@@ -32,6 +32,7 @@ type Backend interface {
 	ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3response.ListBucketResult, s3err.ErrorCode)
 	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3response.ListBucketResultV2, s3err.ErrorCode)
 	DeleteObject(bucket, object string) s3err.ErrorCode
+	DeleteObjects(bucket string, objects []string) s3err.ErrorCode
 
 	IsTaggingSupported() bool
 	GetTags(bucket, object string) (map[string]string, error)
@@ -41,7 +42,9 @@ type Backend interface {
 
 type BackendUnsupported struct{}
 
-var _ Backend = BackendUnsupported{}
+func New() Backend {
+	return &BackendUnsupported{}
+}
 
 func (BackendUnsupported) GetIAMConfig() ([]byte, error) {
 	return nil, fmt.Errorf("not supported")
@@ -88,6 +91,9 @@ func (BackendUnsupported) PutObject(buket, object string, r io.Reader) (string, 
 	return "", s3err.ErrNotImplemented
 }
 func (BackendUnsupported) DeleteObject(bucket, object string) s3err.ErrorCode {
+	return s3err.ErrNotImplemented
+}
+func (BackendUnsupported) DeleteObjects(bucket string, object []string) s3err.ErrorCode {
 	return s3err.ErrNotImplemented
 }
 func (BackendUnsupported) GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3response.GetObjectResponse, s3err.ErrorCode) {

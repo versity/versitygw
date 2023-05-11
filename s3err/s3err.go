@@ -1,12 +1,37 @@
 package s3err
 
-import "net/http"
+import (
+	"bytes"
+	"encoding/xml"
+	"net/http"
+)
 
 // APIError structure
 type APIError struct {
 	Code           string
 	Description    string
 	HTTPStatusCode int
+}
+
+// APIErrorResponse - error response format
+type APIErrorResponse struct {
+	XMLName    xml.Name `xml:"Error" json:"-"`
+	Code       string
+	Message    string
+	Key        string `xml:"Key,omitempty" json:"Key,omitempty"`
+	BucketName string `xml:"BucketName,omitempty" json:"BucketName,omitempty"`
+	Resource   string
+	Region     string `xml:"Region,omitempty" json:"Region,omitempty"`
+	RequestID  string `xml:"RequestId" json:"RequestId"`
+	HostID     string `xml:"HostId" json:"HostId"`
+}
+
+func (A APIError) Error() []byte {
+	var bytesBuffer bytes.Buffer
+	bytesBuffer.WriteString(xml.Header)
+	e := xml.NewEncoder(&bytesBuffer)
+	_ = e.Encode(A)
+	return bytesBuffer.Bytes()
 }
 
 // ErrorCode type of error status.
@@ -344,4 +369,28 @@ var errorCodeResponse = map[ErrorCode]APIError{
 // GetAPIError provides API Error for input API error code.
 func GetAPIError(code ErrorCode) APIError {
 	return errorCodeResponse[code]
+}
+
+// getErrorResponse gets in standard error and resource value and
+// provides a encodable populated response values
+func GetAPIErrorResponse(err APIError, resource, requestID, hostID string) []byte {
+	return encodeResponse(APIErrorResponse{
+		Code:       err.Code,
+		Message:    err.Description,
+		BucketName: "",
+		Key:        "",
+		Resource:   resource,
+		Region:     "",
+		RequestID:  requestID,
+		HostID:     hostID,
+	})
+}
+
+// Encodes the response headers into XML format.
+func encodeResponse(response interface{}) []byte {
+	var bytesBuffer bytes.Buffer
+	bytesBuffer.WriteString(xml.Header)
+	e := xml.NewEncoder(&bytesBuffer)
+	e.Encode(response)
+	return bytesBuffer.Bytes()
 }
