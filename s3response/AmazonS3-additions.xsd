@@ -95,7 +95,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetBucketLoggingStatusResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -116,7 +115,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="SetBucketLoggingStatusResponse">
         <xsd:complexType>
             <xsd:sequence/>
@@ -135,7 +133,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetObjectAccessControlPolicyResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -205,7 +202,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetBucketAccessControlPolicyResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -317,7 +313,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="SetObjectAccessControlPolicyResponse">
         <xsd:complexType>
             <xsd:sequence/>
@@ -336,7 +331,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="SetBucketAccessControlPolicyResponse">
         <xsd:complexType>
             <xsd:sequence/>
@@ -405,7 +399,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetObjectAclResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -431,7 +424,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetObjectAttributesResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -481,7 +473,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="GetObjectExtendedResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -506,7 +497,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="PutObjectResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -514,7 +504,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:complexType name="PutObjectResult">
         <xsd:sequence>
             <xsd:element name="ETag" type="xsd:string"/>
@@ -539,7 +528,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="PutObjectInlineResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -560,11 +548,36 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="DeleteObjectResponse">
         <xsd:complexType>
             <xsd:sequence>
                 <xsd:element name="DeleteObjectResponse" type="tns:Status"/>
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+
+    <xsd:element name="DeleteObjects">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="AWSAccessKeyId" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Timestamp" type="xsd:dateTime" minOccurs="0"/>
+                <xsd:element name="Signature" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Credential" type="xsd:string" minOccurs="0"/>
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+    <xsd:element name="DeleteObjectsInput">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Delete" type="tns:DeleteObjectEntry"/>
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+    <xsd:element name="DeleteObjectsResponse">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Deleted" type="tns:DeletedEntry"/>
+                <xsd:element name="Error" type="tns:Error"/>
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
@@ -584,7 +597,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="ListBucketResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -592,7 +604,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="ListVersionsResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -600,6 +611,127 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
+
+    <xsd:element name="ListMultipartUploads">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Bucket" type="xsd:string"/>
+                <xsd:element name="Delimiter" type="xsd:string"/>
+                <xsd:element name="EncodingType" type="xsd:string"/>
+                <xsd:element name="KeyMarker" type="xsd:string"/>
+                <xsd:element name="MaxUploads" type="xsd:string"/>
+                <xsd:element name="Prefix" type="xsd:string"/>
+                <xsd:element name="UploadIdMarker" type="xsd:string"/>
+                <xsd:element name="AWSAccessKeyId" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Timestamp" type="xsd:dateTime" minOccurs="0"/>
+                <xsd:element name="Signature" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Credential" type="xsd:string" minOccurs="0"/>
+
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+    <xsd:element name="ListMultipartUploadsResponse">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Bucket" type="xsd:string"/>
+                <xsd:element name="KeyMarker" type="xsd:string"/>
+                <xsd:element name="UploadIdMarker" type="xsd:string"/>
+                <xsd:element name="NextKeyMarker" type="xsd:string"/>
+                <xsd:element name="Prefix" type="xsd:string"/>
+                <xsd:element name="Delimiter" type="xsd:string"/>
+                <xsd:element name="NextUploadIdMarker" type="xsd:string"/>
+                <xsd:element name="MaxUploads" type="xsd:integer"/>
+                <xsd:element name="IsTruncated" type="xsd:boolean"/>
+                <xsd:element name="Upload" type="tns:UploadEntry"/>
+                <xsd:element name="CommonPrefixes" type="tns:CommonPrefixes"/>
+                <xsd:element name="EncodingType" type="xsd:string"/>
+
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+
+    <xsd:element name="CreateMultipartUpload">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Bucket" type="xsd:string"/>
+                <xsd:element name="CacheControl" type="xsd:string"/>
+                <xsd:element name="ContentDisposition" type="xsd:string"/>
+                <xsd:element name="ContentEncoding" type="xsd:string"/>
+                <xsd:element name="ContentLanguage" type="xsd:string"/>
+                <xsd:element name="ContentType" type="xsd:string"/>
+                <xsd:element name="Expires" type="xsd:dateTime"/>
+                <xsd:element name="Key" type="xsd:string"/>
+                <xsd:element name="AWSAccessKeyId" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Timestamp" type="xsd:dateTime" minOccurs="0"/>
+                <xsd:element name="Signature" type="xsd:string" minOccurs="0"/>
+                <xsd:element name="Credential" type="xsd:string" minOccurs="0"/>
+
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+    <xsd:element name="CreateMultipartUploadResponse">
+        <xsd:complexType>
+            <xsd:sequence>
+                <xsd:element name="Bucket" type="xsd:string"/>
+                <xsd:element name="Key" type="xsd:string"/>
+                <xsd:element name="UploadId" type="xsd:string"/>
+
+            </xsd:sequence>
+        </xsd:complexType>
+    </xsd:element>
+
+    <xsd:complexType name="DeleteObjectEntry">
+        <xsd:sequence>
+            <xsd:element name="Object" type="tns:ObjectIdentifier"/>
+            <xsd:element name="Key" type="xsd:string"/>
+            <xsd:element name="Quiet" type="xsd:boolean"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
+    <xsd:complexType name="DeletedEntry">
+        <xsd:sequence>
+            <xsd:element name="DeleteMarker" type="xsd:boolean"/>
+            <xsd:element name="DeleteMarkerVersionId" type="xsd:string"/>
+            <xsd:element name="Key" type="xsd:string"/>
+            <xsd:element name="VersionId" type="xsd:string"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
+    <xsd:complexType name="UploadEntry">
+        <xsd:sequence>
+            <xsd:element name="ChecksumAlgorithm" type="xsd:string"/>
+            <xsd:element name="Initiated" type="xsd:dateTime"/>
+            <xsd:element name="Initiator" type="tns:InitiatorEntry"/>
+            <xsd:element name="Key" type="xsd:string"/>
+            <xsd:element name="Owner" type="tns:CanonicalUser"/>
+            <xsd:element name="StorageClass" type="xsd:string"/>
+            <xsd:element name="UploadId" type="xsd:string"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="ObjectIdentifier">
+        <xsd:sequence>
+            <xsd:element name="Key" type="xsd:string"/>
+            <xsd:element name="VersionId" type="xsd:string"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="InitiatorEntry">
+        <xsd:sequence>
+            <xsd:element name="DisplayName" type="xsd:string"/>
+            <xsd:element name="ID" type="xsd:string"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
+
+    <xsd:complexType name="CommonPrefixes">
+        <xsd:sequence>
+            <xsd:element name="Prefix" type="xsd:string"/>
+
+        </xsd:sequence>
+    </xsd:complexType>
 
     <xsd:complexType name="ListEntry">
         <xsd:sequence>
@@ -655,7 +787,6 @@
             <xsd:element name="CommonPrefixes" type="tns:PrefixEntry" minOccurs="0" maxOccurs="unbounded"/>
         </xsd:sequence>
     </xsd:complexType>
-
     <xsd:complexType name="ListVersionsResult">
         <xsd:sequence>
             <xsd:element name="Metadata" type="tns:MetadataEntry" minOccurs="0" maxOccurs="unbounded"/>
@@ -685,7 +816,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="ListAllMyBucketsResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -725,6 +855,15 @@
         </xsd:complexType>
     </xsd:element>
 
+    <xsd:complexType name="Error">
+        <xsd:sequence>
+            <xsd:element name="Code" type="xsd:string"/>
+            <xsd:element name="Key" type="xsd:string"/>
+            <xsd:element name="Message" type="xsd:string"/>
+            <xsd:element name="VersionId" type="xsd:string"/>
+        </xsd:sequence>
+    </xsd:complexType>
+
     <xsd:simpleType name="MetadataDirective">
         <xsd:restriction base="xsd:string">
             <xsd:enumeration value="COPY"/>
@@ -751,10 +890,10 @@
                 <xsd:element name="Timestamp" type="xsd:dateTime" minOccurs="0"/>
                 <xsd:element name="Signature" type="xsd:string" minOccurs="0"/>
                 <xsd:element name="Credential" type="xsd:string" minOccurs="0"/>
+
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:element name="CopyObjectResponse">
         <xsd:complexType>
             <xsd:sequence>
@@ -762,7 +901,6 @@
             </xsd:sequence>
         </xsd:complexType>
     </xsd:element>
-
     <xsd:complexType name="CopyObjectResult">
         <xsd:sequence>
             <xsd:element name="LastModified" type="xsd:dateTime"/>

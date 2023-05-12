@@ -3,7 +3,6 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/scoutgw/backend"
 	"github.com/versity/scoutgw/internal"
@@ -22,7 +21,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	// ListBuckets action
 	app.Get("/", func(ctx *fiber.Ctx) error {
 		res, code := be.ListBuckets()
-		return responce[internal.Any](ctx, res, code)
+		return responce[*s3response.ListAllMyBucketsList](ctx, res, code)
 	})
 
 	// PutBucket action
@@ -42,12 +41,18 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 		return responce[*s3response.HeadBucketResponse](ctx, res, code)
 	})
 	// GetBucketAcl action
+	// ListMultipartUploads action
 	// ListObjects action
 	// ListObjectsV2 action
 	app.Get("/:bucket", func(ctx *fiber.Ctx) error {
 		if ctx.Request().URI().QueryArgs().Has("acl") {
 			res, code := be.GetBucketAcl(ctx.Params("bucket"))
 			return responce[*s3response.GetBucketAclResponse](ctx, res, code)
+		}
+
+		if ctx.Request().URI().QueryArgs().Has("uploads") {
+			res, code := be.ListMultipartUploads(&s3response.ListMultipartUploads{Bucket: ctx.Params("bucket")})
+			return responce[*s3response.ListMultipartUploadsResponse](ctx, res, code)
 		}
 
 		if ctx.QueryInt("list-type") == 2 {
@@ -58,23 +63,33 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 		res, code := be.ListObjects(ctx.Params("bucket"), "", "", "", 1)
 		return responce[*s3response.ListBucketResult](ctx, res, code)
 	})
+
+	// HeadObject action
+	app.Head("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
+		bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
+		if keyEnd != "" {
+			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
+		res, code := be.HeadObject(bucket, key, "")
+		return responce[*s3response.HeadObjectResponse](ctx, res, code)
+	})
 	// GetObjectAcl action
 	// GetObject action
-	//todo: will continue HeadObject implementation
 	app.Get("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
+		bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
+		if keyEnd != "" {
+			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
 		if ctx.Request().URI().QueryArgs().Has("acl") {
-			res, code := be.GetObjectAcl(ctx.Params("bucket"), ctx.Params("key"))
+			res, code := be.GetObjectAcl(bucket, key)
 			return responce[*s3response.GetObjectAccessControlPolicyResponse](ctx, res, code)
 		}
 
 		if attrs := ctx.Get("X-Amz-Object-Attributes"); attrs != "" {
-			res, code := be.GetObjectAttributes(ctx.Params("bucket"), ctx.Params("key"), strings.Split(ctx.Get("key"), ","))
+			res, code := be.GetObjectAttributes(bucket, key, strings.Split(attrs, ","))
 			return responce[*s3response.GetObjectAttributesResponse](ctx, res, code)
-		}
-
-		bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
-		if keyEnd != "" {
-			key = strings.Join([]string{key, keyEnd}, "/")
 		}
 
 		bRangeSl := strings.Split(ctx.Get("Range"), "=")
@@ -112,24 +127,27 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	})
 	// DeleteObjects action
 	app.Post("/:bucket", func(ctx *fiber.Ctx) error {
-		body := ctx.Body()
+		var dObj s3response.DeleteObjectEntry
+		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+			return errors.New("wrong api call")
+		}
 
-		fmt.Println(string(body))
-		//todo: create type for body and pass to function parsed structure
-		code := be.DeleteObjects(ctx.Params("bucket"), []string{})
+		code := be.DeleteObjects(ctx.Params("bucket"), &s3response.DeleteObjectsInput{Delete: dObj})
 		return responce[internal.Any](ctx, nil, code)
 	})
 	// CopyObject action
-	app.Put("/:dstBucket/:dstKey/*", func(ctx *fiber.Ctx) error {
+	app.Put("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
 		copySource := strings.Split(ctx.Get("X-Amz-Copy-Source"), "/")
 		if len(copySource) < 2 {
 			return errors.New("wrong api call")
 		}
+
 		srcBucket, srcObject := copySource[0], copySource[1:]
-		dstBucket, dstKeyStart, dstKeyEnd := ctx.Params("dstBucket"), ctx.Params("dstKey"), ctx.Params("*1")
+		dstBucket, dstKeyStart, dstKeyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
 		if dstKeyEnd != "" {
 			dstKeyStart = strings.Join([]string{dstKeyStart, dstKeyEnd}, "/")
 		}
+
 		res, code := be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
 		return responce[*s3response.CopyObjectResponse](ctx, res, code)
 	})
