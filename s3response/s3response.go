@@ -25,14 +25,6 @@ type LocationResponse struct {
 	Location string   `xml:",chardata"`
 }
 
-// Part container for part metadata.
-type Part struct {
-	PartNumber   int
-	LastModified string
-	ETag         string
-	Size         int64
-}
-
 // ListPartsResponse - format for list parts response.
 type ListPartsResponse struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`

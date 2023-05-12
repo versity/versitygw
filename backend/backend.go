@@ -15,6 +15,8 @@ type Backend interface {
 	Shutdown()
 
 	ListBuckets() (*s3response.ListAllMyBucketsList, s3err.ErrorCode)
+	HeadBucket(bucket string) (*s3response.HeadBucketResponse, s3err.ErrorCode)
+	GetBucketAcl(bucket string) (*s3response.GetBucketAclResponse, s3err.ErrorCode)
 	PutBucket(bucket string) s3err.ErrorCode
 	DeleteBucket(bucket string) s3err.ErrorCode
 
@@ -27,7 +29,10 @@ type Backend interface {
 	PutObjectPart(bucket, object, uploadID string, part int, r io.Reader) (etag string, err s3err.ErrorCode)
 
 	PutObject(bucket, object string, r io.Reader) (string, s3err.ErrorCode)
+	HeadObject(bucket, object string, etag string) (*s3response.HeadObjectResponse, s3err.ErrorCode)
 	GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3response.GetObjectResponse, s3err.ErrorCode)
+	GetObjectAcl(bucket, object string) (*s3response.GetObjectAccessControlPolicyResponse, s3err.ErrorCode)
+	GetObjectAttributes(bucket, object string, attributes []string) (*s3response.GetObjectAttributesResponse, s3err.ErrorCode)
 	CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3response.CopyObjectResponse, s3err.ErrorCode)
 	ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3response.ListBucketResult, s3err.ErrorCode)
 	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3response.ListBucketResultV2, s3err.ErrorCode)
@@ -56,6 +61,12 @@ func (BackendUnsupported) String() string {
 }
 
 func (BackendUnsupported) ListBuckets() (*s3response.ListAllMyBucketsList, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) GetBucketAcl(bucket string) (*s3response.GetBucketAclResponse, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) HeadBucket(bucket string) (*s3response.HeadBucketResponse, s3err.ErrorCode) {
 	return nil, s3err.ErrNotImplemented
 }
 func (BackendUnsupported) PutBucket(bucket string) s3err.ErrorCode {
@@ -97,6 +108,15 @@ func (BackendUnsupported) DeleteObjects(bucket string, object []string) s3err.Er
 	return s3err.ErrNotImplemented
 }
 func (BackendUnsupported) GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3response.GetObjectResponse, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) HeadObject(bucket, object string, etag string) (*s3response.HeadObjectResponse, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) GetObjectAcl(bucket, object string) (*s3response.GetObjectAccessControlPolicyResponse, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) GetObjectAttributes(bucket, object string, attributes []string) (*s3response.GetObjectAttributesResponse, s3err.ErrorCode) {
 	return nil, s3err.ErrNotImplemented
 }
 func (BackendUnsupported) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3response.CopyObjectResponse, s3err.ErrorCode) {

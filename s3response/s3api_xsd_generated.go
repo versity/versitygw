@@ -31,6 +31,13 @@ type CanonicalUser struct {
 	DisplayName string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DisplayName,omitempty"`
 }
 
+type Checksum struct {
+	ChecksumCRC32  string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumCRC32"`
+	ChecksumCRC32C string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumCRC32C"`
+	ChecksumSHA1   string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumSHA1"`
+	ChecksumSHA256 string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumSHA256"`
+}
+
 type CopyObject struct {
 	SourceBucket                string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ SourceBucket"`
 	SourceKey                   string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ SourceKey"`
@@ -279,6 +286,65 @@ type GetBucketAccessControlPolicyResponse struct {
 	GetBucketAccessControlPolicyResponse AccessControlPolicy `xml:"http://s3.amazonaws.com/doc/2006-03-01/ GetBucketAccessControlPolicyResponse"`
 }
 
+type GetBucketAcl struct {
+	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *GetBucketAcl) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T GetBucketAcl
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *GetBucketAcl) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T GetBucketAcl
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type GetBucketAclResponse struct {
+	CanonicalUser     CanonicalUser     `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CanonicalUser"`
+	AccessControlList AccessControlList `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AccessControlList"`
+	AWSAccessKeyId    string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp         time.Time         `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature         string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential        string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *GetBucketAclResponse) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T GetBucketAclResponse
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *GetBucketAclResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T GetBucketAclResponse
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
 type GetBucketLoggingStatus struct {
 	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
 	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
@@ -377,6 +443,82 @@ func (t *GetObjectAccessControlPolicy) UnmarshalXML(d *xml.Decoder, start xml.St
 
 type GetObjectAccessControlPolicyResponse struct {
 	GetObjectAccessControlPolicyResponse AccessControlPolicy `xml:"http://s3.amazonaws.com/doc/2006-03-01/ GetObjectAccessControlPolicyResponse"`
+}
+
+type GetObjectAcl struct {
+	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
+	Key            string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Key"`
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *GetObjectAcl) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T GetObjectAcl
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *GetObjectAcl) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T GetObjectAcl
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type GetObjectAclResponse struct {
+	Owner          CanonicalUser     `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Owner"`
+	Grants         AccessControlList `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Grants"`
+	RequestCharged string            `xml:"http://s3.amazonaws.com/doc/2006-03-01/ RequestCharged"`
+}
+
+type GetObjectAttributes struct {
+	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
+	Key            string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Key"`
+	Attributes     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Attributes"`
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *GetObjectAttributes) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T GetObjectAttributes
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *GetObjectAttributes) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T GetObjectAttributes
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type GetObjectAttributesResponse struct {
+	Etag           string      `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Etag"`
+	Checksum       Checksum    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Checksum"`
+	RequestCharged string      `xml:"http://s3.amazonaws.com/doc/2006-03-01/ RequestCharged"`
+	ObjectParts    ObjectParts `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ObjectParts"`
+	StorageClass   string      `xml:"http://s3.amazonaws.com/doc/2006-03-01/ StorageClass"`
+	ObjectSize     int64       `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ObjectSize"`
 }
 
 type GetObjectExtended struct {
@@ -478,6 +620,121 @@ type Grantee struct {
 
 type Group struct {
 	URI string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ URI"`
+}
+
+type HeadBucket struct {
+	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *HeadBucket) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T HeadBucket
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *HeadBucket) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T HeadBucket
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type HeadBucketResponse struct {
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *HeadBucketResponse) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T HeadBucketResponse
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *HeadBucketResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T HeadBucketResponse
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type HeadObject struct {
+	Bucket         string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Bucket"`
+	Key            string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Key"`
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *HeadObject) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T HeadObject
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *HeadObject) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T HeadObject
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
+}
+
+type HeadObjectResponse struct {
+	AWSAccessKeyId string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AWSAccessKeyId,omitempty"`
+	Timestamp      time.Time `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	Signature      string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Signature,omitempty"`
+	Credential     string    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Credential,omitempty"`
+}
+
+func (t *HeadObjectResponse) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type T HeadObjectResponse
+	var layout struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	layout.T = (*T)(t)
+	layout.Timestamp = (*xsdDateTime)(&layout.T.Timestamp)
+	return e.EncodeElement(layout, start)
+}
+func (t *HeadObjectResponse) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type T HeadObjectResponse
+	var overlay struct {
+		*T
+		Timestamp *xsdDateTime `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Timestamp,omitempty"`
+	}
+	overlay.T = (*T)(t)
+	overlay.Timestamp = (*xsdDateTime)(&overlay.T.Timestamp)
+	return d.DecodeElement(&overlay, &start)
 }
 
 type ListAllMyBuckets struct {
@@ -665,6 +922,24 @@ type MfaDeleteStatus string
 
 type NotificationConfiguration struct {
 	TopicConfiguration []TopicConfiguration `xml:"http://s3.amazonaws.com/doc/2006-03-01/ TopicConfiguration,omitempty"`
+}
+
+type ObjectParts struct {
+	IsTruncated          bool `xml:"http://s3.amazonaws.com/doc/2006-03-01/ IsTruncated"`
+	MaxParts             int  `xml:"http://s3.amazonaws.com/doc/2006-03-01/ MaxParts"`
+	NextPartNumberMarker int  `xml:"http://s3.amazonaws.com/doc/2006-03-01/ NextPartNumberMarker"`
+	PartNumberMarker     int  `xml:"http://s3.amazonaws.com/doc/2006-03-01/ PartNumberMarker"`
+	Part                 Part `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Part"`
+	PartsCount           int  `xml:"http://s3.amazonaws.com/doc/2006-03-01/ PartsCount"`
+}
+
+type Part struct {
+	ChecksumCRC32  string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumCRC32"`
+	ChecksumCRC32C string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumCRC32C"`
+	ChecksumSHA1   string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumSHA1"`
+	ChecksumSHA256 string `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ChecksumSHA256"`
+	PartNumber     int    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ PartNumber"`
+	Size           int    `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Size"`
 }
 
 // May be one of BucketOwner, Requester
