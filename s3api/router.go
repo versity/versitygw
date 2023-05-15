@@ -3,13 +3,15 @@ package s3api
 import (
 	"encoding/xml"
 	"errors"
+	"strconv"
+	"strings"
+
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/scoutgw/backend"
 	"github.com/versity/scoutgw/internal"
 	"github.com/versity/scoutgw/s3err"
 	"github.com/versity/scoutgw/s3response"
-	"strconv"
-	"strings"
 )
 
 type S3ApiRouter struct {
@@ -76,10 +78,26 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	})
 	// GetObjectAcl action
 	// GetObject action
+	// ListObjectParts action
 	app.Get("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
-		bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
+		bucket, key, keyEnd, uploadId, maxPartsStr, partNumberMarkerStr := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("max-parts"), ctx.Query("part-number-marker")
 		if keyEnd != "" {
 			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
+		if uploadId != "" {
+			maxParts, err := strconv.Atoi(maxPartsStr)
+			if err != nil && maxPartsStr != "" {
+				return errors.New("wrong api call")
+			}
+
+			partNumberMarker, err := strconv.Atoi(partNumberMarkerStr)
+			if err != nil && partNumberMarkerStr != "" {
+				return errors.New("wrong api call")
+			}
+
+			res, code := be.ListObjectParts(bucket, "", uploadId, partNumberMarker, maxParts)
+			return responce[*s3response.ListPartsResponse](ctx, res, code)
 		}
 
 		if ctx.Request().URI().QueryArgs().Has("acl") {
@@ -116,10 +134,25 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 		return responce[*s3response.GetObjectResponse](ctx, res, code)
 	})
 	// DeleteObject action
+	// AbortMultipartUpload action
 	app.Delete("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
-		bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
+		bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
+
 		if keyEnd != "" {
 			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
+		if uploadId != "" {
+			expectedBucketOwner, requestPayer := ctx.Get("X-Amz-Expected-Bucket-Owner"), ctx.Get("X-Amz-Request-Payer")
+
+			code := be.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
+				UploadId: &uploadId, 
+				Bucket: &bucket, 
+				Key: &key, 
+				ExpectedBucketOwner: &expectedBucketOwner, 
+				RequestPayer: &requestPayer,
+			})
+			return responce[internal.Any](ctx, nil, code)
 		}
 
 		code := be.DeleteObject(bucket, key)
@@ -134,6 +167,28 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 
 		code := be.DeleteObjects(ctx.Params("bucket"), &s3response.DeleteObjectsInput{Delete: dObj})
 		return responce[internal.Any](ctx, nil, code)
+	})
+	// CompleteMultipartUpload action
+	// CreateMultipartUpload
+	app.Post("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
+		bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
+		
+		if keyEnd != "" {
+			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
+		if uploadId != "" {
+			var parts []s3response.Part
+
+			if err := xml.Unmarshal(ctx.Body(), &parts); err != nil {
+				return errors.New("wrong api call")
+			}
+			
+			res, code := be.CompleteMultipartUpload(bucket, "", uploadId,  parts)
+			return responce[*s3response.CompleteMultipartUploadResponse](ctx, res, code)
+		}
+		res, code := be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
+		return responce[*s3response.InitiateMultipartUploadResponse](ctx, res, code)
 	})
 	// CopyObject action
 	app.Put("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
