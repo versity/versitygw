@@ -1,8 +1,10 @@
 package s3api
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 
@@ -27,8 +29,37 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	})
 
 	// PutBucket action
+	// PutBucketAcl action
 	app.Put("/:bucket", func(ctx *fiber.Ctx) error {
-		code := be.PutBucket(ctx.Params("bucket"))
+		bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP := 
+			ctx.Params("bucket"), 
+			ctx.Get("x-amz-acl"), 
+			ctx.Get("x-amz-grant-full-control"), 
+			ctx.Get("x-amz-grant-read"), 
+			ctx.Get("x-amz-grant-read-acp"), 
+			ctx.Get("x-amz-grant-write"), 
+			ctx.Get("x-amz-grant-write-acp")
+
+		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
+
+		if grants != "" || acl != "" {
+			if grants != "" && acl != "" {
+				return errors.New("Wrong api call")
+			}
+			code := be.PutBucketAcl(&s3.PutBucketAclInput{
+				Bucket: &bucket,
+				ACL: &acl, 
+				GrantFullControl: &grantFullControl, 
+				GrantRead: &grantRead, 
+				GrantReadACP: &grantReadACP, 
+				GrantWrite: &granWrite, 
+				GrantWriteACP: &grantWriteACP,
+			})
+			
+			return responce[internal.Any](ctx, nil, code)
+		}
+
+		code := be.PutBucket(bucket)
 		return responce[internal.Any](ctx, nil, code)
 	})
 	// DeleteBucket action
@@ -170,11 +201,18 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	})
 	// CompleteMultipartUpload action
 	// CreateMultipartUpload
+	// RestoreObject action
 	app.Post("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
 		bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
+		var restoreRequest s3.RestoreRequest
 		
 		if keyEnd != "" {
 			key = strings.Join([]string{key, keyEnd}, "/")
+		}
+
+		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err == nil {
+			code := be.RestoreObject(bucket, key, &restoreRequest)
+			return responce[internal.Any](ctx, nil, code)
 		}
 
 		if uploadId != "" {
@@ -191,20 +229,57 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 		return responce[*s3response.InitiateMultipartUploadResponse](ctx, res, code)
 	})
 	// CopyObject action
+	// PutObject action
+	// UploadPart action
 	app.Put("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
 		copySource := strings.Split(ctx.Get("X-Amz-Copy-Source"), "/")
-		if len(copySource) < 2 {
-			return errors.New("wrong api call")
-		}
+		dstBucket, dstKeyStart, dstKeyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
+		acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP := 
+			ctx.Get("x-amz-acl"), 
+			ctx.Get("x-amz-grant-full-control"), 
+			ctx.Get("x-amz-grant-read"), 
+			ctx.Get("x-amz-grant-read-acp"), 
+			ctx.Get("x-amz-grant-write"), 
+			ctx.Get("x-amz-grant-write-acp")
+		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
-		srcBucket, srcObject := copySource[0], copySource[1:]
-		dstBucket, dstKeyStart, dstKeyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
 		if dstKeyEnd != "" {
 			dstKeyStart = strings.Join([]string{dstKeyStart, dstKeyEnd}, "/")
 		}
 
-		res, code := be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
-		return responce[*s3response.CopyObjectResponse](ctx, res, code)
+		if uploadId != "" {
+			body := io.ReadSeeker( bytes.NewReader([]byte(ctx.Body())))
+			res, code := be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
+			return responce[*s3.UploadPartOutput](ctx, res, code)
+		}
+
+		if grants != "" || acl != "" {
+			if grants != "" && acl != "" {
+				return errors.New("Wrong api call")
+			}
+
+			code := be.PutObjectAcl(&s3.PutObjectAclInput{
+				Bucket: &dstBucket,
+				Key: &dstKeyStart,
+				ACL: &acl, 
+				GrantFullControl: &grantFullControl, 
+				GrantRead: &grantRead, 
+				GrantReadACP: &grantReadACP, 
+				GrantWrite: &granWrite, 
+				GrantWriteACP: &grantWriteACP,
+			})
+			return responce[internal.Any](ctx, nil, code)
+		}
+
+		if len(copySource) > 1 {
+			srcBucket, srcObject := copySource[0], copySource[1:]
+	
+			res, code := be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
+			return responce[*s3response.CopyObjectResponse](ctx, res, code)
+		}
+
+		res, code := be.PutObject(dstBucket, dstKeyStart, bytes.NewReader(ctx.Request().Body()))
+		return responce[string](ctx, res, code)
 	})
 }
 
