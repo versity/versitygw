@@ -40,7 +40,7 @@ type Backend interface {
 	DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) s3err.ErrorCode
 	PutBucketAcl(*s3.PutBucketAclInput) s3err.ErrorCode
 	PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode
-	RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode
+	RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) s3err.ErrorCode
 	UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, s3err.ErrorCode)
 	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode)
 
@@ -73,7 +73,7 @@ func (BackendUnsupported) PutBucketAcl(*s3.PutBucketAclInput) s3err.ErrorCode {
 func (BackendUnsupported) PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode {
 	return s3err.ErrNotImplemented
 }
-func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode {
+func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) s3err.ErrorCode {
 	return s3err.ErrNotImplemented
 }
 func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode) {

@@ -1,20 +1,9 @@
 package s3api
 
 import (
-	"encoding/xml"
-	"errors"
-
-	"strconv"
-	"strings"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/scoutgw/backend"
-	"github.com/versity/scoutgw/internal"
 	"github.com/versity/scoutgw/s3api/controllers"
-	"github.com/versity/scoutgw/s3err"
 )
 
 type S3ApiRouter struct{}
