@@ -26,8 +26,8 @@ func New(be backend.Backend) S3ApiController {
 }
 
 func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
-	res, code := c.be.ListBuckets()
-	return responce(ctx, res, code)
+	res, err := c.be.ListBuckets()
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
@@ -47,18 +47,18 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			return errors.New("wrong api call")
 		}
 
-		res, code := c.be.ListObjectParts(bucket, "", uploadId, partNumberMarker, maxParts)
-		return responce(ctx, res, code)
+		res, err := c.be.ListObjectParts(bucket, "", uploadId, partNumberMarker, maxParts)
+		return responce(ctx, res, err)
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
-		res, code := c.be.GetObjectAcl(bucket, key)
-		return responce(ctx, res, code)
+		res, err := c.be.GetObjectAcl(bucket, key)
+		return responce(ctx, res, err)
 	}
 
 	if attrs := ctx.Get("X-Amz-Object-Attributes"); attrs != "" {
-		res, code := c.be.GetObjectAttributes(bucket, key, strings.Split(attrs, ","))
-		return responce(ctx, res, code)
+		res, err := c.be.GetObjectAttributes(bucket, key, strings.Split(attrs, ","))
+		return responce(ctx, res, err)
 	}
 
 	bRangeSl := strings.Split(ctx.Get("Range"), "=")
@@ -81,28 +81,28 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return errors.New("wrong api call")
 	}
 
-	res, code := c.be.GetObject(bucket, key, int64(startOffset), int64(length), ctx.Response().BodyWriter(), "")
-	return responce(ctx, res, code)
+	res, err := c.be.GetObject(bucket, key, int64(startOffset), int64(length), ctx.Response().BodyWriter(), "")
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("acl") {
-		res, code := c.be.GetBucketAcl(ctx.Params("bucket"))
-		return responce(ctx, res, code)
+		res, err := c.be.GetBucketAcl(ctx.Params("bucket"))
+		return responce(ctx, res, err)
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("uploads") {
-		res, code := c.be.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: aws.String(ctx.Params("bucket"))})
-		return responce(ctx, res, code)
+		res, err := c.be.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: aws.String(ctx.Params("bucket"))})
+		return responce(ctx, res, err)
 	}
 
 	if ctx.QueryInt("list-type") == 2 {
-		res, code := c.be.ListObjectsV2(ctx.Params("bucket"), "", "", "", 1)
-		return responce(ctx, res, code)
+		res, err := c.be.ListObjectsV2(ctx.Params("bucket"), "", "", "", 1)
+		return responce(ctx, res, err)
 	}
 
-	res, code := c.be.ListObjects(ctx.Params("bucket"), "", "", "", 1)
-	return responce(ctx, res, code)
+	res, err := c.be.ListObjects(ctx.Params("bucket"), "", "", "", 1)
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
@@ -121,7 +121,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		if grants != "" && acl != "" {
 			return errors.New("wrong api call")
 		}
-		code := c.be.PutBucketAcl(&s3.PutBucketAclInput{
+		err := c.be.PutBucketAcl(&s3.PutBucketAclInput{
 			Bucket:           &bucket,
 			ACL:              types.BucketCannedACL(acl),
 			GrantFullControl: &grantFullControl,
@@ -131,11 +131,11 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			GrantWriteACP:    &grantWriteACP,
 		})
 
-		return responce[any](ctx, nil, code)
+		return responce[any](ctx, nil, err)
 	}
 
-	code := c.be.PutBucket(bucket)
-	return responce[any](ctx, nil, code)
+	err := c.be.PutBucket(bucket)
+	return responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
@@ -180,7 +180,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return errors.New("wrong api call")
 		}
 
-		res, code := c.be.UploadPartCopy(&s3.UploadPartCopyInput{
+		res, err := c.be.UploadPartCopy(&s3.UploadPartCopyInput{
 			Bucket:                      &dstBucket,
 			Key:                         &dstKeyStart,
 			PartNumber:                  int32(partNumber),
@@ -192,13 +192,13 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			CopySourceIfUnmodifiedSince: &copySrcUnmodifSinceDate,
 		})
 
-		return responce(ctx, res, code)
+		return responce(ctx, res, err)
 	}
 
 	if uploadId != "" {
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
-		res, code := c.be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
-		return responce(ctx, res, code)
+		res, err := c.be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
+		return responce(ctx, res, err)
 	}
 
 	if grants != "" || acl != "" {
@@ -206,7 +206,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return errors.New("wrong api call")
 		}
 
-		code := c.be.PutObjectAcl(&s3.PutObjectAclInput{
+		err := c.be.PutObjectAcl(&s3.PutObjectAclInput{
 			Bucket:           &dstBucket,
 			Key:              &dstKeyStart,
 			ACL:              types.ObjectCannedACL(acl),
@@ -216,24 +216,24 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			GrantWrite:       &granWrite,
 			GrantWriteACP:    &grantWriteACP,
 		})
-		return responce[any](ctx, nil, code)
+		return responce[any](ctx, nil, err)
 	}
 
 	if copySource != "" {
 		copySourceSplit := strings.Split(copySource, "/")
 		srcBucket, srcObject := copySourceSplit[0], copySourceSplit[1:]
 
-		res, code := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
-		return responce(ctx, res, code)
+		res, err := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
+		return responce(ctx, res, err)
 	}
 
-	res, code := c.be.PutObject(dstBucket, dstKeyStart, bytes.NewReader(ctx.Request().Body()))
-	return responce(ctx, res, code)
+	res, err := c.be.PutObject(dstBucket, dstKeyStart, bytes.NewReader(ctx.Request().Body()))
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
-	code := c.be.DeleteBucket(ctx.Params("bucket"))
-	return responce[any](ctx, nil, code)
+	err := c.be.DeleteBucket(ctx.Params("bucket"))
+	return responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
@@ -242,8 +242,8 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 		return errors.New("wrong api call")
 	}
 
-	code := c.be.DeleteObjects(ctx.Params("bucket"), &s3.DeleteObjectsInput{Delete: &dObj})
-	return responce[any](ctx, nil, code)
+	err := c.be.DeleteObjects(ctx.Params("bucket"), &s3.DeleteObjectsInput{Delete: &dObj})
+	return responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
@@ -256,23 +256,23 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	if uploadId != "" {
 		expectedBucketOwner, requestPayer := ctx.Get("X-Amz-Expected-Bucket-Owner"), ctx.Get("X-Amz-Request-Payer")
 
-		code := c.be.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
+		err := c.be.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
 			UploadId:            &uploadId,
 			Bucket:              &bucket,
 			Key:                 &key,
 			ExpectedBucketOwner: &expectedBucketOwner,
 			RequestPayer:        types.RequestPayer(requestPayer),
 		})
-		return responce[any](ctx, nil, code)
+		return responce[any](ctx, nil, err)
 	}
 
-	code := c.be.DeleteObject(bucket, key)
-	return responce[any](ctx, nil, code)
+	err := c.be.DeleteObject(bucket, key)
+	return responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
-	res, code := c.be.HeadBucket(ctx.Params("bucket"))
-	return responce(ctx, res, code)
+	res, err := c.be.HeadBucket(ctx.Params("bucket"))
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
@@ -281,8 +281,8 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
-	res, code := c.be.HeadObject(bucket, key, "")
-	return responce(ctx, res, code)
+	res, err := c.be.HeadObject(bucket, key, "")
+	return responce(ctx, res, err)
 }
 
 func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
@@ -294,8 +294,8 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	}
 
 	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err == nil {
-		code := c.be.RestoreObject(bucket, key, &restoreRequest)
-		return responce[any](ctx, nil, code)
+		err := c.be.RestoreObject(bucket, key, &restoreRequest)
+		return responce[any](ctx, nil, err)
 	}
 
 	if uploadId != "" {
@@ -305,21 +305,28 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			return errors.New("wrong api call")
 		}
 
-		res, code := c.be.CompleteMultipartUpload(bucket, "", uploadId, parts)
-		return responce(ctx, res, code)
+		res, err := c.be.CompleteMultipartUpload(bucket, "", uploadId, parts)
+		return responce(ctx, res, err)
 	}
-	res, code := c.be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
-	return responce(ctx, res, code)
+	res, err := c.be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
+	return responce(ctx, res, err)
 }
 
-func responce[R comparable](ctx *fiber.Ctx, resp R, code s3err.ErrorCode) error {
-	if code != 0 {
-		err := s3err.GetAPIError(code)
-		ctx.Status(err.HTTPStatusCode)
-		return ctx.Send(s3err.GetAPIErrorResponse(err, "", "", ""))
-	} else if b, err := xml.Marshal(resp); err != nil {
-		return err
-	} else {
-		return ctx.Send(b)
+func responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
+	if err != nil {
+		serr, ok := err.(s3err.APIError)
+		if ok {
+			ctx.Status(serr.HTTPStatusCode)
+			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
+		}
+		return ctx.Send(s3err.GetAPIErrorResponse(
+			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
+
+	var b []byte
+	if b, err = xml.Marshal(resp); err != nil {
+		return err
+	}
+
+	return ctx.Send(b)
 }
