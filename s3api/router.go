@@ -16,10 +16,7 @@ import (
 	"github.com/versity/scoutgw/s3response"
 )
 
-type S3ApiRouter struct {
-	app *fiber.App
-	api fiber.Router
-}
+type S3ApiRouter struct{}
 
 func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	// ListBuckets action
@@ -31,31 +28,31 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	// PutBucket action
 	// PutBucketAcl action
 	app.Put("/:bucket", func(ctx *fiber.Ctx) error {
-		bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP := 
-			ctx.Params("bucket"), 
-			ctx.Get("x-amz-acl"), 
-			ctx.Get("x-amz-grant-full-control"), 
-			ctx.Get("x-amz-grant-read"), 
-			ctx.Get("x-amz-grant-read-acp"), 
-			ctx.Get("x-amz-grant-write"), 
+		bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP :=
+			ctx.Params("bucket"),
+			ctx.Get("x-amz-acl"),
+			ctx.Get("x-amz-grant-full-control"),
+			ctx.Get("x-amz-grant-read"),
+			ctx.Get("x-amz-grant-read-acp"),
+			ctx.Get("x-amz-grant-write"),
 			ctx.Get("x-amz-grant-write-acp")
 
 		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
 		if grants != "" || acl != "" {
 			if grants != "" && acl != "" {
-				return errors.New("Wrong api call")
+				return errors.New("wrong api call")
 			}
 			code := be.PutBucketAcl(&s3.PutBucketAclInput{
-				Bucket: &bucket,
-				ACL: &acl, 
-				GrantFullControl: &grantFullControl, 
-				GrantRead: &grantRead, 
-				GrantReadACP: &grantReadACP, 
-				GrantWrite: &granWrite, 
-				GrantWriteACP: &grantWriteACP,
+				Bucket:           &bucket,
+				ACL:              &acl,
+				GrantFullControl: &grantFullControl,
+				GrantRead:        &grantRead,
+				GrantReadACP:     &grantReadACP,
+				GrantWrite:       &granWrite,
+				GrantWriteACP:    &grantWriteACP,
 			})
-			
+
 			return responce[internal.Any](ctx, nil, code)
 		}
 
@@ -177,11 +174,11 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 			expectedBucketOwner, requestPayer := ctx.Get("X-Amz-Expected-Bucket-Owner"), ctx.Get("X-Amz-Request-Payer")
 
 			code := be.AbortMultipartUpload(&s3.AbortMultipartUploadInput{
-				UploadId: &uploadId, 
-				Bucket: &bucket, 
-				Key: &key, 
-				ExpectedBucketOwner: &expectedBucketOwner, 
-				RequestPayer: &requestPayer,
+				UploadId:            &uploadId,
+				Bucket:              &bucket,
+				Key:                 &key,
+				ExpectedBucketOwner: &expectedBucketOwner,
+				RequestPayer:        &requestPayer,
 			})
 			return responce[internal.Any](ctx, nil, code)
 		}
@@ -205,7 +202,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	app.Post("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
 		bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
 		var restoreRequest s3.RestoreRequest
-		
+
 		if keyEnd != "" {
 			key = strings.Join([]string{key, keyEnd}, "/")
 		}
@@ -221,8 +218,8 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 			if err := xml.Unmarshal(ctx.Body(), &parts); err != nil {
 				return errors.New("wrong api call")
 			}
-			
-			res, code := be.CompleteMultipartUpload(bucket, "", uploadId,  parts)
+
+			res, code := be.CompleteMultipartUpload(bucket, "", uploadId, parts)
 			return responce[*s3response.CompleteMultipartUploadResponse](ctx, res, code)
 		}
 		res, code := be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
@@ -234,12 +231,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	app.Put("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
 		copySource := strings.Split(ctx.Get("X-Amz-Copy-Source"), "/")
 		dstBucket, dstKeyStart, dstKeyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
-		acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP := 
-			ctx.Get("x-amz-acl"), 
-			ctx.Get("x-amz-grant-full-control"), 
-			ctx.Get("x-amz-grant-read"), 
-			ctx.Get("x-amz-grant-read-acp"), 
-			ctx.Get("x-amz-grant-write"), 
+		acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP :=
+			ctx.Get("x-amz-acl"),
+			ctx.Get("x-amz-grant-full-control"),
+			ctx.Get("x-amz-grant-read"),
+			ctx.Get("x-amz-grant-read-acp"),
+			ctx.Get("x-amz-grant-write"),
 			ctx.Get("x-amz-grant-write-acp")
 		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -248,32 +245,32 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 		}
 
 		if uploadId != "" {
-			body := io.ReadSeeker( bytes.NewReader([]byte(ctx.Body())))
+			body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
 			res, code := be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
 			return responce[*s3.UploadPartOutput](ctx, res, code)
 		}
 
 		if grants != "" || acl != "" {
 			if grants != "" && acl != "" {
-				return errors.New("Wrong api call")
+				return errors.New("wrong api call")
 			}
 
 			code := be.PutObjectAcl(&s3.PutObjectAclInput{
-				Bucket: &dstBucket,
-				Key: &dstKeyStart,
-				ACL: &acl, 
-				GrantFullControl: &grantFullControl, 
-				GrantRead: &grantRead, 
-				GrantReadACP: &grantReadACP, 
-				GrantWrite: &granWrite, 
-				GrantWriteACP: &grantWriteACP,
+				Bucket:           &dstBucket,
+				Key:              &dstKeyStart,
+				ACL:              &acl,
+				GrantFullControl: &grantFullControl,
+				GrantRead:        &grantRead,
+				GrantReadACP:     &grantReadACP,
+				GrantWrite:       &granWrite,
+				GrantWriteACP:    &grantWriteACP,
 			})
 			return responce[internal.Any](ctx, nil, code)
 		}
 
 		if len(copySource) > 1 {
 			srcBucket, srcObject := copySource[0], copySource[1:]
-	
+
 			res, code := be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
 			return responce[*s3response.CopyObjectResponse](ctx, res, code)
 		}
