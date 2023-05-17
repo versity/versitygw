@@ -2,10 +2,10 @@ package backend
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/scoutgw/s3err"
 )
 
@@ -38,6 +38,11 @@ type Backend interface {
 	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, s3err.ErrorCode)
 	DeleteObject(bucket, object string) s3err.ErrorCode
 	DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) s3err.ErrorCode
+	PutBucketAcl(*s3.PutBucketAclInput) s3err.ErrorCode
+	PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode
+	RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode
+	UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, s3err.ErrorCode)
+	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode)
 
 	IsTaggingSupported() bool
 	GetTags(bucket, object string) (map[string]string, error)
@@ -60,6 +65,21 @@ func (BackendUnsupported) String() string {
 	return "Unsupported"
 }
 func (BackendUnsupported) ListBuckets() (*s3.ListBucketsOutput, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) PutBucketAcl(*s3.PutBucketAclInput) s3err.ErrorCode {
+	return s3err.ErrNotImplemented
+}
+func (BackendUnsupported) PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode {
+	return s3err.ErrNotImplemented
+}
+func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode {
+	return s3err.ErrNotImplemented
+}
+func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
+}
+func (BackendUnsupported) UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, s3err.ErrorCode) {
 	return nil, s3err.ErrNotImplemented
 }
 func (BackendUnsupported) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, s3err.ErrorCode) {
