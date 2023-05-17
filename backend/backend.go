@@ -42,6 +42,7 @@ type Backend interface {
 	PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode
 	RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode
 	UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, s3err.ErrorCode)
+	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode)
 
 	IsTaggingSupported() bool
 	GetTags(bucket, object string) (map[string]string, error)
@@ -75,6 +76,9 @@ func (BackendUnsupported) PutObjectAcl(*s3.PutObjectAclInput) s3err.ErrorCode {
 }
 func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s3.RestoreRequest) s3err.ErrorCode {
 	return s3err.ErrNotImplemented
+}
+func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, s3err.ErrorCode) {
+	return nil, s3err.ErrNotImplemented
 }
 func (BackendUnsupported) UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, s3err.ErrorCode) {
 	return nil, s3err.ErrNotImplemented

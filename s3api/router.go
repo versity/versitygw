@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gofiber/fiber/v2"
@@ -30,12 +31,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	app.Put("/:bucket", func(ctx *fiber.Ctx) error {
 		bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP :=
 			ctx.Params("bucket"),
-			ctx.Get("x-amz-acl"),
-			ctx.Get("x-amz-grant-full-control"),
-			ctx.Get("x-amz-grant-read"),
-			ctx.Get("x-amz-grant-read-acp"),
-			ctx.Get("x-amz-grant-write"),
-			ctx.Get("x-amz-grant-write-acp")
+			ctx.Get("X-Amz-Acl"),
+			ctx.Get("X-Amz-Grant-Full-Control"),
+			ctx.Get("X-Amz-Grant-Read"),
+			ctx.Get("X-Amz-Grant-Read-Acp"),
+			ctx.Get("X-Amz-Grant-Write"),
+			ctx.Get("X-Amz-Grant-Write-Acp")
 
 		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -228,20 +229,62 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 	// CopyObject action
 	// PutObject action
 	// UploadPart action
+	// UploadPartCopy action
 	app.Put("/:bucket/:key/*", func(ctx *fiber.Ctx) error {
-		copySource := strings.Split(ctx.Get("X-Amz-Copy-Source"), "/")
-		dstBucket, dstKeyStart, dstKeyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
-		acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP :=
-			ctx.Get("x-amz-acl"),
-			ctx.Get("x-amz-grant-full-control"),
-			ctx.Get("x-amz-grant-read"),
-			ctx.Get("x-amz-grant-read-acp"),
-			ctx.Get("x-amz-grant-write"),
-			ctx.Get("x-amz-grant-write-acp")
+		dstBucket, dstKeyStart, dstKeyEnd, uploadId, partNumberStr := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("partNumber")
+		copySource, copySrcIfMatch, copySrcIfNoneMatch,
+			copySrcModifSince, copySrcUnmodifSince, acl,
+			grantFullControl, grantRead, grantReadACP,
+			granWrite, grantWriteACP :=
+			// Copy source headers
+			ctx.Get("X-Amz-Copy-Source"),
+			ctx.Get("X-Amz-Copy-Source-If-Match"),
+			ctx.Get("X-Amz-Copy-Source-If-None-Match"),
+			ctx.Get("X-Amz-Copy-Source-If-Modified-Since"),
+			ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since"),
+			// Permission headers
+			ctx.Get("X-Amz-Acl"),
+			ctx.Get("X-Amz-Grant-Full-Control"),
+			ctx.Get("X-Amz-Grant-Read"),
+			ctx.Get("X-Amz-Grant-Read-Acp"),
+			ctx.Get("X-Amz-Grant-Write"),
+			ctx.Get("X-Amz-Grant-Write-Acp")
+
 		grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
 		if dstKeyEnd != "" {
 			dstKeyStart = strings.Join([]string{dstKeyStart, dstKeyEnd}, "/")
+		}
+
+		if partNumberStr != "" {
+			copySrcModifSinceDate, err := time.Parse(time.RFC3339, copySrcModifSince)
+			if err != nil && copySrcModifSince != "" {
+				return errors.New("wrong api call")
+			}
+
+			copySrcUnmodifSinceDate, err := time.Parse(time.RFC3339, copySrcUnmodifSince)
+			if err != nil && copySrcUnmodifSince != "" {
+				return errors.New("wrong api call")
+			}
+
+			partNumber, err := strconv.ParseInt(partNumberStr, 10, 64)
+			if err != nil {
+				return errors.New("wrong api call")
+			}
+
+			res, code := be.UploadPartCopy(&s3.UploadPartCopyInput{
+				Bucket:                      &dstBucket,
+				Key:                         &dstKeyStart,
+				PartNumber:                  &partNumber,
+				UploadId:                    &uploadId,
+				CopySource:                  &copySource,
+				CopySourceIfMatch:           &copySrcIfMatch,
+				CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
+				CopySourceIfModifiedSince:   &copySrcModifSinceDate,
+				CopySourceIfUnmodifiedSince: &copySrcUnmodifSinceDate,
+			})
+
+			return responce[*s3.UploadPartCopyOutput](ctx, res, code)
 		}
 
 		if uploadId != "" {
@@ -268,8 +311,9 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
 			return responce[internal.Any](ctx, nil, code)
 		}
 
-		if len(copySource) > 1 {
-			srcBucket, srcObject := copySource[0], copySource[1:]
+		if copySource != "" {
+			copySourceSplit := strings.Split(copySource, "/")
+			srcBucket, srcObject := copySourceSplit[0], copySourceSplit[1:]
 
 			res, code := be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
 			return responce[*s3response.CopyObjectResponse](ctx, res, code)
