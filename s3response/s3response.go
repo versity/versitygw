@@ -25,14 +25,6 @@ type LocationResponse struct {
 	Location string   `xml:",chardata"`
 }
 
-// Part container for part metadata.
-type Part struct {
-	PartNumber   int
-	LastModified string
-	ETag         string
-	Size         int64
-}
-
 // ListPartsResponse - format for list parts response.
 type ListPartsResponse struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`
@@ -41,7 +33,7 @@ type ListPartsResponse struct {
 	Key      string
 	UploadID string `xml:"UploadId"`
 
-	Initiator Initiator
+	Initiator CanonicalUser
 	Owner     Owner
 
 	// The class of storage used to store the object.
@@ -54,38 +46,6 @@ type ListPartsResponse struct {
 
 	// List of parts.
 	Parts []Part `xml:"Part"`
-}
-
-// ListMultipartUploadsResponse - format for list multipart uploads response.
-type ListMultipartUploadsResponse struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListMultipartUploadsResult" json:"-"`
-
-	Bucket             string
-	KeyMarker          string
-	UploadIDMarker     string `xml:"UploadIdMarker"`
-	NextKeyMarker      string
-	NextUploadIDMarker string `xml:"NextUploadIdMarker"`
-	Delimiter          string
-	Prefix             string
-	EncodingType       string `xml:"EncodingType,omitempty"`
-	MaxUploads         int
-	IsTruncated        bool
-
-	// List of pending uploads.
-	Uploads []Upload `xml:"Upload"`
-
-	// Delimed common prefixes.
-	CommonPrefixes []CommonPrefix
-}
-
-// Upload container for in progress multipart upload
-type Upload struct {
-	Key          string
-	UploadID     string `xml:"UploadId"`
-	Initiator    Initiator
-	Owner        Owner
-	StorageClass string
-	Initiated    string
 }
 
 // CommonPrefix container for prefix response in ListObjectsResponse
@@ -175,9 +135,6 @@ type CopyObjectPartResponse struct {
 	ETag         string   // md5sum of the copied object part.
 }
 
-// Initiator inherit from Owner struct, fields are same
-type Initiator Owner
-
 // Owner - bucket owner/principal
 type Owner struct {
 	ID          string
@@ -209,15 +166,4 @@ type DeleteError struct {
 	Message   string
 	Key       string
 	VersionID string `xml:"VersionId"`
-}
-
-// DeleteObjectsResponse container for multiple object deletes.
-type DeleteObjectsResponse struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ DeleteResult" json:"-"`
-
-	// Collection of all deleted objects
-	DeletedObjects []DeleteObject `xml:"Deleted,omitempty"`
-
-	// Collection of errors deleting certain objects.
-	Errors []DeleteError `xml:"Error,omitempty"`
 }

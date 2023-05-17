@@ -4,3 +4,4 @@ see https://blog.aqwari.net/xml-schema-go/
 
 go install aqwari.net/xml/cmd/xsdgen@latest
 xsdgen -o s3api_xsd_generated.go -pkg s3response AmazonS3.xsd
+xsdgen -o s3api_xsd_generated.go -pkg s3response AmazonS3-additions.xsd
