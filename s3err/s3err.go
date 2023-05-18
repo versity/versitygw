@@ -26,12 +26,12 @@ type APIErrorResponse struct {
 	HostID     string `xml:"HostId" json:"HostId"`
 }
 
-func (A APIError) Error() []byte {
+func (A APIError) Error() string {
 	var bytesBuffer bytes.Buffer
 	bytesBuffer.WriteString(xml.Header)
 	e := xml.NewEncoder(&bytesBuffer)
 	_ = e.Encode(A)
-	return bytesBuffer.Bytes()
+	return bytesBuffer.String()
 }
 
 // ErrorCode type of error status.
