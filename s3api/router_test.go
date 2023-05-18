@@ -17,7 +17,14 @@ func TestS3ApiRouter_Init(t *testing.T) {
 		sa   *S3ApiRouter
 		args args
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Initialize S3 api router",
+			sa:   &S3ApiRouter{},
+			args: args{
+				app: fiber.New(),
+				be:  backend.BackendUnsupported{},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

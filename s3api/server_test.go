@@ -14,13 +14,33 @@ func TestNew(t *testing.T) {
 		be   backend.Backend
 		port string
 	}
+
+	app := fiber.New()
+	be := backend.BackendUnsupported{}
+	router := S3ApiRouter{}
+	port := ":7070"
+
 	tests := []struct {
 		name            string
 		args            args
 		wantS3ApiServer *S3ApiServer
 		wantErr         bool
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Create S3 api server",
+			args: args{
+				app:  app,
+				be:   be,
+				port: port,
+			},
+			wantS3ApiServer: &S3ApiServer{
+				app:     app,
+				port:    port,
+				router:  &router,
+				backend: be,
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -42,7 +62,16 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		sa      *S3ApiServer
 		wantErr bool
 	}{
-		// TODO: Add test cases.
+		{
+			name:    "Return error when serving S3 api server with invalid address",
+			wantErr: true,
+			sa: &S3ApiServer{
+				app:     fiber.New(),
+				backend: backend.BackendUnsupported{},
+				port:    "Wrong address",
+				router:  &S3ApiRouter{},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

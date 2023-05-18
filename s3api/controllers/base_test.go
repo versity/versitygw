@@ -5,20 +5,31 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/scoutgw/backend"
-	"github.com/versity/scoutgw/s3err"
 )
 
 func TestNew(t *testing.T) {
 	type args struct {
 		be backend.Backend
 	}
+
+	be := backend.BackendUnsupported{}
+
 	tests := []struct {
 		name string
 		args args
 		want S3ApiController
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Initialize S3 api controller",
+			args: args{
+				be: be,
+			},
+			want: S3ApiController{
+				be: be,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -33,13 +44,25 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	type args struct {
 		ctx *fiber.Ctx
 	}
+
+	app := fiber.New()
+
 	tests := []struct {
 		name    string
 		c       S3ApiController
 		args    args
 		wantErr bool
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Returns successful response",
+			c: S3ApiController{
+				be: backend.BackendUnsupported{},
+			},
+			args: args{
+				ctx: app.AcquireCtx(&fasthttp.RequestCtx{}),
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -264,7 +287,7 @@ func Test_responce(t *testing.T) {
 	type args struct {
 		ctx  *fiber.Ctx
 		resp any
-		code s3err.ErrorCode
+		err  error
 	}
 	tests := []struct {
 		name    string
@@ -275,7 +298,7 @@ func Test_responce(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := responce(tt.args.ctx, tt.args.resp, tt.args.code); (err != nil) != tt.wantErr {
+			if err := responce(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
 				t.Errorf("responce() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
