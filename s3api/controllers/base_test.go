@@ -4,9 +4,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/scoutgw/backend"
+	"github.com/versity/scoutgw/s3err"
 )
 
 func TestNew(t *testing.T) {
@@ -48,26 +50,52 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		c          S3ApiController
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
 		{
-			name: "Returns successful response",
+			name: "List-bucket-not-implemented",
 			c: S3ApiController{
 				be: backend.BackendUnsupported{},
 			},
 			args: args{
 				ctx: app.AcquireCtx(&fasthttp.RequestCtx{}),
 			},
-			wantErr: false,
+			wantErr:    false,
+			statusCode: 501,
+		},
+		{
+			name: "list-bucket-success",
+			c: S3ApiController{
+				be: &BackendMock{
+					ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
+						return &s3.ListBucketsOutput{}, nil
+					},
+				},
+			},
+			args: args{
+				ctx: app.AcquireCtx(&fasthttp.RequestCtx{}),
+			},
+			wantErr:    false,
+			statusCode: 200,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.ListBuckets(tt.args.ctx); (err != nil) != tt.wantErr {
+			err := tt.c.ListBuckets(tt.args.ctx)
+
+			if (err != nil) != tt.wantErr {
 				t.Errorf("S3ApiController.ListBuckets() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			statusCode := tt.args.ctx.Response().StatusCode()
+
+			if statusCode != tt.statusCode {
+				t.Errorf("S3ApiController.ListBuckets() code = %v, wantErr %v", statusCode, tt.wantErr)
 			}
 		})
 	}
@@ -289,17 +317,65 @@ func Test_responce(t *testing.T) {
 		resp any
 		err  error
 	}
+	app := fiber.New()
+	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
+
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name       string
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Internal-server-error",
+			args: args{
+				ctx:  ctx,
+				resp: nil,
+				err:  s3err.GetAPIError(16),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Error-not-implemented",
+			args: args{
+				ctx:  ctx,
+				resp: nil,
+				err:  s3err.GetAPIError(50),
+			},
+			wantErr:    false,
+			statusCode: 501,
+		},
+		{
+			name: "Invalid-request-body",
+			args: args{
+				ctx:  ctx,
+				resp: make(chan int),
+				err:  nil,
+			},
+			wantErr:    true,
+			statusCode: 501,
+		},
+		{
+			name: "Successful-response",
+			args: args{
+				ctx:  ctx,
+				resp: "Valid response",
+				err:  nil,
+			},
+			statusCode: 200,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := responce(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
 				t.Errorf("responce() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			statusCode := tt.args.ctx.Response().StatusCode()
+
+			if statusCode != tt.statusCode {
+				t.Errorf("responce() code = %v, wantErr %v", statusCode, tt.wantErr)
 			}
 		})
 	}
