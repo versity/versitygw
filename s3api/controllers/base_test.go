@@ -651,7 +651,6 @@ func Test_responce(t *testing.T) {
 		err  error
 	}
 	app := fiber.New()
-	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
 	tests := []struct {
 		name       string
@@ -662,7 +661,7 @@ func Test_responce(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  ctx,
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
 				resp: nil,
 				err:  s3err.GetAPIError(16),
 			},
@@ -672,7 +671,7 @@ func Test_responce(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  ctx,
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
 				resp: nil,
 				err:  s3err.GetAPIError(50),
 			},
@@ -682,20 +681,21 @@ func Test_responce(t *testing.T) {
 		{
 			name: "Invalid-request-body",
 			args: args{
-				ctx:  ctx,
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
 				resp: make(chan int),
 				err:  nil,
 			},
 			wantErr:    true,
-			statusCode: 501,
+			statusCode: 200,
 		},
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  ctx,
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
 				resp: "Valid response",
 				err:  nil,
 			},
+			wantErr:    false,
 			statusCode: 200,
 		},
 	}
