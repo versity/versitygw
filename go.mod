@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.33.1
 	github.com/gofiber/fiber/v2 v2.45.0
+	github.com/valyala/fasthttp v1.47.0
 	github.com/google/uuid v1.3.0
 	github.com/pkg/xattr v0.4.9
 	golang.org/x/sys v0.8.0
@@ -32,6 +33,5 @@ require (
 	github.com/savsgio/gotils v0.0.0-20230208104028-c358bd845dee // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.47.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 )

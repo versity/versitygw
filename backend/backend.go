@@ -9,6 +9,8 @@ import (
 	"github.com/versity/scoutgw/s3err"
 )
 
+//go:generate moq -out backend_moq_test.go . Backend
+//go:generate moq -out ../s3api/controllers/backend_moq_test.go . Backend
 type Backend interface {
 	fmt.Stringer
 	GetIAMConfig() ([]byte, error)
