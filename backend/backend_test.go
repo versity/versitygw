@@ -19,7 +19,6 @@ func TestBackend_ListBuckets(t *testing.T) {
 		c       Backend
 		args    args
 		wantErr bool
-		want    s3.ListBucketsOutput
 	}
 	var tests []test
 	tests = append(tests, test{
@@ -69,7 +68,6 @@ func TestBackend_HeadBucket(t *testing.T) {
 		c       Backend
 		args    args
 		wantErr bool
-		want    s3.ListBucketsOutput
 	}
 	var tests []test
 	tests = append(tests, test{
@@ -103,7 +101,6 @@ func TestBackend_GetBucketAcl(t *testing.T) {
 		c       Backend
 		args    args
 		wantErr bool
-		want    *s3.GetBucketAclOutput
 	}
 	var tests []test
 	tests = append(tests, test{
@@ -137,7 +134,6 @@ func TestBackend_PutBucket(t *testing.T) {
 		c       Backend
 		args    args
 		wantErr bool
-		want    s3.ListBucketsOutput
 	}
 	var tests []test
 	tests = append(tests, test{
@@ -183,7 +179,6 @@ func TestBackend_DeleteBucket(t *testing.T) {
 		c       Backend
 		args    args
 		wantErr bool
-		want    s3.ListBucketsOutput
 	}
 	var tests []test
 	tests = append(tests, test{
