@@ -4,23 +4,22 @@
 package controllers
 
 import (
-	"io"
-	"sync"
-
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/scoutgw/backend"
+	"io"
+	"sync"
 )
 
-// Ensure, that BackendMock does implement Backend.
+// Ensure, that BackendMock does implement backend.Backend.
 // If this is not the case, regenerate this file with moq.
 var _ backend.Backend = &BackendMock{}
 
-// BackendMock is a mock implementation of Backend.
+// BackendMock is a mock implementation of backend.Backend.
 //
 //	func TestSomethingThatUsesBackend(t *testing.T) {
 //
-//		// make and configure a mocked Backend
+//		// make and configure a mocked backend.Backend
 //		mockedBackend := &BackendMock{
 //			AbortMultipartUploadFunc: func(abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 //				panic("mock out the AbortMultipartUpload method")
@@ -82,10 +81,10 @@ var _ backend.Backend = &BackendMock{}
 //			ListObjectPartsFunc: func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
 //				panic("mock out the ListObjectParts method")
 //			},
-//			ListObjectsFunc: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+//			ListObjectsFunc: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 //				panic("mock out the ListObjects method")
 //			},
-//			ListObjectsV2Func: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+//			ListObjectsV2Func: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 //				panic("mock out the ListObjectsV2 method")
 //			},
 //			PutBucketFunc: func(bucket string) error {
@@ -100,7 +99,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutObjectAclFunc: func(putObjectAclInput *s3.PutObjectAclInput) error {
 //				panic("mock out the PutObjectAcl method")
 //			},
-//			PutObjectPartFunc: func(bucket string, object string, uploadID string, part int, r io.Reader) (string, error) {
+//			PutObjectPartFunc: func(bucket string, object string, uploadID string, part int, length int64, r io.Reader) (string, error) {
 //				panic("mock out the PutObjectPart method")
 //			},
 //			RemoveTagsFunc: func(bucket string, object string) error {
@@ -126,7 +125,7 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //		}
 //
-//		// use mockedBackend in code that requires Backend
+//		// use mockedBackend in code that requires backend.Backend
 //		// and then make assertions.
 //
 //	}
@@ -192,10 +191,10 @@ type BackendMock struct {
 	ListObjectPartsFunc func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
-	ListObjectsFunc func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
+	ListObjectsFunc func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error)
 
 	// ListObjectsV2Func mocks the ListObjectsV2 method.
-	ListObjectsV2Func func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
+	ListObjectsV2Func func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error)
 
 	// PutBucketFunc mocks the PutBucket method.
 	PutBucketFunc func(bucket string) error
@@ -1272,7 +1271,7 @@ func (mock *BackendMock) ListObjectPartsCalls() []struct {
 }
 
 // ListObjects calls ListObjectsFunc.
-func (mock *BackendMock) ListObjects(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (mock *BackendMock) ListObjects(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 	if mock.ListObjectsFunc == nil {
 		panic("BackendMock.ListObjectsFunc: method is nil but Backend.ListObjects was just called")
 	}
@@ -1320,7 +1319,7 @@ func (mock *BackendMock) ListObjectsCalls() []struct {
 }
 
 // ListObjectsV2 calls ListObjectsV2Func.
-func (mock *BackendMock) ListObjectsV2(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (mock *BackendMock) ListObjectsV2(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	if mock.ListObjectsV2Func == nil {
 		panic("BackendMock.ListObjectsV2Func: method is nil but Backend.ListObjectsV2 was just called")
 	}

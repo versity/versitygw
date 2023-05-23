@@ -80,10 +80,10 @@ var _ Backend = &BackendMock{}
 //			ListObjectPartsFunc: func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
 //				panic("mock out the ListObjectParts method")
 //			},
-//			ListObjectsFunc: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+//			ListObjectsFunc: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 //				panic("mock out the ListObjects method")
 //			},
-//			ListObjectsV2Func: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+//			ListObjectsV2Func: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 //				panic("mock out the ListObjectsV2 method")
 //			},
 //			PutBucketFunc: func(bucket string) error {
@@ -190,10 +190,10 @@ type BackendMock struct {
 	ListObjectPartsFunc func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
-	ListObjectsFunc func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
+	ListObjectsFunc func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error)
 
 	// ListObjectsV2Func mocks the ListObjectsV2 method.
-	ListObjectsV2Func func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
+	ListObjectsV2Func func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error)
 
 	// PutBucketFunc mocks the PutBucket method.
 	PutBucketFunc func(bucket string) error
@@ -1270,7 +1270,7 @@ func (mock *BackendMock) ListObjectPartsCalls() []struct {
 }
 
 // ListObjects calls ListObjectsFunc.
-func (mock *BackendMock) ListObjects(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (mock *BackendMock) ListObjects(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 	if mock.ListObjectsFunc == nil {
 		panic("BackendMock.ListObjectsFunc: method is nil but Backend.ListObjects was just called")
 	}
@@ -1318,7 +1318,7 @@ func (mock *BackendMock) ListObjectsCalls() []struct {
 }
 
 // ListObjectsV2 calls ListObjectsV2Func.
-func (mock *BackendMock) ListObjectsV2(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (mock *BackendMock) ListObjectsV2(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	if mock.ListObjectsV2Func == nil {
 		panic("BackendMock.ListObjectsV2Func: method is nil but Backend.ListObjectsV2 was just called")
 	}

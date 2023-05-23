@@ -10,7 +10,7 @@ import (
 )
 
 //go:generate moq -out backend_moq_test.go . Backend
-//go:generate moq -out ../s3api/controllers/backend_moq_test.go . Backend
+//go:generate moq -out ../s3api/controllers/backend_moq_test.go -pkg controllers . Backend
 type Backend interface {
 	fmt.Stringer
 	GetIAMConfig() ([]byte, error)
@@ -36,8 +36,8 @@ type Backend interface {
 	GetObjectAcl(bucket, object string) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(bucket, object string, attributes []string) (*s3.GetObjectAttributesOutput, error)
 	CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error)
-	ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
-	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error)
+	ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error)
+	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error)
 	DeleteObject(bucket, object string) error
 	DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) error
 	PutBucketAcl(*s3.PutBucketAclInput) error
@@ -144,10 +144,10 @@ func (BackendUnsupported) GetObjectAttributes(bucket, object string, attributes 
 func (BackendUnsupported) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (BackendUnsupported) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+func (BackendUnsupported) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
