@@ -644,7 +644,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 // func (p *Posix) CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error) {
 // }
 
-func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, r io.Reader) (string, error) {
+func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
 	_, err := os.Stat(bucket)
 	if err != nil && os.IsNotExist(err) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)

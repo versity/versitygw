@@ -210,7 +210,7 @@ type BackendMock struct {
 	PutObjectAclFunc func(putObjectAclInput *s3.PutObjectAclInput) error
 
 	// PutObjectPartFunc mocks the PutObjectPart method.
-	PutObjectPartFunc func(bucket string, object string, uploadID string, part int, r io.Reader) (string, error)
+	PutObjectPartFunc func(bucket string, object string, uploadID string, part int, length int64, r io.Reader) (string, error)
 
 	// RemoveTagsFunc mocks the RemoveTags method.
 	RemoveTagsFunc func(bucket string, object string) error
@@ -445,6 +445,8 @@ type BackendMock struct {
 			UploadID string
 			// Part is the part argument value.
 			Part int
+			// Length is the length argument value.
+			Length int64
 			// R is the r argument value.
 			R io.Reader
 		}
@@ -1502,7 +1504,7 @@ func (mock *BackendMock) PutObjectAclCalls() []struct {
 }
 
 // PutObjectPart calls PutObjectPartFunc.
-func (mock *BackendMock) PutObjectPart(bucket string, object string, uploadID string, part int, r io.Reader) (string, error) {
+func (mock *BackendMock) PutObjectPart(bucket string, object string, uploadID string, part int, length int64, r io.Reader) (string, error) {
 	if mock.PutObjectPartFunc == nil {
 		panic("BackendMock.PutObjectPartFunc: method is nil but Backend.PutObjectPart was just called")
 	}
@@ -1511,18 +1513,20 @@ func (mock *BackendMock) PutObjectPart(bucket string, object string, uploadID st
 		Object   string
 		UploadID string
 		Part     int
+		Length   int64
 		R        io.Reader
 	}{
 		Bucket:   bucket,
 		Object:   object,
 		UploadID: uploadID,
 		Part:     part,
+		Length:   length,
 		R:        r,
 	}
 	mock.lockPutObjectPart.Lock()
 	mock.calls.PutObjectPart = append(mock.calls.PutObjectPart, callInfo)
 	mock.lockPutObjectPart.Unlock()
-	return mock.PutObjectPartFunc(bucket, object, uploadID, part, r)
+	return mock.PutObjectPartFunc(bucket, object, uploadID, part, length, r)
 }
 
 // PutObjectPartCalls gets all the calls that were made to PutObjectPart.
@@ -1534,6 +1538,7 @@ func (mock *BackendMock) PutObjectPartCalls() []struct {
 	Object   string
 	UploadID string
 	Part     int
+	Length   int64
 	R        io.Reader
 } {
 	var calls []struct {
@@ -1541,6 +1546,7 @@ func (mock *BackendMock) PutObjectPartCalls() []struct {
 		Object   string
 		UploadID string
 		Part     int
+		Length   int64
 		R        io.Reader
 	}
 	mock.lockPutObjectPart.RLock()
