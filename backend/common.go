@@ -14,6 +14,12 @@ func (d ByBucketName) Len() int           { return len(d) }
 func (d ByBucketName) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
 func (d ByBucketName) Less(i, j int) bool { return *d[i].Name < *d[j].Name }
 
+type ByObjectName []types.Object
+
+func (d ByObjectName) Len() int           { return len(d) }
+func (d ByObjectName) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
+func (d ByObjectName) Less(i, j int) bool { return *d[i].Key < *d[j].Key }
+
 func GetStringPtr(s string) *string {
 	return &s
 }

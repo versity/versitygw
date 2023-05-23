@@ -228,18 +228,18 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
 			return &s3.ListMultipartUploadsOutput{}, nil
 		},
-		ListObjectsV2Func: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
-			return &s3.ListBucketsOutput{}, nil
+		ListObjectsV2Func: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{}, nil
 		},
-		ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
-			return &s3.ListBucketsOutput{}, nil
+		ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
+			return &s3.ListObjectsOutput{}, nil
 		},
 	}}
 	app.Get("/:bucket", s3ApiController.ListActions)
 
 	//Error case
 	s3ApiControllerError := S3ApiController{be: &BackendMock{
-		ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListBucketsOutput, error) {
+		ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 			return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 		},
 	}}
