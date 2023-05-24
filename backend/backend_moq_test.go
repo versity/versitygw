@@ -68,9 +68,6 @@ var _ Backend = &BackendMock{}
 //			HeadObjectFunc: func(bucket string, object string, etag string) (*s3.HeadObjectOutput, error) {
 //				panic("mock out the HeadObject method")
 //			},
-//			IsTaggingSupportedFunc: func() bool {
-//				panic("mock out the IsTaggingSupported method")
-//			},
 //			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
 //				panic("mock out the ListBuckets method")
 //			},
@@ -176,9 +173,6 @@ type BackendMock struct {
 
 	// HeadObjectFunc mocks the HeadObject method.
 	HeadObjectFunc func(bucket string, object string, etag string) (*s3.HeadObjectOutput, error)
-
-	// IsTaggingSupportedFunc mocks the IsTaggingSupported method.
-	IsTaggingSupportedFunc func() bool
 
 	// ListBucketsFunc mocks the ListBuckets method.
 	ListBucketsFunc func() (*s3.ListBucketsOutput, error)
@@ -359,9 +353,6 @@ type BackendMock struct {
 			// Etag is the etag argument value.
 			Etag string
 		}
-		// IsTaggingSupported holds details about calls to the IsTaggingSupported method.
-		IsTaggingSupported []struct {
-		}
 		// ListBuckets holds details about calls to the ListBuckets method.
 		ListBuckets []struct {
 		}
@@ -508,7 +499,6 @@ type BackendMock struct {
 	lockGetTags                 sync.RWMutex
 	lockHeadBucket              sync.RWMutex
 	lockHeadObject              sync.RWMutex
-	lockIsTaggingSupported      sync.RWMutex
 	lockListBuckets             sync.RWMutex
 	lockListMultipartUploads    sync.RWMutex
 	lockListObjectParts         sync.RWMutex
@@ -1128,33 +1118,6 @@ func (mock *BackendMock) HeadObjectCalls() []struct {
 	mock.lockHeadObject.RLock()
 	calls = mock.calls.HeadObject
 	mock.lockHeadObject.RUnlock()
-	return calls
-}
-
-// IsTaggingSupported calls IsTaggingSupportedFunc.
-func (mock *BackendMock) IsTaggingSupported() bool {
-	if mock.IsTaggingSupportedFunc == nil {
-		panic("BackendMock.IsTaggingSupportedFunc: method is nil but Backend.IsTaggingSupported was just called")
-	}
-	callInfo := struct {
-	}{}
-	mock.lockIsTaggingSupported.Lock()
-	mock.calls.IsTaggingSupported = append(mock.calls.IsTaggingSupported, callInfo)
-	mock.lockIsTaggingSupported.Unlock()
-	return mock.IsTaggingSupportedFunc()
-}
-
-// IsTaggingSupportedCalls gets all the calls that were made to IsTaggingSupported.
-// Check the length with:
-//
-//	len(mockedBackend.IsTaggingSupportedCalls())
-func (mock *BackendMock) IsTaggingSupportedCalls() []struct {
-} {
-	var calls []struct {
-	}
-	mock.lockIsTaggingSupported.RLock()
-	calls = mock.calls.IsTaggingSupported
-	mock.lockIsTaggingSupported.RUnlock()
 	return calls
 }
 
