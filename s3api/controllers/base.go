@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/scoutgw/backend"
+	"github.com/versity/scoutgw/s3api/utils"
 	"github.com/versity/scoutgw/s3err"
 )
 
@@ -143,7 +144,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	copySource, copySrcIfMatch, copySrcIfNoneMatch,
 		copySrcModifSince, copySrcUnmodifSince, acl,
 		grantFullControl, grantRead, grantReadACP,
-		granWrite, grantWriteACP :=
+		granWrite, grantWriteACP, contentLengthStr :=
 		// Copy source headers
 		ctx.Get("X-Amz-Copy-Source"),
 		ctx.Get("X-Amz-Copy-Source-If-Match"),
@@ -156,7 +157,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		ctx.Get("X-Amz-Grant-Read"),
 		ctx.Get("X-Amz-Grant-Read-Acp"),
 		ctx.Get("X-Amz-Grant-Write"),
-		ctx.Get("X-Amz-Grant-Write-Acp")
+		ctx.Get("X-Amz-Grant-Write-Acp"),
+		// Other headers
+		ctx.Get("Content-Length")
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -227,7 +230,20 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return responce(ctx, res, err)
 	}
 
-	res, err := c.be.PutObject(dstBucket, dstKeyStart, bytes.NewReader(ctx.Request().Body()))
+	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
+	if err != nil {
+		return errors.New("wrong api call")
+	}
+
+	metadata := utils.GetUserMetaData(&ctx.Request().Header)
+
+	res, err := c.be.PutObject(&s3.PutObjectInput{
+		Bucket:        &dstBucket,
+		Key:           &dstKeyStart,
+		ContentLength: contentLength,
+		Metadata:      metadata,
+		Body:          bytes.NewReader(ctx.Request().Body()),
+	})
 	return responce(ctx, res, err)
 }
 

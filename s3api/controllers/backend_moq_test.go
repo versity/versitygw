@@ -93,7 +93,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutBucketAclFunc: func(putBucketAclInput *s3.PutBucketAclInput) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
-//			PutObjectFunc: func(bucket string, object string, r io.Reader) (string, error) {
+//			PutObjectFunc: func(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
 //				panic("mock out the PutObject method")
 //			},
 //			PutObjectAclFunc: func(putObjectAclInput *s3.PutObjectAclInput) error {
@@ -203,7 +203,7 @@ type BackendMock struct {
 	PutBucketAclFunc func(putBucketAclInput *s3.PutBucketAclInput) error
 
 	// PutObjectFunc mocks the PutObject method.
-	PutObjectFunc func(bucket string, object string, r io.Reader) (string, error)
+	PutObjectFunc func(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error)
 
 	// PutObjectAclFunc mocks the PutObjectAcl method.
 	PutObjectAclFunc func(putObjectAclInput *s3.PutObjectAclInput) error
@@ -422,12 +422,8 @@ type BackendMock struct {
 		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
-			// Bucket is the bucket argument value.
-			Bucket string
-			// Object is the object argument value.
-			Object string
-			// R is the r argument value.
-			R io.Reader
+			// PutObjectInput is the putObjectInput argument value.
+			PutObjectInput *s3.PutObjectInput
 		}
 		// PutObjectAcl holds details about calls to the PutObjectAcl method.
 		PutObjectAcl []struct {
@@ -1431,23 +1427,19 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 }
 
 // PutObject calls PutObjectFunc.
-func (mock *BackendMock) PutObject(bucket string, object string, r io.Reader) (string, error) {
+func (mock *BackendMock) PutObject(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
 	if mock.PutObjectFunc == nil {
 		panic("BackendMock.PutObjectFunc: method is nil but Backend.PutObject was just called")
 	}
 	callInfo := struct {
-		Bucket string
-		Object string
-		R      io.Reader
+		PutObjectInput *s3.PutObjectInput
 	}{
-		Bucket: bucket,
-		Object: object,
-		R:      r,
+		PutObjectInput: putObjectInput,
 	}
 	mock.lockPutObject.Lock()
 	mock.calls.PutObject = append(mock.calls.PutObject, callInfo)
 	mock.lockPutObject.Unlock()
-	return mock.PutObjectFunc(bucket, object, r)
+	return mock.PutObjectFunc(putObjectInput)
 }
 
 // PutObjectCalls gets all the calls that were made to PutObject.
@@ -1455,14 +1447,10 @@ func (mock *BackendMock) PutObject(bucket string, object string, r io.Reader) (s
 //
 //	len(mockedBackend.PutObjectCalls())
 func (mock *BackendMock) PutObjectCalls() []struct {
-	Bucket string
-	Object string
-	R      io.Reader
+	PutObjectInput *s3.PutObjectInput
 } {
 	var calls []struct {
-		Bucket string
-		Object string
-		R      io.Reader
+		PutObjectInput *s3.PutObjectInput
 	}
 	mock.lockPutObject.RLock()
 	calls = mock.calls.PutObject

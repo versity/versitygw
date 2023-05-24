@@ -406,8 +406,8 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		CopyObjectFunc: func(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
 			return &s3.CopyObjectOutput{}, nil
 		},
-		PutObjectFunc: func(bucket, object string, r io.Reader) (string, error) {
-			return "hello", nil
+		PutObjectFunc: func(*s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+			return &s3.PutObjectOutput{}, nil
 		},
 	}}
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
