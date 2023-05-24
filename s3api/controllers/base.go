@@ -62,7 +62,9 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return responce(ctx, res, err)
 	}
 
-	bRangeSl := strings.Split(ctx.Get("Range"), "=")
+	acceptRange := ctx.Get("Range")
+
+	bRangeSl := strings.Split(acceptRange, "=")
 	if len(bRangeSl) < 2 {
 		return errors.New("wrong api call")
 	}
@@ -82,7 +84,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return errors.New("wrong api call")
 	}
 
-	res, err := c.be.GetObject(bucket, key, int64(startOffset), int64(length), ctx.Response().BodyWriter())
+	res, err := c.be.GetObject(bucket, key, acceptRange, int64(startOffset), int64(length), ctx.Response().BodyWriter())
 	return responce(ctx, res, err)
 }
 
