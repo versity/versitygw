@@ -20,6 +20,7 @@ type Backend interface {
 	HeadBucket(bucket string) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error)
 	PutBucket(bucket string) error
+	PutBucketAcl(*s3.PutBucketAclInput) error
 	DeleteBucket(bucket string) error
 
 	CreateMultipartUpload(*s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
@@ -40,13 +41,11 @@ type Backend interface {
 	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error)
 	DeleteObject(bucket, object string) error
 	DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) error
-	PutBucketAcl(*s3.PutBucketAclInput) error
 	PutObjectAcl(*s3.PutObjectAclInput) error
 	RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) error
 	UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, error)
 	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
 
-	IsTaggingSupported() bool
 	GetTags(bucket, object string) (map[string]string, error)
 	SetTags(bucket, object string, tags map[string]string) error
 	RemoveTags(bucket, object string) error
@@ -151,13 +150,12 @@ func (BackendUnsupported) ListObjectsV2(bucket, prefix, marker, delim string, ma
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) IsTaggingSupported() bool { return false }
 func (BackendUnsupported) GetTags(bucket, object string) (map[string]string, error) {
-	return nil, fmt.Errorf("not supported")
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) SetTags(bucket, object string, tags map[string]string) error {
-	return fmt.Errorf("not supported")
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) RemoveTags(bucket, object string) error {
-	return fmt.Errorf("not supported")
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
