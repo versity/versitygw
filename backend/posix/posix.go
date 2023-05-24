@@ -210,11 +210,11 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 		}
 	}
 
-	f, err := openTmpFile(".")
+	f, err := openTmpFile(metaTmpDir, object)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
-	defer f.Close()
+	defer f.cleanup()
 
 	for _, p := range parts {
 		pf, err := os.Open(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber)))
@@ -244,7 +244,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 			}
 		}
 	}
-	err = linkTmpFile(f, objname)
+	err = f.link()
 	if err != nil {
 		return nil, fmt.Errorf("link object in namespace: %w", err)
 	}
@@ -653,11 +653,15 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 		return "", fmt.Errorf("stat bucket: %w", err)
 	}
 
-	f, err := openTmpFile(".")
+	sum := sha256.Sum256([]byte(object))
+	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", part))
+
+	f, err := openTmpFile(objdir, partPath)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
-	defer f.Close()
+	defer f.cleanup()
 
 	hash := md5.New()
 	tr := io.TeeReader(r, hash)
@@ -666,11 +670,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 		return "", fmt.Errorf("write part data: %w", err)
 	}
 
-	sum := sha256.Sum256([]byte(object))
-	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
-	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", part))
-
-	err = linkTmpFile(f, partPath)
+	err = f.link()
 	if err != nil {
 		return "", fmt.Errorf("link object in namespace: %w", err)
 	}
@@ -702,20 +702,19 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			return "", err
 		}
 
-		// TODO: set user attrs
-		//for k, v := range metadata {
-		//	xattr.Set(name, "user."+k, []byte(v))
-		//}
+		for k, v := range po.Metadata {
+			xattr.Set(name, "user."+k, []byte(v))
+		}
 
 		// set our tag that this dir was specifically put
 		xattr.Set(name, dirObjKey, nil)
 	} else {
 		// object is file
-		f, err := openTmpFile(".")
+		f, err := openTmpFile(metaTmpDir, *po.Key)
 		if err != nil {
 			return "", fmt.Errorf("open temp file: %w", err)
 		}
-		defer f.Close()
+		defer f.cleanup()
 
 		// TODO: fallocate based on content length
 
@@ -723,27 +722,24 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 		rdr := io.TeeReader(po.Body, hash)
 		_, err = io.Copy(f, rdr)
 		if err != nil {
-			f.Close()
 			return "", fmt.Errorf("write object data: %w", err)
 		}
 		dir := filepath.Dir(name)
 		if dir != "" {
 			err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
 			if err != nil {
-				f.Close()
 				return "", fmt.Errorf("make object parent directories: %w", err)
 			}
 		}
 
-		err = linkTmpFile(f, name)
+		err = f.link()
 		if err != nil {
 			return "", fmt.Errorf("link object in namespace: %w", err)
 		}
 
-		// TODO: set user attrs
-		//for k, v := range metadata {
-		//	xattr.Set(name, "user."+k, []byte(v))
-		//}
+		for k, v := range po.Metadata {
+			xattr.Set(name, "user."+k, []byte(v))
+		}
 
 		dataSum := hash.Sum(nil)
 		etag := hex.EncodeToString(dataSum[:])
@@ -864,6 +860,12 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
+	b, err := xattr.Get(objPath, "user.etag")
+	etag := string(b)
+	if err != nil {
+		etag = ""
+	}
+
 	// TODO: fill range request header?
 	// TODO: parse tags for tag count?
 	return &s3.GetObjectOutput{
@@ -871,9 +873,9 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		ContentLength:   length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
-		// ETag:            &etag,
-		LastModified: backend.GetTimePtr(fi.ModTime()),
-		Metadata:     userMetaData,
+		ETag:            &etag,
+		LastModified:    backend.GetTimePtr(fi.ModTime()),
+		Metadata:        userMetaData,
 	}, nil
 }
 
