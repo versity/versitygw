@@ -822,7 +822,7 @@ func (p *Posix) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) err
 	return nil
 }
 
-func (p *Posix) GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(bucket, object string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
 	_, err := os.Stat(bucket)
 	if err != nil && os.IsNotExist(err) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)

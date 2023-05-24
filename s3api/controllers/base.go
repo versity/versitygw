@@ -81,7 +81,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return errors.New("wrong api call")
 	}
 
-	res, err := c.be.GetObject(bucket, key, int64(startOffset), int64(length), ctx.Response().BodyWriter(), "")
+	res, err := c.be.GetObject(bucket, key, int64(startOffset), int64(length), ctx.Response().BodyWriter())
 	return responce(ctx, res, err)
 }
 
