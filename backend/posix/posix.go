@@ -822,7 +822,7 @@ func (p *Posix) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) err
 	return nil
 }
 
-func (p *Posix) GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
 	_, err := os.Stat(bucket)
 	if err != nil && os.IsNotExist(err) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -867,12 +867,13 @@ func (p *Posix) GetObject(bucket, object string, startOffset, length int64, writ
 	// TODO: fill range request header?
 	// TODO: parse tags for tag count?
 	return &s3.GetObjectOutput{
+		AcceptRanges:    &acceptRange,
 		ContentLength:   length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
-		ETag:            &etag,
-		LastModified:    backend.GetTimePtr(fi.ModTime()),
-		Metadata:        userMetaData,
+		// ETag:            &etag,
+		LastModified: backend.GetTimePtr(fi.ModTime()),
+		Metadata:     userMetaData,
 	}, nil
 }
 
