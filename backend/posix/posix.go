@@ -871,9 +871,9 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		ContentLength:   length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
-		ETag:            &etag,
-		LastModified:    backend.GetTimePtr(fi.ModTime()),
-		Metadata:        userMetaData,
+		// ETag:            &etag,
+		LastModified: backend.GetTimePtr(fi.ModTime()),
+		Metadata:     userMetaData,
 	}, nil
 }
 
