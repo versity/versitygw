@@ -30,7 +30,7 @@ type Backend interface {
 	CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error)
 	PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (etag string, err error)
 
-	PutObject(*s3.PutObjectInput) (*s3.PutObjectOutput, error)
+	PutObject(*s3.PutObjectInput) (string, error)
 	HeadObject(bucket, object string, etag string) (*s3.HeadObjectOutput, error)
 	GetObject(bucket, object string, startOffset, length int64, writer io.Writer, etag string) (*s3.GetObjectOutput, error)
 	GetObjectAcl(bucket, object string) (*s3.GetObjectAclOutput, error)
@@ -120,8 +120,8 @@ func (BackendUnsupported) PutObjectPart(bucket, object, uploadID string, part in
 	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) PutObject(*s3.PutObjectInput) (*s3.PutObjectOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) PutObject(*s3.PutObjectInput) (string, error) {
+	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteObject(bucket, object string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)

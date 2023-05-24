@@ -682,8 +682,8 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 	return etag, nil
 }
 
-func (p *Posix) PutObject(bucket, object string, r io.Reader) (string, error) {
-	_, err := os.Stat(bucket)
+func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
+	_, err := os.Stat(*po.Bucket)
 	if err != nil && os.IsNotExist(err) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
@@ -691,13 +691,13 @@ func (p *Posix) PutObject(bucket, object string, r io.Reader) (string, error) {
 		return "", fmt.Errorf("stat bucket: %w", err)
 	}
 
-	name := filepath.Join(bucket, object)
+	name := filepath.Join(*po.Bucket, *po.Key)
 
 	etag := ""
 
-	if strings.HasSuffix(object, "/") {
+	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
-		err = mkdirAll(name, os.FileMode(0755), bucket, object)
+		err = mkdirAll(name, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
 			return "", err
 		}
@@ -720,7 +720,7 @@ func (p *Posix) PutObject(bucket, object string, r io.Reader) (string, error) {
 		// TODO: fallocate based on content length
 
 		hash := md5.New()
-		rdr := io.TeeReader(r, hash)
+		rdr := io.TeeReader(po.Body, hash)
 		_, err = io.Copy(f, rdr)
 		if err != nil {
 			f.Close()
@@ -728,7 +728,7 @@ func (p *Posix) PutObject(bucket, object string, r io.Reader) (string, error) {
 		}
 		dir := filepath.Dir(name)
 		if dir != "" {
-			err = mkdirAll(dir, os.FileMode(0755), bucket, object)
+			err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
 			if err != nil {
 				f.Close()
 				return "", fmt.Errorf("make object parent directories: %w", err)
@@ -936,7 +936,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 	}
 	defer f.Close()
 
-	etag, err := p.PutObject(DstBucket, dstObject, f)
+	etag, err := p.PutObject(&s3.PutObjectInput{Bucket: &DstBucket, Key: &dstObject, Body: f})
 	if err != nil {
 		return nil, err
 	}

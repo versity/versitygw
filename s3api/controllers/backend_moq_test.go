@@ -93,7 +93,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutBucketAclFunc: func(putBucketAclInput *s3.PutBucketAclInput) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
-//			PutObjectFunc: func(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+//			PutObjectFunc: func(putObjectInput *s3.PutObjectInput) (string, error) {
 //				panic("mock out the PutObject method")
 //			},
 //			PutObjectAclFunc: func(putObjectAclInput *s3.PutObjectAclInput) error {
@@ -203,7 +203,7 @@ type BackendMock struct {
 	PutBucketAclFunc func(putBucketAclInput *s3.PutBucketAclInput) error
 
 	// PutObjectFunc mocks the PutObject method.
-	PutObjectFunc func(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error)
+	PutObjectFunc func(putObjectInput *s3.PutObjectInput) (string, error)
 
 	// PutObjectAclFunc mocks the PutObjectAcl method.
 	PutObjectAclFunc func(putObjectAclInput *s3.PutObjectAclInput) error
@@ -1427,7 +1427,7 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 }
 
 // PutObject calls PutObjectFunc.
-func (mock *BackendMock) PutObject(putObjectInput *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+func (mock *BackendMock) PutObject(putObjectInput *s3.PutObjectInput) (string, error) {
 	if mock.PutObjectFunc == nil {
 		panic("BackendMock.PutObjectFunc: method is nil but Backend.PutObject was just called")
 	}
