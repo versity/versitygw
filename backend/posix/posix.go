@@ -702,10 +702,9 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			return "", err
 		}
 
-		// TODO: set user attrs
-		//for k, v := range metadata {
-		//	xattr.Set(name, "user."+k, []byte(v))
-		//}
+		for k, v := range po.Metadata {
+			xattr.Set(name, "user."+k, []byte(v))
+		}
 
 		// set our tag that this dir was specifically put
 		xattr.Set(name, dirObjKey, nil)
@@ -738,10 +737,9 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			return "", fmt.Errorf("link object in namespace: %w", err)
 		}
 
-		// TODO: set user attrs
-		//for k, v := range metadata {
-		//	xattr.Set(name, "user."+k, []byte(v))
-		//}
+		for k, v := range po.Metadata {
+			xattr.Set(name, "user."+k, []byte(v))
+		}
 
 		dataSum := hash.Sum(nil)
 		etag := hex.EncodeToString(dataSum[:])
