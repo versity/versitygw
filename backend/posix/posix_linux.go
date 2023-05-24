@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -20,7 +21,7 @@ type tmpfile struct {
 	isOTmp  bool
 }
 
-func openTmpFile(dir, obj string) (*tmpfile, error) {
+func openTmpFile(dir, obj string, size int64) (*tmpfile, error) {
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
 	// etc. And will auto cleanup the inode on close if we never link this
@@ -35,11 +36,29 @@ func openTmpFile(dir, obj string) (*tmpfile, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &tmpfile{f: f}, nil
+		tmp := &tmpfile{f: f}
+		// falloc is best effort, its fine if this fails
+		if size > 0 {
+			tmp.falloc(size)
+		}
+		return tmp, nil
 	}
 
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
-	return &tmpfile{f: f, isOTmp: true}, nil
+	tmp := &tmpfile{f: f, isOTmp: true}
+	// falloc is best effort, its fine if this fails
+	if size > 0 {
+		tmp.falloc(size)
+	}
+	return tmp, nil
+}
+
+func (tmp *tmpfile) falloc(size int64) error {
+	err := syscall.Fallocate(int(tmp.f.Fd()), 0, 0, size)
+	if err != nil {
+		return fmt.Errorf("fallocate: %v", err)
+	}
+	return nil
 }
 
 func (tmp *tmpfile) link() error {
