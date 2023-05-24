@@ -860,6 +860,12 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
+	b, err := xattr.Get(objPath, "user.etag")
+	etag := string(b)
+	if err != nil {
+		etag = ""
+	}
+
 	// TODO: fill range request header?
 	// TODO: parse tags for tag count?
 	return &s3.GetObjectOutput{
@@ -867,9 +873,9 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		ContentLength:   length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
-		// ETag:            &etag,
-		LastModified: backend.GetTimePtr(fi.ModTime()),
-		Metadata:     userMetaData,
+		ETag:            &etag,
+		LastModified:    backend.GetTimePtr(fi.ModTime()),
+		Metadata:        userMetaData,
 	}, nil
 }
 
