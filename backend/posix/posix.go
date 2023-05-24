@@ -22,6 +22,8 @@ import (
 )
 
 type Posix struct {
+	rootfd  *os.File
+	rootdir string
 	backend.BackendUnsupported
 }
 
@@ -39,6 +41,28 @@ var (
 	newObjUID = 0
 	newObjGID = 0
 )
+
+func New(rootdir string) (*Posix, error) {
+	err := os.Chdir(rootdir)
+	if err != nil {
+		return nil, fmt.Errorf("chdir %v: %w", rootdir, err)
+	}
+
+	f, err := os.Open(rootdir)
+	if err != nil {
+		return nil, fmt.Errorf("open %v: %w", rootdir, err)
+	}
+
+	return &Posix{rootfd: f, rootdir: rootdir}, nil
+}
+
+func (p *Posix) Shutdown() {
+	p.rootfd.Close()
+}
+
+func (p *Posix) Sring() string {
+	return "Posix Gateway"
+}
 
 func (p *Posix) ListBuckets() (*s3.ListBucketsOutput, error) {
 	entries, err := os.ReadDir(".")
