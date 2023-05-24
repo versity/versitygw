@@ -13,7 +13,7 @@ type tmpfile struct {
 	objname string
 }
 
-func openTmpFile(dir, obj string) (*tmpfile, error) {
+func openTmpFile(dir, obj string, size int64) (*tmpfile, error) {
 	// Create a temp file for upload while in progress (see link comments below).
 	f, err := os.CreateTemp(dir,
 		fmt.Sprintf("%x\n", sha256.Sum256([]byte(obj))))
