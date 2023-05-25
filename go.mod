@@ -5,10 +5,10 @@ go 1.20
 require (
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.33.1
-	github.com/gofiber/fiber/v2 v2.45.0
-	github.com/valyala/fasthttp v1.47.0
+	github.com/gofiber/fiber/v2 v2.46.0
 	github.com/google/uuid v1.3.0
 	github.com/pkg/xattr v0.4.9
+	github.com/valyala/fasthttp v1.47.0
 	golang.org/x/sys v0.8.0
 )
 
@@ -25,7 +25,7 @@ require (
 	github.com/aws/smithy-go v1.13.5 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.18 // indirect
+	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
