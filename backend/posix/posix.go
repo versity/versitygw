@@ -910,7 +910,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 	}, nil
 }
 
-func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOutput, error) {
+func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) {
 	_, err := os.Stat(bucket)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -929,10 +929,14 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 	}
 
 	userMetaData := make(map[string]string)
-	_, contentType, contentEncoding := loadUserMetaData(filepath.Join(bucket, objPath), userMetaData)
+	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	// TODO: fill accept ranges request header?
-	// TODO: do we need to get etag from xattr?
+	b, err := xattr.Get(objPath, "user.etag")
+	etag := string(b)
+	if err != nil {
+		etag = ""
+	}
+
 	return &s3.HeadObjectOutput{
 		ContentLength:   fi.Size(),
 		ContentType:     &contentType,

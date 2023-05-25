@@ -65,7 +65,7 @@ var _ Backend = &BackendMock{}
 //			HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
 //				panic("mock out the HeadBucket method")
 //			},
-//			HeadObjectFunc: func(bucket string, object string, etag string) (*s3.HeadObjectOutput, error) {
+//			HeadObjectFunc: func(bucket string, object string) (*s3.HeadObjectOutput, error) {
 //				panic("mock out the HeadObject method")
 //			},
 //			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
@@ -172,7 +172,7 @@ type BackendMock struct {
 	HeadBucketFunc func(bucket string) (*s3.HeadBucketOutput, error)
 
 	// HeadObjectFunc mocks the HeadObject method.
-	HeadObjectFunc func(bucket string, object string, etag string) (*s3.HeadObjectOutput, error)
+	HeadObjectFunc func(bucket string, object string) (*s3.HeadObjectOutput, error)
 
 	// ListBucketsFunc mocks the ListBuckets method.
 	ListBucketsFunc func() (*s3.ListBucketsOutput, error)
@@ -350,8 +350,6 @@ type BackendMock struct {
 			Bucket string
 			// Object is the object argument value.
 			Object string
-			// Etag is the etag argument value.
-			Etag string
 		}
 		// ListBuckets holds details about calls to the ListBuckets method.
 		ListBuckets []struct {
@@ -1082,23 +1080,21 @@ func (mock *BackendMock) HeadBucketCalls() []struct {
 }
 
 // HeadObject calls HeadObjectFunc.
-func (mock *BackendMock) HeadObject(bucket string, object string, etag string) (*s3.HeadObjectOutput, error) {
+func (mock *BackendMock) HeadObject(bucket string, object string) (*s3.HeadObjectOutput, error) {
 	if mock.HeadObjectFunc == nil {
 		panic("BackendMock.HeadObjectFunc: method is nil but Backend.HeadObject was just called")
 	}
 	callInfo := struct {
 		Bucket string
 		Object string
-		Etag   string
 	}{
 		Bucket: bucket,
 		Object: object,
-		Etag:   etag,
 	}
 	mock.lockHeadObject.Lock()
 	mock.calls.HeadObject = append(mock.calls.HeadObject, callInfo)
 	mock.lockHeadObject.Unlock()
-	return mock.HeadObjectFunc(bucket, object, etag)
+	return mock.HeadObjectFunc(bucket, object)
 }
 
 // HeadObjectCalls gets all the calls that were made to HeadObject.
@@ -1108,12 +1104,10 @@ func (mock *BackendMock) HeadObject(bucket string, object string, etag string) (
 func (mock *BackendMock) HeadObjectCalls() []struct {
 	Bucket string
 	Object string
-	Etag   string
 } {
 	var calls []struct {
 		Bucket string
 		Object string
-		Etag   string
 	}
 	mock.lockHeadObject.RLock()
 	calls = mock.calls.HeadObject
