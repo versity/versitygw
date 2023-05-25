@@ -331,7 +331,7 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
-func loadUserMetaData(path string, m map[string]string) (tag, contentType, contentEncoding string) {
+func loadUserMetaData(path string, m map[string]string) (contentType, contentEncoding string) {
 	ents, err := xattr.List(path)
 	if err != nil || len(ents) == 0 {
 		return
@@ -351,16 +351,7 @@ func loadUserMetaData(path string, m map[string]string) (tag, contentType, conte
 		m[strings.TrimPrefix(e, "user.")] = string(b)
 	}
 
-	b, err := xattr.Get(path, "user."+tagHdr)
-	tag = string(b)
-	if err != nil {
-		tag = ""
-	}
-	if tag != "" {
-		m[tagHdr] = tag
-	}
-
-	b, err = xattr.Get(path, "user.content-type")
+	b, err := xattr.Get(path, "user.content-type")
 	contentType = string(b)
 	if err != nil {
 		contentType = ""
@@ -883,7 +874,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	userMetaData := make(map[string]string)
 
-	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
+	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
 	b, err := xattr.Get(objPath, "user.etag")
 	etag := string(b)
@@ -927,7 +918,7 @@ func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) 
 	}
 
 	userMetaData := make(map[string]string)
-	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
+	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
 	b, err := xattr.Get(objPath, "user.etag")
 	etag := string(b)
