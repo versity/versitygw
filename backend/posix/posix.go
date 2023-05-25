@@ -733,7 +733,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			xattr.Set(name, "user."+k, []byte(v))
 		}
 
-		// set our tag that this dir was specifically put
+		// set our attribute that this dir was specifically put
 		xattr.Set(name, dirObjKey, nil)
 	} else {
 		// object is file
@@ -742,8 +742,6 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			return "", fmt.Errorf("open temp file: %w", err)
 		}
 		defer f.cleanup()
-
-		// TODO: fallocate based on content length
 
 		hash := md5.New()
 		rdr := io.TeeReader(po.Body, hash)
