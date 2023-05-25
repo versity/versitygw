@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -890,8 +891,11 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		etag = ""
 	}
 
-	// TODO: fill range request header?
-	// TODO: parse tags for tag count?
+	tags, err := p.getXattrTags(bucket, object)
+	if err != nil {
+		return nil, fmt.Errorf("get object tags: %w", err)
+	}
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
 		ContentLength:   length,
@@ -900,6 +904,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
+		TagCount:        int32(len(tags)),
 	}, nil
 }
 
@@ -1008,6 +1013,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 		Prefix:         &prefix,
 	}, nil
 }
+
 func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	_, err := os.Stat(bucket)
 	if err != nil && os.IsNotExist(err) {
@@ -1034,4 +1040,84 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 		NextContinuationToken: &results.NextMarker,
 		Prefix:                &prefix,
 	}, nil
+}
+
+func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
+	_, err := os.Stat(bucket)
+	if err != nil && os.IsNotExist(err) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	return p.getXattrTags(bucket, object)
+}
+
+func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
+	tags := make(map[string]string)
+	b, err := xattr.Get(filepath.Join(bucket, object), "user."+tagHdr)
+	if os.IsNotExist(err) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if isNoAttr(err) {
+		return tags, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tags: %w", err)
+	}
+
+	err = json.Unmarshal(b, &tags)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal tags: %w", err)
+	}
+
+	return tags, nil
+}
+
+func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
+	_, err := os.Stat(bucket)
+	if err != nil && os.IsNotExist(err) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if tags == nil {
+		return xattr.Remove(filepath.Join(bucket, object), "user."+tagHdr)
+	}
+
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+
+	err = xattr.Set(filepath.Join(bucket, object), "user."+tagHdr, b)
+	if os.IsNotExist(err) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("set tags: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) RemoveTags(bucket, object string) error {
+	return p.SetTags(bucket, object, nil)
+}
+
+func isNoAttr(err error) bool {
+	if err == nil {
+		return false
+	}
+	xerr, ok := err.(*xattr.Error)
+	if ok && xerr.Err == xattr.ENOATTR {
+		return true
+	}
+	if err == syscall.ENODATA {
+		return true
+	}
+	return false
 }
