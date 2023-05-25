@@ -299,7 +299,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
-	res, err := c.be.HeadObject(bucket, key, "")
+	res, err := c.be.HeadObject(bucket, key)
 	return responce(ctx, res, err)
 }
 
