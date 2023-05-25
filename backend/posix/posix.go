@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -99,7 +101,7 @@ func (p *Posix) ListBuckets() (*s3.ListBucketsOutput, error) {
 
 func (p *Posix) HeadBucket(bucket string) (*s3.HeadBucketOutput, error) {
 	_, err := os.Lstat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -123,7 +125,7 @@ func (p *Posix) PutBucket(bucket string) error {
 
 func (p *Posix) DeleteBucket(bucket string) error {
 	names, err := os.ReadDir(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -134,7 +136,7 @@ func (p *Posix) DeleteBucket(bucket string) error {
 		// if .sgwtmp is only item in directory
 		// then clean this up before trying to remove the bucket
 		err = os.RemoveAll(filepath.Join(bucket, metaTmpDir))
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove temp dir: %w", err)
 		}
 	}
@@ -155,7 +157,7 @@ func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.C
 	object := *mpu.Key
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -203,7 +205,7 @@ func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.C
 
 func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -320,7 +322,7 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	_, err := os.Stat(filepath.Join(objdir, uploadID))
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return [32]byte{}, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
@@ -468,7 +470,7 @@ func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {
 	uploadID := *mpu.UploadId
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -496,7 +498,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 	bucket := *mpu.Bucket
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -586,7 +588,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 
 func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -601,7 +603,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	ents, err := os.ReadDir(filepath.Join(objdir, uploadID))
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
@@ -671,7 +673,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 
 func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -709,7 +711,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 
 func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	_, err := os.Stat(*po.Bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -783,7 +785,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 func (p *Posix) DeleteObject(bucket, object string) error {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -791,7 +793,7 @@ func (p *Posix) DeleteObject(bucket, object string) error {
 	}
 
 	os.Remove(filepath.Join(bucket, object))
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -845,7 +847,7 @@ func (p *Posix) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) err
 
 func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -854,7 +856,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	objPath := filepath.Join(bucket, object)
 	fi, err := os.Stat(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -867,7 +869,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 	}
 
 	f, err := os.Open(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -910,7 +912,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -919,7 +921,7 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 
 	objPath := filepath.Join(bucket, object)
 	fi, err := os.Stat(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -943,7 +945,7 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 
 func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
 	_, err := os.Stat(srcBucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -951,7 +953,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 	}
 
 	_, err = os.Stat(DstBucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -960,7 +962,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 
 	objPath := filepath.Join(srcBucket, srcObject)
 	f, err := os.Open(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -988,7 +990,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 
 func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1016,7 +1018,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 
 func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1044,7 +1046,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 
 func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1057,7 +1059,7 @@ func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
 func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
 	tags := make(map[string]string)
 	b, err := xattr.Get(filepath.Join(bucket, object), "user."+tagHdr)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if isNoAttr(err) {
@@ -1077,7 +1079,7 @@ func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
 
 func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1094,7 +1096,7 @@ func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
 	}
 
 	err = xattr.Set(filepath.Join(bucket, object), "user."+tagHdr, b)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
