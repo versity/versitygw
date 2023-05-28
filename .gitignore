@@ -8,6 +8,7 @@
 *.so
 *.dylib
 cmd/versitygw/versitygw
+/versitygw
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,3 +24,11 @@ go.work
 
 # ignore IntelliJ directories
 .idea
+
+# auto generated VERSION file
+VERSION
+
+# build output
+/versitygw.spec
+*.tar
+*.tar.gz
