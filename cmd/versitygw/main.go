@@ -34,6 +34,15 @@ var (
 	certFile, keyFile string
 )
 
+var (
+	// Version is the latest tag (set within Makefile)
+	Version = "git"
+	// Build is the commit hash (set within Makefile)
+	Build = "norev"
+	// BuildTime is the date/time of build (set within Makefile)
+	BuildTime = "none"
+)
+
 func main() {
 	app := initApp()
 
@@ -61,6 +70,18 @@ to access the supported backend storage as if it was a native S3 service.`,
 
 func initFlags() []cli.Flag {
 	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "version",
+			Usage:   "list versitygw version",
+			Aliases: []string{"v"},
+			Action: func(*cli.Context, bool) error {
+				fmt.Println("Version  :", Version)
+				fmt.Println("Build    :", Build)
+				fmt.Println("BuildTime:", BuildTime)
+				os.Exit(0)
+				return nil
+			},
+		},
 		&cli.StringFlag{
 			Name:        "port",
 			Usage:       "gateway listen address <ip>:<port> or :<port>",
