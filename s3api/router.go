@@ -2,8 +2,8 @@ package s3api
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/scoutgw/backend"
-	"github.com/versity/scoutgw/s3api/controllers"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/controllers"
 )
 
 type S3ApiRouter struct{}

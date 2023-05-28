@@ -6,7 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/scoutgw/s3err"
+	"github.com/versity/versitygw/s3err"
 )
 
 //go:generate moq -out backend_moq_test.go . Backend

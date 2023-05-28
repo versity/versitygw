@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/scoutgw/backend"
+	"github.com/versity/versitygw/backend"
 )
 
 func TestS3ApiRouter_Init(t *testing.T) {

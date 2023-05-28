@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/scoutgw/s3err"
+	"github.com/versity/versitygw/s3err"
 )
 
 func TestBackend_ListBuckets(t *testing.T) {
