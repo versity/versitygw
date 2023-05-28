@@ -1,8 +1,8 @@
 package scoutfs
 
 import (
-	"github.com/versity/scoutgw/backend"
-	"github.com/versity/scoutgw/backend/posix"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/posix"
 )
 
 type ScoutFS struct {

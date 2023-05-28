@@ -6,7 +6,7 @@ import (
 	"testing/fstest"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/scoutgw/backend"
+	"github.com/versity/versitygw/backend"
 )
 
 type walkTest struct {
