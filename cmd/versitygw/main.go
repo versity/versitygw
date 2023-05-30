@@ -106,7 +106,6 @@ func initFlags() []cli.Flag {
 			Usage:       "s3 region string",
 			Value:       "us-east-1",
 			Destination: &region,
-			EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
 		},
 		&cli.StringFlag{
 			Name:        "cert",
