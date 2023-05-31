@@ -715,7 +715,7 @@ func Test_responce(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := responce(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
+			if err := Responce(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
 				t.Errorf("responce() error = %v, wantErr %v", err, tt.wantErr)
 			}
 

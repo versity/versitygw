@@ -27,7 +27,6 @@ import (
 //go:generate moq -out ../s3api/controllers/backend_moq_test.go -pkg controllers . Backend
 type Backend interface {
 	fmt.Stringer
-	GetIAMConfig() ([]byte, error)
 	Shutdown()
 
 	ListBuckets() (*s3.ListBucketsOutput, error)
@@ -71,10 +70,6 @@ var _ Backend = &BackendUnsupported{}
 
 func New() Backend {
 	return &BackendUnsupported{}
-}
-
-func (BackendUnsupported) GetIAMConfig() ([]byte, error) {
-	return nil, fmt.Errorf("not supported")
 }
 func (BackendUnsupported) Shutdown() {}
 func (BackendUnsupported) String() string {
