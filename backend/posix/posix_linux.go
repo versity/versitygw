@@ -47,6 +47,10 @@ func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, 0666)
 	if err != nil {
 		// O_TMPFILE not supported, try fallback
+		err := os.MkdirAll(dir, 0700)
+		if err != nil {
+			return nil, fmt.Errorf("make temp dir: %w", err)
+		}
 		f, err := os.CreateTemp(dir,
 			fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 		if err != nil {

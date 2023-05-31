@@ -32,6 +32,10 @@ type tmpfile struct {
 
 func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 	// Create a temp file for upload while in progress (see link comments below).
+	err := os.MkdirAll(dir, 0700)
+	if err != nil {
+		return nil, fmt.Errorf("make temp dir: %w", err)
+	}
 	f, err := os.CreateTemp(dir,
 		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 	if err != nil {
