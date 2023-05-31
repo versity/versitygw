@@ -726,8 +726,6 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 	name := filepath.Join(*po.Bucket, *po.Key)
 
-	etag := ""
-
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
 		err = mkdirAll(name, os.FileMode(0755), *po.Bucket, *po.Key)
@@ -741,47 +739,52 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 		// set our attribute that this dir was specifically put
 		xattr.Set(name, dirObjKey, nil)
-	} else {
-		// object is file
-		f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
-			*po.Bucket, *po.Key, po.ContentLength)
+
+		// TODO: what etag should be returned here
+		// and we should set etag xattr to identify dir was
+		// specifically uploaded
+		return "", nil
+	}
+
+	// object is file
+	f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
+		*po.Bucket, *po.Key, po.ContentLength)
+	if err != nil {
+		return "", fmt.Errorf("open temp file: %w", err)
+	}
+	defer f.cleanup()
+
+	hash := md5.New()
+	rdr := io.TeeReader(po.Body, hash)
+	_, err = io.Copy(f, rdr)
+	if err != nil {
+		return "", fmt.Errorf("write object data: %w", err)
+	}
+	dir := filepath.Dir(name)
+	if dir != "" {
+		err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
-			return "", fmt.Errorf("open temp file: %w", err)
+			return "", fmt.Errorf("make object parent directories: %w", err)
 		}
-		defer f.cleanup()
+	}
 
-		hash := md5.New()
-		rdr := io.TeeReader(po.Body, hash)
-		_, err = io.Copy(f, rdr)
+	err = f.link()
+	if err != nil {
+		return "", fmt.Errorf("link object in namespace: %w", err)
+	}
+
+	for k, v := range po.Metadata {
+		xattr.Set(name, "user."+k, []byte(v))
+	}
+
+	dataSum := hash.Sum(nil)
+	etag := hex.EncodeToString(dataSum[:])
+	xattr.Set(name, "user.etag", []byte(etag))
+
+	if newObjUID != 0 || newObjGID != 0 {
+		err = os.Chown(name, newObjUID, newObjGID)
 		if err != nil {
-			return "", fmt.Errorf("write object data: %w", err)
-		}
-		dir := filepath.Dir(name)
-		if dir != "" {
-			err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
-			if err != nil {
-				return "", fmt.Errorf("make object parent directories: %w", err)
-			}
-		}
-
-		err = f.link()
-		if err != nil {
-			return "", fmt.Errorf("link object in namespace: %w", err)
-		}
-
-		for k, v := range po.Metadata {
-			xattr.Set(name, "user."+k, []byte(v))
-		}
-
-		dataSum := hash.Sum(nil)
-		etag := hex.EncodeToString(dataSum[:])
-		xattr.Set(name, "user.etag", []byte(etag))
-
-		if newObjUID != 0 || newObjGID != 0 {
-			err = os.Chown(name, newObjUID, newObjGID)
-			if err != nil {
-				return "", fmt.Errorf("set object uid/gid: %v", err)
-			}
+			return "", fmt.Errorf("set object uid/gid: %v", err)
 		}
 	}
 
