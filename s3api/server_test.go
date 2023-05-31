@@ -6,13 +6,15 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/scoutgw/backend"
+	"github.com/versity/scoutgw/s3api/utils"
 )
 
 func TestNew(t *testing.T) {
 	type args struct {
-		app  *fiber.App
-		be   backend.Backend
-		port string
+		app      *fiber.App
+		be       backend.Backend
+		port     string
+		rootUser utils.RootUser
 	}
 
 	app := fiber.New()
@@ -29,9 +31,10 @@ func TestNew(t *testing.T) {
 		{
 			name: "Create S3 api server",
 			args: args{
-				app:  app,
-				be:   be,
-				port: port,
+				app:      app,
+				be:       be,
+				port:     port,
+				rootUser: utils.RootUser{},
 			},
 			wantS3ApiServer: &S3ApiServer{
 				app:     app,
@@ -44,7 +47,7 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotS3ApiServer, err := New(tt.args.app, tt.args.be, tt.args.port)
+			gotS3ApiServer, err := New(tt.args.app, tt.args.be, tt.args.port, tt.args.rootUser)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
