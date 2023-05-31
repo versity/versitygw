@@ -17,9 +17,7 @@ package utils
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -36,28 +34,6 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 		}
 	})
 
-	return
-}
-
-type RootUser struct {
-	Login    string
-	Password string
-}
-
-func GetRootUserCreds() (rootUser RootUser) {
-	loginPtr := flag.String("login", "", "Root user login")
-	passwordPtr := flag.String("password", "", "Root user password")
-
-	flag.Parse()
-
-	if *loginPtr == "" || *passwordPtr == "" {
-		os.Exit(3)
-	}
-
-	rootUser = RootUser{
-		Login:    *loginPtr,
-		Password: *passwordPtr,
-	}
 	return
 }
 

@@ -24,7 +24,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api"
-	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 var (
@@ -144,9 +144,7 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithTLS(cert))
 	}
 
-	rootUser := utils.GetRootUserCreds()
-
-	srv, err := s3api.New(app, be, port, rootUser, opts...)
+	srv, err := s3api.New(app, be, port, middlewares.AdminUser{AdminAccess: adminAccess, AdminSecret: adminSecret}, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}
