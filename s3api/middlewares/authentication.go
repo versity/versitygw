@@ -32,12 +32,13 @@ const (
 	iso8601Format = "20060102T150405Z"
 )
 
-type AdminUser struct {
+type AdminConfig struct {
 	AdminAccess string
 	AdminSecret string
+	Region      string
 }
 
-func VerifyV4Signature(user AdminUser) fiber.Handler {
+func VerifyV4Signature(config AdminConfig) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
@@ -84,9 +85,9 @@ func VerifyV4Signature(user AdminUser) fiber.Handler {
 		signer := v4.NewSigner()
 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
-			AccessKeyID:     user.AdminAccess,
-			SecretAccessKey: user.AdminSecret,
-		}, req, hexPayload, creds[3], creds[2], tdate)
+			AccessKeyID:     config.AdminAccess,
+			SecretAccessKey: config.AdminSecret,
+		}, req, hexPayload, creds[3], config.Region, tdate)
 		if signErr != nil {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied))
 		}

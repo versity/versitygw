@@ -28,7 +28,7 @@ func TestNew(t *testing.T) {
 		app       *fiber.App
 		be        backend.Backend
 		port      string
-		adminUser middlewares.AdminUser
+		adminUser middlewares.AdminConfig
 	}
 
 	app := fiber.New()
@@ -48,7 +48,7 @@ func TestNew(t *testing.T) {
 				app:       app,
 				be:        be,
 				port:      port,
-				adminUser: middlewares.AdminUser{},
+				adminUser: middlewares.AdminConfig{},
 			},
 			wantS3ApiServer: &S3ApiServer{
 				app:     app,

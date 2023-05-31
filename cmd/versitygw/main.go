@@ -144,7 +144,7 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithTLS(cert))
 	}
 
-	srv, err := s3api.New(app, be, port, middlewares.AdminUser{AdminAccess: adminAccess, AdminSecret: adminSecret}, opts...)
+	srv, err := s3api.New(app, be, port, middlewares.AdminConfig{AdminAccess: adminAccess, AdminSecret: adminSecret, Region: region}, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

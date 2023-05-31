@@ -31,7 +31,7 @@ type S3ApiServer struct {
 	cert    *tls.Certificate
 }
 
-func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.AdminUser, opts ...Option) (*S3ApiServer, error) {
+func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.AdminConfig, opts ...Option) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
