@@ -17,9 +17,8 @@ type S3ApiServer struct {
 
 func New(app *fiber.App, be backend.Backend, port string, rootUser utils.RootUser) (s3ApiServer *S3ApiServer, err error) {
 	s3ApiServer = &S3ApiServer{app, be, new(S3ApiRouter), port}
-	utils.GetRootUserCreds()
 
-	app.Use(middlewares.CheckUserCreds(rootUser))
+	app.Use(middlewares.VerifyV4Signature(rootUser))
 	app.Use(logger.New())
 	s3ApiServer.router.Init(app, be)
 	return

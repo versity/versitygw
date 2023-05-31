@@ -1,10 +1,14 @@
 package utils
 
 import (
+	"bytes"
+	"errors"
 	"flag"
+	"net/http"
 	"os"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 )
 
@@ -41,4 +45,29 @@ func GetRootUserCreds() (rootUser RootUser) {
 		Password: *passwordPtr,
 	}
 	return
+}
+
+func CreateHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
+	req := ctx.Request()
+
+	httpReq, err := http.NewRequest(string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	if err != nil {
+		return nil, errors.New("error in creating an http request")
+	}
+
+	// Set the request headers
+	req.Header.VisitAll(func(key, value []byte) {
+		keyStr := string(key)
+		if keyStr == "X-Amz-Date" || keyStr == "X-Amz-Content-Sha256" || keyStr == "Host" {
+			httpReq.Header.Add(keyStr, string(value))
+		}
+	})
+
+	// Set the Content-Length header
+	httpReq.ContentLength = int64(len(req.Body()))
+
+	// Set the Host header
+	httpReq.Host = string(req.Header.Host())
+
+	return httpReq, nil
 }

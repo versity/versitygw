@@ -28,7 +28,7 @@ func New(be backend.Backend) S3ApiController {
 
 func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 	res, err := c.be.ListBuckets()
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
@@ -49,17 +49,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 
 		res, err := c.be.ListObjectParts(bucket, "", uploadId, partNumberMarker, maxParts)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		res, err := c.be.GetObjectAcl(bucket, key)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if attrs := ctx.Get("X-Amz-Object-Attributes"); attrs != "" {
 		res, err := c.be.GetObjectAttributes(bucket, key, strings.Split(attrs, ","))
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	acceptRange := ctx.Get("Range")
@@ -85,27 +85,27 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	res, err := c.be.GetObject(bucket, key, acceptRange, int64(startOffset), int64(length), ctx.Response().BodyWriter())
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		res, err := c.be.GetBucketAcl(ctx.Params("bucket"))
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("uploads") {
 		res, err := c.be.ListMultipartUploads(&s3.ListMultipartUploadsInput{Bucket: aws.String(ctx.Params("bucket"))})
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if ctx.QueryInt("list-type") == 2 {
 		res, err := c.be.ListObjectsV2(ctx.Params("bucket"), "", "", "", 1)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	res, err := c.be.ListObjects(ctx.Params("bucket"), "", "", "", 1)
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
@@ -134,11 +134,11 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			GrantWriteACP:    &grantWriteACP,
 		})
 
-		return responce[any](ctx, nil, err)
+		return Responce[any](ctx, nil, err)
 	}
 
 	err := c.be.PutBucket(bucket)
-	return responce[any](ctx, nil, err)
+	return Responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
@@ -197,13 +197,13 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			CopySourceIfUnmodifiedSince: &copySrcUnmodifSinceDate,
 		})
 
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if uploadId != "" {
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
 		res, err := c.be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	if grants != "" || acl != "" {
@@ -221,7 +221,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			GrantWrite:       &granWrite,
 			GrantWriteACP:    &grantWriteACP,
 		})
-		return responce[any](ctx, nil, err)
+		return Responce[any](ctx, nil, err)
 	}
 
 	if copySource != "" {
@@ -229,7 +229,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		srcBucket, srcObject := copySourceSplit[0], copySourceSplit[1:]
 
 		res, err := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
@@ -246,12 +246,12 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		Metadata:      metadata,
 		Body:          bytes.NewReader(ctx.Request().Body()),
 	})
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	err := c.be.DeleteBucket(ctx.Params("bucket"))
-	return responce[any](ctx, nil, err)
+	return Responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
@@ -261,7 +261,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	}
 
 	err := c.be.DeleteObjects(ctx.Params("bucket"), &s3.DeleteObjectsInput{Delete: &dObj})
-	return responce[any](ctx, nil, err)
+	return Responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
@@ -281,16 +281,16 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			ExpectedBucketOwner: &expectedBucketOwner,
 			RequestPayer:        types.RequestPayer(requestPayer),
 		})
-		return responce[any](ctx, nil, err)
+		return Responce[any](ctx, nil, err)
 	}
 
 	err := c.be.DeleteObject(bucket, key)
-	return responce[any](ctx, nil, err)
+	return Responce[any](ctx, nil, err)
 }
 
 func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 	res, err := c.be.HeadBucket(ctx.Params("bucket"))
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
@@ -300,7 +300,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	}
 
 	res, err := c.be.HeadObject(bucket, key, "")
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
 func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
@@ -313,7 +313,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err == nil {
 		err := c.be.RestoreObject(bucket, key, &restoreRequest)
-		return responce[any](ctx, nil, err)
+		return Responce[any](ctx, nil, err)
 	}
 
 	if uploadId != "" {
@@ -324,13 +324,13 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		}
 
 		res, err := c.be.CompleteMultipartUpload(bucket, "", uploadId, parts)
-		return responce(ctx, res, err)
+		return Responce(ctx, res, err)
 	}
 	res, err := c.be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
-	return responce(ctx, res, err)
+	return Responce(ctx, res, err)
 }
 
-func responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
+func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
