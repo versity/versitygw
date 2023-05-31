@@ -1,11 +1,28 @@
+// Copyright 2023 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package posix
 
 import (
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,8 +34,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 	"github.com/pkg/xattr"
-	"github.com/versity/scoutgw/backend"
-	"github.com/versity/scoutgw/s3err"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
 )
 
 type Posix struct {
@@ -98,7 +115,7 @@ func (p *Posix) ListBuckets() (*s3.ListBucketsOutput, error) {
 
 func (p *Posix) HeadBucket(bucket string) (*s3.HeadBucketOutput, error) {
 	_, err := os.Lstat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -122,7 +139,7 @@ func (p *Posix) PutBucket(bucket string) error {
 
 func (p *Posix) DeleteBucket(bucket string) error {
 	names, err := os.ReadDir(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -133,7 +150,7 @@ func (p *Posix) DeleteBucket(bucket string) error {
 		// if .sgwtmp is only item in directory
 		// then clean this up before trying to remove the bucket
 		err = os.RemoveAll(filepath.Join(bucket, metaTmpDir))
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove temp dir: %w", err)
 		}
 	}
@@ -154,7 +171,7 @@ func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.C
 	object := *mpu.Key
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -202,7 +219,7 @@ func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.C
 
 func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -234,7 +251,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 		}
 	}
 
-	f, err := openTmpFile(metaTmpDir, object, 0)
+	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
@@ -319,7 +336,7 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	_, err := os.Stat(filepath.Join(objdir, uploadID))
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return [32]byte{}, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
@@ -328,7 +345,7 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
-func loadUserMetaData(path string, m map[string]string) (tag, contentType, contentEncoding string) {
+func loadUserMetaData(path string, m map[string]string) (contentType, contentEncoding string) {
 	ents, err := xattr.List(path)
 	if err != nil || len(ents) == 0 {
 		return
@@ -348,16 +365,7 @@ func loadUserMetaData(path string, m map[string]string) (tag, contentType, conte
 		m[strings.TrimPrefix(e, "user.")] = string(b)
 	}
 
-	b, err := xattr.Get(path, "user."+tagHdr)
-	tag = string(b)
-	if err != nil {
-		tag = ""
-	}
-	if tag != "" {
-		m[tagHdr] = tag
-	}
-
-	b, err = xattr.Get(path, "user.content-type")
+	b, err := xattr.Get(path, "user.content-type")
 	contentType = string(b)
 	if err != nil {
 		contentType = ""
@@ -467,7 +475,7 @@ func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {
 	uploadID := *mpu.UploadId
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -495,7 +503,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 	bucket := *mpu.Bucket
 
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -585,7 +593,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 
 func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -600,7 +608,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	ents, err := os.ReadDir(filepath.Join(objdir, uploadID))
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
@@ -670,7 +678,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 
 func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -678,10 +686,11 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 	}
 
 	sum := sha256.Sum256([]byte(object))
-	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", part))
 
-	f, err := openTmpFile(objdir, partPath, length)
+	f, err := openTmpFile(filepath.Join(bucket, objdir),
+		bucket, partPath, length)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
@@ -708,7 +717,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 
 func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	_, err := os.Stat(*po.Bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -716,8 +725,6 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	}
 
 	name := filepath.Join(*po.Bucket, *po.Key)
-
-	etag := ""
 
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
@@ -730,50 +737,54 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			xattr.Set(name, "user."+k, []byte(v))
 		}
 
-		// set our tag that this dir was specifically put
+		// set our attribute that this dir was specifically put
 		xattr.Set(name, dirObjKey, nil)
-	} else {
-		// object is file
-		f, err := openTmpFile(metaTmpDir, *po.Key, po.ContentLength)
+
+		// TODO: what etag should be returned here
+		// and we should set etag xattr to identify dir was
+		// specifically uploaded
+		return "", nil
+	}
+
+	// object is file
+	f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
+		*po.Bucket, *po.Key, po.ContentLength)
+	if err != nil {
+		return "", fmt.Errorf("open temp file: %w", err)
+	}
+	defer f.cleanup()
+
+	hash := md5.New()
+	rdr := io.TeeReader(po.Body, hash)
+	_, err = io.Copy(f, rdr)
+	if err != nil {
+		return "", fmt.Errorf("write object data: %w", err)
+	}
+	dir := filepath.Dir(name)
+	if dir != "" {
+		err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
-			return "", fmt.Errorf("open temp file: %w", err)
+			return "", fmt.Errorf("make object parent directories: %w", err)
 		}
-		defer f.cleanup()
+	}
 
-		// TODO: fallocate based on content length
+	err = f.link()
+	if err != nil {
+		return "", fmt.Errorf("link object in namespace: %w", err)
+	}
 
-		hash := md5.New()
-		rdr := io.TeeReader(po.Body, hash)
-		_, err = io.Copy(f, rdr)
+	for k, v := range po.Metadata {
+		xattr.Set(name, "user."+k, []byte(v))
+	}
+
+	dataSum := hash.Sum(nil)
+	etag := hex.EncodeToString(dataSum[:])
+	xattr.Set(name, "user.etag", []byte(etag))
+
+	if newObjUID != 0 || newObjGID != 0 {
+		err = os.Chown(name, newObjUID, newObjGID)
 		if err != nil {
-			return "", fmt.Errorf("write object data: %w", err)
-		}
-		dir := filepath.Dir(name)
-		if dir != "" {
-			err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
-			if err != nil {
-				return "", fmt.Errorf("make object parent directories: %w", err)
-			}
-		}
-
-		err = f.link()
-		if err != nil {
-			return "", fmt.Errorf("link object in namespace: %w", err)
-		}
-
-		for k, v := range po.Metadata {
-			xattr.Set(name, "user."+k, []byte(v))
-		}
-
-		dataSum := hash.Sum(nil)
-		etag := hex.EncodeToString(dataSum[:])
-		xattr.Set(name, "user.etag", []byte(etag))
-
-		if newObjUID != 0 || newObjGID != 0 {
-			err = os.Chown(name, newObjUID, newObjGID)
-			if err != nil {
-				return "", fmt.Errorf("set object uid/gid: %v", err)
-			}
+			return "", fmt.Errorf("set object uid/gid: %v", err)
 		}
 	}
 
@@ -782,7 +793,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 func (p *Posix) DeleteObject(bucket, object string) error {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -790,7 +801,7 @@ func (p *Posix) DeleteObject(bucket, object string) error {
 	}
 
 	os.Remove(filepath.Join(bucket, object))
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -844,7 +855,7 @@ func (p *Posix) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) err
 
 func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -853,7 +864,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	objPath := filepath.Join(bucket, object)
 	fi, err := os.Stat(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -866,7 +877,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 	}
 
 	f, err := os.Open(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -882,7 +893,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 
 	userMetaData := make(map[string]string)
 
-	_, contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
+	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
 	b, err := xattr.Get(objPath, "user.etag")
 	etag := string(b)
@@ -890,8 +901,11 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		etag = ""
 	}
 
-	// TODO: fill range request header?
-	// TODO: parse tags for tag count?
+	tags, err := p.getXattrTags(bucket, object)
+	if err != nil {
+		return nil, fmt.Errorf("get object tags: %w", err)
+	}
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
 		ContentLength:   length,
@@ -900,12 +914,13 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
+		TagCount:        int32(len(tags)),
 	}, nil
 }
 
-func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOutput, error) {
+func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -914,7 +929,7 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 
 	objPath := filepath.Join(bucket, object)
 	fi, err := os.Stat(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -922,10 +937,14 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 	}
 
 	userMetaData := make(map[string]string)
-	_, contentType, contentEncoding := loadUserMetaData(filepath.Join(bucket, objPath), userMetaData)
+	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	// TODO: fill accept ranges request header?
-	// TODO: do we need to get etag from xattr?
+	b, err := xattr.Get(objPath, "user.etag")
+	etag := string(b)
+	if err != nil {
+		etag = ""
+	}
+
 	return &s3.HeadObjectOutput{
 		ContentLength:   fi.Size(),
 		ContentType:     &contentType,
@@ -938,7 +957,7 @@ func (p *Posix) HeadObject(bucket, object string, etag string) (*s3.HeadObjectOu
 
 func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
 	_, err := os.Stat(srcBucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -946,7 +965,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 	}
 
 	_, err = os.Stat(DstBucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -955,7 +974,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 
 	objPath := filepath.Join(srcBucket, srcObject)
 	f, err := os.Open(objPath)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -983,7 +1002,7 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 
 func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1008,9 +1027,10 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 		Prefix:         &prefix,
 	}, nil
 }
+
 func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	_, err := os.Stat(bucket)
-	if err != nil && os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
@@ -1034,4 +1054,91 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 		NextContinuationToken: &results.NextMarker,
 		Prefix:                &prefix,
 	}, nil
+}
+
+func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	return p.getXattrTags(bucket, object)
+}
+
+func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
+	tags := make(map[string]string)
+	b, err := xattr.Get(filepath.Join(bucket, object), "user."+tagHdr)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if isNoAttr(err) {
+		return tags, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tags: %w", err)
+	}
+
+	err = json.Unmarshal(b, &tags)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal tags: %w", err)
+	}
+
+	return tags, nil
+}
+
+func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if tags == nil {
+		err = xattr.Remove(filepath.Join(bucket, object), "user."+tagHdr)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil {
+			return fmt.Errorf("remove tags: %w", err)
+		}
+		return nil
+	}
+
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+
+	err = xattr.Set(filepath.Join(bucket, object), "user."+tagHdr, b)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("set tags: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) RemoveTags(bucket, object string) error {
+	return p.SetTags(bucket, object, nil)
+}
+
+func isNoAttr(err error) bool {
+	if err == nil {
+		return false
+	}
+	xerr, ok := err.(*xattr.Error)
+	if ok && xerr.Err == xattr.ENOATTR {
+		return true
+	}
+	if err == syscall.ENODATA {
+		return true
+	}
+	return false
 }
