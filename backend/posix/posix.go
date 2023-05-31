@@ -251,7 +251,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 		}
 	}
 
-	f, err := openTmpFile(metaTmpDir, object, 0)
+	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
@@ -686,10 +686,11 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 	}
 
 	sum := sha256.Sum256([]byte(object))
-	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", part))
 
-	f, err := openTmpFile(objdir, partPath, length)
+	f, err := openTmpFile(filepath.Join(bucket, objdir),
+		bucket, partPath, length)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
@@ -742,7 +743,8 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 		xattr.Set(name, dirObjKey, nil)
 	} else {
 		// object is file
-		f, err := openTmpFile(metaTmpDir, *po.Key, po.ContentLength)
+		f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
+			*po.Bucket, *po.Key, po.ContentLength)
 		if err != nil {
 			return "", fmt.Errorf("open temp file: %w", err)
 		}

@@ -20,30 +20,39 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 type tmpfile struct {
 	f       *os.File
+	bucket  string
 	objname string
+	size    int64
 }
 
-func openTmpFile(dir, obj string, size int64) (*tmpfile, error) {
+func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 	// Create a temp file for upload while in progress (see link comments below).
 	f, err := os.CreateTemp(dir,
-		fmt.Sprintf("%x\n", sha256.Sum256([]byte(obj))))
+		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 	if err != nil {
 		return nil, err
 	}
-	return &tmpfile{f: f, objname: obj}, nil
+	return &tmpfile{f: f, bucket: bucket, objname: obj, size: size}, nil
 }
 
 func (tmp *tmpfile) link() error {
+	tempname := tmp.f.Name()
+	// cleanup in case anything goes wrong, if rename succeeds then
+	// this will no longer exist
+	defer os.Remove(tempname)
+
 	// We use Rename as the atomic operation for object puts. The upload is
 	// written to a temp file to not conflict with any other simultaneous
 	// uploads. The final operation is to move the temp file into place for
 	// the object. This ensures the object semantics of last upload completed
 	// wins and is not some combination of writes from simultaneous uploads.
-	err := os.Remove(tmp.objname)
+	objPath := filepath.Join(tmp.bucket, tmp.objname)
+	err := os.Remove(objPath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove stale path: %w", err)
 	}
@@ -53,7 +62,7 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	err = os.Rename(tmp.f.Name(), tmp.objname)
+	err = os.Rename(tempname, objPath)
 	if err != nil {
 		return fmt.Errorf("rename tmpfile: %w", err)
 	}
@@ -62,7 +71,13 @@ func (tmp *tmpfile) link() error {
 }
 
 func (tmp *tmpfile) Write(b []byte) (int, error) {
-	return tmp.f.Write(b)
+	if int64(len(b)) > tmp.size {
+		return 0, fmt.Errorf("write exceeds content length")
+	}
+
+	n, err := tmp.f.Write(b)
+	tmp.size -= int64(n)
+	return n, err
 }
 
 func (tmp *tmpfile) cleanup() {
