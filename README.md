@@ -14,9 +14,10 @@ The S3 HTTP(S) server and routing is implemented using the [Fiber](https://gofib
 
 ## Getting Started
 
-###Run the gateway with posix backend:
+### Run the gateway with posix backend:
 
 ```
+mkdir /tmp/vgw
 ADMIN_ACCESS_KEY="testuser" ADMIN_SECRET_KEY="secret" ./versitygw --port :10000 posix /tmp/vgw
 ```
 This will enable an S3 server on the current host listening on port 10000 and hosting the directory `/tmp/vgw`.
@@ -32,4 +33,4 @@ The command format is
 ```
 versitygw [global options] command [command options] [arguments...]
 ```
-The global options are specified before the backend type and the backend options are speficied after.
+The global options are specified before the backend type and the backend options are specified after.
