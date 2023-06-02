@@ -356,9 +356,11 @@ func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
 	}
 
 	var b []byte
-	if b, err = xml.Marshal(resp); err != nil {
+	if b, err = utils.MarshalStructToXML(resp); err != nil {
 		return err
 	}
+
+	ctx.Set("Content-Type", "application/xml")
 
 	return ctx.Send(b)
 }

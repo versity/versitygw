@@ -17,7 +17,9 @@ package utils
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -60,4 +62,81 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 	httpReq.Host = string(req.Header.Host())
 
 	return httpReq, nil
+}
+
+func MarshalStructToXML(data interface{}) ([]byte, error) {
+	value := reflect.ValueOf(data)
+	if value.Kind() == reflect.Ptr {
+		value = value.Elem()
+	}
+
+	switch value.Kind() {
+	case reflect.Struct:
+		xmlData := []byte{}
+
+		for i := 0; i < value.NumField(); i++ {
+			field := value.Field(i)
+			fieldType := value.Type().Field(i)
+
+			if field.CanInterface() {
+				tag := fieldType.Tag.Get("xml")
+				if tag == "" {
+					tag = fieldType.Name
+				}
+
+				if field.Kind() == reflect.Slice {
+					for j := 0; j < field.Len(); j++ {
+						item := field.Index(j).Interface()
+						itemData, err := MarshalStructToXML(item)
+						if err != nil {
+							return nil, err
+						}
+
+						xmlData = append(xmlData, itemData...)
+					}
+				} else if field.Kind() == reflect.Struct || field.Kind() == reflect.Ptr {
+					subData := field.Interface()
+					subDataXML, err := MarshalStructToXML(subData)
+					if err != nil {
+						return nil, err
+					}
+
+					openTag := fmt.Sprintf("<%s>", tag)
+					closeTag := fmt.Sprintf("</%s>", tag)
+
+					xmlData = append(xmlData, []byte(openTag)...)
+					xmlData = append(xmlData, subDataXML...)
+					xmlData = append(xmlData, []byte(closeTag)...)
+				} else {
+					fieldData := fmt.Sprintf("<%s>%v</%s>", tag, field.Interface(), tag)
+					xmlData = append(xmlData, []byte(fieldData)...)
+				}
+			}
+		}
+		return xmlData, nil
+
+	case reflect.Map:
+		xmlData := []byte{}
+		iter := value.MapRange()
+		for iter.Next() {
+			key := iter.Key()
+			val := iter.Value()
+
+			subDataXML, err := MarshalStructToXML(val.Interface())
+			if err != nil {
+				return nil, err
+			}
+
+			openTag := fmt.Sprintf("<%v>", key.Interface())
+			closeTag := fmt.Sprintf("</%v>", key.Interface())
+
+			xmlData = append(xmlData, []byte(openTag)...)
+			xmlData = append(xmlData, subDataXML...)
+			xmlData = append(xmlData, []byte(closeTag)...)
+		}
+		return xmlData, nil
+
+	default:
+		return []byte(fmt.Sprintf("%v", data)), nil
+	}
 }
