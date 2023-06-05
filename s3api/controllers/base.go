@@ -19,6 +19,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -356,8 +357,17 @@ func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
 	}
 
 	var b []byte
-	if b, err = utils.MarshalStructToXML(resp); err != nil {
-		return err
+
+	if reflect.ValueOf(resp).Kind() == reflect.Struct || reflect.ValueOf(resp).Kind() == reflect.Map {
+		b, err = utils.MarshalStructToXML(resp)
+		if err != nil {
+			return err
+		}
+	} else {
+		b, err = xml.Marshal(resp)
+		if err != nil {
+			return err
+		}
 	}
 
 	ctx.Set("Content-Type", "application/xml")
