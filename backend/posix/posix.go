@@ -871,7 +871,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, writer io.Writer) 
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
-	startOffset, length, err := parseRange(fi, acceptRange)
+	startOffset, length, err := backend.ParseRange(fi, acceptRange)
 	if err != nil {
 		return nil, err
 	}
@@ -1146,33 +1146,4 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
-}
-
-func parseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
-	if acceptRange == "" {
-		return 0, file.Size(), nil
-	}
-
-	bRangeSl := strings.Split(acceptRange, "=")
-
-	if len(bRangeSl) < 2 {
-		return 0, 0, errors.New("invalid range parameter")
-	}
-
-	bRange := strings.Split(bRangeSl[1], "-")
-	if len(bRange) < 2 {
-		return 0, 0, errors.New("invalid range parameter")
-	}
-
-	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
-	if err != nil {
-		return 0, 0, errors.New("invalid range parameter")
-	}
-
-	length, err := strconv.ParseInt(bRange[1], 10, 64)
-	if err != nil {
-		return 0, 0, errors.New("invalid range parameter")
-	}
-
-	return int64(startOffset), int64(length), nil
 }
