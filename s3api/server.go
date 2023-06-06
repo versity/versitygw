@@ -20,6 +20,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
 
@@ -31,7 +32,7 @@ type S3ApiServer struct {
 	cert    *tls.Certificate
 }
 
-func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.AdminConfig, opts ...Option) (*S3ApiServer, error) {
+func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.AdminConfig, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
@@ -43,8 +44,9 @@ func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.
 		opt(server)
 	}
 
-	app.Use(middlewares.VerifyV4Signature(adminUser))
+	app.Use(middlewares.VerifyV4Signature(adminUser, iam))
 	app.Use(logger.New())
+	app.Use(middlewares.VerifyMD5Body())
 	server.router.Init(app, be)
 	return server, nil
 }

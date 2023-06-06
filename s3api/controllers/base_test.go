@@ -19,9 +19,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
@@ -534,127 +537,426 @@ func TestS3ApiController_PutActions(t *testing.T) {
 
 func TestS3ApiController_DeleteBucket(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+
+	app := fiber.New()
+	s3ApiController := S3ApiController{be: &BackendMock{
+		DeleteBucketFunc: func(bucket string) error {
+			return nil
+		},
+	}}
+
+	app.Delete("/:bucket", s3ApiController.DeleteBucket)
+
+	// error case
+	appErr := fiber.New()
+
+	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		DeleteBucketFunc: func(bucket string) error {
+			return s3err.GetAPIError(48)
+		},
+	}}
+
+	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Delete-bucket-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Delete-bucket-error",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.DeleteBucket(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.DeleteBucket() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.DeleteBucket() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.DeleteBucket() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 
 func TestS3ApiController_DeleteObjects(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+
+	app := fiber.New()
+	s3ApiController := S3ApiController{be: &BackendMock{
+		DeleteObjectsFunc: func(bucket string, objects *s3.DeleteObjectsInput) error {
+			return nil
+		},
+	}}
+
+	app.Post("/:bucket", s3ApiController.DeleteObjects)
+
+	// Valid request body
+	xmlBody := `<root><key>body</key></root>`
+
+	request := httptest.NewRequest(http.MethodPost, "/my-bucket", strings.NewReader(xmlBody))
+	request.Header.Set("Content-Type", "application/xml")
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Delete-Objects-success",
+			app:  app,
+			args: args{
+				req: request,
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Delete-Objects-error",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.DeleteObjects(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.DeleteObjects() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.DeleteObjects() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.DeleteObjects() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 
 func TestS3ApiController_DeleteActions(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+
+	app := fiber.New()
+	s3ApiController := S3ApiController{be: &BackendMock{
+		DeleteObjectFunc: func(bucket, object string) error {
+			return nil
+		},
+		AbortMultipartUploadFunc: func(*s3.AbortMultipartUploadInput) error {
+			return nil
+		},
+	}}
+
+	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
+
+	//Error case
+	appErr := fiber.New()
+
+	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		DeleteObjectFunc: func(bucket, object string) error {
+			return s3err.GetAPIError(7)
+		},
+	}}
+
+	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Abort-multipart-upload-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key?uploadId=324234", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Delete-object-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Delete-object-error",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/invalid-key", nil),
+			},
+			wantErr:    false,
+			statusCode: 404,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.DeleteActions(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.DeleteActions() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.DeleteActions() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.DeleteActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 
 func TestS3ApiController_HeadBucket(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+
+	app := fiber.New()
+	s3ApiController := S3ApiController{be: &BackendMock{
+		HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
+			return &s3.HeadBucketOutput{}, nil
+		},
+	}}
+
+	app.Head("/:bucket", s3ApiController.HeadBucket)
+
+	//Error case
+	appErr := fiber.New()
+
+	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
+			return nil, s3err.GetAPIError(3)
+		},
+	}}
+
+	appErr.Head("/:bucket", s3ApiControllerErr.HeadBucket)
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Head-bucket-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodHead, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Head-bucket-error",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodHead, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 409,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.HeadBucket(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.HeadBucket() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.HeadBucket() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.HeadBucket() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 
 func TestS3ApiController_HeadObject(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+
+	app := fiber.New()
+
+	// Mock values
+	contentEncoding := "gzip"
+	contentType := "application/xml"
+	eTag := "Valid etag"
+	lastModifie := time.Now()
+
+	s3ApiController := S3ApiController{be: &BackendMock{
+		HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
+			return &s3.HeadObjectOutput{
+				ContentEncoding: &contentEncoding,
+				ContentLength:   64,
+				ContentType:     &contentType,
+				LastModified:    &lastModifie,
+				ETag:            &eTag,
+			}, nil
+		},
+	}}
+
+	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
+
+	//Error case
+	appErr := fiber.New()
+
+	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
+			return nil, s3err.GetAPIError(42)
+		},
+	}}
+
+	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Head-object-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodHead, "/my-bucket/my-key", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Head-object-error",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodHead, "/my-bucket/my-key", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.HeadObject(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.HeadObject() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.HeadObject() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.HeadObject() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 
 func TestS3ApiController_CreateActions(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		req *http.Request
 	}
+	app := fiber.New()
+	s3ApiController := S3ApiController{be: &BackendMock{
+		RestoreObjectFunc: func(bucket, object string, restoreRequest *s3.RestoreObjectInput) error {
+			return nil
+		},
+		CompleteMultipartUploadFunc: func(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
+			return &s3.CompleteMultipartUploadOutput{}, nil
+		},
+		CreateMultipartUploadFunc: func(*s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+			return &s3.CreateMultipartUploadOutput{}, nil
+		},
+	}}
+
+	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)
+
 	tests := []struct {
-		name    string
-		c       S3ApiController
-		args    args
-		wantErr bool
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Restore-object-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?restore", strings.NewReader(`<root><key>body</key></root>`)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Restore-object-error",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?restore", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Complete-multipart-upload-error",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Complete-multipart-upload-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(`<root><key>body</key></root>`)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Create-multipart-upload-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.CreateActions(tt.args.ctx); (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.CreateActions() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("S3ApiController.CreateActions() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("S3ApiController.CreateActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
 	}
 }
 

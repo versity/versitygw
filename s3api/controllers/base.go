@@ -18,7 +18,9 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -292,7 +294,38 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	}
 
 	res, err := c.be.HeadObject(bucket, key)
-	return Responce(ctx, res, err)
+	if err != nil {
+		return ErrorResponse(ctx, err)
+	}
+
+	utils.SetMetaHeaders(ctx, res.Metadata)
+	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+		{
+			Key:   "Content-Length",
+			Value: fmt.Sprint(res.ContentLength),
+		},
+		{
+			Key:   "Content-Type",
+			Value: *res.ContentType,
+		},
+		{
+			Key:   "Content-Encoding",
+			Value: *res.ContentEncoding,
+		},
+		{
+			Key:   "ETag",
+			Value: *res.ETag,
+		},
+		{
+			Key:   "Last-Modified",
+			Value: res.LastModified.Format("20060102T150405Z"),
+		},
+	})
+
+	// https://github.com/gofiber/fiber/issues/2080
+	// ctx.SendStatus() sets incorrect content length on HEAD request
+	ctx.Status(http.StatusOK)
+	return nil
 }
 
 func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
@@ -303,7 +336,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
-	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err == nil {
+	if ctx.Request().URI().QueryArgs().Has("restore") {
+		xmlErr := xml.Unmarshal(ctx.Body(), &restoreRequest)
+		if xmlErr != nil {
+			return errors.New("wrong api call")
+		}
 		err := c.be.RestoreObject(bucket, key, &restoreRequest)
 		return Responce[any](ctx, nil, err)
 	}
@@ -339,4 +376,14 @@ func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
 	}
 
 	return ctx.Send(b)
+}
+
+func ErrorResponse(ctx *fiber.Ctx, err error) error {
+	serr, ok := err.(s3err.APIError)
+	if ok {
+		ctx.Status(serr.HTTPStatusCode)
+		return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
+	}
+	return ctx.Send(s3err.GetAPIErrorResponse(
+		s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 }
