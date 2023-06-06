@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -24,12 +25,11 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 
 	// Case 2
 	ctx2 := app.AcquireCtx(&fasthttp.RequestCtx{})
-
 	req2 := ctx2.Request()
-	req2.Header.Add("X-Amz-Date", "Some valid date")
+	req2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
 
 	request2, _ := http.NewRequest(string(req2.Header.Method()), req2.URI().String(), bytes.NewReader(req2.Body()))
-	request2.Header.Add("X-Amz-Date", "Some valid date")
+	request2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
 
 	tests := []struct {
 		name    string
@@ -61,6 +61,8 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 				t.Errorf("CreateHttpRequestFromCtx() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
+			fmt.Println(got.Header, tt.want.Header)
 
 			if !reflect.DeepEqual(got.Header, tt.want.Header) {
 				t.Errorf("CreateHttpRequestFromCtx() got = %v, want %v", got, tt.want)
