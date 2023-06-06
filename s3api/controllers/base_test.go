@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -803,9 +804,22 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	}
 
 	app := fiber.New()
+
+	// Mock values
+	contentEncoding := "gzip"
+	contentType := "application/xml"
+	eTag := "Valid etag"
+	lastModifie := time.Now()
+
 	s3ApiController := S3ApiController{be: &BackendMock{
 		HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
-			return nil, nil
+			return &s3.HeadObjectOutput{
+				ContentEncoding: &contentEncoding,
+				ContentLength:   64,
+				ContentType:     &contentType,
+				LastModified:    &lastModifie,
+				ETag:            &eTag,
+			}, nil
 		},
 	}}
 
