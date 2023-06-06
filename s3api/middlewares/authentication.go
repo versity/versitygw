@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -38,7 +39,12 @@ type AdminConfig struct {
 	Region      string
 }
 
-func VerifyV4Signature(config AdminConfig) fiber.Handler {
+func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
+	acct := accounts{
+		admin: config,
+		iam:   iam,
+	}
+
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
@@ -47,11 +53,22 @@ func VerifyV4Signature(config AdminConfig) fiber.Handler {
 
 		// Check the signature version
 		authParts := strings.Split(authorization, " ")
+		if len(authParts) < 4 {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrMissingFields))
+		}
 		if authParts[0] != "AWS4-HMAC-SHA256" {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported))
 		}
 
 		creds := strings.Split(strings.Split(authParts[1], "=")[1], "/")
+		if len(creds) < 4 {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrCredMalformed))
+		}
+
+		secret, ok := acct.getAcctSecret(creds[0])
+		if !ok {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+		}
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
@@ -79,20 +96,23 @@ func VerifyV4Signature(config AdminConfig) fiber.Handler {
 		// Create a new http request instance from fasthttp request
 		req, err := utils.CreateHttpRequestFromCtx(ctx)
 		if err != nil {
-			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied))
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInternalError))
 		}
 
 		signer := v4.NewSigner()
 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
-			AccessKeyID:     config.AdminAccess,
-			SecretAccessKey: config.AdminSecret,
+			AccessKeyID:     creds[0],
+			SecretAccessKey: secret,
 		}, req, hexPayload, creds[3], config.Region, tdate)
 		if signErr != nil {
-			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied))
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInternalError))
 		}
 
 		parts := strings.Split(req.Header.Get("Authorization"), " ")
+		if len(parts) < 4 {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrMissingFields))
+		}
 		calculatedSign := strings.Split(parts[3], "=")[1]
 		expectedSign := strings.Split(authParts[3], "=")[1]
 
@@ -102,4 +122,23 @@ func VerifyV4Signature(config AdminConfig) fiber.Handler {
 
 		return ctx.Next()
 	}
+}
+
+type accounts struct {
+	admin AdminConfig
+	iam   auth.IAMService
+}
+
+func (a accounts) getAcctSecret(access string) (string, bool) {
+	if a.admin.AdminAccess == access {
+		return a.admin.AdminSecret, true
+	}
+
+	conf, err := a.iam.GetIAMConfig()
+	if err != nil {
+		return "", false
+	}
+
+	secret, ok := conf.AccessAccounts[access]
+	return secret, ok
 }

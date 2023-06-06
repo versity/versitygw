@@ -49,13 +49,13 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 	// Set the request headers
 	req.Header.VisitAll(func(key, value []byte) {
 		keyStr := string(key)
-		if keyStr == "X-Amz-Date" || keyStr == "X-Amz-Content-Sha256" || keyStr == "Host" {
+		if includeHeader(keyStr) {
 			httpReq.Header.Add(keyStr, string(value))
 		}
 	})
 
-	// Set the Content-Length header
-	httpReq.ContentLength = int64(len(req.Body()))
+	// Content-Length header ignored for signing
+	httpReq.ContentLength = 0
 
 	// Set the Host header
 	httpReq.Host = string(req.Header.Host())
@@ -77,5 +77,94 @@ type CustomHeader struct {
 func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
 	for _, header := range headers {
 		ctx.Set(header.Key, header.Value)
+	}
+}
+
+func includeHeader(hdr string) bool {
+	switch {
+	case strings.EqualFold(hdr, "Cache-Control"):
+		return true
+	case strings.EqualFold(hdr, "Content-Disposition"):
+		return true
+	case strings.EqualFold(hdr, "Content-Encoding"):
+		return true
+	case strings.EqualFold(hdr, "Content-Language"):
+		return true
+	case strings.EqualFold(hdr, "Content-Md5"):
+		return true
+	case strings.EqualFold(hdr, "Content-Type"):
+		return true
+	case strings.EqualFold(hdr, "Expires"):
+		return true
+	case strings.EqualFold(hdr, "If-Match"):
+		return true
+	case strings.EqualFold(hdr, "If-Modified-Since"):
+		return true
+	case strings.EqualFold(hdr, "If-None-Match"):
+		return true
+	case strings.EqualFold(hdr, "If-Unmodified-Since"):
+		return true
+	case strings.EqualFold(hdr, "Range"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Acl"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-If-Match"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-If-Modified-Since"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-If-None-Match"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-If-Unmodified-Since"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-Range"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-Server-Side-Encryption-Customer-Algorithm"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Copy-Source-Server-Side-Encryption-Customer-Key-Md5"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Grant-Full-control"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Grant-Read"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Grant-Read-Acp"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Grant-Write"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Grant-Write-Acp"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Metadata-Directive"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Mfa"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Request-Payer"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Server-Side-Encryption"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Server-Side-Encryption-Aws-Kms-Key-Id"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Server-Side-Encryption-Customer-Algorithm"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Server-Side-Encryption-Customer-Key"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Server-Side-Encryption-Customer-Key-Md5"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Storage-Class"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Website-Redirect-Location"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Content-Sha256"):
+		return true
+	case strings.EqualFold(hdr, "X-Amz-Tagging"):
+		return true
+	case strings.HasPrefix(hdr, "X-Amz-Object-Lock-"):
+		return true
+	case strings.HasPrefix(hdr, "X-Amz-Meta-"):
+		return true
+	default:
+		return false
 	}
 }

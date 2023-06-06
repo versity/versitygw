@@ -23,6 +23,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
@@ -144,7 +145,12 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithTLS(cert))
 	}
 
-	srv, err := s3api.New(app, be, port, middlewares.AdminConfig{AdminAccess: adminAccess, AdminSecret: adminSecret, Region: region}, opts...)
+	srv, err := s3api.New(app, be, port,
+		middlewares.AdminConfig{
+			AdminAccess: adminAccess,
+			AdminSecret: adminSecret,
+			Region:      region,
+		}, auth.IAMServiceUnsupported{}, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}
