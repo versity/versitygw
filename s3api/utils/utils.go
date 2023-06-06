@@ -16,12 +16,10 @@ package utils
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/clbanning/mxj"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 )
@@ -62,23 +60,4 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 	httpReq.Host = string(req.Header.Host())
 
 	return httpReq, nil
-}
-
-func MarshalStructToXML(data interface{}) ([]byte, error) {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-
-	mv, err := mxj.NewMapJson(jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	xmlData, err := mv.Xml()
-	if err != nil {
-		return nil, err
-	}
-
-	return xmlData, nil
 }
