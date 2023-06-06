@@ -46,6 +46,7 @@ func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.
 
 	app.Use(middlewares.VerifyV4Signature(adminUser, iam))
 	app.Use(logger.New())
+	app.Use(middlewares.VerifyMD5Body())
 	server.router.Init(app, be)
 	return server, nil
 }
