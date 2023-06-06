@@ -136,6 +136,7 @@ func runGateway(be backend.Backend) error {
 	app := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
+		BodyLimit:    5 * 1024 * 1024 * 1024,
 	})
 
 	var opts []s3api.Option

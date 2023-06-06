@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 //go:generate moq -out backend_moq_test.go . Backend
@@ -39,8 +40,8 @@ type Backend interface {
 	CreateMultipartUpload(*s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(*s3.AbortMultipartUploadInput) error
-	ListMultipartUploads(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error)
-	ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error)
+	ListMultipartUploads(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
+	ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error)
 	CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error)
 	PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (etag string, err error)
 
@@ -115,11 +116,11 @@ func (BackendUnsupported) CompleteMultipartUpload(bucket, object, uploadID strin
 func (BackendUnsupported) AbortMultipartUpload(input *s3.AbortMultipartUploadInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListMultipartUploads(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListMultipartUploads(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+	return s3response.ListMultipartUploadsResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
+	return s3response.ListPartsResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
