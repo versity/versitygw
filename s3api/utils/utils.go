@@ -17,6 +17,7 @@ package utils
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -60,6 +61,23 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 	httpReq.Host = string(req.Header.Host())
 
 	return httpReq, nil
+}
+
+func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
+	for key, val := range meta {
+		ctx.Set(fmt.Sprintf("X-Amz-Meta-%s", key), val)
+	}
+}
+
+type CustomHeader struct {
+	Key   string
+	Value string
+}
+
+func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
+	for _, header := range headers {
+		ctx.Set(header.Key, header.Value)
+	}
 }
 
 func includeHeader(hdr string) bool {
