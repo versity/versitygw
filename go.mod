@@ -5,7 +5,6 @@ go 1.20
 require (
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.33.1
-	github.com/clbanning/mxj v1.8.4
 	github.com/gofiber/fiber/v2 v2.46.0
 	github.com/google/uuid v1.3.0
 	github.com/pkg/xattr v0.4.9
