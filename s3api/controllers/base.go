@@ -344,7 +344,10 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		},
 	})
 
-	return ctx.SendStatus(http.StatusOK)
+	// https://github.com/gofiber/fiber/issues/2080
+	// ctx.SendStatus() sets incorrect content length on HEAD request
+	ctx.Status(http.StatusOK)
+	return nil
 }
 
 func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
