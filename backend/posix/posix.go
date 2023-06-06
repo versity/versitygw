@@ -853,7 +853,7 @@ func (p *Posix) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) err
 	return nil
 }
 
-func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -869,6 +869,11 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, startOffset, lengt
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	startOffset, length, err := parseRange(fi, acceptRange)
+	if err != nil {
+		return nil, err
 	}
 
 	if startOffset+length > fi.Size() {
@@ -1141,4 +1146,33 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
+}
+
+func parseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
+	if acceptRange == "" {
+		return 0, file.Size(), nil
+	}
+
+	bRangeSl := strings.Split(acceptRange, "=")
+
+	if len(bRangeSl) < 2 {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	bRange := strings.Split(bRangeSl[1], "-")
+	if len(bRange) < 2 {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	length, err := strconv.ParseInt(bRange[1], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	return int64(startOffset), int64(length), nil
 }

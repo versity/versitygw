@@ -46,7 +46,7 @@ type Backend interface {
 
 	PutObject(*s3.PutObjectInput) (string, error)
 	HeadObject(bucket, object string) (*s3.HeadObjectOutput, error)
-	GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error)
+	GetObject(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error)
 	GetObjectAcl(bucket, object string) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(bucket, object string, attributes []string) (*s3.GetObjectAttributesOutput, error)
 	CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error)
@@ -137,7 +137,7 @@ func (BackendUnsupported) DeleteObject(bucket, object string) error {
 func (BackendUnsupported) DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) GetObject(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (BackendUnsupported) GetObject(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) {

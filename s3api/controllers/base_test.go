@@ -137,7 +137,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		GetObjectAttributesFunc: func(bucket, object string, attributes []string) (*s3.GetObjectAttributesOutput, error) {
 			return &s3.GetObjectAttributesOutput{}, nil
 		},
-		GetObjectFunc: func(bucket, object, acceptRange string, startOffset, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
+		GetObjectFunc: func(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
 			return &s3.GetObjectOutput{Metadata: nil}, nil
 		},
 	}}
