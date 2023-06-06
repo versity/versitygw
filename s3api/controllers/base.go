@@ -325,7 +325,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
-	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err == nil {
+	if ctx.Request().URI().QueryArgs().Has("restore") {
+		xmlErr := xml.Unmarshal(ctx.Body(), &restoreRequest)
+		if xmlErr != nil {
+			return errors.New("wrong api call")
+		}
 		err := c.be.RestoreObject(bucket, key, &restoreRequest)
 		return Responce[any](ctx, nil, err)
 	}
