@@ -47,10 +47,7 @@ var _ Backend = &BackendMock{}
 //			GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
 //				panic("mock out the GetBucketAcl method")
 //			},
-//			GetIAMConfigFunc: func() ([]byte, error) {
-//				panic("mock out the GetIAMConfig method")
-//			},
-//			GetObjectFunc: func(bucket string, object string, acceptRange string, startOffset int64, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
+//			GetObjectFunc: func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
 //			},
 //			GetObjectAclFunc: func(bucket string, object string) (*s3.GetObjectAclOutput, error) {
@@ -153,11 +150,8 @@ type BackendMock struct {
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(bucket string) (*s3.GetBucketAclOutput, error)
 
-	// GetIAMConfigFunc mocks the GetIAMConfig method.
-	GetIAMConfigFunc func() ([]byte, error)
-
 	// GetObjectFunc mocks the GetObject method.
-	GetObjectFunc func(bucket string, object string, acceptRange string, startOffset int64, length int64, writer io.Writer) (*s3.GetObjectOutput, error)
+	GetObjectFunc func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error)
 
 	// GetObjectAclFunc mocks the GetObjectAcl method.
 	GetObjectAclFunc func(bucket string, object string) (*s3.GetObjectAclOutput, error)
@@ -298,9 +292,6 @@ type BackendMock struct {
 			// Bucket is the bucket argument value.
 			Bucket string
 		}
-		// GetIAMConfig holds details about calls to the GetIAMConfig method.
-		GetIAMConfig []struct {
-		}
 		// GetObject holds details about calls to the GetObject method.
 		GetObject []struct {
 			// Bucket is the bucket argument value.
@@ -309,10 +300,6 @@ type BackendMock struct {
 			Object string
 			// AcceptRange is the acceptRange argument value.
 			AcceptRange string
-			// StartOffset is the startOffset argument value.
-			StartOffset int64
-			// Length is the length argument value.
-			Length int64
 			// Writer is the writer argument value.
 			Writer io.Writer
 		}
@@ -490,7 +477,6 @@ type BackendMock struct {
 	lockDeleteObject            sync.RWMutex
 	lockDeleteObjects           sync.RWMutex
 	lockGetBucketAcl            sync.RWMutex
-	lockGetIAMConfig            sync.RWMutex
 	lockGetObject               sync.RWMutex
 	lockGetObjectAcl            sync.RWMutex
 	lockGetObjectAttributes     sync.RWMutex
@@ -856,35 +842,8 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 	return calls
 }
 
-// GetIAMConfig calls GetIAMConfigFunc.
-func (mock *BackendMock) GetIAMConfig() ([]byte, error) {
-	if mock.GetIAMConfigFunc == nil {
-		panic("BackendMock.GetIAMConfigFunc: method is nil but Backend.GetIAMConfig was just called")
-	}
-	callInfo := struct {
-	}{}
-	mock.lockGetIAMConfig.Lock()
-	mock.calls.GetIAMConfig = append(mock.calls.GetIAMConfig, callInfo)
-	mock.lockGetIAMConfig.Unlock()
-	return mock.GetIAMConfigFunc()
-}
-
-// GetIAMConfigCalls gets all the calls that were made to GetIAMConfig.
-// Check the length with:
-//
-//	len(mockedBackend.GetIAMConfigCalls())
-func (mock *BackendMock) GetIAMConfigCalls() []struct {
-} {
-	var calls []struct {
-	}
-	mock.lockGetIAMConfig.RLock()
-	calls = mock.calls.GetIAMConfig
-	mock.lockGetIAMConfig.RUnlock()
-	return calls
-}
-
 // GetObject calls GetObjectFunc.
-func (mock *BackendMock) GetObject(bucket string, object string, acceptRange string, startOffset int64, length int64, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (mock *BackendMock) GetObject(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
 	if mock.GetObjectFunc == nil {
 		panic("BackendMock.GetObjectFunc: method is nil but Backend.GetObject was just called")
 	}
@@ -892,21 +851,17 @@ func (mock *BackendMock) GetObject(bucket string, object string, acceptRange str
 		Bucket      string
 		Object      string
 		AcceptRange string
-		StartOffset int64
-		Length      int64
 		Writer      io.Writer
 	}{
 		Bucket:      bucket,
 		Object:      object,
 		AcceptRange: acceptRange,
-		StartOffset: startOffset,
-		Length:      length,
 		Writer:      writer,
 	}
 	mock.lockGetObject.Lock()
 	mock.calls.GetObject = append(mock.calls.GetObject, callInfo)
 	mock.lockGetObject.Unlock()
-	return mock.GetObjectFunc(bucket, object, acceptRange, startOffset, length, writer)
+	return mock.GetObjectFunc(bucket, object, acceptRange, writer)
 }
 
 // GetObjectCalls gets all the calls that were made to GetObject.
@@ -917,16 +872,12 @@ func (mock *BackendMock) GetObjectCalls() []struct {
 	Bucket      string
 	Object      string
 	AcceptRange string
-	StartOffset int64
-	Length      int64
 	Writer      io.Writer
 } {
 	var calls []struct {
 		Bucket      string
 		Object      string
 		AcceptRange string
-		StartOffset int64
-		Length      int64
 		Writer      io.Writer
 	}
 	mock.lockGetObject.RLock()

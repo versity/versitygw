@@ -46,7 +46,7 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
-	bucket, key, keyEnd, uploadId, maxPartsStr, partNumberMarkerStr := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("max-parts"), ctx.Query("part-number-marker")
+	bucket, key, keyEnd, uploadId, maxPartsStr, partNumberMarkerStr, acceptRange := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("max-parts"), ctx.Query("part-number-marker"), ctx.Get("Range")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
@@ -76,29 +76,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return Responce(ctx, res, err)
 	}
 
-	acceptRange := ctx.Get("Range")
-
-	bRangeSl := strings.Split(acceptRange, "=")
-	if len(bRangeSl) < 2 {
-		return errors.New("wrong api call")
-	}
-
-	bRange := strings.Split(bRangeSl[1], "-")
-	if len(bRange) < 2 {
-		return errors.New("wrong api call")
-	}
-
-	startOffset, err := strconv.Atoi(bRange[0])
-	if err != nil {
-		return errors.New("wrong api call")
-	}
-
-	length, err := strconv.Atoi(bRange[1])
-	if err != nil {
-		return errors.New("wrong api call")
-	}
-
-	res, err := c.be.GetObject(bucket, key, acceptRange, int64(startOffset), int64(length), ctx.Response().BodyWriter())
+	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
 	return Responce(ctx, res, err)
 }
 
