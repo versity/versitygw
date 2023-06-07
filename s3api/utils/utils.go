@@ -54,6 +54,12 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Reques
 		}
 	})
 
+	// Check if Content-Length in signed headers
+	// If content length is non 0, then the header will be included
+	if !includeHeader("Content-Length", signedHdrs) {
+		httpReq.ContentLength = 0
+	}
+
 	// Set the Host header
 	httpReq.Host = string(req.Header.Host())
 

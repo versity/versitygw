@@ -17,11 +17,13 @@ package middlewares
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api/controllers"
@@ -39,7 +41,7 @@ type AdminConfig struct {
 	Region      string
 }
 
-func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
+func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fiber.Handler {
 	acct := accounts{
 		admin: config,
 		iam:   iam,
@@ -115,8 +117,10 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
 			AccessKeyID:     creds[0],
 			SecretAccessKey: secret,
 		}, req, hexPayload, creds[3], config.Region, tdate, func(options *v4.SignerOptions) {
-			//options.LogSigning = true
-			//options.Logger = logging.NewStandardLogger(os.Stdout)
+			if debug {
+				options.LogSigning = true
+				options.Logger = logging.NewStandardLogger(os.Stderr)
+			}
 		})
 		if signErr != nil {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInternalError))
