@@ -34,6 +34,7 @@ var (
 	adminSecret       string
 	region            string
 	certFile, keyFile string
+	debug             bool
 )
 
 var (
@@ -119,6 +120,11 @@ func initFlags() []cli.Flag {
 			Usage:       "TLS key file",
 			Destination: &keyFile,
 		},
+		&cli.BoolFlag{
+			Name:        "debug",
+			Usage:       "enable debug output",
+			Destination: &debug,
+		},
 	}
 }
 
@@ -143,6 +149,10 @@ func runGateway(be backend.Backend) error {
 			return fmt.Errorf("tls: load certs: %v", err)
 		}
 		opts = append(opts, s3api.WithTLS(cert))
+	}
+
+	if debug {
+		opts = append(opts, s3api.WithDebug())
 	}
 
 	srv, err := s3api.New(app, be, port,

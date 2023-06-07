@@ -30,6 +30,7 @@ type S3ApiServer struct {
 	router  *S3ApiRouter
 	port    string
 	cert    *tls.Certificate
+	debug   bool
 }
 
 func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.AdminConfig, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
@@ -44,7 +45,7 @@ func New(app *fiber.App, be backend.Backend, port string, adminUser middlewares.
 		opt(server)
 	}
 
-	app.Use(middlewares.VerifyV4Signature(adminUser, iam))
+	app.Use(middlewares.VerifyV4Signature(adminUser, iam, server.debug))
 	app.Use(logger.New())
 	app.Use(middlewares.VerifyMD5Body())
 	server.router.Init(app, be)
@@ -57,6 +58,11 @@ type Option func(*S3ApiServer)
 // WithTLS sets TLS Credentials
 func WithTLS(cert tls.Certificate) Option {
 	return func(s *S3ApiServer) { s.cert = &cert }
+}
+
+// WithDebug sets debug output
+func WithDebug() Option {
+	return func(s *S3ApiServer) { s.debug = true }
 }
 
 func (sa *S3ApiServer) Serve() (err error) {
