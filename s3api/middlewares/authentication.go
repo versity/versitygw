@@ -60,10 +60,20 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported))
 		}
 
-		creds := strings.Split(strings.Split(authParts[1], "=")[1], "/")
+		credKv := strings.Split(authParts[1], "=")
+		if len(credKv) != 2 {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrCredMalformed))
+		}
+		creds := strings.Split(credKv[1], "/")
 		if len(creds) < 4 {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
+
+		signHdrKv := strings.Split(authParts[2], "=")
+		if len(signHdrKv) != 2 {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrCredMalformed))
+		}
+		signedHdrs := strings.Split(signHdrKv[1], ";")
 
 		secret, ok := acct.getAcctSecret(creds[0])
 		if !ok {
@@ -94,7 +104,7 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
 		}
 
 		// Create a new http request instance from fasthttp request
-		req, err := utils.CreateHttpRequestFromCtx(ctx)
+		req, err := utils.CreateHttpRequestFromCtx(ctx, signedHdrs)
 		if err != nil {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInternalError))
 		}
@@ -104,7 +114,10 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService) fiber.Handler {
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
 			AccessKeyID:     creds[0],
 			SecretAccessKey: secret,
-		}, req, hexPayload, creds[3], config.Region, tdate)
+		}, req, hexPayload, creds[3], config.Region, tdate, func(options *v4.SignerOptions) {
+			//options.LogSigning = true
+			//options.Logger = logging.NewStandardLogger(os.Stdout)
+		})
 		if signErr != nil {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInternalError))
 		}

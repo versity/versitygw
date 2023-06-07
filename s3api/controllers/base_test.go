@@ -199,22 +199,13 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			statusCode: 200,
 		},
 		{
-			name: "Get-actions-invalid-range-header",
-			app:  app,
-			args: args{
-				req: getObjectReq,
-			},
-			wantErr:    false,
-			statusCode: 500,
-		},
-		{
-			name: "Get-actions-get-object-error",
+			name: "Get-actions-get-object-success",
 			app:  app,
 			args: args{
 				req: getObjectSuccessReq,
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 200,
 		},
 	}
 	for _, tt := range tests {

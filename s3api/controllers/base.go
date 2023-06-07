@@ -79,7 +79,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
-	return Responce(ctx, res, err)
+	if err != nil {
+		return Responce(ctx, res, err)
+	}
+	return nil
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
