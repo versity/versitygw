@@ -15,6 +15,10 @@
 package backend
 
 import (
+	"errors"
+	"io/fs"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -40,4 +44,37 @@ func GetStringPtr(s string) *string {
 
 func GetTimePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func ParseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
+	if acceptRange == "" {
+		return 0, file.Size(), nil
+	}
+
+	rangeKv := strings.Split(acceptRange, "=")
+
+	if len(rangeKv) < 2 {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	bRange := strings.Split(rangeKv[1], "-")
+	if len(bRange) < 2 {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	endOffset, err := strconv.ParseInt(bRange[1], 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	if endOffset < startOffset {
+		return 0, 0, errors.New("invalid range parameter")
+	}
+
+	return int64(startOffset), int64(endOffset - startOffset + 1), nil
 }
