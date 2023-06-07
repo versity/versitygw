@@ -1,4 +1,4 @@
-# Versity S3 Gateway
+# The Versity Gateway: A High-Performance Open Source S3 to File Translation Tool
 
 [![Versity Logo](https://www.versity.com/wp-content/themes/versity-theme/assets/img/svg/logo.svg)](https://www.versity.com)
 
