@@ -65,9 +65,14 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
-			// match this prefix.  Make sure to append the / at the end of
+			// match this prefix. Make sure to append the / at the end of
 			// directories since this is implied as a directory path name.
-			if prefix != "" && !strings.HasPrefix(path+string(os.PathSeparator), prefix) {
+			// If path is a prefix of prefix, then path could still be
+			// building to match. So only skip if path isnt a prefix of prefix
+			// and prefix isnt a prefix of path.
+			if prefix != "" &&
+				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
+				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
 				return fs.SkipDir
 			}
 
@@ -102,7 +107,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 				LastModified: GetTimePtr(fi.ModTime()),
 				Size:         fi.Size(),
 			})
-			if (len(objects) + len(cpmap)) == max {
+			if max > 0 && (len(objects)+len(cpmap)) == max {
 				pastMax = true
 			}
 			return nil
@@ -162,15 +167,16 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 		return WalkResults{}, err
 	}
 
-	commonPrefixStrings := make([]string, 0, len(cpmap))
+	var commonPrefixStrings []string
 	for k := range cpmap {
 		commonPrefixStrings = append(commonPrefixStrings, k)
 	}
 	sort.Strings(commonPrefixStrings)
 	commonPrefixes := make([]types.CommonPrefix, 0, len(commonPrefixStrings))
 	for _, cp := range commonPrefixStrings {
+		pfx := cp
 		commonPrefixes = append(commonPrefixes, types.CommonPrefix{
-			Prefix: &cp,
+			Prefix: &pfx,
 		})
 	}
 
