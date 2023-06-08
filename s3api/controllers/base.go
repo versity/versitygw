@@ -48,7 +48,13 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
-	bucket, key, keyEnd, uploadId, maxPartsStr, partNumberMarkerStr, acceptRange := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("max-parts"), ctx.Query("part-number-marker"), ctx.Get("Range")
+	bucket := ctx.Params("bucket")
+	key := ctx.Params("key")
+	keyEnd := ctx.Params("*1")
+	uploadId := ctx.Query("uploadId")
+	maxPartsStr := ctx.Query("max-parts")
+	partNumberMarkerStr := ctx.Query("part-number-marker")
+	acceptRange := ctx.Get("Range")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
@@ -86,6 +92,12 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
+	bucket := ctx.Params("bucket")
+	prefix := ctx.Query("prefix")
+	marker := ctx.Query("continuation-token")
+	delimiter := ctx.Query("delimiter")
+	maxkeys := ctx.QueryInt("max-keys")
+
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		res, err := c.be.GetBucketAcl(ctx.Params("bucket"))
 		return Responce(ctx, res, err)
@@ -97,11 +109,11 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.QueryInt("list-type") == 2 {
-		res, err := c.be.ListObjectsV2(ctx.Params("bucket"), "", "", "", 1)
+		res, err := c.be.ListObjectsV2(bucket, prefix, marker, delimiter, maxkeys)
 		return Responce(ctx, res, err)
 	}
 
-	res, err := c.be.ListObjects(ctx.Params("bucket"), "", "", "", 1)
+	res, err := c.be.ListObjects(bucket, prefix, marker, delimiter, maxkeys)
 	return Responce(ctx, res, err)
 }
 
@@ -139,26 +151,29 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
-	dstBucket, dstKeyStart, dstKeyEnd, uploadId, partNumberStr := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId"), ctx.Query("partNumber")
-	copySource, copySrcIfMatch, copySrcIfNoneMatch,
-		copySrcModifSince, copySrcUnmodifSince, acl,
-		grantFullControl, grantRead, grantReadACP,
-		granWrite, grantWriteACP, contentLengthStr :=
-		// Copy source headers
-		ctx.Get("X-Amz-Copy-Source"),
-		ctx.Get("X-Amz-Copy-Source-If-Match"),
-		ctx.Get("X-Amz-Copy-Source-If-None-Match"),
-		ctx.Get("X-Amz-Copy-Source-If-Modified-Since"),
-		ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since"),
-		// Permission headers
-		ctx.Get("X-Amz-Acl"),
-		ctx.Get("X-Amz-Grant-Full-Control"),
-		ctx.Get("X-Amz-Grant-Read"),
-		ctx.Get("X-Amz-Grant-Read-Acp"),
-		ctx.Get("X-Amz-Grant-Write"),
-		ctx.Get("X-Amz-Grant-Write-Acp"),
-		// Other headers
-		ctx.Get("Content-Length")
+	dstBucket := ctx.Params("bucket")
+	dstKeyStart := ctx.Params("key")
+	dstKeyEnd := ctx.Params("*1")
+	uploadId := ctx.Query("uploadId")
+	partNumberStr := ctx.Query("partNumber")
+
+	// Copy source headers
+	copySource := ctx.Get("X-Amz-Copy-Source")
+	copySrcIfMatch := ctx.Get("X-Amz-Copy-Source-If-Match")
+	copySrcIfNoneMatch := ctx.Get("X-Amz-Copy-Source-If-None-Match")
+	copySrcModifSince := ctx.Get("X-Amz-Copy-Source-If-Modified-Since")
+	copySrcUnmodifSince := ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since")
+
+	// Permission headers
+	acl := ctx.Get("X-Amz-Acl")
+	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
+	grantRead := ctx.Get("X-Amz-Grant-Read")
+	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
+	granWrite := ctx.Get("X-Amz-Grant-Write")
+	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
+
+	// Other headers
+	contentLengthStr := ctx.Get("Content-Length")
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -262,7 +277,10 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
-	bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
+	bucket := ctx.Params("bucket")
+	key := ctx.Params("key")
+	keyEnd := ctx.Params("*1")
+	uploadId := ctx.Query("uploadId")
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
@@ -291,7 +309,9 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
-	bucket, key, keyEnd := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1")
+	bucket := ctx.Params("bucket")
+	key := ctx.Params("key")
+	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
@@ -332,13 +352,16 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
-	bucket, key, keyEnd, uploadId := ctx.Params("bucket"), ctx.Params("key"), ctx.Params("*1"), ctx.Query("uploadId")
-	var restoreRequest s3.RestoreObjectInput
+	bucket := ctx.Params("bucket")
+	key := ctx.Params("key")
+	keyEnd := ctx.Params("*1")
+	uploadId := ctx.Query("uploadId")
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
+	var restoreRequest s3.RestoreObjectInput
 	if ctx.Request().URI().QueryArgs().Has("restore") {
 		xmlErr := xml.Unmarshal(ctx.Body(), &restoreRequest)
 		if xmlErr != nil {
