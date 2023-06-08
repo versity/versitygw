@@ -25,14 +25,10 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api"
-	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 var (
 	port              string
-	adminAccess       string
-	adminSecret       string
-	region            string
 	certFile, keyFile string
 	debug             bool
 )
@@ -51,6 +47,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		posixCommand(),
+		adminCommand(),
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -91,24 +88,6 @@ func initFlags() []cli.Flag {
 			Value:       ":7070",
 			Destination: &port,
 			Aliases:     []string{"p"},
-		},
-		&cli.StringFlag{
-			Name:        "access",
-			Usage:       "admin access account",
-			Destination: &adminAccess,
-			EnvVars:     []string{"ADMIN_ACCESS_KEY_ID", "ADMIN_ACCESS_KEY"},
-		},
-		&cli.StringFlag{
-			Name:        "secret",
-			Usage:       "admin secret access key",
-			Destination: &adminSecret,
-			EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
-		},
-		&cli.StringFlag{
-			Name:        "region",
-			Usage:       "s3 region string",
-			Value:       "us-east-1",
-			Destination: &region,
 		},
 		&cli.StringFlag{
 			Name:        "cert",
@@ -155,12 +134,7 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithDebug())
 	}
 
-	srv, err := s3api.New(app, be, port,
-		middlewares.AdminConfig{
-			AdminAccess: adminAccess,
-			AdminSecret: adminSecret,
-			Region:      region,
-		}, auth.IAMServiceUnsupported{}, opts...)
+	srv, err := s3api.New(app, be, port, auth.IAMServiceUnsupported{}, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

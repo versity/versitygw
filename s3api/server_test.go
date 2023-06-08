@@ -21,15 +21,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/auth"
-	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 func TestNew(t *testing.T) {
 	type args struct {
-		app       *fiber.App
-		be        backend.Backend
-		port      string
-		adminUser middlewares.AdminConfig
+		app  *fiber.App
+		be   backend.Backend
+		port string
 	}
 
 	app := fiber.New()
@@ -46,10 +44,9 @@ func TestNew(t *testing.T) {
 		{
 			name: "Create S3 api server",
 			args: args{
-				app:       app,
-				be:        be,
-				port:      port,
-				adminUser: middlewares.AdminConfig{},
+				app:  app,
+				be:   be,
+				port: port,
 			},
 			wantS3ApiServer: &S3ApiServer{
 				app:     app,
@@ -63,7 +60,7 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotS3ApiServer, err := New(tt.args.app, tt.args.be,
-				tt.args.port, tt.args.adminUser, auth.IAMServiceUnsupported{})
+				tt.args.port, auth.IAMServiceUnsupported{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return

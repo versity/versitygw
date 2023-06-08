@@ -17,13 +17,18 @@ package s3api
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api/controllers"
 )
 
 type S3ApiRouter struct{}
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend) {
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService) {
 	s3ApiController := controllers.New(be)
+	adminController := controllers.AdminController{IAMService: iam}
+
+	// TODO: think of better routing system
+	app.Post("/create-user", adminController.CreateUser)
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)
 

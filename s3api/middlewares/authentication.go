@@ -41,12 +41,7 @@ type AdminConfig struct {
 	Region      string
 }
 
-func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fiber.Handler {
-	acct := accounts{
-		admin: config,
-		iam:   iam,
-	}
-
+func VerifyV4Signature(iam auth.IAMService, debug bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
@@ -77,9 +72,9 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
-		secret, ok := acct.getAcctSecret(creds[0])
-		if !ok {
-			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+		userAccount := iam.GetUserAccount(creds[0])
+		if userAccount == nil {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied))
 		}
 
 		// Check X-Amz-Date header
@@ -114,9 +109,9 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 		signer := v4.NewSigner()
 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
-			AccessKeyID:     creds[0],
-			SecretAccessKey: secret,
-		}, req, hexPayload, creds[3], config.Region, tdate, func(options *v4.SignerOptions) {
+			AccessKeyID:     userAccount.Access,
+			SecretAccessKey: userAccount.Secret,
+		}, req, hexPayload, creds[3], userAccount.Region, tdate, func(options *v4.SignerOptions) {
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
@@ -137,25 +132,8 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 		}
 
+		ctx.Locals("role", userAccount.Role)
+
 		return ctx.Next()
 	}
-}
-
-type accounts struct {
-	admin AdminConfig
-	iam   auth.IAMService
-}
-
-func (a accounts) getAcctSecret(access string) (string, bool) {
-	if a.admin.AdminAccess == access {
-		return a.admin.AdminSecret, true
-	}
-
-	conf, err := a.iam.GetIAMConfig()
-	if err != nil {
-		return "", false
-	}
-
-	secret, ok := conf.AccessAccounts[access]
-	return secret, ok
 }
