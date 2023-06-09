@@ -26,31 +26,50 @@ import (
 type walkTest struct {
 	fsys     fs.FS
 	expected backend.WalkResults
+	dc       backend.DirObjCheck
 }
 
+func gettag(string) (string, error) { return "myetag", nil }
+
 func TestWalk(t *testing.T) {
-	tests := []walkTest{{
-		// test case from
-		// https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-prefixes.html
-		fsys: fstest.MapFS{
-			"sample.jpg":                       {},
-			"photos/2006/January/sample.jpg":   {},
-			"photos/2006/February/sample2.jpg": {},
-			"photos/2006/February/sample3.jpg": {},
-			"photos/2006/February/sample4.jpg": {},
+	tests := []walkTest{
+		{
+			// test case from
+			// https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-prefixes.html
+			fsys: fstest.MapFS{
+				"sample.jpg":                       {},
+				"photos/2006/January/sample.jpg":   {},
+				"photos/2006/February/sample2.jpg": {},
+				"photos/2006/February/sample3.jpg": {},
+				"photos/2006/February/sample4.jpg": {},
+			},
+			expected: backend.WalkResults{
+				CommonPrefixes: []types.CommonPrefix{{
+					Prefix: backend.GetStringPtr("photos/"),
+				}},
+				Objects: []types.Object{{
+					Key: backend.GetStringPtr("sample.jpg"),
+				}},
+			},
+			dc: func(string) (bool, error) { return false, nil },
 		},
-		expected: backend.WalkResults{
-			CommonPrefixes: []types.CommonPrefix{{
-				Prefix: backend.GetStringPtr("photos/"),
-			}},
-			Objects: []types.Object{{
-				Key: backend.GetStringPtr("sample.jpg"),
-			}},
+		{
+			// test case single dir/single file
+			fsys: fstest.MapFS{
+				"test/file": {},
+			},
+			expected: backend.WalkResults{
+				CommonPrefixes: []types.CommonPrefix{{
+					Prefix: backend.GetStringPtr("test/"),
+				}},
+				Objects: []types.Object{},
+			},
+			dc: func(string) (bool, error) { return true, nil },
 		},
-	}}
+	}
 
 	for _, tt := range tests {
-		res, err := backend.Walk(tt.fsys, "", "/", "", 1000)
+		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.dc, gettag, []string{})
 		if err != nil {
 			t.Fatalf("walk: %v", err)
 		}
@@ -67,13 +86,16 @@ func compareResults(got, wanted backend.WalkResults, t *testing.T) {
 	}
 
 	if !compareObjects(got.Objects, wanted.Objects) {
-		t.Errorf("unexpected common prefix, got %v wanted %v",
+		t.Errorf("unexpected object, got %v wanted %v",
 			printObjects(got.Objects),
 			printObjects(wanted.Objects))
 	}
 }
 
 func compareCommonPrefix(a, b []types.CommonPrefix) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
 	if len(a) != len(b) {
 		return false
 	}
@@ -108,6 +130,9 @@ func printCommonPrefixes(list []types.CommonPrefix) string {
 }
 
 func compareObjects(a, b []types.Object) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
 	if len(a) != len(b) {
 		return false
 	}
