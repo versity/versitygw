@@ -2,7 +2,6 @@ package utils
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -61,8 +60,6 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 				t.Errorf("CreateHttpRequestFromCtx() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-
-			fmt.Println(got.Header, tt.want.Header)
 
 			if !reflect.DeepEqual(got.Header, tt.want.Header) {
 				t.Errorf("CreateHttpRequestFromCtx() got = %v, want %v", got, tt.want)

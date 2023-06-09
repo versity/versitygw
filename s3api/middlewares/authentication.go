@@ -35,17 +35,14 @@ const (
 	iso8601Format = "20060102T150405Z"
 )
 
-type AdminConfig struct {
-	AdminAccess string
-	AdminSecret string
-	Region      string
+type RootUserConfig struct {
+	Access string
+	Secret string
+	Region string
 }
 
-func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fiber.Handler {
-	acct := accounts{
-		admin: config,
-		iam:   iam,
-	}
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fiber.Handler {
+	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
@@ -77,8 +74,8 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
-		secret, ok := acct.getAcctSecret(creds[0])
-		if !ok {
+		account := acct.getAccount(creds[0])
+		if account == nil {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
 		}
 
@@ -115,8 +112,8 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
 			AccessKeyID:     creds[0],
-			SecretAccessKey: secret,
-		}, req, hexPayload, creds[3], config.Region, tdate, func(options *v4.SignerOptions) {
+			SecretAccessKey: account.Secret,
+		}, req, hexPayload, creds[3], account.Region, tdate, func(options *v4.SignerOptions) {
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
@@ -137,25 +134,27 @@ func VerifyV4Signature(config AdminConfig, iam auth.IAMService, debug bool) fibe
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 		}
 
+		ctx.Locals("role", account.Role)
+
 		return ctx.Next()
 	}
 }
 
 type accounts struct {
-	admin AdminConfig
-	iam   auth.IAMService
+	root RootUserConfig
+	iam  auth.IAMService
 }
 
-func (a accounts) getAcctSecret(access string) (string, bool) {
-	if a.admin.AdminAccess == access {
-		return a.admin.AdminSecret, true
+func (a accounts) getAccount(access string) *auth.Account {
+	var account *auth.Account
+	if access == a.root.Access {
+		account = &auth.Account{
+			Secret: a.root.Secret,
+			Role:   "admin",
+			Region: a.root.Region,
+		}
+	} else {
+		account = a.iam.GetUserAccount(access)
 	}
-
-	conf, err := a.iam.GetIAMConfig()
-	if err != nil {
-		return "", false
-	}
-
-	secret, ok := conf.AccessAccounts[access]
-	return secret, ok
+	return account
 }

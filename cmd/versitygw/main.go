@@ -30,8 +30,8 @@ import (
 
 var (
 	port              string
-	adminAccess       string
-	adminSecret       string
+	rootUserAccess    string
+	rootUserSecret    string
 	region            string
 	certFile, keyFile string
 	debug             bool
@@ -51,6 +51,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		posixCommand(),
+		adminCommand(),
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -94,21 +95,24 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "access",
-			Usage:       "admin access account",
-			Destination: &adminAccess,
-			EnvVars:     []string{"ADMIN_ACCESS_KEY_ID", "ADMIN_ACCESS_KEY"},
+			Usage:       "root user access key",
+			EnvVars:     []string{"ROOT_ACCESS_KEY_ID", "ROOT_ACCESS_KEY"},
+			Aliases:     []string{"a"},
+			Destination: &rootUserAccess,
 		},
 		&cli.StringFlag{
 			Name:        "secret",
-			Usage:       "admin secret access key",
-			Destination: &adminSecret,
-			EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
+			Usage:       "root user secret access key",
+			EnvVars:     []string{"ROOT_SECRET_ACCESS_KEY", "ROOT_SECRET_KEY"},
+			Aliases:     []string{"s"},
+			Destination: &rootUserSecret,
 		},
 		&cli.StringFlag{
 			Name:        "region",
 			Usage:       "s3 region string",
 			Value:       "us-east-1",
 			Destination: &region,
+			Aliases:     []string{"r"},
 		},
 		&cli.StringFlag{
 			Name:        "cert",
@@ -155,12 +159,11 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithDebug())
 	}
 
-	srv, err := s3api.New(app, be, port,
-		middlewares.AdminConfig{
-			AdminAccess: adminAccess,
-			AdminSecret: adminSecret,
-			Region:      region,
-		}, auth.IAMServiceUnsupported{}, opts...)
+	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
+		Access: rootUserAccess,
+		Secret: rootUserSecret,
+		Region: region,
+	}, port, auth.New(), opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}
