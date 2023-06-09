@@ -31,9 +31,12 @@ type WalkResults struct {
 	NextMarker     string
 }
 
+type DirObjCheck func(path string) (bool, error)
+type GetETag func(path string) (string, error)
+
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResults, error) {
+func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk DirObjCheck, getetag GetETag, skipdirs []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
 	var objects []types.Object
 
@@ -63,6 +66,10 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 				return nil
 			}
 
+			if contains(d.Name(), skipdirs) {
+				return fs.SkipDir
+			}
+
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
 			// match this prefix. Make sure to append the / at the end of
@@ -76,8 +83,35 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 				return fs.SkipDir
 			}
 
-			// TODO: special case handling if directory is empty
-			// and was "PUT" explicitly
+			// TODO: can we do better here rather than a second readdir
+			// per directory?
+			ents, err := fs.ReadDir(fileSystem, path)
+			if err != nil {
+				return fmt.Errorf("readdir %q: %w", path, err)
+			}
+			if len(ents) == 0 {
+				dirobj, err := dirchk(path)
+				if err != nil {
+					return fmt.Errorf("directory object check %q: %w", path, err)
+				}
+				if dirobj {
+					fi, err := d.Info()
+					if err != nil {
+						return fmt.Errorf("dir info %q: %w", path, err)
+					}
+					etag, err := getetag(path)
+					if err != nil {
+						return fmt.Errorf("get etag %q: %w", path, err)
+					}
+					path := path + "/"
+					objects = append(objects, types.Object{
+						ETag:         &etag,
+						Key:          &path,
+						LastModified: GetTimePtr(fi.ModTime()),
+					})
+				}
+			}
+
 			return nil
 		}
 
@@ -100,16 +134,22 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 			if err != nil {
 				return fmt.Errorf("get info for %v: %w", path, err)
 			}
+			etag, err := getetag(path)
+			if err != nil {
+				return fmt.Errorf("get etag %q: %w", path, err)
+			}
 
 			objects = append(objects, types.Object{
-				ETag:         new(string),
+				ETag:         &etag,
 				Key:          &path,
 				LastModified: GetTimePtr(fi.ModTime()),
 				Size:         fi.Size(),
 			})
+
 			if max > 0 && (len(objects)+len(cpmap)) == max {
 				pastMax = true
 			}
+
 			return nil
 		}
 
@@ -133,7 +173,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 		// these are all rolled up into the common prefix.
 		// Note: The delimeter can be anything, so we have to operate on
 		// the full path without any assumptions on posix directory heirarchy
-		// here.  Usually the delimeter with be "/", but thats not required.
+		// here.  Usually the delimeter will be "/", but thats not required.
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
@@ -141,8 +181,12 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 			if err != nil {
 				return fmt.Errorf("get info for %v: %w", path, err)
 			}
+			etag, err := getetag(path)
+			if err != nil {
+				return fmt.Errorf("get etag %q: %w", path, err)
+			}
 			objects = append(objects, types.Object{
-				ETag:         new(string),
+				ETag:         &etag,
 				Key:          &path,
 				LastModified: GetTimePtr(fi.ModTime()),
 				Size:         fi.Size(),
@@ -186,4 +230,13 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int) (WalkResu
 		Truncated:      truncated,
 		NextMarker:     newMarker,
 	}, nil
+}
+
+func contains(a string, strs []string) bool {
+	for _, s := range strs {
+		if s == a {
+			return true
+		}
+	}
+	return false
 }

@@ -51,12 +51,7 @@ const (
 	metaTmpMultipartDir = metaTmpDir + "/multipart"
 	onameAttr           = "user.objname"
 	tagHdr              = "X-Amz-Tagging"
-	dirObjKey           = "user.dirisobject"
-)
-
-var (
-	newObjUID = 0
-	newObjGID = 0
+	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 )
 
 func New(rootdir string) (*Posix, error) {
@@ -309,15 +304,6 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 		return nil, fmt.Errorf("set etag attr: %w", err)
 	}
 
-	if newObjUID != 0 || newObjGID != 0 {
-		err = os.Chown(objname, newObjUID, newObjGID)
-		if err != nil {
-			// cleanup object if returning error
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object uid/gid: %w", err)
-		}
-	}
-
 	// cleanup tmp dirs
 	os.RemoveAll(upiddir)
 	// use Remove for objdir in case there are still other uploads
@@ -437,12 +423,6 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 			return nil
 		}
 		return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-	}
-	if newObjUID != 0 || newObjGID != 0 {
-		err = os.Chown(path, newObjUID, newObjGID)
-		if err != nil {
-			return fmt.Errorf("set parent ownership: %w", err)
-		}
 	}
 	return nil
 }
@@ -737,13 +717,10 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 			xattr.Set(name, "user."+k, []byte(v))
 		}
 
-		// set our attribute that this dir was specifically put
-		xattr.Set(name, dirObjKey, nil)
+		// set etag attribute to signify this dir was specifically put
+		xattr.Set(name, "user.etag", []byte(emptyMD5))
 
-		// TODO: what etag should be returned here
-		// and we should set etag xattr to identify dir was
-		// specifically uploaded
-		return "", nil
+		return emptyMD5, nil
 	}
 
 	// object is file
@@ -780,13 +757,6 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum[:])
 	xattr.Set(name, "user.etag", []byte(etag))
-
-	if newObjUID != 0 || newObjGID != 0 {
-		err = os.Chown(name, newObjUID, newObjGID)
-		if err != nil {
-			return "", fmt.Errorf("set object uid/gid: %v", err)
-		}
-	}
 
 	return etag, nil
 }
@@ -826,7 +796,7 @@ func (p *Posix) removeParents(bucket, object string) error {
 			break
 		}
 
-		_, err := xattr.Get(parent, dirObjKey)
+		_, err := xattr.Get(parent, "user.etag")
 		if err == nil {
 			break
 		}
@@ -1015,7 +985,20 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 	}
 
 	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys)
+	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
+		func(path string) (bool, error) {
+			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			if isNoAttr(err) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		}, func(path string) (string, error) {
+			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			return string(etag), err
+		}, []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -1043,7 +1026,20 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	}
 
 	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys)
+	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
+		func(path string) (bool, error) {
+			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			if isNoAttr(err) {
+				return false, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		}, func(path string) (string, error) {
+			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			return string(etag), err
+		}, []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
