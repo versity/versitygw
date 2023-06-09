@@ -25,10 +25,14 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api"
+	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 var (
 	port              string
+	rootUserAccess    string
+	rootUserSecret    string
+	region            string
 	certFile, keyFile string
 	debug             bool
 )
@@ -90,6 +94,27 @@ func initFlags() []cli.Flag {
 			Aliases:     []string{"p"},
 		},
 		&cli.StringFlag{
+			Name:        "access",
+			Usage:       "root user access key",
+			EnvVars:     []string{"ROOT_ACCESS_KEY_ID", "ROOT_ACCESS_KEY"},
+			Aliases:     []string{"a"},
+			Destination: &rootUserAccess,
+		},
+		&cli.StringFlag{
+			Name:        "secret",
+			Usage:       "root user secret access key",
+			EnvVars:     []string{"ROOT_SECRET_ACCESS_KEY", "ROOT_SECRET_KEY"},
+			Aliases:     []string{"s"},
+			Destination: &rootUserSecret,
+		},
+		&cli.StringFlag{
+			Name:        "region",
+			Usage:       "s3 region string",
+			Value:       "us-east-1",
+			Destination: &region,
+			Aliases:     []string{"r"},
+		},
+		&cli.StringFlag{
 			Name:        "cert",
 			Usage:       "TLS cert file",
 			Destination: &certFile,
@@ -134,7 +159,11 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithDebug())
 	}
 
-	srv, err := s3api.New(app, be, port, auth.IAMServiceUnsupported{}, opts...)
+	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
+		Access: rootUserAccess,
+		Secret: rootUserSecret,
+		Region: region,
+	}, port, auth.New(), opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

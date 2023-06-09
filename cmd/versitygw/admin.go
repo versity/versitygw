@@ -115,8 +115,6 @@ func createUser(ctx *cli.Context) error {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
 
-	fmt.Printf("%v\n", req)
-
 	signer := v4.NewSigner()
 
 	hashedPayload := sha256.Sum256([]byte{})
