@@ -151,9 +151,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
-	dstBucket := ctx.Params("bucket")
-	dstKeyStart := ctx.Params("key")
-	dstKeyEnd := ctx.Params("*1")
+	bucket := ctx.Params("bucket")
+	keyStart := ctx.Params("key")
+	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
 	partNumberStr := ctx.Query("partNumber")
 
@@ -177,8 +177,12 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
-	if dstKeyEnd != "" {
-		dstKeyStart = strings.Join([]string{dstKeyStart, dstKeyEnd}, "/")
+	if keyEnd != "" {
+		keyStart = strings.Join([]string{keyStart, keyEnd}, "/")
+	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && keyStart[len(keyStart)-1:] != "/" {
+		keyStart = keyStart + "/"
 	}
 
 	if partNumberStr != "" {
@@ -198,8 +202,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		res, err := c.be.UploadPartCopy(&s3.UploadPartCopyInput{
-			Bucket:                      &dstBucket,
-			Key:                         &dstKeyStart,
+			Bucket:                      &bucket,
+			Key:                         &keyStart,
 			PartNumber:                  int32(partNumber),
 			UploadId:                    &uploadId,
 			CopySource:                  &copySource,
@@ -214,7 +218,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	if uploadId != "" {
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
-		res, err := c.be.UploadPart(dstBucket, dstKeyStart, uploadId, body)
+		res, err := c.be.UploadPart(bucket, keyStart, uploadId, body)
 		return Responce(ctx, res, err)
 	}
 
@@ -224,8 +228,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		err := c.be.PutObjectAcl(&s3.PutObjectAclInput{
-			Bucket:           &dstBucket,
-			Key:              &dstKeyStart,
+			Bucket:           &bucket,
+			Key:              &keyStart,
 			ACL:              types.ObjectCannedACL(acl),
 			GrantFullControl: &grantFullControl,
 			GrantRead:        &grantRead,
@@ -240,7 +244,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		copySourceSplit := strings.Split(copySource, "/")
 		srcBucket, srcObject := copySourceSplit[0], copySourceSplit[1:]
 
-		res, err := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), dstBucket, dstKeyStart)
+		res, err := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), bucket, keyStart)
 		return Responce(ctx, res, err)
 	}
 
@@ -252,8 +256,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
 	res, err := c.be.PutObject(&s3.PutObjectInput{
-		Bucket:        &dstBucket,
-		Key:           &dstKeyStart,
+		Bucket:        &bucket,
+		Key:           &keyStart,
 		ContentLength: contentLength,
 		Metadata:      metadata,
 		Body:          bytes.NewReader(ctx.Request().Body()),
