@@ -35,13 +35,15 @@ const (
 	iso8601Format = "20060102T150405Z"
 )
 
-type AdminConfig struct {
-	AdminAccess string
-	AdminSecret string
-	Region      string
+type RootUserConfig struct {
+	Access string
+	Secret string
+	Region string
 }
 
-func VerifyV4Signature(iam auth.IAMService, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fiber.Handler {
+	acct := accounts{root: root, iam: iam}
+
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
@@ -72,9 +74,9 @@ func VerifyV4Signature(iam auth.IAMService, debug bool) fiber.Handler {
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
-		userAccount := iam.GetUserAccount(creds[0])
-		if userAccount == nil {
-			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied))
+		account := acct.getAccount(creds[0])
+		if account == nil {
+			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
 		}
 
 		// Check X-Amz-Date header
@@ -109,9 +111,9 @@ func VerifyV4Signature(iam auth.IAMService, debug bool) fiber.Handler {
 		signer := v4.NewSigner()
 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
-			AccessKeyID:     userAccount.Access,
-			SecretAccessKey: userAccount.Secret,
-		}, req, hexPayload, creds[3], userAccount.Region, tdate, func(options *v4.SignerOptions) {
+			AccessKeyID:     creds[0],
+			SecretAccessKey: account.Secret,
+		}, req, hexPayload, creds[3], account.Region, tdate, func(options *v4.SignerOptions) {
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
@@ -132,8 +134,27 @@ func VerifyV4Signature(iam auth.IAMService, debug bool) fiber.Handler {
 			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 		}
 
-		ctx.Locals("role", userAccount.Role)
+		ctx.Locals("role", account.Role)
 
 		return ctx.Next()
 	}
+}
+
+type accounts struct {
+	root RootUserConfig
+	iam  auth.IAMService
+}
+
+func (a accounts) getAccount(access string) *auth.Account {
+	var account *auth.Account
+	if access == a.root.Access {
+		account = &auth.Account{
+			Secret: a.root.Secret,
+			Role:   "admin",
+			Region: a.root.Region,
+		}
+	} else {
+		account = a.iam.GetUserAccount(access)
+	}
+	return account
 }

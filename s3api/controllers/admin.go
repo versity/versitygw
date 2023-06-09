@@ -37,9 +37,9 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 
-	user := auth.Account{Access: access, Secret: secret, Role: role, Region: region}
+	user := auth.Account{Secret: secret, Role: role, Region: region}
 
-	err := c.IAMService.CreateAccount(&user)
+	err := c.IAMService.CreateAccount(access, &user)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}
