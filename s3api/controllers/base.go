@@ -80,12 +80,49 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return SendXMLResponse(ctx, res, err)
 	}
 
-	_, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
+	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
 	if err != nil {
 		return SendResponse(ctx, err)
 	}
-	// TODO set response headers?
-	return nil
+	if res == nil {
+		return SendResponse(ctx, fmt.Errorf("get object nil response"))
+	}
+
+	utils.SetMetaHeaders(ctx, res.Metadata)
+	var lastmod string
+	if res.LastModified != nil {
+		lastmod = res.LastModified.Format(timefmt)
+	}
+	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+		{
+			Key:   "Content-Length",
+			Value: fmt.Sprint(res.ContentLength),
+		},
+		{
+			Key:   "Content-Type",
+			Value: getstring(res.ContentType),
+		},
+		{
+			Key:   "Content-Encoding",
+			Value: getstring(res.ContentEncoding),
+		},
+		{
+			Key:   "ETag",
+			Value: getstring(res.ETag),
+		},
+		{
+			Key:   "Last-Modified",
+			Value: lastmod,
+		},
+	})
+	return ctx.SendStatus(http.StatusOK)
+}
+
+func getstring(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
@@ -309,8 +346,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	if err != nil {
 		return SendResponse(ctx, err)
 	}
+	if res == nil {
+		return SendResponse(ctx, fmt.Errorf("head object nil response"))
+	}
 
 	utils.SetMetaHeaders(ctx, res.Metadata)
+	var lastmod string
+	if res.LastModified != nil {
+		lastmod = res.LastModified.Format(timefmt)
+	}
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
@@ -318,19 +362,19 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		},
 		{
 			Key:   "Content-Type",
-			Value: *res.ContentType,
+			Value: getstring(res.ContentType),
 		},
 		{
 			Key:   "Content-Encoding",
-			Value: *res.ContentEncoding,
+			Value: getstring(res.ContentEncoding),
 		},
 		{
 			Key:   "ETag",
-			Value: *res.ETag,
+			Value: getstring(res.ETag),
 		},
 		{
 			Key:   "Last-Modified",
-			Value: res.LastModified.Format(timefmt),
+			Value: lastmod,
 		},
 	})
 
@@ -406,12 +450,15 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 	}
 
 	var b []byte
-	if b, err = xml.Marshal(resp); err != nil {
-		return err
-	}
 
-	if len(b) > 0 {
-		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+	if resp != nil {
+		if b, err = xml.Marshal(resp); err != nil {
+			return err
+		}
+
+		if len(b) > 0 {
+			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+		}
 	}
 
 	return ctx.Send(b)
