@@ -954,7 +954,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	}
 }
 
-func Test_responce(t *testing.T) {
+func Test_XMLresponse(t *testing.T) {
 	type args struct {
 		ctx  *fiber.Ctx
 		resp any
@@ -1011,14 +1011,74 @@ func Test_responce(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := Responce(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
-				t.Errorf("responce() error = %v, wantErr %v", err, tt.wantErr)
+			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
+				t.Errorf("responce() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
 			statusCode := tt.args.ctx.Response().StatusCode()
 
 			if statusCode != tt.statusCode {
-				t.Errorf("responce() code = %v, wantErr %v", statusCode, tt.wantErr)
+				t.Errorf("responce() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_response(t *testing.T) {
+	type args struct {
+		ctx  *fiber.Ctx
+		resp any
+		err  error
+	}
+	app := fiber.New()
+
+	tests := []struct {
+		name       string
+		args       args
+		wantErr    bool
+		statusCode int
+	}{
+		{
+			name: "Internal-server-error",
+			args: args{
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				resp: nil,
+				err:  s3err.GetAPIError(16),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Error-not-implemented",
+			args: args{
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				resp: nil,
+				err:  s3err.GetAPIError(50),
+			},
+			wantErr:    false,
+			statusCode: 501,
+		},
+		{
+			name: "Successful-response",
+			args: args{
+				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				resp: "Valid response",
+				err:  nil,
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := SendResponse(tt.args.ctx, tt.args.err); (err != nil) != tt.wantErr {
+				t.Errorf("responce() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
+			}
+
+			statusCode := tt.args.ctx.Response().StatusCode()
+
+			if statusCode != tt.statusCode {
+				t.Errorf("responce() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
 			}
 		})
 	}
