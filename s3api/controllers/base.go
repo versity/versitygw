@@ -313,6 +313,10 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 	return Responce(ctx, res, err)
 }
 
+const (
+	timefmt = "Mon, 02 Jan 2006 15:04:05 GMT"
+)
+
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	bucket := ctx.Params("bucket")
 	key := ctx.Params("key")
@@ -346,7 +350,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		},
 		{
 			Key:   "Last-Modified",
-			Value: res.LastModified.Format("20060102T150405Z"),
+			Value: res.LastModified.Format(timefmt),
 		},
 	})
 
