@@ -47,3 +47,19 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	ctx.SendString("The user has been created successfully")
 	return nil
 }
+
+func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
+	access := ctx.Query("access")
+	requesterRole := ctx.Locals("role")
+	if requesterRole != "admin" {
+		return fmt.Errorf("access denied: only admin users have access to this resource")
+	}
+
+	err := c.IAMService.DeleteUserAccount(access)
+	if err != nil {
+		return err
+	}
+
+	ctx.SendString("The user has been created successfully")
+	return nil
+}
