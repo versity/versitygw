@@ -52,7 +52,8 @@ The global options are specified before the backend type and the backend options
 
 #### Versity gives you clarity and control over your archival storage, so you can allocate more resources to your core mission.
 
-### Contact 
+### Contact
+![versity logo](https://www.versity.com/wp-content/uploads/2022/12/cropped-android-chrome-512x512-1-32x32.png)
 info@versity.com <br />
 +1 844 726 8826
 
