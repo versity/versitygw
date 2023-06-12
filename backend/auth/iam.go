@@ -70,10 +70,17 @@ func (c *AccountsCache) updateAccounts() error {
 	return nil
 }
 
+func (c *AccountsCache) deleteAccount(access string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.Accounts, access)
+}
+
 type IAMService interface {
 	GetIAMConfig() (*IAMConfig, error)
 	CreateAccount(access string, account *Account) error
 	GetUserAccount(access string) *Account
+	DeleteUserAccount(access string) error
 }
 
 type IAMServiceUnsupported struct {
@@ -134,4 +141,37 @@ func (s IAMServiceUnsupported) GetUserAccount(access string) *Account {
 	}
 
 	return acc
+}
+
+func (s IAMServiceUnsupported) DeleteUserAccount(access string) error {
+	var data IAMConfig
+
+	file, err := os.ReadFile("users.json")
+	if err != nil {
+		return fmt.Errorf("unable to read config file: %w", err)
+	}
+
+	if err := json.Unmarshal(file, &data); err != nil {
+		return fmt.Errorf("failed to parse the config file: %w", err)
+	}
+
+	_, ok := data.AccessAccounts[access]
+	if !ok {
+		return fmt.Errorf("invalid access for the user: user does not exist")
+	}
+
+	delete(data.AccessAccounts, access)
+
+	updatedJSON, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to parse the data: %w", err)
+	}
+
+	if err := os.WriteFile("users.json", updatedJSON, 0644); err != nil {
+		return fmt.Errorf("failed to saved the changes: %w", err)
+	}
+
+	s.accCache.deleteAccount(access)
+
+	return nil
 }

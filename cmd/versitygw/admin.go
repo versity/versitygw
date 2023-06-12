@@ -73,6 +73,19 @@ func adminCommand() *cli.Command {
 					},
 				},
 			},
+			{
+				Name:   "delete-user",
+				Usage:  "Delete a user",
+				Action: deleteUser,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "access",
+						Usage:    "access value for the user to be deleted",
+						Required: true,
+						Aliases:  []string{"a"},
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			// TODO: create a configuration file for this
@@ -111,6 +124,46 @@ func createUser(ctx *cli.Context) error {
 	}
 
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v&region=%v", access, secret, role, region), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s", body)
+
+	return nil
+}
+
+func deleteUser(ctx *cli.Context) error {
+	access := ctx.String("access")
+	if access == "" {
+		return fmt.Errorf("invalid input parameter for the new user")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://localhost:7070/delete-user?access=%v", access), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
