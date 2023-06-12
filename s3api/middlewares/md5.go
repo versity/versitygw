@@ -34,7 +34,7 @@ func VerifyMD5Body() fiber.Handler {
 		calculatedSum := base64.StdEncoding.EncodeToString(sum[:])
 
 		if incomingSum != calculatedSum {
-			return controllers.Responce[any](ctx, nil, s3err.GetAPIError(s3err.ErrInvalidDigest))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest))
 		}
 
 		return ctx.Next()
