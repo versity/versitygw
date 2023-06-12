@@ -172,7 +172,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk Di
 		// Note: No obects are included past the common prefix since
 		// these are all rolled up into the common prefix.
 		// Note: The delimeter can be anything, so we have to operate on
-		// the full path without any assumptions on posix directory heirarchy
+		// the full path without any assumptions on posix directory hierarchy
 		// here.  Usually the delimeter will be "/", but thats not required.
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
