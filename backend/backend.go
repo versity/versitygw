@@ -44,6 +44,7 @@ type Backend interface {
 	ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error)
 	CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error)
 	PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (etag string, err error)
+	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
 
 	PutObject(*s3.PutObjectInput) (string, error)
 	HeadObject(bucket, object string) (*s3.HeadObjectOutput, error)
@@ -57,8 +58,6 @@ type Backend interface {
 	DeleteObjects(bucket string, objects *s3.DeleteObjectsInput) error
 	PutObjectAcl(*s3.PutObjectAclInput) error
 	RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) error
-	UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, error)
-	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
 
 	GetTags(bucket, object string) (map[string]string, error)
 	SetTags(bucket, object string, tags map[string]string) error
@@ -89,9 +88,6 @@ func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) UploadPart(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
