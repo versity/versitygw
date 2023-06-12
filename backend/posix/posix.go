@@ -36,6 +36,7 @@ import (
 	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 type Posix struct {
@@ -231,8 +232,10 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 	// check all parts ok
 	last := len(parts) - 1
 	partsize := int64(0)
+	var totalsize int64
 	for i, p := range parts {
-		fi, err := os.Lstat(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber)))
+		partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber))
+		fi, err := os.Lstat(partPath)
 		if err != nil {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
@@ -240,13 +243,21 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 		if i == 0 {
 			partsize = fi.Size()
 		}
+		totalsize += fi.Size()
 		// all parts except the last need to be the same size
 		if i < last && partsize != fi.Size() {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
+
+		b, err := xattr.Get(partPath, "user.etag")
+		etag := string(b)
+		if err != nil {
+			etag = ""
+		}
+		parts[i].ETag = &etag
 	}
 
-	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0)
+	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, totalsize)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
@@ -272,11 +283,8 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 	dir := filepath.Dir(objname)
 	if dir != "" {
 		if err = mkdirAll(dir, os.FileMode(0755), bucket, object); err != nil {
-			if err != nil && os.IsExist(err) {
-				return nil, s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-			}
 			if err != nil {
-				return nil, fmt.Errorf("make object parent directories: %w", err)
+				return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 			}
 		}
 	}
@@ -479,24 +487,40 @@ func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {
 	return nil
 }
 
-func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
+func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 	bucket := *mpu.Bucket
+	var delimiter string
+	if mpu.Delimiter != nil {
+		delimiter = *mpu.Delimiter
+	}
+	var prefix string
+	if mpu.Prefix != nil {
+		prefix = *mpu.Prefix
+	}
+
+	var lmu s3response.ListMultipartUploadsResponse
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return lmu, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return lmu, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	// ignore readdir error and use the empty list returned
 	objs, _ := os.ReadDir(filepath.Join(bucket, metaTmpMultipartDir))
 
-	var uploads []types.MultipartUpload
+	var uploads []s3response.Upload
 
-	keyMarker := *mpu.KeyMarker
-	uploadIDMarker := *mpu.UploadIdMarker
+	var keyMarker string
+	if mpu.KeyMarker != nil {
+		keyMarker = *mpu.KeyMarker
+	}
+	var uploadIDMarker string
+	if mpu.UploadIdMarker != nil {
+		uploadIDMarker = *mpu.UploadIdMarker
+	}
 	var pastMarker bool
 	if keyMarker == "" && uploadIDMarker == "" {
 		pastMarker = true
@@ -512,7 +536,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 			continue
 		}
 		objectName := string(b)
-		if !strings.HasPrefix(objectName, *mpu.Prefix) {
+		if mpu.Prefix != nil && !strings.HasPrefix(objectName, *mpu.Prefix) {
 			continue
 		}
 
@@ -538,64 +562,71 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (*s3.Lis
 			upiddir := filepath.Join(bucket, metaTmpMultipartDir, obj.Name(), upid.Name())
 			loadUserMetaData(upiddir, userMetaData)
 
+			fi, err := upid.Info()
+			if err != nil {
+				return lmu, fmt.Errorf("stat %q: %w", upid.Name(), err)
+			}
+
 			uploadID := upid.Name()
-			uploads = append(uploads, types.MultipartUpload{
-				Key:      &objectName,
-				UploadId: &uploadID,
+			uploads = append(uploads, s3response.Upload{
+				Key:       objectName,
+				UploadID:  uploadID,
+				Initiated: fi.ModTime().Format(backend.RFC3339TimeFormat),
 			})
 			if len(uploads) == int(mpu.MaxUploads) {
-				return &s3.ListMultipartUploadsOutput{
-					Bucket:             &bucket,
-					Delimiter:          mpu.Delimiter,
+				return s3response.ListMultipartUploadsResponse{
+					Bucket:             bucket,
+					Delimiter:          delimiter,
 					IsTruncated:        i != len(objs) || j != len(upids),
-					KeyMarker:          &keyMarker,
-					MaxUploads:         mpu.MaxUploads,
-					NextKeyMarker:      &objectName,
-					NextUploadIdMarker: &uploadID,
-					Prefix:             mpu.Prefix,
-					UploadIdMarker:     mpu.UploadIdMarker,
+					KeyMarker:          keyMarker,
+					MaxUploads:         int(mpu.MaxUploads),
+					NextKeyMarker:      objectName,
+					NextUploadIDMarker: uploadID,
+					Prefix:             prefix,
+					UploadIDMarker:     uploadIDMarker,
 					Uploads:            uploads,
 				}, nil
 			}
 		}
 	}
 
-	return &s3.ListMultipartUploadsOutput{
-		Bucket:         &bucket,
-		Delimiter:      mpu.Delimiter,
-		KeyMarker:      &keyMarker,
-		MaxUploads:     mpu.MaxUploads,
-		Prefix:         mpu.Prefix,
-		UploadIdMarker: mpu.UploadIdMarker,
+	return s3response.ListMultipartUploadsResponse{
+		Bucket:         bucket,
+		Delimiter:      delimiter,
+		KeyMarker:      keyMarker,
+		MaxUploads:     int(mpu.MaxUploads),
+		Prefix:         prefix,
+		UploadIDMarker: uploadIDMarker,
 		Uploads:        uploads,
 	}, nil
 }
 
-func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
+func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
+	var lpr s3response.ListPartsResponse
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return lpr, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return lpr, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	sum, err := p.checkUploadIDExists(bucket, object, uploadID)
 	if err != nil {
-		return nil, err
+		return lpr, err
 	}
 
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	ents, err := os.ReadDir(filepath.Join(objdir, uploadID))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		return lpr, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("readdir upload: %w", err)
+		return lpr, fmt.Errorf("readdir upload: %w", err)
 	}
 
-	var parts []types.Part
+	var parts []s3response.Part
 	for _, e := range ents {
 		pn, _ := strconv.Atoi(e.Name())
 		if pn <= partNumberMarker {
@@ -614,10 +645,10 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 			continue
 		}
 
-		parts = append(parts, types.Part{
-			PartNumber:   int32(pn),
-			ETag:         &etag,
-			LastModified: backend.GetTimePtr(fi.ModTime()),
+		parts = append(parts, s3response.Part{
+			PartNumber:   pn,
+			ETag:         etag,
+			LastModified: fi.ModTime().Format(backend.RFC3339TimeFormat),
 			Size:         fi.Size(),
 		})
 	}
@@ -626,12 +657,12 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 		func(i int, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
 
 	oldLen := len(parts)
-	if len(parts) > maxParts {
+	if maxParts > 0 && len(parts) > maxParts {
 		parts = parts[:maxParts]
 	}
 	newLen := len(parts)
 
-	nextpart := int32(0)
+	nextpart := 0
 	if len(parts) != 0 {
 		nextpart = parts[len(parts)-1].PartNumber
 	}
@@ -640,15 +671,15 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 	upiddir := filepath.Join(objdir, uploadID)
 	loadUserMetaData(upiddir, userMetaData)
 
-	return &s3.ListPartsOutput{
-		Bucket:               &bucket,
+	return s3response.ListPartsResponse{
+		Bucket:               bucket,
 		IsTruncated:          oldLen != newLen,
-		Key:                  &object,
-		MaxParts:             int32(maxParts),
-		NextPartNumberMarker: backend.GetStringPtr(fmt.Sprintf("%v", nextpart)),
-		PartNumberMarker:     backend.GetStringPtr(fmt.Sprintf("%v", partNumberMarker)),
+		Key:                  object,
+		MaxParts:             maxParts,
+		NextPartNumberMarker: nextpart,
+		PartNumberMarker:     partNumberMarker,
 		Parts:                parts,
-		UploadId:             &uploadID,
+		UploadID:             uploadID,
 	}, nil
 }
 
@@ -689,7 +720,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 	}
 
 	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum[:])
+	etag := hex.EncodeToString(dataSum)
 	xattr.Set(partPath, "user.etag", []byte(etag))
 
 	return etag, nil
@@ -741,7 +772,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	if dir != "" {
 		err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
-			return "", fmt.Errorf("make object parent directories: %w", err)
+			return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
 	}
 

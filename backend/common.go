@@ -24,6 +24,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+var (
+	// RFC3339TimeFormat RFC3339 time format
+	RFC3339TimeFormat = "2006-01-02T15:04:05.999Z"
+)
+
 func IsValidBucketName(name string) bool { return true }
 
 type ByBucketName []types.Bucket

@@ -76,7 +76,7 @@ func (tmp *tmpfile) link() error {
 
 func (tmp *tmpfile) Write(b []byte) (int, error) {
 	if int64(len(b)) > tmp.size {
-		return 0, fmt.Errorf("write exceeds content length")
+		return 0, fmt.Errorf("write exceeds content length %v", tmp.size)
 	}
 
 	n, err := tmp.f.Write(b)

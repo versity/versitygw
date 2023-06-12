@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3response"
 	"io"
 	"sync"
 )
@@ -69,10 +70,10 @@ var _ backend.Backend = &BackendMock{}
 //			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
 //				panic("mock out the ListBuckets method")
 //			},
-//			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
+//			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 //				panic("mock out the ListMultipartUploads method")
 //			},
-//			ListObjectPartsFunc: func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
+//			ListObjectPartsFunc: func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
 //				panic("mock out the ListObjectParts method")
 //			},
 //			ListObjectsFunc: func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
@@ -173,10 +174,10 @@ type BackendMock struct {
 	ListBucketsFunc func() (*s3.ListBucketsOutput, error)
 
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
-	ListMultipartUploadsFunc func(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error)
+	ListMultipartUploadsFunc func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
 
 	// ListObjectPartsFunc mocks the ListObjectParts method.
-	ListObjectPartsFunc func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error)
+	ListObjectPartsFunc func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
 	ListObjectsFunc func(bucket string, prefix string, marker string, delim string, maxkeys int) (*s3.ListObjectsOutput, error)
@@ -1095,7 +1096,7 @@ func (mock *BackendMock) ListBucketsCalls() []struct {
 }
 
 // ListMultipartUploads calls ListMultipartUploadsFunc.
-func (mock *BackendMock) ListMultipartUploads(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
+func (mock *BackendMock) ListMultipartUploads(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 	if mock.ListMultipartUploadsFunc == nil {
 		panic("BackendMock.ListMultipartUploadsFunc: method is nil but Backend.ListMultipartUploads was just called")
 	}
@@ -1127,7 +1128,7 @@ func (mock *BackendMock) ListMultipartUploadsCalls() []struct {
 }
 
 // ListObjectParts calls ListObjectPartsFunc.
-func (mock *BackendMock) ListObjectParts(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
+func (mock *BackendMock) ListObjectParts(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
 	if mock.ListObjectPartsFunc == nil {
 		panic("BackendMock.ListObjectPartsFunc: method is nil but Backend.ListObjectParts was just called")
 	}
