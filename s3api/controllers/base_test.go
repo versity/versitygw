@@ -1012,13 +1012,13 @@ func Test_XMLresponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
-				t.Errorf("responce() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
+				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
 			statusCode := tt.args.ctx.Response().StatusCode()
 
 			if statusCode != tt.statusCode {
-				t.Errorf("responce() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
+				t.Errorf("response() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
 			}
 		})
 	}
@@ -1072,13 +1072,13 @@ func Test_response(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := SendResponse(tt.args.ctx, tt.args.err); (err != nil) != tt.wantErr {
-				t.Errorf("responce() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
+				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
 			statusCode := tt.args.ctx.Response().StatusCode()
 
 			if statusCode != tt.statusCode {
-				t.Errorf("responce() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
+				t.Errorf("response() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
 			}
 		})
 	}
