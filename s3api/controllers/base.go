@@ -24,7 +24,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -53,25 +52,21 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
-	maxPartsStr := ctx.Query("max-parts")
-	partNumberMarkerStr := ctx.Query("part-number-marker")
+	maxParts := ctx.QueryInt("max-parts", 0)
+	partNumberMarker := ctx.QueryInt("part-number-marker", 0)
 	acceptRange := ctx.Get("Range")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
 	if uploadId != "" {
-		maxParts, err := strconv.Atoi(maxPartsStr)
-		if err != nil && maxPartsStr != "" {
-			return errors.New("wrong api call")
+		if maxParts < 0 || (maxParts == 0 && ctx.Query("max-parts") != "") {
+			return ErrorResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidMaxParts))
 		}
-
-		partNumberMarker, err := strconv.Atoi(partNumberMarkerStr)
-		if err != nil && partNumberMarkerStr != "" {
-			return errors.New("wrong api call")
+		if partNumberMarker < 0 || (partNumberMarker == 0 && ctx.Query("part-number-marker") != "") {
+			return ErrorResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker))
 		}
-
-		res, err := c.be.ListObjectParts(bucket, "", uploadId, partNumberMarker, maxParts)
+		res, err := c.be.ListObjectParts(bucket, key, uploadId, partNumberMarker, maxParts)
 		return Responce(ctx, res, err)
 	}
 
@@ -186,40 +181,24 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		keyStart = keyStart + "/"
 	}
 
-	if partNumberStr != "" {
-		copySrcModifSinceDate, err := time.Parse(time.RFC3339, copySrcModifSince)
-		if err != nil && copySrcModifSince != "" {
-			return errors.New("wrong api call")
-		}
-
-		copySrcUnmodifSinceDate, err := time.Parse(time.RFC3339, copySrcUnmodifSince)
-		if err != nil && copySrcUnmodifSince != "" {
-			return errors.New("wrong api call")
-		}
-
-		partNumber, err := strconv.ParseInt(partNumberStr, 10, 64)
+	var contentLength int64
+	if contentLengthStr != "" {
+		var err error
+		contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
 		if err != nil {
-			return errors.New("wrong api call")
+			return ErrorResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest))
 		}
-
-		res, err := c.be.UploadPartCopy(&s3.UploadPartCopyInput{
-			Bucket:                      &bucket,
-			Key:                         &keyStart,
-			PartNumber:                  int32(partNumber),
-			UploadId:                    &uploadId,
-			CopySource:                  &copySource,
-			CopySourceIfMatch:           &copySrcIfMatch,
-			CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
-			CopySourceIfModifiedSince:   &copySrcModifSinceDate,
-			CopySourceIfUnmodifiedSince: &copySrcUnmodifSinceDate,
-		})
-
-		return Responce(ctx, res, err)
 	}
 
-	if uploadId != "" {
+	if uploadId != "" && partNumberStr != "" {
+		partNumber := ctx.QueryInt("partNumber", -1)
+		if partNumber < 1 {
+			return ErrorResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart))
+		}
+
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
-		res, err := c.be.UploadPart(bucket, keyStart, uploadId, body)
+		res, err := c.be.PutObjectPart(bucket, keyStart, uploadId,
+			partNumber, contentLength, body)
 		return Responce(ctx, res, err)
 	}
 
@@ -242,16 +221,13 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if copySource != "" {
+		_, _, _, _ = copySrcIfMatch, copySrcIfNoneMatch,
+			copySrcModifSince, copySrcUnmodifSince
 		copySourceSplit := strings.Split(copySource, "/")
 		srcBucket, srcObject := copySourceSplit[0], copySourceSplit[1:]
 
 		res, err := c.be.CopyObject(srcBucket, strings.Join(srcObject, "/"), bucket, keyStart)
 		return Responce(ctx, res, err)
-	}
-
-	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
-	if err != nil {
-		return errors.New("wrong api call")
 	}
 
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
@@ -313,6 +289,10 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 	return Responce(ctx, res, err)
 }
 
+const (
+	timefmt = "Mon, 02 Jan 2006 15:04:05 GMT"
+)
+
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	bucket := ctx.Params("bucket")
 	key := ctx.Params("key")
@@ -346,7 +326,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		},
 		{
 			Key:   "Last-Modified",
-			Value: res.LastModified.Format("20060102T150405Z"),
+			Value: res.LastModified.Format(timefmt),
 		},
 	})
 
@@ -377,20 +357,22 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	}
 
 	if uploadId != "" {
-		var parts []types.Part
+		data := struct {
+			Parts []types.Part `xml:"Part"`
+		}{}
 
-		if err := xml.Unmarshal(ctx.Body(), &parts); err != nil {
+		if err := xml.Unmarshal(ctx.Body(), &data); err != nil {
 			return errors.New("wrong api call")
 		}
 
-		res, err := c.be.CompleteMultipartUpload(bucket, "", uploadId, parts)
+		res, err := c.be.CompleteMultipartUpload(bucket, key, uploadId, data.Parts)
 		return Responce(ctx, res, err)
 	}
 	res, err := c.be.CreateMultipartUpload(&s3.CreateMultipartUploadInput{Bucket: &bucket, Key: &key})
 	return Responce(ctx, res, err)
 }
 
-func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
+func Responce[R any](ctx *fiber.Ctx, resp R, err error) error {
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
@@ -408,6 +390,10 @@ func Responce[R comparable](ctx *fiber.Ctx, resp R, err error) error {
 	var b []byte
 	if b, err = xml.Marshal(resp); err != nil {
 		return err
+	}
+
+	if len(b) > 0 {
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 	}
 
 	return ctx.Send(b)

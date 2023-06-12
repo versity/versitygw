@@ -29,6 +29,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 func TestNew(t *testing.T) {
@@ -128,8 +129,8 @@ func TestS3ApiController_GetActions(t *testing.T) {
 
 	app := fiber.New()
 	s3ApiController := S3ApiController{be: &BackendMock{
-		ListObjectPartsFunc: func(bucket, object, uploadID string, partNumberMarker int, maxParts int) (*s3.ListPartsOutput, error) {
-			return &s3.ListPartsOutput{}, nil
+		ListObjectPartsFunc: func(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
+			return s3response.ListPartsResponse{}, nil
 		},
 		GetObjectAclFunc: func(bucket, object string) (*s3.GetObjectAclOutput, error) {
 			return &s3.GetObjectAclOutput{}, nil
@@ -169,16 +170,16 @@ func TestS3ApiController_GetActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=InvalidMaxParts", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
-			name: "Get-actions-invalid-part-number",
+			name: "Get-actions-invalid-part-number-marker",
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=200&part-number-marker=InvalidPartNumber", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
 			name: "Get-actions-list-object-parts-success",
@@ -233,8 +234,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
 			return &s3.GetBucketAclOutput{}, nil
 		},
-		ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (*s3.ListMultipartUploadsOutput, error) {
-			return &s3.ListMultipartUploadsOutput{}, nil
+		ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+			return s3response.ListMultipartUploadsResponse{}, nil
 		},
 		ListObjectsV2Func: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 			return &s3.ListObjectsV2Output{}, nil
@@ -441,13 +442,13 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		statusCode int
 	}{
 		{
-			name: "Upload-copy-part-error-case",
+			name: "Upload-put-part-error-case",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?partNumber=invalid", nil),
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=abc&partNumber=invalid", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
 			name: "Upload-copy-part-success",
@@ -517,11 +518,13 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		resp, err := tt.app.Test(tt.args.req)
 
 		if (err != nil) != tt.wantErr {
-			t.Errorf("S3ApiController.GetActions() error = %v, wantErr %v", err, tt.wantErr)
+			t.Errorf("S3ApiController.GetActions() %v error = %v, wantErr %v",
+				tt.name, err, tt.wantErr)
 		}
 
 		if resp.StatusCode != tt.statusCode {
-			t.Errorf("S3ApiController.GetActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+			t.Errorf("S3ApiController.GetActions() %v statusCode = %v, wantStatusCode = %v",
+				tt.name, resp.StatusCode, tt.statusCode)
 		}
 	}
 }
