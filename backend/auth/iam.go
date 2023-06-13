@@ -89,8 +89,19 @@ type IAMServiceUnsupported struct {
 
 var _ IAMService = &IAMServiceUnsupported{}
 
-func New() IAMService {
-	return &IAMServiceUnsupported{accCache: &AccountsCache{Accounts: map[string]Account{}}}
+func InitIAM() (IAMService, error) {
+	_, err := os.ReadFile("users.json")
+	if err != nil {
+		jsonData, err := json.MarshalIndent(IAMConfig{AccessAccounts: map[string]Account{}}, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+
+		if err := os.WriteFile("users.json", jsonData, 0644); err != nil {
+			return nil, err
+		}
+	}
+	return &IAMServiceUnsupported{accCache: &AccountsCache{Accounts: map[string]Account{}}}, nil
 }
 
 func (IAMServiceUnsupported) GetIAMConfig() (*IAMConfig, error) {
@@ -102,21 +113,19 @@ func (s IAMServiceUnsupported) CreateAccount(access string, account *Account) er
 
 	file, err := os.ReadFile("users.json")
 	if err != nil {
-		data = IAMConfig{AccessAccounts: map[string]Account{
-			access: *account,
-		}}
-	} else {
-		if err := json.Unmarshal(file, &data); err != nil {
-			return err
-		}
-
-		_, ok := data.AccessAccounts[access]
-		if ok {
-			return fmt.Errorf("user with the given access already exists")
-		}
-
-		data.AccessAccounts[access] = *account
+		return fmt.Errorf("unable to read config file: %w", err)
 	}
+
+	if err := json.Unmarshal(file, &data); err != nil {
+		return err
+	}
+
+	_, ok := data.AccessAccounts[access]
+	if ok {
+		return fmt.Errorf("user with the given access already exists")
+	}
+
+	data.AccessAccounts[access] = *account
 
 	updatedJSON, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -126,6 +135,7 @@ func (s IAMServiceUnsupported) CreateAccount(access string, account *Account) er
 	if err := os.WriteFile("users.json", updatedJSON, 0644); err != nil {
 		return err
 	}
+
 	return nil
 }
 
