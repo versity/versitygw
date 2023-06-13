@@ -424,6 +424,10 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 			ctx.Status(serr.HTTPStatusCode)
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
+
+		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr:\n%v\n",
+			ctx.Request(), err)
+
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
