@@ -25,10 +25,6 @@ type AdminController struct {
 	IAMService auth.IAMService
 }
 
-func NewAdminController() AdminController {
-	return AdminController{IAMService: auth.New()}
-}
-
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	access, secret, role, region := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role"), ctx.Query("region")
 	requesterRole := ctx.Locals("role")
