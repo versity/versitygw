@@ -165,16 +165,11 @@ func runGateway(be backend.Backend) error {
 		return err
 	}
 
-	acl, err := auth.InitACL()
-	if err != nil {
-		return err
-	}
-
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
 		Region: region,
-	}, port, iam, acl, opts...)
+	}, port, iam, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

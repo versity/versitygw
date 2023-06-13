@@ -33,7 +33,7 @@ type S3ApiServer struct {
 	debug   bool
 }
 
-func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port string, iam auth.IAMService, acl auth.ACLService, opts ...Option) (*S3ApiServer, error) {
+func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port string, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
