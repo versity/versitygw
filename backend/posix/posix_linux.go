@@ -68,7 +68,7 @@ func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 
-	tmp := &tmpfile{f: f, isOTmp: true, size: size}
+	tmp := &tmpfile{f: f, bucket: bucket, objname: obj, isOTmp: true, size: size}
 	// falloc is best effort, its fine if this fails
 	if size > 0 {
 		tmp.falloc()
@@ -117,7 +117,8 @@ func (tmp *tmpfile) link() error {
 	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
 		int(dir.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
 	if err != nil {
-		return fmt.Errorf("link tmpfile: %w", err)
+		return fmt.Errorf("link tmpfile (%q in %q): %w",
+			filepath.Dir(objPath), filepath.Base(tmp.f.Name()), err)
 	}
 
 	err = tmp.f.Close()
