@@ -428,8 +428,8 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr:\n%v\n",
-			ctx.Request(), err)
+		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
+			ctx.Request().Header.String(), err)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
@@ -449,8 +449,8 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr:\n%v\n",
-			ctx.Request(), err)
+		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
+			ctx.Request().Header.String(), err)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
