@@ -140,8 +140,9 @@ func TestBackend_GetBucketAcl(t *testing.T) {
 }
 func TestBackend_PutBucket(t *testing.T) {
 	type args struct {
-		ctx        context.Context
-		bucketName string
+		ctx         context.Context
+		bucketName  string
+		bucketOwner string
 	}
 	type test struct {
 		name    string
@@ -153,31 +154,33 @@ func TestBackend_PutBucket(t *testing.T) {
 	tests = append(tests, test{
 		name: "put bucket ",
 		c: &BackendMock{
-			PutBucketFunc: func(bucket string) error {
+			PutBucketFunc: func(bucket, owner string) error {
 				return s3err.GetAPIError(0)
 			},
 		},
 		args: args{
-			ctx:        context.Background(),
-			bucketName: "b1",
+			ctx:         context.Background(),
+			bucketName:  "b1",
+			bucketOwner: "owner",
 		},
 		wantErr: false,
 	}, test{
 		name: "put bucket error",
 		c: &BackendMock{
-			PutBucketFunc: func(bucket string) error {
+			PutBucketFunc: func(bucket, owner string) error {
 				return s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
 		args: args{
-			ctx:        context.Background(),
-			bucketName: "b2",
+			ctx:         context.Background(),
+			bucketName:  "b2",
+			bucketOwner: "owner",
 		},
 		wantErr: true,
 	})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.PutBucket(tt.args.bucketName); (err.(s3err.APIError).Code != "") != tt.wantErr {
+			if err := tt.c.PutBucket(tt.args.bucketName, tt.args.bucketOwner); (err.(s3err.APIError).Code != "") != tt.wantErr {
 				t.Errorf("Backend.PutBucket() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

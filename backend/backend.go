@@ -33,7 +33,7 @@ type Backend interface {
 	ListBuckets() (*s3.ListBucketsOutput, error)
 	HeadBucket(bucket string) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error)
-	PutBucket(bucket string) error
+	PutBucket(bucket, owner string) error
 	PutBucketAcl(*s3.PutBucketAclInput) error
 	DeleteBucket(bucket string) error
 
@@ -96,7 +96,7 @@ func (BackendUnsupported) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, e
 func (BackendUnsupported) HeadBucket(bucket string) (*s3.HeadBucketOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutBucket(bucket string) error {
+func (BackendUnsupported) PutBucket(bucket, owner string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteBucket(bucket string) error {

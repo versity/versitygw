@@ -35,6 +35,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -121,13 +122,23 @@ func (p *Posix) HeadBucket(bucket string) (*s3.HeadBucketOutput, error) {
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (p *Posix) PutBucket(bucket string) error {
+func (p *Posix) PutBucket(bucket string, owner string) error {
 	err := os.Mkdir(bucket, 0777)
 	if err != nil && os.IsExist(err) {
 		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
 	if err != nil {
 		return fmt.Errorf("mkdir bucket: %w", err)
+	}
+
+	acl := auth.ACL{ACL: "private", Owner: owner, Grantees: []auth.Grantee{}}
+	jsonACL, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("marshal acl: %w", err)
+	}
+
+	if err := xattr.Set(bucket, "user.acl", jsonACL); err != nil {
+		return fmt.Errorf("set acl: %w", err)
 	}
 
 	return nil
@@ -1088,6 +1099,120 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	}, nil
 }
 
+func (p *Posix) PutBucketAcl(input *s3.PutBucketAclInput) error {
+	var ACL auth.ACL
+	acl, err := xattr.Get(*input.Bucket, "user.acl")
+	if err != nil {
+		return fmt.Errorf("get acl: %w", err)
+	}
+
+	if err := json.Unmarshal(acl, &ACL); err != nil {
+		return fmt.Errorf("parse acl: %w", err)
+	}
+
+	if ACL.Owner != *input.AccessControlPolicy.Owner.ID {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
+	grantees := []auth.Grantee{}
+
+	fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
+
+	if *input.GrantFullControl != "" {
+		fullControlList = strings.Split(*input.GrantFullControl, ",")
+		for _, str := range fullControlList {
+			grantees = append(grantees, auth.Grantee{Access: str, Permission: "FULL_CONTROL"})
+		}
+	}
+	if *input.GrantRead != "" {
+		readList = strings.Split(*input.GrantRead, ",")
+		for _, str := range readList {
+			grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ"})
+		}
+	}
+	if *input.GrantReadACP != "" {
+		readACPList = strings.Split(*input.GrantReadACP, ",")
+		for _, str := range readACPList {
+			grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ_ACP"})
+		}
+	}
+	if *input.GrantWrite != "" {
+		writeList = strings.Split(*input.GrantWrite, ",")
+		for _, str := range writeList {
+			grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE"})
+		}
+	}
+	if *input.GrantWriteACP != "" {
+		writeACPList = strings.Split(*input.GrantWriteACP, ",")
+		for _, str := range writeACPList {
+			grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE_ACP"})
+		}
+	}
+
+	accs := append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
+
+	accList, err := checkIfAccountsExist(accs)
+	if err != nil {
+		return err
+	}
+	if len(accList) > 0 {
+		return fmt.Errorf("Accounts does not exist: %s", strings.Join(accList, ", "))
+	}
+
+	for _, elem := range grantees {
+		doesContain := false
+		for _, grantee := range ACL.Grantees {
+			if elem == grantee {
+				doesContain = true
+				break
+			}
+		}
+		if !doesContain {
+			ACL.Grantees = append(ACL.Grantees, elem)
+		}
+	}
+
+	if input.ACL != "" {
+		ACL.ACL = input.ACL
+	}
+
+	ACLJson, err := json.Marshal(ACL)
+	if err != nil {
+		return fmt.Errorf("parsing error: %w", err)
+	}
+
+	if err := xattr.Set(*input.Bucket, "user.acl", ACLJson); err != nil {
+		return fmt.Errorf("set acl: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
+	var ACL auth.ACL
+	acl, err := xattr.Get(bucket, "user.acl")
+	if err != nil {
+		return nil, fmt.Errorf("get acl: %w", err)
+	}
+
+	if err := json.Unmarshal(acl, &ACL); err != nil {
+		return nil, fmt.Errorf("parse acl: %w", err)
+	}
+
+	grants := []types.Grant{}
+
+	for _, elem := range ACL.Grantees {
+		grants = append(grants, types.Grant{Grantee: &types.Grantee{ID: &elem.Access}, Permission: elem.Permission})
+	}
+
+	return &s3.GetBucketAclOutput{
+		Owner: &types.Owner{
+			ID: &ACL.Owner,
+		},
+		Grants: grants,
+	}, nil
+}
+
 func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1173,4 +1298,26 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
+}
+
+func checkIfAccountsExist(accs []string) ([]string, error) {
+	var data auth.IAMConfig
+	result := []string{}
+
+	file, err := os.ReadFile("users.json")
+	if err != nil {
+		return []string{}, fmt.Errorf("unable to read config file: %w", err)
+	}
+
+	if err := json.Unmarshal(file, &data); err != nil {
+		return []string{}, err
+	}
+
+	for _, acc := range accs {
+		_, ok := data.AccessAccounts[acc]
+		if !ok {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
 }

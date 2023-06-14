@@ -152,15 +152,17 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
-	bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP :=
+	bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP, access :=
 		ctx.Params("bucket"),
 		ctx.Get("X-Amz-Acl"),
 		ctx.Get("X-Amz-Grant-Full-Control"),
 		ctx.Get("X-Amz-Grant-Read"),
 		ctx.Get("X-Amz-Grant-Read-Acp"),
 		ctx.Get("X-Amz-Grant-Write"),
-		ctx.Get("X-Amz-Grant-Write-Acp")
+		ctx.Get("X-Amz-Grant-Write-Acp"),
+		ctx.Locals("access")
 
+	owner := access.(string)
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
 	if grants != "" || acl != "" {
@@ -168,19 +170,20 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			return errors.New("wrong api call")
 		}
 		err := c.be.PutBucketAcl(&s3.PutBucketAclInput{
-			Bucket:           &bucket,
-			ACL:              types.BucketCannedACL(acl),
-			GrantFullControl: &grantFullControl,
-			GrantRead:        &grantRead,
-			GrantReadACP:     &grantReadACP,
-			GrantWrite:       &granWrite,
-			GrantWriteACP:    &grantWriteACP,
+			Bucket:              &bucket,
+			ACL:                 types.BucketCannedACL(acl),
+			GrantFullControl:    &grantFullControl,
+			GrantRead:           &grantRead,
+			GrantReadACP:        &grantReadACP,
+			GrantWrite:          &granWrite,
+			GrantWriteACP:       &grantWriteACP,
+			AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &owner}},
 		})
 
 		return SendResponse(ctx, err)
 	}
 
-	err := c.be.PutBucket(bucket)
+	err := c.be.PutBucket(bucket, owner)
 	return SendResponse(ctx, err)
 }
 

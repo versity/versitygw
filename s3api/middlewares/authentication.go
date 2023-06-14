@@ -68,7 +68,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fib
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
 
-		signHdrKv := strings.Split(authParts[2], "=")
+		signHdrKv := strings.Split(authParts[2][:len(authParts[2])-1], "=")
 		if len(signHdrKv) != 2 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
@@ -135,6 +135,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fib
 		}
 
 		ctx.Locals("role", account.Role)
+		ctx.Locals("access", creds[0])
 
 		return ctx.Next()
 	}
