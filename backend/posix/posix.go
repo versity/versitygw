@@ -74,7 +74,7 @@ func (p *Posix) Shutdown() {
 	p.rootfd.Close()
 }
 
-func (p *Posix) Sring() string {
+func (p *Posix) String() string {
 	return "Posix Gateway"
 }
 
@@ -317,7 +317,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 	}
 
 	// Calculate s3 compatible md5sum for complete multipart.
-	s3MD5 := getMultipartMD5(parts)
+	s3MD5 := backend.GetMultipartMD5(parts)
 
 	err = xattr.Set(objname, "user.etag", []byte(s3MD5))
 	if err != nil {
@@ -404,8 +404,8 @@ func isValidMeta(val string) bool {
 	return false
 }
 
-// mkdirAll is similar to os.MkdirAll but it will also set uid/gid when
-// making new directories
+// mkdirAll is similar to os.MkdirAll but it will return ErrObjectParentIsFile
+// when appropriate
 func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
 	dir, err := os.Stat(path)
@@ -413,7 +413,7 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 		if dir.IsDir() {
 			return nil
 		}
-		return &os.PathError{Op: "mkdir", Path: path, Err: syscall.ENOTDIR}
+		return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
 	}
 
 	// Slow path: make sure parent exists and then call Mkdir for path.
@@ -447,28 +447,6 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 		return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
 	}
 	return nil
-}
-
-func getMultipartMD5(parts []types.Part) string {
-	var partsEtagBytes []byte
-	for _, part := range parts {
-		partsEtagBytes = append(partsEtagBytes, getEtagBytes(*part.ETag)...)
-	}
-	s3MD5 := fmt.Sprintf("%s-%d", md5String(partsEtagBytes), len(parts))
-	return s3MD5
-}
-
-func getEtagBytes(etag string) []byte {
-	decode, err := hex.DecodeString(strings.ReplaceAll(etag, string('"'), ""))
-	if err != nil {
-		return []byte(etag)
-	}
-	return decode
-}
-
-func md5String(data []byte) string {
-	sum := md5.Sum(data)
-	return hex.EncodeToString(sum[:])
 }
 
 func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {

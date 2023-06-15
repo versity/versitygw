@@ -15,7 +15,10 @@
 package backend
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"strconv"
 	"strings"
@@ -83,4 +86,26 @@ func ParseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
 	}
 
 	return int64(startOffset), int64(endOffset - startOffset + 1), nil
+}
+
+func GetMultipartMD5(parts []types.Part) string {
+	var partsEtagBytes []byte
+	for _, part := range parts {
+		partsEtagBytes = append(partsEtagBytes, getEtagBytes(*part.ETag)...)
+	}
+	s3MD5 := fmt.Sprintf("%s-%d", md5String(partsEtagBytes), len(parts))
+	return s3MD5
+}
+
+func getEtagBytes(etag string) []byte {
+	decode, err := hex.DecodeString(strings.ReplaceAll(etag, string('"'), ""))
+	if err != nil {
+		return []byte(etag)
+	}
+	return decode
+}
+
+func md5String(data []byte) string {
+	sum := md5.Sum(data)
+	return hex.EncodeToString(sum[:])
 }
