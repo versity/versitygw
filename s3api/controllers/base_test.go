@@ -28,6 +28,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -231,8 +232,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 
 	app := fiber.New()
 	s3ApiController := S3ApiController{be: &BackendMock{
-		GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
-			return &s3.GetBucketAclOutput{}, nil
+		GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
+			return nil, nil
 		},
 		ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 			return s3response.ListMultipartUploadsResponse{}, nil
@@ -333,10 +334,15 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		PutBucketAclFunc: func(*s3.PutBucketAclInput) error {
 			return nil
 		},
-		PutBucketFunc: func(bucket string) error {
+		PutBucketFunc: func(bucket, owner string) error {
 			return nil
 		},
 	}}
+	// Mock ctx.Locals
+	app.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("access", "valid access")
+		return ctx.Next()
+	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
 
 	// Error case
@@ -405,9 +411,6 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	s3ApiController := S3ApiController{be: &BackendMock{
 		UploadPartCopyFunc: func(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
 			return &s3.UploadPartCopyOutput{}, nil
-		},
-		UploadPartFunc: func(bucket, object, uploadId string, Body io.ReadSeeker) (*s3.UploadPartOutput, error) {
-			return &s3.UploadPartOutput{}, nil
 		},
 		PutObjectAclFunc: func(*s3.PutObjectAclInput) error {
 			return nil

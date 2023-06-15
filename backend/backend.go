@@ -20,6 +20,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -32,8 +33,8 @@ type Backend interface {
 
 	ListBuckets() (*s3.ListBucketsOutput, error)
 	HeadBucket(bucket string) (*s3.HeadBucketOutput, error)
-	GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error)
-	PutBucket(bucket string) error
+	GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error)
+	PutBucket(bucket, owner string) error
 	PutBucketAcl(*s3.PutBucketAclInput) error
 	DeleteBucket(bucket string) error
 
@@ -90,13 +91,13 @@ func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s
 func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
+func (BackendUnsupported) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) HeadBucket(bucket string) (*s3.HeadBucketOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutBucket(bucket string) error {
+func (BackendUnsupported) PutBucket(bucket, owner string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteBucket(bucket string) error {

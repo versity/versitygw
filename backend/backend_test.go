@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -120,7 +121,7 @@ func TestBackend_GetBucketAcl(t *testing.T) {
 	tests = append(tests, test{
 		name: "get bucket acl error",
 		c: &BackendMock{
-			GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
+			GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
@@ -140,8 +141,9 @@ func TestBackend_GetBucketAcl(t *testing.T) {
 }
 func TestBackend_PutBucket(t *testing.T) {
 	type args struct {
-		ctx        context.Context
-		bucketName string
+		ctx         context.Context
+		bucketName  string
+		bucketOwner string
 	}
 	type test struct {
 		name    string
@@ -153,31 +155,33 @@ func TestBackend_PutBucket(t *testing.T) {
 	tests = append(tests, test{
 		name: "put bucket ",
 		c: &BackendMock{
-			PutBucketFunc: func(bucket string) error {
+			PutBucketFunc: func(bucket, owner string) error {
 				return s3err.GetAPIError(0)
 			},
 		},
 		args: args{
-			ctx:        context.Background(),
-			bucketName: "b1",
+			ctx:         context.Background(),
+			bucketName:  "b1",
+			bucketOwner: "owner",
 		},
 		wantErr: false,
 	}, test{
 		name: "put bucket error",
 		c: &BackendMock{
-			PutBucketFunc: func(bucket string) error {
+			PutBucketFunc: func(bucket, owner string) error {
 				return s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
 		args: args{
-			ctx:        context.Background(),
-			bucketName: "b2",
+			ctx:         context.Background(),
+			bucketName:  "b2",
+			bucketOwner: "owner",
 		},
 		wantErr: true,
 	})
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.c.PutBucket(tt.args.bucketName); (err.(s3err.APIError).Code != "") != tt.wantErr {
+			if err := tt.c.PutBucket(tt.args.bucketName, tt.args.bucketOwner); (err.(s3err.APIError).Code != "") != tt.wantErr {
 				t.Errorf("Backend.PutBucket() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
