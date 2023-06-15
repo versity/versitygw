@@ -1156,7 +1156,7 @@ func (p *Posix) PutBucketAcl(input *s3.PutBucketAclInput) error {
 		return err
 	}
 	if len(accList) > 0 {
-		return fmt.Errorf("Accounts does not exist: %s", strings.Join(accList, ", "))
+		return fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
 	}
 
 	for _, elem := range grantees {
@@ -1188,7 +1188,7 @@ func (p *Posix) PutBucketAcl(input *s3.PutBucketAclInput) error {
 	return nil
 }
 
-func (p *Posix) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
+func (p *Posix) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
 	var ACL auth.ACL
 	acl, err := xattr.Get(bucket, "user.acl")
 	if err != nil {
@@ -1205,11 +1205,13 @@ func (p *Posix) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
 		grants = append(grants, types.Grant{Grantee: &types.Grantee{ID: &elem.Access}, Permission: elem.Permission})
 	}
 
-	return &s3.GetBucketAclOutput{
+	return &auth.GetBucketAclOutput{
 		Owner: &types.Owner{
 			ID: &ACL.Owner,
 		},
-		Grants: grants,
+		AccessControlList: auth.AccessControlList{
+			Grants: grants,
+		},
 	}, nil
 }
 

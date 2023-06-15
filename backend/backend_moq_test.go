@@ -6,6 +6,7 @@ package backend
 import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3response"
 	"io"
 	"sync"
@@ -45,7 +46,7 @@ var _ Backend = &BackendMock{}
 //			DeleteObjectsFunc: func(bucket string, objects *s3.DeleteObjectsInput) error {
 //				panic("mock out the DeleteObjects method")
 //			},
-//			GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
+//			GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
 //				panic("mock out the GetBucketAcl method")
 //			},
 //			GetObjectFunc: func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
@@ -146,7 +147,7 @@ type BackendMock struct {
 	DeleteObjectsFunc func(bucket string, objects *s3.DeleteObjectsInput) error
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
-	GetBucketAclFunc func(bucket string) (*s3.GetBucketAclOutput, error)
+	GetBucketAclFunc func(bucket string) (*auth.GetBucketAclOutput, error)
 
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error)
@@ -796,7 +797,7 @@ func (mock *BackendMock) DeleteObjectsCalls() []struct {
 }
 
 // GetBucketAcl calls GetBucketAclFunc.
-func (mock *BackendMock) GetBucketAcl(bucket string) (*s3.GetBucketAclOutput, error) {
+func (mock *BackendMock) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
 	if mock.GetBucketAclFunc == nil {
 		panic("BackendMock.GetBucketAclFunc: method is nil but Backend.GetBucketAcl was just called")
 	}

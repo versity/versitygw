@@ -26,3 +26,12 @@ type Grantee struct {
 	Permission types.Permission
 	Access     string
 }
+
+type GetBucketAclOutput struct {
+	Owner             *types.Owner
+	AccessControlList AccessControlList
+}
+
+type AccessControlList struct {
+	Grants []types.Grant
+}

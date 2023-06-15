@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -120,7 +121,7 @@ func TestBackend_GetBucketAcl(t *testing.T) {
 	tests = append(tests, test{
 		name: "get bucket acl error",
 		c: &BackendMock{
-			GetBucketAclFunc: func(bucket string) (*s3.GetBucketAclOutput, error) {
+			GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
