@@ -51,6 +51,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		posixCommand(),
+		scoutfsCommand(),
 		adminCommand(),
 	}
 
