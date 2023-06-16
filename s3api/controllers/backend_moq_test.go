@@ -68,7 +68,7 @@ var _ backend.Backend = &BackendMock{}
 //			HeadObjectFunc: func(bucket string, object string) (*s3.HeadObjectOutput, error) {
 //				panic("mock out the HeadObject method")
 //			},
-//			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
+//			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
 //				panic("mock out the ListBuckets method")
 //			},
 //			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
@@ -169,7 +169,7 @@ type BackendMock struct {
 	HeadObjectFunc func(bucket string, object string) (*s3.HeadObjectOutput, error)
 
 	// ListBucketsFunc mocks the ListBuckets method.
-	ListBucketsFunc func() (*s3.ListBucketsOutput, error)
+	ListBucketsFunc func() (s3response.ListAllMyBucketsResult, error)
 
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
 	ListMultipartUploadsFunc func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
@@ -1054,7 +1054,7 @@ func (mock *BackendMock) HeadObjectCalls() []struct {
 }
 
 // ListBuckets calls ListBucketsFunc.
-func (mock *BackendMock) ListBuckets() (*s3.ListBucketsOutput, error) {
+func (mock *BackendMock) ListBuckets() (s3response.ListAllMyBucketsResult, error) {
 	if mock.ListBucketsFunc == nil {
 		panic("BackendMock.ListBucketsFunc: method is nil but Backend.ListBuckets was just called")
 	}

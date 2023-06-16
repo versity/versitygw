@@ -18,11 +18,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 func TestBackend_ListBuckets(t *testing.T) {
@@ -39,11 +38,13 @@ func TestBackend_ListBuckets(t *testing.T) {
 	tests = append(tests, test{
 		name: "list-Bucket",
 		c: &BackendMock{
-			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
-				return &s3.ListBucketsOutput{
-					Buckets: []types.Bucket{
-						{
-							Name: aws.String("t1"),
+			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+				return s3response.ListAllMyBucketsResult{
+					Buckets: s3response.ListAllMyBucketsList{
+						Bucket: []s3response.ListAllMyBucketsEntry{
+							{
+								Name: "t1",
+							},
 						},
 					},
 				}, s3err.GetAPIError(0)
@@ -56,8 +57,8 @@ func TestBackend_ListBuckets(t *testing.T) {
 	}, test{
 		name: "list-Bucket-error",
 		c: &BackendMock{
-			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
-				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
 		args: args{

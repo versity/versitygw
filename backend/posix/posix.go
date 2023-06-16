@@ -78,13 +78,14 @@ func (p *Posix) Sring() string {
 	return "Posix Gateway"
 }
 
-func (p *Posix) ListBuckets() (*s3.ListBucketsOutput, error) {
+func (p *Posix) ListBuckets() (s3response.ListAllMyBucketsResult, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
-		return nil, fmt.Errorf("readdir buckets: %w", err)
+		return s3response.ListAllMyBucketsResult{},
+			fmt.Errorf("readdir buckets: %w", err)
 	}
 
-	var buckets []types.Bucket
+	var buckets []s3response.ListAllMyBucketsEntry
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			// buckets must be a directory
@@ -97,16 +98,18 @@ func (p *Posix) ListBuckets() (*s3.ListBucketsOutput, error) {
 			continue
 		}
 
-		buckets = append(buckets, types.Bucket{
-			Name:         backend.GetStringPtr(entry.Name()),
-			CreationDate: backend.GetTimePtr(fi.ModTime()),
+		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+			Name:         entry.Name(),
+			CreationDate: fi.ModTime(),
 		})
 	}
 
 	sort.Sort(backend.ByBucketName(buckets))
 
-	return &s3.ListBucketsOutput{
-		Buckets: buckets,
+	return s3response.ListAllMyBucketsResult{
+		Buckets: s3response.ListAllMyBucketsList{
+			Bucket: buckets,
+		},
 	}, nil
 }
 

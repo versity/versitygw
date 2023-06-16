@@ -31,7 +31,7 @@ type Backend interface {
 	fmt.Stringer
 	Shutdown()
 
-	ListBuckets() (*s3.ListBucketsOutput, error)
+	ListBuckets() (s3response.ListAllMyBucketsResult, error)
 	HeadBucket(bucket string) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error)
 	PutBucket(bucket, owner string) error
@@ -76,8 +76,8 @@ func (BackendUnsupported) Shutdown() {}
 func (BackendUnsupported) String() string {
 	return "Unsupported"
 }
-func (BackendUnsupported) ListBuckets() (*s3.ListBucketsOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListBuckets() (s3response.ListAllMyBucketsResult, error) {
+	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) PutBucketAcl(*s3.PutBucketAclInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)

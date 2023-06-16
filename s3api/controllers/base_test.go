@@ -74,8 +74,8 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
-				return &s3.ListBucketsOutput{}, nil
+			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+				return s3response.ListAllMyBucketsResult{}, nil
 			},
 		},
 		acl: auth.ACLServiceUnsupported{},
@@ -92,8 +92,8 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr := fiber.New()
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
-			ListBucketsFunc: func() (*s3.ListBucketsOutput, error) {
-				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			},
 		},
 		acl: auth.ACLServiceUnsupported{},

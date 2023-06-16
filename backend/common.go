@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -31,11 +32,11 @@ var (
 
 func IsValidBucketName(name string) bool { return true }
 
-type ByBucketName []types.Bucket
+type ByBucketName []s3response.ListAllMyBucketsEntry
 
 func (d ByBucketName) Len() int           { return len(d) }
 func (d ByBucketName) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
-func (d ByBucketName) Less(i, j int) bool { return *d[i].Name < *d[j].Name }
+func (d ByBucketName) Less(i, j int) bool { return d[i].Name < d[j].Name }
 
 type ByObjectName []types.Object
 
