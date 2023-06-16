@@ -6,7 +6,6 @@ package backend
 import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3response"
 	"io"
 	"sync"
@@ -46,7 +45,7 @@ var _ Backend = &BackendMock{}
 //			DeleteObjectsFunc: func(bucket string, objects *s3.DeleteObjectsInput) error {
 //				panic("mock out the DeleteObjects method")
 //			},
-//			GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
+//			GetBucketAclFunc: func(bucket string) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
 //			},
 //			GetObjectFunc: func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
@@ -85,7 +84,7 @@ var _ Backend = &BackendMock{}
 //			PutBucketFunc: func(bucket string, owner string) error {
 //				panic("mock out the PutBucket method")
 //			},
-//			PutBucketAclFunc: func(putBucketAclInput *s3.PutBucketAclInput) error {
+//			PutBucketAclFunc: func(bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
 //			PutObjectFunc: func(putObjectInput *s3.PutObjectInput) (string, error) {
@@ -147,7 +146,7 @@ type BackendMock struct {
 	DeleteObjectsFunc func(bucket string, objects *s3.DeleteObjectsInput) error
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
-	GetBucketAclFunc func(bucket string) (*auth.GetBucketAclOutput, error)
+	GetBucketAclFunc func(bucket string) ([]byte, error)
 
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(bucket string, object string, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error)
@@ -186,7 +185,7 @@ type BackendMock struct {
 	PutBucketFunc func(bucket string, owner string) error
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
-	PutBucketAclFunc func(putBucketAclInput *s3.PutBucketAclInput) error
+	PutBucketAclFunc func(bucket string, data []byte) error
 
 	// PutObjectFunc mocks the PutObject method.
 	PutObjectFunc func(putObjectInput *s3.PutObjectInput) (string, error)
@@ -390,8 +389,10 @@ type BackendMock struct {
 		}
 		// PutBucketAcl holds details about calls to the PutBucketAcl method.
 		PutBucketAcl []struct {
-			// PutBucketAclInput is the putBucketAclInput argument value.
-			PutBucketAclInput *s3.PutBucketAclInput
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Data is the data argument value.
+			Data []byte
 		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
@@ -797,7 +798,7 @@ func (mock *BackendMock) DeleteObjectsCalls() []struct {
 }
 
 // GetBucketAcl calls GetBucketAclFunc.
-func (mock *BackendMock) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
+func (mock *BackendMock) GetBucketAcl(bucket string) ([]byte, error) {
 	if mock.GetBucketAclFunc == nil {
 		panic("BackendMock.GetBucketAclFunc: method is nil but Backend.GetBucketAcl was just called")
 	}
@@ -1292,19 +1293,21 @@ func (mock *BackendMock) PutBucketCalls() []struct {
 }
 
 // PutBucketAcl calls PutBucketAclFunc.
-func (mock *BackendMock) PutBucketAcl(putBucketAclInput *s3.PutBucketAclInput) error {
+func (mock *BackendMock) PutBucketAcl(bucket string, data []byte) error {
 	if mock.PutBucketAclFunc == nil {
 		panic("BackendMock.PutBucketAclFunc: method is nil but Backend.PutBucketAcl was just called")
 	}
 	callInfo := struct {
-		PutBucketAclInput *s3.PutBucketAclInput
+		Bucket string
+		Data   []byte
 	}{
-		PutBucketAclInput: putBucketAclInput,
+		Bucket: bucket,
+		Data:   data,
 	}
 	mock.lockPutBucketAcl.Lock()
 	mock.calls.PutBucketAcl = append(mock.calls.PutBucketAcl, callInfo)
 	mock.lockPutBucketAcl.Unlock()
-	return mock.PutBucketAclFunc(putBucketAclInput)
+	return mock.PutBucketAclFunc(bucket, data)
 }
 
 // PutBucketAclCalls gets all the calls that were made to PutBucketAcl.
@@ -1312,10 +1315,12 @@ func (mock *BackendMock) PutBucketAcl(putBucketAclInput *s3.PutBucketAclInput) e
 //
 //	len(mockedBackend.PutBucketAclCalls())
 func (mock *BackendMock) PutBucketAclCalls() []struct {
-	PutBucketAclInput *s3.PutBucketAclInput
+	Bucket string
+	Data   []byte
 } {
 	var calls []struct {
-		PutBucketAclInput *s3.PutBucketAclInput
+		Bucket string
+		Data   []byte
 	}
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
