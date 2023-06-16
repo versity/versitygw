@@ -136,6 +136,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fib
 
 		ctx.Locals("role", account.Role)
 		ctx.Locals("access", creds[0])
+		ctx.Locals("isRoot", creds[0] == root.Access)
 
 		return ctx.Next()
 	}
