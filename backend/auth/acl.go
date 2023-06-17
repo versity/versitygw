@@ -76,7 +76,7 @@ func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
 	}, nil
 }
 
-func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMConfig) error {
+func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) error {
 	if acl.Owner != *input.AccessControlPolicy.Owner.ID {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
@@ -141,12 +141,15 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMConfig) error {
 	return nil
 }
 
-func checkIfAccountsExist(accs []string, iam IAMConfig) ([]string, error) {
+func checkIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 	result := []string{}
 
 	for _, acc := range accs {
-		_, ok := iam.AccessAccounts[acc]
-		if !ok {
+		_, err := iam.GetUserAccount(acc)
+		if err != nil && err != ErrNoSuchUser {
+			return nil, fmt.Errorf("check user account: %w", err)
+		}
+		if err == nil {
 			result = append(result, acc)
 		}
 	}

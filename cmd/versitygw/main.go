@@ -133,7 +133,7 @@ func initFlags() []cli.Flag {
 	}
 }
 
-func runGateway(be backend.Backend) error {
+func runGateway(be backend.Backend, s auth.Storer) error {
 	app := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
@@ -161,7 +161,7 @@ func runGateway(be backend.Backend) error {
 		opts = append(opts, s3api.WithDebug())
 	}
 
-	iam, err := auth.InitIAM()
+	iam, err := auth.NewInternal(s)
 	if err != nil {
 		return err
 	}
@@ -169,8 +169,7 @@ func runGateway(be backend.Backend) error {
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
-		Region: region,
-	}, port, iam, opts...)
+	}, port, region, iam, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

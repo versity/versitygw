@@ -28,7 +28,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -41,19 +43,34 @@ import (
 )
 
 type Posix struct {
+	backend.BackendUnsupported
+
 	rootfd  *os.File
 	rootdir string
-	backend.BackendUnsupported
+
+	mu        sync.RWMutex
+	iamcache  []byte
+	iamvalid  bool
+	iamexpire time.Time
 }
 
 var _ backend.Backend = &Posix{}
+
+var (
+	cacheDuration = 5 * time.Minute
+)
 
 const (
 	metaTmpDir          = ".sgwtmp"
 	metaTmpMultipartDir = metaTmpDir + "/multipart"
 	onameAttr           = "user.objname"
 	tagHdr              = "X-Amz-Tagging"
+	contentTypeHdr      = "content-type"
+	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
+	iamkey              = "user.iam"
+	aclkey              = "user.acl"
+	etagkey             = "user.etag"
 )
 
 func New(rootdir string) (*Posix, error) {
@@ -140,7 +157,7 @@ func (p *Posix) PutBucket(bucket string, owner string) error {
 		return fmt.Errorf("marshal acl: %w", err)
 	}
 
-	if err := xattr.Set(bucket, "user.acl", jsonACL); err != nil {
+	if err := xattr.Set(bucket, aclkey, jsonACL); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
@@ -263,7 +280,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		b, err := xattr.Get(partPath, "user.etag")
+		b, err := xattr.Get(partPath, etagkey)
 		etag := string(b)
 		if err != nil {
 			etag = ""
@@ -319,7 +336,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 	// Calculate s3 compatible md5sum for complete multipart.
 	s3MD5 := backend.GetMultipartMD5(parts)
 
-	err = xattr.Set(objname, "user.etag", []byte(s3MD5))
+	err = xattr.Set(objname, etagkey, []byte(s3MD5))
 	if err != nil {
 		// cleanup object if returning error
 		os.Remove(objname)
@@ -373,22 +390,22 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 		m[strings.TrimPrefix(e, "user.")] = string(b)
 	}
 
-	b, err := xattr.Get(path, "user.content-type")
+	b, err := xattr.Get(path, "user."+contentTypeHdr)
 	contentType = string(b)
 	if err != nil {
 		contentType = ""
 	}
 	if contentType != "" {
-		m["content-type"] = contentType
+		m[contentTypeHdr] = contentType
 	}
 
-	b, err = xattr.Get(path, "user.content-encoding")
+	b, err = xattr.Get(path, "user."+contentEncHdr)
 	contentEncoding = string(b)
 	if err != nil {
 		contentEncoding = ""
 	}
 	if contentEncoding != "" {
-		m["content-encoding"] = contentEncoding
+		m[contentEncHdr] = contentEncoding
 	}
 
 	return
@@ -626,7 +643,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 		}
 
 		partPath := filepath.Join(objdir, uploadID, e.Name())
-		b, err := xattr.Get(partPath, "user.etag")
+		b, err := xattr.Get(partPath, etagkey)
 		etag := string(b)
 		if err != nil {
 			etag = ""
@@ -713,7 +730,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum)
-	xattr.Set(partPath, "user.etag", []byte(etag))
+	xattr.Set(partPath, etagkey, []byte(etag))
 
 	return etag, nil
 }
@@ -741,7 +758,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 		}
 
 		// set etag attribute to signify this dir was specifically put
-		xattr.Set(name, "user.etag", []byte(emptyMD5))
+		xattr.Set(name, etagkey, []byte(emptyMD5))
 
 		return emptyMD5, nil
 	}
@@ -779,7 +796,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum[:])
-	xattr.Set(name, "user.etag", []byte(etag))
+	xattr.Set(name, etagkey, []byte(etag))
 
 	return etag, nil
 }
@@ -819,7 +836,7 @@ func (p *Posix) removeParents(bucket, object string) error {
 			break
 		}
 
-		_, err := xattr.Get(parent, "user.etag")
+		_, err := xattr.Get(parent, etagkey)
 		if err == nil {
 			break
 		}
@@ -893,7 +910,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, writer io.Writer) 
 
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	b, err := xattr.Get(objPath, "user.etag")
+	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
 	if err != nil {
 		etag = ""
@@ -937,7 +954,7 @@ func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) 
 	userMetaData := make(map[string]string)
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	b, err := xattr.Get(objPath, "user.etag")
+	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
 	if err != nil {
 		etag = ""
@@ -1010,7 +1027,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
 		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			if isNoAttr(err) {
 				return false, nil
 			}
@@ -1019,7 +1036,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 			}
 			return true, nil
 		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			return string(etag), err
 		}, []string{metaTmpDir})
 	if err != nil {
@@ -1051,7 +1068,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
 		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			if isNoAttr(err) {
 				return false, nil
 			}
@@ -1060,7 +1077,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 			}
 			return true, nil
 		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			return string(etag), err
 		}, []string{metaTmpDir})
 	if err != nil {
@@ -1089,7 +1106,7 @@ func (p *Posix) PutBucketAcl(bucket string, data []byte) error {
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := xattr.Set(bucket, "user.acl", data); err != nil {
+	if err := xattr.Set(bucket, aclkey, data); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
@@ -1105,7 +1122,7 @@ func (p *Posix) GetBucketAcl(bucket string) ([]byte, error) {
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	b, err := xattr.Get(bucket, "user.acl")
+	b, err := xattr.Get(bucket, aclkey)
 	if err != nil {
 		return nil, fmt.Errorf("get acl: %w", err)
 	}
@@ -1183,6 +1200,65 @@ func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
 
 func (p *Posix) RemoveTags(bucket, object string) error {
 	return p.SetTags(bucket, object, nil)
+}
+
+func (p *Posix) GetIAM() ([]byte, error) {
+	p.mu.RLock()
+	defer p.mu.Unlock()
+
+	if !p.iamvalid || !p.iamexpire.After(time.Now()) {
+		p.mu.Unlock()
+		err := p.refreshIAM()
+		p.mu.RLock()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return p.iamcache, nil
+}
+
+func (p *Posix) refreshIAM() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	b, err := xattr.FGet(p.rootfd, iamkey)
+	if isNoAttr(err) {
+		return err
+	}
+
+	p.iamcache = b
+	p.iamvalid = true
+	p.iamexpire = time.Now().Add(cacheDuration)
+
+	return nil
+}
+
+func (p *Posix) StoreIAM(update auth.UpdateAcctFunc) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	b, err := xattr.FGet(p.rootfd, iamkey)
+	if isNoAttr(err) {
+		return err
+	}
+	b, err = update(b)
+	if err != nil {
+		return err
+	}
+
+	// TODO: use xattr.FRemove/xattr.FSetWithFlags/xattr.XATTR_CREATE
+	// to detect racing updates, loop on update race fail
+	err = xattr.FSet(p.rootfd, iamkey, b)
+	if err != nil {
+		return err
+	}
+
+	p.iamcache = b
+	p.iamvalid = true
+	p.iamexpire = time.Now().Add(cacheDuration)
+
+	return nil
 }
 
 func isNoAttr(err error) bool {
