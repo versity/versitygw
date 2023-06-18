@@ -161,9 +161,14 @@ func runGateway(be backend.Backend, s auth.Storer) error {
 		opts = append(opts, s3api.WithDebug())
 	}
 
+	err := s.InitIAM()
+	if err != nil {
+		return fmt.Errorf("init iam: %w", err)
+	}
+
 	iam, err := auth.NewInternal(s)
 	if err != nil {
-		return err
+		return fmt.Errorf("setup internal iam service: %w", err)
 	}
 
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{

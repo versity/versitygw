@@ -68,7 +68,8 @@ const (
 	contentTypeHdr      = "content-type"
 	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
-	iamkey              = "user.iam"
+	iamFile             = "users.json"
+	iamBackupFile       = "users.json.backup"
 	aclkey              = "user.acl"
 	etagkey             = "user.etag"
 )
@@ -1202,12 +1203,35 @@ func (p *Posix) RemoveTags(bucket, object string) error {
 	return p.SetTags(bucket, object, nil)
 }
 
+const (
+	iamMode = 0600
+)
+
+func (p *Posix) InitIAM() error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	_, err := os.ReadFile(iamFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err := json.Marshal(auth.IAMConfig{})
+		if err != nil {
+			return fmt.Errorf("marshal default iam: %w", err)
+		}
+		err = os.WriteFile(iamFile, b, iamMode)
+		if err != nil {
+			return fmt.Errorf("write default iam: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (p *Posix) GetIAM() ([]byte, error) {
 	p.mu.RLock()
-	defer p.mu.Unlock()
+	defer p.mu.RUnlock()
 
 	if !p.iamvalid || !p.iamexpire.After(time.Now()) {
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		err := p.refreshIAM()
 		p.mu.RLock()
 		if err != nil {
@@ -1218,18 +1242,44 @@ func (p *Posix) GetIAM() ([]byte, error) {
 	return p.iamcache, nil
 }
 
+const (
+	backoff  = 100 * time.Millisecond
+	maxretry = 300
+)
+
 func (p *Posix) refreshIAM() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	b, err := xattr.FGet(p.rootfd, iamkey)
-	if isNoAttr(err) {
-		return err
-	}
+	// We are going to be racing with other running gateways without any
+	// coordination. So we might find the file does not exist at times.
+	// For this case we need to retry for a while assuming the other gateway
+	// will eventually write the file. If it doesn't after the max retries,
+	// then we will return the error.
 
-	p.iamcache = b
-	p.iamvalid = true
-	p.iamexpire = time.Now().Add(cacheDuration)
+	retries := 0
+
+	for {
+		b, err := os.ReadFile(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			retries++
+			if retries < maxretry {
+				time.Sleep(backoff)
+				continue
+			}
+			return fmt.Errorf("read iam file: %w", err)
+		}
+		if err != nil {
+			return err
+		}
+
+		p.iamcache = b
+		p.iamvalid = true
+		p.iamexpire = time.Now().Add(cacheDuration)
+		break
+	}
 
 	return nil
 }
@@ -1238,25 +1288,109 @@ func (p *Posix) StoreIAM(update auth.UpdateAcctFunc) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	b, err := xattr.FGet(p.rootfd, iamkey)
-	if isNoAttr(err) {
-		return err
-	}
-	b, err = update(b)
-	if err != nil {
-		return err
+	// We are going to be racing with other running gateways without any
+	// coordination. So the strategy here is to read the current file data.
+	// If the file doesn't exist, then we assume someone else is currently
+	// updating the file. So we just need to keep retrying. We also need
+	// to make sure the data is consistent within a single update. So racing
+	// writes to a file would possibly leave this in some invalid state.
+	// We can get atomic updates with rename. If we read the data, update
+	// the data, write to a temp file, then rename the tempfile back to the
+	// data file. This should always result in a complete data image.
+
+	// There is at least one unsolved failure mode here.
+	// If a gateway removes the data file and then crashes, all other
+	// gateways will retry forever thinking that the original will eventually
+	// write the file.
+
+	retries := 0
+
+	for {
+		b, err := os.ReadFile(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			retries++
+			if retries < maxretry {
+				time.Sleep(backoff)
+				continue
+			}
+
+			// we have been unsuccessful trying to read the iam file
+			// so this must be the case where something happened and
+			// the file did not get updated successfully, and probably
+			// isn't going to be. The recovery procedure would be to
+			// copy the backup file into place of the original.
+			return fmt.Errorf("no iam file, needs backup recovery")
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("read iam file: %w", err)
+		}
+
+		// reset retries on successful read
+		retries = 0
+
+		err = os.Remove(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			time.Sleep(backoff)
+			continue
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove old iam file: %w", err)
+		}
+
+		// save copy of data
+		datacopy := make([]byte, len(b))
+		copy(datacopy, b)
+
+		// make a backup copy in case we crash before update
+		// this is after remove, so there is a small window something
+		// can go wrong, but the remove should barrier other gateways
+		// from trying to write backup at the same time. Only one
+		// gateway will successfully remove the file.
+		os.WriteFile(iamBackupFile, b, iamMode)
+
+		b, err = update(b)
+		if err != nil {
+			// update failed, try to write old data back out
+			os.WriteFile(iamFile, datacopy, iamMode)
+			return fmt.Errorf("update iam data: %w", err)
+		}
+
+		err = writeTempFile(b)
+		if err != nil {
+			// update failed, try to write old data back out
+			os.WriteFile(iamFile, datacopy, iamMode)
+			return err
+		}
+
+		p.iamcache = b
+		p.iamvalid = true
+		p.iamexpire = time.Now().Add(cacheDuration)
+		break
 	}
 
-	// TODO: use xattr.FRemove/xattr.FSetWithFlags/xattr.XATTR_CREATE
-	// to detect racing updates, loop on update race fail
-	err = xattr.FSet(p.rootfd, iamkey, b)
+	return nil
+}
+
+func writeTempFile(b []byte) error {
+	f, err := os.CreateTemp(".", iamFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(f.Name())
+
+	_, err = f.Write(b)
+	if err != nil {
+		return fmt.Errorf("write temp file: %w", err)
 	}
 
-	p.iamcache = b
-	p.iamvalid = true
-	p.iamexpire = time.Now().Add(cacheDuration)
+	err = os.Rename(f.Name(), iamFile)
+	if err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
 
 	return nil
 }
