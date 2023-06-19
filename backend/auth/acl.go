@@ -46,6 +46,10 @@ type AccessControlList struct {
 }
 
 func ParseACL(data []byte) (ACL, error) {
+	if len(data) == 0 {
+		return ACL{}, nil
+	}
+
 	var acl ACL
 	if err := json.Unmarshal(data, &acl); err != nil {
 		return acl, fmt.Errorf("parse acl: %w", err)

@@ -834,11 +834,15 @@ func (p *Posix) removeParents(bucket, object string) error {
 		parent := filepath.Dir(objPath)
 
 		if filepath.Base(parent) == bucket {
+			// stop removing parents if we hit the bucket directory.
 			break
 		}
 
 		_, err := xattr.Get(parent, etagkey)
 		if err == nil {
+			// a directory with a valid etag means this was specifically
+			// uploaded with a put object, so stop here and leave this
+			// directory in place.
 			break
 		}
 
@@ -1124,6 +1128,9 @@ func (p *Posix) GetBucketAcl(bucket string) ([]byte, error) {
 	}
 
 	b, err := xattr.Get(bucket, aclkey)
+	if isNoAttr(err) {
+		return []byte{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get acl: %w", err)
 	}
