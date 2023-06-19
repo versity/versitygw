@@ -16,16 +16,18 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/crc32"
 	"sync"
 )
 
-// Account is an internal IAM account
-type Account struct {
-	Secret string `json:"secret"`
-	Role   string `json:"role"`
+// IAMServiceInternal manages the internal IAM service
+type IAMServiceInternal struct {
+	storer Storer
+
+	mu     sync.RWMutex
+	accts  IAMConfig
+	serial uint32
 }
 
 // UpdateAcctFunc accepts the current data and returns the new data to be stored
@@ -42,22 +44,6 @@ type Storer interface {
 // IAMConfig stores all internal IAM accounts
 type IAMConfig struct {
 	AccessAccounts map[string]Account `json:"accessAccounts"`
-}
-
-// IAMService is the interface for all IAM service implementations
-type IAMService interface {
-	CreateAccount(access string, account Account) error
-	GetUserAccount(access string) (Account, error)
-	DeleteUserAccount(access string) error
-}
-
-// IAMServiceInternal manages the internal IAM service
-type IAMServiceInternal struct {
-	storer Storer
-
-	mu     sync.RWMutex
-	accts  IAMConfig
-	serial uint32
 }
 
 var _ IAMService = &IAMServiceInternal{}
@@ -108,8 +94,6 @@ func (s *IAMServiceInternal) CreateAccount(access string, account Account) error
 	})
 }
 
-var ErrNoSuchUser = errors.New("user not found")
-
 // GetUserAccount retrieves account info for the requested user. Returns
 // ErrNoSuchUser if the account does not exist.
 func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
@@ -125,7 +109,7 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 	if serial != s.serial {
 		s.mu.RUnlock()
 		err := s.updateCache()
-		s.mu.RUnlock()
+		s.mu.RLock()
 		if err != nil {
 			return Account{}, fmt.Errorf("refresh iam cache: %w", err)
 		}
