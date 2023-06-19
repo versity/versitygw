@@ -39,7 +39,7 @@ func TestS3ApiRouter_Init(t *testing.T) {
 			args: args{
 				app: fiber.New(),
 				be:  backend.BackendUnsupported{},
-				iam: auth.IAMServiceUnsupported{},
+				iam: &auth.IAMServiceInternal{},
 			},
 		},
 	}

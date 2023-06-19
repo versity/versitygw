@@ -16,187 +16,179 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"hash/crc32"
 	"sync"
-
-	"github.com/versity/versitygw/s3err"
 )
 
+// Account is an internal IAM account
 type Account struct {
 	Secret string `json:"secret"`
 	Role   string `json:"role"`
-	Region string `json:"region"`
 }
 
+// UpdateAcctFunc accepts the current data and returns the new data to be stored
+type UpdateAcctFunc func([]byte) ([]byte, error)
+
+// Storer is the interface to manage the peristent IAM data for the internal
+// IAM service
+type Storer interface {
+	InitIAM() error
+	GetIAM() ([]byte, error)
+	StoreIAM(UpdateAcctFunc) error
+}
+
+// IAMConfig stores all internal IAM accounts
 type IAMConfig struct {
 	AccessAccounts map[string]Account `json:"accessAccounts"`
 }
 
-type AccountsCache struct {
-	mu       sync.Mutex
-	Accounts map[string]Account
-}
-
-func (c *AccountsCache) getAccount(access string) *Account {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	acc, ok := c.Accounts[access]
-	if !ok {
-		return nil
-	}
-
-	return &acc
-}
-
-func (c *AccountsCache) updateAccounts() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	var data IAMConfig
-
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return fmt.Errorf("error reading config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return fmt.Errorf("error parsing the data: %w", err)
-	}
-
-	c.Accounts = data.AccessAccounts
-
-	return nil
-}
-
-func (c *AccountsCache) deleteAccount(access string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.Accounts, access)
-}
-
+// IAMService is the interface for all IAM service implementations
 type IAMService interface {
-	GetIAMConfig() (*IAMConfig, error)
-	CreateAccount(access string, account *Account) error
-	GetUserAccount(access string) *Account
+	CreateAccount(access string, account Account) error
+	GetUserAccount(access string) (Account, error)
 	DeleteUserAccount(access string) error
 }
 
-type IAMServiceUnsupported struct {
-	accCache *AccountsCache
+// IAMServiceInternal manages the internal IAM service
+type IAMServiceInternal struct {
+	storer Storer
+
+	mu     sync.RWMutex
+	accts  IAMConfig
+	serial uint32
 }
 
-var _ IAMService = &IAMServiceUnsupported{}
+var _ IAMService = &IAMServiceInternal{}
 
-func InitIAM() (IAMService, error) {
-	_, err := os.ReadFile("users.json")
+// NewInternal creates a new instance for the Internal IAM service
+func NewInternal(s Storer) (*IAMServiceInternal, error) {
+	i := &IAMServiceInternal{
+		storer: s,
+	}
+
+	err := i.updateCache()
 	if err != nil {
-		jsonData, err := json.MarshalIndent(IAMConfig{AccessAccounts: map[string]Account{}}, "", "  ")
+		return nil, fmt.Errorf("refresh iam cache: %w", err)
+	}
+
+	return i, nil
+}
+
+// CreateAccount creates a new IAM account. Returns an error if the account
+// already exists.
+func (s *IAMServiceInternal) CreateAccount(access string, account Account) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.storer.StoreIAM(func(data []byte) ([]byte, error) {
+		var conf IAMConfig
+
+		if len(data) > 0 {
+			if err := json.Unmarshal(data, &conf); err != nil {
+				return nil, fmt.Errorf("failed to parse iam: %w", err)
+			}
+		} else {
+			conf.AccessAccounts = make(map[string]Account)
+		}
+
+		_, ok := conf.AccessAccounts[access]
+		if ok {
+			return nil, fmt.Errorf("account already exists")
+		}
+		conf.AccessAccounts[access] = account
+
+		b, err := json.Marshal(s.accts)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to serialize iam: %w", err)
 		}
 
-		if err := os.WriteFile("users.json", jsonData, 0644); err != nil {
-			return nil, err
-		}
-	}
-	return &IAMServiceUnsupported{accCache: &AccountsCache{Accounts: map[string]Account{}}}, nil
+		return b, nil
+	})
 }
 
-func (IAMServiceUnsupported) GetIAMConfig() (*IAMConfig, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
-}
+var ErrNoSuchUser = errors.New("user not found")
 
-func GetIAMConfig() (*IAMConfig, error) {
-	var data IAMConfig
+// GetUserAccount retrieves account info for the requested user. Returns
+// ErrNoSuchUser if the account does not exist.
+func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	file, err := os.ReadFile("users.json")
+	data, err := s.storer.GetIAM()
 	if err != nil {
-		return nil, fmt.Errorf("unable to read config file: %w", err)
+		return Account{}, fmt.Errorf("get iam data: %w", err)
 	}
 
-	if err := json.Unmarshal(file, &data); err != nil {
-		return nil, err
-	}
-
-	return &data, nil
-}
-
-func (s IAMServiceUnsupported) CreateAccount(access string, account *Account) error {
-	var data IAMConfig
-
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return fmt.Errorf("unable to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return err
-	}
-
-	_, ok := data.AccessAccounts[access]
-	if ok {
-		return fmt.Errorf("user with the given access already exists")
-	}
-
-	data.AccessAccounts[access] = *account
-
-	updatedJSON, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile("users.json", updatedJSON, 0644); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s IAMServiceUnsupported) GetUserAccount(access string) *Account {
-	acc := s.accCache.getAccount(access)
-	if acc == nil {
-		err := s.accCache.updateAccounts()
+	serial := crc32.ChecksumIEEE(data)
+	if serial != s.serial {
+		s.mu.RUnlock()
+		err := s.updateCache()
+		s.mu.RUnlock()
 		if err != nil {
-			return nil
+			return Account{}, fmt.Errorf("refresh iam cache: %w", err)
 		}
-
-		return s.accCache.getAccount(access)
 	}
 
-	return acc
-}
-
-func (s IAMServiceUnsupported) DeleteUserAccount(access string) error {
-	var data IAMConfig
-
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return fmt.Errorf("unable to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return fmt.Errorf("failed to parse the config file: %w", err)
-	}
-
-	_, ok := data.AccessAccounts[access]
+	acct, ok := s.accts.AccessAccounts[access]
 	if !ok {
-		return fmt.Errorf("invalid access for the user: user does not exist")
+		return Account{}, ErrNoSuchUser
 	}
 
-	delete(data.AccessAccounts, access)
+	return acct, nil
+}
 
-	updatedJSON, err := json.MarshalIndent(data, "", "  ")
+// updateCache must be called with no locks held
+func (s *IAMServiceInternal) updateCache() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := s.storer.GetIAM()
 	if err != nil {
-		return fmt.Errorf("failed to parse the data: %w", err)
+		return fmt.Errorf("get iam data: %w", err)
 	}
 
-	if err := os.WriteFile("users.json", updatedJSON, 0644); err != nil {
-		return fmt.Errorf("failed to saved the changes: %w", err)
+	serial := crc32.ChecksumIEEE(data)
+
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &s.accts); err != nil {
+			return fmt.Errorf("failed to parse the config file: %w", err)
+		}
+	} else {
+		s.accts.AccessAccounts = make(map[string]Account)
 	}
 
-	s.accCache.deleteAccount(access)
+	s.serial = serial
 
 	return nil
+}
+
+// DeleteUserAccount deletes the specified user account. Does not check if
+// account exists.
+func (s *IAMServiceInternal) DeleteUserAccount(access string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.storer.StoreIAM(func(data []byte) ([]byte, error) {
+		if len(data) == 0 {
+			// empty config, do nothing
+			return data, nil
+		}
+
+		var conf IAMConfig
+
+		if err := json.Unmarshal(data, &conf); err != nil {
+			return nil, fmt.Errorf("failed to parse iam: %w", err)
+		}
+
+		delete(conf.AccessAccounts, access)
+
+		b, err := json.Marshal(s.accts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize iam: %w", err)
+		}
+
+		return b, nil
+	})
 }

@@ -36,7 +36,8 @@ import (
 )
 
 type S3ApiController struct {
-	be backend.Backend
+	be  backend.Backend
+	iam auth.IAMService
 }
 
 func New(be backend.Backend) S3ApiController {
@@ -257,12 +258,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
 		}
 
-		iam, err := auth.GetIAMConfig()
-		if err != nil {
-			return SendResponse(ctx, err)
-		}
-
-		err = auth.UpdateACL(input, parsedAcl, *iam)
+		err = auth.UpdateACL(input, parsedAcl, c.iam)
 		return SendResponse(ctx, err)
 	}
 

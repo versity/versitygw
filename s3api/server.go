@@ -33,7 +33,7 @@ type S3ApiServer struct {
 	debug   bool
 }
 
-func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port string, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
+func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
@@ -45,7 +45,7 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 		opt(server)
 	}
 
-	app.Use(middlewares.VerifyV4Signature(root, iam, server.debug))
+	app.Use(middlewares.VerifyV4Signature(root, iam, region, server.debug))
 	app.Use(logger.New())
 	app.Use(middlewares.VerifyMD5Body())
 	server.router.Init(app, be, iam)
