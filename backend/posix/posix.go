@@ -1080,115 +1080,36 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	}, nil
 }
 
-func (p *Posix) PutBucketAcl(input *s3.PutBucketAclInput) error {
-	var ACL auth.ACL
-	acl, err := xattr.Get(*input.Bucket, "user.acl")
+func (p *Posix) PutBucketAcl(bucket string, data []byte) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
 	if err != nil {
-		return fmt.Errorf("get acl: %w", err)
+		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := json.Unmarshal(acl, &ACL); err != nil {
-		return fmt.Errorf("parse acl: %w", err)
-	}
-
-	if ACL.Owner != *input.AccessControlPolicy.Owner.ID {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
-	}
-
-	// if the ACL is specified, set the ACL, else replace the grantees
-	if input.ACL != "" {
-		ACL.ACL = input.ACL
-		ACL.Grantees = []auth.Grantee{}
-	} else {
-		grantees := []auth.Grantee{}
-
-		fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
-
-		if *input.GrantFullControl != "" {
-			fullControlList = splitUnique(*input.GrantFullControl, ",")
-			fmt.Println(fullControlList)
-			for _, str := range fullControlList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "FULL_CONTROL"})
-			}
-		}
-		if *input.GrantRead != "" {
-			readList = splitUnique(*input.GrantRead, ",")
-			for _, str := range readList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ"})
-			}
-		}
-		if *input.GrantReadACP != "" {
-			readACPList = splitUnique(*input.GrantReadACP, ",")
-			for _, str := range readACPList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ_ACP"})
-			}
-		}
-		if *input.GrantWrite != "" {
-			writeList = splitUnique(*input.GrantWrite, ",")
-			for _, str := range writeList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE"})
-			}
-		}
-		if *input.GrantWriteACP != "" {
-			writeACPList = splitUnique(*input.GrantWriteACP, ",")
-			for _, str := range writeACPList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE_ACP"})
-			}
-		}
-
-		accs := append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
-
-		// Check if the specified accounts exist
-		accList, err := checkIfAccountsExist(accs)
-		if err != nil {
-			return err
-		}
-		if len(accList) > 0 {
-			return fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
-		}
-
-		ACL.Grantees = grantees
-		ACL.ACL = ""
-	}
-
-	ACLJson, err := json.Marshal(ACL)
-	if err != nil {
-		return fmt.Errorf("parsing error: %w", err)
-	}
-
-	if err := xattr.Set(*input.Bucket, "user.acl", ACLJson); err != nil {
+	if err := xattr.Set(bucket, "user.acl", data); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Posix) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
-	var ACL auth.ACL
-	acl, err := xattr.Get(bucket, "user.acl")
+func (p *Posix) GetBucketAcl(bucket string) ([]byte, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	b, err := xattr.Get(bucket, "user.acl")
 	if err != nil {
 		return nil, fmt.Errorf("get acl: %w", err)
 	}
-
-	if err := json.Unmarshal(acl, &ACL); err != nil {
-		return nil, fmt.Errorf("parse acl: %w", err)
-	}
-
-	grants := []types.Grant{}
-
-	for _, elem := range ACL.Grantees {
-		acs := elem.Access
-		grants = append(grants, types.Grant{Grantee: &types.Grantee{ID: &acs}, Permission: elem.Permission})
-	}
-
-	return &auth.GetBucketAclOutput{
-		Owner: &types.Owner{
-			ID: &ACL.Owner,
-		},
-		AccessControlList: auth.AccessControlList{
-			Grants: grants,
-		},
-	}, nil
+	return b, nil
 }
 
 func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
@@ -1276,41 +1197,4 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
-}
-
-func checkIfAccountsExist(accs []string) ([]string, error) {
-	var data auth.IAMConfig
-	result := []string{}
-
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return []string{}, fmt.Errorf("unable to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return []string{}, err
-	}
-
-	for _, acc := range accs {
-		_, ok := data.AccessAccounts[acc]
-		if !ok {
-			result = append(result, acc)
-		}
-	}
-	return result, nil
-}
-
-func splitUnique(s, divider string) []string {
-	elements := strings.Split(s, divider)
-	uniqueElements := make(map[string]bool)
-	result := make([]string, 0, len(elements))
-
-	for _, element := range elements {
-		if _, ok := uniqueElements[element]; !ok {
-			result = append(result, element)
-			uniqueElements[element] = true
-		}
-	}
-
-	return result
 }

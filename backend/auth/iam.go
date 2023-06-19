@@ -108,6 +108,21 @@ func (IAMServiceUnsupported) GetIAMConfig() (*IAMConfig, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
+func GetIAMConfig() (*IAMConfig, error) {
+	var data IAMConfig
+
+	file, err := os.ReadFile("users.json")
+	if err != nil {
+		return nil, fmt.Errorf("unable to read config file: %w", err)
+	}
+
+	if err := json.Unmarshal(file, &data); err != nil {
+		return nil, err
+	}
+
+	return &data, nil
+}
+
 func (s IAMServiceUnsupported) CreateAccount(access string, account *Account) error {
 	var data IAMConfig
 
