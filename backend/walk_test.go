@@ -15,6 +15,9 @@
 package backend_test
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -26,10 +29,44 @@ import (
 type walkTest struct {
 	fsys     fs.FS
 	expected backend.WalkResults
-	dc       backend.DirObjCheck
+	getobj   backend.GetObjFunc
 }
 
-func gettag(string) (string, error) { return "myetag", nil }
+func getObj(path string, d fs.DirEntry) (types.Object, error) {
+	if d.IsDir() {
+		etag := getMD5(path)
+
+		fi, err := d.Info()
+		if err != nil {
+			return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+		}
+
+		return types.Object{
+			ETag:         &etag,
+			Key:          &path,
+			LastModified: backend.GetTimePtr(fi.ModTime()),
+		}, nil
+	}
+
+	etag := getMD5(path)
+
+	fi, err := d.Info()
+	if err != nil {
+		return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+	}
+
+	return types.Object{
+		ETag:         &etag,
+		Key:          &path,
+		LastModified: backend.GetTimePtr(fi.ModTime()),
+		Size:         fi.Size(),
+	}, nil
+}
+
+func getMD5(text string) string {
+	hash := md5.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
+}
 
 func TestWalk(t *testing.T) {
 	tests := []walkTest{
@@ -51,7 +88,7 @@ func TestWalk(t *testing.T) {
 					Key: backend.GetStringPtr("sample.jpg"),
 				}},
 			},
-			dc: func(string) (bool, error) { return false, nil },
+			getobj: getObj,
 		},
 		{
 			// test case single dir/single file
@@ -64,12 +101,12 @@ func TestWalk(t *testing.T) {
 				}},
 				Objects: []types.Object{},
 			},
-			dc: func(string) (bool, error) { return true, nil },
+			getobj: getObj,
 		},
 	}
 
 	for _, tt := range tests {
-		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.dc, gettag, []string{})
+		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.getobj, []string{})
 		if err != nil {
 			t.Fatalf("walk: %v", err)
 		}
