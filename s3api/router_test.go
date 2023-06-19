@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/auth"
 )
 
 func TestS3ApiRouter_Init(t *testing.T) {
@@ -39,7 +39,7 @@ func TestS3ApiRouter_Init(t *testing.T) {
 			args: args{
 				app: fiber.New(),
 				be:  backend.BackendUnsupported{},
-				iam: auth.IAMServiceUnsupported{},
+				iam: &auth.IAMServiceInternal{},
 			},
 		},
 	}

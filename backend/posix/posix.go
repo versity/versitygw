@@ -28,32 +28,50 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 	"github.com/pkg/xattr"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
 type Posix struct {
+	backend.BackendUnsupported
+
 	rootfd  *os.File
 	rootdir string
-	backend.BackendUnsupported
+
+	mu        sync.RWMutex
+	iamcache  []byte
+	iamvalid  bool
+	iamexpire time.Time
 }
 
 var _ backend.Backend = &Posix{}
+
+var (
+	cacheDuration = 5 * time.Minute
+)
 
 const (
 	metaTmpDir          = ".sgwtmp"
 	metaTmpMultipartDir = metaTmpDir + "/multipart"
 	onameAttr           = "user.objname"
 	tagHdr              = "X-Amz-Tagging"
+	contentTypeHdr      = "content-type"
+	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
+	iamFile             = "users.json"
+	iamBackupFile       = "users.json.backup"
+	aclkey              = "user.acl"
+	etagkey             = "user.etag"
 )
 
 func New(rootdir string) (*Posix, error) {
@@ -140,7 +158,7 @@ func (p *Posix) PutBucket(bucket string, owner string) error {
 		return fmt.Errorf("marshal acl: %w", err)
 	}
 
-	if err := xattr.Set(bucket, "user.acl", jsonACL); err != nil {
+	if err := xattr.Set(bucket, aclkey, jsonACL); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
@@ -263,7 +281,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		b, err := xattr.Get(partPath, "user.etag")
+		b, err := xattr.Get(partPath, etagkey)
 		etag := string(b)
 		if err != nil {
 			etag = ""
@@ -319,7 +337,7 @@ func (p *Posix) CompleteMultipartUpload(bucket, object, uploadID string, parts [
 	// Calculate s3 compatible md5sum for complete multipart.
 	s3MD5 := backend.GetMultipartMD5(parts)
 
-	err = xattr.Set(objname, "user.etag", []byte(s3MD5))
+	err = xattr.Set(objname, etagkey, []byte(s3MD5))
 	if err != nil {
 		// cleanup object if returning error
 		os.Remove(objname)
@@ -373,22 +391,22 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 		m[strings.TrimPrefix(e, "user.")] = string(b)
 	}
 
-	b, err := xattr.Get(path, "user.content-type")
+	b, err := xattr.Get(path, "user."+contentTypeHdr)
 	contentType = string(b)
 	if err != nil {
 		contentType = ""
 	}
 	if contentType != "" {
-		m["content-type"] = contentType
+		m[contentTypeHdr] = contentType
 	}
 
-	b, err = xattr.Get(path, "user.content-encoding")
+	b, err = xattr.Get(path, "user."+contentEncHdr)
 	contentEncoding = string(b)
 	if err != nil {
 		contentEncoding = ""
 	}
 	if contentEncoding != "" {
-		m["content-encoding"] = contentEncoding
+		m[contentEncHdr] = contentEncoding
 	}
 
 	return
@@ -626,7 +644,7 @@ func (p *Posix) ListObjectParts(bucket, object, uploadID string, partNumberMarke
 		}
 
 		partPath := filepath.Join(objdir, uploadID, e.Name())
-		b, err := xattr.Get(partPath, "user.etag")
+		b, err := xattr.Get(partPath, etagkey)
 		etag := string(b)
 		if err != nil {
 			etag = ""
@@ -713,7 +731,7 @@ func (p *Posix) PutObjectPart(bucket, object, uploadID string, part int, length 
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum)
-	xattr.Set(partPath, "user.etag", []byte(etag))
+	xattr.Set(partPath, etagkey, []byte(etag))
 
 	return etag, nil
 }
@@ -741,7 +759,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 		}
 
 		// set etag attribute to signify this dir was specifically put
-		xattr.Set(name, "user.etag", []byte(emptyMD5))
+		xattr.Set(name, etagkey, []byte(emptyMD5))
 
 		return emptyMD5, nil
 	}
@@ -779,7 +797,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum[:])
-	xattr.Set(name, "user.etag", []byte(etag))
+	xattr.Set(name, etagkey, []byte(etag))
 
 	return etag, nil
 }
@@ -816,11 +834,15 @@ func (p *Posix) removeParents(bucket, object string) error {
 		parent := filepath.Dir(objPath)
 
 		if filepath.Base(parent) == bucket {
+			// stop removing parents if we hit the bucket directory.
 			break
 		}
 
-		_, err := xattr.Get(parent, "user.etag")
+		_, err := xattr.Get(parent, etagkey)
 		if err == nil {
+			// a directory with a valid etag means this was specifically
+			// uploaded with a put object, so stop here and leave this
+			// directory in place.
 			break
 		}
 
@@ -893,7 +915,7 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, writer io.Writer) 
 
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	b, err := xattr.Get(objPath, "user.etag")
+	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
 	if err != nil {
 		etag = ""
@@ -937,7 +959,7 @@ func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) 
 	userMetaData := make(map[string]string)
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
 
-	b, err := xattr.Get(objPath, "user.etag")
+	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
 	if err != nil {
 		etag = ""
@@ -1010,7 +1032,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
 		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			if isNoAttr(err) {
 				return false, nil
 			}
@@ -1019,7 +1041,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 			}
 			return true, nil
 		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			return string(etag), err
 		}, []string{metaTmpDir})
 	if err != nil {
@@ -1051,7 +1073,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
 		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			if isNoAttr(err) {
 				return false, nil
 			}
@@ -1060,7 +1082,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 			}
 			return true, nil
 		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), "user.etag")
+			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
 			return string(etag), err
 		}, []string{metaTmpDir})
 	if err != nil {
@@ -1080,115 +1102,39 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 	}, nil
 }
 
-func (p *Posix) PutBucketAcl(input *s3.PutBucketAclInput) error {
-	var ACL auth.ACL
-	acl, err := xattr.Get(*input.Bucket, "user.acl")
+func (p *Posix) PutBucketAcl(bucket string, data []byte) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
 	if err != nil {
-		return fmt.Errorf("get acl: %w", err)
+		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := json.Unmarshal(acl, &ACL); err != nil {
-		return fmt.Errorf("parse acl: %w", err)
-	}
-
-	if ACL.Owner != *input.AccessControlPolicy.Owner.ID {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
-	}
-
-	// if the ACL is specified, set the ACL, else replace the grantees
-	if input.ACL != "" {
-		ACL.ACL = input.ACL
-		ACL.Grantees = []auth.Grantee{}
-	} else {
-		grantees := []auth.Grantee{}
-
-		fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
-
-		if *input.GrantFullControl != "" {
-			fullControlList = splitUnique(*input.GrantFullControl, ",")
-			fmt.Println(fullControlList)
-			for _, str := range fullControlList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "FULL_CONTROL"})
-			}
-		}
-		if *input.GrantRead != "" {
-			readList = splitUnique(*input.GrantRead, ",")
-			for _, str := range readList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ"})
-			}
-		}
-		if *input.GrantReadACP != "" {
-			readACPList = splitUnique(*input.GrantReadACP, ",")
-			for _, str := range readACPList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "READ_ACP"})
-			}
-		}
-		if *input.GrantWrite != "" {
-			writeList = splitUnique(*input.GrantWrite, ",")
-			for _, str := range writeList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE"})
-			}
-		}
-		if *input.GrantWriteACP != "" {
-			writeACPList = splitUnique(*input.GrantWriteACP, ",")
-			for _, str := range writeACPList {
-				grantees = append(grantees, auth.Grantee{Access: str, Permission: "WRITE_ACP"})
-			}
-		}
-
-		accs := append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
-
-		// Check if the specified accounts exist
-		accList, err := checkIfAccountsExist(accs)
-		if err != nil {
-			return err
-		}
-		if len(accList) > 0 {
-			return fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
-		}
-
-		ACL.Grantees = grantees
-		ACL.ACL = ""
-	}
-
-	ACLJson, err := json.Marshal(ACL)
-	if err != nil {
-		return fmt.Errorf("parsing error: %w", err)
-	}
-
-	if err := xattr.Set(*input.Bucket, "user.acl", ACLJson); err != nil {
+	if err := xattr.Set(bucket, aclkey, data); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Posix) GetBucketAcl(bucket string) (*auth.GetBucketAclOutput, error) {
-	var ACL auth.ACL
-	acl, err := xattr.Get(bucket, "user.acl")
+func (p *Posix) GetBucketAcl(bucket string) ([]byte, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	b, err := xattr.Get(bucket, aclkey)
+	if isNoAttr(err) {
+		return []byte{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get acl: %w", err)
 	}
-
-	if err := json.Unmarshal(acl, &ACL); err != nil {
-		return nil, fmt.Errorf("parse acl: %w", err)
-	}
-
-	grants := []types.Grant{}
-
-	for _, elem := range ACL.Grantees {
-		acs := elem.Access
-		grants = append(grants, types.Grant{Grantee: &types.Grantee{ID: &acs}, Permission: elem.Permission})
-	}
-
-	return &auth.GetBucketAclOutput{
-		Owner: &types.Owner{
-			ID: &ACL.Owner,
-		},
-		AccessControlList: auth.AccessControlList{
-			Grants: grants,
-		},
-	}, nil
+	return b, nil
 }
 
 func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
@@ -1264,6 +1210,198 @@ func (p *Posix) RemoveTags(bucket, object string) error {
 	return p.SetTags(bucket, object, nil)
 }
 
+const (
+	iamMode = 0600
+)
+
+func (p *Posix) InitIAM() error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	_, err := os.ReadFile(iamFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		b, err := json.Marshal(auth.IAMConfig{})
+		if err != nil {
+			return fmt.Errorf("marshal default iam: %w", err)
+		}
+		err = os.WriteFile(iamFile, b, iamMode)
+		if err != nil {
+			return fmt.Errorf("write default iam: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (p *Posix) GetIAM() ([]byte, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if !p.iamvalid || !p.iamexpire.After(time.Now()) {
+		p.mu.RUnlock()
+		err := p.refreshIAM()
+		p.mu.RLock()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return p.iamcache, nil
+}
+
+const (
+	backoff  = 100 * time.Millisecond
+	maxretry = 300
+)
+
+func (p *Posix) refreshIAM() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// We are going to be racing with other running gateways without any
+	// coordination. So we might find the file does not exist at times.
+	// For this case we need to retry for a while assuming the other gateway
+	// will eventually write the file. If it doesn't after the max retries,
+	// then we will return the error.
+
+	retries := 0
+
+	for {
+		b, err := os.ReadFile(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			retries++
+			if retries < maxretry {
+				time.Sleep(backoff)
+				continue
+			}
+			return fmt.Errorf("read iam file: %w", err)
+		}
+		if err != nil {
+			return err
+		}
+
+		p.iamcache = b
+		p.iamvalid = true
+		p.iamexpire = time.Now().Add(cacheDuration)
+		break
+	}
+
+	return nil
+}
+
+func (p *Posix) StoreIAM(update auth.UpdateAcctFunc) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// We are going to be racing with other running gateways without any
+	// coordination. So the strategy here is to read the current file data.
+	// If the file doesn't exist, then we assume someone else is currently
+	// updating the file. So we just need to keep retrying. We also need
+	// to make sure the data is consistent within a single update. So racing
+	// writes to a file would possibly leave this in some invalid state.
+	// We can get atomic updates with rename. If we read the data, update
+	// the data, write to a temp file, then rename the tempfile back to the
+	// data file. This should always result in a complete data image.
+
+	// There is at least one unsolved failure mode here.
+	// If a gateway removes the data file and then crashes, all other
+	// gateways will retry forever thinking that the original will eventually
+	// write the file.
+
+	retries := 0
+
+	for {
+		b, err := os.ReadFile(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			retries++
+			if retries < maxretry {
+				time.Sleep(backoff)
+				continue
+			}
+
+			// we have been unsuccessful trying to read the iam file
+			// so this must be the case where something happened and
+			// the file did not get updated successfully, and probably
+			// isn't going to be. The recovery procedure would be to
+			// copy the backup file into place of the original.
+			return fmt.Errorf("no iam file, needs backup recovery")
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("read iam file: %w", err)
+		}
+
+		// reset retries on successful read
+		retries = 0
+
+		err = os.Remove(iamFile)
+		if errors.Is(err, fs.ErrNotExist) {
+			// racing with someone else updating
+			// keep retrying after backoff
+			time.Sleep(backoff)
+			continue
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove old iam file: %w", err)
+		}
+
+		// save copy of data
+		datacopy := make([]byte, len(b))
+		copy(datacopy, b)
+
+		// make a backup copy in case we crash before update
+		// this is after remove, so there is a small window something
+		// can go wrong, but the remove should barrier other gateways
+		// from trying to write backup at the same time. Only one
+		// gateway will successfully remove the file.
+		os.WriteFile(iamBackupFile, b, iamMode)
+
+		b, err = update(b)
+		if err != nil {
+			// update failed, try to write old data back out
+			os.WriteFile(iamFile, datacopy, iamMode)
+			return fmt.Errorf("update iam data: %w", err)
+		}
+
+		err = writeTempFile(b)
+		if err != nil {
+			// update failed, try to write old data back out
+			os.WriteFile(iamFile, datacopy, iamMode)
+			return err
+		}
+
+		p.iamcache = b
+		p.iamvalid = true
+		p.iamexpire = time.Now().Add(cacheDuration)
+		break
+	}
+
+	return nil
+}
+
+func writeTempFile(b []byte) error {
+	f, err := os.CreateTemp(".", iamFile)
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer os.Remove(f.Name())
+
+	_, err = f.Write(b)
+	if err != nil {
+		return fmt.Errorf("write temp file: %w", err)
+	}
+
+	err = os.Rename(f.Name(), iamFile)
+	if err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+
+	return nil
+}
+
 func isNoAttr(err error) bool {
 	if err == nil {
 		return false
@@ -1276,41 +1414,4 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
-}
-
-func checkIfAccountsExist(accs []string) ([]string, error) {
-	var data auth.IAMConfig
-	result := []string{}
-
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return []string{}, fmt.Errorf("unable to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return []string{}, err
-	}
-
-	for _, acc := range accs {
-		_, ok := data.AccessAccounts[acc]
-		if !ok {
-			result = append(result, acc)
-		}
-	}
-	return result, nil
-}
-
-func splitUnique(s, divider string) []string {
-	elements := strings.Split(s, divider)
-	uniqueElements := make(map[string]bool)
-	result := make([]string, 0, len(elements))
-
-	for _, element := range elements {
-		if _, ok := uniqueElements[element]; !ok {
-			result = append(result, element)
-			uniqueElements[element] = true
-		}
-	}
-
-	return result
 }

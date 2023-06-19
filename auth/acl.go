@@ -1,0 +1,242 @@
+// Copyright 2023 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+package auth
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
+)
+
+type ACL struct {
+	ACL      types.BucketCannedACL
+	Owner    string
+	Grantees []Grantee
+}
+
+type Grantee struct {
+	Permission types.Permission
+	Access     string
+}
+
+type GetBucketAclOutput struct {
+	Owner             *types.Owner
+	AccessControlList AccessControlList
+}
+
+type AccessControlList struct {
+	Grants []types.Grant
+}
+
+func ParseACL(data []byte) (ACL, error) {
+	if len(data) == 0 {
+		return ACL{}, nil
+	}
+
+	var acl ACL
+	if err := json.Unmarshal(data, &acl); err != nil {
+		return acl, fmt.Errorf("parse acl: %w", err)
+	}
+	return acl, nil
+}
+
+func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
+	var acl ACL
+	if err := json.Unmarshal(data, &acl); err != nil {
+		return GetBucketAclOutput{}, fmt.Errorf("parse acl: %w", err)
+	}
+
+	grants := []types.Grant{}
+
+	for _, elem := range acl.Grantees {
+		acs := elem.Access
+		grants = append(grants, types.Grant{Grantee: &types.Grantee{ID: &acs}, Permission: elem.Permission})
+	}
+
+	return GetBucketAclOutput{
+		Owner: &types.Owner{
+			ID: &acl.Owner,
+		},
+		AccessControlList: AccessControlList{
+			Grants: grants,
+		},
+	}, nil
+}
+
+func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) error {
+	if acl.Owner != *input.AccessControlPolicy.Owner.ID {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
+	// if the ACL is specified, set the ACL, else replace the grantees
+	if input.ACL != "" {
+		acl.ACL = input.ACL
+		acl.Grantees = []Grantee{}
+		return nil
+	}
+
+	grantees := []Grantee{}
+
+	fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
+
+	if *input.GrantFullControl != "" {
+		fullControlList = splitUnique(*input.GrantFullControl, ",")
+		fmt.Println(fullControlList)
+		for _, str := range fullControlList {
+			grantees = append(grantees, Grantee{Access: str, Permission: "FULL_CONTROL"})
+		}
+	}
+	if *input.GrantRead != "" {
+		readList = splitUnique(*input.GrantRead, ",")
+		for _, str := range readList {
+			grantees = append(grantees, Grantee{Access: str, Permission: "READ"})
+		}
+	}
+	if *input.GrantReadACP != "" {
+		readACPList = splitUnique(*input.GrantReadACP, ",")
+		for _, str := range readACPList {
+			grantees = append(grantees, Grantee{Access: str, Permission: "READ_ACP"})
+		}
+	}
+	if *input.GrantWrite != "" {
+		writeList = splitUnique(*input.GrantWrite, ",")
+		for _, str := range writeList {
+			grantees = append(grantees, Grantee{Access: str, Permission: "WRITE"})
+		}
+	}
+	if *input.GrantWriteACP != "" {
+		writeACPList = splitUnique(*input.GrantWriteACP, ",")
+		for _, str := range writeACPList {
+			grantees = append(grantees, Grantee{Access: str, Permission: "WRITE_ACP"})
+		}
+	}
+
+	accs := append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
+
+	// Check if the specified accounts exist
+	accList, err := checkIfAccountsExist(accs, iam)
+	if err != nil {
+		return err
+	}
+	if len(accList) > 0 {
+		return fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
+	}
+
+	acl.Grantees = grantees
+	acl.ACL = ""
+
+	return nil
+}
+
+func checkIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
+	result := []string{}
+
+	for _, acc := range accs {
+		_, err := iam.GetUserAccount(acc)
+		if err != nil && err != ErrNoSuchUser {
+			return nil, fmt.Errorf("check user account: %w", err)
+		}
+		if err == nil {
+			result = append(result, acc)
+		}
+	}
+	return result, nil
+}
+
+func splitUnique(s, divider string) []string {
+	elements := strings.Split(s, divider)
+	uniqueElements := make(map[string]bool)
+	result := make([]string, 0, len(elements))
+
+	for _, element := range elements {
+		if _, ok := uniqueElements[element]; !ok {
+			result = append(result, element)
+			uniqueElements[element] = true
+		}
+	}
+
+	return result
+}
+
+func VerifyACL(acl ACL, bucket, access string, permission types.Permission, isRoot bool) error {
+	if isRoot {
+		return nil
+	}
+
+	if acl.Owner == access {
+		return nil
+	}
+
+	if acl.ACL != "" {
+		if (permission == "READ" || permission == "READ_ACP") && (acl.ACL != "public-read" && acl.ACL != "public-read-write") {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+		if (permission == "WRITE" || permission == "WRITE_ACP") && acl.ACL != "public-read-write" {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+
+		return nil
+	} else {
+		grantee := Grantee{Access: access, Permission: permission}
+		granteeFullCtrl := Grantee{Access: access, Permission: "FULL_CONTROL"}
+
+		isFound := false
+
+		for _, grt := range acl.Grantees {
+			if grt == grantee || grt == granteeFullCtrl {
+				isFound = true
+				break
+			}
+		}
+
+		if isFound {
+			return nil
+		}
+	}
+
+	return s3err.GetAPIError(s3err.ErrAccessDenied)
+}
+
+func IsAdmin(access string, isRoot bool) error {
+	var data IAMConfig
+
+	if isRoot {
+		return nil
+	}
+
+	file, err := os.ReadFile("users.json")
+	if err != nil {
+		return fmt.Errorf("unable to read config file: %w", err)
+	}
+
+	if err := json.Unmarshal(file, &data); err != nil {
+		return err
+	}
+
+	acc, ok := data.AccessAccounts[access]
+	if !ok {
+		return fmt.Errorf("user does not exist")
+	}
+
+	if acc.Role == "admin" {
+		return nil
+	}
+	return fmt.Errorf("only admin users have access to this resource")
+}

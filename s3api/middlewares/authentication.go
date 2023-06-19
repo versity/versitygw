@@ -25,7 +25,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/backend/auth"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -38,10 +38,9 @@ const (
 type RootUserConfig struct {
 	Access string
 	Secret string
-	Region string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -74,9 +73,12 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fib
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
-		account := acct.getAccount(creds[0])
-		if account == nil {
+		account, err := acct.getAccount(creds[0])
+		if err == auth.ErrNoSuchUser {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+		}
+		if err != nil {
+			return controllers.SendResponse(ctx, err)
 		}
 
 		// Check X-Amz-Date header
@@ -113,7 +115,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, debug bool) fib
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
 			AccessKeyID:     creds[0],
 			SecretAccessKey: account.Secret,
-		}, req, hexPayload, creds[3], account.Region, tdate, func(options *v4.SignerOptions) {
+		}, req, hexPayload, creds[3], region, tdate, func(options *v4.SignerOptions) {
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
@@ -147,16 +149,13 @@ type accounts struct {
 	iam  auth.IAMService
 }
 
-func (a accounts) getAccount(access string) *auth.Account {
-	var account *auth.Account
+func (a accounts) getAccount(access string) (auth.Account, error) {
 	if access == a.root.Access {
-		account = &auth.Account{
+		return auth.Account{
 			Secret: a.root.Secret,
 			Role:   "admin",
-			Region: a.root.Region,
-		}
-	} else {
-		account = a.iam.GetUserAccount(access)
+		}, nil
 	}
-	return account
+
+	return a.iam.GetUserAccount(access)
 }

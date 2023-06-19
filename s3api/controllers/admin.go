@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/backend/auth"
+	"github.com/versity/versitygw/auth"
 )
 
 type AdminController struct {
@@ -26,16 +26,16 @@ type AdminController struct {
 }
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
-	access, secret, role, region := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role"), ctx.Query("region")
+	access, secret, role := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role")
 	requesterRole := ctx.Locals("role")
 
 	if requesterRole != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 
-	user := auth.Account{Secret: secret, Role: role, Region: region}
+	user := auth.Account{Secret: secret, Role: role}
 
-	err := c.IAMService.CreateAccount(access, &user)
+	err := c.IAMService.CreateAccount(access, user)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}

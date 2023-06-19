@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,11 +27,24 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
+
+var (
+	acl     auth.ACL
+	acldata []byte
+)
+
+func init() {
+	var err error
+	acldata, err = json.Marshal(acl)
+	if err != nil {
+		panic(err)
+	}
+}
 
 func TestNew(t *testing.T) {
 	type args struct {
@@ -38,7 +52,6 @@ func TestNew(t *testing.T) {
 	}
 
 	be := backend.BackendUnsupported{}
-	acl := auth.ACLServiceUnsupported{}
 
 	tests := []struct {
 		name string
@@ -51,8 +64,7 @@ func TestNew(t *testing.T) {
 				be: be,
 			},
 			want: S3ApiController{
-				be:  be,
-				acl: acl,
+				be: be,
 			},
 		},
 	}
@@ -73,11 +85,13 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -91,11 +105,13 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr := fiber.New()
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
@@ -154,6 +170,9 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			ListObjectPartsFunc: func(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
 				return s3response.ListPartsResponse{}, nil
 			},
@@ -167,7 +186,6 @@ func TestS3ApiController_GetActions(t *testing.T) {
 				return &s3.GetObjectOutput{Metadata: nil}, nil
 			},
 		},
-		acl: &auth.ACLServiceUnsupported{},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
@@ -264,8 +282,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) (*auth.GetBucketAclOutput, error) {
-				return nil, nil
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
 			},
 			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 				return s3response.ListMultipartUploadsResponse{}, nil
@@ -277,7 +295,6 @@ func TestS3ApiController_ListActions(t *testing.T) {
 				return &s3.ListObjectsOutput{}, nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -291,11 +308,13 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	//Error case
 	s3ApiControllerError := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 	appError := fiber.New()
 	appError.Use(func(ctx *fiber.Ctx) error {
@@ -381,14 +400,16 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			PutBucketAclFunc: func(*s3.PutBucketAclInput) error {
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
+			PutBucketAclFunc: func(string, []byte) error {
 				return nil
 			},
 			PutBucketFunc: func(bucket, owner string) error {
 				return nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 	// Mock ctx.Locals
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -463,6 +484,9 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			UploadPartCopyFunc: func(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
 				return &s3.UploadPartCopyOutput{}, nil
 			},
@@ -476,7 +500,6 @@ func TestS3ApiController_PutActions(t *testing.T) {
 				return "Hey", nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
@@ -601,11 +624,13 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			DeleteBucketFunc: func(bucket string) error {
 				return nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -621,11 +646,13 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			DeleteBucketFunc: func(bucket string) error {
 				return s3err.GetAPIError(48)
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
@@ -682,11 +709,13 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			DeleteObjectsFunc: func(bucket string, objects *s3.DeleteObjectsInput) error {
 				return nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -749,6 +778,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			DeleteObjectFunc: func(bucket, object string) error {
 				return nil
 			},
@@ -756,7 +788,6 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 				return nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -770,6 +801,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	appErr := fiber.New()
 
 	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			return acldata, nil
+		},
 		DeleteObjectFunc: func(bucket, object string) error {
 			return s3err.GetAPIError(7)
 		},
@@ -838,11 +872,13 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
 				return &s3.HeadBucketOutput{}, nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -857,11 +893,13 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	appErr := fiber.New()
 
 	s3ApiControllerErr := S3ApiController{be: &BackendMock{
+		GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			return acldata, nil
+		},
 		HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
 			return nil, s3err.GetAPIError(3)
 		},
 	},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
@@ -926,6 +964,9 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
 				return &s3.HeadObjectOutput{
 					ContentEncoding: &contentEncoding,
@@ -936,7 +977,6 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 				}, nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -951,11 +991,13 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
 				return nil, s3err.GetAPIError(42)
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
@@ -1011,6 +1053,9 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
+			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+				return acldata, nil
+			},
 			RestoreObjectFunc: func(bucket, object string, restoreRequest *s3.RestoreObjectInput) error {
 				return nil
 			},
@@ -1021,7 +1066,6 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 				return &s3.CreateMultipartUploadOutput{}, nil
 			},
 		},
-		acl: auth.ACLServiceUnsupported{},
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {

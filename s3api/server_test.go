@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
 
@@ -63,7 +63,7 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotS3ApiServer, err := New(tt.args.app, tt.args.be, tt.args.root,
-				tt.args.port, auth.IAMServiceUnsupported{})
+				tt.args.port, "us-east-1", &auth.IAMServiceInternal{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
