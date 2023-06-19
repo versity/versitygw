@@ -26,7 +26,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
-	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3err"
@@ -1106,6 +1105,15 @@ func Test_XMLresponse(t *testing.T) {
 	}
 	app := fiber.New()
 
+	var ctx fiber.Ctx
+	// Mocking the fiber ctx
+	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
+		ctx = *c
+		return nil
+	})
+
+	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
+
 	tests := []struct {
 		name       string
 		args       args
@@ -1115,7 +1123,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(16),
 			},
@@ -1125,7 +1133,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(50),
 			},
@@ -1135,7 +1143,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Invalid-request-body",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: make(chan int),
 				err:  nil,
 			},
@@ -1145,7 +1153,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: "Valid response",
 				err:  nil,
 			},
@@ -1164,6 +1172,8 @@ func Test_XMLresponse(t *testing.T) {
 			if statusCode != tt.statusCode {
 				t.Errorf("response() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
 			}
+
+			tt.args.ctx.Status(http.StatusOK)
 		})
 	}
 }
@@ -1175,6 +1185,14 @@ func Test_response(t *testing.T) {
 		err  error
 	}
 	app := fiber.New()
+	var ctx fiber.Ctx
+	// Mocking the fiber ctx
+	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
+		ctx = *c
+		return nil
+	})
+
+	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
 
 	tests := []struct {
 		name       string
@@ -1185,7 +1203,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(16),
 			},
@@ -1195,7 +1213,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(50),
 			},
@@ -1205,7 +1223,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: "Valid response",
 				err:  nil,
 			},

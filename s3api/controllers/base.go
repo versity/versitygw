@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -138,7 +138,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Value: lastmod,
 		},
 	})
-	return ctx.SendStatus(http.StatusOK)
+	return SendResponse(ctx, err)
 }
 
 func getstring(s *string) string {
@@ -531,19 +531,22 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 }
 
 func SendResponse(ctx *fiber.Ctx, err error) error {
+	utils.LogPathParams(ctx)
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
+			log.Printf("%s: %v", serr.Code, err)
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
-			ctx.Request().Header.String(), err)
-
+		log.Printf("Internal Error, %v", err)
+		ctx.Status(http.StatusInternalServerError)
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
+
+	utils.LogResponseHeaders(&ctx.Response().Header)
 
 	// https://github.com/gofiber/fiber/issues/2080
 	// ctx.SendStatus() sets incorrect content length on HEAD request
@@ -552,15 +555,17 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 }
 
 func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
+	utils.LogPathParams(ctx)
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
+			log.Printf("%s: %v", serr.Code, err)
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
-			ctx.Request().Header.String(), err)
+		log.Printf("Internal Error, %v", err)
+		ctx.Status(http.StatusInternalServerError)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
@@ -577,6 +582,10 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 		}
 	}
+
+	utils.LogResponseHeaders(&ctx.Response().Header)
+	fmt.Println()
+	log.Printf("Response Body: %s", b)
 
 	return ctx.Send(b)
 }
