@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/backend/auth"
+	"github.com/versity/versitygw/auth"
 )
 
 type AdminController struct {

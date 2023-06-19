@@ -22,8 +22,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/auth"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
 )
