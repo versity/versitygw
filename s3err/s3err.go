@@ -105,6 +105,7 @@ const (
 	ErrAuthNotSetup
 	ErrNotImplemented
 	ErrPreconditionFailed
+	ErrInvalidObjectState
 
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
@@ -367,6 +368,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "PreconditionFailed",
 		Description:    "At least one of the pre-conditions you specified did not hold",
 		HTTPStatusCode: http.StatusPreconditionFailed,
+	},
+	ErrInvalidObjectState: {
+		Code:           "InvalidObjectState",
+		Description:    "The operation is not valid for the current state of the object",
+		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrExistingObjectIsDirectory: {
 		Code:           "ExistingObjectIsDirectory",

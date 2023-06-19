@@ -148,6 +148,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Key:   "Last-Modified",
 			Value: lastmod,
 		},
+		{
+			Key:   "x-amz-storage-class",
+			Value: string(res.StorageClass),
+		},
 	})
 	return SendResponse(ctx, err)
 }
@@ -570,6 +574,14 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		{
 			Key:   "Last-Modified",
 			Value: lastmod,
+		},
+		{
+			Key:   "x-amz-storage-class",
+			Value: string(res.StorageClass),
+		},
+		{
+			Key:   "x-amz-restore",
+			Value: getstring(res.Restore),
 		},
 	})
 

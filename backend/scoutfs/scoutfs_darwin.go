@@ -20,7 +20,7 @@ import (
 	"os"
 )
 
-func New(rootdir string) (*ScoutFS, error) {
+func New(rootdir string, opts ...Option) (*ScoutFS, error) {
 	return nil, fmt.Errorf("scoutfs only available on linux")
 }
 
