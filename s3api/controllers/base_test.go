@@ -27,7 +27,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
-	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -98,6 +97,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Get("/", s3ApiController.ListBuckets)
@@ -118,6 +118,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
@@ -191,6 +192,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
@@ -301,6 +303,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -321,6 +324,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	appError.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appError.Get("/:bucket", s3ApiControllerError.ListActions)
@@ -416,6 +420,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
@@ -505,6 +510,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
@@ -637,6 +643,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -659,6 +666,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
@@ -722,6 +730,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Post("/:bucket", s3ApiController.DeleteObjects)
@@ -794,6 +803,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
@@ -813,6 +823,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
@@ -885,6 +896,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -906,6 +918,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -983,6 +996,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
@@ -1004,6 +1018,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
@@ -1072,6 +1087,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)
@@ -1150,6 +1166,15 @@ func Test_XMLresponse(t *testing.T) {
 	}
 	app := fiber.New()
 
+	var ctx fiber.Ctx
+	// Mocking the fiber ctx
+	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
+		ctx = *c
+		return nil
+	})
+
+	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
+
 	tests := []struct {
 		name       string
 		args       args
@@ -1159,7 +1184,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(16),
 			},
@@ -1169,7 +1194,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(50),
 			},
@@ -1179,7 +1204,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Invalid-request-body",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: make(chan int),
 				err:  nil,
 			},
@@ -1189,7 +1214,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: "Valid response",
 				err:  nil,
 			},
@@ -1208,6 +1233,8 @@ func Test_XMLresponse(t *testing.T) {
 			if statusCode != tt.statusCode {
 				t.Errorf("response() %v code = %v, wantErr %v", tt.name, statusCode, tt.wantErr)
 			}
+
+			tt.args.ctx.Status(http.StatusOK)
 		})
 	}
 }
@@ -1219,6 +1246,14 @@ func Test_response(t *testing.T) {
 		err  error
 	}
 	app := fiber.New()
+	var ctx fiber.Ctx
+	// Mocking the fiber ctx
+	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
+		ctx = *c
+		return nil
+	})
+
+	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
 
 	tests := []struct {
 		name       string
@@ -1229,7 +1264,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(16),
 			},
@@ -1239,7 +1274,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(50),
 			},
@@ -1249,7 +1284,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  app.AcquireCtx(&fasthttp.RequestCtx{}),
+				ctx:  &ctx,
 				resp: "Valid response",
 				err:  nil,
 			},

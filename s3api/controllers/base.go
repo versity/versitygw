@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -113,6 +113,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	ctx.Locals("logResBody", false)
 	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
 	if err != nil {
 		return SendResponse(ctx, err)
@@ -148,7 +149,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Value: lastmod,
 		},
 	})
-	return ctx.SendStatus(http.StatusOK)
+	return SendResponse(ctx, err)
 }
 
 func getstring(s *string) string {
@@ -333,6 +334,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
+		ctx.Locals("logReqBody", false)
 		etag, err := c.be.PutObjectPart(bucket, keyStart, uploadId,
 			partNumber, contentLength, body)
 		ctx.Response().Header.Set("Etag", etag)
@@ -381,6 +383,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	ctx.Locals("logReqBody", false)
 	etag, err := c.be.PutObject(&s3.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &keyStart,
@@ -643,12 +646,13 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
-			ctx.Request().Header.String(), err)
-
+		log.Printf("Internal Error, %v", err)
+		ctx.Status(http.StatusInternalServerError)
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
+
+	utils.LogCtxDetails(ctx, []byte{})
 
 	// https://github.com/gofiber/fiber/issues/2080
 	// ctx.SendStatus() sets incorrect content length on HEAD request
@@ -664,8 +668,8 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, req:\n%v\nerr: %v\n",
-			ctx.Request().Header.String(), err)
+		log.Printf("Internal Error, %v", err)
+		ctx.Status(http.StatusInternalServerError)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
@@ -682,6 +686,8 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 		}
 	}
+
+	utils.LogCtxDetails(ctx, b)
 
 	return ctx.Send(b)
 }
