@@ -19,24 +19,26 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/s3api/utils"
 )
 
-func RequestLogger(ctx *fiber.Ctx) error {
-	utils.LogRequestHeaders(&ctx.Request().Header)
+func RequestLogger(isDebug bool) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		ctx.Locals("isDebug", isDebug)
+		if isDebug {
+			log.Println("Request headers: ")
+			ctx.Request().Header.VisitAll(func(key, val []byte) {
+				log.Printf("%s: %s", key, val)
+			})
 
-	if len(ctx.Body()) > 0 {
-		fmt.Println()
-		log.Printf("Request Body: %s", ctx.Request().Body())
+			if ctx.Request().URI().QueryArgs().Len() != 0 {
+				fmt.Println()
+				log.Println("Request query arguments: ")
+				ctx.Request().URI().QueryArgs().VisitAll(func(key, val []byte) {
+					log.Printf("%s: %s", key, val)
+				})
+			}
+		}
+
+		return ctx.Next()
 	}
-
-	if ctx.Request().URI().QueryArgs().Len() != 0 {
-		fmt.Println()
-		log.Println("Request query arguments: ")
-		ctx.Request().URI().QueryArgs().VisitAll(func(key, val []byte) {
-			log.Printf("%s: %s", key, val)
-		})
-	}
-
-	return ctx.Next()
 }

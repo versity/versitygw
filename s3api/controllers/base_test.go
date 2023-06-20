@@ -97,6 +97,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Get("/", s3ApiController.ListBuckets)
@@ -117,6 +118,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
@@ -190,6 +192,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
@@ -300,6 +303,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -320,6 +324,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	appError.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appError.Get("/:bucket", s3ApiControllerError.ListActions)
@@ -415,6 +420,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
@@ -504,6 +510,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
@@ -636,6 +643,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -658,6 +666,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
@@ -721,6 +730,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Post("/:bucket", s3ApiController.DeleteObjects)
@@ -793,6 +803,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
@@ -812,6 +823,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
@@ -884,6 +896,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -905,6 +918,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 
@@ -982,6 +996,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
@@ -1003,6 +1018,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
@@ -1071,6 +1087,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
+		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)

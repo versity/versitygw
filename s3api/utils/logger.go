@@ -19,28 +19,37 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/valyala/fasthttp"
 )
 
-func LogRequestHeaders(headers *fasthttp.RequestHeader) {
-	log.Println("Request Headers: ")
-	headers.VisitAll(func(key, val []byte) {
-		log.Printf("%s: %s", key, val)
-	})
-}
+func LogCtxDetails(ctx *fiber.Ctx, respBody []byte) {
+	isDebug, ok := ctx.Locals("isDebug").(bool)
+	_, notLogReqBody := ctx.Locals("logReqBody").(bool)
+	_, notLogResBody := ctx.Locals("logResBody").(bool)
+	if isDebug && ok {
+		// Log request body
+		if !notLogReqBody {
+			fmt.Println()
+			log.Printf("Request Body: %s", ctx.Request().Body())
+		}
 
-func LogResponseHeaders(headers *fasthttp.ResponseHeader) {
-	fmt.Println()
-	log.Println("Response Headers: ")
-	headers.VisitAll(func(key, val []byte) {
-		log.Printf("%s: %s", key, val)
-	})
-}
+		// Log path parameters
+		fmt.Println()
+		log.Println("Path parameters: ")
+		for key, val := range ctx.AllParams() {
+			log.Printf("%s: %s", key, val)
+		}
 
-func LogPathParams(ctx *fiber.Ctx) {
-	fmt.Println()
-	log.Println("Path parameters: ")
-	for key, val := range ctx.AllParams() {
-		log.Printf("%s: %s", key, val)
+		// Log response headers
+		fmt.Println()
+		log.Println("Response Headers: ")
+		ctx.Response().Header.VisitAll(func(key, val []byte) {
+			log.Printf("%s: %s", key, val)
+		})
+
+		// Log response body
+		if !notLogResBody && len(respBody) > 0 {
+			fmt.Println()
+			log.Printf("Response body %s", ctx.Response().Body())
+		}
 	}
 }

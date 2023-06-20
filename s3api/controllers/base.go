@@ -113,6 +113,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	ctx.Locals("logResBody", false)
 	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
 	if err != nil {
 		return SendResponse(ctx, err)
@@ -333,6 +334,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
+		ctx.Locals("logReqBody", false)
 		etag, err := c.be.PutObjectPart(bucket, keyStart, uploadId,
 			partNumber, contentLength, body)
 		ctx.Response().Header.Set("Etag", etag)
@@ -381,6 +383,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	ctx.Locals("logReqBody", false)
 	etag, err := c.be.PutObject(&s3.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &keyStart,
@@ -636,12 +639,10 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 }
 
 func SendResponse(ctx *fiber.Ctx, err error) error {
-	utils.LogPathParams(ctx)
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
-			log.Printf("%s: %v", serr.Code, err)
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
@@ -651,7 +652,7 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
 
-	utils.LogResponseHeaders(&ctx.Response().Header)
+	utils.LogCtxDetails(ctx, []byte{})
 
 	// https://github.com/gofiber/fiber/issues/2080
 	// ctx.SendStatus() sets incorrect content length on HEAD request
@@ -660,12 +661,10 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 }
 
 func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
-	utils.LogPathParams(ctx)
 	if err != nil {
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
-			log.Printf("%s: %v", serr.Code, err)
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
@@ -688,9 +687,7 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 		}
 	}
 
-	utils.LogResponseHeaders(&ctx.Response().Header)
-	fmt.Println()
-	log.Printf("Response Body: %s", b)
+	utils.LogCtxDetails(ctx, b)
 
 	return ctx.Send(b)
 }

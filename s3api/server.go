@@ -47,7 +47,7 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 
 	// Logging middlewares
 	app.Use(logger.New())
-	app.Use(middlewares.RequestLogger)
+	app.Use(middlewares.RequestLogger(server.debug))
 
 	// Authentication middlewares
 	app.Use(middlewares.VerifyV4Signature(root, iam, region, server.debug))
