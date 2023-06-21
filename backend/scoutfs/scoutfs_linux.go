@@ -29,7 +29,7 @@ import (
 	"github.com/versity/versitygw/backend/posix"
 )
 
-func New(rootdir string) (*ScoutFS, error) {
+func New(rootdir string, opts ...Option) (*ScoutFS, error) {
 	p, err := posix.New(rootdir)
 	if err != nil {
 		return nil, err
@@ -40,7 +40,12 @@ func New(rootdir string) (*ScoutFS, error) {
 		return nil, fmt.Errorf("open %v: %w", rootdir, err)
 	}
 
-	return &ScoutFS{Posix: p, rootfd: f, rootdir: rootdir}, nil
+	s := &ScoutFS{Posix: p, rootfd: f, rootdir: rootdir}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	return s, nil
 }
 
 const procfddir = "/proc/self/fd"

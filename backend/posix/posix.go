@@ -1031,19 +1031,7 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
-		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
-			if isNoAttr(err) {
-				return false, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			return true, nil
-		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
-			return string(etag), err
-		}, []string{metaTmpDir})
+		fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -1061,6 +1049,65 @@ func (p *Posix) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (
 	}, nil
 }
 
+func fileToObj(bucket string) backend.GetObjFunc {
+	return func(path string, d fs.DirEntry) (types.Object, error) {
+		if d.IsDir() {
+			// directory object only happens if directory empty
+			// check to see if this is a directory object by checking etag
+			etagBytes, err := xattr.Get(filepath.Join(bucket, path), etagkey)
+			if isNoAttr(err) || errors.Is(err, fs.ErrNotExist) {
+				return types.Object{}, backend.ErrSkipObj
+			}
+			if err != nil {
+				return types.Object{}, fmt.Errorf("get etag: %w", err)
+			}
+			etag := string(etagBytes)
+
+			fi, err := d.Info()
+			if errors.Is(err, fs.ErrNotExist) {
+				return types.Object{}, backend.ErrSkipObj
+			}
+			if err != nil {
+				return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+			}
+
+			return types.Object{
+				ETag:         &etag,
+				Key:          &path,
+				LastModified: backend.GetTimePtr(fi.ModTime()),
+			}, nil
+		}
+
+		// file object, get object info and fill out object data
+		etagBytes, err := xattr.Get(filepath.Join(bucket, path), etagkey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return types.Object{}, backend.ErrSkipObj
+		}
+		if err != nil && !isNoAttr(err) {
+			return types.Object{}, fmt.Errorf("get etag: %w", err)
+		}
+		// note: isNoAttr(err) will return etagBytes = []byte{}
+		// so this will just set etag to "" if its not already set
+
+		etag := string(etagBytes)
+
+		fi, err := d.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			return types.Object{}, backend.ErrSkipObj
+		}
+		if err != nil {
+			return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+		}
+
+		return types.Object{
+			ETag:         &etag,
+			Key:          &path,
+			LastModified: backend.GetTimePtr(fi.ModTime()),
+			Size:         fi.Size(),
+		}, nil
+	}
+}
+
 func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1072,19 +1119,7 @@ func (p *Posix) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int)
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
-		func(path string) (bool, error) {
-			_, err := xattr.Get(filepath.Join(bucket, path), etagkey)
-			if isNoAttr(err) {
-				return false, nil
-			}
-			if err != nil {
-				return false, err
-			}
-			return true, nil
-		}, func(path string) (string, error) {
-			etag, err := xattr.Get(filepath.Join(bucket, path), etagkey)
-			return string(etag), err
-		}, []string{metaTmpDir})
+		fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}

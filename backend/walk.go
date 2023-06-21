@@ -15,6 +15,7 @@
 package backend
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -31,12 +32,13 @@ type WalkResults struct {
 	NextMarker     string
 }
 
-type DirObjCheck func(path string) (bool, error)
-type GetETag func(path string) (string, error)
+type GetObjFunc func(path string, d fs.DirEntry) (types.Object, error)
+
+var ErrSkipObj = errors.New("skip this object")
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk DirObjCheck, getetag GetETag, skipdirs []string) (WalkResults, error) {
+func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
 	var objects []types.Object
 
@@ -90,26 +92,14 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk Di
 				return fmt.Errorf("readdir %q: %w", path, err)
 			}
 			if len(ents) == 0 {
-				dirobj, err := dirchk(path)
+				dirobj, err := getObj(path, d)
+				if err == ErrSkipObj {
+					return nil
+				}
 				if err != nil {
-					return fmt.Errorf("directory object check %q: %w", path, err)
+					return fmt.Errorf("directory to object %q: %w", path, err)
 				}
-				if dirobj {
-					fi, err := d.Info()
-					if err != nil {
-						return fmt.Errorf("dir info %q: %w", path, err)
-					}
-					etag, err := getetag(path)
-					if err != nil {
-						return fmt.Errorf("get etag %q: %w", path, err)
-					}
-					path := path + "/"
-					objects = append(objects, types.Object{
-						ETag:         &etag,
-						Key:          &path,
-						LastModified: GetTimePtr(fi.ModTime()),
-					})
-				}
+				objects = append(objects, dirobj)
 			}
 
 			return nil
@@ -130,21 +120,14 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk Di
 		if delimiter == "" {
 			// If no delimeter specified, then all files with matching
 			// prefix are included in results
-			fi, err := d.Info()
-			if err != nil {
-				return fmt.Errorf("get info for %v: %w", path, err)
+			obj, err := getObj(path, d)
+			if err == ErrSkipObj {
+				return nil
 			}
-			etag, err := getetag(path)
 			if err != nil {
-				return fmt.Errorf("get etag %q: %w", path, err)
+				return fmt.Errorf("file to object %q: %w", path, err)
 			}
-
-			objects = append(objects, types.Object{
-				ETag:         &etag,
-				Key:          &path,
-				LastModified: GetTimePtr(fi.ModTime()),
-				Size:         fi.Size(),
-			})
+			objects = append(objects, obj)
 
 			if max > 0 && (len(objects)+len(cpmap)) == max {
 				pastMax = true
@@ -177,20 +160,14 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, dirchk Di
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
-			fi, err := d.Info()
-			if err != nil {
-				return fmt.Errorf("get info for %v: %w", path, err)
+			obj, err := getObj(path, d)
+			if err == ErrSkipObj {
+				return nil
 			}
-			etag, err := getetag(path)
 			if err != nil {
-				return fmt.Errorf("get etag %q: %w", path, err)
+				return fmt.Errorf("file to object %q: %w", path, err)
 			}
-			objects = append(objects, types.Object{
-				ETag:         &etag,
-				Key:          &path,
-				LastModified: GetTimePtr(fi.ModTime()),
-				Size:         fi.Size(),
-			})
+			objects = append(objects, obj)
 			if (len(objects) + len(cpmap)) == max {
 				pastMax = true
 			}

@@ -21,6 +21,10 @@ import (
 	"github.com/versity/versitygw/backend/scoutfs"
 )
 
+var (
+	glacier bool
+)
+
 func scoutfsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "scoutfs",
@@ -39,6 +43,14 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject
 ScoutFS contains optimizations for multipart uploads using extent
 move interfaces as well as support for tiered filesystems.`,
 		Action: runScoutfs,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:        "glacier",
+				Usage:       "enable glacier emulation mode",
+				Aliases:     []string{"g"},
+				Destination: &glacier,
+			},
+		},
 	}
 }
 
@@ -47,7 +59,12 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("no directory provided for operation")
 	}
 
-	be, err := scoutfs.New(ctx.Args().Get(0))
+	var opts []scoutfs.Option
+	if glacier {
+		opts = append(opts, scoutfs.WithGlacierEmulation())
+	}
+
+	be, err := scoutfs.New(ctx.Args().Get(0), opts...)
 	if err != nil {
 		return fmt.Errorf("init scoutfs: %v", err)
 	}
