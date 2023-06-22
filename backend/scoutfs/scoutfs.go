@@ -605,9 +605,11 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 				return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
 			}
 
+			key := path + "/"
+
 			return types.Object{
 				ETag:         &etag,
-				Key:          &path,
+				Key:          &key,
 				LastModified: backend.GetTimePtr(fi.ModTime()),
 			}, nil
 		}
