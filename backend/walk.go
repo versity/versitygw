@@ -112,13 +112,13 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 			pastMarker = true
 		}
 
-		// If object doesnt have prefix, dont include in results.
+		// If object doesn't have prefix, don't include in results.
 		if prefix != "" && !strings.HasPrefix(path, prefix) {
 			return nil
 		}
 
 		if delimiter == "" {
-			// If no delimeter specified, then all files with matching
+			// If no delimiter specified, then all files with matching
 			// prefix are included in results
 			obj, err := getObj(path, d)
 			if err == ErrSkipObj {
@@ -143,7 +143,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 		//
 		// For example:
 		// prefix = A/
-		// delimeter = /
+		// delimiter = /
 		// and objects:
 		// A/file
 		// A/B/file
@@ -152,11 +152,11 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 		// objects: A/file
 		// common prefix: A/B/
 		//
-		// Note: No obects are included past the common prefix since
+		// Note: No objects are included past the common prefix since
 		// these are all rolled up into the common prefix.
-		// Note: The delimeter can be anything, so we have to operate on
+		// Note: The delimiter can be anything, so we have to operate on
 		// the full path without any assumptions on posix directory hierarchy
-		// here.  Usually the delimeter will be "/", but thats not required.
+		// here.  Usually the delimiter will be "/", but thats not required.
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
@@ -176,7 +176,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 
 		// Common prefixes are a set, so should not have duplicates.
 		// These are abstractly a "directory", so need to include the
-		// delimeter at the end.
+		// delimiter at the end.
 		cpmap[prefix+before+delimiter] = struct{}{}
 		if (len(objects) + len(cpmap)) == max {
 			pastMax = true
