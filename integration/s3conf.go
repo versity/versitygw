@@ -2,7 +2,6 @@ package integration
 
 import (
 	"context"
-	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -92,9 +91,7 @@ func (c *S3Conf) ResolveEndpoint(service, region string, options ...interface{})
 func (c *S3Conf) Config() aws.Config {
 	creds := c.getCreds()
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
+	tr := &http.Transport{}
 	client := &http.Client{Transport: tr}
 
 	opts := []func(*config.LoadOptions) error{
