@@ -53,6 +53,7 @@ func main() {
 		posixCommand(),
 		scoutfsCommand(),
 		adminCommand(),
+		testCommand(),
 	}
 
 	if err := app.Run(os.Args); err != nil {
