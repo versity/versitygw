@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +11,8 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 )
 
@@ -26,10 +29,7 @@ type S3Conf struct {
 }
 
 func NewS3Conf(opts ...Option) *S3Conf {
-	s := &S3Conf{
-		PartSize:    64 * 1024 * 1024, // 64B default chunksize
-		Concurrency: 1,                // 1 default concurrency
-	}
+	s := &S3Conf{}
 
 	for _, opt := range opts {
 		opt(s)
@@ -122,4 +122,32 @@ func (c *S3Conf) Config() aws.Config {
 	}
 
 	return cfg
+}
+
+func (c *S3Conf) UploadData(r io.Reader, bucket, object string) error {
+	uploader := manager.NewUploader(s3.NewFromConfig(c.Config()))
+	uploader.PartSize = c.PartSize
+	uploader.Concurrency = c.Concurrency
+
+	upinfo := &s3.PutObjectInput{
+		Body:   r,
+		Bucket: &bucket,
+		Key:    &object,
+	}
+
+	_, err := uploader.Upload(context.Background(), upinfo)
+	return err
+}
+
+func (c *S3Conf) DownloadData(w io.WriterAt, bucket, object string) (int64, error) {
+	downloader := manager.NewDownloader(s3.NewFromConfig(c.Config()))
+	downloader.PartSize = c.PartSize
+	downloader.Concurrency = c.Concurrency
+
+	downinfo := &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	}
+
+	return downloader.Download(context.Background(), w, downinfo)
 }
