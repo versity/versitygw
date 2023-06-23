@@ -38,6 +38,26 @@ func (r *RReader) Sum() []byte {
 	return r.hash.Sum(nil)
 }
 
+type ZReader struct {
+	buf      []byte
+	dataleft int
+}
+
+func NewZeroReader(totalsize, bufsize int) *ZReader {
+	b := make([]byte, bufsize)
+	return &ZReader{buf: b, dataleft: totalsize}
+}
+
+func (r *ZReader) Read(p []byte) (int, error) {
+	n := min(len(p), len(r.buf), r.dataleft)
+	r.dataleft -= n
+	err := error(nil)
+	if n == 0 {
+		err = io.EOF
+	}
+	return copy(p, r.buf[:n]), err
+}
+
 func min(values ...int) int {
 	if len(values) == 0 {
 		return 0
@@ -51,4 +71,14 @@ func min(values ...int) int {
 	}
 
 	return min
+}
+
+type NW struct{}
+
+func NewNullWriter() NW {
+	return NW{}
+}
+
+func (NW) WriteAt(p []byte, off int64) (n int, err error) {
+	return len(p), nil
 }

@@ -8,9 +8,21 @@ import (
 )
 
 var (
-	awsID     string
-	awsSecret string
-	endpoint  string
+	awsID           string
+	awsSecret       string
+	endpoint        string
+	bucket          string
+	prefix          string
+	dstBucket       string
+	partSize        int64
+	objSize         int64
+	chunkSize       int64
+	concurrency     int
+	files           int
+	upload          bool
+	download        bool
+	pathStyle       bool
+	checksumDisable bool
 )
 
 func testCommand() *cli.Command {
@@ -152,6 +164,106 @@ func initTestCommands() []*cli.Command {
 			Usage:       "Tests the full flow of gateway.",
 			Description: `Runs all the available tests to test the full flow of the gateway.`,
 			Action:      getAction(integration.TestFullFlow),
+		},
+		{
+			Name:  "bench",
+			Usage: "Runs download/upload performance test on the gateway",
+			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).
+			Logs the results to the console`,
+			Flags: []cli.Flag{
+				&cli.IntFlag{
+					Name:        "files",
+					Usage:       "Number of objects to read/write",
+					Value:       1,
+					Destination: &files,
+				},
+				&cli.Int64Flag{
+					Name:        "objsize",
+					Usage:       "Uploading object size",
+					Value:       0,
+					Destination: &objSize,
+				},
+				&cli.StringFlag{
+					Name:        "prefix",
+					Usage:       "Object name prefix",
+					Destination: &prefix,
+				},
+				&cli.BoolFlag{
+					Name:        "upload",
+					Usage:       "Upload data to the gateway",
+					Value:       false,
+					Destination: &upload,
+				},
+				&cli.BoolFlag{
+					Name:        "download",
+					Usage:       "Download data to the gateway",
+					Value:       false,
+					Destination: &download,
+				},
+				&cli.StringFlag{
+					Name:        "bucket",
+					Usage:       "Destination bucket name to read/write data",
+					Destination: &bucket,
+				},
+				&cli.Int64Flag{
+					Name:        "partSize",
+					Usage:       "Upload/download size per thread",
+					Value:       64 * 1024 * 1024,
+					Destination: &partSize,
+				},
+				&cli.IntFlag{
+					Name:        "concurrency",
+					Usage:       "Upload/download threads per object",
+					Value:       1,
+					Destination: &concurrency,
+				},
+				&cli.BoolFlag{
+					Name:        "pathStyle",
+					Usage:       "Use Pathstyle bucket addressing",
+					Value:       false,
+					Destination: &pathStyle,
+				},
+				&cli.BoolFlag{
+					Name:        "checksumDis",
+					Usage:       "Disable server checksum",
+					Value:       false,
+					Destination: &checksumDisable,
+				},
+			},
+			Action: func(ctx *cli.Context) error {
+				if upload && download {
+					return fmt.Errorf("must only specify one of upload or download")
+				}
+				if !upload && !download {
+					return fmt.Errorf("must specify one of upload or download")
+				}
+
+				if bucket == "" {
+					return fmt.Errorf("must specify bucket")
+				}
+
+				opts := []integration.Option{
+					integration.WithAccess(awsID),
+					integration.WithSecret(awsSecret),
+					integration.WithRegion(region),
+					integration.WithEndpoint(endpoint),
+					integration.WithConcurrency(concurrency),
+					integration.WithPartSize(partSize),
+				}
+				if debug {
+					opts = append(opts, integration.WithDebug())
+				}
+				if pathStyle {
+					opts = append(opts, integration.WithPathStyle())
+				}
+				if checksumDisable {
+					opts = append(opts, integration.WithDisableChecksum())
+				}
+
+				s3conf := integration.NewS3Conf(opts...)
+
+				return integration.TestPerformance(s3conf, upload, download, files, objSize, bucket, prefix)
+			},
 		},
 	}
 }
