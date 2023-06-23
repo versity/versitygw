@@ -11,12 +11,10 @@ var (
 	awsID           string
 	awsSecret       string
 	endpoint        string
-	bucket          string
 	prefix          string
 	dstBucket       string
 	partSize        int64
 	objSize         int64
-	chunkSize       int64
 	concurrency     int
 	files           int
 	upload          bool
@@ -203,7 +201,7 @@ func initTestCommands() []*cli.Command {
 				&cli.StringFlag{
 					Name:        "bucket",
 					Usage:       "Destination bucket name to read/write data",
-					Destination: &bucket,
+					Destination: &dstBucket,
 				},
 				&cli.Int64Flag{
 					Name:        "partSize",
@@ -238,7 +236,7 @@ func initTestCommands() []*cli.Command {
 					return fmt.Errorf("must specify one of upload or download")
 				}
 
-				if bucket == "" {
+				if dstBucket == "" {
 					return fmt.Errorf("must specify bucket")
 				}
 
@@ -262,7 +260,7 @@ func initTestCommands() []*cli.Command {
 
 				s3conf := integration.NewS3Conf(opts...)
 
-				return integration.TestPerformance(s3conf, upload, download, files, objSize, bucket, prefix)
+				return integration.TestPerformance(s3conf, upload, download, files, objSize, dstBucket, prefix)
 			},
 		},
 	}
