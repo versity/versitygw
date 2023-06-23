@@ -1158,8 +1158,7 @@ func TestPerformance(s *S3Conf, upload, download bool, files int, objectSize int
 		for i := 0; i < files; i++ {
 			sg.Add(1)
 			go func(i int) {
-				var r io.Reader
-				r = NewDataReader(int(objectSize), int(s.PartSize))
+				var r io.Reader = NewDataReader(int(objectSize), int(s.PartSize))
 
 				start := time.Now()
 				err := s.UploadData(r, bucket, fmt.Sprintf("%v%v", prefix, i))
