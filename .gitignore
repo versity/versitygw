@@ -32,3 +32,4 @@ VERSION
 /versitygw.spec
 *.tar
 *.tar.gz
+/rand.data

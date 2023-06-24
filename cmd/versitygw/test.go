@@ -285,6 +285,9 @@ func getAction(tf testFunc) func(*cli.Context) error {
 
 		fmt.Println()
 		fmt.Println("RAN:", integration.RunCount, "PASS:", integration.PassCount, "FAIL:", integration.FailCount)
+		if integration.FailCount > 0 {
+			return fmt.Errorf("test failed with %v errors", integration.FailCount)
+		}
 		return nil
 	}
 }
