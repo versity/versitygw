@@ -33,3 +33,4 @@ VERSION
 *.tar
 *.tar.gz
 /rand.data
+/profile.txt

@@ -3,7 +3,7 @@ on: pull_request
 jobs:
 
   build:
-    name: Build
+    name: RunTests
     runs-on: ubuntu-latest
     steps:
 
@@ -16,16 +16,15 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v3
 
-    - name: Get dependencies
+    - name: Get Dependencies
       run: |
         go get -v -t -d ./...
 
-    - name: Build
-      run: make
-
-    - name: Test
+    - name: Build and Run
       run: |
-        mkdir /tmp/gw
-        ./versitygw -a user -s pass posix /tmp/gw &
-        sleep 1
-        ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow
+        make testbin
+        ./runtests.sh
+
+    - name: Coverage Report
+      run: |
+        go tool covdata percent -i=/tmp/covdata
