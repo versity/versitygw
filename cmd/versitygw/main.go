@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -47,6 +48,8 @@ var (
 )
 
 func main() {
+	setupSignalHandler()
+
 	app := initApp()
 
 	app.Commands = []*cli.Command{
@@ -56,7 +59,14 @@ func main() {
 		testCommand(),
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-sigDone
+		fmt.Fprintf(os.Stderr, "terminating signal caught, shutting down\n")
+		cancel()
+	}()
+
+	if err := app.RunContext(ctx, os.Args); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -134,7 +144,7 @@ func initFlags() []cli.Flag {
 	}
 }
 
-func runGateway(be backend.Backend, s auth.Storer) error {
+func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 	app := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
@@ -180,5 +190,15 @@ func runGateway(be backend.Backend, s auth.Storer) error {
 		return fmt.Errorf("init gateway: %v", err)
 	}
 
-	return srv.Serve()
+	c := make(chan error, 1)
+	go func() { c <- srv.Serve() }()
+
+	select {
+	case <-ctx.Done():
+		be.Shutdown()
+		return ctx.Err()
+	case err := <-c:
+		be.Shutdown()
+		return err
+	}
 }
