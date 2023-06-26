@@ -1218,6 +1218,6 @@ func TestFullFlow(s *S3Conf) {
 	TestIncompleteMultiParts(s)
 	TestIncorrectMultiParts(s)
 	TestListAbortMultiPartObject(s)
-	TestListAbortMultiPartObject(s)
+	TestRangeGet(s)
 	TestInvalidMultiParts(s)
 }

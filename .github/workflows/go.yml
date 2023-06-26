@@ -24,10 +24,10 @@ jobs:
         go get -v -t -d ./...
 
     - name: Build
-      run: go build -o versitygw cmd/versitygw/*.go
+      run: make
 
     - name: Test
-      run: go test -v -timeout 30s -tags=github ./...
+      run: go test -coverprofile profile.txt -race -v -timeout 30s -tags=github ./...
 
     - name: Install govulncheck
       run: go install golang.org/x/vuln/cmd/govulncheck@latest
