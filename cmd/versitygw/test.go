@@ -158,6 +158,14 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestInvalidMultiParts),
 		},
 		{
+			Name:  "object-tag-actions",
+			Usage: "Tests get/put/delete object tag actions.",
+			Description: `Creates a bucket with s3 gateway action, puts an object in it,
+			puts some tags for the object, gets the tags, compares the results, removes the tags,
+			gets the tags again, checks it to be empty, then removes both the object and bucket`,
+			Action: getAction(integration.TestPutGetRemoveTags),
+		},
+		{
 			Name:        "full-flow",
 			Usage:       "Tests the full flow of gateway.",
 			Description: `Runs all the available tests to test the full flow of the gateway.`,
