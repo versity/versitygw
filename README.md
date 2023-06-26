@@ -1,4 +1,4 @@
-# The Versity Gateway: A High-Performance Open Source S3 to File Translation Tool
+# The Versity Gateway:<br/>A High-Performance S3 to Storage System Translation Service
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/versity/versitygw/blob/assets/assets/logo-white.svg">
@@ -8,13 +8,11 @@
 
  [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE)  
 
-The Versity Gateway: A High-Performance Open Source S3 to File Translation Tool
-
-Current status: Alpha, in development not yet suited for production use
+**Current status:** Alpha, in development not yet suited for production use
 
 See project [documentation](https://github.com/versity/versitygw/wiki) on the wiki.
 
-Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and file-based storage systems. The Versity Gateway bridges the gap between S3-reliant applications and file storage systems, enabling enhanced compatibility and integration with file based systems while offering exceptional scalability.
+Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and storage systems. The Versity Gateway bridges the gap between S3-reliant applications and other storage systems, enabling enhanced compatibility and integration while offering exceptional scalability.
 
 The server translates incoming S3 API requests and transforms them into equivalent operations to the backend service. By leveraging this gateway server, applications can interact with the S3-compatible API on top of already existing storage systems. This project enables leveraging existing infrastructure investments while seamlessly integrating with S3-compatible systems, offering increased flexibility and compatibility in managing data storage.
 
