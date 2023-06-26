@@ -94,3 +94,16 @@ type Owner struct {
 	ID          string
 	DisplayName string
 }
+
+type Tag struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+type TagSet struct {
+	Tags []Tag `xml:"Tag"`
+}
+
+type Tagging struct {
+	TagSet TagSet `xml:"TagSet"`
+}
