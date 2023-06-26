@@ -132,8 +132,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
-	fmt.Println("Request is here")
-
 	ctx.Locals("logResBody", false)
 	res, err := c.be.GetObject(bucket, key, acceptRange, ctx.Response().BodyWriter())
 	if err != nil {
