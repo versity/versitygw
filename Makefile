@@ -34,6 +34,9 @@ build: $(BIN)
 $(BIN):
 	$(GOBUILD) $(LDFLAGS) -o $(BIN) cmd/$(BIN)/*.go
 
+testbin:
+	$(GOBUILD) $(LDFLAGS) -o $(BIN) -cover -race cmd/$(BIN)/*.go
+
 .PHONY: test
 test: 
 	$(GOTEST) ./...
