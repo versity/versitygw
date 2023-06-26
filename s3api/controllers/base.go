@@ -33,6 +33,7 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 type S3ApiController struct {
@@ -75,6 +76,24 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	parsedAcl, err := auth.ParseACL(data)
 	if err != nil {
 		return SendResponse(ctx, err)
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
+			return SendXMLResponse(ctx, nil, err)
+		}
+
+		tags, err := c.be.GetTags(bucket, key)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err)
+		}
+		resp := s3response.Tagging{TagSet: s3response.TagSet{Tags: []s3response.Tag{}}}
+
+		for key, val := range tags {
+			resp.TagSet.Tags = append(resp.TagSet.Tags, s3response.Tag{Key: key, Value: val})
+		}
+
+		return SendXMLResponse(ctx, resp, nil)
 	}
 
 	if uploadId != "" {
@@ -327,6 +346,28 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		var objTagging s3response.Tagging
+		err := xml.Unmarshal(ctx.Body(), &objTagging)
+		if err != nil {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest))
+		}
+
+		tags := make(map[string]string, len(objTagging.TagSet.Tags))
+
+		for _, tag := range objTagging.TagSet.Tags {
+			tags[tag.Key] = tag.Value
+		}
+
+		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE", isRoot); err != nil {
+			return SendResponse(ctx, err)
+		}
+
+		err = c.be.SetTags(bucket, keyStart, tags)
+
+		return SendResponse(ctx, err)
+	}
+
 	if uploadId != "" && partNumberStr != "" {
 		partNumber := ctx.QueryInt("partNumber", -1)
 		if partNumber < 1 {
@@ -465,6 +506,15 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 
 	parsedAcl, err := auth.ParseACL(data)
 	if err != nil {
+		return SendResponse(ctx, err)
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE", isRoot); err != nil {
+			return SendResponse(ctx, err)
+		}
+
+		err = c.be.RemoveTags(bucket, key)
 		return SendResponse(ctx, err)
 	}
 
