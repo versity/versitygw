@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,65 +19,6 @@ import (
 var (
 	shortTimeout = 10 * time.Second
 )
-
-func setup(s *S3Conf, bucket string) error {
-	s3client := s3.NewFromConfig(s.Config())
-
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: &bucket,
-	})
-	cancel()
-	return err
-}
-
-func teardown(s *S3Conf, bucket string) error {
-	s3client := s3.NewFromConfig(s.Config())
-
-	deleteObject := func(bucket, key, versionId *string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket:    bucket,
-			Key:       key,
-			VersionId: versionId,
-		})
-		cancel()
-		if err != nil {
-			return fmt.Errorf("failed to delete object %v: %v", *key, err)
-		}
-		return nil
-	}
-
-	in := &s3.ListObjectsV2Input{Bucket: &bucket}
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.ListObjectsV2(ctx, in)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("failed to list objects: %v", err)
-		}
-
-		for _, item := range out.Contents {
-			err = deleteObject(&bucket, item.Key, nil)
-			if err != nil {
-				return err
-			}
-		}
-
-		if out.IsTruncated {
-			in.ContinuationToken = out.ContinuationToken
-		} else {
-			break
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err := s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
-		Bucket: &bucket,
-	})
-	cancel()
-	return err
-}
 
 func TestMakeBucket(s *S3Conf) {
 	testname := "test make bucket"
@@ -243,20 +183,6 @@ func TestPutGetMPObject(s *S3Conf) {
 		return
 	}
 	passF(testname)
-}
-
-func isEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i, d := range a {
-		if d != b[i] {
-			return false
-		}
-	}
-
-	return true
 }
 
 func TestPutDirObject(s *S3Conf) {
@@ -434,16 +360,6 @@ func TestListObject(s *S3Conf) {
 	passF(testname)
 }
 
-func contains(name string, list []types.Object) bool {
-	for _, item := range list {
-		fmt.Println(*item.Key)
-		if strings.EqualFold(name, *item.Key) {
-			return true
-		}
-	}
-	return false
-}
-
 func TestListAbortMultiPartObject(s *S3Conf) {
 	testname := "list/abort multipart objects"
 	runF(testname)
@@ -526,15 +442,6 @@ func TestListAbortMultiPartObject(s *S3Conf) {
 		return
 	}
 	passF(testname)
-}
-
-func containsUID(name, id string, list []types.MultipartUpload) bool {
-	for _, item := range list {
-		if strings.EqualFold(name, *item.Key) && strings.EqualFold(id, *item.UploadId) {
-			return true
-		}
-	}
-	return false
 }
 
 func TestListMultiParts(s *S3Conf) {
@@ -907,15 +814,6 @@ func TestIncompleteMultiParts(s *S3Conf) {
 	passF(testname)
 }
 
-func containsPart(part int32, list []types.Part) bool {
-	for _, item := range list {
-		if item.PartNumber == part {
-			return true
-		}
-	}
-	return false
-}
-
 func TestIncompletePutObject(s *S3Conf) {
 	testname := "test incomplete put object"
 	runF(testname)
@@ -1035,18 +933,6 @@ func TestRangeGet(s *S3Conf) {
 		return
 	}
 	passF(testname)
-}
-
-func isSame(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, x := range a {
-		if x != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestInvalidMultiParts(s *S3Conf) {
@@ -1205,6 +1091,101 @@ func TestPerformance(s *S3Conf, upload, download bool, files int, objectSize int
 	return nil
 }
 
+func TestPutGetRemoveTags(s *S3Conf) {
+	testname := "test put/get/remove object tags"
+	runF(testname)
+
+	bucket := "testbucket1"
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	obj := "myobject"
+	s3client := s3.NewFromConfig(s.Config())
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &obj,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	key1 := "hello1"
+	key2 := "hello2"
+	val1 := "world1"
+	val2 := "world2"
+
+	tagging := types.Tagging{TagSet: []types.Tag{{Key: &key1, Value: &val1}, {Key: &key2, Value: &val2}}}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+		Bucket:  &bucket,
+		Key:     &obj,
+		Tagging: &tagging,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Key:    &obj,
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ok := areTagsSame(tagging.TagSet, out.TagSet)
+	if !ok {
+		failF("%v: expected %v instead got %v", testname, tagging.TagSet, out.TagSet)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+		Key:    &obj,
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Key:    &obj,
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	if len(out.TagSet) > 0 {
+		failF("%v: expected empty tag set instead got %v", testname, out.TagSet)
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+	passF(testname)
+}
+
 // Full flow test
 func TestFullFlow(s *S3Conf) {
 	// TODO: add more test cases to get 100% coverage
@@ -1220,4 +1201,5 @@ func TestFullFlow(s *S3Conf) {
 	TestListAbortMultiPartObject(s)
 	TestRangeGet(s)
 	TestInvalidMultiParts(s)
+	TestPutGetRemoveTags(s)
 }
