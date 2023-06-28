@@ -406,6 +406,12 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 
 	app := fiber.New()
+	acl := auth.ACL{Owner: "valid access", ACL: "public-read-write"}
+	acldata, err := json.Marshal(acl)
+	if err != nil {
+		t.Errorf("Failed to parse the params: %v", err.Error())
+		return
+	}
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(bucket string) ([]byte, error) {
@@ -429,13 +435,13 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
 
 	// Error case
-	errorReq := httptest.NewRequest(http.MethodPut, "/my-bucket", nil)
-	errorReq.Header.Set("X-Amz-Acl", "restricted")
+	errorReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	errorReq.Header.Set("X-Amz-Acl", "private")
 	errorReq.Header.Set("X-Amz-Grant-Read", "read")
 
 	// PutBucketAcl success
-	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket", nil)
-	errorReq.Header.Set("X-Amz-Acl", "full")
+	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	aclReq.Header.Set("X-Amz-Acl", "private")
 
 	tests := []struct {
 		name       string
@@ -476,11 +482,11 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		resp, err := tt.app.Test(tt.args.req)
 
 		if (err != nil) != tt.wantErr {
-			t.Errorf("S3ApiController.GetActions() error = %v, wantErr %v", err, tt.wantErr)
+			t.Errorf("S3ApiController.PutBucketActions() error = %v, wantErr %v", err, tt.wantErr)
 		}
 
 		if resp.StatusCode != tt.statusCode {
-			t.Errorf("S3ApiController.GetActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+			t.Errorf("S3ApiController.PutBucketActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 		}
 	}
 }
