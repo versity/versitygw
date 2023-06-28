@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -1186,6 +1187,121 @@ func TestPutGetRemoveTags(s *S3Conf) {
 	passF(testname)
 }
 
+func TestAclActions(s *S3Conf) {
+	testname := "test put/get acl"
+	runF(testname)
+
+	bucket := "testbucket1"
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	s3client := s3.NewFromConfig(s.Config())
+
+	rootAccess := s.awsID
+	rootSecret := s.awsSecret
+
+	s.awsID = "grt1"
+	s.awsSecret = "grt1secret"
+
+	userS3Client := s3.NewFromConfig(s.Config())
+
+	s.awsID = rootAccess
+	s.awsSecret = rootSecret
+
+	grt1 := "grt1"
+
+	grants := []types.Grant{
+		{
+			Permission: "READ",
+			Grantee: &types.Grantee{
+				ID:   &grt1,
+				Type: "CanonicalUser",
+			},
+		},
+	}
+
+	succUsrCrt := "The user has been created successfully"
+	failUsrCrt := "failed to create a user: update iam data: account already exists"
+
+	out, err := execCommand("admin", "-aa", s.awsID, "-as", s.awsSecret, "create-user", "--access", grt1, "--secret", "grt1secret", "--role", "user")
+	if err != nil {
+		failF("%v: %v", err)
+		return
+	}
+	if !strings.Contains(string(out), succUsrCrt) && !strings.Contains(string(out), failUsrCrt) {
+		failF("%v: failed to create user accounts", testname)
+		return
+	}
+
+	// Validation error case
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+		Bucket: &bucket,
+		AccessControlPolicy: &types.AccessControlPolicy{
+			Grants: grants,
+		},
+		ACL: "private",
+	})
+	cancel()
+	if err == nil {
+		failF("%v: expected validation error", testname)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+		Bucket: &bucket,
+		AccessControlPolicy: &types.AccessControlPolicy{
+			Grants: grants,
+		},
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	acl, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	if *acl.Owner.ID != s.awsID {
+		failF("%v: expected bucket owner: %v, instead got: %v", testname, s.awsID, *acl.Owner.ID)
+		return
+	}
+	if !checkGrants(acl.Grants, grants) {
+		failF("%v: expected %v, instead got %v", testname, grants, acl.Grants)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = userS3Client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err == nil {
+		failF("%v: expected acl access denied error", testname)
+		return
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+	passF(testname)
+}
+
 // Full flow test
 func TestFullFlow(s *S3Conf) {
 	// TODO: add more test cases to get 100% coverage
@@ -1202,4 +1318,5 @@ func TestFullFlow(s *S3Conf) {
 	TestRangeGet(s)
 	TestInvalidMultiParts(s)
 	TestPutGetRemoveTags(s)
+	TestAclActions(s)
 }

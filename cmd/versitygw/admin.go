@@ -65,12 +65,6 @@ func adminCommand() *cli.Command {
 						Required: true,
 						Aliases:  []string{"r"},
 					},
-					&cli.StringFlag{
-						Name:    "region",
-						Usage:   "s3 region string for the user",
-						Value:   "us-east-1",
-						Aliases: []string{"rg"},
-					},
 				},
 			},
 			{
@@ -115,15 +109,15 @@ func adminCommand() *cli.Command {
 }
 
 func createUser(ctx *cli.Context) error {
-	access, secret, role, region := ctx.String("access"), ctx.String("secret"), ctx.String("role"), ctx.String("region")
-	if access == "" || secret == "" || region == "" {
+	access, secret, role := ctx.String("access"), ctx.String("secret"), ctx.String("role")
+	if access == "" || secret == "" {
 		return fmt.Errorf("invalid input parameters for the new user")
 	}
 	if role != "admin" && role != "user" {
 		return fmt.Errorf("invalid input parameter for role")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v&region=%v", access, secret, role, region), nil)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v", access, secret, role), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}

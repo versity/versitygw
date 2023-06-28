@@ -48,7 +48,8 @@ func init() {
 
 func TestNew(t *testing.T) {
 	type args struct {
-		be backend.Backend
+		be  backend.Backend
+		iam auth.IAMService
 	}
 
 	be := backend.BackendUnsupported{}
@@ -61,16 +62,18 @@ func TestNew(t *testing.T) {
 		{
 			name: "Initialize S3 api controller",
 			args: args{
-				be: be,
+				be:  be,
+				iam: &auth.IAMServiceInternal{},
 			},
 			want: S3ApiController{
-				be: be,
+				be:  be,
+				iam: &auth.IAMServiceInternal{},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.args.be); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.be, tt.args.iam); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})

@@ -85,10 +85,11 @@ func (s *IAMServiceInternal) CreateAccount(access string, account Account) error
 		}
 		conf.AccessAccounts[access] = account
 
-		b, err := json.Marshal(s.accts)
+		b, err := json.Marshal(conf)
 		if err != nil {
 			return nil, fmt.Errorf("failed to serialize iam: %w", err)
 		}
+		s.accts = conf
 
 		return b, nil
 	})

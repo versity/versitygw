@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -135,4 +136,26 @@ func areTagsSame(tags1, tags2 []types.Tag) bool {
 		}
 	}
 	return true
+}
+
+func checkGrants(grts1, grts2 []types.Grant) bool {
+	if len(grts1) != len(grts2) {
+		return false
+	}
+
+	for i, grt := range grts1 {
+		if grt.Permission != grts2[i].Permission {
+			return false
+		}
+		if *grt.Grantee.ID != *grts2[i].Grantee.ID {
+			return false
+		}
+	}
+	return true
+}
+
+func execCommand(args ...string) ([]byte, error) {
+	cmd := exec.Command("./versitygw", args...)
+
+	return cmd.CombinedOutput()
 }
