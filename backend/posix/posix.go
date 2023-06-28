@@ -1257,7 +1257,7 @@ func (p *Posix) InitIAM() error {
 
 	_, err := os.ReadFile(iamFile)
 	if errors.Is(err, fs.ErrNotExist) {
-		b, err := json.Marshal(auth.IAMConfig{})
+		b, err := json.Marshal(auth.IAMConfig{AccessAccounts: map[string]auth.Account{}})
 		if err != nil {
 			return fmt.Errorf("marshal default iam: %w", err)
 		}

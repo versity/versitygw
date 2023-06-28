@@ -76,7 +76,7 @@ func (s *IAMServiceInternal) CreateAccount(access string, account Account) error
 				return nil, fmt.Errorf("failed to parse iam: %w", err)
 			}
 		} else {
-			conf.AccessAccounts = make(map[string]Account)
+			conf = IAMConfig{AccessAccounts: map[string]Account{}}
 		}
 
 		_, ok := conf.AccessAccounts[access]

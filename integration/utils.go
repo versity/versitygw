@@ -155,7 +155,7 @@ func checkGrants(grts1, grts2 []types.Grant) bool {
 }
 
 func execCommand(args ...string) ([]byte, error) {
-	cmd := exec.Command("../../versitygw", args...)
+	cmd := exec.Command("./versitygw", args...)
 
 	return cmd.CombinedOutput()
 }
