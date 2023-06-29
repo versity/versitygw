@@ -1042,7 +1042,34 @@ func TestRangeGet(s *S3Conf) {
 	}
 
 	// bytes range is inclusive, go range for second value is not
-	if !isSame(b, data[100:201]) {
+	if !isEqual(b, data[100:201]) {
+		failF("%v: data mismatch of range", testname)
+		return
+	}
+
+	rangeString = "bytes=100-"
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &name,
+		Range:  &rangeString,
+	})
+	defer cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+	defer out.Body.Close()
+
+	b, err = io.ReadAll(out.Body)
+	if err != nil {
+		failF("%v: read body %v", testname, err)
+		return
+	}
+
+	// bytes range is inclusive, go range for second value is not
+	if !isEqual(b, data[100:]) {
 		failF("%v: data mismatch of range", testname)
 		return
 	}

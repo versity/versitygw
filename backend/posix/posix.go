@@ -891,8 +891,11 @@ func (p *Posix) GetObject(bucket, object, acceptRange string, writer io.Writer) 
 		return nil, err
 	}
 
-	if startOffset+length > fi.Size() {
-		// TODO: is ErrInvalidRequest correct here?
+	if length == -1 {
+		length = fi.Size() - startOffset + 1
+	}
+
+	if startOffset+length > fi.Size()+1 {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
