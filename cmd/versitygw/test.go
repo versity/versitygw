@@ -166,6 +166,13 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestPutGetRemoveTags),
 		},
 		{
+			Name:  "bucket-acl-actions",
+			Usage: "Tests put/get bucket actions.",
+			Description: `Creates a bucket with s3 gateway action, puts some bucket acls
+			gets the acl, verifies it, then removes the bucket`,
+			Action: getAction(integration.TestAclActions),
+		},
+		{
 			Name:        "full-flow",
 			Usage:       "Tests the full flow of gateway.",
 			Description: `Runs all the available tests to test the full flow of the gateway.`,

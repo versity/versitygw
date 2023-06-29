@@ -24,7 +24,7 @@ import (
 type S3ApiRouter struct{}
 
 func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService) {
-	s3ApiController := controllers.New(be)
+	s3ApiController := controllers.New(be, iam)
 	adminController := controllers.AdminController{IAMService: iam}
 
 	// TODO: think of better routing system

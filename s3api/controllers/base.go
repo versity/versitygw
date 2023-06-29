@@ -41,8 +41,8 @@ type S3ApiController struct {
 	iam auth.IAMService
 }
 
-func New(be backend.Backend) S3ApiController {
-	return S3ApiController{be: be}
+func New(be backend.Backend, iam auth.IAMService) S3ApiController {
+	return S3ApiController{be: be, iam: iam}
 }
 
 func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
@@ -248,13 +248,54 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
-	if grants != "" || acl != "" {
-		if grants != "" && acl != "" {
-			return errors.New("wrong api call")
-		}
+	if ctx.Request().URI().QueryArgs().Has("acl") {
+		var input *s3.PutBucketAclInput
 
-		if acl != "" && acl != "private" && acl != "public-read" && acl != "public-read-write" {
-			return errors.New("wrong api call")
+		if len(ctx.Body()) > 0 {
+			if grants+acl != "" {
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+
+			var accessControlPolicy auth.AccessControlPolicy
+			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
+			if err != nil {
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+
+			input = &s3.PutBucketAclInput{
+				Bucket:              &bucket,
+				ACL:                 "",
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}, Grants: accessControlPolicy.AccessControlList.Grants},
+			}
+		}
+		if acl != "" {
+			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+			if len(ctx.Body()) > 0 || grants != "" {
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+
+			input = &s3.PutBucketAclInput{
+				Bucket:              &bucket,
+				ACL:                 types.BucketCannedACL(acl),
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
+			}
+		}
+		if grants != "" {
+			if acl != "" || len(ctx.Body()) > 0 {
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}
+
+			input = &s3.PutBucketAclInput{
+				Bucket:              &bucket,
+				GrantFullControl:    &grantFullControl,
+				GrantRead:           &grantRead,
+				GrantReadACP:        &grantReadACP,
+				GrantWrite:          &granWrite,
+				GrantWriteACP:       &grantWriteACP,
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
+			}
 		}
 
 		data, err := c.be.GetBucketAcl(bucket)
@@ -271,18 +312,12 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, err)
 		}
 
-		input := &s3.PutBucketAclInput{
-			Bucket:              &bucket,
-			ACL:                 types.BucketCannedACL(acl),
-			GrantFullControl:    &grantFullControl,
-			GrantRead:           &grantRead,
-			GrantReadACP:        &grantReadACP,
-			GrantWrite:          &granWrite,
-			GrantWriteACP:       &grantWriteACP,
-			AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
+		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam)
+		if err != nil {
+			return SendResponse(ctx, err)
 		}
 
-		err = auth.UpdateACL(input, parsedAcl, c.iam)
+		err = c.be.PutBucketAcl(bucket, updAcl)
 		return SendResponse(ctx, err)
 	}
 

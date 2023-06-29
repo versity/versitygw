@@ -48,7 +48,8 @@ func init() {
 
 func TestNew(t *testing.T) {
 	type args struct {
-		be backend.Backend
+		be  backend.Backend
+		iam auth.IAMService
 	}
 
 	be := backend.BackendUnsupported{}
@@ -61,16 +62,18 @@ func TestNew(t *testing.T) {
 		{
 			name: "Initialize S3 api controller",
 			args: args{
-				be: be,
+				be:  be,
+				iam: &auth.IAMServiceInternal{},
 			},
 			want: S3ApiController{
-				be: be,
+				be:  be,
+				iam: &auth.IAMServiceInternal{},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.args.be); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.be, tt.args.iam); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
@@ -403,6 +406,12 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 
 	app := fiber.New()
+	acl := auth.ACL{Owner: "valid access", ACL: "public-read-write"}
+	acldata, err := json.Marshal(acl)
+	if err != nil {
+		t.Errorf("Failed to parse the params: %v", err.Error())
+		return
+	}
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(bucket string) ([]byte, error) {
@@ -426,13 +435,13 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
 
 	// Error case
-	errorReq := httptest.NewRequest(http.MethodPut, "/my-bucket", nil)
-	errorReq.Header.Set("X-Amz-Acl", "restricted")
+	errorReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	errorReq.Header.Set("X-Amz-Acl", "private")
 	errorReq.Header.Set("X-Amz-Grant-Read", "read")
 
 	// PutBucketAcl success
-	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket", nil)
-	errorReq.Header.Set("X-Amz-Acl", "full")
+	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	aclReq.Header.Set("X-Amz-Acl", "private")
 
 	tests := []struct {
 		name       string
@@ -473,11 +482,11 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		resp, err := tt.app.Test(tt.args.req)
 
 		if (err != nil) != tt.wantErr {
-			t.Errorf("S3ApiController.GetActions() error = %v, wantErr %v", err, tt.wantErr)
+			t.Errorf("S3ApiController.PutBucketActions() error = %v, wantErr %v", err, tt.wantErr)
 		}
 
 		if resp.StatusCode != tt.statusCode {
-			t.Errorf("S3ApiController.GetActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+			t.Errorf("S3ApiController.PutBucketActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 		}
 	}
 }

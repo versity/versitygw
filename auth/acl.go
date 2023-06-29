@@ -42,7 +42,10 @@ type GetBucketAclOutput struct {
 }
 
 type AccessControlList struct {
-	Grants []types.Grant
+	Grants []types.Grant `xml:"Grant"`
+}
+type AccessControlPolicy struct {
+	AccessControlList AccessControlList `xml:"AccessControlList"`
 }
 
 func ParseACL(data []byte) (ACL, error) {
@@ -80,69 +83,88 @@ func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
 	}, nil
 }
 
-func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) error {
+func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error) {
+	if input == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
 	if acl.Owner != *input.AccessControlPolicy.Owner.ID {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	// if the ACL is specified, set the ACL, else replace the grantees
 	if input.ACL != "" {
 		acl.ACL = input.ACL
 		acl.Grantees = []Grantee{}
-		return nil
+	} else {
+		grantees := []Grantee{}
+		accs := []string{}
+
+		if input.GrantRead != nil {
+			fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
+
+			if *input.GrantFullControl != "" {
+				fullControlList = splitUnique(*input.GrantFullControl, ",")
+				fmt.Println(fullControlList)
+				for _, str := range fullControlList {
+					grantees = append(grantees, Grantee{Access: str, Permission: "FULL_CONTROL"})
+				}
+			}
+			if *input.GrantRead != "" {
+				readList = splitUnique(*input.GrantRead, ",")
+				for _, str := range readList {
+					grantees = append(grantees, Grantee{Access: str, Permission: "READ"})
+				}
+			}
+			if *input.GrantReadACP != "" {
+				readACPList = splitUnique(*input.GrantReadACP, ",")
+				for _, str := range readACPList {
+					grantees = append(grantees, Grantee{Access: str, Permission: "READ_ACP"})
+				}
+			}
+			if *input.GrantWrite != "" {
+				writeList = splitUnique(*input.GrantWrite, ",")
+				for _, str := range writeList {
+					grantees = append(grantees, Grantee{Access: str, Permission: "WRITE"})
+				}
+			}
+			if *input.GrantWriteACP != "" {
+				writeACPList = splitUnique(*input.GrantWriteACP, ",")
+				for _, str := range writeACPList {
+					grantees = append(grantees, Grantee{Access: str, Permission: "WRITE_ACP"})
+				}
+			}
+
+			accs = append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
+		} else {
+			cache := make(map[string]bool)
+			for _, grt := range input.AccessControlPolicy.Grants {
+				grantees = append(grantees, Grantee{Access: *grt.Grantee.ID, Permission: grt.Permission})
+				if _, ok := cache[*grt.Grantee.ID]; !ok {
+					cache[*grt.Grantee.ID] = true
+					accs = append(accs, *grt.Grantee.ID)
+				}
+			}
+		}
+
+		// Check if the specified accounts exist
+		accList, err := checkIfAccountsExist(accs, iam)
+		if err != nil {
+			return nil, err
+		}
+		if len(accList) > 0 {
+			return nil, fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
+		}
+
+		acl.Grantees = grantees
+		acl.ACL = ""
 	}
 
-	grantees := []Grantee{}
-
-	fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
-
-	if *input.GrantFullControl != "" {
-		fullControlList = splitUnique(*input.GrantFullControl, ",")
-		fmt.Println(fullControlList)
-		for _, str := range fullControlList {
-			grantees = append(grantees, Grantee{Access: str, Permission: "FULL_CONTROL"})
-		}
-	}
-	if *input.GrantRead != "" {
-		readList = splitUnique(*input.GrantRead, ",")
-		for _, str := range readList {
-			grantees = append(grantees, Grantee{Access: str, Permission: "READ"})
-		}
-	}
-	if *input.GrantReadACP != "" {
-		readACPList = splitUnique(*input.GrantReadACP, ",")
-		for _, str := range readACPList {
-			grantees = append(grantees, Grantee{Access: str, Permission: "READ_ACP"})
-		}
-	}
-	if *input.GrantWrite != "" {
-		writeList = splitUnique(*input.GrantWrite, ",")
-		for _, str := range writeList {
-			grantees = append(grantees, Grantee{Access: str, Permission: "WRITE"})
-		}
-	}
-	if *input.GrantWriteACP != "" {
-		writeACPList = splitUnique(*input.GrantWriteACP, ",")
-		for _, str := range writeACPList {
-			grantees = append(grantees, Grantee{Access: str, Permission: "WRITE_ACP"})
-		}
-	}
-
-	accs := append(append(append(append(fullControlList, readList...), writeACPList...), readACPList...), writeList...)
-
-	// Check if the specified accounts exist
-	accList, err := checkIfAccountsExist(accs, iam)
+	result, err := json.Marshal(acl)
 	if err != nil {
-		return err
-	}
-	if len(accList) > 0 {
-		return fmt.Errorf("accounts does not exist: %s", strings.Join(accList, ", "))
+		return nil, err
 	}
 
-	acl.Grantees = grantees
-	acl.ACL = ""
-
-	return nil
+	return result, nil
 }
 
 func checkIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
@@ -153,7 +175,7 @@ func checkIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 		if err != nil && err != ErrNoSuchUser {
 			return nil, fmt.Errorf("check user account: %w", err)
 		}
-		if err == nil {
+		if err == ErrNoSuchUser {
 			result = append(result, acc)
 		}
 	}
