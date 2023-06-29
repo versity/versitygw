@@ -976,6 +976,7 @@ func (p *Posix) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) 
 }
 
 func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
+	fmt.Println(srcBucket, srcObject, DstBucket, dstObject)
 	_, err := os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1002,7 +1003,12 @@ func (p *Posix) CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*
 	}
 	defer f.Close()
 
-	etag, err := p.PutObject(&s3.PutObjectInput{Bucket: &DstBucket, Key: &dstObject, Body: f})
+	fInfo, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	etag, err := p.PutObject(&s3.PutObjectInput{Bucket: &DstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size()})
 	if err != nil {
 		return nil, err
 	}
