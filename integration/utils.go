@@ -111,19 +111,26 @@ func containsPart(part int32, list []types.Part) bool {
 	return false
 }
 
-// Checks if the slices contain the same objects, if the objects doesn't
-// contain map, slice, channel.
 func areTagsSame(tags1, tags2 []types.Tag) bool {
 	if len(tags1) != len(tags2) {
 		return false
 	}
 
-	for i, tag := range tags1 {
-		if *tag.Key != *tags2[i].Key || *tag.Value != *tags2[i].Value {
+	for _, tag := range tags1 {
+		if !containsTag(tag, tags2) {
 			return false
 		}
 	}
 	return true
+}
+
+func containsTag(tag types.Tag, list []types.Tag) bool {
+	for _, item := range list {
+		if *item.Key == *tag.Key && *item.Value == *tag.Value {
+			return true
+		}
+	}
+	return false
 }
 
 func checkGrants(grts1, grts2 []types.Grant) bool {

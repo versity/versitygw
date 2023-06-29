@@ -68,17 +68,20 @@ func initTestFlags() []cli.Flag {
 func initTestCommands() []*cli.Command {
 	return []*cli.Command{
 		{
-			Name:  "make-bucket",
-			Usage: "Test bucket creation.",
+			Name:  "bucket-actions",
+			Usage: "Test bucket creation, checking the existence, deletes it.",
 			Description: `Calls s3 gateway create-bucket action to create a new bucket,
-		then calls delete-bucket action to delete the bucket.`,
+		calls head-bucket action to check the existence, then calls delete-bucket action to delete the bucket.`,
 			Action: getAction(integration.TestMakeBucket),
 		},
 		{
-			Name:  "put-get-object",
-			Usage: "Test put & get object.",
+			Name:  "object-actions",
+			Usage: "Test put/get/delete/copy objects.",
 			Description: `Creates a bucket with s3 gateway action, puts an object in it,
-			gets the object from the bucket, deletes both the object and bucket.`,
+			tries to copy into another bucket, that doesn't exist, creates the destination bucket for copying,
+			copies the object, get's the object to check the length and content, 
+			get's the copied object to check the length and content, deletes all the objects inside the source bucket, 
+			deletes both the objects and buckets.`,
 			Action: getAction(integration.TestPutGetObject),
 		},
 		{
