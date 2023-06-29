@@ -131,6 +131,8 @@ func areTagsSame(tags1, tags2 []types.Tag) bool {
 	}
 
 	for i, tag := range tags1 {
+		fmt.Println(*tag.Key, *tag.Value)
+		fmt.Println(*tags2[i].Key, *tags2[i].Value)
 		if *tag.Key != *tags2[i].Key || *tag.Value != *tags2[i].Value {
 			return false
 		}
