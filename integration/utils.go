@@ -111,18 +111,6 @@ func containsPart(part int32, list []types.Part) bool {
 	return false
 }
 
-func isSame(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, x := range a {
-		if x != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Checks if the slices contain the same objects, if the objects doesn't
 // contain map, slice, channel.
 func areTagsSame(tags1, tags2 []types.Tag) bool {
