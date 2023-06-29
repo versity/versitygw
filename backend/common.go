@@ -17,7 +17,6 @@ package backend
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/fs"
 	"strconv"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -55,6 +55,12 @@ func GetTimePtr(t time.Time) *time.Time {
 	return &t
 }
 
+var (
+	errInvalidRange = s3err.GetAPIError(s3err.ErrInvalidRequest)
+)
+
+// ParseRange parses input range header and returns startoffset, length, and
+// error. If no endoffset specified, then length is set to -1.
 func ParseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
 	if acceptRange == "" {
 		return 0, file.Size(), nil
@@ -63,29 +69,34 @@ func ParseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
 	rangeKv := strings.Split(acceptRange, "=")
 
 	if len(rangeKv) < 2 {
-		return 0, 0, errors.New("invalid range parameter")
+		return 0, 0, errInvalidRange
 	}
 
 	bRange := strings.Split(rangeKv[1], "-")
-	if len(bRange) < 2 {
-		return 0, 0, errors.New("invalid range parameter")
+	if len(bRange) < 1 || len(bRange) > 2 {
+		return 0, 0, errInvalidRange
 	}
 
 	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
 	if err != nil {
-		return 0, 0, errors.New("invalid range parameter")
+		return 0, 0, errInvalidRange
 	}
 
-	endOffset, err := strconv.ParseInt(bRange[1], 10, 64)
+	endOffset := int64(-1)
+	if len(bRange) == 1 || bRange[1] == "" {
+		return startOffset, endOffset, nil
+	}
+
+	endOffset, err = strconv.ParseInt(bRange[1], 10, 64)
 	if err != nil {
-		return 0, 0, errors.New("invalid range parameter")
+		return 0, 0, errInvalidRange
 	}
 
 	if endOffset < startOffset {
-		return 0, 0, errors.New("invalid range parameter")
+		return 0, 0, errInvalidRange
 	}
 
-	return int64(startOffset), int64(endOffset - startOffset + 1), nil
+	return startOffset, endOffset - startOffset + 1, nil
 }
 
 func GetMultipartMD5(parts []types.Part) string {
