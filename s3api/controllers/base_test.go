@@ -126,6 +126,16 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	})
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
 
+	//Admin error case
+	admErr := fiber.New()
+	admErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("access", "valid access")
+		ctx.Locals("isRoot", false)
+		ctx.Locals("isDebug", false)
+		return ctx.Next()
+	})
+	admErr.Get("/", s3ApiController.ListBuckets)
+
 	tests := []struct {
 		name       string
 		args       args
@@ -151,6 +161,15 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			wantErr:    false,
 			statusCode: 200,
 		},
+		{
+			name: "admin-error-case",
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/", nil),
+			},
+			app:        admErr,
+			wantErr:    false,
+			statusCode: 500,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,6 +191,11 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		req *http.Request
 	}
 
+	getPtr := func(val string) *string {
+		return &val
+	}
+	now := time.Now()
+
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
@@ -188,7 +212,18 @@ func TestS3ApiController_GetActions(t *testing.T) {
 				return &s3.GetObjectAttributesOutput{}, nil
 			},
 			GetObjectFunc: func(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
-				return &s3.GetObjectOutput{Metadata: nil}, nil
+				return &s3.GetObjectOutput{
+					Metadata:        map[string]string{"hello": "world"},
+					ContentType:     getPtr("application/xml"),
+					ContentEncoding: getPtr("gzip"),
+					ETag:            getPtr("98sda7f97sa9df798sd79f8as9df"),
+					ContentLength:   1000,
+					LastModified:    &now,
+					StorageClass:    "storage class",
+				}, nil
+			},
+			GetTagsFunc: func(bucket, object string) (map[string]string, error) {
+				return map[string]string{"hello": "world"}, nil
 			},
 		},
 	}
@@ -200,17 +235,9 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	})
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
 
-	// GetObjectACL
-	getObjectACLReq := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
-	getObjectACLReq.Header.Set("X-Amz-Object-Attributes", "attrs")
-
-	// GetObject error case
-	getObjectReq := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
-	getObjectReq.Header.Set("Range", "hello=")
-
-	// GetObject success case
-	getObjectSuccessReq := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
-	getObjectReq.Header.Set("Range", "range=13-invalid")
+	// GetObjectAttributes success case
+	getObjAttrs := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
+	getObjAttrs.Header.Set("X-Amz-Object-Attributes", "hello")
 
 	tests := []struct {
 		name       string
@@ -220,19 +247,46 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		statusCode int
 	}{
 		{
-			name: "Get-actions-invalid-max-parts",
+			name: "Get-actions-get-tags-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=InvalidMaxParts", nil),
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key/key.json?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Get-actions-invalid-max-parts-string",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=invalid", nil),
 			},
 			wantErr:    false,
 			statusCode: 400,
 		},
 		{
-			name: "Get-actions-invalid-part-number-marker",
+			name: "Get-actions-invalid-max-parts-negative",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=200&part-number-marker=InvalidPartNumber", nil),
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=-8", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Get-actions-invalid-part-number-marker-string",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=200&part-number-marker=invalid", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Get-actions-invalid-part-number-marker-negative",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?uploadId=hello&max-parts=200&part-number-marker=-8", nil),
 			},
 			wantErr:    false,
 			statusCode: 400,
@@ -250,7 +304,16 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			name: "Get-actions-get-object-acl-success",
 			app:  app,
 			args: args{
-				req: getObjectACLReq,
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key?acl", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Get-actions-get-object-attributes-success",
+			app:  app,
+			args: args{
+				req: getObjAttrs,
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -259,7 +322,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			name: "Get-actions-get-object-success",
 			app:  app,
 			args: args{
-				req: getObjectSuccessReq,
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -390,11 +453,11 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			resp, err := tt.app.Test(tt.args.req)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("S3ApiController.GetActions() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("S3ApiController.ListActions() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if resp.StatusCode != tt.statusCode {
-				t.Errorf("S3ApiController.GetActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+				t.Errorf("S3ApiController.ListActions() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 			}
 		})
 	}
@@ -406,12 +469,31 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 
 	app := fiber.New()
+
+	// Mock valid acl
 	acl := auth.ACL{Owner: "valid access", ACL: "public-read-write"}
 	acldata, err := json.Marshal(acl)
 	if err != nil {
 		t.Errorf("Failed to parse the params: %v", err.Error())
 		return
 	}
+
+	body := `
+	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<AccessControlList>
+			<Grant>
+				<Grantee>
+					<ID>hell</ID>
+				</Grantee>
+				<Permission>string</Permission>
+			</Grant>
+		</AccessControlList>
+		<Owner>
+			<ID>hello</ID>
+		</Owner>
+	</AccessControlPolicy>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(bucket string) ([]byte, error) {
@@ -434,14 +516,28 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
 
-	// Error case
-	errorReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
-	errorReq.Header.Set("X-Amz-Acl", "private")
-	errorReq.Header.Set("X-Amz-Grant-Read", "read")
+	// invalid acl case
+	invAclReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	invAclReq.Header.Set("X-Amz-Acl", "invalid")
 
-	// PutBucketAcl success
-	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
-	aclReq.Header.Set("X-Amz-Acl", "private")
+	// invalid acl case 2
+	errAclReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	errAclReq.Header.Set("X-Amz-Acl", "private")
+	errAclReq.Header.Set("X-Amz-Grant-Read", "hello")
+
+	// PutBucketAcl incorrect bucket owner case
+	incorrectBucketOwner := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	incorrectBucketOwner.Header.Set("X-Amz-Acl", "private")
+	incorrectBucketOwner.Header.Set("X-Amz-Expected-Bucket-Owner", "invalid access")
+
+	// PutBucketAcl acl success
+	aclSuccReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	aclSuccReq.Header.Set("X-Amz-Acl", "private")
+	aclSuccReq.Header.Set("X-Amz-Expected-Bucket-Owner", "valid access")
+
+	// Invalid acl body case
+	errAclBodyReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(body))
+	errAclBodyReq.Header.Set("X-Amz-Grant-Read", "hello")
 
 	tests := []struct {
 		name       string
@@ -451,19 +547,46 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		statusCode int
 	}{
 		{
-			name: "Put-bucket-acl-error",
+			name: "Put-bucket-acl-invalid-acl",
 			app:  app,
 			args: args{
-				req: errorReq,
+				req: invAclReq,
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
-			name: "Put-object-acl-success",
+			name: "Put-bucket-acl-incorrect-acl",
 			app:  app,
 			args: args{
-				req: aclReq,
+				req: errAclReq,
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-acl-incorrect-acl-body",
+			app:  app,
+			args: args{
+				req: errAclBodyReq,
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-acl-incorrect-bucket-owner",
+			app:  app,
+			args: args{
+				req: incorrectBucketOwner,
+			},
+			wantErr:    false,
+			statusCode: 403,
+		},
+		{
+			name: "Put-bucket-acl-success",
+			app:  app,
+			args: args{
+				req: aclSuccReq,
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -496,14 +619,37 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		req *http.Request
 	}
 
+	body := `
+	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<AccessControlList>
+			<Grant>
+				<Grantee>
+					<ID>hell</ID>
+				</Grantee>
+				<Permission>string</Permission>
+			</Grant>
+		</AccessControlList>
+		<Owner>
+			<ID>hello</ID>
+		</Owner>
+	</AccessControlPolicy>
+	`
+	tagBody := `
+	<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<TagSet>
+			<Tag>
+				<Key>string</Key>
+				<Value>string</Value>
+			</Tag>
+		</TagSet>
+	</Tagging>
+	`
+
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(bucket string) ([]byte, error) {
 				return acldata, nil
-			},
-			UploadPartCopyFunc: func(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
-				return &s3.UploadPartCopyOutput{}, nil
 			},
 			PutObjectAclFunc: func(*s3.PutObjectAclInput) error {
 				return nil
@@ -513,6 +659,12 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			},
 			PutObjectFunc: func(*s3.PutObjectInput) (string, error) {
 				return "Hey", nil
+			},
+			PutObjectPartFunc: func(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
+				return "hello", nil
+			},
+			SetTagsFunc: func(bucket, object string, tags map[string]string) error {
+				return nil
 			},
 		},
 	}
@@ -524,18 +676,30 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
 
-	//PutObjectAcl error
-	aclReqErr := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
-	aclReqErr.Header.Set("X-Amz-Acl", "acl")
-	aclReqErr.Header.Set("X-Amz-Grant-Write", "write")
-
-	//PutObjectAcl success
-	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
-	aclReq.Header.Set("X-Amz-Acl", "acl")
-
-	//CopyObject success
+	// CopyObject success
 	cpySrcReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
 	cpySrcReq.Header.Set("X-Amz-Copy-Source", "srcBucket/srcObject")
+
+	// PutObjectAcl success
+	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	aclReq.Header.Set("X-Amz-Acl", "private")
+
+	// PutObjectAcl success grt case
+	aclGrtReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	aclGrtReq.Header.Set("X-Amz-Grant-Read", "private")
+
+	// invalid acl case 1
+	invAclReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?acl", nil)
+	invAclReq.Header.Set("X-Amz-Acl", "invalid")
+
+	// invalid acl case 2
+	errAclReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?acl", nil)
+	errAclReq.Header.Set("X-Amz-Acl", "private")
+	errAclReq.Header.Set("X-Amz-Grant-Read", "hello")
+
+	// invalid body & grt case
+	invAclBodyGrtReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?acl", strings.NewReader(body))
+	invAclBodyGrtReq.Header.Set("X-Amz-Grant-Read", "hello")
 
 	tests := []struct {
 		name       string
@@ -545,7 +709,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		statusCode int
 	}{
 		{
-			name: "Upload-put-part-error-case",
+			name: "Put-object-part-error-case",
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=abc&partNumber=invalid", nil),
@@ -554,46 +718,73 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			statusCode: 400,
 		},
 		{
-			name: "Upload-copy-part-success",
+			name: "Put-object-part-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?partNumber=3", nil),
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=4&partNumber=3", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
 		},
 		{
-			name: "Upload-part-success",
+			name: "Set-tags-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=234234", nil),
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?tagging", strings.NewReader(tagBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
 		},
 		{
-			name: "Put-object-acl-error",
+			name: "Put-object-acl-invalid-acl",
 			app:  app,
 			args: args{
-				req: aclReqErr,
+				req: invAclReq,
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
-			name: "Put-object-acl-error",
+			name: "Put-object-acl-incorrect-acl",
 			app:  app,
 			args: args{
-				req: aclReqErr,
+				req: errAclReq,
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
+		},
+		{
+			name: "Put-object-acl-incorrect-acl-body-case",
+			app:  app,
+			args: args{
+				req: invAclBodyGrtReq,
+			},
+			wantErr:    false,
+			statusCode: 400,
 		},
 		{
 			name: "Put-object-acl-success",
 			app:  app,
 			args: args{
 				req: aclReq,
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-object-acl-success-body-case",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?acl", strings.NewReader(body)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-object-acl-success-grt-case",
+			app:  app,
+			args: args{
+				req: aclGrtReq,
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -611,7 +802,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			name: "Put-object-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil),
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key/key2", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -658,28 +849,6 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 
 	app.Delete("/:bucket", s3ApiController.DeleteBucket)
 
-	// error case
-	appErr := fiber.New()
-
-	s3ApiControllerErr := S3ApiController{
-		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
-				return acldata, nil
-			},
-			DeleteBucketFunc: func(bucket string) error {
-				return s3err.GetAPIError(48)
-			},
-		},
-	}
-
-	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		return ctx.Next()
-	})
-	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
-
 	tests := []struct {
 		name       string
 		app        *fiber.App
@@ -695,15 +864,6 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 200,
-		},
-		{
-			name: "Delete-bucket-error",
-			app:  appErr,
-			args: args{
-				req: httptest.NewRequest(http.MethodDelete, "/my-bucket", nil),
-			},
-			wantErr:    false,
-			statusCode: 400,
 		},
 	}
 	for _, tt := range tests {

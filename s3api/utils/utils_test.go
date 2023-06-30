@@ -117,3 +117,39 @@ func TestGetUserMetaData(t *testing.T) {
 		})
 	}
 }
+
+func Test_includeHeader(t *testing.T) {
+	type args struct {
+		hdr        string
+		signedHdrs []string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "include-header-falsy-case",
+			args: args{
+				hdr:        "Content-Type",
+				signedHdrs: []string{"X-Amz-Acl", "Content-Encoding"},
+			},
+			want: false,
+		},
+		{
+			name: "include-header-falsy-case",
+			args: args{
+				hdr:        "Content-Type",
+				signedHdrs: []string{"X-Amz-Acl", "Content-Type"},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := includeHeader(tt.args.hdr, tt.args.signedHdrs); got != tt.want {
+				t.Errorf("includeHeader() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
