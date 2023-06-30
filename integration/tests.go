@@ -22,20 +22,34 @@ var (
 )
 
 func TestMakeBucket(s *S3Conf) {
-	testname := "test make bucket"
+	testname := "test make/head/delete bucket"
 	runF(testname)
+
+	s3client := s3.NewFromConfig(s.Config())
 
 	bucket := "testbucket"
 
-	err := setup(s, bucket)
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
+	cancel()
+	if err == nil {
+		failF("%v: expected error, instead got success response", testname)
+		return
+	}
+
+	err = setup(s, bucket)
 	if err != nil {
 		failF("%v: %v", testname, err)
 		return
 	}
-	passF(testname)
 
-	testname = "test delete empty bucket"
-	runF(testname)
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
 
 	err = teardown(s, bucket)
 	if err != nil {
@@ -46,10 +60,16 @@ func TestMakeBucket(s *S3Conf) {
 }
 
 func TestPutGetObject(s *S3Conf) {
-	testname := "test put/get object"
+	testname := "test put/get/delete/copy objects"
 	runF(testname)
 
 	bucket := "testbucket1"
+	dstBucket := "testdstbucket"
+	obj := "myobject"
+	obj2 := "myobject2"
+	copySource := bucket + "/" + obj
+
+	s3client := s3.NewFromConfig(s.Config())
 
 	err := setup(s, bucket)
 	if err != nil {
@@ -64,13 +84,22 @@ func TestPutGetObject(s *S3Conf) {
 	csum := sha256.Sum256(data)
 	r := bytes.NewReader(data)
 
-	name := "myobject"
-	s3client := s3.NewFromConfig(s.Config())
-
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: &bucket,
-		Key:    &name,
+		Key:    &obj,
+		Body:   r,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &obj2,
 		Body:   r,
 	})
 	cancel()
@@ -82,7 +111,7 @@ func TestPutGetObject(s *S3Conf) {
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
-		Key:    &name,
+		Key:    &obj,
 	})
 	defer cancel()
 	if err != nil {
@@ -108,11 +137,101 @@ func TestPutGetObject(s *S3Conf) {
 		return
 	}
 
+	// Expected error: destination bucket doesn't exist
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{Bucket: &dstBucket, Key: &obj, CopySource: &copySource})
+	cancel()
+	if err == nil {
+		failF("%v: expect bucket not found error instead got success response", testname)
+		return
+	}
+
+	err = setup(s, dstBucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{Bucket: &dstBucket, Key: &obj, CopySource: &copySource})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	copyObjOut, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &dstBucket,
+		Key:    &obj,
+	})
+	defer cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+	defer copyObjOut.Body.Close()
+
+	if copyObjOut.ContentLength != int64(datalen) {
+		failF("%v: content length got %v expected %v", testname, copyObjOut.ContentLength, datalen)
+		return
+	}
+
+	b, err = io.ReadAll(copyObjOut.Body)
+	if err != nil {
+		failF("%v: read body %v", testname, err)
+		return
+	}
+
+	copysum := sha256.Sum256(b)
+	if csum != copysum {
+		failF("%v: copied object checksum got %x expected %x", testname, copysum, csum)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{Bucket: &bucket, Delete: &types.Delete{Objects: []types.ObjectIdentifier{{Key: &obj}, {Key: &obj2}}}})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	objCount := 0
+
+	in := &s3.ListObjectsV2Input{Bucket: &bucket}
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, in)
+		cancel()
+		if err != nil {
+			failF("%v: %v", testname, err)
+			return
+		}
+		objCount += len(out.Contents)
+		if out.IsTruncated {
+			in.ContinuationToken = out.ContinuationToken
+		} else {
+			break
+		}
+	}
+
+	if objCount != 2 {
+		failF("%v: expected object count %v instead got %v", testname, 2, objCount)
+	}
+
 	err = teardown(s, bucket)
 	if err != nil {
 		failF("%v: %v", testname, err)
 		return
 	}
+
+	err = teardown(s, dstBucket)
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
 	passF(testname)
 }
 
@@ -923,7 +1042,34 @@ func TestRangeGet(s *S3Conf) {
 	}
 
 	// bytes range is inclusive, go range for second value is not
-	if !isSame(b, data[100:201]) {
+	if !isEqual(b, data[100:201]) {
+		failF("%v: data mismatch of range", testname)
+		return
+	}
+
+	rangeString = "bytes=100-"
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &name,
+		Range:  &rangeString,
+	})
+	defer cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+	defer out.Body.Close()
+
+	b, err = io.ReadAll(out.Body)
+	if err != nil {
+		failF("%v: read body %v", testname, err)
+		return
+	}
+
+	// bytes range is inclusive, go range for second value is not
+	if !isEqual(b, data[100:]) {
 		failF("%v: data mismatch of range", testname)
 		return
 	}

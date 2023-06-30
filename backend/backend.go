@@ -51,7 +51,7 @@ type Backend interface {
 	GetObject(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error)
 	GetObjectAcl(bucket, object string) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(bucket, object string, attributes []string) (*s3.GetObjectAttributesOutput, error)
-	CopyObject(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error)
+	CopyObject(srcBucket, srcObject, dstBucket, dstObject string) (*s3.CopyObjectOutput, error)
 	ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error)
 	ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error)
 	DeleteObject(bucket, object string) error
