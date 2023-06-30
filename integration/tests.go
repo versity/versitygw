@@ -1096,7 +1096,7 @@ func TestPutGetRemoveTags(s *S3Conf) {
 	testname := "test put/get/remove object tags"
 	runF(testname)
 
-	bucket := "testbucket1"
+	bucket := "testbucket13"
 
 	err := setup(s, bucket)
 	if err != nil {
@@ -1191,7 +1191,7 @@ func TestAclActions(s *S3Conf) {
 	testname := "test put/get acl"
 	runF(testname)
 
-	bucket := "testbucket1"
+	bucket := "testbucket14"
 
 	err := setup(s, bucket)
 	if err != nil {
@@ -1257,6 +1257,7 @@ func TestAclActions(s *S3Conf) {
 		Bucket: &bucket,
 		AccessControlPolicy: &types.AccessControlPolicy{
 			Grants: grants,
+			Owner:  &types.Owner{ID: &s.awsID},
 		},
 	})
 	cancel()

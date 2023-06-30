@@ -15,6 +15,7 @@
 package s3api
 
 import (
+	"crypto/tls"
 	"reflect"
 	"testing"
 
@@ -82,13 +83,24 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Return error when serving S3 api server with invalid address",
+			name:    "Serve-invalid-address",
 			wantErr: true,
 			sa: &S3ApiServer{
 				app:     fiber.New(),
 				backend: backend.BackendUnsupported{},
-				port:    "Wrong address",
+				port:    "Invalid address",
 				router:  &S3ApiRouter{},
+			},
+		},
+		{
+			name:    "Serve-invalid-address-with-certificate",
+			wantErr: true,
+			sa: &S3ApiServer{
+				app:     fiber.New(),
+				backend: backend.BackendUnsupported{},
+				port:    "Invalid address",
+				router:  &S3ApiRouter{},
+				cert:    &tls.Certificate{},
 			},
 		},
 	}

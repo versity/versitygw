@@ -235,8 +235,9 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
-	bucket, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP, access, isRoot :=
+	bucket, bucketOwner, acl, grantFullControl, grantRead, grantReadACP, granWrite, grantWriteACP, access, isRoot :=
 		ctx.Params("bucket"),
+		ctx.Get("X-Amz-Expected-Bucket-Owner"),
 		ctx.Get("X-Amz-Acl"),
 		ctx.Get("X-Amz-Grant-Full-Control"),
 		ctx.Get("X-Amz-Grant-Read"),
@@ -253,40 +254,36 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 		if len(ctx.Body()) > 0 {
 			if grants+acl != "" {
-				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
 			}
 
 			var accessControlPolicy auth.AccessControlPolicy
 			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
 			if err != nil {
-				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
 			}
 
 			input = &s3.PutBucketAclInput{
 				Bucket:              &bucket,
 				ACL:                 "",
-				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}, Grants: accessControlPolicy.AccessControlList.Grants},
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &accessControlPolicy.Owner, Grants: accessControlPolicy.AccessControlList.Grants},
 			}
 		}
 		if acl != "" {
 			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
-				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
 			}
 			if len(ctx.Body()) > 0 || grants != "" {
-				return s3err.GetAPIError(s3err.ErrInvalidRequest)
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
 			}
 
 			input = &s3.PutBucketAclInput{
 				Bucket:              &bucket,
 				ACL:                 types.BucketCannedACL(acl),
-				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &bucketOwner}},
 			}
 		}
 		if grants != "" {
-			if acl != "" || len(ctx.Body()) > 0 {
-				return s3err.GetAPIError(s3err.ErrInvalidRequest)
-			}
-
 			input = &s3.PutBucketAclInput{
 				Bucket:              &bucket,
 				GrantFullControl:    &grantFullControl,
@@ -294,7 +291,8 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				GrantReadACP:        &grantReadACP,
 				GrantWrite:          &granWrite,
 				GrantWriteACP:       &grantWriteACP,
-				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &access}},
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &bucketOwner}},
+				ACL:                 "",
 			}
 		}
 
@@ -330,7 +328,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	keyStart := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
-	partNumberStr := ctx.Query("partNumber")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
 
@@ -351,6 +348,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	// Other headers
 	contentLengthStr := ctx.Get("Content-Length")
+	bucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -403,7 +401,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
-	if uploadId != "" && partNumberStr != "" {
+	if ctx.Request().URI().QueryArgs().Has("uploadId") && ctx.Request().URI().QueryArgs().Has("partNumber") {
 		partNumber := ctx.QueryInt("partNumber", -1)
 		if partNumber < 1 {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart))
@@ -421,25 +419,57 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
-	if grants != "" || acl != "" {
-		if grants != "" && acl != "" {
-			return errors.New("wrong api call")
+	if ctx.Request().URI().QueryArgs().Has("acl") {
+		var input *s3.PutObjectAclInput
+
+		if len(ctx.Body()) > 0 {
+			if grants+acl != "" {
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
+			}
+
+			var accessControlPolicy auth.AccessControlPolicy
+			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
+			if err != nil {
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
+			}
+
+			input = &s3.PutObjectAclInput{
+				Bucket:              &bucket,
+				Key:                 &keyStart,
+				ACL:                 "",
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &accessControlPolicy.Owner, Grants: accessControlPolicy.AccessControlList.Grants},
+			}
+		}
+		if acl != "" {
+			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
+			}
+			if len(ctx.Body()) > 0 || grants != "" {
+				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest))
+			}
+
+			input = &s3.PutObjectAclInput{
+				Bucket:              &bucket,
+				Key:                 &keyStart,
+				ACL:                 types.ObjectCannedACL(acl),
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &bucketOwner}},
+			}
+		}
+		if grants != "" {
+			input = &s3.PutObjectAclInput{
+				Bucket:              &bucket,
+				Key:                 &keyStart,
+				GrantFullControl:    &grantFullControl,
+				GrantRead:           &grantRead,
+				GrantReadACP:        &grantReadACP,
+				GrantWrite:          &granWrite,
+				GrantWriteACP:       &grantWriteACP,
+				AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &bucketOwner}},
+				ACL:                 "",
+			}
 		}
 
-		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE_ACP", isRoot); err != nil {
-			return SendResponse(ctx, err)
-		}
-
-		err := c.be.PutObjectAcl(&s3.PutObjectAclInput{
-			Bucket:           &bucket,
-			Key:              &keyStart,
-			ACL:              types.ObjectCannedACL(acl),
-			GrantFullControl: &grantFullControl,
-			GrantRead:        &grantRead,
-			GrantReadACP:     &grantReadACP,
-			GrantWrite:       &granWrite,
-			GrantWriteACP:    &grantWriteACP,
-		})
+		err = c.be.PutObjectAcl(input)
 		return SendResponse(ctx, err)
 	}
 
@@ -759,6 +789,7 @@ func SendResponse(ctx *fiber.Ctx, err error) error {
 
 func SendXMLResponse(ctx *fiber.Ctx, resp any, err error) error {
 	if err != nil {
+		fmt.Println(err)
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)

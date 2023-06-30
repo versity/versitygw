@@ -46,6 +46,7 @@ type AccessControlList struct {
 }
 type AccessControlPolicy struct {
 	AccessControlList AccessControlList `xml:"AccessControlList"`
+	Owner             types.Owner
 }
 
 func ParseACL(data []byte) (ACL, error) {
