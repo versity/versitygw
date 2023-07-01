@@ -39,11 +39,10 @@ type Backend interface {
 	CreateMultipartUpload(*s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(*s3.AbortMultipartUploadInput) error
-	ListMultipartUploads(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
+	ListMultipartUploads(*s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
 	ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error)
-	CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error)
 	PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (etag string, err error)
-	UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
+	UploadPartCopy(*s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
 
 	PutObject(*s3.PutObjectInput) (string, error)
 	HeadObject(bucket, object string) (*s3.HeadObjectOutput, error)
@@ -86,8 +85,8 @@ func (BackendUnsupported) PutObjectAcl(*s3.PutObjectAclInput) error {
 func (BackendUnsupported) RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) UploadPartCopy(*s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetBucketAcl(bucket string) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
@@ -116,9 +115,6 @@ func (BackendUnsupported) ListMultipartUploads(output *s3.ListMultipartUploadsIn
 }
 func (BackendUnsupported) ListObjectParts(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
 	return s3response.ListPartsResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) CopyPart(srcBucket, srcObject, DstBucket, uploadID, rangeHeader string, part int) (*types.CopyPartResult, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) PutObjectPart(bucket, object, uploadID string, part int, length int64, r io.Reader) (etag string, err error) {
 	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
