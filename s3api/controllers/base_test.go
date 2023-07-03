@@ -666,6 +666,9 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			SetTagsFunc: func(bucket, object string, tags map[string]string) error {
 				return nil
 			},
+			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
+				return &s3.UploadPartCopyOutput{}, nil
+			},
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -675,6 +678,14 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		return ctx.Next()
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
+
+	// UploadPartCopy success
+	uploadPartCpyReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=12asd32&partNumber=3", nil)
+	uploadPartCpyReq.Header.Set("X-Amz-Copy-Source", "srcBucket/srcObject")
+
+	// UploadPartCopy error case
+	uploadPartCpyErrReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?uploadId=12asd32&partNumber=invalid", nil)
+	uploadPartCpyErrReq.Header.Set("X-Amz-Copy-Source", "srcBucket/srcObject")
 
 	// CopyObject success
 	cpySrcReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
@@ -785,6 +796,24 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: aclGrtReq,
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Upload-part-copy-invalid-part-number",
+			app:  app,
+			args: args{
+				req: uploadPartCpyErrReq,
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Upload-part-copy-success",
+			app:  app,
+			args: args{
+				req: uploadPartCpyReq,
 			},
 			wantErr:    false,
 			statusCode: 200,
