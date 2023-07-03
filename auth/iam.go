@@ -25,6 +25,8 @@ type Account struct {
 }
 
 // IAMService is the interface for all IAM service implementations
+//
+//go:generate moq -out ../s3api/controllers/iam_moq_test.go -pkg controllers . IAMService
 type IAMService interface {
 	CreateAccount(access string, account Account) error
 	GetUserAccount(access string) (Account, error)

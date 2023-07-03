@@ -24,7 +24,6 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-//go:generate moq -out backend_moq_test.go . Backend
 //go:generate moq -out ../s3api/controllers/backend_moq_test.go -pkg controllers . Backend
 type Backend interface {
 	fmt.Stringer

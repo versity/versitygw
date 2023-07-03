@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -962,7 +963,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPost, "/my-bucket", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 	}
 	for _, tt := range tests {
@@ -995,6 +996,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 			AbortMultipartUploadFunc: func(*s3.AbortMultipartUploadInput) error {
 				return nil
 			},
+			RemoveTagsFunc: func(bucket, object string) error {
+				return nil
+			},
 		},
 	}
 
@@ -1006,7 +1010,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	})
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
 
-	//Error case
+	// Error case
 	appErr := fiber.New()
 
 	s3ApiControllerErr := S3ApiController{be: &BackendMock{
@@ -1024,7 +1028,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
-	appErr.Delete("/:bucket", s3ApiControllerErr.DeleteBucket)
+	appErr.Delete("/:bucket/:key/*", s3ApiControllerErr.DeleteActions)
 
 	tests := []struct {
 		name       string
@@ -1038,6 +1042,15 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key?uploadId=324234", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Remove-object-tagging-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key/key2?tagging", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -1465,6 +1478,16 @@ func Test_response(t *testing.T) {
 				ctx:  &ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(16),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Internal-server-error-not-api",
+			args: args{
+				ctx:  &ctx,
+				resp: nil,
+				err:  fmt.Errorf("custom error"),
 			},
 			wantErr:    false,
 			statusCode: 500,

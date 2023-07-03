@@ -550,7 +550,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	var dObj types.Delete
 
 	if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
-		return errors.New("wrong api call")
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest))
 	}
 
 	data, err := c.be.GetBucketAcl(bucket)

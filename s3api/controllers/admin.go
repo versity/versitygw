@@ -32,6 +32,9 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	if requesterRole != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
+	if role != "user" && role != "admin" {
+		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
+	}
 
 	user := auth.Account{Secret: secret, Role: role}
 
@@ -40,8 +43,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}
 
-	ctx.SendString("The user has been created successfully")
-	return nil
+	return ctx.SendString("The user has been created successfully")
 }
 
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
@@ -56,6 +58,5 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	ctx.SendString("The user has been created successfully")
-	return nil
+	return ctx.SendString("The user has been created successfully")
 }
