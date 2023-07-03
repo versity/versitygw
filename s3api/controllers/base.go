@@ -337,6 +337,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	copySrcIfNoneMatch := ctx.Get("X-Amz-Copy-Source-If-None-Match")
 	copySrcModifSince := ctx.Get("X-Amz-Copy-Source-If-Modified-Since")
 	copySrcUnmodifSince := ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since")
+	copySrcRange := ctx.Get("X-Amz-Copy-Source-Range")
 
 	// Permission headers
 	acl := ctx.Get("X-Amz-Acl")
@@ -401,9 +402,27 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err)
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("uploadId") && ctx.Request().URI().QueryArgs().Has("partNumber") && copySource != "" {
+		partNumber := ctx.QueryInt("partNumber", -1)
+		if partNumber < 1 || partNumber > 10000 {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart))
+		}
+
+		resp, err := c.be.UploadPartCopy(&s3.UploadPartCopyInput{
+			Bucket:              &bucket,
+			Key:                 &keyStart,
+			CopySource:          &copySource,
+			PartNumber:          int32(partNumber),
+			UploadId:            &uploadId,
+			ExpectedBucketOwner: &bucketOwner,
+			CopySourceRange:     &copySrcRange,
+		})
+		return SendXMLResponse(ctx, resp, err)
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("uploadId") && ctx.Request().URI().QueryArgs().Has("partNumber") {
 		partNumber := ctx.QueryInt("partNumber", -1)
-		if partNumber < 1 {
+		if partNumber < 1 || partNumber > 10000 {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart))
 		}
 
