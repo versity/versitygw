@@ -667,8 +667,8 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			SetTagsFunc: func(bucket, object string, tags map[string]string) error {
 				return nil
 			},
-			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
-				return &s3.UploadPartCopyOutput{}, nil
+			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+				return s3response.CopyObjectResult{}, nil
 			},
 		},
 	}
