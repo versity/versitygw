@@ -51,8 +51,8 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		// Check the signature version
 		authParts := strings.Split(authorization, ",")
-		for _, el := range authParts {
-			el = strings.TrimSpace(el)
+		for i, el := range authParts {
+			authParts[i] = strings.TrimSpace(el)
 		}
 
 		if len(authParts) != 3 {
