@@ -27,7 +27,7 @@ type AdminController struct {
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	access, secret, role := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role")
-	requesterRole := ctx.Locals("role")
+	requesterRole := ctx.Locals("role").(string)
 
 	if requesterRole != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
@@ -48,7 +48,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 	access := ctx.Query("access")
-	requesterRole := ctx.Locals("role")
+	requesterRole := ctx.Locals("role").(string)
 	if requesterRole != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
@@ -58,5 +58,5 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	return ctx.SendString("The user has been created successfully")
+	return ctx.SendString("The user has been deleted successfully")
 }

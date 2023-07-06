@@ -84,25 +84,25 @@ func adminCommand() *cli.Command {
 		Flags: []cli.Flag{
 			// TODO: create a configuration file for this
 			&cli.StringFlag{
-				Name:        "adminAccess",
+				Name:        "access",
 				Usage:       "admin access account",
 				EnvVars:     []string{"ADMIN_ACCESS_KEY_ID", "ADMIN_ACCESS_KEY"},
-				Aliases:     []string{"aa"},
+				Aliases:     []string{"a"},
 				Destination: &adminAccess,
 			},
 			&cli.StringFlag{
-				Name:        "adminSecret",
+				Name:        "secret",
 				Usage:       "admin secret access key",
 				EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
-				Aliases:     []string{"as"},
+				Aliases:     []string{"s"},
 				Destination: &adminSecret,
 			},
 			&cli.StringFlag{
-				Name:        "adminRegion",
+				Name:        "region",
 				Usage:       "s3 region string",
 				Value:       "us-east-1",
 				Destination: &adminRegion,
-				Aliases:     []string{"ar"},
+				Aliases:     []string{"r"},
 			},
 		},
 	}
@@ -117,7 +117,7 @@ func createUser(ctx *cli.Context) error {
 		return fmt.Errorf("invalid input parameter for role")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v", access, secret, role), nil)
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v", access, secret, role), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
@@ -157,7 +157,7 @@ func deleteUser(ctx *cli.Context) error {
 		return fmt.Errorf("invalid input parameter for the new user")
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://localhost:7070/delete-user?access=%v", access), nil)
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("http://localhost:7070/delete-user?access=%v", access), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
