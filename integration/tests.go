@@ -1373,7 +1373,7 @@ func TestAclActions(s *S3Conf) {
 	succUsrCrt := "The user has been created successfully"
 	failUsrCrt := "failed to create a user: update iam data: account already exists"
 
-	out, err := execCommand("admin", "-aa", s.awsID, "-as", s.awsSecret, "create-user", "--access", grt1, "--secret", "grt1secret", "--role", "user")
+	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "create-user", "-a", grt1, "-s", "grt1secret", "-r", "user")
 	if err != nil {
 		failF("%v: %v", err)
 		return

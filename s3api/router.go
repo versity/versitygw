@@ -27,11 +27,10 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	s3ApiController := controllers.New(be, iam)
 	adminController := controllers.AdminController{IAMService: iam}
 
-	// TODO: think of better routing system
-	app.Post("/create-user", adminController.CreateUser)
+	app.Patch("/create-user", adminController.CreateUser)
 
 	// Admin Delete api
-	app.Delete("/delete-user", adminController.DeleteUser)
+	app.Patch("/delete-user", adminController.DeleteUser)
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)
 

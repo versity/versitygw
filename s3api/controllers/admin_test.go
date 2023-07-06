@@ -43,7 +43,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 		return ctx.Next()
 	})
 
-	app.Post("/create-user", adminController.CreateUser)
+	app.Patch("/create-user", adminController.CreateUser)
 
 	appErr := fiber.New()
 
@@ -52,7 +52,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 		return ctx.Next()
 	})
 
-	appErr.Post("/create-user", adminController.CreateUser)
+	appErr.Patch("/create-user", adminController.CreateUser)
 
 	tests := []struct {
 		name       string
@@ -65,7 +65,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/create-user?access=test&secret=test&role=user", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=user", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -74,7 +74,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-invalid-user-role",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/create-user?access=test&secret=test&role=invalid", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=invalid", nil),
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -83,7 +83,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-invalid-requester-role",
 			app:  appErr,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/create-user?access=test&secret=test&role=admin", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=admin", nil),
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -122,7 +122,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 		return ctx.Next()
 	})
 
-	app.Delete("/delete-user", adminController.DeleteUser)
+	app.Patch("/delete-user", adminController.DeleteUser)
 
 	appErr := fiber.New()
 
@@ -131,7 +131,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 		return ctx.Next()
 	})
 
-	appErr.Delete("/delete-user", adminController.DeleteUser)
+	appErr.Patch("/delete-user", adminController.DeleteUser)
 
 	tests := []struct {
 		name       string
@@ -144,7 +144,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 			name: "Admin-delete-user-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodDelete, "/delete-user?access=test", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/delete-user?access=test", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -153,7 +153,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 			name: "Admin-delete-user-invalid-requester-role",
 			app:  appErr,
 			args: args{
-				req: httptest.NewRequest(http.MethodDelete, "/delete-user?access=test", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/delete-user?access=test", nil),
 			},
 			wantErr:    false,
 			statusCode: 500,
