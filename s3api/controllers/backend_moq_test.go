@@ -28,11 +28,8 @@ var _ backend.Backend = &BackendMock{}
 //			CompleteMultipartUploadFunc: func(bucket string, object string, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
-//			CopyObjectFunc: func(srcBucket string, srcObject string, DstBucket string, dstObject string) (*s3.CopyObjectOutput, error) {
+//			CopyObjectFunc: func(srcBucket string, srcObject string, dstBucket string, dstObject string) (*s3.CopyObjectOutput, error) {
 //				panic("mock out the CopyObject method")
-//			},
-//			CopyPartFunc: func(srcBucket string, srcObject string, DstBucket string, uploadID string, rangeHeader string, part int) (*types.CopyPartResult, error) {
-//				panic("mock out the CopyPart method")
 //			},
 //			CreateMultipartUploadFunc: func(createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 //				panic("mock out the CreateMultipartUpload method")
@@ -70,7 +67,7 @@ var _ backend.Backend = &BackendMock{}
 //			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
 //				panic("mock out the ListBuckets method")
 //			},
-//			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+//			ListMultipartUploadsFunc: func(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 //				panic("mock out the ListMultipartUploads method")
 //			},
 //			ListObjectPartsFunc: func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
@@ -112,7 +109,7 @@ var _ backend.Backend = &BackendMock{}
 //			StringFunc: func() string {
 //				panic("mock out the String method")
 //			},
-//			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
+//			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 //				panic("mock out the UploadPartCopy method")
 //			},
 //		}
@@ -129,10 +126,7 @@ type BackendMock struct {
 	CompleteMultipartUploadFunc func(bucket string, object string, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error)
 
 	// CopyObjectFunc mocks the CopyObject method.
-	CopyObjectFunc func(srcBucket string, srcObject string, DstBucket string, dstObject string) (*s3.CopyObjectOutput, error)
-
-	// CopyPartFunc mocks the CopyPart method.
-	CopyPartFunc func(srcBucket string, srcObject string, DstBucket string, uploadID string, rangeHeader string, part int) (*types.CopyPartResult, error)
+	CopyObjectFunc func(srcBucket string, srcObject string, dstBucket string, dstObject string) (*s3.CopyObjectOutput, error)
 
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
 	CreateMultipartUploadFunc func(createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
@@ -171,7 +165,7 @@ type BackendMock struct {
 	ListBucketsFunc func() (s3response.ListAllMyBucketsResult, error)
 
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
-	ListMultipartUploadsFunc func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
+	ListMultipartUploadsFunc func(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
 
 	// ListObjectPartsFunc mocks the ListObjectParts method.
 	ListObjectPartsFunc func(bucket string, object string, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error)
@@ -213,7 +207,7 @@ type BackendMock struct {
 	StringFunc func() string
 
 	// UploadPartCopyFunc mocks the UploadPartCopy method.
-	UploadPartCopyFunc func(uploadPartCopyInput *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error)
+	UploadPartCopyFunc func(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -239,25 +233,10 @@ type BackendMock struct {
 			SrcBucket string
 			// SrcObject is the srcObject argument value.
 			SrcObject string
-			// DstBucket is the DstBucket argument value.
+			// DstBucket is the dstBucket argument value.
 			DstBucket string
 			// DstObject is the dstObject argument value.
 			DstObject string
-		}
-		// CopyPart holds details about calls to the CopyPart method.
-		CopyPart []struct {
-			// SrcBucket is the srcBucket argument value.
-			SrcBucket string
-			// SrcObject is the srcObject argument value.
-			SrcObject string
-			// DstBucket is the DstBucket argument value.
-			DstBucket string
-			// UploadID is the uploadID argument value.
-			UploadID string
-			// RangeHeader is the rangeHeader argument value.
-			RangeHeader string
-			// Part is the part argument value.
-			Part int
 		}
 		// CreateMultipartUpload holds details about calls to the CreateMultipartUpload method.
 		CreateMultipartUpload []struct {
@@ -339,8 +318,8 @@ type BackendMock struct {
 		}
 		// ListMultipartUploads holds details about calls to the ListMultipartUploads method.
 		ListMultipartUploads []struct {
-			// Output is the output argument value.
-			Output *s3.ListMultipartUploadsInput
+			// ListMultipartUploadsInput is the listMultipartUploadsInput argument value.
+			ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 		}
 		// ListObjectParts holds details about calls to the ListObjectParts method.
 		ListObjectParts []struct {
@@ -460,7 +439,6 @@ type BackendMock struct {
 	lockAbortMultipartUpload    sync.RWMutex
 	lockCompleteMultipartUpload sync.RWMutex
 	lockCopyObject              sync.RWMutex
-	lockCopyPart                sync.RWMutex
 	lockCreateMultipartUpload   sync.RWMutex
 	lockDeleteBucket            sync.RWMutex
 	lockDeleteObject            sync.RWMutex
@@ -567,7 +545,7 @@ func (mock *BackendMock) CompleteMultipartUploadCalls() []struct {
 }
 
 // CopyObject calls CopyObjectFunc.
-func (mock *BackendMock) CopyObject(srcBucket string, srcObject string, DstBucket string, dstObject string) (*s3.CopyObjectOutput, error) {
+func (mock *BackendMock) CopyObject(srcBucket string, srcObject string, dstBucket string, dstObject string) (*s3.CopyObjectOutput, error) {
 	if mock.CopyObjectFunc == nil {
 		panic("BackendMock.CopyObjectFunc: method is nil but Backend.CopyObject was just called")
 	}
@@ -579,13 +557,13 @@ func (mock *BackendMock) CopyObject(srcBucket string, srcObject string, DstBucke
 	}{
 		SrcBucket: srcBucket,
 		SrcObject: srcObject,
-		DstBucket: DstBucket,
+		DstBucket: dstBucket,
 		DstObject: dstObject,
 	}
 	mock.lockCopyObject.Lock()
 	mock.calls.CopyObject = append(mock.calls.CopyObject, callInfo)
 	mock.lockCopyObject.Unlock()
-	return mock.CopyObjectFunc(srcBucket, srcObject, DstBucket, dstObject)
+	return mock.CopyObjectFunc(srcBucket, srcObject, dstBucket, dstObject)
 }
 
 // CopyObjectCalls gets all the calls that were made to CopyObject.
@@ -607,58 +585,6 @@ func (mock *BackendMock) CopyObjectCalls() []struct {
 	mock.lockCopyObject.RLock()
 	calls = mock.calls.CopyObject
 	mock.lockCopyObject.RUnlock()
-	return calls
-}
-
-// CopyPart calls CopyPartFunc.
-func (mock *BackendMock) CopyPart(srcBucket string, srcObject string, DstBucket string, uploadID string, rangeHeader string, part int) (*types.CopyPartResult, error) {
-	if mock.CopyPartFunc == nil {
-		panic("BackendMock.CopyPartFunc: method is nil but Backend.CopyPart was just called")
-	}
-	callInfo := struct {
-		SrcBucket   string
-		SrcObject   string
-		DstBucket   string
-		UploadID    string
-		RangeHeader string
-		Part        int
-	}{
-		SrcBucket:   srcBucket,
-		SrcObject:   srcObject,
-		DstBucket:   DstBucket,
-		UploadID:    uploadID,
-		RangeHeader: rangeHeader,
-		Part:        part,
-	}
-	mock.lockCopyPart.Lock()
-	mock.calls.CopyPart = append(mock.calls.CopyPart, callInfo)
-	mock.lockCopyPart.Unlock()
-	return mock.CopyPartFunc(srcBucket, srcObject, DstBucket, uploadID, rangeHeader, part)
-}
-
-// CopyPartCalls gets all the calls that were made to CopyPart.
-// Check the length with:
-//
-//	len(mockedBackend.CopyPartCalls())
-func (mock *BackendMock) CopyPartCalls() []struct {
-	SrcBucket   string
-	SrcObject   string
-	DstBucket   string
-	UploadID    string
-	RangeHeader string
-	Part        int
-} {
-	var calls []struct {
-		SrcBucket   string
-		SrcObject   string
-		DstBucket   string
-		UploadID    string
-		RangeHeader string
-		Part        int
-	}
-	mock.lockCopyPart.RLock()
-	calls = mock.calls.CopyPart
-	mock.lockCopyPart.RUnlock()
 	return calls
 }
 
@@ -1082,19 +1008,19 @@ func (mock *BackendMock) ListBucketsCalls() []struct {
 }
 
 // ListMultipartUploads calls ListMultipartUploadsFunc.
-func (mock *BackendMock) ListMultipartUploads(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+func (mock *BackendMock) ListMultipartUploads(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 	if mock.ListMultipartUploadsFunc == nil {
 		panic("BackendMock.ListMultipartUploadsFunc: method is nil but Backend.ListMultipartUploads was just called")
 	}
 	callInfo := struct {
-		Output *s3.ListMultipartUploadsInput
+		ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 	}{
-		Output: output,
+		ListMultipartUploadsInput: listMultipartUploadsInput,
 	}
 	mock.lockListMultipartUploads.Lock()
 	mock.calls.ListMultipartUploads = append(mock.calls.ListMultipartUploads, callInfo)
 	mock.lockListMultipartUploads.Unlock()
-	return mock.ListMultipartUploadsFunc(output)
+	return mock.ListMultipartUploadsFunc(listMultipartUploadsInput)
 }
 
 // ListMultipartUploadsCalls gets all the calls that were made to ListMultipartUploads.
@@ -1102,10 +1028,10 @@ func (mock *BackendMock) ListMultipartUploads(output *s3.ListMultipartUploadsInp
 //
 //	len(mockedBackend.ListMultipartUploadsCalls())
 func (mock *BackendMock) ListMultipartUploadsCalls() []struct {
-	Output *s3.ListMultipartUploadsInput
+	ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 } {
 	var calls []struct {
-		Output *s3.ListMultipartUploadsInput
+		ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 	}
 	mock.lockListMultipartUploads.RLock()
 	calls = mock.calls.ListMultipartUploads
@@ -1616,7 +1542,7 @@ func (mock *BackendMock) StringCalls() []struct {
 }
 
 // UploadPartCopy calls UploadPartCopyFunc.
-func (mock *BackendMock) UploadPartCopy(uploadPartCopyInput *s3.UploadPartCopyInput) (*s3.UploadPartCopyOutput, error) {
+func (mock *BackendMock) UploadPartCopy(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 	if mock.UploadPartCopyFunc == nil {
 		panic("BackendMock.UploadPartCopyFunc: method is nil but Backend.UploadPartCopy was just called")
 	}

@@ -50,15 +50,22 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		}
 
 		// Check the signature version
-		authParts := strings.Split(authorization, " ")
-		if len(authParts) < 4 {
+		authParts := strings.Split(authorization, ",")
+		for i, el := range authParts {
+			authParts[i] = strings.TrimSpace(el)
+		}
+
+		if len(authParts) != 3 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields))
 		}
-		if authParts[0] != "AWS4-HMAC-SHA256" {
+
+		startParts := strings.Split(authParts[0], " ")
+
+		if startParts[0] != "AWS4-HMAC-SHA256" {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported))
 		}
 
-		credKv := strings.Split(authParts[1], "=")
+		credKv := strings.Split(startParts[1], "=")
 		if len(credKv) != 2 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
@@ -67,7 +74,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
 
-		signHdrKv := strings.Split(authParts[2][:len(authParts[2])-1], "=")
+		signHdrKv := strings.Split(authParts[1], "=")
 		if len(signHdrKv) != 2 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
 		}
@@ -93,15 +100,18 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate))
 		}
 
-		// Calculate the hash of the request payload
-		hashedPayload := sha256.Sum256(ctx.Body())
-		hexPayload := hex.EncodeToString(hashedPayload[:])
-
 		hashPayloadHeader := ctx.Get("X-Amz-Content-Sha256")
+		ok := isSpecialPayload(hashPayloadHeader)
 
-		// Compare the calculated hash with the hash provided
-		if hashPayloadHeader != hexPayload {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+		if !ok {
+			// Calculate the hash of the request payload
+			hashedPayload := sha256.Sum256(ctx.Body())
+			hexPayload := hex.EncodeToString(hashedPayload[:])
+
+			// Compare the calculated hash with the hash provided
+			if hashPayloadHeader != hexPayload {
+				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+			}
 		}
 
 		// Create a new http request instance from fasthttp request
@@ -115,7 +125,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		signErr := signer.SignHTTP(req.Context(), aws.Credentials{
 			AccessKeyID:     creds[0],
 			SecretAccessKey: account.Secret,
-		}, req, hexPayload, creds[3], region, tdate, func(options *v4.SignerOptions) {
+		}, req, hashPayloadHeader, creds[3], region, tdate, func(options *v4.SignerOptions) {
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
@@ -130,7 +140,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields))
 		}
 		calculatedSign := strings.Split(parts[3], "=")[1]
-		expectedSign := strings.Split(authParts[3], "=")[1]
+		expectedSign := strings.Split(authParts[2], "=")[1]
 
 		if expectedSign != calculatedSign {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
@@ -158,4 +168,17 @@ func (a accounts) getAccount(access string) (auth.Account, error) {
 	}
 
 	return a.iam.GetUserAccount(access)
+}
+
+func isSpecialPayload(str string) bool {
+	specialValues := map[string]bool{
+		"UNSIGNED-PAYLOAD":                                 true,
+		"STREAMING-UNSIGNED-PAYLOAD-TRAILER":               true,
+		"STREAMING-AWS4-HMAC-SHA256-PAYLOAD":               true,
+		"STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER":       true,
+		"STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD":         true,
+		"STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER": true,
+	}
+
+	return specialValues[str]
 }
