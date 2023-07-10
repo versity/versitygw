@@ -29,6 +29,7 @@ import (
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 )
 
 const (
@@ -40,13 +41,13 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Logger, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		// Check the signature version
@@ -56,48 +57,50 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		}
 
 		if len(authParts) != 3 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		startParts := strings.Split(authParts[0], " ")
 
 		if startParts[0] != "AWS4-HMAC-SHA256" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		credKv := strings.Split(startParts[1], "=")
 		if len(credKv) != 2 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 		creds := strings.Split(credKv[1], "/")
 		if len(creds) < 4 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
+
+		ctx.Locals("access", creds[0])
 
 		signHdrKv := strings.Split(authParts[1], "=")
 		if len(signHdrKv) != 2 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
 		account, err := acct.getAccount(creds[0])
 		if err == auth.ErrNoSuchUser {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 		if err != nil {
-			return controllers.SendResponse(ctx, err)
+			return controllers.SendResponse(ctx, err, controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		// Parse the date and check the date validity
 		tdate, err := time.Parse(iso8601Format, date)
 		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		hashPayloadHeader := ctx.Get("X-Amz-Content-Sha256")
@@ -110,14 +113,14 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 			// Compare the calculated hash with the hash provided
 			if hashPayloadHeader != hexPayload {
-				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), controllers.LogOptions{Logger: logger, LogType: "auth"})
 			}
 		}
 
 		// Create a new http request instance from fasthttp request
 		req, err := utils.CreateHttpRequestFromCtx(ctx, signedHdrs)
 		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		signer := v4.NewSigner()
@@ -132,23 +135,26 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			}
 		})
 		if signErr != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		parts := strings.Split(req.Header.Get("Authorization"), " ")
 		if len(parts) < 4 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 		calculatedSign := strings.Split(parts[3], "=")[1]
 		expectedSign := strings.Split(authParts[2], "=")[1]
 
 		if expectedSign != calculatedSign {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch), controllers.LogOptions{Logger: logger, LogType: "auth"})
 		}
 
 		ctx.Locals("role", account.Role)
-		ctx.Locals("access", creds[0])
 		ctx.Locals("isRoot", creds[0] == root.Access)
+
+		if logger != nil {
+			logger.SendAuthLog(&creds[0], nil)
+		}
 
 		return ctx.Next()
 	}

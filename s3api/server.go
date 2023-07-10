@@ -22,6 +22,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3log"
 )
 
 type S3ApiServer struct {
@@ -33,7 +34,7 @@ type S3ApiServer struct {
 	debug   bool
 }
 
-func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, opts ...Option) (*S3ApiServer, error) {
+func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.Logger, opts ...Option) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
@@ -50,10 +51,10 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 	app.Use(middlewares.RequestLogger(server.debug))
 
 	// Authentication middlewares
-	app.Use(middlewares.VerifyV4Signature(root, iam, region, server.debug))
-	app.Use(middlewares.VerifyMD5Body())
+	app.Use(middlewares.VerifyV4Signature(root, iam, l, region, server.debug))
+	app.Use(middlewares.VerifyMD5Body(l))
 
-	server.router.Init(app, be, iam)
+	server.router.Init(app, be, iam, l)
 
 	return server, nil
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3log"
 )
 
 func TestNew(t *testing.T) {
@@ -64,7 +65,7 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotS3ApiServer, err := New(tt.args.app, tt.args.be, tt.args.root,
-				tt.args.port, "us-east-1", &auth.IAMServiceInternal{})
+				tt.args.port, "us-east-1", &auth.IAMServiceInternal{}, s3log.InitLogger("url", "posix", s3log.WebhookLoggerType))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -27,6 +27,7 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3log"
 )
 
 var (
@@ -35,6 +36,7 @@ var (
 	rootUserSecret    string
 	region            string
 	certFile, keyFile string
+	webhookLoggerURL  string
 	debug             bool
 )
 
@@ -141,10 +143,15 @@ func initFlags() []cli.Flag {
 			Usage:       "enable debug output",
 			Destination: &debug,
 		},
+		&cli.StringFlag{
+			Name:        "webhook-logger-url",
+			Usage:       "Webhook logger url to send audit logs",
+			Destination: &webhookLoggerURL,
+		},
 	}
 }
 
-func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
+func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer, storageSystem string) error {
 	app := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
@@ -182,10 +189,12 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		return fmt.Errorf("setup internal iam service: %w", err)
 	}
 
+	logger := s3log.InitLogger(webhookLoggerURL, storageSystem, s3log.WebhookLoggerType)
+
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
-	}, port, region, iam, opts...)
+	}, port, region, iam, logger, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

@@ -21,9 +21,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 )
 
-func VerifyMD5Body() fiber.Handler {
+func VerifyMD5Body(logger s3log.Logger) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		incomingSum := ctx.Get("Content-Md5")
 		if incomingSum == "" {
@@ -34,10 +35,9 @@ func VerifyMD5Body() fiber.Handler {
 		calculatedSum := base64.StdEncoding.EncodeToString(sum[:])
 
 		if incomingSum != calculatedSum {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest))
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest), controllers.LogOptions{Logger: logger})
 		}
 
 		return ctx.Next()
-
 	}
 }
