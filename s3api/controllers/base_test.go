@@ -1376,10 +1376,9 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 
 func Test_XMLresponse(t *testing.T) {
 	type args struct {
-		ctx    *fiber.Ctx
-		resp   any
-		err    error
-		logger s3log.Logger
+		ctx  *fiber.Ctx
+		resp any
+		err  error
 	}
 	app := fiber.New()
 
