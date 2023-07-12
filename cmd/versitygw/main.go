@@ -37,6 +37,9 @@ var (
 	region            string
 	certFile, keyFile string
 	webhookLoggerURL  string
+	kafkaLoggerURL    string
+	kafkaMessageTopic string
+	kafkaMessageKey   string
 	debug             bool
 )
 
@@ -147,6 +150,25 @@ func initFlags() []cli.Flag {
 			Name:        "webhook-logger-url",
 			Usage:       "Webhook logger url to send audit logs",
 			Destination: &webhookLoggerURL,
+			Aliases:     []string{"wlu"},
+		},
+		&cli.StringFlag{
+			Name:        "kafka-logger-url",
+			Usage:       "Kafka server url to send audit logs",
+			Destination: &kafkaLoggerURL,
+			Aliases:     []string{"klu"},
+		},
+		&cli.StringFlag{
+			Name:        "kafka-message-topic",
+			Usage:       "Kafka server message topic to send the logs",
+			Destination: &kafkaMessageTopic,
+			Aliases:     []string{"kmt"},
+		},
+		&cli.StringFlag{
+			Name:        "kafka-message-key",
+			Usage:       "Kafka server message topic key for partitioning",
+			Destination: &kafkaMessageKey,
+			Aliases:     []string{"kmk"},
 		},
 	}
 }
@@ -189,7 +211,16 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer, storageSyst
 		return fmt.Errorf("setup internal iam service: %w", err)
 	}
 
-	logger := s3log.InitLogger(webhookLoggerURL, storageSystem, s3log.WebhookLoggerType)
+	logger, err := s3log.InitLogger(&s3log.LogConfig{
+		StorageSystem: storageSystem,
+		WebhookURL:    webhookLoggerURL,
+		KafkaURL:      kafkaLoggerURL,
+		KafkaTopic:    kafkaMessageTopic,
+		KafkaTopicKey: kafkaMessageKey,
+	})
+	if err != nil {
+		return fmt.Errorf("setup logger: %w", err)
+	}
 
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,

@@ -15,54 +15,52 @@
 package s3log
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/http"
 	"sync"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/versity/versitygw/s3err"
 )
 
-type LogError struct {
-	StatusCode int
-	Message    string
-}
-
-type WebhookLogger struct {
+type KafkaLogger struct {
 	StorageSystem string
-	Time          time.Time
 	Action        string
 	UserAccess    *string
 	Bucket        *string
 	Object        *string
+	Time          time.Time
 	Response      any
 	Error         *LogError
-	url           string
+	topic         string
+	key           string
+	producer      sarama.SyncProducer
 	mu            sync.Mutex
 }
 
-var _ Logger = &WebhookLogger{}
+func InitKafkaLogger(storageSystem, url, topic, key string) (Logger, error) {
+	if topic == "" {
+		return nil, fmt.Errorf("kafka message topic should be specified")
+	}
 
-func InitWebhookLogger(storageSystem, url string) (Logger, error) {
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-	}
-	_, err := client.Post(url, "application/json", nil)
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer([]string{url}, config)
 	if err != nil {
-		if err, ok := err.(net.Error); ok && !err.Timeout() {
-			return nil, fmt.Errorf("unreachable webhook url")
-		}
+		return nil, err
 	}
-	return &WebhookLogger{
-		url:           url,
+
+	return &KafkaLogger{
 		StorageSystem: storageSystem,
+		topic:         topic,
+		key:           key,
+		producer:      producer,
 	}, nil
 }
 
-func (l *WebhookLogger) SendSuccessLog(data any, action string, access, bucket, object *string) {
+func (l *KafkaLogger) SendSuccessLog(data any, action string, access, bucket, object *string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -77,7 +75,7 @@ func (l *WebhookLogger) SendSuccessLog(data any, action string, access, bucket, 
 	l.sendLog(nil)
 }
 
-func (l *WebhookLogger) SendErrorLog(err error, action string, access, bucket, object *string) {
+func (l *KafkaLogger) SendErrorLog(err error, action string, access, bucket, object *string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -102,7 +100,7 @@ func (l *WebhookLogger) SendErrorLog(err error, action string, access, bucket, o
 	l.sendLog(nil)
 }
 
-func (l *WebhookLogger) SendAuthLog(access *string, err error) {
+func (l *KafkaLogger) SendAuthLog(access *string, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err != nil {
@@ -136,26 +134,32 @@ func (l *WebhookLogger) SendAuthLog(access *string, err error) {
 	})
 }
 
-func (l *WebhookLogger) sendLog(data any) {
+func (l *KafkaLogger) sendLog(data any) {
 	if data == nil {
 		data = l
 	}
-	jsonLog, err := json.Marshal(data)
+	msg, err := json.Marshal(data)
 	if err != nil {
 		fmt.Printf("\n failed to parse the log data: %v", err.Error())
 	}
 
-	req, err := http.NewRequest(http.MethodPost, l.url, bytes.NewReader(jsonLog))
+	var message *sarama.ProducerMessage
+
+	if l.key == "" {
+		message = &sarama.ProducerMessage{
+			Topic: l.topic,
+			Value: sarama.StringEncoder(msg),
+		}
+	} else {
+		message = &sarama.ProducerMessage{
+			Topic: l.topic,
+			Key:   sarama.StringEncoder(l.key),
+			Value: sarama.StringEncoder(msg),
+		}
+	}
+
+	_, _, err = l.producer.SendMessage(message)
 	if err != nil {
 		fmt.Println(err)
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-	}
-	_, err = client.Do(req)
-	if err != nil {
-		fmt.Printf("\n failed to send the log %v", err.Error())
 	}
 }

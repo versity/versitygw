@@ -14,6 +14,11 @@
 
 package s3log
 
+import (
+	"fmt"
+	"time"
+)
+
 type LoggerType string
 
 const (
@@ -26,14 +31,39 @@ type Logger interface {
 	SendAuthLog(access *string, err error)
 }
 
-func InitLogger(url, storageSystem string, t LoggerType) Logger {
-	if url == "" {
-		return nil
+type AuthSuccessLog struct {
+	StorageSystem string
+	Time          time.Time
+	UserAccess    *string
+	Message       string
+}
+
+type AuthErrorLog struct {
+	StorageSystem string
+	Time          time.Time
+	UserAccess    *string
+	ErrorMessage  string
+	ErrorStatus   int
+	ErrorType     string
+}
+
+type LogConfig struct {
+	WebhookURL    string
+	KafkaURL      string
+	KafkaTopic    string
+	KafkaTopicKey string
+	StorageSystem string
+}
+
+func InitLogger(cfg *LogConfig) (Logger, error) {
+	if cfg.WebhookURL != "" && cfg.KafkaURL != "" {
+		return nil, fmt.Errorf("specify one of 2 option for audit logging: kafka, webhook")
 	}
-	switch t {
-	case WebhookLoggerType:
-		return InitWebhookLogger(storageSystem, url)
-	default:
-		return nil
+	if cfg.WebhookURL != "" {
+		return InitWebhookLogger(cfg.StorageSystem, cfg.WebhookURL)
 	}
+	if cfg.KafkaURL != "" {
+		return InitKafkaLogger(cfg.StorageSystem, cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
+	}
+	return nil, nil
 }
