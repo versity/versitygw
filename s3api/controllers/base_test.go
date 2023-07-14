@@ -31,6 +31,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -49,8 +50,9 @@ func init() {
 
 func TestNew(t *testing.T) {
 	type args struct {
-		be  backend.Backend
-		iam auth.IAMService
+		be     backend.Backend
+		iam    auth.IAMService
+		logger s3log.AuditLogger
 	}
 
 	be := backend.BackendUnsupported{}
@@ -74,7 +76,7 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.args.be, tt.args.iam); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.be, tt.args.iam, tt.args.logger); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
@@ -187,14 +189,15 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	}
 }
 
+func getPtr(val string) *string {
+	return &val
+}
+
 func TestS3ApiController_GetActions(t *testing.T) {
 	type args struct {
 		req *http.Request
 	}
 
-	getPtr := func(val string) *string {
-		return &val
-	}
 	now := time.Now()
 
 	app := fiber.New()
@@ -1435,7 +1438,7 @@ func Test_XMLresponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err); (err != nil) != tt.wantErr {
+			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err, &LogOptions{}); (err != nil) != tt.wantErr {
 				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
@@ -1515,7 +1518,7 @@ func Test_response(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SendResponse(tt.args.ctx, tt.args.err); (err != nil) != tt.wantErr {
+			if err := SendResponse(tt.args.ctx, tt.args.err, &LogOptions{}); (err != nil) != tt.wantErr {
 				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
