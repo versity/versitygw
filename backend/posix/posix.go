@@ -921,7 +921,7 @@ func (p *Posix) DeleteObject(bucket, object string) error {
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	os.Remove(filepath.Join(bucket, object))
+	err = os.Remove(filepath.Join(bucket, object))
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
