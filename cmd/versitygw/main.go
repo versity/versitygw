@@ -27,18 +27,20 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
 
 var (
-	port              string
-	rootUserAccess    string
-	rootUserSecret    string
-	region            string
-	certFile, keyFile string
-	logWebhookURL     string
-	accessLog         bool
-	debug             bool
+	port                           string
+	rootUserAccess                 string
+	rootUserSecret                 string
+	region                         string
+	certFile, keyFile              string
+	kafkaURL, kafkaTopic, kafkaKey string
+	logWebhookURL                  string
+	accessLog                      bool
+	debug                          bool
 )
 
 var (
@@ -154,6 +156,24 @@ func initFlags() []cli.Flag {
 			Usage:       "webhook url to send the audit logs",
 			Destination: &logWebhookURL,
 		},
+		&cli.StringFlag{
+			Name:        "event-kafka-url",
+			Usage:       "kafka server url to send the bucket notifications.",
+			Destination: &kafkaURL,
+			Aliases:     []string{"eku"},
+		},
+		&cli.StringFlag{
+			Name:        "event-kafka-topic",
+			Usage:       "kafka server pub-sub topic to send the bucket notifications to",
+			Destination: &kafkaTopic,
+			Aliases:     []string{"ekt"},
+		},
+		&cli.StringFlag{
+			Name:        "event-kafka-key",
+			Usage:       "kafka server put-sub topic key to send the bucket notifications to",
+			Destination: &kafkaKey,
+			Aliases:     []string{"ekk"},
+		},
 	}
 }
 
@@ -203,11 +223,19 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		return fmt.Errorf("setup logger: %w", err)
 	}
 
+	evSender, err := s3event.InitEventSender(&s3event.EventConfig{
+		KafkaURL:      kafkaURL,
+		KafkaTopic:    kafkaTopic,
+		KafkaTopicKey: kafkaKey,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to connect to the message broker: %w", err)
+	}
+
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
-		Region: region,
-	}, port, region, iam, logger, opts...)
+	}, port, region, iam, logger, evSender, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}

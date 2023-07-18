@@ -39,18 +39,17 @@ const (
 type RootUserConfig struct {
 	Access string
 	Secret string
-	Region string
 }
 
 func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
-		ctx.Locals("region", root.Region)
+		ctx.Locals("region", region)
 		ctx.Locals("startTime", time.Now())
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), &controllers.MetaOpts{Logger: logger})
 		}
 
 		// Check the signature version
@@ -60,22 +59,22 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		}
 
 		if len(authParts) != 3 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), &controllers.MetaOpts{Logger: logger})
 		}
 
 		startParts := strings.Split(authParts[0], " ")
 
 		if startParts[0] != "AWS4-HMAC-SHA256" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), &controllers.MetaOpts{Logger: logger})
 		}
 
 		credKv := strings.Split(startParts[1], "=")
 		if len(credKv) != 2 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
 		}
 		creds := strings.Split(credKv[1], "/")
 		if len(creds) < 4 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
 		}
 
 		ctx.Locals("access", creds[0])
@@ -83,29 +82,29 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 
 		signHdrKv := strings.Split(authParts[1], "=")
 		if len(signHdrKv) != 2 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
 		}
 		signedHdrs := strings.Split(signHdrKv[1], ";")
 
 		account, err := acct.getAccount(creds[0])
 		if err == auth.ErrNoSuchUser {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), &controllers.MetaOpts{Logger: logger})
 		}
 		if err != nil {
-			return controllers.SendResponse(ctx, err, &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
 		}
 		ctx.Locals("role", account.Role)
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), &controllers.MetaOpts{Logger: logger})
 		}
 
 		// Parse the date and check the date validity
 		tdate, err := time.Parse(iso8601Format, date)
 		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), &controllers.MetaOpts{Logger: logger})
 		}
 
 		hashPayloadHeader := ctx.Get("X-Amz-Content-Sha256")
@@ -118,14 +117,14 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 
 			// Compare the calculated hash with the hash provided
 			if hashPayloadHeader != hexPayload {
-				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), &controllers.LogOptions{Logger: logger})
+				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), &controllers.MetaOpts{Logger: logger})
 			}
 		}
 
 		// Create a new http request instance from fasthttp request
 		req, err := utils.CreateHttpRequestFromCtx(ctx, signedHdrs)
 		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), &controllers.MetaOpts{Logger: logger})
 		}
 
 		signer := v4.NewSigner()
@@ -140,18 +139,18 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			}
 		})
 		if signErr != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInternalError), &controllers.MetaOpts{Logger: logger})
 		}
 
 		parts := strings.Split(req.Header.Get("Authorization"), " ")
 		if len(parts) < 4 {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingFields), &controllers.MetaOpts{Logger: logger})
 		}
 		calculatedSign := strings.Split(parts[3], "=")[1]
 		expectedSign := strings.Split(authParts[2], "=")[1]
 
 		if expectedSign != calculatedSign {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch), &controllers.LogOptions{Logger: logger})
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch), &controllers.MetaOpts{Logger: logger})
 		}
 
 		return ctx.Next()
