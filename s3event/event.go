@@ -14,7 +14,11 @@
 
 package s3event
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"fmt"
+
+	"github.com/gofiber/fiber/v2"
+)
 
 type S3EventSender interface {
 	SendEvent(ctx *fiber.Ctx, meta EventMeta)
@@ -108,9 +112,17 @@ type EventConfig struct {
 	KafkaURL      string
 	KafkaTopic    string
 	KafkaTopicKey string
+	NatsURL       string
+	NatsTopic     string
 }
 
 func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
+	if cfg.KafkaURL != "" && cfg.NatsURL != "" {
+		return nil, fmt.Errorf("there should be specified one of the following: kafka, nats")
+	}
+	if cfg.NatsURL != "" {
+		return InitNatsNotifSender(cfg.NatsURL, cfg.NatsTopic)
+	}
 	if cfg.KafkaURL != "" {
 		return InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
 	}
