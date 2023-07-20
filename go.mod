@@ -9,6 +9,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.47.0
 	github.com/google/uuid v1.3.0
 	github.com/pkg/xattr v0.4.9
+	github.com/segmentio/kafka-go v0.4.42
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/valyala/fasthttp v1.48.0
 	github.com/versity/scoutfs-go v0.0.0-20230606232754-0474b14343b9
@@ -22,6 +23,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.17 // indirect
+	github.com/stretchr/testify v1.8.1 // indirect
 )
 
 require (

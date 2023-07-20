@@ -19,13 +19,14 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
 
 type S3ApiRouter struct{}
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger) {
-	s3ApiController := controllers.New(be, iam, logger)
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender) {
+	s3ApiController := controllers.New(be, iam, logger, evs)
 	adminController := controllers.AdminController{IAMService: iam}
 
 	app.Patch("/create-user", adminController.CreateUser)

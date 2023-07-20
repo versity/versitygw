@@ -31,7 +31,6 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -50,9 +49,8 @@ func init() {
 
 func TestNew(t *testing.T) {
 	type args struct {
-		be     backend.Backend
-		iam    auth.IAMService
-		logger s3log.AuditLogger
+		be  backend.Backend
+		iam auth.IAMService
 	}
 
 	be := backend.BackendUnsupported{}
@@ -76,7 +74,7 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.args.be, tt.args.iam, tt.args.logger); !reflect.DeepEqual(got, tt.want) {
+			if got := New(tt.args.be, tt.args.iam, nil, nil); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("New() = %v, want %v", got, tt.want)
 			}
 		})
@@ -659,10 +657,12 @@ func TestS3ApiController_PutActions(t *testing.T) {
 				return nil
 			},
 			CopyObjectFunc: func(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
-				return &s3.CopyObjectOutput{}, nil
+				return &s3.CopyObjectOutput{
+					CopyObjectResult: &types.CopyObjectResult{},
+				}, nil
 			},
 			PutObjectFunc: func(*s3.PutObjectInput) (string, error) {
-				return "Hey", nil
+				return "ETag", nil
 			},
 			PutObjectPartFunc: func(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
 				return "hello", nil
@@ -1438,7 +1438,7 @@ func Test_XMLresponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err, &LogOptions{}); (err != nil) != tt.wantErr {
+			if err := SendXMLResponse(tt.args.ctx, tt.args.resp, tt.args.err, &MetaOpts{}); (err != nil) != tt.wantErr {
 				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
@@ -1518,7 +1518,7 @@ func Test_response(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SendResponse(tt.args.ctx, tt.args.err, &LogOptions{}); (err != nil) != tt.wantErr {
+			if err := SendResponse(tt.args.ctx, tt.args.err, &MetaOpts{}); (err != nil) != tt.wantErr {
 				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 
