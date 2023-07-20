@@ -8,6 +8,7 @@ require (
 	github.com/aws/smithy-go v1.13.5
 	github.com/gofiber/fiber/v2 v2.47.0
 	github.com/google/uuid v1.3.0
+	github.com/nats-io/nats.go v1.28.0
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/urfave/cli/v2 v2.25.7
@@ -22,9 +23,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.12.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.14.12 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/nats-io/nats-server/v2 v2.9.20 // indirect
+	github.com/nats-io/nkeys v0.4.4 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
+	golang.org/x/crypto v0.11.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )
 
 require (

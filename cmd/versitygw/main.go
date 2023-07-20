@@ -38,6 +38,7 @@ var (
 	region                         string
 	certFile, keyFile              string
 	kafkaURL, kafkaTopic, kafkaKey string
+	natsURL, natsTopic             string
 	logWebhookURL                  string
 	accessLog                      bool
 	debug                          bool
@@ -174,6 +175,18 @@ func initFlags() []cli.Flag {
 			Destination: &kafkaKey,
 			Aliases:     []string{"ekk"},
 		},
+		&cli.StringFlag{
+			Name:        "event-nats-url",
+			Usage:       "nats server url to send the bucket notifications",
+			Destination: &natsURL,
+			Aliases:     []string{"enu"},
+		},
+		&cli.StringFlag{
+			Name:        "event-nats-topic",
+			Usage:       "nats server pub-sub topic to send the bucket notifications to",
+			Destination: &natsTopic,
+			Aliases:     []string{"ent"},
+		},
 	}
 }
 
@@ -227,6 +240,8 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		KafkaURL:      kafkaURL,
 		KafkaTopic:    kafkaTopic,
 		KafkaTopicKey: kafkaKey,
+		NatsURL:       natsURL,
+		NatsTopic:     natsTopic,
 	})
 	if err != nil {
 		return fmt.Errorf("unable to connect to the message broker: %w", err)
