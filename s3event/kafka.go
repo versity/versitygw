@@ -131,7 +131,7 @@ func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 func (ks *Kafka) send(evnt []EventSchema) {
 	msg, err := json.Marshal(evnt)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nfailed to parse the event data: %v", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to parse the event data: %v\n", err.Error())
 		return
 	}
 
@@ -143,7 +143,7 @@ func (ks *Kafka) send(evnt []EventSchema) {
 	ctx := context.Background()
 	err = ks.writer.WriteMessages(ctx, message)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nfailed to send kafka event: %v", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to send kafka event: %v\n", err.Error())
 	}
 }
 
