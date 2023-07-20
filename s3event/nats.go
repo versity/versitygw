@@ -17,6 +17,7 @@ package s3event
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -26,13 +27,12 @@ import (
 )
 
 type NatsEventSender struct {
-	EventFields
 	topic  string
 	client *nats.Conn
 	mu     sync.Mutex
 }
 
-func InitNatsNotifSender(url, topic string) (S3EventSender, error) {
+func InitNatsEventService(url, topic string) (S3EventSender, error) {
 	if topic == "" {
 		return nil, fmt.Errorf("nats message topic should be specified")
 	}
@@ -96,18 +96,17 @@ func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 		},
 	}
 
-	ns.Records = []EventSchema{schema}
-	ns.sendEvent()
+	ns.send([]EventSchema{schema})
 }
 
-func (ns *NatsEventSender) sendEvent() {
-	jsonEvent, err := json.Marshal(ns)
+func (ns *NatsEventSender) send(evnt []EventSchema) {
+	msg, err := json.Marshal(evnt)
 	if err != nil {
-		fmt.Printf("\n failed to parse the event data: %v", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to parse the event data: %v\n", err.Error())
 	}
 
-	err = ns.client.Publish(ns.topic, jsonEvent)
+	err = ns.client.Publish(ns.topic, msg)
 	if err != nil {
-		fmt.Println("failed to send nats event: ", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to send nats event: %v\n", err.Error())
 	}
 }

@@ -121,7 +121,7 @@ func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
 		return nil, fmt.Errorf("there should be specified one of the following: kafka, nats")
 	}
 	if cfg.NatsURL != "" {
-		return InitNatsNotifSender(cfg.NatsURL, cfg.NatsTopic)
+		return InitNatsEventService(cfg.NatsURL, cfg.NatsTopic)
 	}
 	if cfg.KafkaURL != "" {
 		return InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
