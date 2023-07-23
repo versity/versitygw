@@ -114,7 +114,12 @@ func (*ScoutFS) String() string {
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
-func (s *ScoutFS) CompleteMultipartUpload(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *ScoutFS) CompleteMultipartUpload(input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	bucket := *input.Bucket
+	object := *input.Key
+	uploadID := *input.UploadId
+	parts := input.MultipartUpload.Parts
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -347,7 +352,10 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 	return nil
 }
 
-func (s *ScoutFS) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error) {
+func (s *ScoutFS) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	bucket := *input.Bucket
+	object := *input.Key
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -417,7 +425,11 @@ func (s *ScoutFS) HeadObject(bucket, object string) (*s3.HeadObjectOutput, error
 	}, nil
 }
 
-func (s *ScoutFS) GetObject(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (s *ScoutFS) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+	bucket := *input.Bucket
+	object := *input.Key
+	acceptRange := *input.Range
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -527,7 +539,13 @@ func (s *ScoutFS) getXattrTags(bucket, object string) (map[string]string, error)
 	return tags, nil
 }
 
-func (s *ScoutFS) ListObjects(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
+func (s *ScoutFS) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+	bucket := *input.Bucket
+	prefix := *input.Prefix
+	marker := *input.Marker
+	delim := *input.Delimiter
+	maxkeys := input.MaxKeys
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -549,14 +567,20 @@ func (s *ScoutFS) ListObjects(bucket, prefix, marker, delim string, maxkeys int)
 		Delimiter:      &delim,
 		IsTruncated:    results.Truncated,
 		Marker:         &marker,
-		MaxKeys:        int32(maxkeys),
+		MaxKeys:        maxkeys,
 		Name:           &bucket,
 		NextMarker:     &results.NextMarker,
 		Prefix:         &prefix,
 	}, nil
 }
 
-func (s *ScoutFS) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
+func (s *ScoutFS) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	bucket := *input.Bucket
+	prefix := *input.Prefix
+	marker := *input.ContinuationToken
+	delim := *input.Delimiter
+	maxkeys := input.MaxKeys
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -566,7 +590,7 @@ func (s *ScoutFS) ListObjectsV2(bucket, prefix, marker, delim string, maxkeys in
 	}
 
 	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
+	results, err := backend.Walk(fileSystem, prefix, delim, marker, int32(maxkeys),
 		s.fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
@@ -663,7 +687,10 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 
 // RestoreObject will set stage request on file if offline and do nothing if
 // file is online
-func (s *ScoutFS) RestoreObject(bucket, object string, restoreRequest *s3.RestoreObjectInput) error {
+func (s *ScoutFS) RestoreObject(input *s3.RestoreObjectInput) error {
+	bucket := *input.Bucket
+	object := *input.Key
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
