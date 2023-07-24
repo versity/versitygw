@@ -99,7 +99,7 @@ func ParseRange(file fs.FileInfo, acceptRange string) (int64, int64, error) {
 	return startOffset, endOffset - startOffset + 1, nil
 }
 
-func GetMultipartMD5(parts []types.Part) string {
+func GetMultipartMD5(parts []types.CompletedPart) string {
 	var partsEtagBytes []byte
 	for _, part := range parts {
 		partsEtagBytes = append(partsEtagBytes, getEtagBytes(*part.ETag)...)

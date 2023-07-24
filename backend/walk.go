@@ -38,7 +38,7 @@ var ErrSkipObj = errors.New("skip this object")
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
+func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
 	var objects []types.Object
 
@@ -129,7 +129,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 			}
 			objects = append(objects, obj)
 
-			if max > 0 && (len(objects)+len(cpmap)) == max {
+			if max > 0 && (len(objects)+len(cpmap)) == int(max) {
 				pastMax = true
 			}
 
@@ -168,7 +168,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 				return fmt.Errorf("file to object %q: %w", path, err)
 			}
 			objects = append(objects, obj)
-			if (len(objects) + len(cpmap)) == max {
+			if (len(objects) + len(cpmap)) == int(max) {
 				pastMax = true
 			}
 			return nil
@@ -178,7 +178,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int, getObj Ge
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
 		cpmap[prefix+before+delimiter] = struct{}{}
-		if (len(objects) + len(cpmap)) == max {
+		if (len(objects) + len(cpmap)) == int(max) {
 			pastMax = true
 		}
 

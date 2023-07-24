@@ -89,10 +89,10 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+			ListBucketsFunc: func(string, bool) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, nil
 			},
 		},
@@ -110,10 +110,10 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr := fiber.New()
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListBucketsFunc: func() (s3response.ListAllMyBucketsResult, error) {
+			ListBucketsFunc: func(string, bool) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			},
 		},
@@ -201,19 +201,19 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListObjectPartsFunc: func(bucket, object, uploadID string, partNumberMarker int, maxParts int) (s3response.ListPartsResponse, error) {
+			ListPartsFunc: func(*s3.ListPartsInput) (s3response.ListPartsResponse, error) {
 				return s3response.ListPartsResponse{}, nil
 			},
-			GetObjectAclFunc: func(bucket, object string) (*s3.GetObjectAclOutput, error) {
+			GetObjectAclFunc: func(*s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 				return &s3.GetObjectAclOutput{}, nil
 			},
-			GetObjectAttributesFunc: func(bucket, object string, attributes []string) (*s3.GetObjectAttributesOutput, error) {
+			GetObjectAttributesFunc: func(*s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 				return &s3.GetObjectAttributesOutput{}, nil
 			},
-			GetObjectFunc: func(bucket, object, acceptRange string, writer io.Writer) (*s3.GetObjectOutput, error) {
+			GetObjectFunc: func(*s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
 				return &s3.GetObjectOutput{
 					Metadata:        map[string]string{"hello": "world"},
 					ContentType:     getPtr("application/xml"),
@@ -353,16 +353,16 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
 			ListMultipartUploadsFunc: func(output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 				return s3response.ListMultipartUploadsResponse{}, nil
 			},
-			ListObjectsV2Func: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsV2Output, error) {
+			ListObjectsV2Func: func(*s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 				return &s3.ListObjectsV2Output{}, nil
 			},
-			ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
+			ListObjectsFunc: func(*s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 				return &s3.ListObjectsOutput{}, nil
 			},
 		},
@@ -380,10 +380,10 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	//Error case
 	s3ApiControllerError := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListObjectsFunc: func(bucket, prefix, marker, delim string, maxkeys int) (*s3.ListObjectsOutput, error) {
+			ListObjectsFunc: func(*s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 		},
@@ -498,13 +498,13 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
 			PutBucketAclFunc: func(string, []byte) error {
 				return nil
 			},
-			PutBucketFunc: func(bucket, owner string) error {
+			CreateBucketFunc: func(*s3.CreateBucketInput) error {
 				return nil
 			},
 		},
@@ -650,13 +650,13 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
 			PutObjectAclFunc: func(*s3.PutObjectAclInput) error {
 				return nil
 			},
-			CopyObjectFunc: func(srcBucket, srcObject, DstBucket, dstObject string) (*s3.CopyObjectOutput, error) {
+			CopyObjectFunc: func(*s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 				return &s3.CopyObjectOutput{
 					CopyObjectResult: &types.CopyObjectResult{},
 				}, nil
@@ -664,7 +664,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			PutObjectFunc: func(*s3.PutObjectInput) (string, error) {
 				return "ETag", nil
 			},
-			PutObjectPartFunc: func(bucket, object, uploadID string, part int, length int64, r io.Reader) (string, error) {
+			UploadPartFunc: func(*s3.UploadPartInput) (string, error) {
 				return "hello", nil
 			},
 			SetTagsFunc: func(bucket, object string, tags map[string]string) error {
@@ -864,10 +864,10 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			DeleteBucketFunc: func(bucket string) error {
+			DeleteBucketFunc: func(*s3.DeleteBucketInput) error {
 				return nil
 			},
 		},
@@ -920,10 +920,10 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			DeleteObjectsFunc: func(bucket string, objects *s3.DeleteObjectsInput) error {
+			DeleteObjectsFunc: func(*s3.DeleteObjectsInput) error {
 				return nil
 			},
 		},
@@ -990,10 +990,10 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			DeleteObjectFunc: func(bucket, object string) error {
+			DeleteObjectFunc: func(*s3.DeleteObjectInput) error {
 				return nil
 			},
 			AbortMultipartUploadFunc: func(*s3.AbortMultipartUploadInput) error {
@@ -1017,10 +1017,10 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	appErr := fiber.New()
 
 	s3ApiControllerErr := S3ApiController{be: &BackendMock{
-		GetBucketAclFunc: func(bucket string) ([]byte, error) {
+		GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 			return acldata, nil
 		},
-		DeleteObjectFunc: func(bucket, object string) error {
+		DeleteObjectFunc: func(*s3.DeleteObjectInput) error {
 			return s3err.GetAPIError(7)
 		},
 	}}
@@ -1098,10 +1098,10 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
+			HeadBucketFunc: func(*s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 				return &s3.HeadBucketOutput{}, nil
 			},
 		},
@@ -1120,10 +1120,10 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	appErr := fiber.New()
 
 	s3ApiControllerErr := S3ApiController{be: &BackendMock{
-		GetBucketAclFunc: func(bucket string) ([]byte, error) {
+		GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 			return acldata, nil
 		},
-		HeadBucketFunc: func(bucket string) (*s3.HeadBucketOutput, error) {
+		HeadBucketFunc: func(*s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 			return nil, s3err.GetAPIError(3)
 		},
 	},
@@ -1192,10 +1192,10 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
+			HeadObjectFunc: func(*s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 				return &s3.HeadObjectOutput{
 					ContentEncoding: &contentEncoding,
 					ContentLength:   64,
@@ -1220,10 +1220,10 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			HeadObjectFunc: func(bucket, object string) (*s3.HeadObjectOutput, error) {
+			HeadObjectFunc: func(*s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 				return nil, s3err.GetAPIError(42)
 			},
 		},
@@ -1283,13 +1283,13 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(bucket string) ([]byte, error) {
+			GetBucketAclFunc: func(*s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			RestoreObjectFunc: func(bucket, object string, restoreRequest *s3.RestoreObjectInput) error {
+			RestoreObjectFunc: func(restoreRequest *s3.RestoreObjectInput) error {
 				return nil
 			},
-			CompleteMultipartUploadFunc: func(bucket, object, uploadID string, parts []types.Part) (*s3.CompleteMultipartUploadOutput, error) {
+			CompleteMultipartUploadFunc: func(*s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 				return &s3.CompleteMultipartUploadOutput{}, nil
 			},
 			CreateMultipartUploadFunc: func(*s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
