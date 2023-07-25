@@ -1343,6 +1343,7 @@ func (p *Posix) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Ou
 		Name:                  &bucket,
 		NextContinuationToken: &results.NextMarker,
 		Prefix:                &prefix,
+		KeyCount:              int32(len(results.Objects)),
 	}, nil
 }
 

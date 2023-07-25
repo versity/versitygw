@@ -426,6 +426,10 @@ func TestListObject(s *S3Conf) {
 		failF("object %v not found", obj2)
 		return
 	}
+	if out.KeyCount != 2 {
+		failF("%v: expected key count: %v, instead got: %v", testname, 2, out.KeyCount)
+		return
+	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
