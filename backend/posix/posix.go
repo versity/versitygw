@@ -878,12 +878,25 @@ func (p *Posix) UploadPartCopy(upi *s3.UploadPartCopyInput) (s3response.CopyObje
 }
 
 func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
+	tagsStr := getString(po.Tagging)
+	tags := make(map[string]string)
 	_, err := os.Stat(*po.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
 		return "", fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if tagsStr != "" {
+		tagParts := strings.Split(tagsStr, "&")
+		for _, prt := range tagParts {
+			p := strings.Split(prt, "=")
+			if len(p) != 2 {
+				return "", s3err.GetAPIError(s3err.ErrInvalidTag)
+			}
+			tags[p[0]] = p[1]
+		}
 	}
 
 	name := filepath.Join(*po.Bucket, *po.Key)
@@ -934,6 +947,13 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 
 	for k, v := range po.Metadata {
 		xattr.Set(name, "user."+k, []byte(v))
+	}
+
+	if tagsStr != "" {
+		err := p.SetTags(*po.Bucket, *po.Key, tags)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	dataSum := hash.Sum(nil)
@@ -1632,4 +1652,11 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
+}
+
+func getString(str *string) string {
+	if str == nil {
+		return ""
+	}
+	return *str
 }
