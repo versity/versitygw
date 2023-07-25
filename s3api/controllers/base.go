@@ -377,6 +377,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	uploadId := ctx.Query("uploadId")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
+	tagging := ctx.Get("x-amz-tagging")
 
 	// Copy source headers
 	copySource := ctx.Get("X-Amz-Copy-Source")
@@ -617,6 +618,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		ContentLength: contentLength,
 		Metadata:      metadata,
 		Body:          bytes.NewReader(ctx.Request().Body()),
+		Tagging:       &tagging,
 	})
 	ctx.Response().Header.Set("ETag", etag)
 	return SendResponse(ctx, err, &MetaOpts{
