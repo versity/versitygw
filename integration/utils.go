@@ -154,3 +154,10 @@ func execCommand(args ...string) ([]byte, error) {
 
 	return cmd.CombinedOutput()
 }
+
+func getString(str *string) string {
+	if str == nil {
+		return ""
+	}
+	return *str
+}

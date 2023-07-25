@@ -1035,6 +1035,14 @@ func TestRangeGet(s *S3Conf) {
 	}
 	defer out.Body.Close()
 
+	if getString(out.ContentRange) != fmt.Sprintf("bytes 100-200/%v", datalen) {
+		failF("%v: expected content range: %v, instead got: %v", testname, fmt.Sprintf("bytes 100-200/%v", datalen), getString(out.ContentRange))
+		return
+	}
+	if getString(out.AcceptRanges) != rangeString {
+		failF("%v: expected accept range: %v, instead got: %v", testname, rangeString, getString(out.AcceptRanges))
+	}
+
 	b, err := io.ReadAll(out.Body)
 	if err != nil {
 		failF("%v: read body %v", testname, err)
