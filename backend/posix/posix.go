@@ -1039,6 +1039,7 @@ func (p *Posix) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetOb
 	bucket := *input.Bucket
 	object := *input.Key
 	acceptRange := *input.Range
+	var contentRange string
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1068,6 +1069,10 @@ func (p *Posix) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetOb
 
 	if startOffset+length > fi.Size()+1 {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	if acceptRange != "" {
+		contentRange = fmt.Sprintf("bytes %v-%v/%v", startOffset, startOffset+length-1, fi.Size())
 	}
 
 	f, err := os.Open(objPath)
@@ -1109,6 +1114,7 @@ func (p *Posix) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetOb
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
 		TagCount:        int32(len(tags)),
+		ContentRange:    &contentRange,
 	}, nil
 }
 

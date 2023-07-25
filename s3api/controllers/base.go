@@ -178,6 +178,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	if res.LastModified != nil {
 		lastmod = res.LastModified.Format(timefmt)
 	}
+
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
@@ -202,6 +203,18 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		{
 			Key:   "x-amz-storage-class",
 			Value: string(res.StorageClass),
+		},
+		{
+			Key:   "Content-Range",
+			Value: getstring(res.ContentRange),
+		},
+		{
+			Key:   "accept-ranges",
+			Value: getstring(res.AcceptRanges),
+		},
+		{
+			Key:   "x-amz-tagging-count",
+			Value: fmt.Sprint(res.TagCount),
 		},
 	})
 	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "GetObject", BucketOwner: parsedAcl.Owner})
