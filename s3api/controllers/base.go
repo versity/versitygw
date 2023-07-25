@@ -217,7 +217,8 @@ func getstring(s *string) string {
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	bucket := ctx.Params("bucket")
 	prefix := ctx.Query("prefix")
-	marker := ctx.Query("continuation-token")
+	cToken := ctx.Query("continuation-token")
+	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeys := ctx.QueryInt("max-keys")
 	access := ctx.Locals("access").(string)
@@ -257,7 +258,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		res, err := c.be.ListObjectsV2(&s3.ListObjectsV2Input{
 			Bucket:            &bucket,
 			Prefix:            &prefix,
-			ContinuationToken: &marker,
+			ContinuationToken: &cToken,
 			Delimiter:         &delimiter,
 			MaxKeys:           int32(maxkeys),
 		})
