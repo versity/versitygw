@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -29,14 +30,15 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+// WebhookLogger is a webhook URL audit log
 type WebhookLogger struct {
-	LogFields
 	mu  sync.Mutex
 	url string
 }
 
 var _ AuditLogger = &WebhookLogger{}
 
+// InitWebhookLogger initializes audit logs to webhook URL
 func InitWebhookLogger(url string) (AuditLogger, error) {
 	client := &http.Client{
 		Timeout: 3 * time.Second,
@@ -44,7 +46,7 @@ func InitWebhookLogger(url string) (AuditLogger, error) {
 	_, err := client.Post(url, "application/json", nil)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && !err.Timeout() {
-			return nil, fmt.Errorf("unreachable webhook url")
+			return nil, fmt.Errorf("unreachable webhook url: %w", err)
 		}
 	}
 	return &WebhookLogger{
@@ -52,9 +54,12 @@ func InitWebhookLogger(url string) (AuditLogger, error) {
 	}, nil
 }
 
+// Log sends log message to webhook
 func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	wl.mu.Lock()
 	defer wl.mu.Unlock()
+
+	lf := LogFields{}
 
 	access := "-"
 	reqURI := ctx.Request().URI().String()
@@ -65,8 +70,8 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	startTime := ctx.Locals("startTime").(time.Time)
 	tlsConnState := ctx.Context().TLSConnectionState()
 	if tlsConnState != nil {
-		wl.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
-		wl.TLSVersion = getTLSVersionName(tlsConnState.Version)
+		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
+		lf.TLSVersion = getTLSVersionName(tlsConnState.Version)
 	}
 
 	if err != nil {
@@ -85,43 +90,43 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 		access = ctx.Locals("access").(string)
 	}
 
-	wl.BucketOwner = meta.BucketOwner
-	wl.Bucket = bucket
-	wl.Time = time.Now()
-	wl.RemoteIP = ctx.IP()
-	wl.Requester = access
-	wl.RequestID = genID()
-	wl.Operation = meta.Action
-	wl.Key = object
-	wl.RequestURI = reqURI
-	wl.HttpStatus = httpStatus
-	wl.ErrorCode = errorCode
-	wl.BytesSent = len(body)
-	wl.ObjectSize = meta.ObjectSize
-	wl.TotalTime = time.Since(startTime).Milliseconds()
-	wl.TurnAroundTime = time.Since(startTime).Milliseconds()
-	wl.Referer = ctx.Get("Referer")
-	wl.UserAgent = ctx.Get("User-Agent")
-	wl.VersionID = ctx.Query("versionId")
-	wl.HostID = ctx.Get("X-Amz-Id-2")
-	wl.SignatureVersion = "SigV4"
-	wl.AuthenticationType = "AuthHeader"
-	wl.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", ctx.Locals("region").(string))
-	wl.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
-	wl.AclRequired = "Yes"
+	lf.BucketOwner = meta.BucketOwner
+	lf.Bucket = bucket
+	lf.Time = time.Now()
+	lf.RemoteIP = ctx.IP()
+	lf.Requester = access
+	lf.RequestID = genID()
+	lf.Operation = meta.Action
+	lf.Key = object
+	lf.RequestURI = reqURI
+	lf.HttpStatus = httpStatus
+	lf.ErrorCode = errorCode
+	lf.BytesSent = len(body)
+	lf.ObjectSize = meta.ObjectSize
+	lf.TotalTime = time.Since(startTime).Milliseconds()
+	lf.TurnAroundTime = time.Since(startTime).Milliseconds()
+	lf.Referer = ctx.Get("Referer")
+	lf.UserAgent = ctx.Get("User-Agent")
+	lf.VersionID = ctx.Query("versionId")
+	lf.HostID = ctx.Get("X-Amz-Id-2")
+	lf.SignatureVersion = "SigV4"
+	lf.AuthenticationType = "AuthHeader"
+	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", ctx.Locals("region").(string))
+	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
+	lf.AclRequired = "Yes"
 
-	wl.sendLog()
+	wl.sendLog(lf)
 }
 
-func (wl *WebhookLogger) sendLog() {
-	jsonLog, err := json.Marshal(wl)
+func (wl *WebhookLogger) sendLog(lf LogFields) {
+	jsonLog, err := json.Marshal(lf)
 	if err != nil {
-		fmt.Printf("\n failed to parse the log data: %v", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to parse the log data: %v\n", err.Error())
 	}
 
 	req, err := http.NewRequest(http.MethodPost, wl.url, bytes.NewReader(jsonLog))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
@@ -135,7 +140,17 @@ func makeRequest(req *http.Request) {
 	_, err := client.Do(req)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && !err.Timeout() {
-			fmt.Println("error sending the log to the specified url")
+			fmt.Fprintf(os.Stderr, "error sending webhook log: %v\n", err)
 		}
 	}
+}
+
+// HangUp does nothing for webhooks
+func (wl *WebhookLogger) HangUp() error {
+	return nil
+}
+
+// Shutdown does nothing for webhooks
+func (wl *WebhookLogger) Shutdown() error {
+	return nil
 }
