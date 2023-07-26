@@ -55,9 +55,6 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 
 func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 	access, isRoot := ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
-	if err := auth.IsAdmin(access, isRoot); err != nil {
-		return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListBucket"})
-	}
 	res, err := c.be.ListBuckets(access, isRoot)
 	return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListBucket"})
 }
@@ -72,18 +69,9 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	acceptRange := ctx.Get("Range")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
+	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
-	}
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
@@ -236,20 +224,16 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	maxkeys := ctx.QueryInt("max-keys")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
+	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "READ_ACP", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetBucketAcl", BucketOwner: parsedAcl.Owner})
+		}
+
+		data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
+		if err != nil {
+			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
 		}
 
 		res, err := auth.ParseACLOutput(data)
@@ -308,17 +292,8 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		var input *s3.PutBucketAclInput
-
-		data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-		if err != nil {
-			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketAcl"})
-		}
-
-		parsedAcl, err := auth.ParseACL(data)
-		if err != nil {
-			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketAcl"})
-		}
 
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE_ACP", isRoot); err != nil {
 			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketAcl", BucketOwner: parsedAcl.Owner})
@@ -391,6 +366,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	uploadId := ctx.Query("uploadId")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
+	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	tagging := ctx.Get("x-amz-tagging")
 
 	// Copy source headers
@@ -421,16 +397,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	path := ctx.Path()
 	if path[len(path)-1:] == "/" && keyStart[len(keyStart)-1:] != "/" {
 		keyStart = keyStart + "/"
-	}
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
@@ -557,7 +523,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			}
 		}
 
-		err = c.be.PutObjectAcl(input)
+		err := c.be.PutObjectAcl(input)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			EvSender:    c.evSender,
@@ -573,6 +539,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		var mtime time.Time
+		var err error
 		if copySrcModifSince != "" {
 			mtime, err = time.Parse(iso8601Format, copySrcModifSince)
 			if err != nil {
@@ -647,41 +614,21 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
-	bucket, access, isRoot := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBuckets"})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBuckets"})
-	}
+	bucket, access, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
 
 	if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE", isRoot); err != nil {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner})
 	}
 
-	err = c.be.DeleteBucket(&s3.DeleteBucketInput{
+	err := c.be.DeleteBucket(&s3.DeleteBucketInput{
 		Bucket: &bucket,
 	})
 	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner})
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
-	bucket, access, isRoot := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
+	bucket, access, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
 	var dObj types.Delete
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects"})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects"})
-	}
 
 	if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
@@ -691,7 +638,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
 	}
 
-	err = c.be.DeleteObjects(&s3.DeleteObjectsInput{
+	err := c.be.DeleteObjects(&s3.DeleteObjectsInput{
 		Bucket: &bucket,
 		Delete: &dObj,
 	})
@@ -705,19 +652,10 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	uploadId := ctx.Query("uploadId")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
+	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
-	}
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
@@ -725,7 +663,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "RemoveObjectTagging", BucketOwner: parsedAcl.Owner})
 		}
 
-		err = c.be.RemoveTags(bucket, key)
+		err := c.be.RemoveTags(bucket, key)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			EvSender:    c.evSender,
@@ -756,7 +694,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObject", BucketOwner: parsedAcl.Owner})
 	}
 
-	err = c.be.DeleteObject(&s3.DeleteObjectInput{
+	err := c.be.DeleteObject(&s3.DeleteObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 	})
@@ -770,23 +708,13 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 }
 
 func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
-	bucket, access, isRoot := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "HeadBucket"})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "HeadBucket"})
-	}
+	bucket, access, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
 
 	if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "HeadBucket", BucketOwner: parsedAcl.Owner})
 	}
 
-	_, err = c.be.HeadBucket(&s3.HeadBucketInput{
+	_, err := c.be.HeadBucket(&s3.HeadBucketInput{
 		Bucket: &bucket,
 	})
 	// TODO: set bucket response headers
@@ -798,23 +726,11 @@ const (
 )
 
 func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
-	bucket, access, isRoot := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
+	bucket, access, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
-	}
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{
-		Bucket: &bucket,
-	})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "HeadObject"})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "HeadObject"})
 	}
 
 	if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
@@ -878,19 +794,10 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	uploadId := ctx.Query("uploadId")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
+	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
-	}
-
-	data, err := c.be.GetBucketAcl(&s3.GetBucketAclInput{Bucket: &bucket})
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
-	}
-
-	parsedAcl, err := auth.ParseACL(data)
-	if err != nil {
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger})
 	}
 
 	var restoreRequest s3.RestoreObjectInput

@@ -127,16 +127,6 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	})
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
 
-	//Admin error case
-	admErr := fiber.New()
-	admErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
-		ctx.Locals("isRoot", false)
-		ctx.Locals("isDebug", false)
-		return ctx.Next()
-	})
-	admErr.Get("/", s3ApiController.ListBuckets)
-
 	tests := []struct {
 		name       string
 		args       args
@@ -161,15 +151,6 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			app:        app,
 			wantErr:    false,
 			statusCode: 200,
-		},
-		{
-			name: "admin-error-case",
-			args: args{
-				req: httptest.NewRequest(http.MethodGet, "/", nil),
-			},
-			app:        admErr,
-			wantErr:    false,
-			statusCode: 500,
 		},
 	}
 	for _, tt := range tests {
@@ -233,6 +214,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
@@ -372,6 +354,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -393,6 +376,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	appError.Get("/:bucket", s3ApiControllerError.ListActions)
@@ -514,6 +498,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{Owner: "valid access"})
 		return ctx.Next()
 	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
@@ -679,6 +664,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
@@ -877,6 +863,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -933,6 +920,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Post("/:bucket", s3ApiController.DeleteObjects)
@@ -1009,6 +997,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
@@ -1029,6 +1018,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket/:key/*", s3ApiControllerErr.DeleteActions)
@@ -1111,6 +1101,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -1133,6 +1124,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -1211,6 +1203,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
@@ -1233,6 +1226,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
@@ -1302,6 +1296,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 		ctx.Locals("access", "valid access")
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
+		ctx.Locals("parsedAcl", auth.ACL{})
 		return ctx.Next()
 	})
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)

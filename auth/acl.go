@@ -261,5 +261,5 @@ func IsAdmin(access string, isRoot bool) error {
 	if acc.Role == "admin" {
 		return nil
 	}
-	return fmt.Errorf("only admin users have access to this resource")
+	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }
