@@ -15,6 +15,7 @@
 package scoutfs
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -114,7 +115,7 @@ func (*ScoutFS) String() string {
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
-func (s *ScoutFS) CompleteMultipartUpload(input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -352,7 +353,7 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 	return nil
 }
 
-func (s *ScoutFS) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (s *ScoutFS) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -425,7 +426,7 @@ func (s *ScoutFS) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, e
 	}, nil
 }
 
-func (s *ScoutFS) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	acceptRange := *input.Range
@@ -539,7 +540,7 @@ func (s *ScoutFS) getXattrTags(bucket, object string) (map[string]string, error)
 	return tags, nil
 }
 
-func (s *ScoutFS) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (s *ScoutFS) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	bucket := *input.Bucket
 	prefix := *input.Prefix
 	marker := *input.Marker
@@ -574,7 +575,7 @@ func (s *ScoutFS) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput
 	}, nil
 }
 
-func (s *ScoutFS) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (s *ScoutFS) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	bucket := *input.Bucket
 	prefix := *input.Prefix
 	marker := *input.ContinuationToken
@@ -687,7 +688,7 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 
 // RestoreObject will set stage request on file if offline and do nothing if
 // file is online
-func (s *ScoutFS) RestoreObject(input *s3.RestoreObjectInput) error {
+func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput) error {
 	bucket := *input.Bucket
 	object := *input.Key
 
