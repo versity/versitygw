@@ -352,11 +352,15 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketAcl", BucketOwner: parsedAcl.Owner})
 	}
 
+	if ok := utils.IsValidBucketName(bucket); !ok {
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName), &MetaOpts{Logger: c.logger, Action: "CreateBucket"})
+	}
+
 	err := c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
 		Bucket:          &bucket,
 		ObjectOwnership: types.ObjectOwnership(access),
 	})
-	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucket", BucketOwner: ctx.Locals("access").(string)})
+	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: access})
 }
 
 func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {

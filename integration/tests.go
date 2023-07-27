@@ -27,10 +27,17 @@ func TestMakeBucket(s *S3Conf) {
 
 	s3client := s3.NewFromConfig(s.Config())
 
+	invBucket := "aa"
+	err := setup(s, invBucket)
+	if err == nil {
+		failF("%v: expected bucket name validation error", testname)
+		return
+	}
+
 	bucket := "testbucket"
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
+	_, err = s3client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
 	cancel()
 	if err == nil {
 		failF("%v: expected error, instead got success response", testname)

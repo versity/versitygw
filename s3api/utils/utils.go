@@ -19,10 +19,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+)
+
+var (
+	bucketNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`)
+	bucketNameIpRegexp = regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`)
 )
 
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
@@ -81,6 +87,22 @@ func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
 	for _, header := range headers {
 		ctx.Set(header.Key, header.Value)
 	}
+}
+
+func IsValidBucketName(bucket string) bool {
+	if len(bucket) < 3 || len(bucket) > 63 {
+		return false
+	}
+	// Checks to contain only digits, lowercase letters, dot, hyphen.
+	// Checks to start and end with only digits and lowercase letters.
+	if !bucketNameRegexp.MatchString(bucket) {
+		return false
+	}
+	// Checks not to be a valid IP address
+	if bucketNameIpRegexp.MatchString(bucket) {
+		return false
+	}
+	return true
 }
 
 func includeHeader(hdr string, signedHdrs []string) bool {

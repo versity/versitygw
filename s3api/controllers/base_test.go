@@ -580,6 +580,15 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			statusCode: 200,
 		},
 		{
+			name: "Put-bucket-invalid-bucket-name",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/aa", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
 			name: "Put-bucket-success",
 			app:  app,
 			args: args{
