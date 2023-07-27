@@ -40,7 +40,7 @@ var (
 	kafkaURL, kafkaTopic, kafkaKey string
 	natsURL, natsTopic             string
 	logWebhookURL                  string
-	accessLog                      bool
+	accessLog                      string
 	debug                          bool
 )
 
@@ -147,14 +147,16 @@ func initFlags() []cli.Flag {
 			Usage:       "enable debug output",
 			Destination: &debug,
 		},
-		&cli.BoolFlag{
+		&cli.StringFlag{
 			Name:        "access-log",
-			Usage:       "enable server access logging in the root directory",
+			Usage:       "enable server access logging to specified file",
+			EnvVars:     []string{"LOGFILE"},
 			Destination: &accessLog,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
 			Usage:       "webhook url to send the audit logs",
+			EnvVars:     []string{"WEBHOOK"},
 			Destination: &logWebhookURL,
 		},
 		&cli.StringFlag{
@@ -229,7 +231,7 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 	}
 
 	logger, err := s3log.InitLogger(&s3log.LogConfig{
-		IsFile:     accessLog,
+		LogFile:    accessLog,
 		WebhookURL: logWebhookURL,
 	})
 	if err != nil {
@@ -258,12 +260,32 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 	c := make(chan error, 1)
 	go func() { c <- srv.Serve() }()
 
-	select {
-	case <-ctx.Done():
-		be.Shutdown()
-		return ctx.Err()
-	case err := <-c:
-		be.Shutdown()
-		return err
+	// for/select blocks until shutdown
+Loop:
+	for {
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			break Loop
+		case err = <-c:
+			break Loop
+		case <-sigHup:
+			if logger != nil {
+				err = logger.HangUp()
+				if err != nil {
+					err = fmt.Errorf("HUP logger: %w", err)
+					break Loop
+				}
+			}
+		}
 	}
+
+	be.Shutdown()
+	if logger != nil {
+		lerr := logger.Shutdown()
+		if lerr != nil {
+			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", lerr)
+		}
+	}
+	return err
 }

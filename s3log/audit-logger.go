@@ -27,6 +27,8 @@ import (
 
 type AuditLogger interface {
 	Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta)
+	HangUp() error
+	Shutdown() error
 }
 
 type LogMeta struct {
@@ -36,7 +38,7 @@ type LogMeta struct {
 }
 
 type LogConfig struct {
-	IsFile     bool
+	LogFile    string
 	WebhookURL string
 }
 
@@ -70,14 +72,14 @@ type LogFields struct {
 }
 
 func InitLogger(cfg *LogConfig) (AuditLogger, error) {
-	if cfg.WebhookURL != "" && cfg.IsFile {
+	if cfg.WebhookURL != "" && cfg.LogFile != "" {
 		return nil, fmt.Errorf("there should be specified one of the following: file, webhook")
 	}
 	if cfg.WebhookURL != "" {
 		return InitWebhookLogger(cfg.WebhookURL)
 	}
-	if cfg.IsFile {
-		return InitFileLogger()
+	if cfg.LogFile != "" {
+		return InitFileLogger(cfg.LogFile)
 	}
 
 	return nil, nil

@@ -23,6 +23,7 @@ import (
 
 var (
 	sigDone = make(chan bool, 1)
+	sigHup  = make(chan bool, 1)
 )
 
 func setupSignalHandler() {
@@ -36,6 +37,7 @@ func setupSignalHandler() {
 			case syscall.SIGINT, syscall.SIGTERM:
 				sigDone <- true
 			case syscall.SIGHUP:
+				sigHup <- true
 			}
 		}
 	}()

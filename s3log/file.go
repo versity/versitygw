@@ -16,9 +16,7 @@ package s3log
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -29,35 +27,42 @@ import (
 )
 
 const (
-	logFile     = "access.log"
 	logFileMode = 0600
 	timeFormat  = "02/January/2006:15:04:05 -0700"
 )
 
+// FileLogger is a local file audit log
 type FileLogger struct {
-	LogFields
-	mu sync.Mutex
+	logfile string
+	f       *os.File
+	gotErr  bool
+	mu      sync.Mutex
 }
 
 var _ AuditLogger = &FileLogger{}
 
-func InitFileLogger() (AuditLogger, error) {
-	_, err := os.ReadFile(logFile)
-	if err != nil && errors.Is(err, fs.ErrNotExist) {
-		err := os.WriteFile(logFile, []byte{}, logFileMode)
-		if err != nil {
-			return nil, err
-		} else {
-			return nil, err
-		}
+// InitFileLogger initializes audit logs to local file
+func InitFileLogger(logname string) (AuditLogger, error) {
+	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open log: %w", err)
 	}
 
-	return &FileLogger{}, nil
+	f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+
+	return &FileLogger{logfile: logname, f: f}, nil
 }
 
+// Log sends log message to file logger
 func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.gotErr {
+		return
+	}
+
+	lf := LogFields{}
 
 	access := "-"
 	reqURI := ctx.Request().URI().String()
@@ -68,8 +73,8 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	startTime := ctx.Locals("startTime").(time.Time)
 	tlsConnState := ctx.Context().TLSConnectionState()
 	if tlsConnState != nil {
-		f.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
-		f.TLSVersion = getTLSVersionName(tlsConnState.Version)
+		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
+		lf.TLSVersion = getTLSVersionName(tlsConnState.Version)
 	}
 
 	if err != nil {
@@ -88,117 +93,138 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 		access = ctx.Locals("access").(string)
 	}
 
-	f.BucketOwner = meta.BucketOwner
-	f.Bucket = bucket
-	f.Time = time.Now()
-	f.RemoteIP = ctx.IP()
-	f.Requester = access
-	f.RequestID = genID()
-	f.Operation = meta.Action
-	f.Key = object
-	f.RequestURI = reqURI
-	f.HttpStatus = httpStatus
-	f.ErrorCode = errorCode
-	f.BytesSent = len(body)
-	f.ObjectSize = meta.ObjectSize
-	f.TotalTime = time.Since(startTime).Milliseconds()
-	f.TurnAroundTime = time.Since(startTime).Milliseconds()
-	f.Referer = ctx.Get("Referer")
-	f.UserAgent = ctx.Get("User-Agent")
-	f.VersionID = ctx.Query("versionId")
-	f.HostID = ctx.Get("X-Amz-Id-2")
-	f.SignatureVersion = "SigV4"
-	f.AuthenticationType = "AuthHeader"
-	f.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", ctx.Locals("region").(string))
-	f.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
-	f.AclRequired = "Yes"
+	lf.BucketOwner = meta.BucketOwner
+	lf.Bucket = bucket
+	lf.Time = time.Now()
+	lf.RemoteIP = ctx.IP()
+	lf.Requester = access
+	lf.RequestID = genID()
+	lf.Operation = meta.Action
+	lf.Key = object
+	lf.RequestURI = reqURI
+	lf.HttpStatus = httpStatus
+	lf.ErrorCode = errorCode
+	lf.BytesSent = len(body)
+	lf.ObjectSize = meta.ObjectSize
+	lf.TotalTime = time.Since(startTime).Milliseconds()
+	lf.TurnAroundTime = time.Since(startTime).Milliseconds()
+	lf.Referer = ctx.Get("Referer")
+	lf.UserAgent = ctx.Get("User-Agent")
+	lf.VersionID = ctx.Query("versionId")
+	lf.HostID = ctx.Get("X-Amz-Id-2")
+	lf.SignatureVersion = "SigV4"
+	lf.AuthenticationType = "AuthHeader"
+	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", ctx.Locals("region").(string))
+	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
+	lf.AclRequired = "Yes"
 
-	f.writeLog()
+	f.writeLog(lf)
 }
 
-func (fl *FileLogger) writeLog() {
-	if fl.BucketOwner == "" {
-		fl.BucketOwner = "-"
+func (f *FileLogger) writeLog(lf LogFields) {
+	if lf.BucketOwner == "" {
+		lf.BucketOwner = "-"
 	}
-	if fl.Bucket == "" {
-		fl.Bucket = "-"
+	if lf.Bucket == "" {
+		lf.Bucket = "-"
 	}
-	if fl.RemoteIP == "" {
-		fl.RemoteIP = "-"
+	if lf.RemoteIP == "" {
+		lf.RemoteIP = "-"
 	}
-	if fl.Requester == "" {
-		fl.Requester = "-"
+	if lf.Requester == "" {
+		lf.Requester = "-"
 	}
-	if fl.Operation == "" {
-		fl.Operation = "-"
+	if lf.Operation == "" {
+		lf.Operation = "-"
 	}
-	if fl.Key == "" {
-		fl.Key = "-"
+	if lf.Key == "" {
+		lf.Key = "-"
 	}
-	if fl.RequestURI == "" {
-		fl.RequestURI = "-"
+	if lf.RequestURI == "" {
+		lf.RequestURI = "-"
 	}
-	if fl.ErrorCode == "" {
-		fl.ErrorCode = "-"
+	if lf.ErrorCode == "" {
+		lf.ErrorCode = "-"
 	}
-	if fl.Referer == "" {
-		fl.Referer = "-"
+	if lf.Referer == "" {
+		lf.Referer = "-"
 	}
-	if fl.UserAgent == "" {
-		fl.UserAgent = "-"
+	if lf.UserAgent == "" {
+		lf.UserAgent = "-"
 	}
-	if fl.VersionID == "" {
-		fl.VersionID = "-"
+	if lf.VersionID == "" {
+		lf.VersionID = "-"
 	}
-	if fl.HostID == "" {
-		fl.HostID = "-"
+	if lf.HostID == "" {
+		lf.HostID = "-"
 	}
-	if fl.CipherSuite == "" {
-		fl.CipherSuite = "-"
+	if lf.CipherSuite == "" {
+		lf.CipherSuite = "-"
 	}
-	if fl.HostHeader == "" {
-		fl.HostHeader = "-"
+	if lf.HostHeader == "" {
+		lf.HostHeader = "-"
 	}
-	if fl.TLSVersion == "" {
-		fl.TLSVersion = "-"
+	if lf.TLSVersion == "" {
+		lf.TLSVersion = "-"
 	}
 
-	log := fmt.Sprintf("\n%v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v",
-		fl.BucketOwner,
-		fl.Bucket,
-		fmt.Sprintf("[%v]", fl.Time.Format(timeFormat)),
-		fl.RemoteIP,
-		fl.Requester,
-		fl.RequestID,
-		fl.Operation,
-		fl.Key,
-		fl.RequestURI,
-		fl.HttpStatus,
-		fl.ErrorCode,
-		fl.BytesSent,
-		fl.ObjectSize,
-		fl.TotalTime,
-		fl.TurnAroundTime,
-		fl.Referer,
-		fl.UserAgent,
-		fl.VersionID,
-		fl.HostID,
-		fl.SignatureVersion,
-		fl.CipherSuite,
-		fl.AuthenticationType,
-		fl.HostHeader,
-		fl.TLSVersion,
-		fl.AccessPointARN,
-		fl.AclRequired,
+	log := fmt.Sprintf("%v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v %v\n",
+		lf.BucketOwner,
+		lf.Bucket,
+		fmt.Sprintf("[%v]", lf.Time.Format(timeFormat)),
+		lf.RemoteIP,
+		lf.Requester,
+		lf.RequestID,
+		lf.Operation,
+		lf.Key,
+		lf.RequestURI,
+		lf.HttpStatus,
+		lf.ErrorCode,
+		lf.BytesSent,
+		lf.ObjectSize,
+		lf.TotalTime,
+		lf.TurnAroundTime,
+		lf.Referer,
+		lf.UserAgent,
+		lf.VersionID,
+		lf.HostID,
+		lf.SignatureVersion,
+		lf.CipherSuite,
+		lf.AuthenticationType,
+		lf.HostHeader,
+		lf.TLSVersion,
+		lf.AccessPointARN,
+		lf.AclRequired,
 	)
 
-	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, logFileMode)
+	_, err := f.f.WriteString(log)
 	if err != nil {
-		fmt.Printf("error opening the log file: %v", err.Error())
+		fmt.Fprintf(os.Stderr, "error writing to log file: %v\n", err)
+		// TODO: do we need to terminate on log error?
+		// set err for now so that we don't spew errors
+		f.gotErr = true
 	}
-	defer file.Close()
-	_, err = file.WriteString(log)
+}
+
+// HangUp closes current logfile handle and opens a new one
+// typically needed for log rotations
+func (f *FileLogger) HangUp() error {
+	err := f.f.Close()
 	if err != nil {
-		fmt.Printf("error writing in log file: %v", err.Error())
+		return fmt.Errorf("close log: %w", err)
 	}
+
+	f.f, err = os.OpenFile(f.logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open log: %w", err)
+	}
+
+	f.f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+
+	return nil
+}
+
+// Shutdown closes logfile handle
+func (f *FileLogger) Shutdown() error {
+	return f.f.Close()
 }
