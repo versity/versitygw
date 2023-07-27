@@ -26,6 +26,11 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+var (
+	bucketNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`)
+	bucketNameIpRegexp = regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`)
+)
+
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
 	metadata = make(map[string]string)
 	headers.VisitAll(func(key, value []byte) {
@@ -90,11 +95,11 @@ func IsValidBucketName(bucket string) bool {
 	}
 	// Checks to contain only digits, lowercase letters, dot, hyphen.
 	// Checks to start and end with only digits and lowercase letters.
-	if !regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`).MatchString(bucket) {
+	if !bucketNameRegexp.MatchString(bucket) {
 		return false
 	}
 	// Checks not to be a valid IP address
-	if regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`).MatchString(bucket) {
+	if bucketNameIpRegexp.MatchString(bucket) {
 		return false
 	}
 	return true
