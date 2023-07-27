@@ -153,3 +153,71 @@ func Test_includeHeader(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidBucketName(t *testing.T) {
+	type args struct {
+		bucket string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "IsValidBucketName-short-name",
+			args: args{
+				bucket: "a",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-start-with-hyphen",
+			args: args{
+				bucket: "-bucket",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-start-with-dot",
+			args: args{
+				bucket: ".bucket",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-contain-invalid-character",
+			args: args{
+				bucket: "my@bucket",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-end-with-hyphen",
+			args: args{
+				bucket: "bucket-",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-end-with-dot",
+			args: args{
+				bucket: "bucket.",
+			},
+			want: false,
+		},
+		{
+			name: "IsValidBucketName-valid-bucket-name",
+			args: args{
+				bucket: "my-bucket",
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidBucketName(tt.args.bucket); got != tt.want {
+				t.Errorf("IsValidBucketName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

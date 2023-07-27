@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -81,6 +82,22 @@ func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
 	for _, header := range headers {
 		ctx.Set(header.Key, header.Value)
 	}
+}
+
+func IsValidBucketName(bucket string) bool {
+	if len(bucket) < 3 || len(bucket) > 63 {
+		return false
+	}
+	// Checks to contain only digits, lowercase letters, dot, hyphen.
+	// Checks to start and end with only digits and lowercase letters.
+	if !regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`).MatchString(bucket) {
+		return false
+	}
+	// Checks not to be a valid IP address
+	if regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`).MatchString(bucket) {
+		return false
+	}
+	return true
 }
 
 func includeHeader(hdr string, signedHdrs []string) bool {
