@@ -56,7 +56,7 @@ func GetTimePtr(t time.Time) *time.Time {
 }
 
 var (
-	errInvalidRange = s3err.GetAPIError(s3err.ErrInvalidRequest)
+	errInvalidRange = s3err.GetAPIError(s3err.ErrInvalidRange)
 )
 
 // ParseRange parses input range header and returns startoffset, length, and

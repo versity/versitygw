@@ -106,9 +106,9 @@ const (
 	ErrNotImplemented
 	ErrPreconditionFailed
 	ErrInvalidObjectState
-
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
+	ErrInvalidRange
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -383,6 +383,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "ObjectParentIsFile",
 		Description:    "Object parent already exists as a file.",
 		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrInvalidRange: {
+		Code:           "InvalidRange",
+		Description:    "The requested range is not valid for the request. Try another range.",
+		HTTPStatusCode: http.StatusRequestedRangeNotSatisfiable,
 	},
 }
 
