@@ -106,7 +106,9 @@ const (
 	ErrNotImplemented
 	ErrPreconditionFailed
 	ErrInvalidObjectState
+	ErrInvalidRange
 
+	// Non-AWS errors
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
 )
@@ -373,6 +375,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidObjectState",
 		Description:    "The operation is not valid for the current state of the object",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrInvalidRange: {
+		Code:           "InvalidRange",
+		Description:    "The requested range is not valid for the request. Try another range.",
+		HTTPStatusCode: http.StatusRequestedRangeNotSatisfiable,
 	},
 	ErrExistingObjectIsDirectory: {
 		Code:           "ExistingObjectIsDirectory",
