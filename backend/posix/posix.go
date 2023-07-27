@@ -15,6 +15,7 @@
 package posix
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
@@ -96,7 +97,7 @@ func (p *Posix) String() string {
 	return "Posix Gateway"
 }
 
-func (p *Posix) ListBuckets(owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
+func (p *Posix) ListBuckets(_ context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{},
@@ -131,7 +132,7 @@ func (p *Posix) ListBuckets(owner string, isRoot bool) (s3response.ListAllMyBuck
 	}, nil
 }
 
-func (p *Posix) HeadBucket(input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 	_, err := os.Lstat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -143,7 +144,7 @@ func (p *Posix) HeadBucket(input *s3.HeadBucketInput) (*s3.HeadBucketOutput, err
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (p *Posix) CreateBucket(input *s3.CreateBucketInput) error {
+func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput) error {
 	bucket := *input.Bucket
 	owner := string(input.ObjectOwnership)
 
@@ -168,7 +169,7 @@ func (p *Posix) CreateBucket(input *s3.CreateBucketInput) error {
 	return nil
 }
 
-func (p *Posix) DeleteBucket(input *s3.DeleteBucketInput) error {
+func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) error {
 	names, err := os.ReadDir(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -197,7 +198,7 @@ func (p *Posix) DeleteBucket(input *s3.DeleteBucketInput) error {
 	return nil
 }
 
-func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 	bucket := *mpu.Bucket
 	object := *mpu.Key
 
@@ -248,7 +249,7 @@ func (p *Posix) CreateMultipartUpload(mpu *s3.CreateMultipartUploadInput) (*s3.C
 	}, nil
 }
 
-func (p *Posix) CompleteMultipartUpload(input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -475,7 +476,7 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 	return nil
 }
 
-func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {
+func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUploadInput) error {
 	bucket := *mpu.Bucket
 	object := *mpu.Key
 	uploadID := *mpu.UploadId
@@ -505,7 +506,7 @@ func (p *Posix) AbortMultipartUpload(mpu *s3.AbortMultipartUploadInput) error {
 	return nil
 }
 
-func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 	bucket := *mpu.Bucket
 	var delimiter string
 	if mpu.Delimiter != nil {
@@ -619,7 +620,7 @@ func (p *Posix) ListMultipartUploads(mpu *s3.ListMultipartUploadsInput) (s3respo
 	}, nil
 }
 
-func (p *Posix) ListParts(input *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -717,7 +718,7 @@ func (p *Posix) ListParts(input *s3.ListPartsInput) (s3response.ListPartsRespons
 	}, nil
 }
 
-func (p *Posix) UploadPart(input *s3.UploadPartInput) (string, error) {
+func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -772,7 +773,7 @@ func (p *Posix) UploadPart(input *s3.UploadPartInput) (string, error) {
 	return etag, nil
 }
 
-func (p *Posix) UploadPartCopy(upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 	_, err := os.Stat(*upi.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -877,7 +878,7 @@ func (p *Posix) UploadPartCopy(upi *s3.UploadPartCopyInput) (s3response.CopyObje
 	}, nil
 }
 
-func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
+func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
 	tagsStr := getString(po.Tagging)
 	tags := make(map[string]string)
 	_, err := os.Stat(*po.Bucket)
@@ -950,7 +951,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	}
 
 	if tagsStr != "" {
-		err := p.SetTags(*po.Bucket, *po.Key, tags)
+		err := p.SetTags(ctx, *po.Bucket, *po.Key, tags)
 		if err != nil {
 			return "", err
 		}
@@ -963,7 +964,7 @@ func (p *Posix) PutObject(po *s3.PutObjectInput) (string, error) {
 	return etag, nil
 }
 
-func (p *Posix) DeleteObject(input *s3.DeleteObjectInput) error {
+func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) error {
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -1020,10 +1021,10 @@ func (p *Posix) removeParents(bucket, object string) error {
 	return nil
 }
 
-func (p *Posix) DeleteObjects(input *s3.DeleteObjectsInput) error {
+func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) error {
 	// delete object already checks bucket
 	for _, obj := range input.Delete.Objects {
-		err := p.DeleteObject(&s3.DeleteObjectInput{
+		err := p.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: input.Bucket,
 			Key:    obj.Key,
 		})
@@ -1035,7 +1036,7 @@ func (p *Posix) DeleteObjects(input *s3.DeleteObjectsInput) error {
 	return nil
 }
 
-func (p *Posix) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	acceptRange := *input.Range
@@ -1118,7 +1119,7 @@ func (p *Posix) GetObject(input *s3.GetObjectInput, writer io.Writer) (*s3.GetOb
 	}, nil
 }
 
-func (p *Posix) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -1158,7 +1159,7 @@ func (p *Posix) HeadObject(input *s3.HeadObjectInput) (*s3.HeadObjectOutput, err
 	}, nil
 }
 
-func (p *Posix) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	srcBucket, srcObject, ok := strings.Cut(*input.CopySource, "/")
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -1197,7 +1198,7 @@ func (p *Posix) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, err
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
-	etag, err := p.PutObject(&s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size()})
+	etag, err := p.PutObject(ctx, &s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size()})
 	if err != nil {
 		return nil, err
 	}
@@ -1215,7 +1216,7 @@ func (p *Posix) CopyObject(input *s3.CopyObjectInput) (*s3.CopyObjectOutput, err
 	}, nil
 }
 
-func (p *Posix) ListObjects(input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (p *Posix) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	bucket := *input.Bucket
 	prefix := *input.Prefix
 	marker := *input.Marker
@@ -1311,7 +1312,7 @@ func fileToObj(bucket string) backend.GetObjFunc {
 	}
 }
 
-func (p *Posix) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (p *Posix) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	bucket := *input.Bucket
 	prefix := *input.Prefix
 	marker := *input.ContinuationToken
@@ -1347,7 +1348,7 @@ func (p *Posix) ListObjectsV2(input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Ou
 	}, nil
 }
 
-func (p *Posix) PutBucketAcl(bucket string, data []byte) error {
+func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1363,7 +1364,7 @@ func (p *Posix) PutBucketAcl(bucket string, data []byte) error {
 	return nil
 }
 
-func (p *Posix) GetBucketAcl(input *s3.GetBucketAclInput) ([]byte, error) {
+func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
 	_, err := os.Stat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1382,7 +1383,7 @@ func (p *Posix) GetBucketAcl(input *s3.GetBucketAclInput) ([]byte, error) {
 	return b, nil
 }
 
-func (p *Posix) GetTags(bucket, object string) (map[string]string, error) {
+func (p *Posix) GetTags(_ context.Context, bucket, object string) (map[string]string, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1415,7 +1416,7 @@ func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
 	return tags, nil
 }
 
-func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
+func (p *Posix) SetTags(_ context.Context, bucket, object string, tags map[string]string) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1451,8 +1452,8 @@ func (p *Posix) SetTags(bucket, object string, tags map[string]string) error {
 	return nil
 }
 
-func (p *Posix) RemoveTags(bucket, object string) error {
-	return p.SetTags(bucket, object, nil)
+func (p *Posix) RemoveTags(ctx context.Context, bucket, object string) error {
+	return p.SetTags(ctx, bucket, object, nil)
 }
 
 const (

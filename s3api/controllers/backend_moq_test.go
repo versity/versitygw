@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
@@ -21,82 +22,82 @@ var _ backend.Backend = &BackendMock{}
 //
 //		// make and configure a mocked backend.Backend
 //		mockedBackend := &BackendMock{
-//			AbortMultipartUploadFunc: func(abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
+//			AbortMultipartUploadFunc: func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 //				panic("mock out the AbortMultipartUpload method")
 //			},
-//			CompleteMultipartUploadFunc: func(completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+//			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
-//			CopyObjectFunc: func(copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+//			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 //				panic("mock out the CopyObject method")
 //			},
-//			CreateBucketFunc: func(createBucketInput *s3.CreateBucketInput) error {
+//			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error {
 //				panic("mock out the CreateBucket method")
 //			},
-//			CreateMultipartUploadFunc: func(createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+//			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 //				panic("mock out the CreateMultipartUpload method")
 //			},
-//			DeleteBucketFunc: func(deleteBucketInput *s3.DeleteBucketInput) error {
+//			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 //				panic("mock out the DeleteBucket method")
 //			},
-//			DeleteObjectFunc: func(deleteObjectInput *s3.DeleteObjectInput) error {
+//			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error {
 //				panic("mock out the DeleteObject method")
 //			},
-//			DeleteObjectsFunc: func(deleteObjectsInput *s3.DeleteObjectsInput) error {
+//			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error {
 //				panic("mock out the DeleteObjects method")
 //			},
-//			GetBucketAclFunc: func(getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
+//			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
 //			},
-//			GetObjectFunc: func(getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+//			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
 //			},
-//			GetObjectAclFunc: func(getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
+//			GetObjectAclFunc: func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 //				panic("mock out the GetObjectAcl method")
 //			},
-//			GetObjectAttributesFunc: func(getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
+//			GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 //				panic("mock out the GetObjectAttributes method")
 //			},
-//			GetTagsFunc: func(bucket string, object string) (map[string]string, error) {
+//			GetTagsFunc: func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error) {
 //				panic("mock out the GetTags method")
 //			},
-//			HeadBucketFunc: func(headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+//			HeadBucketFunc: func(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 //				panic("mock out the HeadBucket method")
 //			},
-//			HeadObjectFunc: func(headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+//			HeadObjectFunc: func(contextMoqParam context.Context, headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 //				panic("mock out the HeadObject method")
 //			},
-//			ListBucketsFunc: func(owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
+//			ListBucketsFunc: func(contextMoqParam context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
 //				panic("mock out the ListBuckets method")
 //			},
-//			ListMultipartUploadsFunc: func(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+//			ListMultipartUploadsFunc: func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 //				panic("mock out the ListMultipartUploads method")
 //			},
-//			ListObjectsFunc: func(listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+//			ListObjectsFunc: func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 //				panic("mock out the ListObjects method")
 //			},
-//			ListObjectsV2Func: func(listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+//			ListObjectsV2Func: func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 //				panic("mock out the ListObjectsV2 method")
 //			},
-//			ListPartsFunc: func(listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+//			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
 //				panic("mock out the ListParts method")
 //			},
-//			PutBucketAclFunc: func(bucket string, data []byte) error {
+//			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
-//			PutObjectFunc: func(putObjectInput *s3.PutObjectInput) (string, error) {
+//			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error) {
 //				panic("mock out the PutObject method")
 //			},
-//			PutObjectAclFunc: func(putObjectAclInput *s3.PutObjectAclInput) error {
+//			PutObjectAclFunc: func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error {
 //				panic("mock out the PutObjectAcl method")
 //			},
-//			RemoveTagsFunc: func(bucket string, object string) error {
+//			RemoveTagsFunc: func(contextMoqParam context.Context, bucket string, object string) error {
 //				panic("mock out the RemoveTags method")
 //			},
-//			RestoreObjectFunc: func(restoreObjectInput *s3.RestoreObjectInput) error {
+//			RestoreObjectFunc: func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error {
 //				panic("mock out the RestoreObject method")
 //			},
-//			SetTagsFunc: func(bucket string, object string, tags map[string]string) error {
+//			SetTagsFunc: func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
 //				panic("mock out the SetTags method")
 //			},
 //			ShutdownFunc: func()  {
@@ -105,10 +106,10 @@ var _ backend.Backend = &BackendMock{}
 //			StringFunc: func() string {
 //				panic("mock out the String method")
 //			},
-//			UploadPartFunc: func(uploadPartInput *s3.UploadPartInput) (string, error) {
+//			UploadPartFunc: func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error) {
 //				panic("mock out the UploadPart method")
 //			},
-//			UploadPartCopyFunc: func(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+//			UploadPartCopyFunc: func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 //				panic("mock out the UploadPartCopy method")
 //			},
 //		}
@@ -119,82 +120,82 @@ var _ backend.Backend = &BackendMock{}
 //	}
 type BackendMock struct {
 	// AbortMultipartUploadFunc mocks the AbortMultipartUpload method.
-	AbortMultipartUploadFunc func(abortMultipartUploadInput *s3.AbortMultipartUploadInput) error
+	AbortMultipartUploadFunc func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error
 
 	// CompleteMultipartUploadFunc mocks the CompleteMultipartUpload method.
-	CompleteMultipartUploadFunc func(completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
+	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 
 	// CopyObjectFunc mocks the CopyObject method.
-	CopyObjectFunc func(copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
+	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
 
 	// CreateBucketFunc mocks the CreateBucket method.
-	CreateBucketFunc func(createBucketInput *s3.CreateBucketInput) error
+	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error
 
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
-	CreateMultipartUploadFunc func(createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
+	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 
 	// DeleteBucketFunc mocks the DeleteBucket method.
-	DeleteBucketFunc func(deleteBucketInput *s3.DeleteBucketInput) error
+	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
 
 	// DeleteObjectFunc mocks the DeleteObject method.
-	DeleteObjectFunc func(deleteObjectInput *s3.DeleteObjectInput) error
+	DeleteObjectFunc func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error
 
 	// DeleteObjectsFunc mocks the DeleteObjects method.
-	DeleteObjectsFunc func(deleteObjectsInput *s3.DeleteObjectsInput) error
+	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
-	GetBucketAclFunc func(getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
+	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
 
 	// GetObjectFunc mocks the GetObject method.
-	GetObjectFunc func(getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error)
+	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error)
 
 	// GetObjectAclFunc mocks the GetObjectAcl method.
-	GetObjectAclFunc func(getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
+	GetObjectAclFunc func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
 
 	// GetObjectAttributesFunc mocks the GetObjectAttributes method.
-	GetObjectAttributesFunc func(getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error)
+	GetObjectAttributesFunc func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error)
 
 	// GetTagsFunc mocks the GetTags method.
-	GetTagsFunc func(bucket string, object string) (map[string]string, error)
+	GetTagsFunc func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error)
 
 	// HeadBucketFunc mocks the HeadBucket method.
-	HeadBucketFunc func(headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
+	HeadBucketFunc func(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
 
 	// HeadObjectFunc mocks the HeadObject method.
-	HeadObjectFunc func(headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
+	HeadObjectFunc func(contextMoqParam context.Context, headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
 
 	// ListBucketsFunc mocks the ListBuckets method.
-	ListBucketsFunc func(owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error)
+	ListBucketsFunc func(contextMoqParam context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error)
 
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
-	ListMultipartUploadsFunc func(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
+	ListMultipartUploadsFunc func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
-	ListObjectsFunc func(listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
+	ListObjectsFunc func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
 
 	// ListObjectsV2Func mocks the ListObjectsV2 method.
-	ListObjectsV2Func func(listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
+	ListObjectsV2Func func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 
 	// ListPartsFunc mocks the ListParts method.
-	ListPartsFunc func(listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error)
+	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error)
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
-	PutBucketAclFunc func(bucket string, data []byte) error
+	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
 
 	// PutObjectFunc mocks the PutObject method.
-	PutObjectFunc func(putObjectInput *s3.PutObjectInput) (string, error)
+	PutObjectFunc func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error)
 
 	// PutObjectAclFunc mocks the PutObjectAcl method.
-	PutObjectAclFunc func(putObjectAclInput *s3.PutObjectAclInput) error
+	PutObjectAclFunc func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error
 
 	// RemoveTagsFunc mocks the RemoveTags method.
-	RemoveTagsFunc func(bucket string, object string) error
+	RemoveTagsFunc func(contextMoqParam context.Context, bucket string, object string) error
 
 	// RestoreObjectFunc mocks the RestoreObject method.
-	RestoreObjectFunc func(restoreObjectInput *s3.RestoreObjectInput) error
+	RestoreObjectFunc func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error
 
 	// SetTagsFunc mocks the SetTags method.
-	SetTagsFunc func(bucket string, object string, tags map[string]string) error
+	SetTagsFunc func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error
 
 	// ShutdownFunc mocks the Shutdown method.
 	ShutdownFunc func()
@@ -203,60 +204,80 @@ type BackendMock struct {
 	StringFunc func() string
 
 	// UploadPartFunc mocks the UploadPart method.
-	UploadPartFunc func(uploadPartInput *s3.UploadPartInput) (string, error)
+	UploadPartFunc func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error)
 
 	// UploadPartCopyFunc mocks the UploadPartCopy method.
-	UploadPartCopyFunc func(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
+	UploadPartCopyFunc func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
 		// AbortMultipartUpload holds details about calls to the AbortMultipartUpload method.
 		AbortMultipartUpload []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// AbortMultipartUploadInput is the abortMultipartUploadInput argument value.
 			AbortMultipartUploadInput *s3.AbortMultipartUploadInput
 		}
 		// CompleteMultipartUpload holds details about calls to the CompleteMultipartUpload method.
 		CompleteMultipartUpload []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// CompleteMultipartUploadInput is the completeMultipartUploadInput argument value.
 			CompleteMultipartUploadInput *s3.CompleteMultipartUploadInput
 		}
 		// CopyObject holds details about calls to the CopyObject method.
 		CopyObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// CopyObjectInput is the copyObjectInput argument value.
 			CopyObjectInput *s3.CopyObjectInput
 		}
 		// CreateBucket holds details about calls to the CreateBucket method.
 		CreateBucket []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// CreateBucketInput is the createBucketInput argument value.
 			CreateBucketInput *s3.CreateBucketInput
 		}
 		// CreateMultipartUpload holds details about calls to the CreateMultipartUpload method.
 		CreateMultipartUpload []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// CreateMultipartUploadInput is the createMultipartUploadInput argument value.
 			CreateMultipartUploadInput *s3.CreateMultipartUploadInput
 		}
 		// DeleteBucket holds details about calls to the DeleteBucket method.
 		DeleteBucket []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// DeleteBucketInput is the deleteBucketInput argument value.
 			DeleteBucketInput *s3.DeleteBucketInput
 		}
 		// DeleteObject holds details about calls to the DeleteObject method.
 		DeleteObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// DeleteObjectInput is the deleteObjectInput argument value.
 			DeleteObjectInput *s3.DeleteObjectInput
 		}
 		// DeleteObjects holds details about calls to the DeleteObjects method.
 		DeleteObjects []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// DeleteObjectsInput is the deleteObjectsInput argument value.
 			DeleteObjectsInput *s3.DeleteObjectsInput
 		}
 		// GetBucketAcl holds details about calls to the GetBucketAcl method.
 		GetBucketAcl []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// GetBucketAclInput is the getBucketAclInput argument value.
 			GetBucketAclInput *s3.GetBucketAclInput
 		}
 		// GetObject holds details about calls to the GetObject method.
 		GetObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// GetObjectInput is the getObjectInput argument value.
 			GetObjectInput *s3.GetObjectInput
 			// Writer is the writer argument value.
@@ -264,16 +285,22 @@ type BackendMock struct {
 		}
 		// GetObjectAcl holds details about calls to the GetObjectAcl method.
 		GetObjectAcl []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// GetObjectAclInput is the getObjectAclInput argument value.
 			GetObjectAclInput *s3.GetObjectAclInput
 		}
 		// GetObjectAttributes holds details about calls to the GetObjectAttributes method.
 		GetObjectAttributes []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// GetObjectAttributesInput is the getObjectAttributesInput argument value.
 			GetObjectAttributesInput *s3.GetObjectAttributesInput
 		}
 		// GetTags holds details about calls to the GetTags method.
 		GetTags []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
 			Bucket string
 			// Object is the object argument value.
@@ -281,16 +308,22 @@ type BackendMock struct {
 		}
 		// HeadBucket holds details about calls to the HeadBucket method.
 		HeadBucket []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// HeadBucketInput is the headBucketInput argument value.
 			HeadBucketInput *s3.HeadBucketInput
 		}
 		// HeadObject holds details about calls to the HeadObject method.
 		HeadObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// HeadObjectInput is the headObjectInput argument value.
 			HeadObjectInput *s3.HeadObjectInput
 		}
 		// ListBuckets holds details about calls to the ListBuckets method.
 		ListBuckets []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// Owner is the owner argument value.
 			Owner string
 			// IsRoot is the isRoot argument value.
@@ -298,26 +331,36 @@ type BackendMock struct {
 		}
 		// ListMultipartUploads holds details about calls to the ListMultipartUploads method.
 		ListMultipartUploads []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// ListMultipartUploadsInput is the listMultipartUploadsInput argument value.
 			ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 		}
 		// ListObjects holds details about calls to the ListObjects method.
 		ListObjects []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// ListObjectsInput is the listObjectsInput argument value.
 			ListObjectsInput *s3.ListObjectsInput
 		}
 		// ListObjectsV2 holds details about calls to the ListObjectsV2 method.
 		ListObjectsV2 []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// ListObjectsV2Input is the listObjectsV2Input argument value.
 			ListObjectsV2Input *s3.ListObjectsV2Input
 		}
 		// ListParts holds details about calls to the ListParts method.
 		ListParts []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// ListPartsInput is the listPartsInput argument value.
 			ListPartsInput *s3.ListPartsInput
 		}
 		// PutBucketAcl holds details about calls to the PutBucketAcl method.
 		PutBucketAcl []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
 			Bucket string
 			// Data is the data argument value.
@@ -325,16 +368,22 @@ type BackendMock struct {
 		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// PutObjectInput is the putObjectInput argument value.
 			PutObjectInput *s3.PutObjectInput
 		}
 		// PutObjectAcl holds details about calls to the PutObjectAcl method.
 		PutObjectAcl []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// PutObjectAclInput is the putObjectAclInput argument value.
 			PutObjectAclInput *s3.PutObjectAclInput
 		}
 		// RemoveTags holds details about calls to the RemoveTags method.
 		RemoveTags []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
 			Bucket string
 			// Object is the object argument value.
@@ -342,11 +391,15 @@ type BackendMock struct {
 		}
 		// RestoreObject holds details about calls to the RestoreObject method.
 		RestoreObject []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// RestoreObjectInput is the restoreObjectInput argument value.
 			RestoreObjectInput *s3.RestoreObjectInput
 		}
 		// SetTags holds details about calls to the SetTags method.
 		SetTags []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
 			Bucket string
 			// Object is the object argument value.
@@ -362,11 +415,15 @@ type BackendMock struct {
 		}
 		// UploadPart holds details about calls to the UploadPart method.
 		UploadPart []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// UploadPartInput is the uploadPartInput argument value.
 			UploadPartInput *s3.UploadPartInput
 		}
 		// UploadPartCopy holds details about calls to the UploadPartCopy method.
 		UploadPartCopy []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
 			// UploadPartCopyInput is the uploadPartCopyInput argument value.
 			UploadPartCopyInput *s3.UploadPartCopyInput
 		}
@@ -404,19 +461,21 @@ type BackendMock struct {
 }
 
 // AbortMultipartUpload calls AbortMultipartUploadFunc.
-func (mock *BackendMock) AbortMultipartUpload(abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
+func (mock *BackendMock) AbortMultipartUpload(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 	if mock.AbortMultipartUploadFunc == nil {
 		panic("BackendMock.AbortMultipartUploadFunc: method is nil but Backend.AbortMultipartUpload was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam           context.Context
 		AbortMultipartUploadInput *s3.AbortMultipartUploadInput
 	}{
+		ContextMoqParam:           contextMoqParam,
 		AbortMultipartUploadInput: abortMultipartUploadInput,
 	}
 	mock.lockAbortMultipartUpload.Lock()
 	mock.calls.AbortMultipartUpload = append(mock.calls.AbortMultipartUpload, callInfo)
 	mock.lockAbortMultipartUpload.Unlock()
-	return mock.AbortMultipartUploadFunc(abortMultipartUploadInput)
+	return mock.AbortMultipartUploadFunc(contextMoqParam, abortMultipartUploadInput)
 }
 
 // AbortMultipartUploadCalls gets all the calls that were made to AbortMultipartUpload.
@@ -424,9 +483,11 @@ func (mock *BackendMock) AbortMultipartUpload(abortMultipartUploadInput *s3.Abor
 //
 //	len(mockedBackend.AbortMultipartUploadCalls())
 func (mock *BackendMock) AbortMultipartUploadCalls() []struct {
+	ContextMoqParam           context.Context
 	AbortMultipartUploadInput *s3.AbortMultipartUploadInput
 } {
 	var calls []struct {
+		ContextMoqParam           context.Context
 		AbortMultipartUploadInput *s3.AbortMultipartUploadInput
 	}
 	mock.lockAbortMultipartUpload.RLock()
@@ -436,19 +497,21 @@ func (mock *BackendMock) AbortMultipartUploadCalls() []struct {
 }
 
 // CompleteMultipartUpload calls CompleteMultipartUploadFunc.
-func (mock *BackendMock) CompleteMultipartUpload(completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (mock *BackendMock) CompleteMultipartUpload(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	if mock.CompleteMultipartUploadFunc == nil {
 		panic("BackendMock.CompleteMultipartUploadFunc: method is nil but Backend.CompleteMultipartUpload was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam              context.Context
 		CompleteMultipartUploadInput *s3.CompleteMultipartUploadInput
 	}{
+		ContextMoqParam:              contextMoqParam,
 		CompleteMultipartUploadInput: completeMultipartUploadInput,
 	}
 	mock.lockCompleteMultipartUpload.Lock()
 	mock.calls.CompleteMultipartUpload = append(mock.calls.CompleteMultipartUpload, callInfo)
 	mock.lockCompleteMultipartUpload.Unlock()
-	return mock.CompleteMultipartUploadFunc(completeMultipartUploadInput)
+	return mock.CompleteMultipartUploadFunc(contextMoqParam, completeMultipartUploadInput)
 }
 
 // CompleteMultipartUploadCalls gets all the calls that were made to CompleteMultipartUpload.
@@ -456,9 +519,11 @@ func (mock *BackendMock) CompleteMultipartUpload(completeMultipartUploadInput *s
 //
 //	len(mockedBackend.CompleteMultipartUploadCalls())
 func (mock *BackendMock) CompleteMultipartUploadCalls() []struct {
+	ContextMoqParam              context.Context
 	CompleteMultipartUploadInput *s3.CompleteMultipartUploadInput
 } {
 	var calls []struct {
+		ContextMoqParam              context.Context
 		CompleteMultipartUploadInput *s3.CompleteMultipartUploadInput
 	}
 	mock.lockCompleteMultipartUpload.RLock()
@@ -468,19 +533,21 @@ func (mock *BackendMock) CompleteMultipartUploadCalls() []struct {
 }
 
 // CopyObject calls CopyObjectFunc.
-func (mock *BackendMock) CopyObject(copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	if mock.CopyObjectFunc == nil {
 		panic("BackendMock.CopyObjectFunc: method is nil but Backend.CopyObject was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam context.Context
 		CopyObjectInput *s3.CopyObjectInput
 	}{
+		ContextMoqParam: contextMoqParam,
 		CopyObjectInput: copyObjectInput,
 	}
 	mock.lockCopyObject.Lock()
 	mock.calls.CopyObject = append(mock.calls.CopyObject, callInfo)
 	mock.lockCopyObject.Unlock()
-	return mock.CopyObjectFunc(copyObjectInput)
+	return mock.CopyObjectFunc(contextMoqParam, copyObjectInput)
 }
 
 // CopyObjectCalls gets all the calls that were made to CopyObject.
@@ -488,9 +555,11 @@ func (mock *BackendMock) CopyObject(copyObjectInput *s3.CopyObjectInput) (*s3.Co
 //
 //	len(mockedBackend.CopyObjectCalls())
 func (mock *BackendMock) CopyObjectCalls() []struct {
+	ContextMoqParam context.Context
 	CopyObjectInput *s3.CopyObjectInput
 } {
 	var calls []struct {
+		ContextMoqParam context.Context
 		CopyObjectInput *s3.CopyObjectInput
 	}
 	mock.lockCopyObject.RLock()
@@ -500,19 +569,21 @@ func (mock *BackendMock) CopyObjectCalls() []struct {
 }
 
 // CreateBucket calls CreateBucketFunc.
-func (mock *BackendMock) CreateBucket(createBucketInput *s3.CreateBucketInput) error {
+func (mock *BackendMock) CreateBucket(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error {
 	if mock.CreateBucketFunc == nil {
 		panic("BackendMock.CreateBucketFunc: method is nil but Backend.CreateBucket was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		CreateBucketInput *s3.CreateBucketInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		CreateBucketInput: createBucketInput,
 	}
 	mock.lockCreateBucket.Lock()
 	mock.calls.CreateBucket = append(mock.calls.CreateBucket, callInfo)
 	mock.lockCreateBucket.Unlock()
-	return mock.CreateBucketFunc(createBucketInput)
+	return mock.CreateBucketFunc(contextMoqParam, createBucketInput)
 }
 
 // CreateBucketCalls gets all the calls that were made to CreateBucket.
@@ -520,9 +591,11 @@ func (mock *BackendMock) CreateBucket(createBucketInput *s3.CreateBucketInput) e
 //
 //	len(mockedBackend.CreateBucketCalls())
 func (mock *BackendMock) CreateBucketCalls() []struct {
+	ContextMoqParam   context.Context
 	CreateBucketInput *s3.CreateBucketInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		CreateBucketInput *s3.CreateBucketInput
 	}
 	mock.lockCreateBucket.RLock()
@@ -532,19 +605,21 @@ func (mock *BackendMock) CreateBucketCalls() []struct {
 }
 
 // CreateMultipartUpload calls CreateMultipartUploadFunc.
-func (mock *BackendMock) CreateMultipartUpload(createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 	if mock.CreateMultipartUploadFunc == nil {
 		panic("BackendMock.CreateMultipartUploadFunc: method is nil but Backend.CreateMultipartUpload was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam            context.Context
 		CreateMultipartUploadInput *s3.CreateMultipartUploadInput
 	}{
+		ContextMoqParam:            contextMoqParam,
 		CreateMultipartUploadInput: createMultipartUploadInput,
 	}
 	mock.lockCreateMultipartUpload.Lock()
 	mock.calls.CreateMultipartUpload = append(mock.calls.CreateMultipartUpload, callInfo)
 	mock.lockCreateMultipartUpload.Unlock()
-	return mock.CreateMultipartUploadFunc(createMultipartUploadInput)
+	return mock.CreateMultipartUploadFunc(contextMoqParam, createMultipartUploadInput)
 }
 
 // CreateMultipartUploadCalls gets all the calls that were made to CreateMultipartUpload.
@@ -552,9 +627,11 @@ func (mock *BackendMock) CreateMultipartUpload(createMultipartUploadInput *s3.Cr
 //
 //	len(mockedBackend.CreateMultipartUploadCalls())
 func (mock *BackendMock) CreateMultipartUploadCalls() []struct {
+	ContextMoqParam            context.Context
 	CreateMultipartUploadInput *s3.CreateMultipartUploadInput
 } {
 	var calls []struct {
+		ContextMoqParam            context.Context
 		CreateMultipartUploadInput *s3.CreateMultipartUploadInput
 	}
 	mock.lockCreateMultipartUpload.RLock()
@@ -564,19 +641,21 @@ func (mock *BackendMock) CreateMultipartUploadCalls() []struct {
 }
 
 // DeleteBucket calls DeleteBucketFunc.
-func (mock *BackendMock) DeleteBucket(deleteBucketInput *s3.DeleteBucketInput) error {
+func (mock *BackendMock) DeleteBucket(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 	if mock.DeleteBucketFunc == nil {
 		panic("BackendMock.DeleteBucketFunc: method is nil but Backend.DeleteBucket was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		DeleteBucketInput *s3.DeleteBucketInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		DeleteBucketInput: deleteBucketInput,
 	}
 	mock.lockDeleteBucket.Lock()
 	mock.calls.DeleteBucket = append(mock.calls.DeleteBucket, callInfo)
 	mock.lockDeleteBucket.Unlock()
-	return mock.DeleteBucketFunc(deleteBucketInput)
+	return mock.DeleteBucketFunc(contextMoqParam, deleteBucketInput)
 }
 
 // DeleteBucketCalls gets all the calls that were made to DeleteBucket.
@@ -584,9 +663,11 @@ func (mock *BackendMock) DeleteBucket(deleteBucketInput *s3.DeleteBucketInput) e
 //
 //	len(mockedBackend.DeleteBucketCalls())
 func (mock *BackendMock) DeleteBucketCalls() []struct {
+	ContextMoqParam   context.Context
 	DeleteBucketInput *s3.DeleteBucketInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		DeleteBucketInput *s3.DeleteBucketInput
 	}
 	mock.lockDeleteBucket.RLock()
@@ -596,19 +677,21 @@ func (mock *BackendMock) DeleteBucketCalls() []struct {
 }
 
 // DeleteObject calls DeleteObjectFunc.
-func (mock *BackendMock) DeleteObject(deleteObjectInput *s3.DeleteObjectInput) error {
+func (mock *BackendMock) DeleteObject(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error {
 	if mock.DeleteObjectFunc == nil {
 		panic("BackendMock.DeleteObjectFunc: method is nil but Backend.DeleteObject was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		DeleteObjectInput *s3.DeleteObjectInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		DeleteObjectInput: deleteObjectInput,
 	}
 	mock.lockDeleteObject.Lock()
 	mock.calls.DeleteObject = append(mock.calls.DeleteObject, callInfo)
 	mock.lockDeleteObject.Unlock()
-	return mock.DeleteObjectFunc(deleteObjectInput)
+	return mock.DeleteObjectFunc(contextMoqParam, deleteObjectInput)
 }
 
 // DeleteObjectCalls gets all the calls that were made to DeleteObject.
@@ -616,9 +699,11 @@ func (mock *BackendMock) DeleteObject(deleteObjectInput *s3.DeleteObjectInput) e
 //
 //	len(mockedBackend.DeleteObjectCalls())
 func (mock *BackendMock) DeleteObjectCalls() []struct {
+	ContextMoqParam   context.Context
 	DeleteObjectInput *s3.DeleteObjectInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		DeleteObjectInput *s3.DeleteObjectInput
 	}
 	mock.lockDeleteObject.RLock()
@@ -628,19 +713,21 @@ func (mock *BackendMock) DeleteObjectCalls() []struct {
 }
 
 // DeleteObjects calls DeleteObjectsFunc.
-func (mock *BackendMock) DeleteObjects(deleteObjectsInput *s3.DeleteObjectsInput) error {
+func (mock *BackendMock) DeleteObjects(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error {
 	if mock.DeleteObjectsFunc == nil {
 		panic("BackendMock.DeleteObjectsFunc: method is nil but Backend.DeleteObjects was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam    context.Context
 		DeleteObjectsInput *s3.DeleteObjectsInput
 	}{
+		ContextMoqParam:    contextMoqParam,
 		DeleteObjectsInput: deleteObjectsInput,
 	}
 	mock.lockDeleteObjects.Lock()
 	mock.calls.DeleteObjects = append(mock.calls.DeleteObjects, callInfo)
 	mock.lockDeleteObjects.Unlock()
-	return mock.DeleteObjectsFunc(deleteObjectsInput)
+	return mock.DeleteObjectsFunc(contextMoqParam, deleteObjectsInput)
 }
 
 // DeleteObjectsCalls gets all the calls that were made to DeleteObjects.
@@ -648,9 +735,11 @@ func (mock *BackendMock) DeleteObjects(deleteObjectsInput *s3.DeleteObjectsInput
 //
 //	len(mockedBackend.DeleteObjectsCalls())
 func (mock *BackendMock) DeleteObjectsCalls() []struct {
+	ContextMoqParam    context.Context
 	DeleteObjectsInput *s3.DeleteObjectsInput
 } {
 	var calls []struct {
+		ContextMoqParam    context.Context
 		DeleteObjectsInput *s3.DeleteObjectsInput
 	}
 	mock.lockDeleteObjects.RLock()
@@ -660,19 +749,21 @@ func (mock *BackendMock) DeleteObjectsCalls() []struct {
 }
 
 // GetBucketAcl calls GetBucketAclFunc.
-func (mock *BackendMock) GetBucketAcl(getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
+func (mock *BackendMock) GetBucketAcl(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 	if mock.GetBucketAclFunc == nil {
 		panic("BackendMock.GetBucketAclFunc: method is nil but Backend.GetBucketAcl was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		GetBucketAclInput *s3.GetBucketAclInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		GetBucketAclInput: getBucketAclInput,
 	}
 	mock.lockGetBucketAcl.Lock()
 	mock.calls.GetBucketAcl = append(mock.calls.GetBucketAcl, callInfo)
 	mock.lockGetBucketAcl.Unlock()
-	return mock.GetBucketAclFunc(getBucketAclInput)
+	return mock.GetBucketAclFunc(contextMoqParam, getBucketAclInput)
 }
 
 // GetBucketAclCalls gets all the calls that were made to GetBucketAcl.
@@ -680,9 +771,11 @@ func (mock *BackendMock) GetBucketAcl(getBucketAclInput *s3.GetBucketAclInput) (
 //
 //	len(mockedBackend.GetBucketAclCalls())
 func (mock *BackendMock) GetBucketAclCalls() []struct {
+	ContextMoqParam   context.Context
 	GetBucketAclInput *s3.GetBucketAclInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		GetBucketAclInput *s3.GetBucketAclInput
 	}
 	mock.lockGetBucketAcl.RLock()
@@ -692,21 +785,23 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 }
 
 // GetObject calls GetObjectFunc.
-func (mock *BackendMock) GetObject(getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (mock *BackendMock) GetObject(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	if mock.GetObjectFunc == nil {
 		panic("BackendMock.GetObjectFunc: method is nil but Backend.GetObject was just called")
 	}
 	callInfo := struct {
-		GetObjectInput *s3.GetObjectInput
-		Writer         io.Writer
+		ContextMoqParam context.Context
+		GetObjectInput  *s3.GetObjectInput
+		Writer          io.Writer
 	}{
-		GetObjectInput: getObjectInput,
-		Writer:         writer,
+		ContextMoqParam: contextMoqParam,
+		GetObjectInput:  getObjectInput,
+		Writer:          writer,
 	}
 	mock.lockGetObject.Lock()
 	mock.calls.GetObject = append(mock.calls.GetObject, callInfo)
 	mock.lockGetObject.Unlock()
-	return mock.GetObjectFunc(getObjectInput, writer)
+	return mock.GetObjectFunc(contextMoqParam, getObjectInput, writer)
 }
 
 // GetObjectCalls gets all the calls that were made to GetObject.
@@ -714,12 +809,14 @@ func (mock *BackendMock) GetObject(getObjectInput *s3.GetObjectInput, writer io.
 //
 //	len(mockedBackend.GetObjectCalls())
 func (mock *BackendMock) GetObjectCalls() []struct {
-	GetObjectInput *s3.GetObjectInput
-	Writer         io.Writer
+	ContextMoqParam context.Context
+	GetObjectInput  *s3.GetObjectInput
+	Writer          io.Writer
 } {
 	var calls []struct {
-		GetObjectInput *s3.GetObjectInput
-		Writer         io.Writer
+		ContextMoqParam context.Context
+		GetObjectInput  *s3.GetObjectInput
+		Writer          io.Writer
 	}
 	mock.lockGetObject.RLock()
 	calls = mock.calls.GetObject
@@ -728,19 +825,21 @@ func (mock *BackendMock) GetObjectCalls() []struct {
 }
 
 // GetObjectAcl calls GetObjectAclFunc.
-func (mock *BackendMock) GetObjectAcl(getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
+func (mock *BackendMock) GetObjectAcl(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 	if mock.GetObjectAclFunc == nil {
 		panic("BackendMock.GetObjectAclFunc: method is nil but Backend.GetObjectAcl was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		GetObjectAclInput *s3.GetObjectAclInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		GetObjectAclInput: getObjectAclInput,
 	}
 	mock.lockGetObjectAcl.Lock()
 	mock.calls.GetObjectAcl = append(mock.calls.GetObjectAcl, callInfo)
 	mock.lockGetObjectAcl.Unlock()
-	return mock.GetObjectAclFunc(getObjectAclInput)
+	return mock.GetObjectAclFunc(contextMoqParam, getObjectAclInput)
 }
 
 // GetObjectAclCalls gets all the calls that were made to GetObjectAcl.
@@ -748,9 +847,11 @@ func (mock *BackendMock) GetObjectAcl(getObjectAclInput *s3.GetObjectAclInput) (
 //
 //	len(mockedBackend.GetObjectAclCalls())
 func (mock *BackendMock) GetObjectAclCalls() []struct {
+	ContextMoqParam   context.Context
 	GetObjectAclInput *s3.GetObjectAclInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		GetObjectAclInput *s3.GetObjectAclInput
 	}
 	mock.lockGetObjectAcl.RLock()
@@ -760,19 +861,21 @@ func (mock *BackendMock) GetObjectAclCalls() []struct {
 }
 
 // GetObjectAttributes calls GetObjectAttributesFunc.
-func (mock *BackendMock) GetObjectAttributes(getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
+func (mock *BackendMock) GetObjectAttributes(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 	if mock.GetObjectAttributesFunc == nil {
 		panic("BackendMock.GetObjectAttributesFunc: method is nil but Backend.GetObjectAttributes was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam          context.Context
 		GetObjectAttributesInput *s3.GetObjectAttributesInput
 	}{
+		ContextMoqParam:          contextMoqParam,
 		GetObjectAttributesInput: getObjectAttributesInput,
 	}
 	mock.lockGetObjectAttributes.Lock()
 	mock.calls.GetObjectAttributes = append(mock.calls.GetObjectAttributes, callInfo)
 	mock.lockGetObjectAttributes.Unlock()
-	return mock.GetObjectAttributesFunc(getObjectAttributesInput)
+	return mock.GetObjectAttributesFunc(contextMoqParam, getObjectAttributesInput)
 }
 
 // GetObjectAttributesCalls gets all the calls that were made to GetObjectAttributes.
@@ -780,9 +883,11 @@ func (mock *BackendMock) GetObjectAttributes(getObjectAttributesInput *s3.GetObj
 //
 //	len(mockedBackend.GetObjectAttributesCalls())
 func (mock *BackendMock) GetObjectAttributesCalls() []struct {
+	ContextMoqParam          context.Context
 	GetObjectAttributesInput *s3.GetObjectAttributesInput
 } {
 	var calls []struct {
+		ContextMoqParam          context.Context
 		GetObjectAttributesInput *s3.GetObjectAttributesInput
 	}
 	mock.lockGetObjectAttributes.RLock()
@@ -792,21 +897,23 @@ func (mock *BackendMock) GetObjectAttributesCalls() []struct {
 }
 
 // GetTags calls GetTagsFunc.
-func (mock *BackendMock) GetTags(bucket string, object string) (map[string]string, error) {
+func (mock *BackendMock) GetTags(contextMoqParam context.Context, bucket string, object string) (map[string]string, error) {
 	if mock.GetTagsFunc == nil {
 		panic("BackendMock.GetTagsFunc: method is nil but Backend.GetTags was just called")
 	}
 	callInfo := struct {
-		Bucket string
-		Object string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
 	}{
-		Bucket: bucket,
-		Object: object,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Object:          object,
 	}
 	mock.lockGetTags.Lock()
 	mock.calls.GetTags = append(mock.calls.GetTags, callInfo)
 	mock.lockGetTags.Unlock()
-	return mock.GetTagsFunc(bucket, object)
+	return mock.GetTagsFunc(contextMoqParam, bucket, object)
 }
 
 // GetTagsCalls gets all the calls that were made to GetTags.
@@ -814,12 +921,14 @@ func (mock *BackendMock) GetTags(bucket string, object string) (map[string]strin
 //
 //	len(mockedBackend.GetTagsCalls())
 func (mock *BackendMock) GetTagsCalls() []struct {
-	Bucket string
-	Object string
+	ContextMoqParam context.Context
+	Bucket          string
+	Object          string
 } {
 	var calls []struct {
-		Bucket string
-		Object string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
 	}
 	mock.lockGetTags.RLock()
 	calls = mock.calls.GetTags
@@ -828,19 +937,21 @@ func (mock *BackendMock) GetTagsCalls() []struct {
 }
 
 // HeadBucket calls HeadBucketFunc.
-func (mock *BackendMock) HeadBucket(headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+func (mock *BackendMock) HeadBucket(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 	if mock.HeadBucketFunc == nil {
 		panic("BackendMock.HeadBucketFunc: method is nil but Backend.HeadBucket was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam context.Context
 		HeadBucketInput *s3.HeadBucketInput
 	}{
+		ContextMoqParam: contextMoqParam,
 		HeadBucketInput: headBucketInput,
 	}
 	mock.lockHeadBucket.Lock()
 	mock.calls.HeadBucket = append(mock.calls.HeadBucket, callInfo)
 	mock.lockHeadBucket.Unlock()
-	return mock.HeadBucketFunc(headBucketInput)
+	return mock.HeadBucketFunc(contextMoqParam, headBucketInput)
 }
 
 // HeadBucketCalls gets all the calls that were made to HeadBucket.
@@ -848,9 +959,11 @@ func (mock *BackendMock) HeadBucket(headBucketInput *s3.HeadBucketInput) (*s3.He
 //
 //	len(mockedBackend.HeadBucketCalls())
 func (mock *BackendMock) HeadBucketCalls() []struct {
+	ContextMoqParam context.Context
 	HeadBucketInput *s3.HeadBucketInput
 } {
 	var calls []struct {
+		ContextMoqParam context.Context
 		HeadBucketInput *s3.HeadBucketInput
 	}
 	mock.lockHeadBucket.RLock()
@@ -860,19 +973,21 @@ func (mock *BackendMock) HeadBucketCalls() []struct {
 }
 
 // HeadObject calls HeadObjectFunc.
-func (mock *BackendMock) HeadObject(headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (mock *BackendMock) HeadObject(contextMoqParam context.Context, headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	if mock.HeadObjectFunc == nil {
 		panic("BackendMock.HeadObjectFunc: method is nil but Backend.HeadObject was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam context.Context
 		HeadObjectInput *s3.HeadObjectInput
 	}{
+		ContextMoqParam: contextMoqParam,
 		HeadObjectInput: headObjectInput,
 	}
 	mock.lockHeadObject.Lock()
 	mock.calls.HeadObject = append(mock.calls.HeadObject, callInfo)
 	mock.lockHeadObject.Unlock()
-	return mock.HeadObjectFunc(headObjectInput)
+	return mock.HeadObjectFunc(contextMoqParam, headObjectInput)
 }
 
 // HeadObjectCalls gets all the calls that were made to HeadObject.
@@ -880,9 +995,11 @@ func (mock *BackendMock) HeadObject(headObjectInput *s3.HeadObjectInput) (*s3.He
 //
 //	len(mockedBackend.HeadObjectCalls())
 func (mock *BackendMock) HeadObjectCalls() []struct {
+	ContextMoqParam context.Context
 	HeadObjectInput *s3.HeadObjectInput
 } {
 	var calls []struct {
+		ContextMoqParam context.Context
 		HeadObjectInput *s3.HeadObjectInput
 	}
 	mock.lockHeadObject.RLock()
@@ -892,21 +1009,23 @@ func (mock *BackendMock) HeadObjectCalls() []struct {
 }
 
 // ListBuckets calls ListBucketsFunc.
-func (mock *BackendMock) ListBuckets(owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
+func (mock *BackendMock) ListBuckets(contextMoqParam context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
 	if mock.ListBucketsFunc == nil {
 		panic("BackendMock.ListBucketsFunc: method is nil but Backend.ListBuckets was just called")
 	}
 	callInfo := struct {
-		Owner  string
-		IsRoot bool
+		ContextMoqParam context.Context
+		Owner           string
+		IsRoot          bool
 	}{
-		Owner:  owner,
-		IsRoot: isRoot,
+		ContextMoqParam: contextMoqParam,
+		Owner:           owner,
+		IsRoot:          isRoot,
 	}
 	mock.lockListBuckets.Lock()
 	mock.calls.ListBuckets = append(mock.calls.ListBuckets, callInfo)
 	mock.lockListBuckets.Unlock()
-	return mock.ListBucketsFunc(owner, isRoot)
+	return mock.ListBucketsFunc(contextMoqParam, owner, isRoot)
 }
 
 // ListBucketsCalls gets all the calls that were made to ListBuckets.
@@ -914,12 +1033,14 @@ func (mock *BackendMock) ListBuckets(owner string, isRoot bool) (s3response.List
 //
 //	len(mockedBackend.ListBucketsCalls())
 func (mock *BackendMock) ListBucketsCalls() []struct {
-	Owner  string
-	IsRoot bool
+	ContextMoqParam context.Context
+	Owner           string
+	IsRoot          bool
 } {
 	var calls []struct {
-		Owner  string
-		IsRoot bool
+		ContextMoqParam context.Context
+		Owner           string
+		IsRoot          bool
 	}
 	mock.lockListBuckets.RLock()
 	calls = mock.calls.ListBuckets
@@ -928,19 +1049,21 @@ func (mock *BackendMock) ListBucketsCalls() []struct {
 }
 
 // ListMultipartUploads calls ListMultipartUploadsFunc.
-func (mock *BackendMock) ListMultipartUploads(listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+func (mock *BackendMock) ListMultipartUploads(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
 	if mock.ListMultipartUploadsFunc == nil {
 		panic("BackendMock.ListMultipartUploadsFunc: method is nil but Backend.ListMultipartUploads was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam           context.Context
 		ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 	}{
+		ContextMoqParam:           contextMoqParam,
 		ListMultipartUploadsInput: listMultipartUploadsInput,
 	}
 	mock.lockListMultipartUploads.Lock()
 	mock.calls.ListMultipartUploads = append(mock.calls.ListMultipartUploads, callInfo)
 	mock.lockListMultipartUploads.Unlock()
-	return mock.ListMultipartUploadsFunc(listMultipartUploadsInput)
+	return mock.ListMultipartUploadsFunc(contextMoqParam, listMultipartUploadsInput)
 }
 
 // ListMultipartUploadsCalls gets all the calls that were made to ListMultipartUploads.
@@ -948,9 +1071,11 @@ func (mock *BackendMock) ListMultipartUploads(listMultipartUploadsInput *s3.List
 //
 //	len(mockedBackend.ListMultipartUploadsCalls())
 func (mock *BackendMock) ListMultipartUploadsCalls() []struct {
+	ContextMoqParam           context.Context
 	ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 } {
 	var calls []struct {
+		ContextMoqParam           context.Context
 		ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 	}
 	mock.lockListMultipartUploads.RLock()
@@ -960,19 +1085,21 @@ func (mock *BackendMock) ListMultipartUploadsCalls() []struct {
 }
 
 // ListObjects calls ListObjectsFunc.
-func (mock *BackendMock) ListObjects(listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (mock *BackendMock) ListObjects(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	if mock.ListObjectsFunc == nil {
 		panic("BackendMock.ListObjectsFunc: method is nil but Backend.ListObjects was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam  context.Context
 		ListObjectsInput *s3.ListObjectsInput
 	}{
+		ContextMoqParam:  contextMoqParam,
 		ListObjectsInput: listObjectsInput,
 	}
 	mock.lockListObjects.Lock()
 	mock.calls.ListObjects = append(mock.calls.ListObjects, callInfo)
 	mock.lockListObjects.Unlock()
-	return mock.ListObjectsFunc(listObjectsInput)
+	return mock.ListObjectsFunc(contextMoqParam, listObjectsInput)
 }
 
 // ListObjectsCalls gets all the calls that were made to ListObjects.
@@ -980,9 +1107,11 @@ func (mock *BackendMock) ListObjects(listObjectsInput *s3.ListObjectsInput) (*s3
 //
 //	len(mockedBackend.ListObjectsCalls())
 func (mock *BackendMock) ListObjectsCalls() []struct {
+	ContextMoqParam  context.Context
 	ListObjectsInput *s3.ListObjectsInput
 } {
 	var calls []struct {
+		ContextMoqParam  context.Context
 		ListObjectsInput *s3.ListObjectsInput
 	}
 	mock.lockListObjects.RLock()
@@ -992,19 +1121,21 @@ func (mock *BackendMock) ListObjectsCalls() []struct {
 }
 
 // ListObjectsV2 calls ListObjectsV2Func.
-func (mock *BackendMock) ListObjectsV2(listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (mock *BackendMock) ListObjectsV2(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	if mock.ListObjectsV2Func == nil {
 		panic("BackendMock.ListObjectsV2Func: method is nil but Backend.ListObjectsV2 was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam    context.Context
 		ListObjectsV2Input *s3.ListObjectsV2Input
 	}{
+		ContextMoqParam:    contextMoqParam,
 		ListObjectsV2Input: listObjectsV2Input,
 	}
 	mock.lockListObjectsV2.Lock()
 	mock.calls.ListObjectsV2 = append(mock.calls.ListObjectsV2, callInfo)
 	mock.lockListObjectsV2.Unlock()
-	return mock.ListObjectsV2Func(listObjectsV2Input)
+	return mock.ListObjectsV2Func(contextMoqParam, listObjectsV2Input)
 }
 
 // ListObjectsV2Calls gets all the calls that were made to ListObjectsV2.
@@ -1012,9 +1143,11 @@ func (mock *BackendMock) ListObjectsV2(listObjectsV2Input *s3.ListObjectsV2Input
 //
 //	len(mockedBackend.ListObjectsV2Calls())
 func (mock *BackendMock) ListObjectsV2Calls() []struct {
+	ContextMoqParam    context.Context
 	ListObjectsV2Input *s3.ListObjectsV2Input
 } {
 	var calls []struct {
+		ContextMoqParam    context.Context
 		ListObjectsV2Input *s3.ListObjectsV2Input
 	}
 	mock.lockListObjectsV2.RLock()
@@ -1024,19 +1157,21 @@ func (mock *BackendMock) ListObjectsV2Calls() []struct {
 }
 
 // ListParts calls ListPartsFunc.
-func (mock *BackendMock) ListParts(listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+func (mock *BackendMock) ListParts(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
 	if mock.ListPartsFunc == nil {
 		panic("BackendMock.ListPartsFunc: method is nil but Backend.ListParts was just called")
 	}
 	callInfo := struct {
-		ListPartsInput *s3.ListPartsInput
+		ContextMoqParam context.Context
+		ListPartsInput  *s3.ListPartsInput
 	}{
-		ListPartsInput: listPartsInput,
+		ContextMoqParam: contextMoqParam,
+		ListPartsInput:  listPartsInput,
 	}
 	mock.lockListParts.Lock()
 	mock.calls.ListParts = append(mock.calls.ListParts, callInfo)
 	mock.lockListParts.Unlock()
-	return mock.ListPartsFunc(listPartsInput)
+	return mock.ListPartsFunc(contextMoqParam, listPartsInput)
 }
 
 // ListPartsCalls gets all the calls that were made to ListParts.
@@ -1044,10 +1179,12 @@ func (mock *BackendMock) ListParts(listPartsInput *s3.ListPartsInput) (s3respons
 //
 //	len(mockedBackend.ListPartsCalls())
 func (mock *BackendMock) ListPartsCalls() []struct {
-	ListPartsInput *s3.ListPartsInput
+	ContextMoqParam context.Context
+	ListPartsInput  *s3.ListPartsInput
 } {
 	var calls []struct {
-		ListPartsInput *s3.ListPartsInput
+		ContextMoqParam context.Context
+		ListPartsInput  *s3.ListPartsInput
 	}
 	mock.lockListParts.RLock()
 	calls = mock.calls.ListParts
@@ -1056,21 +1193,23 @@ func (mock *BackendMock) ListPartsCalls() []struct {
 }
 
 // PutBucketAcl calls PutBucketAclFunc.
-func (mock *BackendMock) PutBucketAcl(bucket string, data []byte) error {
+func (mock *BackendMock) PutBucketAcl(contextMoqParam context.Context, bucket string, data []byte) error {
 	if mock.PutBucketAclFunc == nil {
 		panic("BackendMock.PutBucketAclFunc: method is nil but Backend.PutBucketAcl was just called")
 	}
 	callInfo := struct {
-		Bucket string
-		Data   []byte
+		ContextMoqParam context.Context
+		Bucket          string
+		Data            []byte
 	}{
-		Bucket: bucket,
-		Data:   data,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Data:            data,
 	}
 	mock.lockPutBucketAcl.Lock()
 	mock.calls.PutBucketAcl = append(mock.calls.PutBucketAcl, callInfo)
 	mock.lockPutBucketAcl.Unlock()
-	return mock.PutBucketAclFunc(bucket, data)
+	return mock.PutBucketAclFunc(contextMoqParam, bucket, data)
 }
 
 // PutBucketAclCalls gets all the calls that were made to PutBucketAcl.
@@ -1078,12 +1217,14 @@ func (mock *BackendMock) PutBucketAcl(bucket string, data []byte) error {
 //
 //	len(mockedBackend.PutBucketAclCalls())
 func (mock *BackendMock) PutBucketAclCalls() []struct {
-	Bucket string
-	Data   []byte
+	ContextMoqParam context.Context
+	Bucket          string
+	Data            []byte
 } {
 	var calls []struct {
-		Bucket string
-		Data   []byte
+		ContextMoqParam context.Context
+		Bucket          string
+		Data            []byte
 	}
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
@@ -1092,19 +1233,21 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 }
 
 // PutObject calls PutObjectFunc.
-func (mock *BackendMock) PutObject(putObjectInput *s3.PutObjectInput) (string, error) {
+func (mock *BackendMock) PutObject(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error) {
 	if mock.PutObjectFunc == nil {
 		panic("BackendMock.PutObjectFunc: method is nil but Backend.PutObject was just called")
 	}
 	callInfo := struct {
-		PutObjectInput *s3.PutObjectInput
+		ContextMoqParam context.Context
+		PutObjectInput  *s3.PutObjectInput
 	}{
-		PutObjectInput: putObjectInput,
+		ContextMoqParam: contextMoqParam,
+		PutObjectInput:  putObjectInput,
 	}
 	mock.lockPutObject.Lock()
 	mock.calls.PutObject = append(mock.calls.PutObject, callInfo)
 	mock.lockPutObject.Unlock()
-	return mock.PutObjectFunc(putObjectInput)
+	return mock.PutObjectFunc(contextMoqParam, putObjectInput)
 }
 
 // PutObjectCalls gets all the calls that were made to PutObject.
@@ -1112,10 +1255,12 @@ func (mock *BackendMock) PutObject(putObjectInput *s3.PutObjectInput) (string, e
 //
 //	len(mockedBackend.PutObjectCalls())
 func (mock *BackendMock) PutObjectCalls() []struct {
-	PutObjectInput *s3.PutObjectInput
+	ContextMoqParam context.Context
+	PutObjectInput  *s3.PutObjectInput
 } {
 	var calls []struct {
-		PutObjectInput *s3.PutObjectInput
+		ContextMoqParam context.Context
+		PutObjectInput  *s3.PutObjectInput
 	}
 	mock.lockPutObject.RLock()
 	calls = mock.calls.PutObject
@@ -1124,19 +1269,21 @@ func (mock *BackendMock) PutObjectCalls() []struct {
 }
 
 // PutObjectAcl calls PutObjectAclFunc.
-func (mock *BackendMock) PutObjectAcl(putObjectAclInput *s3.PutObjectAclInput) error {
+func (mock *BackendMock) PutObjectAcl(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error {
 	if mock.PutObjectAclFunc == nil {
 		panic("BackendMock.PutObjectAclFunc: method is nil but Backend.PutObjectAcl was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam   context.Context
 		PutObjectAclInput *s3.PutObjectAclInput
 	}{
+		ContextMoqParam:   contextMoqParam,
 		PutObjectAclInput: putObjectAclInput,
 	}
 	mock.lockPutObjectAcl.Lock()
 	mock.calls.PutObjectAcl = append(mock.calls.PutObjectAcl, callInfo)
 	mock.lockPutObjectAcl.Unlock()
-	return mock.PutObjectAclFunc(putObjectAclInput)
+	return mock.PutObjectAclFunc(contextMoqParam, putObjectAclInput)
 }
 
 // PutObjectAclCalls gets all the calls that were made to PutObjectAcl.
@@ -1144,9 +1291,11 @@ func (mock *BackendMock) PutObjectAcl(putObjectAclInput *s3.PutObjectAclInput) e
 //
 //	len(mockedBackend.PutObjectAclCalls())
 func (mock *BackendMock) PutObjectAclCalls() []struct {
+	ContextMoqParam   context.Context
 	PutObjectAclInput *s3.PutObjectAclInput
 } {
 	var calls []struct {
+		ContextMoqParam   context.Context
 		PutObjectAclInput *s3.PutObjectAclInput
 	}
 	mock.lockPutObjectAcl.RLock()
@@ -1156,21 +1305,23 @@ func (mock *BackendMock) PutObjectAclCalls() []struct {
 }
 
 // RemoveTags calls RemoveTagsFunc.
-func (mock *BackendMock) RemoveTags(bucket string, object string) error {
+func (mock *BackendMock) RemoveTags(contextMoqParam context.Context, bucket string, object string) error {
 	if mock.RemoveTagsFunc == nil {
 		panic("BackendMock.RemoveTagsFunc: method is nil but Backend.RemoveTags was just called")
 	}
 	callInfo := struct {
-		Bucket string
-		Object string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
 	}{
-		Bucket: bucket,
-		Object: object,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Object:          object,
 	}
 	mock.lockRemoveTags.Lock()
 	mock.calls.RemoveTags = append(mock.calls.RemoveTags, callInfo)
 	mock.lockRemoveTags.Unlock()
-	return mock.RemoveTagsFunc(bucket, object)
+	return mock.RemoveTagsFunc(contextMoqParam, bucket, object)
 }
 
 // RemoveTagsCalls gets all the calls that were made to RemoveTags.
@@ -1178,12 +1329,14 @@ func (mock *BackendMock) RemoveTags(bucket string, object string) error {
 //
 //	len(mockedBackend.RemoveTagsCalls())
 func (mock *BackendMock) RemoveTagsCalls() []struct {
-	Bucket string
-	Object string
+	ContextMoqParam context.Context
+	Bucket          string
+	Object          string
 } {
 	var calls []struct {
-		Bucket string
-		Object string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
 	}
 	mock.lockRemoveTags.RLock()
 	calls = mock.calls.RemoveTags
@@ -1192,19 +1345,21 @@ func (mock *BackendMock) RemoveTagsCalls() []struct {
 }
 
 // RestoreObject calls RestoreObjectFunc.
-func (mock *BackendMock) RestoreObject(restoreObjectInput *s3.RestoreObjectInput) error {
+func (mock *BackendMock) RestoreObject(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error {
 	if mock.RestoreObjectFunc == nil {
 		panic("BackendMock.RestoreObjectFunc: method is nil but Backend.RestoreObject was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam    context.Context
 		RestoreObjectInput *s3.RestoreObjectInput
 	}{
+		ContextMoqParam:    contextMoqParam,
 		RestoreObjectInput: restoreObjectInput,
 	}
 	mock.lockRestoreObject.Lock()
 	mock.calls.RestoreObject = append(mock.calls.RestoreObject, callInfo)
 	mock.lockRestoreObject.Unlock()
-	return mock.RestoreObjectFunc(restoreObjectInput)
+	return mock.RestoreObjectFunc(contextMoqParam, restoreObjectInput)
 }
 
 // RestoreObjectCalls gets all the calls that were made to RestoreObject.
@@ -1212,9 +1367,11 @@ func (mock *BackendMock) RestoreObject(restoreObjectInput *s3.RestoreObjectInput
 //
 //	len(mockedBackend.RestoreObjectCalls())
 func (mock *BackendMock) RestoreObjectCalls() []struct {
+	ContextMoqParam    context.Context
 	RestoreObjectInput *s3.RestoreObjectInput
 } {
 	var calls []struct {
+		ContextMoqParam    context.Context
 		RestoreObjectInput *s3.RestoreObjectInput
 	}
 	mock.lockRestoreObject.RLock()
@@ -1224,23 +1381,25 @@ func (mock *BackendMock) RestoreObjectCalls() []struct {
 }
 
 // SetTags calls SetTagsFunc.
-func (mock *BackendMock) SetTags(bucket string, object string, tags map[string]string) error {
+func (mock *BackendMock) SetTags(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
 	if mock.SetTagsFunc == nil {
 		panic("BackendMock.SetTagsFunc: method is nil but Backend.SetTags was just called")
 	}
 	callInfo := struct {
-		Bucket string
-		Object string
-		Tags   map[string]string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		Tags            map[string]string
 	}{
-		Bucket: bucket,
-		Object: object,
-		Tags:   tags,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Object:          object,
+		Tags:            tags,
 	}
 	mock.lockSetTags.Lock()
 	mock.calls.SetTags = append(mock.calls.SetTags, callInfo)
 	mock.lockSetTags.Unlock()
-	return mock.SetTagsFunc(bucket, object, tags)
+	return mock.SetTagsFunc(contextMoqParam, bucket, object, tags)
 }
 
 // SetTagsCalls gets all the calls that were made to SetTags.
@@ -1248,14 +1407,16 @@ func (mock *BackendMock) SetTags(bucket string, object string, tags map[string]s
 //
 //	len(mockedBackend.SetTagsCalls())
 func (mock *BackendMock) SetTagsCalls() []struct {
-	Bucket string
-	Object string
-	Tags   map[string]string
+	ContextMoqParam context.Context
+	Bucket          string
+	Object          string
+	Tags            map[string]string
 } {
 	var calls []struct {
-		Bucket string
-		Object string
-		Tags   map[string]string
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		Tags            map[string]string
 	}
 	mock.lockSetTags.RLock()
 	calls = mock.calls.SetTags
@@ -1318,19 +1479,21 @@ func (mock *BackendMock) StringCalls() []struct {
 }
 
 // UploadPart calls UploadPartFunc.
-func (mock *BackendMock) UploadPart(uploadPartInput *s3.UploadPartInput) (string, error) {
+func (mock *BackendMock) UploadPart(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error) {
 	if mock.UploadPartFunc == nil {
 		panic("BackendMock.UploadPartFunc: method is nil but Backend.UploadPart was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam context.Context
 		UploadPartInput *s3.UploadPartInput
 	}{
+		ContextMoqParam: contextMoqParam,
 		UploadPartInput: uploadPartInput,
 	}
 	mock.lockUploadPart.Lock()
 	mock.calls.UploadPart = append(mock.calls.UploadPart, callInfo)
 	mock.lockUploadPart.Unlock()
-	return mock.UploadPartFunc(uploadPartInput)
+	return mock.UploadPartFunc(contextMoqParam, uploadPartInput)
 }
 
 // UploadPartCalls gets all the calls that were made to UploadPart.
@@ -1338,9 +1501,11 @@ func (mock *BackendMock) UploadPart(uploadPartInput *s3.UploadPartInput) (string
 //
 //	len(mockedBackend.UploadPartCalls())
 func (mock *BackendMock) UploadPartCalls() []struct {
+	ContextMoqParam context.Context
 	UploadPartInput *s3.UploadPartInput
 } {
 	var calls []struct {
+		ContextMoqParam context.Context
 		UploadPartInput *s3.UploadPartInput
 	}
 	mock.lockUploadPart.RLock()
@@ -1350,19 +1515,21 @@ func (mock *BackendMock) UploadPartCalls() []struct {
 }
 
 // UploadPartCopy calls UploadPartCopyFunc.
-func (mock *BackendMock) UploadPartCopy(uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (mock *BackendMock) UploadPartCopy(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 	if mock.UploadPartCopyFunc == nil {
 		panic("BackendMock.UploadPartCopyFunc: method is nil but Backend.UploadPartCopy was just called")
 	}
 	callInfo := struct {
+		ContextMoqParam     context.Context
 		UploadPartCopyInput *s3.UploadPartCopyInput
 	}{
+		ContextMoqParam:     contextMoqParam,
 		UploadPartCopyInput: uploadPartCopyInput,
 	}
 	mock.lockUploadPartCopy.Lock()
 	mock.calls.UploadPartCopy = append(mock.calls.UploadPartCopy, callInfo)
 	mock.lockUploadPartCopy.Unlock()
-	return mock.UploadPartCopyFunc(uploadPartCopyInput)
+	return mock.UploadPartCopyFunc(contextMoqParam, uploadPartCopyInput)
 }
 
 // UploadPartCopyCalls gets all the calls that were made to UploadPartCopy.
@@ -1370,9 +1537,11 @@ func (mock *BackendMock) UploadPartCopy(uploadPartCopyInput *s3.UploadPartCopyIn
 //
 //	len(mockedBackend.UploadPartCopyCalls())
 func (mock *BackendMock) UploadPartCopyCalls() []struct {
+	ContextMoqParam     context.Context
 	UploadPartCopyInput *s3.UploadPartCopyInput
 } {
 	var calls []struct {
+		ContextMoqParam     context.Context
 		UploadPartCopyInput *s3.UploadPartCopyInput
 	}
 	mock.lockUploadPartCopy.RLock()
