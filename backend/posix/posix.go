@@ -295,7 +295,9 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 		if err != nil {
 			etag = ""
 		}
-		parts[i].ETag = &etag
+		if etag != *parts[i].ETag {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
 	}
 
 	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, totalsize)
@@ -752,7 +754,6 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
-	defer f.cleanup()
 
 	hash := md5.New()
 	tr := io.TeeReader(r, hash)
@@ -766,9 +767,11 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 		return "", fmt.Errorf("link object in namespace: %w", err)
 	}
 
+	f.cleanup()
+
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum)
-	xattr.Set(partPath, etagkey, []byte(etag))
+	xattr.Set(filepath.Join(bucket, partPath), etagkey, []byte(etag))
 
 	return etag, nil
 }

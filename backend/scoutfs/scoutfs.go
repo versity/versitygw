@@ -166,7 +166,9 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 		if err != nil {
 			etag = ""
 		}
-		parts[i].ETag = &etag
+		if etag != *parts[i].ETag {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
 	}
 
 	// use totalsize=0 because we wont be writing to the file, only moving
