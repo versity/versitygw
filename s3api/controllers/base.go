@@ -834,7 +834,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		}{}
 
 		if err := xml.Unmarshal(ctx.Body(), &data); err != nil {
-			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "CompleteMultipartUpload", BucketOwner: parsedAcl.Owner})
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrMalformedXML), &MetaOpts{
+				Logger:      c.logger,
+				Action:      "CompleteMultipartUpload",
+				BucketOwner: parsedAcl.Owner,
+			})
 		}
 
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE", isRoot); err != nil {

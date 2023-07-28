@@ -1343,7 +1343,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
 			name: "Complete-multipart-upload-success",
