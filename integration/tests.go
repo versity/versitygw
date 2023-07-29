@@ -777,6 +777,30 @@ func TestIncorrectMultiParts(s *S3Conf) {
 		return
 	}
 
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   &bucket,
+		Key:      &obj,
+		UploadId: mpu.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{
+			Parts: []types.CompletedPart{
+				{
+					ETag:       mp2.ETag,
+					PartNumber: 96,
+				},
+				{
+					ETag:       mp1.ETag,
+					PartNumber: 99,
+				},
+			},
+		},
+	})
+	cancel()
+	if err == nil {
+		failF("%v: complete multipart expected err", testname)
+		return
+	}
+
 	badEtag := "bogusEtagValue"
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -792,7 +816,7 @@ func TestIncorrectMultiParts(s *S3Conf) {
 				},
 				{
 					ETag:       &badEtag,
-					PartNumber: 99,
+					PartNumber: 42,
 				},
 			},
 		},
