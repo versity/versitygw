@@ -803,6 +803,19 @@ func TestIncorrectMultiParts(s *S3Conf) {
 
 	badEtag := "bogusEtagValue"
 
+	// Empty multipart upload
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:   &bucket,
+		Key:      &obj,
+		UploadId: mpu.UploadId,
+	})
+	cancel()
+	if err == nil {
+		failF("%v: complete multipart expected err", testname)
+		return
+	}
+
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 		Bucket:   &bucket,
