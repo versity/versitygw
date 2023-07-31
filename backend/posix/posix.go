@@ -1024,7 +1024,7 @@ func (p *Posix) removeParents(bucket, object string) error {
 	return nil
 }
 
-func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
+func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
 	// delete object already checks bucket
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
@@ -1053,7 +1053,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 		}
 	}
 
-	return &s3.DeleteObjectsOutput{
+	return s3response.DeleteObjectsResult{
 		Deleted: delResult,
 		Errors:  errs,
 	}, nil

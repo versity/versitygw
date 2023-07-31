@@ -113,3 +113,8 @@ type Tagging struct {
 type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
 }
+
+type DeleteObjectsResult struct {
+	Deleted []types.DeletedObject
+	Errors  []types.Error
+}
