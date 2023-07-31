@@ -43,7 +43,7 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error {
 //				panic("mock out the DeleteObject method")
 //			},
-//			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error {
+//			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
 //				panic("mock out the DeleteObjects method")
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
@@ -141,7 +141,7 @@ type BackendMock struct {
 	DeleteObjectFunc func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error
 
 	// DeleteObjectsFunc mocks the DeleteObjects method.
-	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error
+	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error)
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
@@ -713,7 +713,7 @@ func (mock *BackendMock) DeleteObjectCalls() []struct {
 }
 
 // DeleteObjects calls DeleteObjectsFunc.
-func (mock *BackendMock) DeleteObjects(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) error {
+func (mock *BackendMock) DeleteObjects(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
 	if mock.DeleteObjectsFunc == nil {
 		panic("BackendMock.DeleteObjectsFunc: method is nil but Backend.DeleteObjects was just called")
 	}

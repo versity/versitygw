@@ -16,6 +16,8 @@ package s3response
 
 import (
 	"encoding/xml"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // Part describes part metadata.
@@ -106,4 +108,8 @@ type TagSet struct {
 
 type Tagging struct {
 	TagSet TagSet `xml:"TagSet"`
+}
+
+type DeleteObjects struct {
+	Objects []types.ObjectIdentifier `xml:"Object"`
 }

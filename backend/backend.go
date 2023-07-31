@@ -53,7 +53,7 @@ type Backend interface {
 	ListObjects(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
 	ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 	DeleteObject(context.Context, *s3.DeleteObjectInput) error
-	DeleteObjects(context.Context, *s3.DeleteObjectsInput) error
+	DeleteObjects(context.Context, *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error)
 	PutObjectAcl(context.Context, *s3.PutObjectAclInput) error
 	RestoreObject(context.Context, *s3.RestoreObjectInput) error
 
@@ -126,8 +126,8 @@ func (BackendUnsupported) PutObject(context.Context, *s3.PutObjectInput) (string
 func (BackendUnsupported) DeleteObject(context.Context, *s3.DeleteObjectInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) DeleteObjects(context.Context, *s3.DeleteObjectsInput) error {
-	return s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) DeleteObjects(context.Context, *s3.DeleteObjectsInput) (*s3.DeleteObjectsOutput, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
