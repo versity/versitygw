@@ -946,7 +946,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	err = f.link()
 	if err != nil {
-		return "", fmt.Errorf("link object in namespace: %w", err)
+		return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
 	for k, v := range po.Metadata {
