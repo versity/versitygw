@@ -29,7 +29,7 @@ type Part struct {
 }
 
 // ListPartsResponse - s3 api list parts response.
-type ListPartsResponse struct {
+type ListPartsResult struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`
 
 	Bucket   string
@@ -52,7 +52,7 @@ type ListPartsResponse struct {
 }
 
 // ListMultipartUploadsResponse - s3 api list multipart uploads response.
-type ListMultipartUploadsResponse struct {
+type ListMultipartUploadsResult struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListMultipartUploadsResult" json:"-"`
 
 	Bucket             string

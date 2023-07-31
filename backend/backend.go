@@ -39,8 +39,8 @@ type Backend interface {
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
-	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
-	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResponse, error)
+	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
+	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error)
 	UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error)
 	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
 
@@ -110,11 +110,11 @@ func (BackendUnsupported) CompleteMultipartUpload(context.Context, *s3.CompleteM
 func (BackendUnsupported) AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
-	return s3response.ListMultipartUploadsResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	return s3response.ListMultipartUploadsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
-	return s3response.ListPartsResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error) {
 	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
