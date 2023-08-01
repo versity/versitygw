@@ -97,6 +97,9 @@ var _ backend.Backend = &BackendMock{}
 //			RestoreObjectFunc: func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error {
 //				panic("mock out the RestoreObject method")
 //			},
+//			SelectObjectContentFunc: func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+//				panic("mock out the SelectObjectContent method")
+//			},
 //			SetTagsFunc: func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
 //				panic("mock out the SetTags method")
 //			},
@@ -193,6 +196,9 @@ type BackendMock struct {
 
 	// RestoreObjectFunc mocks the RestoreObject method.
 	RestoreObjectFunc func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error
+
+	// SelectObjectContentFunc mocks the SelectObjectContent method.
+	SelectObjectContentFunc func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
 
 	// SetTagsFunc mocks the SetTags method.
 	SetTagsFunc func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error
@@ -396,6 +402,13 @@ type BackendMock struct {
 			// RestoreObjectInput is the restoreObjectInput argument value.
 			RestoreObjectInput *s3.RestoreObjectInput
 		}
+		// SelectObjectContent holds details about calls to the SelectObjectContent method.
+		SelectObjectContent []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// SelectObjectContentInput is the selectObjectContentInput argument value.
+			SelectObjectContentInput *s3.SelectObjectContentInput
+		}
 		// SetTags holds details about calls to the SetTags method.
 		SetTags []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -453,6 +466,7 @@ type BackendMock struct {
 	lockPutObjectAcl            sync.RWMutex
 	lockRemoveTags              sync.RWMutex
 	lockRestoreObject           sync.RWMutex
+	lockSelectObjectContent     sync.RWMutex
 	lockSetTags                 sync.RWMutex
 	lockShutdown                sync.RWMutex
 	lockString                  sync.RWMutex
@@ -1377,6 +1391,42 @@ func (mock *BackendMock) RestoreObjectCalls() []struct {
 	mock.lockRestoreObject.RLock()
 	calls = mock.calls.RestoreObject
 	mock.lockRestoreObject.RUnlock()
+	return calls
+}
+
+// SelectObjectContent calls SelectObjectContentFunc.
+func (mock *BackendMock) SelectObjectContent(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+	if mock.SelectObjectContentFunc == nil {
+		panic("BackendMock.SelectObjectContentFunc: method is nil but Backend.SelectObjectContent was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam          context.Context
+		SelectObjectContentInput *s3.SelectObjectContentInput
+	}{
+		ContextMoqParam:          contextMoqParam,
+		SelectObjectContentInput: selectObjectContentInput,
+	}
+	mock.lockSelectObjectContent.Lock()
+	mock.calls.SelectObjectContent = append(mock.calls.SelectObjectContent, callInfo)
+	mock.lockSelectObjectContent.Unlock()
+	return mock.SelectObjectContentFunc(contextMoqParam, selectObjectContentInput)
+}
+
+// SelectObjectContentCalls gets all the calls that were made to SelectObjectContent.
+// Check the length with:
+//
+//	len(mockedBackend.SelectObjectContentCalls())
+func (mock *BackendMock) SelectObjectContentCalls() []struct {
+	ContextMoqParam          context.Context
+	SelectObjectContentInput *s3.SelectObjectContentInput
+} {
+	var calls []struct {
+		ContextMoqParam          context.Context
+		SelectObjectContentInput *s3.SelectObjectContentInput
+	}
+	mock.lockSelectObjectContent.RLock()
+	calls = mock.calls.SelectObjectContent
+	mock.lockSelectObjectContent.RUnlock()
 	return calls
 }
 

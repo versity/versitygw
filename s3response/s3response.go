@@ -118,3 +118,19 @@ type DeleteObjectsResult struct {
 	Deleted []types.DeletedObject
 	Errors  []types.Error
 }
+type SelectObjectContentPayload struct {
+	Expression          *string
+	ExpressionType      types.ExpressionType
+	RequestProgress     *types.RequestProgress
+	InputSerialization  *types.InputSerialization
+	OutputSerialization *types.OutputSerialization
+	ScanRange           *types.ScanRange
+}
+
+type SelectObjectContentResult struct {
+	Records  *types.RecordsEvent
+	Stats    *types.StatsEvent
+	Progress *types.ProgressEvent
+	Cont     *string
+	End      *string
+}

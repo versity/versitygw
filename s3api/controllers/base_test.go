@@ -1299,8 +1299,18 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			CreateMultipartUploadFunc: func(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 				return &s3.CreateMultipartUploadOutput{}, nil
 			},
+			SelectObjectContentFunc: func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+				return s3response.SelectObjectContentResult{}, nil
+			},
 		},
 	}
+
+	bdy := `
+		<SelectObjectContentRequest>
+			<Expression>string</Expression>
+			<ExpressionType>string</ExpressionType>
+		</SelectObjectContentRequest>
+	`
 
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
@@ -1335,6 +1345,24 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 500,
+		},
+		{
+			name: "Select-object-content-invalid-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?select&select-type=2", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Select-object-content-invalid-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?select&select-type=2", strings.NewReader(bdy)),
+			},
+			wantErr:    false,
+			statusCode: 200,
 		},
 		{
 			name: "Complete-multipart-upload-error",
