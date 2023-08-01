@@ -830,6 +830,34 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		})
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("select") && ctx.Query("select-type") == "2" {
+		var payload s3response.SelectObjectContentPayload
+
+		if err := xml.Unmarshal(ctx.Body(), &payload); err != nil {
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrMalformedXML), &MetaOpts{
+				Logger:      c.logger,
+				Action:      "SelectObjectContent",
+				BucketOwner: parsedAcl.Owner,
+			})
+		}
+
+		if err := auth.VerifyACL(parsedAcl, bucket, access, "WRITE", isRoot); err != nil {
+			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "SelectObjectContent", BucketOwner: parsedAcl.Owner})
+		}
+
+		res, err := c.be.SelectObjectContent(ctx.Context(), &s3.SelectObjectContentInput{
+			Bucket:              &bucket,
+			Key:                 &key,
+			Expression:          payload.Expression,
+			ExpressionType:      payload.ExpressionType,
+			InputSerialization:  payload.InputSerialization,
+			OutputSerialization: payload.OutputSerialization,
+			RequestProgress:     payload.RequestProgress,
+			ScanRange:           payload.ScanRange,
+		})
+		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "SelectObjectContent", BucketOwner: parsedAcl.Owner})
+	}
+
 	if uploadId != "" {
 		data := struct {
 			Parts []types.CompletedPart `xml:"Part"`

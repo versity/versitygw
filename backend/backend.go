@@ -43,6 +43,7 @@ type Backend interface {
 	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error)
 	UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error)
 	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
+	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
 
 	PutObject(context.Context, *s3.PutObjectInput) (string, error)
 	HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
@@ -99,6 +100,9 @@ func (BackendUnsupported) CreateBucket(context.Context, *s3.CreateBucketInput) e
 }
 func (BackendUnsupported) DeleteBucket(context.Context, *s3.DeleteBucketInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
