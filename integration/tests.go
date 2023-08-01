@@ -223,8 +223,9 @@ func TestPutGetObject(s *S3Conf) {
 		}
 	}
 
-	if objCount != 2 {
+	if objCount != 0 {
 		failF("%v: expected object count %v instead got %v", testname, 2, objCount)
+		return
 	}
 
 	err = teardown(s, bucket)

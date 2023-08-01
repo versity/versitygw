@@ -1024,19 +1024,39 @@ func (p *Posix) removeParents(bucket, object string) error {
 	return nil
 }
 
-func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) error {
+func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
 	// delete object already checks bucket
+	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
+		//TODO: Make the delete operation concurrent
 		err := p.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: input.Bucket,
 			Key:    obj.Key,
 		})
-		if err != nil {
-			return err
+		if err == nil {
+			delResult = append(delResult, types.DeletedObject{Key: obj.Key})
+		} else {
+			serr, ok := err.(s3err.APIError)
+			if ok {
+				errs = append(errs, types.Error{
+					Key:     obj.Key,
+					Code:    &serr.Code,
+					Message: &serr.Description,
+				})
+			} else {
+				errs = append(errs, types.Error{
+					Key:     obj.Key,
+					Code:    getStringPtr("InternalError"),
+					Message: getStringPtr(err.Error()),
+				})
+			}
 		}
 	}
 
-	return nil
+	return s3response.DeleteObjectsResult{
+		Deleted: delResult,
+		Errors:  errs,
+	}, nil
 }
 
 func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
@@ -1670,4 +1690,8 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
+}
+
+func getStringPtr(str string) *string {
+	return &str
 }

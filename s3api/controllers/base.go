@@ -632,7 +632,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	bucket, access, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("access").(string), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
-	var dObj types.Delete
+	var dObj s3response.DeleteObjects
 
 	if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
@@ -642,11 +642,13 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
 	}
 
-	err := c.be.DeleteObjects(ctx.Context(), &s3.DeleteObjectsInput{
+	res, err := c.be.DeleteObjects(ctx.Context(), &s3.DeleteObjectsInput{
 		Bucket: &bucket,
-		Delete: &dObj,
+		Delete: &types.Delete{
+			Objects: dObj.Objects,
+		},
 	})
-	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
+	return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "DeleteObjects", BucketOwner: parsedAcl.Owner})
 }
 
 func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {

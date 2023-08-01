@@ -920,8 +920,8 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			DeleteObjectsFunc: func(context.Context, *s3.DeleteObjectsInput) error {
-				return nil
+			DeleteObjectsFunc: func(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+				return s3response.DeleteObjectsResult{}, nil
 			},
 		},
 	}
