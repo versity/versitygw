@@ -186,8 +186,8 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListPartsFunc: func(context.Context, *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
-				return s3response.ListPartsResponse{}, nil
+			ListPartsFunc: func(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+				return s3response.ListPartsResult{}, nil
 			},
 			GetObjectAclFunc: func(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 				return &s3.GetObjectAclOutput{}, nil
@@ -339,8 +339,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListMultipartUploadsFunc: func(_ context.Context, output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
-				return s3response.ListMultipartUploadsResponse{}, nil
+			ListMultipartUploadsFunc: func(_ context.Context, output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+				return s3response.ListMultipartUploadsResult{}, nil
 			},
 			ListObjectsV2Func: func(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 				return &s3.ListObjectsV2Output{}, nil

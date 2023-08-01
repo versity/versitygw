@@ -70,7 +70,7 @@ var _ backend.Backend = &BackendMock{}
 //			ListBucketsFunc: func(contextMoqParam context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
 //				panic("mock out the ListBuckets method")
 //			},
-//			ListMultipartUploadsFunc: func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+//			ListMultipartUploadsFunc: func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 //				panic("mock out the ListMultipartUploads method")
 //			},
 //			ListObjectsFunc: func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
@@ -79,7 +79,7 @@ var _ backend.Backend = &BackendMock{}
 //			ListObjectsV2Func: func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 //				panic("mock out the ListObjectsV2 method")
 //			},
-//			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+//			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 //				panic("mock out the ListParts method")
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
@@ -168,7 +168,7 @@ type BackendMock struct {
 	ListBucketsFunc func(contextMoqParam context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error)
 
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
-	ListMultipartUploadsFunc func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error)
+	ListMultipartUploadsFunc func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
 	ListObjectsFunc func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
@@ -177,7 +177,7 @@ type BackendMock struct {
 	ListObjectsV2Func func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
 
 	// ListPartsFunc mocks the ListParts method.
-	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error)
+	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error)
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
@@ -1049,7 +1049,7 @@ func (mock *BackendMock) ListBucketsCalls() []struct {
 }
 
 // ListMultipartUploads calls ListMultipartUploadsFunc.
-func (mock *BackendMock) ListMultipartUploads(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+func (mock *BackendMock) ListMultipartUploads(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	if mock.ListMultipartUploadsFunc == nil {
 		panic("BackendMock.ListMultipartUploadsFunc: method is nil but Backend.ListMultipartUploads was just called")
 	}
@@ -1157,7 +1157,7 @@ func (mock *BackendMock) ListObjectsV2Calls() []struct {
 }
 
 // ListParts calls ListPartsFunc.
-func (mock *BackendMock) ListParts(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+func (mock *BackendMock) ListParts(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	if mock.ListPartsFunc == nil {
 		panic("BackendMock.ListPartsFunc: method is nil but Backend.ListParts was just called")
 	}

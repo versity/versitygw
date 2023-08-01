@@ -508,7 +508,7 @@ func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUp
 	return nil
 }
 
-func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResponse, error) {
+func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	bucket := *mpu.Bucket
 	var delimiter string
 	if mpu.Delimiter != nil {
@@ -519,7 +519,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		prefix = *mpu.Prefix
 	}
 
-	var lmu s3response.ListMultipartUploadsResponse
+	var lmu s3response.ListMultipartUploadsResult
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -595,7 +595,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 				Initiated: fi.ModTime().Format(backend.RFC3339TimeFormat),
 			})
 			if len(uploads) == int(mpu.MaxUploads) {
-				return s3response.ListMultipartUploadsResponse{
+				return s3response.ListMultipartUploadsResult{
 					Bucket:             bucket,
 					Delimiter:          delimiter,
 					IsTruncated:        i != len(objs) || j != len(upids),
@@ -611,7 +611,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		}
 	}
 
-	return s3response.ListMultipartUploadsResponse{
+	return s3response.ListMultipartUploadsResult{
 		Bucket:         bucket,
 		Delimiter:      delimiter,
 		KeyMarker:      keyMarker,
@@ -622,14 +622,14 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	}, nil
 }
 
-func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResponse, error) {
+func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
 	stringMarker := *input.PartNumberMarker
 	maxParts := int(input.MaxParts)
 
-	var lpr s3response.ListPartsResponse
+	var lpr s3response.ListPartsResult
 
 	var partNumberMarker int
 	if stringMarker != "" {
@@ -708,7 +708,7 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 	upiddir := filepath.Join(objdir, uploadID)
 	loadUserMetaData(upiddir, userMetaData)
 
-	return s3response.ListPartsResponse{
+	return s3response.ListPartsResult{
 		Bucket:               bucket,
 		IsTruncated:          oldLen != newLen,
 		Key:                  object,
