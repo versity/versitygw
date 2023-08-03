@@ -221,3 +221,52 @@ func TestIsValidBucketName(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMaxKeys(t *testing.T) {
+	type args struct {
+		str string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    int32
+		wantErr bool
+	}{
+		{
+			name: "Parse-max-keys-empty-string",
+			args: args{
+				str: "",
+			},
+			want:    -1,
+			wantErr: false,
+		},
+		{
+			name: "Parse-max-keys-invalid-number-string",
+			args: args{
+				str: "bla",
+			},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "Parse-max-keys-invalid-negative-number",
+			args: args{
+				str: "-5",
+			},
+			want:    -1,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseMaxKeys(tt.args.str)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseMaxKeys() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ParseMaxKeys() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
