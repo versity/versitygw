@@ -47,13 +47,20 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		pastMarker = true
 	}
 
-	var pastMax bool
+	pastMax := max == 0
 	var newMarker string
 	var truncated bool
 
 	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		// Ignore the root directory
+		if path == "." {
+			return nil
+		}
+		if contains(d.Name(), skipdirs) {
+			return fs.SkipDir
 		}
 
 		if pastMax {
@@ -63,15 +70,6 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		}
 
 		if d.IsDir() {
-			// Ignore the root directory
-			if path == "." {
-				return nil
-			}
-
-			if contains(d.Name(), skipdirs) {
-				return fs.SkipDir
-			}
-
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
 			// match this prefix. Make sure to append the / at the end of
