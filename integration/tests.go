@@ -90,12 +90,17 @@ func TestPutGetObject(s *S3Conf) {
 	rand.Read(data)
 	csum := sha256.Sum256(data)
 	r := bytes.NewReader(data)
+	meta := map[string]string{
+		"key1": "val1",
+		"key2": "val2",
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &bucket,
-		Key:    &obj,
-		Body:   r,
+		Bucket:   &bucket,
+		Key:      &obj,
+		Body:     r,
+		Metadata: meta,
 	})
 	cancel()
 	if err != nil {
@@ -123,6 +128,11 @@ func TestPutGetObject(s *S3Conf) {
 	defer cancel()
 	if err != nil {
 		failF("%v: %v", testname, err)
+		return
+	}
+	fmt.Println(out.Metadata)
+	if !areMapsSame(out.Metadata, meta) {
+		failF("%v: incorrect object metadata", testname)
 		return
 	}
 	defer out.Body.Close()
