@@ -20,10 +20,12 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/s3err"
 )
 
 var (
@@ -76,6 +78,17 @@ func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 	for key, val := range meta {
 		ctx.Set(fmt.Sprintf("X-Amz-Meta-%s", key), val)
 	}
+}
+
+func ParseMaxKeys(str string) (int32, error) {
+	if str == "" {
+		return -1, nil
+	}
+	num, err := strconv.ParseUint(str, 10, 16)
+	if err != nil {
+		return -1, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+	}
+	return int32(num), nil
 }
 
 type CustomHeader struct {

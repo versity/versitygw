@@ -340,6 +340,14 @@ func TestPutDirObject(s *S3Conf) {
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket, MaxKeys: -4})
+	cancel()
+	if err == nil {
+		failF("%v: expected invalid argument error", testname)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
 	cancel()
 	if err != nil {

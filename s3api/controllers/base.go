@@ -221,7 +221,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	cToken := ctx.Query("continuation-token")
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
-	maxkeys := ctx.QueryInt("max-keys")
+	maxkeysStr := ctx.Query("max-keys")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
@@ -252,12 +252,20 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListObjectsV2", BucketOwner: parsedAcl.Owner})
 		}
+		maxkeys, err := utils.ParseMaxKeys(maxkeysStr)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err, &MetaOpts{
+				Logger:      c.logger,
+				Action:      "ListObjectsV2",
+				BucketOwner: parsedAcl.Owner,
+			})
+		}
 		res, err := c.be.ListObjectsV2(ctx.Context(), &s3.ListObjectsV2Input{
 			Bucket:            &bucket,
 			Prefix:            &prefix,
 			ContinuationToken: &cToken,
 			Delimiter:         &delimiter,
-			MaxKeys:           int32(maxkeys),
+			MaxKeys:           maxkeys,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListObjectsV2", BucketOwner: parsedAcl.Owner})
 	}
@@ -266,12 +274,21 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListObjects", BucketOwner: parsedAcl.Owner})
 	}
 
+	maxkeys, err := utils.ParseMaxKeys(maxkeysStr)
+	if err != nil {
+		return SendXMLResponse(ctx, nil, err, &MetaOpts{
+			Logger:      c.logger,
+			Action:      "ListObjects",
+			BucketOwner: parsedAcl.Owner,
+		})
+	}
+
 	res, err := c.be.ListObjects(ctx.Context(), &s3.ListObjectsInput{
 		Bucket:    &bucket,
 		Prefix:    &prefix,
 		Marker:    &marker,
 		Delimiter: &delimiter,
-		MaxKeys:   int32(maxkeys),
+		MaxKeys:   maxkeys,
 	})
 	return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListObjects", BucketOwner: parsedAcl.Owner})
 }
