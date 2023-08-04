@@ -1095,7 +1095,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	}
 
 	if startOffset+length > fi.Size()+1 {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
 
 	if acceptRange != "" {

@@ -1087,6 +1087,19 @@ func TestRangeGet(s *S3Conf) {
 		return
 	}
 
+	lgRange := "bytes=20000000-30000000000"
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &name,
+		Range:  &lgRange,
+	})
+	cancel()
+	if err == nil {
+		failF("%v: expected range error", testname)
+		return
+	}
+
 	// Invalid range
 	invRange := "bytes=100-asd"
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
