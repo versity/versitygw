@@ -161,3 +161,15 @@ func getString(str *string) string {
 	}
 	return *str
 }
+
+func areMapsSame(mp1, mp2 map[string]string) bool {
+	if len(mp1) != len(mp2) {
+		return false
+	}
+	for key, val := range mp1 {
+		if mp2[key] != val {
+			return false
+		}
+	}
+	return true
+}

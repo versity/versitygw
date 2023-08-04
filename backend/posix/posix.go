@@ -66,6 +66,7 @@ const (
 	metaTmpMultipartDir = metaTmpDir + "/multipart"
 	onameAttr           = "user.objname"
 	tagHdr              = "X-Amz-Tagging"
+	metaHdr             = "X-Amz-Meta"
 	contentTypeHdr      = "content-type"
 	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
@@ -387,19 +388,21 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 	if err != nil || len(ents) == 0 {
 		return
 	}
+	fmt.Println(ents)
 	for _, e := range ents {
 		if !isValidMeta(e) {
 			continue
 		}
 		b, err := xattr.Get(path, e)
 		if err == syscall.ENODATA {
-			m[strings.TrimPrefix(e, "user.")] = ""
+			m[strings.TrimPrefix(e, fmt.Sprintf("user.%v.", metaHdr))] = ""
 			continue
 		}
 		if err != nil {
 			continue
 		}
-		m[strings.TrimPrefix(e, "user.")] = string(b)
+		fmt.Println(b)
+		m[strings.TrimPrefix(e, fmt.Sprintf("user.%v.", metaHdr))] = string(b)
 	}
 
 	b, err := xattr.Get(path, "user."+contentTypeHdr)
@@ -424,7 +427,7 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 }
 
 func isValidMeta(val string) bool {
-	if strings.HasPrefix(val, "user.X-Amz-Meta") {
+	if strings.HasPrefix(val, "user."+metaHdr) {
 		return true
 	}
 	if strings.EqualFold(val, "user.Expires") {
@@ -913,7 +916,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		}
 
 		for k, v := range po.Metadata {
-			xattr.Set(name, "user."+k, []byte(v))
+			xattr.Set(name, fmt.Sprintf("user.%v.%v", metaHdr, k), []byte(v))
 		}
 
 		// set etag attribute to signify this dir was specifically put
@@ -950,7 +953,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 
 	for k, v := range po.Metadata {
-		xattr.Set(name, "user."+k, []byte(v))
+		xattr.Set(name, fmt.Sprintf("user.%v.%v", metaHdr, k), []byte(v))
 	}
 
 	if tagsStr != "" {
@@ -1117,6 +1120,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	userMetaData := make(map[string]string)
 
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
+	fmt.Println(userMetaData)
 
 	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
