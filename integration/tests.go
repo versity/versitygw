@@ -74,6 +74,7 @@ func TestPutGetObject(s *S3Conf) {
 	dstBucket := "testdstbucket"
 	obj := "myobject"
 	obj2 := "myobject2"
+	obj3 := "myobject%%3"
 	copySource := bucket + "/" + obj
 
 	s3client := s3.NewFromConfig(s.Config())
@@ -107,12 +108,33 @@ func TestPutGetObject(s *S3Conf) {
 		failF("%v: %v", testname, err)
 		return
 	}
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &obj3,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: &bucket,
 		Key:    &obj2,
 		Body:   r,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testname, err)
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &obj3,
 	})
 	cancel()
 	if err != nil {
@@ -130,7 +152,6 @@ func TestPutGetObject(s *S3Conf) {
 		failF("%v: %v", testname, err)
 		return
 	}
-	fmt.Println(out.Metadata)
 	if !areMapsSame(out.Metadata, meta) {
 		failF("%v: incorrect object metadata", testname)
 		return
@@ -207,7 +228,7 @@ func TestPutGetObject(s *S3Conf) {
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-	_, err = s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{Bucket: &bucket, Delete: &types.Delete{Objects: []types.ObjectIdentifier{{Key: &obj}, {Key: &obj2}}}})
+	_, err = s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{Bucket: &bucket, Delete: &types.Delete{Objects: []types.ObjectIdentifier{{Key: &obj}, {Key: &obj2}, {Key: &obj3}}}})
 	cancel()
 	if err != nil {
 		failF("%v: %v", testname, err)
@@ -234,7 +255,7 @@ func TestPutGetObject(s *S3Conf) {
 	}
 
 	if objCount != 0 {
-		failF("%v: expected object count %v instead got %v", testname, 2, objCount)
+		failF("%v: expected object count %v instead got %v", testname, 0, objCount)
 		return
 	}
 
