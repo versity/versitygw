@@ -62,7 +62,7 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 	lf := LogFields{}
 
 	access := "-"
-	reqURI := ctx.Request().URI().String()
+	reqURI := ctx.OriginalURL()
 	path := strings.Split(ctx.Path(), "/")
 	bucket, object := path[1], strings.Join(path[2:], "/")
 	errorCode := ""

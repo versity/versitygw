@@ -133,6 +133,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			AccessKeyID:     creds[0],
 			SecretAccessKey: account.Secret,
 		}, req, hashPayloadHeader, creds[3], region, tdate, func(options *v4.SignerOptions) {
+			options.DisableURIPathEscaping = true
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)

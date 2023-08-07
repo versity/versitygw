@@ -107,6 +107,7 @@ const (
 	ErrPreconditionFailed
 	ErrInvalidObjectState
 	ErrInvalidRange
+	ErrInvalidURI
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -380,6 +381,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidRange",
 		Description:    "The requested range is not valid for the request. Try another range.",
 		HTTPStatusCode: http.StatusRequestedRangeNotSatisfiable,
+	},
+	ErrInvalidURI: {
+		Code:           "InvalidURI",
+		Description:    "The specified URI couldn't be parsed.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrExistingObjectIsDirectory: {
 		Code:           "ExistingObjectIsDirectory",
