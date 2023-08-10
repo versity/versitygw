@@ -1,14 +1,29 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+	"github.com/versity/versitygw/s3err"
 )
+
+var (
+	bcktCount = 0
+)
+
+func getBucketName() string {
+	bcktCount++
+	return fmt.Sprintf("test-bucket-%v", bcktCount)
+}
 
 func setup(s *S3Conf, bucket string) error {
 	s3client := s3.NewFromConfig(s.Config())
@@ -67,6 +82,78 @@ func teardown(s *S3Conf, bucket string) error {
 	})
 	cancel()
 	return err
+}
+
+func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error) {
+	runF(testName)
+	bucketName := getBucketName()
+	err := setup(s, bucketName)
+	if err != nil {
+		failF("%v: failed to create a bucket: %v", testName, err.Error())
+		return
+	}
+	client := s3.NewFromConfig(s.Config())
+	handlerErr := handler(client, bucketName)
+	if handlerErr != nil {
+		failF("%v: %v", testName, handlerErr.Error())
+	}
+
+	err = teardown(s, bucketName)
+	if err != nil {
+		if handlerErr == nil {
+			failF("%v: failed to delete the bucket: %v", testName, err.Error())
+		} else {
+			fmt.Printf(colorRed+"%v: failed to delete the bucket: %v", testName, err.Error())
+		}
+	}
+	if handlerErr == nil {
+		passF(testName)
+	}
+}
+
+func putObjects(client *s3.Client, objs []string, bucket string) error {
+	for _, key := range objs {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := client.PutObject(ctx, &s3.PutObjectInput{
+			Key:    &key,
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkApiErr(err error, apiErr s3err.APIError) error {
+	if err == nil {
+		return fmt.Errorf("expected %v, instead got nil", apiErr.Code)
+	}
+	var ae smithy.APIError
+	if errors.As(err, &ae) {
+		if ae.ErrorCode() == apiErr.Code && ae.ErrorMessage() == apiErr.Description {
+			return nil
+		}
+
+		return fmt.Errorf("expected %v, instead got %v", apiErr.Code, ae.ErrorCode())
+	} else {
+		return fmt.Errorf("expected aws api error, instead got: %v", err.Error())
+	}
+}
+
+func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
+	data = make([]byte, lgth)
+	rand.Read(data)
+	csum = sha256.Sum256(data)
+	r := bytes.NewReader(data)
+	input.Body = r
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.PutObject(ctx, input)
+	cancel()
+
+	return
 }
 
 func isEqual(a, b []byte) bool {
@@ -160,6 +247,10 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
+}
+
+func getPtr(str string) *string {
+	return &str
 }
 
 func areMapsSame(mp1, mp2 map[string]string) bool {
