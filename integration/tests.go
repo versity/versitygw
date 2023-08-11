@@ -71,6 +71,38 @@ func CreateBucket_existing_bucket(s *S3Conf) {
 	passF(testName)
 }
 
+func HeadBucket_non_existing_bucket(s *S3Conf) {
+	testName := "HeadBucket_non_existing_bucket"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		bcktName := getBucketName()
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{
+			Bucket: &bcktName,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func HeadBucket_success(s *S3Conf) {
+	testName := "HeadBucket_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func CreateDeleteBucket_success(s *S3Conf) {
 	testName := "CreateBucket_success"
 	runF(testName)
@@ -180,6 +212,57 @@ func PutObject_success(s *S3Conf) {
 		if err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func HeadObject_non_existing_object(s *S3Conf) {
+	testName := "HeadObject_non_existing_object"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func HeadObject_success(s *S3Conf) {
+	testName := "HeadObject_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dataLen := "my-obj", int64(1234567)
+		meta := map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+		}
+
+		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{Bucket: &bucket, Key: &obj, Metadata: meta}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err != nil {
+			return err
+		}
+
+		if !areMapsSame(out.Metadata, meta) {
+			return fmt.Errorf("incorrect object metadata")
+		}
+		if out.ContentLength != dataLen {
+			return fmt.Errorf("expected data length %v, instead got %v", dataLen, out.ContentLength)
+		}
+
 		return nil
 	})
 }
@@ -386,6 +469,331 @@ func GetObject_by_range_success(s *S3Conf) {
 		if !isEqual(b, data[100:]) {
 			return fmt.Errorf("data mismatch of range")
 		}
+		return nil
+	})
+}
+
+func ListObjects_non_existing_bucket(s *S3Conf) {
+	testName := "ListObjects_non_existing_bucket"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		bckt := getBucketName()
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bckt,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NoSuchBucket"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func ListObjects_with_prefix(s *S3Conf) {
+	testName := "ListObjects_with_prefix"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		prefix := "obj"
+		objWithPrefix := []string{prefix + "/foo", prefix + "/bar", prefix + "/baz/bla"}
+		err := putObjects(s3client, append(objWithPrefix, []string{"xzy/csf", "hell"}...), bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+			Prefix: &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Prefix != prefix {
+			return fmt.Errorf("expected prefix %v, instead got %v", prefix, *out.Prefix)
+		}
+		if !compareObjects(objWithPrefix, out.Contents) {
+			return fmt.Errorf("unexpected output for list objects with prefix")
+		}
+
+		return nil
+	})
+}
+
+func ListObject_truncated(s *S3Conf) {
+	testName := "ListObject_truncated"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		maxKeys := int32(2)
+		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  &bucket,
+			MaxKeys: maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !out.IsTruncated {
+			return fmt.Errorf("expected output to be truncated")
+		}
+
+		if out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out.MaxKeys)
+		}
+
+		if !compareObjects([]string{"bar", "baz"}, out.Contents) {
+			return fmt.Errorf("unexpected output for list objects with max-keys")
+		}
+
+		//TODO: Add next marker checker after bug-fixing
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+			Marker: out.NextMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.IsTruncated {
+			return fmt.Errorf("expected output not to be truncated")
+		}
+
+		if !compareObjects([]string{"foo"}, out.Contents) {
+			return fmt.Errorf("unexpected output for list objects with max-keys")
+		}
+		return nil
+	})
+}
+
+func ListObjects_invalid_max_keys(s *S3Conf) {
+	testName := "ListObjects_invalid_max_keys"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  &bucket,
+			MaxKeys: -5,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func ListObjects_max_keys_0(s *S3Conf) {
+	testName := "ListObjects_max_keys_0"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objects := []string{"foo", "bar", "baz"}
+		err := putObjects(s3client, objects, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  &bucket,
+			MaxKeys: 0,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if !compareObjects(objects, out.Contents) {
+			return fmt.Errorf("unexpected output for list objects with max-keys 0")
+		}
+
+		return nil
+	})
+}
+
+//TODO: Add a test case for delimiter after buf-fixing, as delimiter doesn't work as intended
+
+func DeleteObject_non_existing_object(s *S3Conf) {
+	testName := "DeleteObject_non_existing_object"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func DeleteObject_success(s *S3Conf) {
+	testName := "DeleteObject_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func DeleteObjects_empty_input(s *S3Conf) {
+	testName := "DeleteObjects_empty_input"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objects := []string{"foo", "bar", "baz"}
+		err := putObjects(s3client, objects, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: []types.ObjectIdentifier{},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
+		}
+		if len(out.Errors) != 0 {
+			return fmt.Errorf("expected 0 errors, instead got %v", len(out.Errors))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects(objects, res.Contents) {
+			return fmt.Errorf("unexpected output for list objects with prefix")
+		}
+
+		return nil
+	})
+}
+
+//TODO: Uncomment the test after fixing the bug: #195
+// func DeleteObjects_non_existing_objects(s *S3Conf) {
+// 	testName := "DeleteObjects_empty_input"
+// 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+// 		delObjects := []types.ObjectIdentifier{{Key: getPtr("obj1")}, {Key: getPtr("obj2")}}
+//
+// 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+// 		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+// 			Bucket: &bucket,
+// 			Delete: &types.Delete{
+// 				Objects: delObjects,
+// 			},
+// 		})
+// 		cancel()
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		if len(out.Deleted) != 0 {
+// 			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
+// 		}
+// 		if len(out.Errors) != 2 {
+// 			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
+// 		}
+
+// 		for _, delErr := range out.Errors {
+// 			if *delErr.Code != "NoSuchKey" {
+// 				return fmt.Errorf("expected NoSuchKey error, instead got %v", *delErr.Code)
+// 			}
+// 		}
+
+// 		return nil
+// 	})
+// }
+
+func DeleteObjects_success(s *S3Conf) {
+	testName := "DeleteObjects_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objects, objToDel := []string{"obj1", "obj2", "obj3"}, []string{"foo", "bar", "baz"}
+		err := putObjects(s3client, append(objToDel, objects...), bucket)
+
+		delObjects := []types.ObjectIdentifier{}
+		for _, key := range objToDel {
+			k := key
+			delObjects = append(delObjects, types.ObjectIdentifier{Key: &k})
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: delObjects,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Deleted) != 3 {
+			return fmt.Errorf("expected deleted object count 3, instead got %v", len(out.Deleted))
+		}
+		if len(out.Errors) != 0 {
+			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
+		}
+
+		if !compareDelObjects(objToDel, out.Deleted) {
+			return fmt.Errorf("unexpected deleted output")
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects(objects, res.Contents) {
+			return fmt.Errorf("unexpected output for list objects with prefix")
+		}
+
 		return nil
 	})
 }
@@ -687,193 +1095,6 @@ func DeleteObjectTagging_success(s *S3Conf) {
 
 // 	if !isEqual(dr.Sum(), h.Sum(nil)) {
 // 		failF("%v: checksum got %x expected %x", testname, h.Sum(nil), dr.Sum())
-// 		return
-// 	}
-
-// 	err = teardown(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-// 	passF(testname)
-// }
-
-// func TestPutDirObject(s *S3Conf) {
-// 	testname := "test put directory object"
-// 	runF(testname)
-
-// 	bucket := "testbucket3"
-
-// 	err := setup(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	name := "myobjectdir/"
-// 	s3client := s3.NewFromConfig(s.Config())
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &name,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket, MaxKeys: -4})
-// 	cancel()
-// 	if err == nil {
-// 		failF("%v: expected invalid argument error", testname)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
-// 	cancel()
-// 	if err != nil {
-// 		failF("failed to list objects: %v", err)
-// 		return
-// 	}
-
-// 	if !contains(name, out.Contents) {
-// 		failF("directory object not found")
-// 		return
-// 	}
-
-// 	err = teardown(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-// 	passF(testname)
-// }
-
-// func TestListObject(s *S3Conf) {
-// 	testname := "list objects"
-// 	runF(testname)
-
-// 	bucket := "testbucket4"
-
-// 	err := setup(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	s3client := s3.NewFromConfig(s.Config())
-
-// 	dir1 := "myobjectdir/"
-// 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &dir1,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	obj1 := "myobjectdir/myobject"
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &obj1,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	obj2 := "myobjectdir1/myobject"
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &obj2,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	// put:
-// 	// "myobjectdir/"
-// 	// "myobjectdir/myobject"
-// 	// "myobjectdir1/myobject"
-// 	// should return:
-// 	// "myobjectdir/myobject"
-// 	// "myobjectdir1/myobject"
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
-// 	cancel()
-// 	if err != nil {
-// 		failF("failed to list objects: %v", err)
-// 		return
-// 	}
-
-// 	if !contains(obj1, out.Contents) {
-// 		failF("object %v not found", obj1)
-// 		return
-// 	}
-// 	if !contains(obj2, out.Contents) {
-// 		failF("object %v not found", obj2)
-// 		return
-// 	}
-// 	if out.KeyCount != 2 {
-// 		failF("%v: expected key count: %v, instead got: %v", testname, 2, out.KeyCount)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &obj1,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("failed to delete %v: %v", obj1, err)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &obj2,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("failed to delete %v: %v", obj2, err)
-// 		return
-// 	}
-
-// 	// put:
-// 	// "myobjectdir/"
-// 	// "myobjectdir/myobject"
-// 	// "myobjectdir1/myobject"
-// 	// delete:
-// 	// "myobjectdir/myobject"
-// 	// "myobjectdir1/myobject"
-// 	// should return:
-// 	// "myobjectdir/"
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	out, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{Bucket: &bucket})
-// 	cancel()
-// 	if err != nil {
-// 		failF("failed to list objects: %v", err)
-// 		return
-// 	}
-
-// 	if !contains(dir1, out.Contents) {
-// 		failF("dir %v not found", dir1)
 // 		return
 // 	}
 
@@ -1505,101 +1726,6 @@ func DeleteObjectTagging_success(s *S3Conf) {
 // 	if err == nil {
 // 		failF("%v: head object %v expected error", testname, obj)
 // 		return
-// 	}
-
-// 	err = teardown(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-// 	passF(testname)
-// }
-
-// func TestPutGetRemoveTags(s *S3Conf) {
-// 	testname := "test put/get/remove object tags"
-// 	runF(testname)
-
-// 	bucket := "testbucket13"
-
-// 	err := setup(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	obj := "myobject"
-// 	s3client := s3.NewFromConfig(s.Config())
-
-// 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-// 		Bucket: &bucket,
-// 		Key:    &obj,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	key1 := "hello1"
-// 	key2 := "hello2"
-// 	val1 := "world1"
-// 	val2 := "world2"
-
-// 	tagging := types.Tagging{TagSet: []types.Tag{{Key: &key1, Value: &val1}, {Key: &key2, Value: &val2}}}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
-// 		Bucket:  &bucket,
-// 		Key:     &obj,
-// 		Tagging: &tagging,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
-// 		Key:    &obj,
-// 		Bucket: &bucket,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	ok := areTagsSame(tagging.TagSet, out.TagSet)
-// 	if !ok {
-// 		failF("%v: expected %v instead got %v", testname, tagging.TagSet, out.TagSet)
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
-// 		Key:    &obj,
-// 		Bucket: &bucket,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	out, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
-// 		Key:    &obj,
-// 		Bucket: &bucket,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-
-// 	if len(out.TagSet) > 0 {
-// 		failF("%v: expected empty tag set instead got %v", testname, out.TagSet)
 // 	}
 
 // 	err = teardown(s, bucket)

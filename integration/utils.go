@@ -142,6 +142,17 @@ func checkApiErr(err error, apiErr s3err.APIError) error {
 	}
 }
 
+func checkSdkApiErr(err error, code string) error {
+	var ae smithy.APIError
+	if errors.As(err, &ae) {
+		if ae.ErrorCode() != code {
+			return fmt.Errorf("expected %v, instead got %v", ae.ErrorCode(), code)
+		}
+		return nil
+	}
+	return err
+}
+
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
 	data = make([]byte, lgth)
 	rand.Read(data)
@@ -172,7 +183,6 @@ func isEqual(a, b []byte) bool {
 
 func contains(name string, list []types.Object) bool {
 	for _, item := range list {
-		fmt.Println(*item.Key)
 		if strings.EqualFold(name, *item.Key) {
 			return true
 		}
@@ -262,5 +272,45 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func compareObjects(list1 []string, list2 []types.Object) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+
+	elementMap := make(map[string]bool)
+
+	for _, elem := range list1 {
+		elementMap[elem] = true
+	}
+
+	for _, elem := range list2 {
+		if _, found := elementMap[*elem.Key]; !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+func compareDelObjects(list1 []string, list2 []types.DeletedObject) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+
+	elementMap := make(map[string]bool)
+
+	for _, elem := range list1 {
+		elementMap[elem] = true
+	}
+
+	for _, elem := range list2 {
+		if _, found := elementMap[*elem.Key]; !found {
+			return false
+		}
+	}
+
 	return true
 }
