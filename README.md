@@ -8,9 +8,13 @@
 
  [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE)  
 
-**Current status:** Alpha, in development not yet suited for production use
+**Current status:** Beta: Most clients functional, work in progress for more test coverage. Issue reports welcome.
 
 See project [documentation](https://github.com/versity/versitygw/wiki) on the wiki.
+
+* Share filesystem directory via S3 protocol
+* Simple to deploy S3 server for development/testing
+* Protocol compatibility allows common access to files via posix or S3 
 
 Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and storage systems. The Versity Gateway bridges the gap between S3-reliant applications and other storage systems, enabling enhanced compatibility and integration while offering exceptional scalability.
 
