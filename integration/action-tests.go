@@ -77,6 +77,58 @@ func TestDeleteObjectTagging(s *S3Conf) {
 	DeleteObjectTagging_success(s)
 }
 
+func TestCreateMultipartUpload(s *S3Conf) {
+	CreateMultipartUpload_non_existing_bucket(s)
+	CreateMultipartUpload_success(s)
+}
+
+func TestUploadPart(s *S3Conf) {
+	UploadPart_non_existing_bucket(s)
+	UploadPart_invalid_part_number(s)
+	UploadPart_non_existing_key(s)
+	UploadPart_non_existing_mp_upload(s)
+	UploadPart_success(s)
+}
+
+func TestUploadPartCopy(s *S3Conf) {
+	UploadPartCopy_non_existing_bucket(s)
+	UploadPartCopy_incorrect_uploadId(s)
+	UploadPartCopy_incorrect_object_key(s)
+	UploadPartCopy_invalid_part_number(s)
+	UploadPartCopy_invalid_copy_source(s)
+	UploadPartCopy_non_existing_source_bucket(s)
+	UploadPartCopy_non_existing_source_object_key(s)
+	UploadPartCopy_success(s)
+	UploadPartCopy_by_range_invalid_range(s)
+	UploadPartCopy_by_range_success(s)
+}
+
+func TestListParts(s *S3Conf) {
+	ListParts_incorrect_uploadId(s)
+	ListParts_incorrect_object_key(s)
+	ListParts_success(s)
+}
+
+func TestListMultipartUploads(s *S3Conf) {
+	ListMultipartUploads_non_existing_bucket(s)
+	ListMultipartUploads_empty_result(s)
+	ListMultipartUploads_success(s)
+}
+
+func TestAbortMultipartUpload(s *S3Conf) {
+	AbortMultipartUpload_non_existing_bucket(s)
+	AbortMultipartUpload_incorrect_uploadId(s)
+	AbortMultipartUpload_incorrect_object_key(s)
+	AbortMultipartUpload_success(s)
+}
+
+func TestCompleteMultipartUpload(s *S3Conf) {
+	CompletedMultipartUpload_non_existing_bucket(s)
+	CompleteMultipartUpload_invalid_part_number(s)
+	CompleteMultipartUpload_invalid_ETag(s)
+	CompleteMultipartUpload_success(s)
+}
+
 func TestFullFlow(s *S3Conf) {
 	TestCreateBucket(s)
 	TestHeadBucket(s)
@@ -90,4 +142,11 @@ func TestFullFlow(s *S3Conf) {
 	TestCopyObject(s)
 	TestPutObjectTagging(s)
 	TestDeleteObjectTagging(s)
+	TestCreateMultipartUpload(s)
+	TestUploadPart(s)
+	TestUploadPartCopy(s)
+	TestListParts(s)
+	TestListMultipartUploads(s)
+	TestAbortMultipartUpload(s)
+	TestCompleteMultipartUpload(s)
 }

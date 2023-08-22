@@ -7,8 +7,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -181,31 +182,33 @@ func isEqual(a, b []byte) bool {
 	return true
 }
 
-func contains(name string, list []types.Object) bool {
-	for _, item := range list {
-		if strings.EqualFold(name, *item.Key) {
-			return true
+func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+	for i, item := range list1 {
+		if *item.Key != *list2[i].Key || *item.UploadId != *list2[i].UploadId {
+			return false
 		}
 	}
-	return false
+
+	return true
 }
 
-func containsUID(name, id string, list []types.MultipartUpload) bool {
-	for _, item := range list {
-		if strings.EqualFold(name, *item.Key) && strings.EqualFold(id, *item.UploadId) {
-			return true
-		}
+func compareParts(parts1, parts2 []types.Part) bool {
+	if len(parts1) != len(parts2) {
+		return false
 	}
-	return false
-}
 
-func containsPart(part int32, list []types.Part) bool {
-	for _, item := range list {
-		if item.PartNumber == part {
-			return true
+	for i, prt := range parts1 {
+		if prt.PartNumber != parts2[i].PartNumber {
+			return false
+		}
+		if *prt.ETag != *parts2[i].ETag {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func areTagsSame(tags1, tags2 []types.Tag) bool {
@@ -313,4 +316,54 @@ func compareDelObjects(list1 []string, list2 []types.DeletedObject) bool {
 	}
 
 	return true
+}
+
+func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId string) (parts []types.Part, err error) {
+	dr := NewDataReader(size, size)
+	datafile := "rand.data"
+	w, err := os.Create(datafile)
+	if err != nil {
+		return parts, err
+	}
+	defer w.Close()
+
+	_, err = io.Copy(w, dr)
+	if err != nil {
+		return parts, err
+	}
+
+	fileInfo, err := w.Stat()
+	if err != nil {
+		return parts, err
+	}
+
+	partSize := fileInfo.Size() / int64(partCount)
+	var offset int64
+
+	for partNumber := int64(1); partNumber <= int64(partCount); partNumber++ {
+		partStart := (partNumber - 1) * partSize
+		partEnd := partStart + partSize - 1
+		if partEnd > fileInfo.Size()-1 {
+			partEnd = fileInfo.Size() - 1
+		}
+		partBuffer := make([]byte, partEnd-partStart+1)
+		_, err := w.ReadAt(partBuffer, partStart)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:     &bucket,
+			Key:        &key,
+			UploadId:   &uploadId,
+			Body:       bytes.NewReader(partBuffer),
+			PartNumber: int32(partNumber),
+		})
+		cancel()
+		if err != nil {
+			return parts, err
+		} else {
+			parts = append(parts, types.Part{ETag: out.ETag, PartNumber: int32(partNumber)})
+			offset += partSize
+		}
+	}
+
+	return parts, err
 }
