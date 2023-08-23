@@ -753,6 +753,9 @@ func DeleteObjects_success(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects, objToDel := []string{"obj1", "obj2", "obj3"}, []string{"foo", "bar", "baz"}
 		err := putObjects(s3client, append(objToDel, objects...), bucket)
+		if err != nil {
+			return err
+		}
 
 		delObjects := []types.ObjectIdentifier{}
 		for _, key := range objToDel {
@@ -804,6 +807,9 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     &bucket,
@@ -1422,6 +1428,11 @@ func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+
+		err = teardown(s, srcBucket)
+		if err != nil {
 			return err
 		}
 
@@ -2090,121 +2101,331 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 	})
 }
 
-// func TestAclActions(s *S3Conf) {
-// 	testname := "test put/get acl"
-// 	runF(testname)
+func PutBucketAcl_non_existing_bucket(s *S3Conf) {
+	testName := "PutBucketAcl_non_existing_bucket"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
 
-// 	bucket := "testbucket14"
+		return nil
+	})
+}
 
-// 	err := setup(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
+func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) {
+	testName := "PutBucketAcl_invalid_acl_canned_and_acp"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:    &bucket,
+			ACL:       types.BucketCannedACLPrivate,
+			GrantRead: getPtr("user1"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+			return err
+		}
 
-// 	s3client := s3.NewFromConfig(s.Config())
+		return nil
+	})
+}
 
-// 	rootAccess := s.awsID
-// 	rootSecret := s.awsSecret
+func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) {
+	testName := "PutBucketAcl_invalid_acl_canned_and_grants"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPrivate,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							ID:   getPtr("awsID"),
+							Type: types.TypeCanonicalUser,
+						},
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+			return err
+		}
 
-// 	s.awsID = "grt1"
-// 	s.awsSecret = "grt1secret"
+		return nil
+	})
+}
 
-// 	userS3Client := s3.NewFromConfig(s.Config())
+func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) {
+	testName := "PutBucketAcl_invalid_acl_acp_and_grants"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:           &bucket,
+			GrantFullControl: getPtr("userAccess"),
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							ID:   getPtr("awsID"),
+							Type: types.TypeCanonicalUser,
+						},
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+			return err
+		}
 
-// 	s.awsID = rootAccess
-// 	s.awsSecret = rootSecret
+		return nil
+	})
+}
 
-// 	grt1 := "grt1"
+func PutBucketAcl_invalid_owner(s *S3Conf) {
+	testName := "PutBucketAcl_invalid_acl_acp_and_grants"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							ID:   getPtr("awsID"),
+							Type: types.TypeCanonicalUser,
+						},
+					},
+				},
+				Owner: &types.Owner{
+					ID: getPtr("invalidOwner"),
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
 
-// 	grants := []types.Grant{
-// 		{
-// 			Permission: "READ",
-// 			Grantee: &types.Grantee{
-// 				ID:   &grt1,
-// 				Type: "CanonicalUser",
-// 			},
-// 		},
-// 	}
+		return nil
+	})
+}
 
-// 	succUsrCrt := "The user has been created successfully"
-// 	failUsrCrt := "failed to create a user: update iam data: account already exists"
+func PutBucketAcl_success_access_denied(s *S3Conf) {
+	testName := "PutBucketAcl_success_access_denied"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		if err != nil {
+			return err
+		}
 
-// 	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "create-user", "-a", grt1, "-s", "grt1secret", "-r", "user")
-// 	if err != nil {
-// 		failF("%v: %v", err)
-// 		return
-// 	}
-// 	if !strings.Contains(string(out), succUsrCrt) && !strings.Contains(string(out), failUsrCrt) {
-// 		failF("%v: failed to create user accounts", testname)
-// 		return
-// 	}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							ID:   getPtr("grt1"),
+							Type: types.TypeCanonicalUser,
+						},
+						Permission: types.PermissionRead,
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
 
-// 	// Validation error case
-// 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
-// 		Bucket: &bucket,
-// 		AccessControlPolicy: &types.AccessControlPolicy{
-// 			Grants: grants,
-// 		},
-// 		ACL: "private",
-// 	})
-// 	cancel()
-// 	if err == nil {
-// 		failF("%v: expected validation error", testname)
-// 		return
-// 	}
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
 
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
-// 		Bucket: &bucket,
-// 		AccessControlPolicy: &types.AccessControlPolicy{
-// 			Grants: grants,
-// 			Owner:  &types.Owner{ID: &s.awsID},
-// 		},
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
+		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
 
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	acl, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
-// 		Bucket: &bucket,
-// 	})
-// 	cancel()
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
+		return nil
+	})
+}
 
-// 	if *acl.Owner.ID != s.awsID {
-// 		failF("%v: expected bucket owner: %v, instead got: %v", testname, s.awsID, *acl.Owner.ID)
-// 		return
-// 	}
-// 	if !checkGrants(acl.Grants, grants) {
-// 		failF("%v: expected %v, instead got %v", testname, grants, acl.Grants)
-// 		return
-// 	}
+func PutBucketAcl_success(s *S3Conf) {
+	testName := "PutBucketAcl_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		if err != nil {
+			return err
+		}
 
-// 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-// 	_, err = userS3Client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
-// 		Bucket: &bucket,
-// 	})
-// 	cancel()
-// 	if err == nil {
-// 		failF("%v: expected acl access denied error", testname)
-// 		return
-// 	}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							ID:   getPtr("grt1"),
+							Type: types.TypeCanonicalUser,
+						},
+						Permission: types.PermissionFullControl,
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
 
-// 	err = teardown(s, bucket)
-// 	if err != nil {
-// 		failF("%v: %v", testname, err)
-// 		return
-// 	}
-// 	passF(testname)
-// }
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
+
+		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketAcl_non_existing_bucket(s *S3Conf) {
+	testName := "GetBucketAcl_non_existing_bucket"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketAcl_access_denied(s *S3Conf) {
+	testName := "GetBucketAcl_access_denied"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		if err != nil {
+			return err
+		}
+
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketAcl_success(s *S3Conf) {
+	testName := "GetBucketAcl_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{
+			{"grt1", "grt1secret", "user"},
+			{"grt2", "grt2secret", "user"},
+			{"grt3", "grt3secret", "user"},
+		})
+		if err != nil {
+			return err
+		}
+
+		grants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("grt1"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionFullControl,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("grt2"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionReadAcp,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("grt3"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionWrite,
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: grants,
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if ok := compareGrants(out.Grants, grants); !ok {
+			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+		}
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+
+		return nil
+	})
+}
 
 type prefResult struct {
 	elapsed time.Duration

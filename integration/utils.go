@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -18,7 +19,9 @@ import (
 )
 
 var (
-	bcktCount = 0
+	bcktCount  = 0
+	succUsrCrt = "The user has been created successfully"
+	failUsrCrt = "failed to create a user: update iam data: account already exists"
 )
 
 func getBucketName() string {
@@ -233,7 +236,7 @@ func containsTag(tag types.Tag, list []types.Tag) bool {
 	return false
 }
 
-func checkGrants(grts1, grts2 []types.Grant) bool {
+func compareGrants(grts1, grts2 []types.Grant) bool {
 	if len(grts1) != len(grts2) {
 		return false
 	}
@@ -348,6 +351,9 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 		}
 		partBuffer := make([]byte, partEnd-partStart+1)
 		_, err := w.ReadAt(partBuffer, partStart)
+		if err != nil {
+			return parts, err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
@@ -366,4 +372,23 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 	}
 
 	return parts, err
+}
+
+type user struct {
+	access string
+	secret string
+	role   string
+}
+
+func createUsers(s *S3Conf, users []user) error {
+	for _, usr := range users {
+		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(out), succUsrCrt) && !strings.Contains(string(out), failUsrCrt) {
+			return fmt.Errorf("failed to create a user account")
+		}
+	}
+	return nil
 }
