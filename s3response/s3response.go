@@ -116,7 +116,7 @@ type DeleteObjects struct {
 
 type DeleteObjectsResult struct {
 	Deleted []types.DeletedObject
-	Errors  []types.Error
+	Error   []types.Error
 }
 type SelectObjectContentPayload struct {
 	Expression          *string

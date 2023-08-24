@@ -1058,7 +1058,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 
 	return s3response.DeleteObjectsResult{
 		Deleted: delResult,
-		Errors:  errs,
+		Error:   errs,
 	}, nil
 }
 

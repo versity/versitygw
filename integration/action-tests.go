@@ -52,8 +52,7 @@ func TestDeleteObject(s *S3Conf) {
 
 func TestDeleteObjects(s *S3Conf) {
 	DeleteObjects_empty_input(s)
-	//TODO: Uncomment this after fixing the bug: #195
-	// DeleteObjects_non_existing_objects(s)
+	DeleteObjects_non_existing_objects(s)
 	DeleteObjects_success(s)
 }
 

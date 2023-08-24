@@ -713,40 +713,39 @@ func DeleteObjects_empty_input(s *S3Conf) {
 	})
 }
 
-//TODO: Uncomment the test after fixing the bug: #195
-// func DeleteObjects_non_existing_objects(s *S3Conf) {
-// 	testName := "DeleteObjects_empty_input"
-// 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-// 		delObjects := []types.ObjectIdentifier{{Key: getPtr("obj1")}, {Key: getPtr("obj2")}}
-//
-// 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-// 		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-// 			Bucket: &bucket,
-// 			Delete: &types.Delete{
-// 				Objects: delObjects,
-// 			},
-// 		})
-// 		cancel()
-// 		if err != nil {
-// 			return err
-// 		}
+func DeleteObjects_non_existing_objects(s *S3Conf) {
+	testName := "DeleteObjects_empty_input"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		delObjects := []types.ObjectIdentifier{{Key: getPtr("obj1")}, {Key: getPtr("obj2")}}
 
-// 		if len(out.Deleted) != 0 {
-// 			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
-// 		}
-// 		if len(out.Errors) != 2 {
-// 			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
-// 		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &bucket,
+			Delete: &types.Delete{
+				Objects: delObjects,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
 
-// 		for _, delErr := range out.Errors {
-// 			if *delErr.Code != "NoSuchKey" {
-// 				return fmt.Errorf("expected NoSuchKey error, instead got %v", *delErr.Code)
-// 			}
-// 		}
+		if len(out.Deleted) != 0 {
+			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
+		}
+		if len(out.Errors) != 2 {
+			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
+		}
 
-// 		return nil
-// 	})
-// }
+		for _, delErr := range out.Errors {
+			if *delErr.Code != "NoSuchKey" {
+				return fmt.Errorf("expected NoSuchKey error, instead got %v", *delErr.Code)
+			}
+		}
+
+		return nil
+	})
+}
 
 func DeleteObjects_success(s *S3Conf) {
 	testName := "DeleteObjects_success"
