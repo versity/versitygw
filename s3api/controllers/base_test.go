@@ -481,6 +481,22 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</AccessControlPolicy>
 	`
 
+	invOwnerBody := `
+	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Owner>
+			<ID>hello</ID>
+		</Owner>
+	</AccessControlPolicy>
+	`
+
+	succBody := `
+	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Owner>
+			<ID>valid access</ID>
+		</Owner>
+	</AccessControlPolicy>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -514,14 +530,12 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	errAclReq.Header.Set("X-Amz-Grant-Read", "hello")
 
 	// PutBucketAcl incorrect bucket owner case
-	incorrectBucketOwner := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	incorrectBucketOwner := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(invOwnerBody))
 	incorrectBucketOwner.Header.Set("X-Amz-Acl", "private")
-	incorrectBucketOwner.Header.Set("X-Amz-Expected-Bucket-Owner", "invalid access")
 
 	// PutBucketAcl acl success
-	aclSuccReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
+	aclSuccReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(succBody))
 	aclSuccReq.Header.Set("X-Amz-Acl", "private")
-	aclSuccReq.Header.Set("X-Amz-Expected-Bucket-Owner", "valid access")
 
 	// Invalid acl body case
 	errAclBodyReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(body))

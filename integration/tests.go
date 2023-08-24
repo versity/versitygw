@@ -2268,8 +2268,91 @@ func PutBucketAcl_success_access_denied(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_success(s *S3Conf) {
-	testName := "PutBucketAcl_success"
+func PutBucketAcl_success_canned_acl(s *S3Conf) {
+	testName := "PutBucketAcl_success_canned_acl"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+			ACL: types.BucketCannedACLPublicReadWrite,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
+
+		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketAcl_success_acp(s *S3Conf) {
+	testName := "PutBucketAcl_success_acp"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+			GrantRead: getPtr("grt1"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
+
+		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.HeadBucket(ctx, &s3.HeadBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketAcl_success_grants(s *S3Conf) {
+	testName := "PutBucketAcl_success_grants"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {

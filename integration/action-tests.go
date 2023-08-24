@@ -135,7 +135,9 @@ func TestPutBucketAcl(s *S3Conf) {
 	PutBucketAcl_invalid_acl_acp_and_grants(s)
 	PutBucketAcl_invalid_owner(s)
 	PutBucketAcl_success_access_denied(s)
-	PutBucketAcl_success(s)
+	PutBucketAcl_success_grants(s)
+	PutBucketAcl_success_canned_acl(s)
+	PutBucketAcl_success_acp(s)
 }
 
 func TestGetBucketAcl(s *S3Conf) {
