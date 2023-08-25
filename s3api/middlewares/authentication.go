@@ -17,6 +17,8 @@ package middlewares
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -34,6 +36,7 @@ import (
 
 const (
 	iso8601Format = "20060102T150405Z"
+	YYYYMMDD      = "20060102"
 )
 
 type RootUserConfig struct {
@@ -72,9 +75,29 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		if len(credKv) != 2 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
 		}
+		// Credential variables validation
 		creds := strings.Split(credKv[1], "/")
-		if len(creds) < 4 {
+		if len(creds) < 5 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
+		}
+		if creds[4] != "aws4_request" {
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureTerminationStr), &controllers.MetaOpts{Logger: logger})
+		}
+		if creds[3] != "s3" {
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureIncorrService), &controllers.MetaOpts{Logger: logger})
+		}
+		if creds[2] != region {
+			return controllers.SendResponse(ctx, s3err.APIError{
+				Code:           "SignatureDoesNotMatch",
+				Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", creds[2]),
+				HTTPStatusCode: http.StatusForbidden,
+			}, &controllers.MetaOpts{Logger: logger})
+		}
+
+		// Validate the dates difference
+		err := validateDate(creds[1])
+		if err != nil {
+			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
 		}
 
 		ctx.Locals("access", creds[0])
@@ -99,6 +122,10 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), &controllers.MetaOpts{Logger: logger})
+		}
+
+		if date[:8] != creds[1] {
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), &controllers.MetaOpts{Logger: logger})
 		}
 
 		// Parse the date and check the date validity
@@ -185,4 +212,29 @@ func isSpecialPayload(str string) bool {
 	}
 
 	return specialValues[str]
+}
+
+func validateDate(date string) error {
+	credDate, err := time.Parse(YYYYMMDD, date)
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
+	}
+
+	today := time.Now()
+	if credDate.Year() > today.Year() || (credDate.Year() == today.Year() && credDate.YearDay() > today.YearDay()) {
+		return s3err.APIError{
+			Code:           "SignatureDoesNotMatch",
+			Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", credDate.Format(YYYYMMDD), today.Format(YYYYMMDD)),
+			HTTPStatusCode: http.StatusForbidden,
+		}
+	}
+	if credDate.Year() < today.Year() || (credDate.Year() == today.Year() && credDate.YearDay() < today.YearDay()) {
+		return s3err.APIError{
+			Code:           "SignatureDoesNotMatch",
+			Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", credDate.Format(YYYYMMDD), today.Format(YYYYMMDD)),
+			HTTPStatusCode: http.StatusForbidden,
+		}
+	}
+
+	return nil
 }

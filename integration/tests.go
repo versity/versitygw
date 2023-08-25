@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +21,93 @@ import (
 var (
 	shortTimeout = 10 * time.Second
 )
+
+func Authentication_empty_auth_header(s *S3Conf) {
+	testName := "Authentication_empty_auth_header"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		req.Header.Set("Authorization", "")
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_invalid_auth_header(s *S3Conf) {
+	testName := "Authentication_invalid_auth_header"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		req.Header.Set("Authorization", "invalid header")
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_unsupported_signature_version(s *S3Conf) {
+	testName := "Authentication_unsupported_signature_version"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		authHdr := req.Header.Get("Authorization")
+		authHdr = strings.Replace(authHdr, "AWS4-HMAC-SHA256", "AWS2-HMAC-SHA1", 1)
+		req.Header.Set("Authorization", authHdr)
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
 
 func CreateBucket_invalid_bucket_name(s *S3Conf) {
 	testName := "CreateBucket_invalid_bucket_name"

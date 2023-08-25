@@ -1447,7 +1447,7 @@ func Test_XMLresponse(t *testing.T) {
 			args: args{
 				ctx:  &ctx,
 				resp: nil,
-				err:  s3err.GetAPIError(16),
+				err:  s3err.GetAPIError(s3err.ErrInternalError),
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -1457,7 +1457,7 @@ func Test_XMLresponse(t *testing.T) {
 			args: args{
 				ctx:  &ctx,
 				resp: nil,
-				err:  s3err.GetAPIError(50),
+				err:  s3err.GetAPIError(s3err.ErrNotImplemented),
 			},
 			wantErr:    false,
 			statusCode: 501,
@@ -1527,7 +1527,7 @@ func Test_response(t *testing.T) {
 			args: args{
 				ctx:  &ctx,
 				resp: nil,
-				err:  s3err.GetAPIError(16),
+				err:  s3err.GetAPIError(s3err.ErrInternalError),
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -1547,7 +1547,7 @@ func Test_response(t *testing.T) {
 			args: args{
 				ctx:  &ctx,
 				resp: nil,
-				err:  s3err.GetAPIError(50),
+				err:  s3err.GetAPIError(s3err.ErrNotImplemented),
 			},
 			wantErr:    false,
 			statusCode: 501,

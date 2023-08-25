@@ -1,5 +1,11 @@
 package integration
 
+func TestAuthentication(s *S3Conf) {
+	Authentication_empty_auth_header(s)
+	Authentication_invalid_auth_header(s)
+	Authentication_unsupported_signature_version(s)
+}
+
 func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
@@ -147,6 +153,7 @@ func TestGetBucketAcl(s *S3Conf) {
 }
 
 func TestFullFlow(s *S3Conf) {
+	TestAuthentication(s)
 	TestCreateBucket(s)
 	TestHeadBucket(s)
 	TestDeleteBucket(s)
