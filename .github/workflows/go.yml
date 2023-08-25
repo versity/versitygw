@@ -7,14 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: 'stable'
       id: go
-
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v3
 
     - name: Verify all files pass gofmt formatting
       run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then gofmt -s -d .; exit 1; fi
