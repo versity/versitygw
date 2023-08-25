@@ -29,6 +29,7 @@ type Backend interface {
 	fmt.Stringer
 	Shutdown()
 
+	// bucket operations
 	ListBuckets(_ context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error)
 	HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error)
@@ -36,6 +37,7 @@ type Backend interface {
 	PutBucketAcl(_ context.Context, bucket string, data []byte) error
 	DeleteBucket(context.Context, *s3.DeleteBucketInput) error
 
+	// multipart operations
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
@@ -43,8 +45,8 @@ type Backend interface {
 	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error)
 	UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error)
 	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
-	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
 
+	// standard object operations
 	PutObject(context.Context, *s3.PutObjectInput) (string, error)
 	HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
 	GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error)
@@ -56,8 +58,12 @@ type Backend interface {
 	DeleteObject(context.Context, *s3.DeleteObjectInput) error
 	DeleteObjects(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error)
 	PutObjectAcl(context.Context, *s3.PutObjectAclInput) error
-	RestoreObject(context.Context, *s3.RestoreObjectInput) error
 
+	// special case object operations
+	RestoreObject(context.Context, *s3.RestoreObjectInput) error
+	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
+
+	// object tags operations
 	GetTags(_ context.Context, bucket, object string) (map[string]string, error)
 	SetTags(_ context.Context, bucket, object string, tags map[string]string) error
 	RemoveTags(_ context.Context, bucket, object string) error
@@ -77,32 +83,20 @@ func (BackendUnsupported) String() string {
 func (BackendUnsupported) ListBuckets(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
 	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutBucketAcl(_ context.Context, bucket string, data []byte) error {
-	return s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) PutObjectAcl(context.Context, *s3.PutObjectAclInput) error {
-	return s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) RestoreObject(context.Context, *s3.RestoreObjectInput) error {
-	return s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
-	return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
+func (BackendUnsupported) HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+func (BackendUnsupported) GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) CreateBucket(context.Context, *s3.CreateBucketInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) DeleteBucket(context.Context, *s3.DeleteBucketInput) error {
+func (BackendUnsupported) PutBucketAcl(_ context.Context, bucket string, data []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
-	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) DeleteBucket(context.Context, *s3.DeleteBucketInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
@@ -123,20 +117,17 @@ func (BackendUnsupported) ListParts(context.Context, *s3.ListPartsInput) (s3resp
 func (BackendUnsupported) UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error) {
 	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
 }
+func (BackendUnsupported) UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
 
 func (BackendUnsupported) PutObject(context.Context, *s3.PutObjectInput) (string, error) {
 	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) DeleteObject(context.Context, *s3.DeleteObjectInput) error {
-	return s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) DeleteObjects(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
-	return s3response.DeleteObjectsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
-}
-func (BackendUnsupported) GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
+func (BackendUnsupported) HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (BackendUnsupported) GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
@@ -153,6 +144,22 @@ func (BackendUnsupported) ListObjects(context.Context, *s3.ListObjectsInput) (*s
 }
 func (BackendUnsupported) ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteObject(context.Context, *s3.DeleteObjectInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteObjects(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+	return s3response.DeleteObjectsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutObjectAcl(context.Context, *s3.PutObjectAclInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+
+func (BackendUnsupported) RestoreObject(context.Context, *s3.RestoreObjectInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) GetTags(_ context.Context, bucket, object string) (map[string]string, error) {
