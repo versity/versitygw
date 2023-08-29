@@ -77,7 +77,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		}
 		// Credential variables validation
 		creds := strings.Split(credKv[1], "/")
-		if len(creds) < 5 {
+		if len(creds) != 5 {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrCredMalformed), &controllers.MetaOpts{Logger: logger})
 		}
 		if creds[4] != "aws4_request" {
