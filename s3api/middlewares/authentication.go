@@ -124,14 +124,14 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), &controllers.MetaOpts{Logger: logger})
 		}
 
-		if date[:8] != creds[1] {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), &controllers.MetaOpts{Logger: logger})
-		}
-
 		// Parse the date and check the date validity
 		tdate, err := time.Parse(iso8601Format, date)
 		if err != nil {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), &controllers.MetaOpts{Logger: logger})
+		}
+
+		if date[:8] != creds[1] {
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), &controllers.MetaOpts{Logger: logger})
 		}
 
 		hashPayloadHeader := ctx.Get("X-Amz-Content-Sha256")

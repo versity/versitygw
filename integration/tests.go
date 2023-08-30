@@ -392,6 +392,240 @@ func Authentication_credentials_past_date(s *S3Conf) {
 	})
 }
 
+func Authentication_credentials_non_existing_access_key(s *S3Conf) {
+	testName := "Authentication_credentials_non_existing_access_key"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		authHdr := req.Header.Get("Authorization")
+		regExp := regexp.MustCompile("Credential=([^/]+)")
+		hdr := regExp.ReplaceAllString(authHdr, "Credential=a_rarely_existing_access_key_id_a7s86df78as6df89790a8sd7f")
+		req.Header.Set("Authorization", hdr)
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_invalid_signed_headers(s *S3Conf) {
+	testName := "Authentication_invalid_signed_headers"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		authHdr := req.Header.Get("Authorization")
+		regExp := regexp.MustCompile("SignedHeaders=[^,]+,")
+		hdr := regExp.ReplaceAllString(authHdr, "SignedHeaders-host;x-amz-content-sha256;x-amz-date,")
+		req.Header.Set("Authorization", hdr)
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_missing_date_header(s *S3Conf) {
+	testName := "Authentication_missing_date_header"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+		req.Header.Set("X-Amz-Date", "")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_invalid_date_header(s *S3Conf) {
+	testName := "Authentication_invalid_date_header"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+		req.Header.Set("X-Amz-Date", "03032006")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_date_mismatch(s *S3Conf) {
+	testName := "Authentication_date_mismatch"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+		req.Header.Set("X-Amz-Date", "20220830T095525Z")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_incorrect_payload_hash(s *S3Conf) {
+	testName := "Authentication_incorrect_payload_hash"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+		req.Header.Set("X-Amz-Content-Sha256", "7sa6df576dsa5f675sad67f")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_incorrect_md5(s *S3Conf) {
+	testName := "Authentication_incorrect_md5"
+	authHandler(s, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req.Header.Set("Content-Md5", "sadfasdf87sad6f87==")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func Authentication_signature_error_incorrect_secret_key(s *S3Conf) {
+	testName := "Authentication_signature_error_incorrect_secret_key"
+	cfg := *s
+	cfg.awsSecret = s.awsSecret + "a"
+	authHandler(&cfg, &authConfig{
+		testName: testName,
+		path:     "my-bucket",
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CreateBucket_invalid_bucket_name(s *S3Conf) {
 	testName := "CreateBucket_invalid_bucket_name"
 	runF(testName)

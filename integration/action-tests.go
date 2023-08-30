@@ -12,6 +12,14 @@ func TestAuthentication(s *S3Conf) {
 	Authentication_credentials_invalid_date(s)
 	Authentication_credentials_future_date(s)
 	Authentication_credentials_past_date(s)
+	Authentication_credentials_non_existing_access_key(s)
+	Authentication_invalid_signed_headers(s)
+	Authentication_missing_date_header(s)
+	Authentication_invalid_date_header(s)
+	Authentication_date_mismatch(s)
+	Authentication_incorrect_payload_hash(s)
+	Authentication_incorrect_md5(s)
+	Authentication_signature_error_incorrect_secret_key(s)
 }
 
 func TestCreateBucket(s *S3Conf) {
