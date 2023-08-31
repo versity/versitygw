@@ -1,4 +1,4 @@
-# The Versity S3 Gateway:<br/>A High-Performance S3 to Storage System Translation Service
+# The Versity S3 Gateway:<br/>A High-Performance S3 Translation Service
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/versity/versitygw/blob/assets/assets/logo-white.svg">
