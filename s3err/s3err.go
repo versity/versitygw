@@ -97,6 +97,9 @@ const (
 	ErrNegativeExpires
 	ErrMaximumExpires
 	ErrSignatureDoesNotMatch
+	ErrSignatureDateDoesNotMatch
+	ErrSignatureTerminationStr
+	ErrSignatureIncorrService
 	ErrContentSHA256Mismatch
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
@@ -190,13 +193,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "We encountered an internal error, please try again.",
 		HTTPStatusCode: http.StatusInternalServerError,
 	},
-
 	ErrInvalidPart: {
 		Code:           "InvalidPart",
 		Description:    "One or more of the specified parts could not be found.  The part may not have been uploaded, or the specified entity tag may not match the part's entity tag.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrInvalidCopyDest: {
 		Code:           "InvalidRequest",
 		Description:    "This copy request is illegal because it is trying to copy an object to itself without changing the object's metadata, storage class, website redirect location or encryption attributes.",
@@ -287,7 +288,6 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Signature header missing Signature field.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrUnsignedHeaders: {
 		Code:           "AccessDenied",
 		Description:    "There were headers present in the request which were not signed",
@@ -323,25 +323,36 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-
 	ErrInvalidAccessKeyID: {
 		Code:           "InvalidAccessKeyId",
 		Description:    "The access key ID you provided does not exist in our records.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
 	ErrRequestNotReadyYet: {
 		Code:           "AccessDenied",
 		Description:    "Request is not valid yet",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
 	ErrSignatureDoesNotMatch: {
 		Code:           "SignatureDoesNotMatch",
 		Description:    "The request signature we calculated does not match the signature you provided. Check your key and signing method.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
-
+	ErrSignatureDateDoesNotMatch: {
+		Code:           "SignatureDoesNotMatch",
+		Description:    "Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrSignatureTerminationStr: {
+		Code:           "SignatureDoesNotMatch",
+		Description:    "Credential should be scoped with a valid terminator: 'aws4_request'",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrSignatureIncorrService: {
+		Code:           "SignatureDoesNotMatch",
+		Description:    "Credential should be scoped to correct service: s3",
+		HTTPStatusCode: http.StatusForbidden,
+	},
 	ErrContentSHA256Mismatch: {
 		Code:           "XAmzContentSHA256Mismatch",
 		Description:    "The provided 'x-amz-content-sha256' header does not match what was computed.",

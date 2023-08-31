@@ -1,5 +1,27 @@
 package integration
 
+func TestAuthentication(s *S3Conf) {
+	Authentication_empty_auth_header(s)
+	Authentication_invalid_auth_header(s)
+	Authentication_unsupported_signature_version(s)
+	Authentication_malformed_credentials(s)
+	Authentication_malformed_credentials_invalid_parts(s)
+	Authentication_credentials_terminated_string(s)
+	Authentication_credentials_incorrect_service(s)
+	Authentication_credentials_incorrect_region(s)
+	Authentication_credentials_invalid_date(s)
+	Authentication_credentials_future_date(s)
+	Authentication_credentials_past_date(s)
+	Authentication_credentials_non_existing_access_key(s)
+	Authentication_invalid_signed_headers(s)
+	Authentication_missing_date_header(s)
+	Authentication_invalid_date_header(s)
+	Authentication_date_mismatch(s)
+	Authentication_incorrect_payload_hash(s)
+	Authentication_incorrect_md5(s)
+	Authentication_signature_error_incorrect_secret_key(s)
+}
+
 func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
@@ -147,6 +169,7 @@ func TestGetBucketAcl(s *S3Conf) {
 }
 
 func TestFullFlow(s *S3Conf) {
+	TestAuthentication(s)
 	TestCreateBucket(s)
 	TestHeadBucket(s)
 	TestDeleteBucket(s)

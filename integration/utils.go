@@ -5,13 +5,19 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
@@ -115,18 +121,66 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 	}
 }
 
-func putObjects(client *s3.Client, objs []string, bucket string) error {
-	for _, key := range objs {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := client.PutObject(ctx, &s3.PutObjectInput{
-			Key:    &key,
-			Bucket: &bucket,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
+type authConfig struct {
+	testName string
+	path     string
+	method   string
+	body     []byte
+	service  string
+	date     time.Time
+}
+
+func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) {
+	runF(cfg.testName)
+	req, err := http.NewRequest(cfg.method, fmt.Sprintf("%v/%v", s.endpoint, cfg.path), bytes.NewReader(cfg.body))
+	if err != nil {
+		failF("%v: failed to send the request: %v", cfg.testName, err.Error())
+		return
 	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, hexPayload, cfg.service, s.awsRegion, cfg.date)
+	if signErr != nil {
+		failF("%v: failed to sign the request: %v", cfg.testName, err.Error())
+		return
+	}
+
+	err = handler(req)
+	if err != nil {
+		failF("%v: %v", cfg.testName, err.Error())
+		return
+	}
+	passF(cfg.testName)
+}
+
+func checkAuthErr(resp *http.Response, apiErr s3err.APIError) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	var errResp s3err.APIErrorResponse
+	err = xml.Unmarshal(body, &errResp)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != apiErr.HTTPStatusCode {
+		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
+	}
+	if errResp.Code != apiErr.Code {
+		return fmt.Errorf("expected error code to be %v, instead got %v", apiErr.Code, errResp.Code)
+	}
+	if errResp.Message != apiErr.Description {
+		return fmt.Errorf("expected error message to be %v, instead got %v", apiErr.Description, errResp.Message)
+	}
+
 	return nil
 }
 
@@ -155,6 +209,21 @@ func checkSdkApiErr(err error, code string) error {
 		return nil
 	}
 	return err
+}
+
+func putObjects(client *s3.Client, objs []string, bucket string) error {
+	for _, key := range objs {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := client.PutObject(ctx, &s3.PutObjectInput{
+			Key:    &key,
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
