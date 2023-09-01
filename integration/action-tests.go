@@ -133,6 +133,10 @@ func TestListParts(s *S3Conf) {
 func TestListMultipartUploads(s *S3Conf) {
 	ListMultipartUploads_non_existing_bucket(s)
 	ListMultipartUploads_empty_result(s)
+	ListMultipartUploads_invalid_max_uploads(s)
+	ListMultipartUploads_max_uploads(s)
+	ListMultipartUploads_incorrect_next_key_marker(s)
+	ListMultipartUploads_ignore_upload_id_marker(s)
 	ListMultipartUploads_success(s)
 }
 

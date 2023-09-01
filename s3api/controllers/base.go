@@ -25,7 +25,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
@@ -222,6 +221,9 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
+	keyMarker := ctx.Query("key-marker")
+	maxUploadsStr := ctx.Query("max-uploads")
+	uploadIdMarker := ctx.Query("upload-id-marker")
 	access := ctx.Locals("access").(string)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
@@ -244,7 +246,22 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListMultipartUploads", BucketOwner: parsedAcl.Owner})
 		}
-		res, err := c.be.ListMultipartUploads(ctx.Context(), &s3.ListMultipartUploadsInput{Bucket: aws.String(ctx.Params("bucket"))})
+		maxUploads, err := utils.ParseUint(maxUploadsStr)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err, &MetaOpts{
+				Logger:      c.logger,
+				Action:      "ListMultipartUploads",
+				BucketOwner: parsedAcl.Owner,
+			})
+		}
+		res, err := c.be.ListMultipartUploads(ctx.Context(), &s3.ListMultipartUploadsInput{
+			Bucket:         &bucket,
+			Delimiter:      &delimiter,
+			Prefix:         &prefix,
+			UploadIdMarker: &uploadIdMarker,
+			MaxUploads:     maxUploads,
+			KeyMarker:      &keyMarker,
+		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListMultipartUploads", BucketOwner: parsedAcl.Owner})
 	}
 
@@ -252,7 +269,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		if err := auth.VerifyACL(parsedAcl, bucket, access, "READ", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListObjectsV2", BucketOwner: parsedAcl.Owner})
 		}
-		maxkeys, err := utils.ParseMaxKeys(maxkeysStr)
+		maxkeys, err := utils.ParseUint(maxkeysStr)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{
 				Logger:      c.logger,
@@ -274,7 +291,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListObjects", BucketOwner: parsedAcl.Owner})
 	}
 
-	maxkeys, err := utils.ParseMaxKeys(maxkeysStr)
+	maxkeys, err := utils.ParseUint(maxkeysStr)
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err, &MetaOpts{
 			Logger:      c.logger,
