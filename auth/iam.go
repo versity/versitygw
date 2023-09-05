@@ -31,6 +31,7 @@ type IAMService interface {
 	CreateAccount(access string, account Account) error
 	GetUserAccount(access string) (Account, error)
 	DeleteUserAccount(access string) error
+	ListUserAccounts() ([]UserAcc, error)
 }
 
 var ErrNoSuchUser = errors.New("user not found")
