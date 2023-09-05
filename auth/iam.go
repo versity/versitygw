@@ -20,6 +20,7 @@ import (
 
 // Account is a gateway IAM account
 type Account struct {
+	Access string `json:"access"`
 	Secret string `json:"secret"`
 	Role   string `json:"role"`
 }
@@ -31,7 +32,7 @@ type IAMService interface {
 	CreateAccount(access string, account Account) error
 	GetUserAccount(access string) (Account, error)
 	DeleteUserAccount(access string) error
-	ListUserAccounts() ([]UserAcc, error)
+	ListUserAccounts() ([]Account, error)
 }
 
 var ErrNoSuchUser = errors.New("user not found")
