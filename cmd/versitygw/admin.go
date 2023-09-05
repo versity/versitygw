@@ -17,6 +17,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,21 +26,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/auth"
 )
 
 var (
-	adminAccess string
-	adminSecret string
+	adminAccess   string
+	adminSecret   string
+	adminEndpoint string
 )
 
 func adminCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "admin",
-		Usage: "admin CLI tool",
-		Description: `admin CLI tool for interacting with admin api.
-		Here is the available api list:
-		create-user
-		`,
+		Name:        "admin",
+		Usage:       "admin CLI tool",
+		Description: `Admin CLI tool for interacting with admin APIs.`,
 		Subcommands: []*cli.Command{
 			{
 				Name:   "create-user",
@@ -48,13 +48,13 @@ func adminCommand() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "access",
-						Usage:    "access value for the new user",
+						Usage:    "access key id for the new user",
 						Required: true,
 						Aliases:  []string{"a"},
 					},
 					&cli.StringFlag{
 						Name:     "secret",
-						Usage:    "secret value for the new user",
+						Usage:    "secret access key for the new user",
 						Required: true,
 						Aliases:  []string{"s"},
 					},
@@ -73,20 +73,26 @@ func adminCommand() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "access",
-						Usage:    "access value for the user to be deleted",
+						Usage:    "access key id of the user to be deleted",
 						Required: true,
 						Aliases:  []string{"a"},
 					},
 				},
+			},
+			{
+				Name:   "list-users",
+				Usage:  "List all the gateway users",
+				Action: listUsers,
 			},
 		},
 		Flags: []cli.Flag{
 			// TODO: create a configuration file for this
 			&cli.StringFlag{
 				Name:        "access",
-				Usage:       "admin access account",
+				Usage:       "admin access key id",
 				EnvVars:     []string{"ADMIN_ACCESS_KEY_ID", "ADMIN_ACCESS_KEY"},
 				Aliases:     []string{"a"},
+				Required:    true,
 				Destination: &adminAccess,
 			},
 			&cli.StringFlag{
@@ -94,7 +100,15 @@ func adminCommand() *cli.Command {
 				Usage:       "admin secret access key",
 				EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
 				Aliases:     []string{"s"},
+				Required:    true,
 				Destination: &adminSecret,
+			},
+			&cli.StringFlag{
+				Name:        "endpoint-url",
+				Usage:       "admin apis endpoint url",
+				Aliases:     []string{"er"},
+				Required:    true,
+				Destination: &adminEndpoint,
 			},
 		},
 	}
@@ -109,7 +123,7 @@ func createUser(ctx *cli.Context) error {
 		return fmt.Errorf("invalid input parameter for role")
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("http://localhost:7070/create-user?access=%v&secret=%v&role=%v", access, secret, role), nil)
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user?access=%v&secret=%v&role=%v", adminEndpoint, access, secret, role), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
@@ -137,6 +151,7 @@ func createUser(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	fmt.Printf("%s\n", body)
 
@@ -149,7 +164,7 @@ func deleteUser(ctx *cli.Context) error {
 		return fmt.Errorf("invalid input parameter for the new user")
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("http://localhost:7070/delete-user?access=%v", access), nil)
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/delete-user?access=%v", adminEndpoint, access), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
@@ -177,8 +192,55 @@ func deleteUser(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
 	fmt.Printf("%s\n", body)
+
+	return nil
+}
+
+func listUsers(ctx *cli.Context) error {
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-users", adminEndpoint), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var accs []auth.UserAcc
+	if err := json.Unmarshal(body, &accs); err != nil {
+		return err
+	}
+
+	jsonData, err := json.MarshalIndent(accs, "", "    ")
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(string(jsonData))
 
 	return nil
 }

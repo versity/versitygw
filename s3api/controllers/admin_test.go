@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -168,6 +169,102 @@ func TestAdminController_DeleteUser(t *testing.T) {
 
 		if resp.StatusCode != tt.statusCode {
 			t.Errorf("AdminController.DeleteUser() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
+	}
+}
+
+func TestAdminController_ListUsers(t *testing.T) {
+	type args struct {
+		req *http.Request
+	}
+
+	adminController := AdminController{
+		IAMService: &IAMServiceMock{
+			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
+				return []auth.UserAcc{}, nil
+			},
+		},
+	}
+
+	adminControllerErr := AdminController{
+		IAMService: &IAMServiceMock{
+			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
+				return []auth.UserAcc{}, fmt.Errorf("server error")
+			},
+		},
+	}
+
+	appErr := fiber.New()
+
+	appErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	appErr.Patch("/list-users", adminControllerErr.ListUsers)
+
+	appRoleErr := fiber.New()
+
+	appRoleErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "user")
+		return ctx.Next()
+	})
+
+	appRoleErr.Patch("/list-users", adminController.ListUsers)
+
+	appSucc := fiber.New()
+
+	appSucc.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	appSucc.Patch("/list-users", adminController.ListUsers)
+
+	tests := []struct {
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
+	}{
+		{
+			name: "Admin-list-users-access-denied",
+			app:  appRoleErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Admin-list-users-iam-error",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Admin-list-users-success",
+			app:  appSucc,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("AdminController.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("AdminController.ListUsers() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 		}
 	}
 }

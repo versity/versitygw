@@ -60,3 +60,16 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 
 	return ctx.SendString("The user has been deleted successfully")
 }
+
+func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
+	role := ctx.Locals("role").(string)
+	if role != "admin" {
+		return fmt.Errorf("access denied: only admin users have access to this resource")
+	}
+	accs, err := c.IAMService.ListUserAccounts()
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(accs)
+}

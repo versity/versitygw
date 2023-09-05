@@ -461,7 +461,7 @@ type user struct {
 
 func createUsers(s *S3Conf, users []user) error {
 	for _, usr := range users {
-		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)
+		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)
 		if err != nil {
 			return err
 		}

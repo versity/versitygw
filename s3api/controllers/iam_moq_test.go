@@ -27,6 +27,9 @@ var _ auth.IAMService = &IAMServiceMock{}
 //			GetUserAccountFunc: func(access string) (auth.Account, error) {
 //				panic("mock out the GetUserAccount method")
 //			},
+//			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
+//				panic("mock out the ListUserAccounts method")
+//			},
 //		}
 //
 //		// use mockedIAMService in code that requires auth.IAMService
@@ -42,6 +45,9 @@ type IAMServiceMock struct {
 
 	// GetUserAccountFunc mocks the GetUserAccount method.
 	GetUserAccountFunc func(access string) (auth.Account, error)
+
+	// ListUserAccountsFunc mocks the ListUserAccounts method.
+	ListUserAccountsFunc func() ([]auth.UserAcc, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -62,10 +68,14 @@ type IAMServiceMock struct {
 			// Access is the access argument value.
 			Access string
 		}
+		// ListUserAccounts holds details about calls to the ListUserAccounts method.
+		ListUserAccounts []struct {
+		}
 	}
 	lockCreateAccount     sync.RWMutex
 	lockDeleteUserAccount sync.RWMutex
 	lockGetUserAccount    sync.RWMutex
+	lockListUserAccounts  sync.RWMutex
 }
 
 // CreateAccount calls CreateAccountFunc.
@@ -165,5 +175,32 @@ func (mock *IAMServiceMock) GetUserAccountCalls() []struct {
 	mock.lockGetUserAccount.RLock()
 	calls = mock.calls.GetUserAccount
 	mock.lockGetUserAccount.RUnlock()
+	return calls
+}
+
+// ListUserAccounts calls ListUserAccountsFunc.
+func (mock *IAMServiceMock) ListUserAccounts() ([]auth.UserAcc, error) {
+	if mock.ListUserAccountsFunc == nil {
+		panic("IAMServiceMock.ListUserAccountsFunc: method is nil but IAMService.ListUserAccounts was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockListUserAccounts.Lock()
+	mock.calls.ListUserAccounts = append(mock.calls.ListUserAccounts, callInfo)
+	mock.lockListUserAccounts.Unlock()
+	return mock.ListUserAccountsFunc()
+}
+
+// ListUserAccountsCalls gets all the calls that were made to ListUserAccounts.
+// Check the length with:
+//
+//	len(mockedIAMService.ListUserAccountsCalls())
+func (mock *IAMServiceMock) ListUserAccountsCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockListUserAccounts.RLock()
+	calls = mock.calls.ListUserAccounts
+	mock.lockListUserAccounts.RUnlock()
 	return calls
 }
