@@ -1652,12 +1652,7 @@ func CreateMultipartUpload_non_existing_bucket(s *S3Conf) {
 	testName := "CreateMultipartUpload_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucketName,
-			Key:    getPtr("my-obj"),
-		})
-		cancel()
+		_, err := CreateMp(s3client, bucketName, "my-obj")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
@@ -1670,12 +1665,7 @@ func CreateMultipartUpload_success(s *S3Conf) {
 	testName := "CreateMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -1753,17 +1743,12 @@ func UploadPart_non_existing_key(s *S3Conf) {
 	testName := "UploadPart_non_existing_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        getPtr("non-existing-object-key"),
@@ -1782,16 +1767,11 @@ func UploadPart_success(s *S3Conf) {
 	testName := "UploadPart_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &obj,
@@ -1842,17 +1822,12 @@ func UploadPartCopy_incorrect_uploadId(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		_, err = CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
@@ -1887,17 +1862,12 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
@@ -1944,17 +1914,12 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("invalid-copy-source"),
@@ -1976,17 +1941,12 @@ func UploadPartCopy_non_existing_source_bucket(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("src/bucket/src/obj"),
@@ -2013,17 +1973,12 @@ func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
 			return nil
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/non/existing/obj/key"),
@@ -2062,17 +2017,12 @@ func UploadPartCopy_success(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		copyOut, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
@@ -2135,17 +2085,12 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:          &bucket,
 			CopySource:      getPtr(srcBucket + "/" + srcObj),
@@ -2185,17 +2130,12 @@ func UploadPartCopy_by_range_success(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		copyOut, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:          &bucket,
 			CopySource:      getPtr(srcBucket + "/" + srcObj),
@@ -2264,17 +2204,12 @@ func ListParts_incorrect_object_key(s *S3Conf) {
 	testName := "ListParts_incorrect_object_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.ListParts(ctx, &s3.ListPartsInput{
 			Bucket:   &bucket,
 			Key:      getPtr("incorrect-object-key"),
@@ -2293,12 +2228,7 @@ func ListParts_success(s *S3Conf) {
 	testName := "ListParts_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2308,7 +2238,7 @@ func ListParts_success(s *S3Conf) {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
 			Bucket:   &bucket,
 			Key:      &obj,
@@ -2363,31 +2293,146 @@ func ListMultipartUploads_empty_result(s *S3Conf) {
 	})
 }
 
+func ListMultipartUploads_invalid_max_uploads(s *S3Conf) {
+	testName := "ListMultipartUploads_invalid_max_uploads"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     &bucket,
+			MaxUploads: -3,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func ListMultipartUploads_max_uploads(s *S3Conf) {
+	testName := "ListMultipartUploads_max_uploads"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		uploads := []types.MultipartUpload{}
+		for i := 1; i < 6; i++ {
+			out, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			if err != nil {
+				return err
+			}
+			uploads = append(uploads, types.MultipartUpload{UploadId: out.UploadId, Key: out.Key})
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     &bucket,
+			MaxUploads: 2,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if !out.IsTruncated {
+			return fmt.Errorf("expected the output to be truncated")
+		}
+		if out.MaxUploads != 2 {
+			return fmt.Errorf("expected max-uploads to be 2, instead got %v", out.MaxUploads)
+		}
+		if ok := compareMultipartUploads(out.Uploads, uploads[:2]); !ok {
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads[:2], out.Uploads)
+		}
+		if *out.NextKeyMarker != *uploads[1].Key {
+			return fmt.Errorf("expected next-key-marker to be %v, instead got %v", *uploads[1].Key, *out.NextKeyMarker)
+		}
+		if *out.NextUploadIdMarker != *uploads[1].UploadId {
+			return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v", *uploads[1].Key, *out.NextKeyMarker)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:    &bucket,
+			KeyMarker: out.NextKeyMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if ok := compareMultipartUploads(out.Uploads, uploads[2:]); !ok {
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads[2:], out.Uploads)
+		}
+
+		return nil
+	})
+}
+
+func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) {
+	testName := "ListMultipartUploads_incorrect_next_key_marker"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i := 1; i < 6; i++ {
+			_, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			if err != nil {
+				return err
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:    &bucket,
+			KeyMarker: getPtr("incorrect_object_key"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Uploads) != 0 {
+			return fmt.Errorf("expected empty list of multipart uploads, instead got %v", out.Uploads)
+		}
+
+		return nil
+	})
+}
+
+func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) {
+	testName := "ListMultipartUploads_ignore_upload_id_marker"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		uploads := []types.MultipartUpload{}
+		for i := 1; i < 6; i++ {
+			out, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			if err != nil {
+				return err
+			}
+			uploads = append(uploads, types.MultipartUpload{UploadId: out.UploadId, Key: out.Key})
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:         &bucket,
+			UploadIdMarker: uploads[2].UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if ok := compareMultipartUploads(out.Uploads, uploads); !ok {
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads, out.Uploads)
+		}
+
+		return nil
+	})
+}
+
 func ListMultipartUploads_success(s *S3Conf) {
 	testName := "ListMultipartUploads_max_uploads"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj1, obj2 := "my-obj-1", "my-obj-2"
+		out1, err := CreateMp(s3client, bucket, obj1)
+		if err != nil {
+			return err
+		}
+
+		out2, err := CreateMp(s3client, bucket, obj2)
+		if err != nil {
+			return err
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out1, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj1,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		out2, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj2,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket: &bucket,
 		})
@@ -2398,12 +2443,12 @@ func ListMultipartUploads_success(s *S3Conf) {
 
 		expected := []types.MultipartUpload{
 			{
-				Key:      &obj2,
-				UploadId: out2.UploadId,
-			},
-			{
 				Key:      &obj1,
 				UploadId: out1.UploadId,
+			},
+			{
+				Key:      &obj2,
+				UploadId: out2.UploadId,
 			},
 		}
 
@@ -2458,17 +2503,12 @@ func AbortMultipartUpload_incorrect_object_key(s *S3Conf) {
 	testName := "AbortMultipartUpload_incorrect_object_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      getPtr("incorrect-object-key"),
@@ -2487,17 +2527,12 @@ func AbortMultipartUpload_success(s *S3Conf) {
 	testName := "AbortMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      &obj,
@@ -2547,16 +2582,11 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 	testName := "CompleteMultipartUpload_invalid_part_number"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &obj,
@@ -2595,16 +2625,11 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
 	testName := "CompleteMultipartUpload_invalid_ETag"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &obj,
@@ -2643,12 +2668,7 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 	testName := "CompleteMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
+		out, err := CreateMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2667,7 +2687,7 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 			})
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      &obj,

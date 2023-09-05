@@ -536,6 +536,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	objs, _ := os.ReadDir(filepath.Join(bucket, metaTmpMultipartDir))
 
 	var uploads []s3response.Upload
+	var resultUpds []s3response.Upload
 
 	var keyMarker string
 	if mpu.KeyMarker != nil {
@@ -545,12 +546,9 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	if mpu.UploadIdMarker != nil {
 		uploadIDMarker = *mpu.UploadIdMarker
 	}
-	var pastMarker bool
-	if keyMarker == "" && uploadIDMarker == "" {
-		pastMarker = true
-	}
+	keyMarkerInd, uploadIdMarkerFound := -1, false
 
-	for i, obj := range objs {
+	for _, obj := range objs {
 		if !obj.IsDir() {
 			continue
 		}
@@ -569,22 +567,14 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 			continue
 		}
 
-		for j, upid := range upids {
+		for _, upid := range upids {
 			if !upid.IsDir() {
 				continue
 			}
 
-			if objectName == keyMarker || upid.Name() == uploadIDMarker {
-				pastMarker = true
-				continue
-			}
-			if keyMarker != "" && uploadIDMarker != "" && !pastMarker {
-				continue
-			}
-
-			userMetaData := make(map[string]string)
-			upiddir := filepath.Join(bucket, metaTmpMultipartDir, obj.Name(), upid.Name())
-			loadUserMetaData(upiddir, userMetaData)
+			// userMetaData := make(map[string]string)
+			// upiddir := filepath.Join(bucket, metaTmpMultipartDir, obj.Name(), upid.Name())
+			// loadUserMetaData(upiddir, userMetaData)
 
 			fi, err := upid.Info()
 			if err != nil {
@@ -592,26 +582,59 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 			}
 
 			uploadID := upid.Name()
+			if !uploadIdMarkerFound && uploadIDMarker == uploadID {
+				uploadIdMarkerFound = true
+			}
+			if keyMarkerInd == -1 && objectName == keyMarker {
+				keyMarkerInd = len(uploads)
+			}
 			uploads = append(uploads, s3response.Upload{
 				Key:       objectName,
 				UploadID:  uploadID,
 				Initiated: fi.ModTime().Format(backend.RFC3339TimeFormat),
 			})
-			if len(uploads) == int(mpu.MaxUploads) {
-				return s3response.ListMultipartUploadsResult{
-					Bucket:             bucket,
-					Delimiter:          delimiter,
-					IsTruncated:        i != len(objs) || j != len(upids),
-					KeyMarker:          keyMarker,
-					MaxUploads:         int(mpu.MaxUploads),
-					NextKeyMarker:      objectName,
-					NextUploadIDMarker: uploadID,
-					Prefix:             prefix,
-					UploadIDMarker:     uploadIDMarker,
-					Uploads:            uploads,
-				}, nil
-			}
 		}
+	}
+
+	if (uploadIDMarker != "" && !uploadIdMarkerFound) || (keyMarker != "" && keyMarkerInd == -1) {
+		return s3response.ListMultipartUploadsResult{
+			Bucket:         bucket,
+			Delimiter:      delimiter,
+			KeyMarker:      keyMarker,
+			MaxUploads:     int(mpu.MaxUploads),
+			Prefix:         prefix,
+			UploadIDMarker: uploadIDMarker,
+			Uploads:        []s3response.Upload{},
+		}, nil
+	}
+
+	sort.SliceStable(uploads, func(i, j int) bool {
+		return uploads[i].Key < uploads[j].Key
+	})
+
+	for i := keyMarkerInd + 1; i < len(uploads); i++ {
+		if mpu.MaxUploads == 0 {
+			break
+		}
+		if keyMarker != "" && uploadIDMarker != "" && uploads[i].UploadID < uploadIDMarker {
+			continue
+		}
+		if i != len(uploads)-1 && len(resultUpds) == int(mpu.MaxUploads) {
+			return s3response.ListMultipartUploadsResult{
+				Bucket:             bucket,
+				Delimiter:          delimiter,
+				KeyMarker:          keyMarker,
+				MaxUploads:         int(mpu.MaxUploads),
+				NextKeyMarker:      resultUpds[i-1].Key,
+				NextUploadIDMarker: resultUpds[i-1].UploadID,
+				IsTruncated:        true,
+				Prefix:             prefix,
+				UploadIDMarker:     uploadIDMarker,
+				Uploads:            resultUpds,
+			}, nil
+		}
+
+		resultUpds = append(resultUpds, uploads[i])
 	}
 
 	return s3response.ListMultipartUploadsResult{
@@ -621,7 +644,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		MaxUploads:     int(mpu.MaxUploads),
 		Prefix:         prefix,
 		UploadIDMarker: uploadIDMarker,
-		Uploads:        uploads,
+		Uploads:        resultUpds,
 	}, nil
 }
 

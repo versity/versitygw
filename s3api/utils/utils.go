@@ -80,7 +80,7 @@ func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 	}
 }
 
-func ParseMaxKeys(str string) (int32, error) {
+func ParseUint(str string) (int32, error) {
 	if str == "" {
 		return -1, nil
 	}

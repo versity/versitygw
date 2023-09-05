@@ -222,7 +222,7 @@ func TestIsValidBucketName(t *testing.T) {
 	}
 }
 
-func TestParseMaxKeys(t *testing.T) {
+func TestParseUint(t *testing.T) {
 	type args struct {
 		str string
 	}
@@ -233,7 +233,7 @@ func TestParseMaxKeys(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "Parse-max-keys-empty-string",
+			name: "Parse-uint-empty-string",
 			args: args{
 				str: "",
 			},
@@ -241,7 +241,7 @@ func TestParseMaxKeys(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Parse-max-keys-invalid-number-string",
+			name: "Parse-uint-invalid-number-string",
 			args: args{
 				str: "bla",
 			},
@@ -249,7 +249,7 @@ func TestParseMaxKeys(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Parse-max-keys-invalid-negative-number",
+			name: "Parse-uint-invalid-negative-number",
 			args: args{
 				str: "-5",
 			},
@@ -259,7 +259,7 @@ func TestParseMaxKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseMaxKeys(tt.args.str)
+			got, err := ParseUint(tt.args.str)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseMaxKeys() error = %v, wantErr %v", err, tt.wantErr)
 				return
