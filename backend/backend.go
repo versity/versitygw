@@ -67,6 +67,9 @@ type Backend interface {
 	GetTags(_ context.Context, bucket, object string) (map[string]string, error)
 	SetTags(_ context.Context, bucket, object string, tags map[string]string) error
 	RemoveTags(_ context.Context, bucket, object string) error
+
+	// non AWS actions
+	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
 }
 
 type BackendUnsupported struct{}
@@ -169,5 +172,9 @@ func (BackendUnsupported) SetTags(_ context.Context, bucket, object string, tags
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) RemoveTags(_ context.Context, bucket, object string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+
+func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket, newOwner string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }

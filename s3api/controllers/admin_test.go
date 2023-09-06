@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		IAMService: &IAMServiceMock{
+		iam: &IAMServiceMock{
 			CreateAccountFunc: func(access string, account auth.Account) error {
 				return nil
 			},
@@ -109,7 +110,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		IAMService: &IAMServiceMock{
+		iam: &IAMServiceMock{
 			DeleteUserAccountFunc: func(access string) error {
 				return nil
 			},
@@ -179,7 +180,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		IAMService: &IAMServiceMock{
+		iam: &IAMServiceMock{
 			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
 				return []auth.UserAcc{}, nil
 			},
@@ -187,7 +188,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 	}
 
 	adminControllerErr := AdminController{
-		IAMService: &IAMServiceMock{
+		iam: &IAMServiceMock{
 			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
 				return []auth.UserAcc{}, fmt.Errorf("server error")
 			},
@@ -265,6 +266,132 @@ func TestAdminController_ListUsers(t *testing.T) {
 
 		if resp.StatusCode != tt.statusCode {
 			t.Errorf("AdminController.ListUsers() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
+	}
+}
+
+func TestAdminController_ChangeBucketOwner(t *testing.T) {
+	type args struct {
+		req *http.Request
+	}
+	adminController := AdminController{
+		be: &BackendMock{
+			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, newOwner string) error {
+				return nil
+			},
+		},
+		iam: &IAMServiceMock{
+			GetUserAccountFunc: func(access string) (auth.Account, error) {
+				return auth.Account{}, nil
+			},
+		},
+	}
+
+	adminControllerIamErr := AdminController{
+		iam: &IAMServiceMock{
+			GetUserAccountFunc: func(access string) (auth.Account, error) {
+				return auth.Account{}, fmt.Errorf("unknown server error")
+			},
+		},
+	}
+
+	adminControllerIamAccDoesNotExist := AdminController{
+		iam: &IAMServiceMock{
+			GetUserAccountFunc: func(access string) (auth.Account, error) {
+				return auth.Account{}, auth.ErrNoSuchUser
+			},
+		},
+	}
+
+	app := fiber.New()
+
+	app.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
+
+	appRoleErr := fiber.New()
+
+	appRoleErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "user")
+		return ctx.Next()
+	})
+
+	appRoleErr.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
+
+	appIamErr := fiber.New()
+
+	appIamErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	appIamErr.Patch("/change-bucket-owner", adminControllerIamErr.ChangeBucketOwner)
+
+	appIamNoSuchUser := fiber.New()
+
+	appIamNoSuchUser.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	appIamNoSuchUser.Patch("/change-bucket-owner", adminControllerIamAccDoesNotExist.ChangeBucketOwner)
+
+	tests := []struct {
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
+	}{
+		{
+			name: "Change-bucket-owner-access-denied",
+			app:  appRoleErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Change-bucket-owner-check-account-server-error",
+			app:  appIamErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Change-bucket-owner-acc-does-not-exist",
+			app:  appIamNoSuchUser,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "Change-bucket-owner-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner?bucket=bucket&owner=owner", nil),
+			},
+			wantErr:    false,
+			statusCode: 201,
+		},
+	}
+	for _, tt := range tests {
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("AdminController.ChangeBucketOwner() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("AdminController.ChangeBucketOwner() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 		}
 	}
 }

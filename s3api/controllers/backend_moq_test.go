@@ -25,6 +25,9 @@ var _ backend.Backend = &BackendMock{}
 //			AbortMultipartUploadFunc: func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 //				panic("mock out the AbortMultipartUpload method")
 //			},
+//			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, newOwner string) error {
+//				panic("mock out the ChangeBucketOwner method")
+//			},
 //			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
@@ -125,6 +128,9 @@ type BackendMock struct {
 	// AbortMultipartUploadFunc mocks the AbortMultipartUpload method.
 	AbortMultipartUploadFunc func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error
 
+	// ChangeBucketOwnerFunc mocks the ChangeBucketOwner method.
+	ChangeBucketOwnerFunc func(contextMoqParam context.Context, bucket string, newOwner string) error
+
 	// CompleteMultipartUploadFunc mocks the CompleteMultipartUpload method.
 	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 
@@ -223,6 +229,15 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// AbortMultipartUploadInput is the abortMultipartUploadInput argument value.
 			AbortMultipartUploadInput *s3.AbortMultipartUploadInput
+		}
+		// ChangeBucketOwner holds details about calls to the ChangeBucketOwner method.
+		ChangeBucketOwner []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+			// NewOwner is the newOwner argument value.
+			NewOwner string
 		}
 		// CompleteMultipartUpload holds details about calls to the CompleteMultipartUpload method.
 		CompleteMultipartUpload []struct {
@@ -442,6 +457,7 @@ type BackendMock struct {
 		}
 	}
 	lockAbortMultipartUpload    sync.RWMutex
+	lockChangeBucketOwner       sync.RWMutex
 	lockCompleteMultipartUpload sync.RWMutex
 	lockCopyObject              sync.RWMutex
 	lockCreateBucket            sync.RWMutex
@@ -507,6 +523,46 @@ func (mock *BackendMock) AbortMultipartUploadCalls() []struct {
 	mock.lockAbortMultipartUpload.RLock()
 	calls = mock.calls.AbortMultipartUpload
 	mock.lockAbortMultipartUpload.RUnlock()
+	return calls
+}
+
+// ChangeBucketOwner calls ChangeBucketOwnerFunc.
+func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, bucket string, newOwner string) error {
+	if mock.ChangeBucketOwnerFunc == nil {
+		panic("BackendMock.ChangeBucketOwnerFunc: method is nil but Backend.ChangeBucketOwner was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		NewOwner        string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		NewOwner:        newOwner,
+	}
+	mock.lockChangeBucketOwner.Lock()
+	mock.calls.ChangeBucketOwner = append(mock.calls.ChangeBucketOwner, callInfo)
+	mock.lockChangeBucketOwner.Unlock()
+	return mock.ChangeBucketOwnerFunc(contextMoqParam, bucket, newOwner)
+}
+
+// ChangeBucketOwnerCalls gets all the calls that were made to ChangeBucketOwner.
+// Check the length with:
+//
+//	len(mockedBackend.ChangeBucketOwnerCalls())
+func (mock *BackendMock) ChangeBucketOwnerCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+	NewOwner        string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		NewOwner        string
+	}
+	mock.lockChangeBucketOwner.RLock()
+	calls = mock.calls.ChangeBucketOwner
+	mock.lockChangeBucketOwner.RUnlock()
 	return calls
 }
 

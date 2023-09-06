@@ -19,10 +19,16 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 )
 
 type AdminController struct {
-	IAMService auth.IAMService
+	iam auth.IAMService
+	be  backend.Backend
+}
+
+func NewAdminController(iam auth.IAMService, be backend.Backend) AdminController {
+	return AdminController{iam: iam, be: be}
 }
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
@@ -38,7 +44,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 
 	user := auth.Account{Secret: secret, Role: role}
 
-	err := c.IAMService.CreateAccount(access, user)
+	err := c.iam.CreateAccount(access, user)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}
@@ -53,7 +59,7 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 
-	err := c.IAMService.DeleteUserAccount(access)
+	err := c.iam.DeleteUserAccount(access)
 	if err != nil {
 		return err
 	}
@@ -66,10 +72,34 @@ func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
 	if role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
-	accs, err := c.IAMService.ListUserAccounts()
+	accs, err := c.iam.ListUserAccounts()
 	if err != nil {
 		return err
 	}
 
 	return ctx.JSON(accs)
+}
+
+func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
+	role := ctx.Locals("role").(string)
+	if role != "admin" {
+		return fmt.Errorf("access denied: only admin users have access to this resource")
+	}
+	owner := ctx.Query("owner")
+	bucket := ctx.Query("bucket")
+
+	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
+	if err != nil {
+		return err
+	}
+	if len(accs) > 0 {
+		return fmt.Errorf("user specified as the new bucket owner does not exist")
+	}
+
+	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
+	if err != nil {
+		return err
+	}
+
+	return ctx.Status(201).SendString("Bucket owner has been updated successfully")
 }
