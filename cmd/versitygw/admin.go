@@ -84,6 +84,25 @@ func adminCommand() *cli.Command {
 				Usage:  "List all the gateway users",
 				Action: listUsers,
 			},
+			{
+				Name:  "change-bucket-owner",
+				Usage: "Changes the bucket owner",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "bucket",
+						Usage:    "the bucket name to change the owner",
+						Required: true,
+						Aliases:  []string{"b"},
+					},
+					&cli.StringFlag{
+						Name:     "owner",
+						Usage:    "the user access key id, who should be the bucket owner",
+						Required: true,
+						Aliases:  []string{"o"},
+					},
+				},
+				Action: changeBucketOwner,
+			},
 		},
 		Flags: []cli.Flag{
 			// TODO: create a configuration file for this
@@ -241,6 +260,43 @@ func listUsers(ctx *cli.Context) error {
 	}
 
 	fmt.Println(string(jsonData))
+
+	return nil
+}
+
+func changeBucketOwner(ctx *cli.Context) error {
+	bucket, owner := ctx.String("bucket"), ctx.String("owner")
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", adminEndpoint, bucket, owner), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	fmt.Println(string(body))
 
 	return nil
 }

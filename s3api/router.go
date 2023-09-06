@@ -27,9 +27,9 @@ type S3ApiRouter struct{}
 
 func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender) {
 	s3ApiController := controllers.New(be, iam, logger, evs)
-	adminController := controllers.AdminController{IAMService: iam}
+	adminController := controllers.NewAdminController(iam, be)
 
-	//CreateUser admin api
+	// CreateUser admin api
 	app.Patch("/create-user", adminController.CreateUser)
 
 	// DeleteUsers admin api
@@ -37,6 +37,9 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 
 	// ListUsers admin api
 	app.Patch("/list-users", adminController.ListUsers)
+
+	// ChangeBucketOwner
+	app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
 
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)

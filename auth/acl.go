@@ -148,7 +148,7 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, er
 		}
 
 		// Check if the specified accounts exist
-		accList, err := checkIfAccountsExist(accs, iam)
+		accList, err := CheckIfAccountsExist(accs, iam)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +168,7 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, er
 	return result, nil
 }
 
-func checkIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
+func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 	result := []string{}
 
 	for _, acc := range accs {

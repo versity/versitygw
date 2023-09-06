@@ -1506,6 +1506,41 @@ func (p *Posix) RemoveTags(ctx context.Context, bucket, object string) error {
 	return p.SetTags(ctx, bucket, object, nil)
 }
 
+func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	aclTag, err := xattr.Get(bucket, aclkey)
+	if err != nil {
+		return fmt.Errorf("get acl: %w", err)
+	}
+
+	var acl auth.ACL
+	err = json.Unmarshal(aclTag, &acl)
+	if err != nil {
+		return fmt.Errorf("unmarshal acl: %w", err)
+	}
+
+	acl.Owner = newOwner
+
+	newAcl, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("marshal acl: %w", err)
+	}
+
+	err = xattr.Set(bucket, aclkey, newAcl)
+	if err != nil {
+		return fmt.Errorf("set acl: %w", err)
+	}
+
+	return nil
+}
+
 const (
 	iamMode = 0600
 )
