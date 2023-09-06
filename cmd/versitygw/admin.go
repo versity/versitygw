@@ -230,7 +230,7 @@ func listUsers(ctx *cli.Context) error {
 	}
 	defer resp.Body.Close()
 
-	var accs []auth.UserAcc
+	var accs []auth.Account
 	if err := json.Unmarshal(body, &accs); err != nil {
 		return err
 	}

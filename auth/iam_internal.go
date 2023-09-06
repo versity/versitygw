@@ -41,12 +41,6 @@ type Storer interface {
 	StoreIAM(UpdateAcctFunc) error
 }
 
-type UserAcc struct {
-	Access string `json:"access"`
-	Secret string `json:"secret"`
-	Role   string `json:"role"`
-}
-
 // IAMConfig stores all internal IAM accounts
 type IAMConfig struct {
 	AccessAccounts map[string]Account `json:"accessAccounts"`
@@ -187,13 +181,13 @@ func (s *IAMServiceInternal) DeleteUserAccount(access string) error {
 }
 
 // ListUserAccounts lists all the user accounts stored.
-func (s *IAMServiceInternal) ListUserAccounts() (accs []UserAcc, err error) {
+func (s *IAMServiceInternal) ListUserAccounts() (accs []Account, err error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	data, err := s.storer.GetIAM()
 	if err != nil {
-		return []UserAcc{}, fmt.Errorf("get iam data: %w", err)
+		return []Account{}, fmt.Errorf("get iam data: %w", err)
 	}
 
 	serial := crc32.ChecksumIEEE(data)
@@ -202,12 +196,12 @@ func (s *IAMServiceInternal) ListUserAccounts() (accs []UserAcc, err error) {
 		err := s.updateCache()
 		s.mu.RLock()
 		if err != nil {
-			return []UserAcc{}, fmt.Errorf("refresh iam cache: %w", err)
+			return []Account{}, fmt.Errorf("refresh iam cache: %w", err)
 		}
 	}
 
 	for access, usr := range s.accts.AccessAccounts {
-		accs = append(accs, UserAcc{
+		accs = append(accs, Account{
 			Access: access,
 			Secret: usr.Secret,
 			Role:   usr.Role,
