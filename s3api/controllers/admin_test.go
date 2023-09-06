@@ -181,16 +181,16 @@ func TestAdminController_ListUsers(t *testing.T) {
 
 	adminController := AdminController{
 		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
-				return []auth.UserAcc{}, nil
+			ListUserAccountsFunc: func() ([]auth.Account, error) {
+				return []auth.Account{}, nil
 			},
 		},
 	}
 
 	adminControllerErr := AdminController{
 		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
-				return []auth.UserAcc{}, fmt.Errorf("server error")
+			ListUserAccountsFunc: func() ([]auth.Account, error) {
+				return []auth.Account{}, fmt.Errorf("server error")
 			},
 		},
 	}

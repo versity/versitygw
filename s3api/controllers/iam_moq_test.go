@@ -27,7 +27,7 @@ var _ auth.IAMService = &IAMServiceMock{}
 //			GetUserAccountFunc: func(access string) (auth.Account, error) {
 //				panic("mock out the GetUserAccount method")
 //			},
-//			ListUserAccountsFunc: func() ([]auth.UserAcc, error) {
+//			ListUserAccountsFunc: func() ([]auth.Account, error) {
 //				panic("mock out the ListUserAccounts method")
 //			},
 //		}
@@ -47,7 +47,7 @@ type IAMServiceMock struct {
 	GetUserAccountFunc func(access string) (auth.Account, error)
 
 	// ListUserAccountsFunc mocks the ListUserAccounts method.
-	ListUserAccountsFunc func() ([]auth.UserAcc, error)
+	ListUserAccountsFunc func() ([]auth.Account, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -179,7 +179,7 @@ func (mock *IAMServiceMock) GetUserAccountCalls() []struct {
 }
 
 // ListUserAccounts calls ListUserAccountsFunc.
-func (mock *IAMServiceMock) ListUserAccounts() ([]auth.UserAcc, error) {
+func (mock *IAMServiceMock) ListUserAccounts() ([]auth.Account, error) {
 	if mock.ListUserAccountsFunc == nil {
 		panic("IAMServiceMock.ListUserAccountsFunc: method is nil but IAMService.ListUserAccounts was just called")
 	}
