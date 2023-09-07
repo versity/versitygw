@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"text/tabwriter"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -254,14 +256,30 @@ func listUsers(ctx *cli.Context) error {
 		return err
 	}
 
-	jsonData, err := json.MarshalIndent(accs, "", "    ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(string(jsonData))
+	printAcctTable(accs)
 
 	return nil
+}
+
+const (
+	// account table formatting
+	minwidth int  = 2   // minimal cell width including any padding
+	tabwidth int  = 0   // width of tab characters (equivalent number of spaces)
+	padding  int  = 2   // padding added to a cell before computing its width
+	padchar  byte = ' ' // ASCII char used for padding
+	flags    uint = 0   // formatting control flags
+)
+
+func printAcctTable(accs []auth.Account) {
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
+	fmt.Fprintln(w, "Account\tRole")
+	fmt.Fprintln(w, "-------\t----")
+	for _, acc := range accs {
+		fmt.Fprintf(w, "%v\t%v\n", acc.Access, acc.Role)
+	}
+	fmt.Fprintln(w)
+	w.Flush()
 }
 
 func changeBucketOwner(ctx *cli.Context) error {
