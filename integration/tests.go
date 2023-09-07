@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -706,6 +707,189 @@ func HeadBucket_success(s *S3Conf) {
 		if err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func ListBuckets_as_user(s *S3Conf) {
+	testName := "ListBuckets_as_user"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		for i := 0; i < 6; i++ {
+			bckt := getBucketName()
+
+			err := setup(s, bckt)
+			if err != nil {
+				return err
+			}
+
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name: bckt,
+			})
+		}
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		err := createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = usr.access
+		cfg.awsSecret = usr.secret
+
+		bckts := []string{}
+		for i := 0; i < 3; i++ {
+			bckts = append(bckts, buckets[i].Name)
+		}
+
+		err = changeBucketsOwner(s, bckts, usr.access)
+		if err != nil {
+			return err
+		}
+
+		userClient := s3.NewFromConfig(cfg.Config())
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := userClient.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != usr.access {
+			return fmt.Errorf("expected buckets owner to be %v, instead got %v", usr.access, *out.Owner.ID)
+		}
+		if ok := compareBuckets(out.Buckets, buckets[:3]); !ok {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[:3], out.Buckets)
+		}
+
+		for _, elem := range buckets[1:] {
+			err = teardown(s, elem.Name)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_as_admin(s *S3Conf) {
+	testName := "ListBuckets_as_admin"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		for i := 0; i < 6; i++ {
+			bckt := getBucketName()
+
+			err := setup(s, bckt)
+			if err != nil {
+				return err
+			}
+
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name: bckt,
+			})
+		}
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		admin := user{
+			access: "admin1",
+			secret: "admin1secret",
+			role:   "admin",
+		}
+
+		err := createUsers(s, []user{usr, admin})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = admin.access
+		cfg.awsSecret = admin.secret
+
+		bckts := []string{}
+		for i := 0; i < 3; i++ {
+			bckts = append(bckts, buckets[i].Name)
+		}
+
+		err = changeBucketsOwner(s, bckts, usr.access)
+		if err != nil {
+			return err
+		}
+
+		adminClient := s3.NewFromConfig(cfg.Config())
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := adminClient.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != admin.access {
+			return fmt.Errorf("expected buckets owner to be %v, instead got %v", admin.access, *out.Owner.ID)
+		}
+		if ok := compareBuckets(out.Buckets, buckets); !ok {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
+		}
+
+		for _, elem := range buckets[1:] {
+			err = teardown(s, elem.Name)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_success(s *S3Conf) {
+	testName := "ListBuckets_success"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		for i := 0; i < 5; i++ {
+			bckt := getBucketName()
+
+			err := setup(s, bckt)
+			if err != nil {
+				return err
+			}
+
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name: bckt,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+		if ok := compareBuckets(out.Buckets, buckets); !ok {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
+		}
+
+		for _, elem := range buckets[1:] {
+			err = teardown(s, elem.Name)
+			if err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 }

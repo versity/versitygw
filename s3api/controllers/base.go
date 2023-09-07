@@ -53,8 +53,8 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 }
 
 func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
-	access, isRoot := ctx.Locals("access").(string), ctx.Locals("isRoot").(bool)
-	res, err := c.be.ListBuckets(ctx.Context(), access, isRoot)
+	access, role := ctx.Locals("access").(string), ctx.Locals("role").(string)
+	res, err := c.be.ListBuckets(ctx.Context(), access, role == "admin")
 	return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListBucket"})
 }
 
