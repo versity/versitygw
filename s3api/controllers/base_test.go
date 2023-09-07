@@ -90,9 +90,6 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
-				return acldata, nil
-			},
 			ListBucketsFunc: func(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, nil
 			},
@@ -101,7 +98,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
-		ctx.Locals("isRoot", true)
+		ctx.Locals("role", "admin")
 		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
@@ -111,9 +108,6 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr := fiber.New()
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
-				return acldata, nil
-			},
 			ListBucketsFunc: func(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			},
@@ -122,7 +116,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("access", "valid access")
-		ctx.Locals("isRoot", true)
+		ctx.Locals("role", "admin")
 		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})

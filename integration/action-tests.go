@@ -33,6 +33,12 @@ func TestHeadBucket(s *S3Conf) {
 	HeadBucket_success(s)
 }
 
+func TestListBuckets(s *S3Conf) {
+	ListBuckets_as_user(s)
+	ListBuckets_as_admin(s)
+	ListBuckets_success(s)
+}
+
 func TestDeleteBucket(s *S3Conf) {
 	DeleteBucket_non_existing_bucket(s)
 	DeleteBucket_non_empty_bucket(s)
@@ -176,6 +182,7 @@ func TestFullFlow(s *S3Conf) {
 	TestAuthentication(s)
 	TestCreateBucket(s)
 	TestHeadBucket(s)
+	TestListBuckets(s)
 	TestDeleteBucket(s)
 	TestPutObject(s)
 	TestHeadObject(s)

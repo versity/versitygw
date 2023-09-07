@@ -30,7 +30,7 @@ type Backend interface {
 	Shutdown()
 
 	// bucket operations
-	ListBuckets(_ context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error)
+	ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error)
 	HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error)
 	CreateBucket(context.Context, *s3.CreateBucketInput) error

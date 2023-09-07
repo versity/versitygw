@@ -98,7 +98,7 @@ func (p *Posix) String() string {
 	return "Posix Gateway"
 }
 
-func (p *Posix) ListBuckets(_ context.Context, owner string, isRoot bool) (s3response.ListAllMyBucketsResult, error) {
+func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{},
@@ -118,10 +118,32 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isRoot bool) (s3res
 			continue
 		}
 
-		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-			Name:         entry.Name(),
-			CreationDate: fi.ModTime(),
-		})
+		// return all the buckets for admin users
+		if isAdmin {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         entry.Name(),
+				CreationDate: fi.ModTime(),
+			})
+			continue
+		}
+
+		aclTag, err := xattr.Get(entry.Name(), aclkey)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
+		}
+
+		var acl auth.ACL
+		err = json.Unmarshal(aclTag, &acl)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("parse acl tag: %w", err)
+		}
+
+		if acl.Owner == owner {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         entry.Name(),
+				CreationDate: fi.ModTime(),
+			})
+		}
 	}
 
 	sort.Sort(backend.ByBucketName(buckets))
@@ -129,6 +151,9 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isRoot bool) (s3res
 	return s3response.ListAllMyBucketsResult{
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
+		},
+		Owner: s3response.CanonicalUser{
+			ID: owner,
 		},
 	}, nil
 }

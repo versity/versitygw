@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -360,6 +361,26 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
+func compareBuckets(list1 []types.Bucket, list2 []s3response.ListAllMyBucketsEntry) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+
+	elementMap := make(map[string]bool)
+
+	for _, elem := range list1 {
+		elementMap[*elem.Name] = true
+	}
+
+	for _, elem := range list2 {
+		if _, found := elementMap[elem.Name]; !found {
+			return false
+		}
+	}
+
+	return true
+}
+
 func compareObjects(list1 []string, list2 []types.Object) bool {
 	if len(list1) != len(list2) {
 		return false
@@ -469,5 +490,19 @@ func createUsers(s *S3Conf, users []user) error {
 			return fmt.Errorf("failed to create a user account")
 		}
 	}
+	return nil
+}
+
+func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
+	for _, bucket := range buckets {
+		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "change-bucket-owner", "-b", bucket, "-o", owner)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(out), "Bucket owner has been updated successfully") {
+			return fmt.Errorf(string(out))
+		}
+	}
+
 	return nil
 }
