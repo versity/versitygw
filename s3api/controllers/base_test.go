@@ -29,6 +29,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -1419,16 +1420,9 @@ func Test_XMLresponse(t *testing.T) {
 		resp any
 		err  error
 	}
+
 	app := fiber.New()
-
-	var ctx fiber.Ctx
-	// Mocking the fiber ctx
-	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
-		ctx = *c
-		return nil
-	})
-
-	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
+	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
 	tests := []struct {
 		name       string
@@ -1439,7 +1433,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrInternalError),
 			},
@@ -1449,7 +1443,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrNotImplemented),
 			},
@@ -1459,7 +1453,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Invalid-request-body",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: make(chan int),
 				err:  nil,
 			},
@@ -1469,7 +1463,7 @@ func Test_XMLresponse(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: "Valid response",
 				err:  nil,
 			},
@@ -1500,15 +1494,9 @@ func Test_response(t *testing.T) {
 		resp any
 		err  error
 	}
-	app := fiber.New()
-	var ctx fiber.Ctx
-	// Mocking the fiber ctx
-	app.Get("/:bucket/:key", func(c *fiber.Ctx) error {
-		ctx = *c
-		return nil
-	})
 
-	app.Test(httptest.NewRequest(http.MethodGet, "/my-bucket/my-key", nil))
+	app := fiber.New()
+	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
 	tests := []struct {
 		name       string
@@ -1519,7 +1507,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Internal-server-error",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrInternalError),
 			},
@@ -1529,7 +1517,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Internal-server-error-not-api",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: nil,
 				err:  fmt.Errorf("custom error"),
 			},
@@ -1539,7 +1527,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Error-not-implemented",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrNotImplemented),
 			},
@@ -1549,7 +1537,7 @@ func Test_response(t *testing.T) {
 		{
 			name: "Successful-response",
 			args: args{
-				ctx:  &ctx,
+				ctx:  ctx,
 				resp: "Valid response",
 				err:  nil,
 			},
