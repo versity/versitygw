@@ -44,7 +44,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)
 
-	// PutBucket action
+	// CreateBucket action
 	// PutBucketAcl action
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
 
@@ -53,6 +53,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 
 	// HeadBucket
 	app.Head("/:bucket", s3ApiController.HeadBucket)
+
 	// GetBucketAcl action
 	// ListMultipartUploads action
 	// ListObjects action
@@ -61,22 +62,34 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 
 	// HeadObject action
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
+
 	// GetObjectAcl action
 	// GetObject action
 	// ListObjectParts action
+	// GetTags action
+	// ListParts action
+	// GetObjectAttributes action
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
+
 	// DeleteObject action
 	// AbortMultipartUpload action
+	// RemoveTags action
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
+
 	// DeleteObjects action
 	app.Post("/:bucket", s3ApiController.DeleteObjects)
+
 	// CompleteMultipartUpload action
 	// CreateMultipartUpload
 	// RestoreObject action
+	// SelectObjectContent action
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)
+
 	// CopyObject action
 	// PutObject action
 	// UploadPart action
 	// UploadPartCopy action
+	// SetTags action
+	// PutObjectAcl action
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
 }

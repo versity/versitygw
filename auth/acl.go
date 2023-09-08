@@ -105,7 +105,6 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, er
 
 			if *input.GrantFullControl != "" {
 				fullControlList = splitUnique(*input.GrantFullControl, ",")
-				fmt.Println(fullControlList)
 				for _, str := range fullControlList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "FULL_CONTROL"})
 				}
