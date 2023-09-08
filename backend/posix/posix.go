@@ -413,7 +413,6 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 	if err != nil || len(ents) == 0 {
 		return
 	}
-	fmt.Println(ents)
 	for _, e := range ents {
 		if !isValidMeta(e) {
 			continue
@@ -426,7 +425,6 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 		if err != nil {
 			continue
 		}
-		fmt.Println(b)
 		m[strings.TrimPrefix(e, fmt.Sprintf("user.%v.", metaHdr))] = string(b)
 	}
 
@@ -1168,7 +1166,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	userMetaData := make(map[string]string)
 
 	contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
-	fmt.Println(userMetaData)
 
 	b, err := xattr.Get(objPath, etagkey)
 	etag := string(b)
