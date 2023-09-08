@@ -656,6 +656,32 @@ func CreateBucket_invalid_bucket_name(s *S3Conf) {
 	passF(testName)
 }
 
+func CreateBucket_as_user(s *S3Conf) {
+	testName := "CreateBucket_as_user"
+	runF(testName)
+	usr := user{
+		access: "grt1",
+		secret: "grt1secret",
+		role:   "user",
+	}
+	cfg := *s
+	cfg.awsID = usr.access
+	cfg.awsSecret = usr.secret
+	err := createUsers(s, []user{usr})
+	if err != nil {
+		failF("%v: %v", testName, err.Error())
+		return
+	}
+
+	err = setup(&cfg, getBucketName())
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		failF("%v: %v", testName, err.Error())
+		return
+	}
+
+	passF(testName)
+}
+
 func CreateBucket_existing_bucket(s *S3Conf) {
 	testName := "CreateBucket_existing_bucket"
 	runF(testName)

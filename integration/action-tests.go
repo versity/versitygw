@@ -25,6 +25,7 @@ func TestAuthentication(s *S3Conf) {
 func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
+	CreateBucket_as_user(s)
 	CreateDeleteBucket_success(s)
 }
 
