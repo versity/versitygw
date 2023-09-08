@@ -127,6 +127,7 @@ func adminCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:        "endpoint-url",
 				Usage:       "admin apis endpoint url",
+				EnvVars:     []string{"ADMIN_ENDPOINT_URL"},
 				Aliases:     []string{"er"},
 				Required:    true,
 				Destination: &adminEndpoint,
