@@ -30,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/pkg/xattr"
-	"github.com/versity/scoutfs-go"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/s3err"
@@ -188,7 +187,7 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 		// scoutfs move data is a metadata only operation that moves the data
 		// extent references from the source, appeding to the destination.
 		// this needs to be 4k aligned.
-		err = scoutfs.MoveData(pf, f.f)
+		err = moveData(pf, f.f)
 		pf.Close()
 		if err != nil {
 			return nil, fmt.Errorf("move blocks part %v: %v", p.PartNumber, err)
@@ -392,7 +391,7 @@ func (s *ScoutFS) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.
 
 		// Check if there are any offline exents associated with this file.
 		// If so, we will set storage class to glacier.
-		st, err := scoutfs.StatMore(objPath)
+		st, err := statMore(objPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
@@ -466,7 +465,7 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 	if s.glaciermode {
 		// Check if there are any offline exents associated with this file.
 		// If so, we will return the InvalidObjectState error.
-		st, err := scoutfs.StatMore(objPath)
+		st, err := statMore(objPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
@@ -666,7 +665,7 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		if s.glaciermode {
 			// Check if there are any offline exents associated with this file.
 			// If so, we will return the InvalidObjectState error.
-			st, err := scoutfs.StatMore(objPath)
+			st, err := statMore(objPath)
 			if errors.Is(err, fs.ErrNotExist) {
 				return types.Object{}, backend.ErrSkipObj
 			}

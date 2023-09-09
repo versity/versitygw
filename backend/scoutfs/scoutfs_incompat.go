@@ -12,6 +12,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//go:build !(linux && amd64)
+
 package scoutfs
 
 import (
@@ -45,4 +47,12 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 }
 
 func (tmp *tmpfile) cleanup() {
+}
+
+func moveData(from *os.File, to *os.File) error {
+	return errNotSupported
+}
+
+func statMore(path string) (stat, error) {
+	return stat{}, errNotSupported
 }

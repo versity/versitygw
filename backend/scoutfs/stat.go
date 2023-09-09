@@ -14,35 +14,12 @@
 
 package scoutfs
 
-import (
-	"errors"
-	"fmt"
-	"os"
-)
-
-func New(rootdir string, opts ...Option) (*ScoutFS, error) {
-	return nil, fmt.Errorf("scoutfs only available on linux")
-}
-
-type tmpfile struct {
-	f *os.File
-}
-
-var (
-	errNotSupported = errors.New("not supported")
-)
-
-func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
-	return nil, errNotSupported
-}
-
-func (tmp *tmpfile) link() error {
-	return errNotSupported
-}
-
-func (tmp *tmpfile) Write(b []byte) (int, error) {
-	return 0, errNotSupported
-}
-
-func (tmp *tmpfile) cleanup() {
+type stat struct {
+	Meta_seq       uint64
+	Data_seq       uint64
+	Data_version   uint64
+	Online_blocks  uint64
+	Offline_blocks uint64
+	Crtime_sec     uint64
+	Crtime_nsec    uint32
 }
