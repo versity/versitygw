@@ -75,6 +75,7 @@ func main() {
 		posixCommand(),
 		scoutfsCommand(),
 		s3Command(),
+		azureCommand(),
 		adminCommand(),
 		testCommand(),
 	}
