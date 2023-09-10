@@ -12,7 +12,7 @@ require (
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/urfave/cli/v2 v2.25.7
-	github.com/valyala/fasthttp v1.48.0
+	github.com/valyala/fasthttp v1.49.0
 	github.com/versity/scoutfs-go v0.0.0-20230606232754-0474b14343b9
 	golang.org/x/sys v0.10.0
 )
