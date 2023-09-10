@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.38.1
 	github.com/aws/smithy-go v1.14.0
 	github.com/gofiber/fiber/v2 v2.48.0
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.3.1
 	github.com/nats-io/nats.go v1.28.0
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.42
