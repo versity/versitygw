@@ -12,6 +12,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//go:build linux && amd64
+
 package scoutfs
 
 import (
@@ -26,6 +28,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/versity/scoutfs-go"
 	"github.com/versity/versitygw/backend/posix"
 )
 
@@ -181,4 +184,26 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 
 func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
+}
+
+func moveData(from *os.File, to *os.File) error {
+	return scoutfs.MoveData(from, to)
+}
+
+func statMore(path string) (stat, error) {
+	st, err := scoutfs.StatMore(path)
+	if err != nil {
+		return stat{}, err
+	}
+	var s stat
+
+	s.Meta_seq = st.Meta_seq
+	s.Data_seq = st.Data_seq
+	s.Data_version = st.Data_version
+	s.Online_blocks = st.Online_blocks
+	s.Offline_blocks = st.Offline_blocks
+	s.Crtime_sec = st.Crtime_sec
+	s.Crtime_nsec = st.Crtime_nsec
+
+	return s, nil
 }
