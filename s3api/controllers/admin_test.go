@@ -23,6 +23,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/s3response"
 )
 
 func TestAdminController_CreateUser(t *testing.T) {
@@ -392,6 +393,75 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 
 		if resp.StatusCode != tt.statusCode {
 			t.Errorf("AdminController.ChangeBucketOwner() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
+	}
+}
+
+func TestAdminController_ListBuckets(t *testing.T) {
+	type args struct {
+		req *http.Request
+	}
+	adminController := AdminController{
+		be: &BackendMock{
+			ListBucketsAndOwnersFunc: func(contextMoqParam context.Context) ([]s3response.Bucket, error) {
+				return []s3response.Bucket{}, nil
+			},
+		},
+	}
+
+	app := fiber.New()
+
+	app.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "admin")
+		return ctx.Next()
+	})
+
+	app.Patch("/list-buckets", adminController.ListBuckets)
+
+	appRoleErr := fiber.New()
+
+	appRoleErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("role", "user")
+		return ctx.Next()
+	})
+
+	appRoleErr.Patch("/list-buckets", adminController.ListBuckets)
+
+	tests := []struct {
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
+	}{
+		{
+			name: "List-buckets-incorrect-role",
+			app:  appRoleErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/list-buckets", nil),
+			},
+			wantErr:    false,
+			statusCode: 500,
+		},
+		{
+			name: "List-buckets-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/list-buckets", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+	}
+	for _, tt := range tests {
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("AdminController.ListBuckets() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("AdminController.ListBuckets() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
 		}
 	}
 }

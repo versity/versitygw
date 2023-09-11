@@ -38,8 +38,11 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// ListUsers admin api
 	app.Patch("/list-users", adminController.ListUsers)
 
-	// ChangeBucketOwner
+	// ChangeBucketOwner admin api
 	app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
+
+	// ListBucketsAndOwners admin api
+	app.Patch("/list-buckets", adminController.ListBuckets)
 
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)

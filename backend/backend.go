@@ -70,6 +70,7 @@ type Backend interface {
 
 	// non AWS actions
 	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
+	ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error)
 }
 
 type BackendUnsupported struct{}
@@ -177,4 +178,7 @@ func (BackendUnsupported) RemoveTags(_ context.Context, bucket, object string) e
 
 func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket, newOwner string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error) {
+	return []s3response.Bucket{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
