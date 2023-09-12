@@ -250,7 +250,6 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 	admApp := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
-		BodyLimit:    5 * 1024 * 1024 * 1024,
 	})
 
 	var admOpts []s3api.AdminOpt
