@@ -23,26 +23,31 @@ import (
 	"github.com/versity/versitygw/s3log"
 )
 
-type S3ApiRouter struct{}
+type S3ApiRouter struct {
+	WithAdmSrv bool
+}
 
 func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender) {
 	s3ApiController := controllers.New(be, iam, logger, evs)
-	adminController := controllers.NewAdminController(iam, be)
 
-	// CreateUser admin api
-	app.Patch("/create-user", adminController.CreateUser)
+	if sa.WithAdmSrv {
+		adminController := controllers.NewAdminController(iam, be)
 
-	// DeleteUsers admin api
-	app.Patch("/delete-user", adminController.DeleteUser)
+		// CreateUser admin api
+		app.Patch("/create-user", adminController.CreateUser)
 
-	// ListUsers admin api
-	app.Patch("/list-users", adminController.ListUsers)
+		// DeleteUsers admin api
+		app.Patch("/delete-user", adminController.DeleteUser)
 
-	// ChangeBucketOwner admin api
-	app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
+		// ListUsers admin api
+		app.Patch("/list-users", adminController.ListUsers)
 
-	// ListBucketsAndOwners admin api
-	app.Patch("/list-buckets", adminController.ListBuckets)
+		// ChangeBucketOwner admin api
+		app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
+
+		// ListBucketsAndOwners admin api
+		app.Patch("/list-buckets", adminController.ListBuckets)
+	}
 
 	// ListBuckets action
 	app.Get("/", s3ApiController.ListBuckets)

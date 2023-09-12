@@ -22,24 +22,21 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/middlewares"
-	"github.com/versity/versitygw/s3event"
-	"github.com/versity/versitygw/s3log"
 )
 
-type S3ApiServer struct {
+type S3AdminServer struct {
 	app     *fiber.App
 	backend backend.Backend
-	router  *S3ApiRouter
+	router  *S3AdminRouter
 	port    string
 	cert    *tls.Certificate
-	debug   bool
 }
 
-func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, evs s3event.S3EventSender, opts ...Option) (*S3ApiServer, error) {
-	server := &S3ApiServer{
+func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, opts ...AdminOpt) *S3AdminServer {
+	server := &S3AdminServer{
 		app:     app,
 		backend: be,
-		router:  new(S3ApiRouter),
+		router:  new(S3AdminRouter),
 		port:    port,
 	}
 
@@ -49,38 +46,25 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 
 	// Logging middlewares
 	app.Use(logger.New())
-	app.Use(middlewares.DecodeURL(l))
-	app.Use(middlewares.RequestLogger(server.debug))
+	app.Use(middlewares.DecodeURL(nil))
 
 	// Authentication middlewares
-	app.Use(middlewares.VerifyV4Signature(root, iam, l, region, server.debug))
-	app.Use(middlewares.VerifyMD5Body(l))
-	app.Use(middlewares.AclParser(be, l))
+	app.Use(middlewares.VerifyV4Signature(root, iam, nil, region, false))
+	app.Use(middlewares.VerifyMD5Body(nil))
+	app.Use(middlewares.AclParser(be, nil))
 
-	server.router.Init(app, be, iam, l, evs)
+	server.router.Init(app, be, iam)
 
-	return server, nil
+	return server
 }
 
-// Option sets various options for New()
-type Option func(*S3ApiServer)
+type AdminOpt func(s *S3AdminServer)
 
-// WithTLS sets TLS Credentials
-func WithTLS(cert tls.Certificate) Option {
-	return func(s *S3ApiServer) { s.cert = &cert }
+func WithAdminSrvTLS(cert tls.Certificate) AdminOpt {
+	return func(s *S3AdminServer) { s.cert = &cert }
 }
 
-// WithAdminServer runs admin endpoints with the gateway in the same network
-func WithAdminServer() Option {
-	return func(s *S3ApiServer) { s.router.WithAdmSrv = true }
-}
-
-// WithDebug sets debug output
-func WithDebug() Option {
-	return func(s *S3ApiServer) { s.debug = true }
-}
-
-func (sa *S3ApiServer) Serve() (err error) {
+func (sa *S3AdminServer) Serve() (err error) {
 	if sa.cert != nil {
 		return sa.app.ListenTLSWithCertificate(sa.port, *sa.cert)
 	}
