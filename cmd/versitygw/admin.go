@@ -29,6 +29,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -104,6 +105,11 @@ func adminCommand() *cli.Command {
 					},
 				},
 				Action: changeBucketOwner,
+			},
+			{
+				Name:   "list-buckets",
+				Usage:  "Lists all the gateway buckets and owners.",
+				Action: listBuckets,
 			},
 		},
 		Flags: []cli.Flag{
@@ -316,6 +322,63 @@ func changeBucketOwner(ctx *cli.Context) error {
 	defer resp.Body.Close()
 
 	fmt.Println(string(body))
+
+	return nil
+}
+
+func printBuckets(buckets []s3response.Bucket) {
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
+	fmt.Fprintln(w, "Bucket\tOwner")
+	fmt.Fprintln(w, "-------\t----")
+	for _, acc := range buckets {
+		fmt.Fprintf(w, "%v\t%v\n", acc.Name, acc.Owner)
+	}
+	fmt.Fprintln(w)
+	w.Flush()
+}
+
+func listBuckets(ctx *cli.Context) error {
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", adminEndpoint), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf(string(body))
+	}
+
+	var buckets []s3response.Bucket
+	if err := json.Unmarshal(body, &buckets); err != nil {
+		return err
+	}
+
+	printBuckets(buckets)
 
 	return nil
 }

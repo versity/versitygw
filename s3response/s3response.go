@@ -134,3 +134,8 @@ type SelectObjectContentResult struct {
 	Cont     *string
 	End      *string
 }
+
+type Bucket struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+}

@@ -103,3 +103,17 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 
 	return ctx.Status(201).SendString("Bucket owner has been updated successfully")
 }
+
+func (c AdminController) ListBuckets(ctx *fiber.Ctx) error {
+	role := ctx.Locals("role").(string)
+	if role != "admin" {
+		return fmt.Errorf("access denied: only admin users have access to this resource")
+	}
+
+	buckets, err := c.be.ListBucketsAndOwners(ctx.Context())
+	if err != nil {
+		return err
+	}
+
+	return ctx.JSON(buckets)
+}

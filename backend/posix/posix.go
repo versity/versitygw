@@ -1563,6 +1563,46 @@ func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) 
 	return nil
 }
 
+func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return buckets, fmt.Errorf("readdir buckets: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		fi, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		aclTag, err := xattr.Get(entry.Name(), aclkey)
+		if err != nil {
+			return buckets, fmt.Errorf("get acl tag: %w", err)
+		}
+
+		var acl auth.ACL
+		err = json.Unmarshal(aclTag, &acl)
+		if err != nil {
+			return buckets, fmt.Errorf("parse acl tag: %w", err)
+		}
+
+		buckets = append(buckets, s3response.Bucket{
+			Name:  fi.Name(),
+			Owner: acl.Owner,
+		})
+	}
+
+	sort.SliceStable(buckets, func(i, j int) bool {
+		return buckets[i].Name < buckets[j].Name
+	})
+
+	return buckets, nil
+}
+
 const (
 	iamMode = 0600
 )
