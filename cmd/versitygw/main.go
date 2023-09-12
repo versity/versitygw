@@ -33,10 +33,11 @@ import (
 )
 
 var (
-	port                           string
+	port, admPort                  string
 	rootUserAccess                 string
 	rootUserSecret                 string
 	region                         string
+	admCertFile, admKeyFile        string
 	certFile, keyFile              string
 	kafkaURL, kafkaTopic, kafkaKey string
 	natsURL, natsTopic             string
@@ -143,6 +144,22 @@ func initFlags() []cli.Flag {
 			Usage:       "TLS key file",
 			Destination: &keyFile,
 		},
+		&cli.StringFlag{
+			Name:        "admin-port",
+			Usage:       "gateway admin server listen address <ip>:<port> or :<port>",
+			Destination: &admPort,
+			Aliases:     []string{"ap"},
+		},
+		&cli.StringFlag{
+			Name:        "admin-cert",
+			Usage:       "TLS cert file for admin server",
+			Destination: &admCertFile,
+		},
+		&cli.StringFlag{
+			Name:        "admin-cert-key",
+			Usage:       "TLS key file for admin server",
+			Destination: &admKeyFile,
+		},
 		&cli.BoolFlag{
 			Name:        "debug",
 			Usage:       "enable debug output",
@@ -223,9 +240,34 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		}
 		opts = append(opts, s3api.WithTLS(cert))
 	}
-
 	if debug {
 		opts = append(opts, s3api.WithDebug())
+	}
+	if admPort == "" {
+		opts = append(opts, s3api.WithAdminServer())
+	}
+
+	admApp := fiber.New(fiber.Config{
+		AppName:      "versitygw",
+		ServerHeader: "VERSITYGW",
+		BodyLimit:    5 * 1024 * 1024 * 1024,
+	})
+
+	var admOpts []s3api.AdminOpt
+
+	if admCertFile != "" || admKeyFile != "" {
+		if admCertFile == "" {
+			return fmt.Errorf("TLS key specified without cert file")
+		}
+		if admKeyFile == "" {
+			return fmt.Errorf("TLS cert specified without key file")
+		}
+
+		cert, err := tls.LoadX509KeyPair(admCertFile, admKeyFile)
+		if err != nil {
+			return fmt.Errorf("tls: load certs: %v", err)
+		}
+		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
 	}
 
 	err := s.InitIAM()
@@ -265,8 +307,13 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		return fmt.Errorf("init gateway: %v", err)
 	}
 
-	c := make(chan error, 1)
+	admSrv := s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, admOpts...)
+
+	c := make(chan error, 2)
 	go func() { c <- srv.Serve() }()
+	if admPort != "" {
+		go func() { c <- admSrv.Serve() }()
+	}
 
 	// for/select blocks until shutdown
 Loop:
