@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -94,14 +95,13 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			}, &controllers.MetaOpts{Logger: logger})
 		}
 
-		// Validate the dates difference
-		err := validateDate(creds[1])
-		if err != nil {
-			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
-		}
-
 		ctx.Locals("access", creds[0])
 		ctx.Locals("isRoot", creds[0] == root.Access)
+
+		_, err := time.Parse(YYYYMMDD, creds[1])
+		if err != nil {
+			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), &controllers.MetaOpts{Logger: logger})
+		}
 
 		signHdrKv := strings.Split(authParts[1], "=")
 		if len(signHdrKv) != 2 {
@@ -132,6 +132,12 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 
 		if date[:8] != creds[1] {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), &controllers.MetaOpts{Logger: logger})
+		}
+
+		// Validate the dates difference
+		err = validateDate(tdate)
+		if err != nil {
+			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
 		}
 
 		hashPayloadHeader := ctx.Get("X-Amz-Content-Sha256")
@@ -214,25 +220,24 @@ func isSpecialPayload(str string) bool {
 	return specialValues[str]
 }
 
-func validateDate(date string) error {
-	credDate, err := time.Parse(YYYYMMDD, date)
-	if err != nil {
-		return s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
-	}
+func validateDate(date time.Time) error {
+	now := time.Now().UTC()
+	diff := date.Unix() - now.Unix()
 
-	today := time.Now()
-	if credDate.Year() > today.Year() || (credDate.Year() == today.Year() && credDate.YearDay() > today.YearDay()) {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", credDate.Format(YYYYMMDD), today.Format(YYYYMMDD)),
-			HTTPStatusCode: http.StatusForbidden,
-		}
-	}
-	if credDate.Year() < today.Year() || (credDate.Year() == today.Year() && credDate.YearDay() < today.YearDay()) {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", credDate.Format(YYYYMMDD), today.Format(YYYYMMDD)),
-			HTTPStatusCode: http.StatusForbidden,
+	// Checks the dates difference to be less than a minute
+	if math.Abs(float64(diff)) > 60 {
+		if diff > 0 {
+			return s3err.APIError{
+				Code:           "SignatureDoesNotMatch",
+				Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
+				HTTPStatusCode: http.StatusForbidden,
+			}
+		} else {
+			return s3err.APIError{
+				Code:           "SignatureDoesNotMatch",
+				Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
+				HTTPStatusCode: http.StatusForbidden,
+			}
 		}
 	}
 
