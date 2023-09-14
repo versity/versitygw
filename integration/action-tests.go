@@ -72,6 +72,7 @@ func TestListObjects(s *S3Conf) {
 	ListObject_truncated(s)
 	ListObjects_invalid_max_keys(s)
 	ListObjects_max_keys_0(s)
+	ListObjects_delimiter(s)
 }
 
 func TestDeleteObject(s *S3Conf) {

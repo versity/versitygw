@@ -401,6 +401,26 @@ func compareObjects(list1 []string, list2 []types.Object) bool {
 	return true
 }
 
+func comparePrefixes(list1 []string, list2 []types.CommonPrefix) bool {
+	if len(list1) != len(list2) {
+		return false
+	}
+
+	elementMap := make(map[string]bool)
+
+	for _, elem := range list1 {
+		elementMap[elem] = true
+	}
+
+	for _, elem := range list2 {
+		if _, found := elementMap[*elem.Prefix]; !found {
+			return false
+		}
+	}
+
+	return true
+}
+
 func compareDelObjects(list1 []string, list2 []types.DeletedObject) bool {
 	if len(list1) != len(list2) {
 		return false
