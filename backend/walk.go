@@ -64,8 +64,12 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		}
 
 		if pastMax {
-			newMarker = path
-			truncated = true
+			if max < 1 {
+				truncated = true
+			} else {
+				newMarker = *objects[len(objects)-1].Key
+				truncated = true
+			}
 			return fs.SkipAll
 		}
 
@@ -75,8 +79,8 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 			// match this prefix. Make sure to append the / at the end of
 			// directories since this is implied as a directory path name.
 			// If path is a prefix of prefix, then path could still be
-			// building to match. So only skip if path isnt a prefix of prefix
-			// and prefix isnt a prefix of path.
+			// building to match. So only skip if path isn't a prefix of prefix
+			// and prefix isn't a prefix of path.
 			if prefix != "" &&
 				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
 				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
@@ -104,10 +108,10 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		}
 
 		if !pastMarker {
-			if path != marker {
-				return nil
+			if path == marker {
+				pastMarker = true
 			}
-			pastMarker = true
+			return nil
 		}
 
 		// If object doesn't have prefix, don't include in results.

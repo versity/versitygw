@@ -1347,7 +1347,7 @@ func ListObject_truncated(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+		out1, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket:  &bucket,
 			MaxKeys: maxKeys,
 		})
@@ -1356,35 +1356,41 @@ func ListObject_truncated(s *S3Conf) {
 			return err
 		}
 
-		if !out.IsTruncated {
-			return fmt.Errorf("expected output to be truncated")
+		if !out1.IsTruncated {
+			return fmt.Errorf("expected out1put to be truncated")
 		}
 
-		if out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out.MaxKeys)
+		if out1.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out1.MaxKeys)
 		}
 
-		if !compareObjects([]string{"bar", "baz"}, out.Contents) {
+		if *out1.NextMarker != "baz" {
+			return fmt.Errorf("expected nex-marker to be baz, instead got %v", *out1.NextMarker)
+		}
+
+		if !compareObjects([]string{"bar", "baz"}, out1.Contents) {
 			return fmt.Errorf("unexpected output for list objects with max-keys")
 		}
 
-		//TODO: Add next marker checker after bug-fixing
-
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		out, err = s3client.ListObjects(ctx, &s3.ListObjectsInput{
+		out2, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket: &bucket,
-			Marker: out.NextMarker,
+			Marker: out1.NextMarker,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
-		if out.IsTruncated {
+		if out2.IsTruncated {
 			return fmt.Errorf("expected output not to be truncated")
 		}
 
-		if !compareObjects([]string{"foo"}, out.Contents) {
+		if *out2.Marker != *out1.NextMarker {
+			return fmt.Errorf("expected marker to be %v, instead got %v", *out1.NextMarker, *out2.Marker)
+		}
+
+		if !compareObjects([]string{"foo"}, out2.Contents) {
 			return fmt.Errorf("unexpected output for list objects with max-keys")
 		}
 		return nil
@@ -1434,7 +1440,38 @@ func ListObjects_max_keys_0(s *S3Conf) {
 	})
 }
 
-//TODO: Add a test case for delimiter after bug-fixing, as delimiter doesn't work as intended
+func ListObjects_delimiter(s *S3Conf) {
+	testName := "ListObjects_delimiter"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo/bar/baz", "foo/bar/xyzzy", "quux/thud", "asdf"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:    &bucket,
+			Delimiter: getPtr("/"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Delimiter != "/" {
+			return fmt.Errorf("expected delimiter to be /, instead got %v", *out.Delimiter)
+		}
+		if len(out.Contents) != 1 || *out.Contents[0].Key != "asdf" {
+			return fmt.Errorf("expected result [\"asdf\"], instead got %v", out.Contents)
+		}
+
+		if !comparePrefixes([]string{"foo/", "quux/"}, out.CommonPrefixes) {
+			return fmt.Errorf("expected common prefixes to be %v, instead got %v", []string{"foo/", "quux/"}, out.CommonPrefixes)
+		}
+
+		return nil
+	})
+}
 
 func DeleteObject_non_existing_object(s *S3Conf) {
 	testName := "DeleteObject_non_existing_object"
