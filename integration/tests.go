@@ -1676,6 +1676,28 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) {
 	})
 }
 
+func CopyObject_copy_to_itself(s *S3Conf) {
+	testName := "CopyObject_copy_to_itself"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCopyDest)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func CopyObject_success(s *S3Conf) {
 	testName := "CopyObject_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
