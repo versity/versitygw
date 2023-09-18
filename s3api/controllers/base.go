@@ -598,6 +598,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
 			CopySourceIfModifiedSince:   &mtime,
 			CopySourceIfUnmodifiedSince: &umtime,
+			ExpectedBucketOwner:         &access,
 		})
 		if err == nil {
 			return SendXMLResponse(ctx, res, err, &MetaOpts{
