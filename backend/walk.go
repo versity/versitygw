@@ -64,9 +64,7 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		}
 
 		if pastMax {
-			if max < 1 {
-				truncated = true
-			} else {
+			if len(objects) != 0 {
 				newMarker = *objects[len(objects)-1].Key
 				truncated = true
 			}
