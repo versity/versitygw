@@ -1239,6 +1239,10 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
 
+	if fmt.Sprintf("%v/%v", srcBucket, srcObject) == fmt.Sprintf("%v/%v", dstBucket, dstObject) {
+		return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
+
 	_, err := os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
