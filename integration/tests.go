@@ -1676,6 +1676,50 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) {
 	})
 }
 
+func CopyObject_not_owned_source_bucket(s *S3Conf) {
+	testName := "CopyObject_not_owned_source_bucket"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj := "my-obj"
+		err := putObjects(s3client, []string{srcObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		usr := user{
+			access: "admin1",
+			secret: "admin1secret",
+			role:   "admin",
+		}
+
+		cfg := *s
+		cfg.awsID = usr.access
+		cfg.awsSecret = usr.secret
+
+		err = createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		dstBucket := getBucketName()
+		err = setup(&cfg, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &dstBucket,
+			Key:        getPtr("obj-1"),
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func CopyObject_success(s *S3Conf) {
 	testName := "CopyObject_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
