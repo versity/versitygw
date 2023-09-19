@@ -2426,6 +2426,46 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
 	})
 }
 
+func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
+	testName := "UploadPartCopy_greater_range_than_obj_size"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
+		err := setup(s, srcBucket)
+		if err != nil {
+			return err
+		}
+		srcObjSize := 5 * 1024 * 1024
+		_, _, err = putObjectWithData(int64(srcObjSize), &s3.PutObjectInput{
+			Bucket: &srcBucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		out, err := CreateMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:          &bucket,
+			CopySource:      getPtr(srcBucket + "/" + srcObj),
+			UploadId:        out.UploadId,
+			Key:             &obj,
+			CopySourceRange: getPtr(fmt.Sprintf("bytes=0-%v", srcObjSize+50)), // The specified range is greater than the actual object size
+			PartNumber:      1,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func UploadPartCopy_by_range_success(s *S3Conf) {
 	testName := "UploadPartCopy_by_range_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
