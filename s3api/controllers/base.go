@@ -446,6 +446,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		tags := make(map[string]string, len(objTagging.TagSet.Tags))
 
 		for _, tag := range objTagging.TagSet.Tags {
+			if len(tag.Key) > 128 || len(tag.Value) > 256 {
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag), &MetaOpts{Logger: c.logger, Action: "PutObjectTagging", BucketOwner: parsedAcl.Owner})
+			}
 			tags[tag.Key] = tag.Value
 		}
 

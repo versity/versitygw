@@ -50,6 +50,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_special_chars(s)
 	PutObject_existing_dir_obj(s)
 	PutObject_obj_parent_is_file(s)
+	PutObject_invalid_long_tags(s)
 	PutObject_success(s)
 }
 
@@ -95,6 +96,7 @@ func TestCopyObject(s *S3Conf) {
 
 func TestPutObjectTagging(s *S3Conf) {
 	PutObjectTagging_non_existing_object(s)
+	PutObjectTagging_long_tags(s)
 	PutObjectTagging_success(s)
 }
 

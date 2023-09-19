@@ -1022,6 +1022,42 @@ func PutObject_obj_parent_is_file(s *S3Conf) {
 	})
 }
 
+func PutObject_invalid_long_tags(s *S3Conf) {
+	testName := "PutObject_invalid_long_tags"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		tagging := fmt.Sprintf("%v=val", genRandString(200))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:  &bucket,
+			Key:     &key,
+			Tagging: &tagging,
+		})
+		cancel()
+
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		tagging = fmt.Sprintf("key=%v", genRandString(300))
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:  &bucket,
+			Key:     &key,
+			Tagging: &tagging,
+		})
+		cancel()
+
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func PutObject_success(s *S3Conf) {
 	testName := "PutObject_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1716,6 +1752,11 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
+
+		err = teardown(s, dstBucket)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 }
@@ -1815,6 +1856,42 @@ func PutObjectTagging_non_existing_object(s *S3Conf) {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func PutObjectTagging_long_tags(s *S3Conf) {
+	testName := "PutObjectTagging_long_tags"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr(genRandString(129)), Value: getPtr("val")}}}
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: &tagging})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		tagging = types.Tagging{TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr(genRandString(257))}}}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: &tagging})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }
@@ -2459,6 +2536,11 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+			return err
+		}
+
+		err = teardown(s, srcBucket)
+		if err != nil {
 			return err
 		}
 

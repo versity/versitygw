@@ -948,6 +948,9 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 			if len(p) != 2 {
 				return "", s3err.GetAPIError(s3err.ErrInvalidTag)
 			}
+			if len(p[0]) > 128 || len(p[1]) > 256 {
+				return "", s3err.GetAPIError(s3err.ErrInvalidTag)
+			}
 			tags[p[0]] = p[1]
 		}
 	}

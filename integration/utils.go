@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	rnd "math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -525,4 +526,16 @@ func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 	}
 
 	return nil
+}
+
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func genRandString(length int) string {
+	source := rnd.NewSource(time.Now().UnixNano())
+	random := rnd.New(source)
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = charset[random.Intn(len(charset))]
+	}
+	return string(result)
 }
