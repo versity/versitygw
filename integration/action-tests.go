@@ -131,6 +131,7 @@ func TestUploadPartCopy(s *S3Conf) {
 	UploadPartCopy_non_existing_source_object_key(s)
 	UploadPartCopy_success(s)
 	UploadPartCopy_by_range_invalid_range(s)
+	UploadPartCopy_greater_range_than_obj_size(s)
 	UploadPartCopy_by_range_success(s)
 }
 
