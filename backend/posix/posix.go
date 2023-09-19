@@ -1274,7 +1274,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, fmt.Errorf("parse dst bucket acl: %w", err)
 	}
 
-	err = auth.VerifyACL(dstBucketACL, dstBucket, owner, types.PermissionWrite, false)
+	err = auth.VerifyACL(dstBucketACL, owner, types.PermissionWrite, false)
 	if err != nil {
 		return nil, err
 	}

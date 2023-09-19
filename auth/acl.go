@@ -197,7 +197,7 @@ func splitUnique(s, divider string) []string {
 	return result
 }
 
-func VerifyACL(acl ACL, bucket, access string, permission types.Permission, isRoot bool) error {
+func VerifyACL(acl ACL, access string, permission types.Permission, isRoot bool) error {
 	if isRoot {
 		return nil
 	}
