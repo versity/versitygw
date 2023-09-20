@@ -1006,7 +1006,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 
 	if tagsStr != "" {
-		err := p.SetTags(ctx, *po.Bucket, *po.Key, tags)
+		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, tags)
 		if err != nil {
 			return "", err
 		}
@@ -1479,7 +1479,7 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 	return b, nil
 }
 
-func (p *Posix) GetTags(_ context.Context, bucket, object string) (map[string]string, error) {
+func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1512,7 +1512,7 @@ func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
 	return tags, nil
 }
 
-func (p *Posix) SetTags(_ context.Context, bucket, object string, tags map[string]string) error {
+func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1548,8 +1548,8 @@ func (p *Posix) SetTags(_ context.Context, bucket, object string, tags map[strin
 	return nil
 }
 
-func (p *Posix) RemoveTags(ctx context.Context, bucket, object string) error {
-	return p.SetTags(ctx, bucket, object, nil)
+func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+	return p.PutObjectTagging(ctx, bucket, object, nil)
 }
 
 func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {

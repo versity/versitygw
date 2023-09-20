@@ -201,7 +201,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 					StorageClass:    "storage class",
 				}, nil
 			},
-			GetTagsFunc: func(_ context.Context, bucket, object string) (map[string]string, error) {
+			GetObjectTaggingFunc: func(_ context.Context, bucket, object string) (map[string]string, error) {
 				return map[string]string{"hello": "world"}, nil
 			},
 		},
@@ -671,7 +671,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			UploadPartFunc: func(context.Context, *s3.UploadPartInput) (string, error) {
 				return "hello", nil
 			},
-			SetTagsFunc: func(_ context.Context, bucket, object string, tags map[string]string) error {
+			PutObjectTaggingFunc: func(_ context.Context, bucket, object string, tags map[string]string) error {
 				return nil
 			},
 			UploadPartCopyFunc: func(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
@@ -1006,7 +1006,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 			AbortMultipartUploadFunc: func(context.Context, *s3.AbortMultipartUploadInput) error {
 				return nil
 			},
-			RemoveTagsFunc: func(_ context.Context, bucket, object string) error {
+			DeleteObjectTaggingFunc: func(_ context.Context, bucket, object string) error {
 				return nil
 			},
 		},
