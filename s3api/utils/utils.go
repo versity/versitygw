@@ -82,11 +82,11 @@ func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 
 func ParseUint(str string) (int32, error) {
 	if str == "" {
-		return -1, nil
+		return 1000, nil
 	}
 	num, err := strconv.ParseUint(str, 10, 16)
 	if err != nil {
-		return -1, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+		return 1000, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
 	}
 	return int32(num), nil
 }
