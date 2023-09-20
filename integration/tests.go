@@ -1509,6 +1509,31 @@ func ListObjects_delimiter(s *S3Conf) {
 	})
 }
 
+func ListObjects_max_keys_none(s *S3Conf) {
+	testName := "ListObjects_max_keys_none"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.MaxKeys != 1000 {
+			return fmt.Errorf("expected max-keys to be 1000, instead got %v", out.MaxKeys)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) {
 	testName := "DeleteObject_non_existing_object"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

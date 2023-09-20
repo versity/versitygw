@@ -237,7 +237,7 @@ func TestParseUint(t *testing.T) {
 			args: args{
 				str: "",
 			},
-			want:    -1,
+			want:    1000,
 			wantErr: false,
 		},
 		{
@@ -245,7 +245,7 @@ func TestParseUint(t *testing.T) {
 			args: args{
 				str: "bla",
 			},
-			want:    -1,
+			want:    1000,
 			wantErr: true,
 		},
 		{
@@ -253,8 +253,16 @@ func TestParseUint(t *testing.T) {
 			args: args{
 				str: "-5",
 			},
-			want:    -1,
+			want:    1000,
 			wantErr: true,
+		},
+		{
+			name: "Parse-uint-success",
+			args: args{
+				str: "23",
+			},
+			want:    23,
+			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
