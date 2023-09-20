@@ -134,22 +134,9 @@ type authConfig struct {
 
 func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) {
 	runF(cfg.testName)
-	req, err := http.NewRequest(cfg.method, fmt.Sprintf("%v/%v", s.endpoint, cfg.path), bytes.NewReader(cfg.body))
+	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.body, cfg.date)
 	if err != nil {
-		failF("%v: failed to send the request: %v", cfg.testName, err.Error())
-		return
-	}
-
-	signer := v4.NewSigner()
-
-	hashedPayload := sha256.Sum256([]byte{})
-	hexPayload := hex.EncodeToString(hashedPayload[:])
-
-	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
-
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, hexPayload, cfg.service, s.awsRegion, cfg.date)
-	if signErr != nil {
-		failF("%v: failed to sign the request: %v", cfg.testName, err.Error())
+		failF("%v: %v", cfg.testName, err.Error())
 		return
 	}
 
@@ -159,6 +146,27 @@ func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) err
 		return
 	}
 	passF(cfg.testName)
+}
+
+func createSignedReq(method, endpoint, path, access, secret, service, region string, body []byte, date time.Time) (*http.Request, error) {
+	req, err := http.NewRequest(method, fmt.Sprintf("%v/%v", endpoint, path), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256(body)
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: access, SecretAccessKey: secret}, req, hexPayload, service, region, date)
+	if signErr != nil {
+		return nil, fmt.Errorf("failed to sign the request: %w", signErr)
+	}
+
+	return req, nil
 }
 
 func checkAuthErr(resp *http.Response, apiErr s3err.APIError) error {

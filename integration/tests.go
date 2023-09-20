@@ -1990,6 +1990,57 @@ func DeleteObjectTagging_non_existing_object(s *S3Conf) {
 	})
 }
 
+func DeleteObjectTagging_success_status(s *S3Conf) {
+	testName := "DeleteObjectTagging_success_status"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{
+					Key:   getPtr("Hello"),
+					Value: getPtr("World"),
+				},
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: &tagging,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		if err != nil {
+			return err
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObjectTagging_success(s *S3Conf) {
 	testName := "DeleteObjectTagging_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
