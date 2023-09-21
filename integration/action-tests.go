@@ -75,6 +75,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_max_keys_0(s)
 	ListObjects_delimiter(s)
 	ListObjects_max_keys_none(s)
+	ListObjects_marker_not_from_obj_list(s)
 }
 
 func TestDeleteObject(s *S3Conf) {
