@@ -93,6 +93,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_non_existing_dst_bucket(s)
 	CopyObject_not_owned_source_bucket(s)
 	CopyObject_copy_to_itself(s)
+	CopyObject_to_itself_with_new_metadata(s)
 	CopyObject_success(s)
 }
 

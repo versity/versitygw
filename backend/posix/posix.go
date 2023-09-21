@@ -449,6 +449,20 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 	return
 }
 
+func compareUserMetadata(meta1, meta2 map[string]string) bool {
+	if len(meta1) != len(meta2) {
+		return false
+	}
+
+	for key, val := range meta1 {
+		if meta2[key] != val {
+			return false
+		}
+	}
+
+	return true
+}
+
 func isValidMeta(val string) bool {
 	if strings.HasPrefix(val, "user."+metaHdr) {
 		return true
@@ -1243,10 +1257,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	dstObject := *input.Key
 	owner := *input.ExpectedBucketOwner
 
-	if fmt.Sprintf("%v/%v", srcBucket, srcObject) == fmt.Sprintf("%v/%v", dstBucket, dstObject) {
-		return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
-	}
-
 	_, err := os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1294,12 +1304,20 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
-	etag, err := p.PutObject(ctx, &s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size()})
+	meta := make(map[string]string)
+	loadUserMetaData(objPath, meta)
+
+	dstObjdPath := filepath.Join(dstBucket, dstObject)
+	if dstObjdPath == objPath && compareUserMetadata(meta, input.Metadata) {
+		return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
+
+	etag, err := p.PutObject(ctx, &s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size(), Metadata: meta})
 	if err != nil {
 		return nil, err
 	}
 
-	fi, err := os.Stat(filepath.Join(dstBucket, dstObject))
+	fi, err := os.Stat(dstObjdPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat dst object: %w", err)
 	}
