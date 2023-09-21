@@ -108,8 +108,11 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 		if !pastMarker {
 			if path == marker {
 				pastMarker = true
+				return nil
 			}
-			return nil
+			if path < marker {
+				return nil
+			}
 		}
 
 		// If object doesn't have prefix, don't include in results.
