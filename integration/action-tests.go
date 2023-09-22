@@ -43,6 +43,7 @@ func TestListBuckets(s *S3Conf) {
 func TestDeleteBucket(s *S3Conf) {
 	DeleteBucket_non_existing_bucket(s)
 	DeleteBucket_non_empty_bucket(s)
+	DeleteBucket_success_status_code(s)
 }
 
 func TestPutObject(s *S3Conf) {
@@ -81,6 +82,7 @@ func TestListObjects(s *S3Conf) {
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
 	DeleteObject_success(s)
+	DeleteObject_success_status_code(s)
 }
 
 func TestDeleteObjects(s *S3Conf) {
@@ -161,6 +163,7 @@ func TestAbortMultipartUpload(s *S3Conf) {
 	AbortMultipartUpload_incorrect_uploadId(s)
 	AbortMultipartUpload_incorrect_object_key(s)
 	AbortMultipartUpload_success(s)
+	AbortMultipartUpload_success_status_code(s)
 }
 
 func TestCompleteMultipartUpload(s *S3Conf) {

@@ -664,7 +664,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	err := c.be.DeleteBucket(ctx.Context(), &s3.DeleteBucketInput{
 		Bucket: &bucket,
 	})
-	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner})
+	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner, Status: 204})
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
@@ -731,7 +731,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			ExpectedBucketOwner: &expectedBucketOwner,
 			RequestPayer:        types.RequestPayer(requestPayer),
 		})
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "AbortMultipartUpload", BucketOwner: parsedAcl.Owner})
+		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "AbortMultipartUpload", BucketOwner: parsedAcl.Owner, Status: 204})
 	}
 
 	if err := auth.VerifyACL(parsedAcl, access, "WRITE", isRoot); err != nil {
@@ -748,6 +748,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 		Action:      "DeleteObject",
 		BucketOwner: parsedAcl.Owner,
 		EventName:   s3event.EventObjectDelete,
+		Status:      204,
 	})
 }
 
