@@ -250,7 +250,7 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 	return
 }
 
-func CreateMp(s3client *s3.Client, bucket, key string) (*s3.CreateMultipartUploadOutput, error) {
+func createMp(s3client *s3.Client, bucket, key string) (*s3.CreateMultipartUploadOutput, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 		Bucket: &bucket,

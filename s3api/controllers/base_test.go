@@ -902,7 +902,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket", nil),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 204,
 		},
 	}
 	for _, tt := range tests {
@@ -1056,7 +1056,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key?uploadId=324234", nil),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 204,
 		},
 		{
 			name: "Remove-object-tagging-success",
@@ -1074,7 +1074,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key", nil),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 204,
 		},
 		{
 			name: "Delete-object-error",

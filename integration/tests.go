@@ -978,6 +978,41 @@ func DeleteBucket_non_empty_bucket(s *S3Conf) {
 	})
 }
 
+func DeleteBucket_success_status_code(s *S3Conf) {
+	testName := "DeleteBucket_success_status_code"
+	runF(testName)
+	bucket := getBucketName()
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: %v", testName, err.Error())
+		return
+	}
+
+	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+	if err != nil {
+		failF("%v: %v", testName, err.Error())
+		return
+	}
+
+	client := http.Client{
+		Timeout: shortTimeout,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		failF("%v: %v", testName, err.Error())
+		return
+	}
+
+	if resp.StatusCode != http.StatusNoContent {
+		failF("%v: expected response status to be %v, instead got %v", testName, http.StatusNoContent, resp.StatusCode)
+		return
+	}
+
+	passF(testName)
+}
+
 func PutObject_non_existing_bucket(s *S3Conf) {
 	testName := "PutObject_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1612,6 +1647,37 @@ func DeleteObject_success(s *S3Conf) {
 	})
 }
 
+func DeleteObject_success_status_code(s *S3Conf) {
+	testName := "DeleteObject_success_status_code"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		if err != nil {
+			return err
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObjects_empty_input(s *S3Conf) {
 	testName := "DeleteObjects_empty_input"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2148,7 +2214,7 @@ func CreateMultipartUpload_non_existing_bucket(s *S3Conf) {
 	testName := "CreateMultipartUpload_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
-		_, err := CreateMp(s3client, bucketName, "my-obj")
+		_, err := createMp(s3client, bucketName, "my-obj")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
@@ -2161,7 +2227,7 @@ func CreateMultipartUpload_success(s *S3Conf) {
 	testName := "CreateMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2239,7 +2305,7 @@ func UploadPart_non_existing_key(s *S3Conf) {
 	testName := "UploadPart_non_existing_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2263,7 +2329,7 @@ func UploadPart_success(s *S3Conf) {
 	testName := "UploadPart_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2318,7 +2384,7 @@ func UploadPartCopy_incorrect_uploadId(s *S3Conf) {
 			return err
 		}
 
-		_, err = CreateMp(s3client, bucket, obj)
+		_, err = createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2358,7 +2424,7 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) {
 			return err
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2410,7 +2476,7 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2437,7 +2503,7 @@ func UploadPartCopy_non_existing_source_bucket(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2469,7 +2535,7 @@ func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
 			return nil
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2513,7 +2579,7 @@ func UploadPartCopy_success(s *S3Conf) {
 			return err
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2581,7 +2647,7 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
 			return err
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2626,7 +2692,7 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
 			return err
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2671,7 +2737,7 @@ func UploadPartCopy_by_range_success(s *S3Conf) {
 			return err
 		}
 
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2745,7 +2811,7 @@ func ListParts_incorrect_object_key(s *S3Conf) {
 	testName := "ListParts_incorrect_object_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2769,7 +2835,7 @@ func ListParts_success(s *S3Conf) {
 	testName := "ListParts_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -2856,7 +2922,7 @@ func ListMultipartUploads_max_uploads(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		uploads := []types.MultipartUpload{}
 		for i := 1; i < 6; i++ {
-			out, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			out, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
 			if err != nil {
 				return err
 			}
@@ -2908,7 +2974,7 @@ func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) {
 	testName := "ListMultipartUploads_incorrect_next_key_marker"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		for i := 1; i < 6; i++ {
-			_, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			_, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
 			if err != nil {
 				return err
 			}
@@ -2936,7 +3002,7 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) {
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		uploads := []types.MultipartUpload{}
 		for i := 1; i < 6; i++ {
-			out, err := CreateMp(s3client, bucket, fmt.Sprintf("obj%v", i))
+			out, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
 			if err != nil {
 				return err
 			}
@@ -2963,12 +3029,12 @@ func ListMultipartUploads_success(s *S3Conf) {
 	testName := "ListMultipartUploads_max_uploads"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj1, obj2 := "my-obj-1", "my-obj-2"
-		out1, err := CreateMp(s3client, bucket, obj1)
+		out1, err := createMp(s3client, bucket, obj1)
 		if err != nil {
 			return err
 		}
 
-		out2, err := CreateMp(s3client, bucket, obj2)
+		out2, err := createMp(s3client, bucket, obj2)
 		if err != nil {
 			return err
 		}
@@ -3044,7 +3110,7 @@ func AbortMultipartUpload_incorrect_object_key(s *S3Conf) {
 	testName := "AbortMultipartUpload_incorrect_object_key"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -3068,7 +3134,7 @@ func AbortMultipartUpload_success(s *S3Conf) {
 	testName := "AbortMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -3101,6 +3167,37 @@ func AbortMultipartUpload_success(s *S3Conf) {
 	})
 }
 
+func AbortMultipartUpload_success_status_code(s *S3Conf) {
+	testName := "AbortMultipartUpload_success_status_code"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		if err != nil {
+			return err
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) {
 	testName := "CompletedMultipartUpload_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3123,7 +3220,7 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 	testName := "CompleteMultipartUpload_invalid_part_number"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -3166,7 +3263,7 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
 	testName := "CompleteMultipartUpload_invalid_ETag"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
@@ -3209,7 +3306,7 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 	testName := "CompleteMultipartUpload_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		out, err := CreateMp(s3client, bucket, obj)
+		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
 			return err
 		}
