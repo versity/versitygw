@@ -1065,7 +1065,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket/my-key/key2?tagging", nil),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 204,
 		},
 		{
 			name: "Delete-object-success",
@@ -1493,6 +1493,7 @@ func Test_response(t *testing.T) {
 		ctx  *fiber.Ctx
 		resp any
 		err  error
+		opts *MetaOpts
 	}
 
 	app := fiber.New()
@@ -1510,6 +1511,7 @@ func Test_response(t *testing.T) {
 				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrInternalError),
+				opts: &MetaOpts{},
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -1520,6 +1522,7 @@ func Test_response(t *testing.T) {
 				ctx:  ctx,
 				resp: nil,
 				err:  fmt.Errorf("custom error"),
+				opts: &MetaOpts{},
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -1530,6 +1533,7 @@ func Test_response(t *testing.T) {
 				ctx:  ctx,
 				resp: nil,
 				err:  s3err.GetAPIError(s3err.ErrNotImplemented),
+				opts: &MetaOpts{},
 			},
 			wantErr:    false,
 			statusCode: 501,
@@ -1540,14 +1544,28 @@ func Test_response(t *testing.T) {
 				ctx:  ctx,
 				resp: "Valid response",
 				err:  nil,
+				opts: &MetaOpts{},
 			},
 			wantErr:    false,
 			statusCode: 200,
 		},
+		{
+			name: "Successful-response-status-204",
+			args: args{
+				ctx:  ctx,
+				resp: "Valid response",
+				err:  nil,
+				opts: &MetaOpts{
+					Status: 204,
+				},
+			},
+			wantErr:    false,
+			statusCode: 204,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := SendResponse(tt.args.ctx, tt.args.err, &MetaOpts{}); (err != nil) != tt.wantErr {
+			if err := SendResponse(tt.args.ctx, tt.args.err, tt.args.opts); (err != nil) != tt.wantErr {
 				t.Errorf("response() %v error = %v, wantErr %v", tt.name, err, tt.wantErr)
 			}
 

@@ -107,6 +107,7 @@ func TestGetObjectTagging(s *S3Conf) {
 
 func TestDeleteObjectTagging(s *S3Conf) {
 	DeleteObjectTagging_non_existing_object(s)
+	DeleteObjectTagging_success_status(s)
 	DeleteObjectTagging_success(s)
 }
 

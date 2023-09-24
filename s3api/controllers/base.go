@@ -708,6 +708,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 
 		err := c.be.RemoveTags(ctx.Context(), bucket, key)
 		return SendResponse(ctx, err, &MetaOpts{
+			Status:      http.StatusNoContent,
 			Logger:      c.logger,
 			EvSender:    c.evSender,
 			Action:      "RemoveObjectTagging",
@@ -957,6 +958,7 @@ type MetaOpts struct {
 	EventName   s3event.EventType
 	ObjectETag  *string
 	VersionId   *string
+	Status      int
 }
 
 func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
@@ -991,9 +993,12 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 
 	utils.LogCtxDetails(ctx, []byte{})
 
+	if l.Status == 0 {
+		l.Status = http.StatusOK
+	}
 	// https://github.com/gofiber/fiber/issues/2080
 	// ctx.SendStatus() sets incorrect content length on HEAD request
-	ctx.Status(http.StatusOK)
+	ctx.Status(l.Status)
 	return nil
 }
 
