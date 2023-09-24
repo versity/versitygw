@@ -1534,6 +1534,36 @@ func ListObjects_max_keys_none(s *S3Conf) {
 	})
 }
 
+func ListObjects_marker_not_from_obj_list(s *S3Conf) {
+	testName := "ListObjects_marker_not_from_obj_list"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz", "qux", "hello", "xyz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+			Marker: getPtr("ceil"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for _, el := range out.Contents {
+			fmt.Println(*el.Key)
+		}
+
+		if !compareObjects([]string{"foo", "qux", "hello", "xyz"}, out.Contents) {
+			return fmt.Errorf("expected output to be %v, instead got %v", []string{"foo", "qux", "hello", "xyz"}, out.Contents)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) {
 	testName := "DeleteObject_non_existing_object"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
