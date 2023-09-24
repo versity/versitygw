@@ -74,14 +74,14 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// GetObjectAcl action
 	// GetObject action
 	// ListObjectParts action
-	// GetTags action
+	// GetObjectTagging action
 	// ListParts action
 	// GetObjectAttributes action
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
 
 	// DeleteObject action
 	// AbortMultipartUpload action
-	// RemoveTags action
+	// DeleteObjectTagging action
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
 
 	// DeleteObjects action
@@ -97,7 +97,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// PutObject action
 	// UploadPart action
 	// UploadPartCopy action
-	// SetTags action
+	// PutObjectTagging action
 	// PutObjectAcl action
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
 }

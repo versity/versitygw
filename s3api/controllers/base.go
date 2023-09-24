@@ -78,7 +78,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetObjectTagging", BucketOwner: parsedAcl.Owner})
 		}
 
-		tags, err := c.be.GetTags(ctx.Context(), bucket, key)
+		tags, err := c.be.GetObjectTagging(ctx.Context(), bucket, key)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetObjectTagging", BucketOwner: parsedAcl.Owner})
 		}
@@ -456,7 +456,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutObjectTagging", BucketOwner: parsedAcl.Owner})
 		}
 
-		err = c.be.SetTags(ctx.Context(), bucket, keyStart, tags)
+		err = c.be.PutObjectTagging(ctx.Context(), bucket, keyStart, tags)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			EvSender:    c.evSender,
@@ -706,12 +706,12 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "RemoveObjectTagging", BucketOwner: parsedAcl.Owner})
 		}
 
-		err := c.be.RemoveTags(ctx.Context(), bucket, key)
+		err := c.be.DeleteObjectTagging(ctx.Context(), bucket, key)
 		return SendResponse(ctx, err, &MetaOpts{
 			Status:      http.StatusNoContent,
 			Logger:      c.logger,
 			EvSender:    c.evSender,
-			Action:      "RemoveObjectTagging",
+			Action:      "DeleteObjectTagging",
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectTaggingDelete,
 		})

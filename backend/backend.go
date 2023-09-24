@@ -64,9 +64,9 @@ type Backend interface {
 	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
 
 	// object tags operations
-	GetTags(_ context.Context, bucket, object string) (map[string]string, error)
-	SetTags(_ context.Context, bucket, object string, tags map[string]string) error
-	RemoveTags(_ context.Context, bucket, object string) error
+	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
+	PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error
+	DeleteObjectTagging(_ context.Context, bucket, object string) error
 
 	// non AWS actions
 	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
@@ -166,13 +166,13 @@ func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectC
 	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) GetTags(_ context.Context, bucket, object string) (map[string]string, error) {
+func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) SetTags(_ context.Context, bucket, object string, tags map[string]string) error {
+func (BackendUnsupported) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) RemoveTags(_ context.Context, bucket, object string) error {
+func (BackendUnsupported) DeleteObjectTagging(_ context.Context, bucket, object string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
