@@ -1308,8 +1308,17 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	loadUserMetaData(objPath, meta)
 
 	dstObjdPath := filepath.Join(dstBucket, dstObject)
-	if dstObjdPath == objPath && compareUserMetadata(meta, input.Metadata) {
-		return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	if dstObjdPath == objPath {
+		if compareUserMetadata(meta, input.Metadata) {
+			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+		} else {
+			for key := range meta {
+				xattr.Remove(dstObjdPath, key)
+			}
+			for k, v := range input.Metadata {
+				xattr.Set(dstObjdPath, fmt.Sprintf("user.%v.%v", metaHdr, k), []byte(v))
+			}
+		}
 	}
 
 	etag, err := p.PutObject(ctx, &s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size(), Metadata: meta})
