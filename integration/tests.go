@@ -1904,6 +1904,32 @@ func CopyObject_copy_to_itself(s *S3Conf) {
 	})
 }
 
+func CopyObject_to_itself_with_new_metadata(s *S3Conf) {
+	testName := "CopyObject_to_itself_with_new_metadata"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			Metadata: map[string]string{
+				"Hello": "World",
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_success(s *S3Conf) {
 	testName := "CopyObject_success"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

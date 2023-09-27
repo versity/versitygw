@@ -593,6 +593,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidCopySource), &MetaOpts{Logger: c.logger, Action: "CopyObject", BucketOwner: parsedAcl.Owner})
 			}
 		}
+
+		metadata := utils.GetUserMetaData(&ctx.Request().Header)
+
 		res, err := c.be.CopyObject(ctx.Context(), &s3.CopyObjectInput{
 			Bucket:                      &bucket,
 			Key:                         &keyStart,
@@ -602,6 +605,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			CopySourceIfModifiedSince:   &mtime,
 			CopySourceIfUnmodifiedSince: &umtime,
 			ExpectedBucketOwner:         &access,
+			Metadata:                    metadata,
 		})
 		if err == nil {
 			return SendXMLResponse(ctx, res, err, &MetaOpts{
