@@ -42,9 +42,9 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
 	}
 
-	user := auth.Account{Secret: secret, Role: role}
+	user := auth.Account{Secret: secret, Role: role, Access: access}
 
-	err := c.iam.CreateAccount(access, user)
+	err := c.iam.CreateAccount(user)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}

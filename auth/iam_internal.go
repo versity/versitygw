@@ -41,9 +41,14 @@ type Storer interface {
 	StoreIAM(UpdateAcctFunc) error
 }
 
+type InternalAcct struct {
+	Secret string `json:"secret"`
+	Role   string `json:"role"`
+}
+
 // IAMConfig stores all internal IAM accounts
 type IAMConfig struct {
-	AccessAccounts map[string]Account `json:"accessAccounts"`
+	AccessAccounts map[string]InternalAcct `json:"accessAccounts"`
 }
 
 var _ IAMService = &IAMServiceInternal{}
@@ -64,7 +69,7 @@ func NewInternal(s Storer) (*IAMServiceInternal, error) {
 
 // CreateAccount creates a new IAM account. Returns an error if the account
 // already exists.
-func (s *IAMServiceInternal) CreateAccount(access string, account Account) error {
+func (s *IAMServiceInternal) CreateAccount(acc Account) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -76,14 +81,14 @@ func (s *IAMServiceInternal) CreateAccount(access string, account Account) error
 				return nil, fmt.Errorf("failed to parse iam: %w", err)
 			}
 		} else {
-			conf = IAMConfig{AccessAccounts: map[string]Account{}}
+			conf = IAMConfig{AccessAccounts: map[string]InternalAcct{}}
 		}
 
-		_, ok := conf.AccessAccounts[access]
+		_, ok := conf.AccessAccounts[acc.Access]
 		if ok {
 			return nil, fmt.Errorf("account already exists")
 		}
-		conf.AccessAccounts[access] = account
+		conf.AccessAccounts[acc.Access] = InternalAcct{Secret: acc.Secret, Role: acc.Role}
 
 		b, err := json.Marshal(conf)
 		if err != nil {
@@ -121,7 +126,7 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 		return Account{}, ErrNoSuchUser
 	}
 
-	return acct, nil
+	return Account{Access: access, Secret: acct.Secret, Role: acct.Role}, nil
 }
 
 // updateCache must be called with no locks held
@@ -141,7 +146,7 @@ func (s *IAMServiceInternal) updateCache() error {
 			return fmt.Errorf("failed to parse the config file: %w", err)
 		}
 	} else {
-		s.accts.AccessAccounts = make(map[string]Account)
+		s.accts.AccessAccounts = make(map[string]InternalAcct)
 	}
 
 	s.serial = serial

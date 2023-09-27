@@ -33,7 +33,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 
 	adminController := AdminController{
 		iam: &IAMServiceMock{
-			CreateAccountFunc: func(access string, account auth.Account) error {
+			CreateAccountFunc: func(account auth.Account) error {
 				return nil
 			},
 		},

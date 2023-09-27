@@ -29,7 +29,7 @@ type Account struct {
 //
 //go:generate moq -out ../s3api/controllers/iam_moq_test.go -pkg controllers . IAMService
 type IAMService interface {
-	CreateAccount(access string, account Account) error
+	CreateAccount(account Account) error
 	GetUserAccount(access string) (Account, error)
 	DeleteUserAccount(access string) error
 	ListUserAccounts() ([]Account, error)
