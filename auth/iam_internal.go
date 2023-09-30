@@ -64,7 +64,7 @@ func NewInternal(s Storer) (*IAMServiceInternal, error) {
 
 // CreateAccount creates a new IAM account. Returns an error if the account
 // already exists.
-func (s *IAMServiceInternal) CreateAccount(access string, account Account) error {
+func (s *IAMServiceInternal) CreateAccount(account Account) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -79,11 +79,11 @@ func (s *IAMServiceInternal) CreateAccount(access string, account Account) error
 			conf = IAMConfig{AccessAccounts: map[string]Account{}}
 		}
 
-		_, ok := conf.AccessAccounts[access]
+		_, ok := conf.AccessAccounts[account.Access]
 		if ok {
 			return nil, fmt.Errorf("account already exists")
 		}
-		conf.AccessAccounts[access] = account
+		conf.AccessAccounts[account.Access] = account
 
 		b, err := json.Marshal(conf)
 		if err != nil {

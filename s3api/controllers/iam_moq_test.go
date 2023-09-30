@@ -18,7 +18,7 @@ var _ auth.IAMService = &IAMServiceMock{}
 //
 //		// make and configure a mocked auth.IAMService
 //		mockedIAMService := &IAMServiceMock{
-//			CreateAccountFunc: func(access string, account auth.Account) error {
+//			CreateAccountFunc: func(account auth.Account) error {
 //				panic("mock out the CreateAccount method")
 //			},
 //			DeleteUserAccountFunc: func(access string) error {
@@ -38,7 +38,7 @@ var _ auth.IAMService = &IAMServiceMock{}
 //	}
 type IAMServiceMock struct {
 	// CreateAccountFunc mocks the CreateAccount method.
-	CreateAccountFunc func(access string, account auth.Account) error
+	CreateAccountFunc func(account auth.Account) error
 
 	// DeleteUserAccountFunc mocks the DeleteUserAccount method.
 	DeleteUserAccountFunc func(access string) error
@@ -53,8 +53,6 @@ type IAMServiceMock struct {
 	calls struct {
 		// CreateAccount holds details about calls to the CreateAccount method.
 		CreateAccount []struct {
-			// Access is the access argument value.
-			Access string
 			// Account is the account argument value.
 			Account auth.Account
 		}
@@ -79,21 +77,19 @@ type IAMServiceMock struct {
 }
 
 // CreateAccount calls CreateAccountFunc.
-func (mock *IAMServiceMock) CreateAccount(access string, account auth.Account) error {
+func (mock *IAMServiceMock) CreateAccount(account auth.Account) error {
 	if mock.CreateAccountFunc == nil {
 		panic("IAMServiceMock.CreateAccountFunc: method is nil but IAMService.CreateAccount was just called")
 	}
 	callInfo := struct {
-		Access  string
 		Account auth.Account
 	}{
-		Access:  access,
 		Account: account,
 	}
 	mock.lockCreateAccount.Lock()
 	mock.calls.CreateAccount = append(mock.calls.CreateAccount, callInfo)
 	mock.lockCreateAccount.Unlock()
-	return mock.CreateAccountFunc(access, account)
+	return mock.CreateAccountFunc(account)
 }
 
 // CreateAccountCalls gets all the calls that were made to CreateAccount.
@@ -101,11 +97,9 @@ func (mock *IAMServiceMock) CreateAccount(access string, account auth.Account) e
 //
 //	len(mockedIAMService.CreateAccountCalls())
 func (mock *IAMServiceMock) CreateAccountCalls() []struct {
-	Access  string
 	Account auth.Account
 } {
 	var calls []struct {
-		Access  string
 		Account auth.Account
 	}
 	mock.lockCreateAccount.RLock()

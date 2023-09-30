@@ -95,7 +95,6 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			}, &controllers.MetaOpts{Logger: logger})
 		}
 
-		ctx.Locals("access", creds[0])
 		ctx.Locals("isRoot", creds[0] == root.Access)
 
 		_, err := time.Parse(YYYYMMDD, creds[1])
@@ -116,7 +115,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		if err != nil {
 			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
 		}
-		ctx.Locals("role", account.Role)
+		ctx.Locals("account", account)
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
@@ -199,6 +198,7 @@ type accounts struct {
 func (a accounts) getAccount(access string) (auth.Account, error) {
 	if access == a.root.Access {
 		return auth.Account{
+			Access: a.root.Access,
 			Secret: a.root.Secret,
 			Role:   "admin",
 		}, nil
