@@ -39,7 +39,7 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger) fiber.Handler {
 			return ctx.Next()
 		}
 		if len(pathParts) == 2 && pathParts[1] != "" && ctx.Method() == http.MethodPut && !ctx.Request().URI().QueryArgs().Has("acl") {
-			if err := auth.IsAdmin(acct.Access, isRoot); err != nil {
+			if err := auth.IsAdmin(acct, isRoot); err != nil {
 				return controllers.SendXMLResponse(ctx, nil, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
 			}
 			return ctx.Next()

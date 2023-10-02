@@ -44,6 +44,7 @@ var (
 	logWebhookURL                  string
 	accessLog                      string
 	debug                          bool
+	iamDir                         string
 )
 
 var (
@@ -207,10 +208,15 @@ func initFlags() []cli.Flag {
 			Destination: &natsTopic,
 			Aliases:     []string{"ent"},
 		},
+		&cli.StringFlag{
+			Name:        "iam-dir",
+			Usage:       "if defined, run internal iam service within this directory",
+			Destination: &iamDir,
+		},
 	}
 }
 
-func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
+func runGateway(ctx *cli.Context, be backend.Backend) error {
 	// int32 max for 32 bit arch
 	blimit := int64(2*1024*1024*1024 - 1)
 	if strconv.IntSize > 32 {
@@ -269,14 +275,18 @@ func runGateway(ctx *cli.Context, be backend.Backend, s auth.Storer) error {
 		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
 	}
 
-	err := s.InitIAM()
-	if err != nil {
-		return fmt.Errorf("init iam: %w", err)
-	}
-
-	iam, err := auth.NewInternal(s)
-	if err != nil {
-		return fmt.Errorf("setup internal iam service: %w", err)
+	var iam auth.IAMService
+	switch {
+	case iamDir != "":
+		var err error
+		iam, err = auth.NewInternal(iamDir)
+		if err != nil {
+			return fmt.Errorf("setup internal iam service: %w", err)
+		}
+	default:
+		// default gateway to single user mode when
+		// no other iam service configured
+		iam = auth.IAMServiceSingle{}
 	}
 
 	logger, err := s3log.InitLogger(&s3log.LogConfig{
