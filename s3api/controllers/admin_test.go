@@ -33,7 +33,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 
 	adminController := AdminController{
 		iam: &IAMServiceMock{
-			CreateAccountFunc: func(access string, account auth.Account) error {
+			CreateAccountFunc: func(account auth.Account) error {
 				return nil
 			},
 		},
@@ -42,7 +42,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 	app := fiber.New()
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -51,7 +51,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 	appErr := fiber.New()
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "user")
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
 		return ctx.Next()
 	})
 
@@ -121,7 +121,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 	app := fiber.New()
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -130,7 +130,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 	appErr := fiber.New()
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "user")
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
 		return ctx.Next()
 	})
 
@@ -199,7 +199,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 	appErr := fiber.New()
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -208,7 +208,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 	appRoleErr := fiber.New()
 
 	appRoleErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "user")
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
 		return ctx.Next()
 	})
 
@@ -217,7 +217,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 	appSucc := fiber.New()
 
 	appSucc.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -307,7 +307,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	app := fiber.New()
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -316,7 +316,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	appRoleErr := fiber.New()
 
 	appRoleErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "user")
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
 		return ctx.Next()
 	})
 
@@ -325,7 +325,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	appIamErr := fiber.New()
 
 	appIamErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -334,7 +334,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	appIamNoSuchUser := fiber.New()
 
 	appIamNoSuchUser.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -412,7 +412,7 @@ func TestAdminController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
 		return ctx.Next()
 	})
 
@@ -421,7 +421,7 @@ func TestAdminController_ListBuckets(t *testing.T) {
 	appRoleErr := fiber.New()
 
 	appRoleErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("role", "user")
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
 		return ctx.Next()
 	})
 

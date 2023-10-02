@@ -33,18 +33,18 @@ func NewAdminController(iam auth.IAMService, be backend.Backend) AdminController
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	access, secret, role := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role")
-	requesterRole := ctx.Locals("role").(string)
+	acct := ctx.Locals("account").(auth.Account)
 
-	if requesterRole != "admin" {
+	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 	if role != "user" && role != "admin" {
 		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
 	}
 
-	user := auth.Account{Secret: secret, Role: role}
+	user := auth.Account{Access: access, Secret: secret, Role: role}
 
-	err := c.iam.CreateAccount(access, user)
+	err := c.iam.CreateAccount(user)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}
@@ -54,8 +54,8 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 	access := ctx.Query("access")
-	requesterRole := ctx.Locals("role").(string)
-	if requesterRole != "admin" {
+	acct := ctx.Locals("account").(auth.Account)
+	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 
@@ -68,8 +68,8 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 }
 
 func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
-	role := ctx.Locals("role").(string)
-	if role != "admin" {
+	acct := ctx.Locals("account").(auth.Account)
+	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 	accs, err := c.iam.ListUserAccounts()
@@ -81,8 +81,8 @@ func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
 }
 
 func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
-	role := ctx.Locals("role").(string)
-	if role != "admin" {
+	acct := ctx.Locals("account").(auth.Account)
+	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 	owner := ctx.Query("owner")
@@ -105,8 +105,8 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 }
 
 func (c AdminController) ListBuckets(ctx *fiber.Ctx) error {
-	role := ctx.Locals("role").(string)
-	if role != "admin" {
+	acct := ctx.Locals("account").(auth.Account)
+	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 

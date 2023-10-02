@@ -17,7 +17,6 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -236,29 +235,14 @@ func VerifyACL(acl ACL, access string, permission types.Permission, isRoot bool)
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }
 
-func IsAdmin(access string, isRoot bool) error {
-	var data IAMConfig
-
+func IsAdmin(acct Account, isRoot bool) error {
 	if isRoot {
 		return nil
 	}
 
-	file, err := os.ReadFile("users.json")
-	if err != nil {
-		return fmt.Errorf("unable to read config file: %w", err)
-	}
-
-	if err := json.Unmarshal(file, &data); err != nil {
-		return err
-	}
-
-	acc, ok := data.AccessAccounts[access]
-	if !ok {
-		return fmt.Errorf("user does not exist")
-	}
-
-	if acc.Role == "admin" {
+	if acct.Role == "admin" {
 		return nil
 	}
+
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }

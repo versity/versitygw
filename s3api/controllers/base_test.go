@@ -98,8 +98,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "valid access", Role: "admin:"})
 		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
@@ -116,8 +115,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
-		ctx.Locals("role", "admin")
+		ctx.Locals("account", auth.Account{Access: "valid access", Role: "admin:"})
 		ctx.Locals("isDebug", false)
 		return ctx.Next()
 	})
@@ -207,7 +205,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -347,7 +345,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -369,7 +367,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	}
 	appError := fiber.New()
 	appError.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -507,7 +505,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 	// Mock ctx.Locals
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{Owner: "valid access"})
@@ -680,7 +678,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -879,7 +877,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -936,7 +934,7 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1013,7 +1011,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1034,7 +1032,7 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	}}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1117,7 +1115,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1140,7 +1138,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1219,7 +1217,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1242,7 +1240,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
@@ -1322,7 +1320,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	`
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("access", "valid access")
+		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})

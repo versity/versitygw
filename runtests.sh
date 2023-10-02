@@ -6,7 +6,7 @@ rm -rf /tmp/covdata
 mkdir /tmp/covdata
 
 # run server in background
-GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass posix /tmp/gw &
+GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix /tmp/gw &
 GW_PID=$!
 
 # wait a second for server to start up

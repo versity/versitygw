@@ -69,5 +69,5 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("init scoutfs: %v", err)
 	}
 
-	return runGateway(ctx, be, be)
+	return runGateway(ctx, be)
 }
