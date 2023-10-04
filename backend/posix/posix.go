@@ -223,6 +223,12 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if strings.HasSuffix(*mpu.Key, "/") {
+		// directory objects can't be uploaded with mutlipart uploads
+		// because posix directories can't contain data
+		return nil, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+	}
+
 	// generate random uuid for upload id
 	uploadID := uuid.New().String()
 	// hash object name for multipart container
@@ -960,6 +966,13 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
+		if po.ContentLength != 0 {
+			// posix directories can't contain data, send error
+			// if reuests has a data payload associated with a
+			// directory object
+			return "", s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		}
+
 		err = mkdirAll(name, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
 			return "", err
