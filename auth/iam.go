@@ -36,3 +36,27 @@ type IAMService interface {
 }
 
 var ErrNoSuchUser = errors.New("user not found")
+
+type Opts struct {
+	Dir            string
+	LDAPServerURL  string
+	LDAPBindDN     string
+	LDAPPassword   string
+	LDAPQueryBase  string
+	LDAPObjClasses string
+	LDAPAccessAtr  string
+	LDAPSecretAtr  string
+	LDAPRoleAtr    string
+}
+
+func New(o *Opts) (IAMService, error) {
+	if o.Dir == "" {
+		if o.LDAPServerURL == "" {
+			return IAMServiceSingle{}, nil
+		} else {
+			return NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword, o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPObjClasses)
+		}
+	} else {
+		return NewInternal(o.Dir)
+	}
+}

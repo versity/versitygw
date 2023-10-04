@@ -33,18 +33,21 @@ import (
 )
 
 var (
-	port, admPort                  string
-	rootUserAccess                 string
-	rootUserSecret                 string
-	region                         string
-	admCertFile, admKeyFile        string
-	certFile, keyFile              string
-	kafkaURL, kafkaTopic, kafkaKey string
-	natsURL, natsTopic             string
-	logWebhookURL                  string
-	accessLog                      string
-	debug                          bool
-	iamDir                         string
+	port, admPort                          string
+	rootUserAccess                         string
+	rootUserSecret                         string
+	region                                 string
+	admCertFile, admKeyFile                string
+	certFile, keyFile                      string
+	kafkaURL, kafkaTopic, kafkaKey         string
+	natsURL, natsTopic                     string
+	logWebhookURL                          string
+	accessLog                              string
+	debug                                  bool
+	iamDir                                 string
+	ldapURL, ldapBindDN, ldapPassword      string
+	ldapQueryBase, ldapObjClasses          string
+	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
 )
 
 var (
@@ -213,6 +216,46 @@ func initFlags() []cli.Flag {
 			Usage:       "if defined, run internal iam service within this directory",
 			Destination: &iamDir,
 		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-url",
+			Usage:       "ldap server url to store iam data",
+			Destination: &ldapURL,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-bind-dn",
+			Usage:       "ldap server binding dn, example: 'cn=admin,dc=example,dc=com'",
+			Destination: &ldapBindDN,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-bind-pass",
+			Usage:       "ldap server user password",
+			Destination: &ldapPassword,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-query-base",
+			Usage:       "ldap server destination query, example: 'ou=iam,dc=example,dc=com'",
+			Destination: &ldapQueryBase,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-object-classes",
+			Usage:       "ldap server object classes used to store the data. provide it as comma separated string, example: 'top,person'",
+			Destination: &ldapObjClasses,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-access-atr",
+			Usage:       "ldap server user access key id attribute name",
+			Destination: &ldapAccessAtr,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-secret-atr",
+			Usage:       "ldap server user secret access key attribute name",
+			Destination: &ldapSecAtr,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-role-atr",
+			Usage:       "ldap server user role attribute name",
+			Destination: &ldapRoleAtr,
+		},
 	}
 }
 
@@ -275,18 +318,19 @@ func runGateway(ctx *cli.Context, be backend.Backend) error {
 		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
 	}
 
-	var iam auth.IAMService
-	switch {
-	case iamDir != "":
-		var err error
-		iam, err = auth.NewInternal(iamDir)
-		if err != nil {
-			return fmt.Errorf("setup internal iam service: %w", err)
-		}
-	default:
-		// default gateway to single user mode when
-		// no other iam service configured
-		iam = auth.IAMServiceSingle{}
+	iam, err := auth.New(&auth.Opts{
+		Dir:            iamDir,
+		LDAPServerURL:  ldapURL,
+		LDAPBindDN:     ldapBindDN,
+		LDAPPassword:   ldapPassword,
+		LDAPQueryBase:  ldapQueryBase,
+		LDAPObjClasses: ldapObjClasses,
+		LDAPAccessAtr:  ldapAccessAtr,
+		LDAPSecretAtr:  ldapSecAtr,
+		LDAPRoleAtr:    ldapRoleAtr,
+	})
+	if err != nil {
+		return fmt.Errorf("setup iam: %w", err)
 	}
 
 	logger, err := s3log.InitLogger(&s3log.LogConfig{
