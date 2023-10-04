@@ -50,13 +50,15 @@ type Opts struct {
 }
 
 func New(o *Opts) (IAMService, error) {
-	if o.Dir == "" {
-		if o.LDAPServerURL == "" {
-			return IAMServiceSingle{}, nil
-		} else {
-			return NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword, o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPObjClasses)
-		}
-	} else {
+	switch {
+	case o.Dir != "":
 		return NewInternal(o.Dir)
+	case o.LDAPServerURL != "":
+		return NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
+			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr,
+			o.LDAPObjClasses)
+	default:
+		// if no iam options selected, default to the single user mode
+		return IAMServiceSingle{}, nil
 	}
 }
