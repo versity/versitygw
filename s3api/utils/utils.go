@@ -35,13 +35,16 @@ var (
 
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
 	metadata = make(map[string]string)
-	headers.VisitAll(func(key, value []byte) {
-		if strings.HasPrefix(string(key), "X-Amz-Meta-") {
-			trimmedKey := strings.TrimPrefix(string(key), "X-Amz-Meta-")
+	headers.DisableNormalizing()
+	headers.VisitAllInOrder(func(key, value []byte) {
+		hKey := string(key)
+		if strings.HasPrefix(strings.ToLower(hKey), "x-amz-meta-") {
+			trimmedKey := hKey[11:]
 			headerValue := string(value)
 			metadata[trimmedKey] = headerValue
 		}
 	})
+	headers.EnableNormalizing()
 
 	return
 }
@@ -75,9 +78,11 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Reques
 }
 
 func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
+	ctx.Response().Header.DisableNormalizing()
 	for key, val := range meta {
-		ctx.Set(fmt.Sprintf("X-Amz-Meta-%s", key), val)
+		ctx.Response().Header.Set(fmt.Sprintf("X-Amz-Meta-%s", key), val)
 	}
+	ctx.Response().Header.EnableNormalizing()
 }
 
 func ParseUint(str string) (int32, error) {

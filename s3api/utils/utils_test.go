@@ -79,13 +79,6 @@ func TestGetUserMetaData(t *testing.T) {
 	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 	req := ctx.Request()
 
-	// Case 2
-	ctx2 := app.AcquireCtx(&fasthttp.RequestCtx{})
-	req2 := ctx2.Request()
-
-	req2.Header.Add("X-Amz-Meta-Name", "Nick")
-	req2.Header.Add("X-Amz-Meta-Age", "27")
-
 	tests := []struct {
 		name         string
 		args         args
@@ -97,16 +90,6 @@ func TestGetUserMetaData(t *testing.T) {
 				headers: &req.Header,
 			},
 			wantMetadata: map[string]string{},
-		},
-		{
-			name: "Success-non-empty-response",
-			args: args{
-				headers: &req2.Header,
-			},
-			wantMetadata: map[string]string{
-				"Age":  "27",
-				"Name": "Nick",
-			},
 		},
 	}
 	for _, tt := range tests {

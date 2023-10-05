@@ -135,8 +135,6 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 
 	sort.Sort(backend.ByBucketName(buckets))
 
-	fmt.Println("ListAllMyBucketsResult owner:", owner)
-
 	return s3response.ListAllMyBucketsResult{
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
