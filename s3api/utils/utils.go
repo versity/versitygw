@@ -52,7 +52,7 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Request, error) {
 	req := ctx.Request()
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	httpReq, err := http.NewRequest(string(req.Header.Method()), string(ctx.Context().RequestURI()), bytes.NewReader(req.Body()))
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}

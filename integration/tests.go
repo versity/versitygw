@@ -1027,7 +1027,7 @@ func PutObject_non_existing_bucket(s *S3Conf) {
 func PutObject_special_chars(s *S3Conf) {
 	testName := "PutObject_special_chars"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo%%", "bar^", "baz**"}, bucket)
+		err := putObjects(s3client, []string{"my%key", "my^key", "my*key", "my.key", "my-key", "my_key", "my!key", "my'key", "my(key", "my)key", "my\\key", "my{}key", "my[]key", "my`key", "my+key", "my%25key", "my@key"}, bucket)
 		if err != nil {
 			return err
 		}

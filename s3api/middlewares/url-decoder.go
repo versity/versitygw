@@ -31,11 +31,6 @@ func DecodeURL(logger s3log.AuditLogger) fiber.Handler {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidURI), &controllers.MetaOpts{Logger: logger})
 		}
 		ctx.Path(decoded.Path)
-		decodedURL, err := url.QueryUnescape(reqURL)
-		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidURI), &controllers.MetaOpts{Logger: logger})
-		}
-		ctx.Request().SetRequestURI(decodedURL)
 		return ctx.Next()
 	}
 }
