@@ -126,3 +126,8 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 
 	return result, nil
 }
+
+// Shutdown graceful termination of service
+func (ld *LdapIAMService) Shutdown() error {
+	return ld.conn.Close()
+}

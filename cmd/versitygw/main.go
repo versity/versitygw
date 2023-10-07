@@ -48,6 +48,9 @@ var (
 	ldapURL, ldapBindDN, ldapPassword      string
 	ldapQueryBase, ldapObjClasses          string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
+	iamCacheDisable                        bool
+	iamCacheTTL                            int
+	iamCachePrune                          int
 )
 
 var (
@@ -256,6 +259,23 @@ func initFlags() []cli.Flag {
 			Usage:       "ldap server user role attribute name",
 			Destination: &ldapRoleAtr,
 		},
+		&cli.BoolFlag{
+			Name:        "iam-cache-disable",
+			Usage:       "disable local iam cache",
+			Destination: &iamCacheDisable,
+		},
+		&cli.IntFlag{
+			Name:        "iam-cache-ttl",
+			Usage:       "local iam cache entry ttl (seconds)",
+			Value:       120,
+			Destination: &iamCacheTTL,
+		},
+		&cli.IntFlag{
+			Name:        "iam-cache-prune",
+			Usage:       "local iam cache cleanup interval (seconds)",
+			Value:       3600,
+			Destination: &iamCachePrune,
+		},
 	}
 }
 
@@ -328,6 +348,9 @@ func runGateway(ctx *cli.Context, be backend.Backend) error {
 		LDAPAccessAtr:  ldapAccessAtr,
 		LDAPSecretAtr:  ldapSecAtr,
 		LDAPRoleAtr:    ldapRoleAtr,
+		CacheDisable:   iamCacheDisable,
+		CacheTTL:       iamCacheTTL,
+		CachePrune:     iamCachePrune,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)
@@ -387,13 +410,21 @@ Loop:
 			}
 		}
 	}
+	saveErr := err
 
 	be.Shutdown()
+
+	err = iam.Shutdown()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "shutdown iam: %v\n", err)
+	}
+
 	if logger != nil {
-		lerr := logger.Shutdown()
-		if lerr != nil {
-			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", lerr)
+		err := logger.Shutdown()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", err)
 		}
 	}
-	return err
+
+	return saveErr
 }

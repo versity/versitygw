@@ -144,6 +144,11 @@ func (s *IAMServiceInternal) ListUserAccounts() ([]Account, error) {
 	return accs, nil
 }
 
+// Shutdown graceful termination of service
+func (s *IAMServiceInternal) Shutdown() error {
+	return nil
+}
+
 const (
 	iamMode = 0600
 )
