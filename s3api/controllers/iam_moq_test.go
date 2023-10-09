@@ -30,6 +30,9 @@ var _ auth.IAMService = &IAMServiceMock{}
 //			ListUserAccountsFunc: func() ([]auth.Account, error) {
 //				panic("mock out the ListUserAccounts method")
 //			},
+//			ShutdownFunc: func() error {
+//				panic("mock out the Shutdown method")
+//			},
 //		}
 //
 //		// use mockedIAMService in code that requires auth.IAMService
@@ -48,6 +51,9 @@ type IAMServiceMock struct {
 
 	// ListUserAccountsFunc mocks the ListUserAccounts method.
 	ListUserAccountsFunc func() ([]auth.Account, error)
+
+	// ShutdownFunc mocks the Shutdown method.
+	ShutdownFunc func() error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -69,11 +75,15 @@ type IAMServiceMock struct {
 		// ListUserAccounts holds details about calls to the ListUserAccounts method.
 		ListUserAccounts []struct {
 		}
+		// Shutdown holds details about calls to the Shutdown method.
+		Shutdown []struct {
+		}
 	}
 	lockCreateAccount     sync.RWMutex
 	lockDeleteUserAccount sync.RWMutex
 	lockGetUserAccount    sync.RWMutex
 	lockListUserAccounts  sync.RWMutex
+	lockShutdown          sync.RWMutex
 }
 
 // CreateAccount calls CreateAccountFunc.
@@ -196,5 +206,32 @@ func (mock *IAMServiceMock) ListUserAccountsCalls() []struct {
 	mock.lockListUserAccounts.RLock()
 	calls = mock.calls.ListUserAccounts
 	mock.lockListUserAccounts.RUnlock()
+	return calls
+}
+
+// Shutdown calls ShutdownFunc.
+func (mock *IAMServiceMock) Shutdown() error {
+	if mock.ShutdownFunc == nil {
+		panic("IAMServiceMock.ShutdownFunc: method is nil but IAMService.Shutdown was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockShutdown.Lock()
+	mock.calls.Shutdown = append(mock.calls.Shutdown, callInfo)
+	mock.lockShutdown.Unlock()
+	return mock.ShutdownFunc()
+}
+
+// ShutdownCalls gets all the calls that were made to Shutdown.
+// Check the length with:
+//
+//	len(mockedIAMService.ShutdownCalls())
+func (mock *IAMServiceMock) ShutdownCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockShutdown.RLock()
+	calls = mock.calls.Shutdown
+	mock.lockShutdown.RUnlock()
 	return calls
 }

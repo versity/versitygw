@@ -16,6 +16,7 @@ package auth
 
 import (
 	"errors"
+	"time"
 )
 
 // Account is a gateway IAM account
@@ -33,6 +34,7 @@ type IAMService interface {
 	GetUserAccount(access string) (Account, error)
 	DeleteUserAccount(access string) error
 	ListUserAccounts() ([]Account, error)
+	Shutdown() error
 }
 
 var ErrNoSuchUser = errors.New("user not found")
@@ -47,18 +49,36 @@ type Opts struct {
 	LDAPAccessAtr  string
 	LDAPSecretAtr  string
 	LDAPRoleAtr    string
+	CacheDisable   bool
+	CacheTTL       int
+	CachePrune     int
 }
 
 func New(o *Opts) (IAMService, error) {
+	var svc IAMService
+	var err error
+
 	switch {
 	case o.Dir != "":
-		return NewInternal(o.Dir)
+		svc, err = NewInternal(o.Dir)
 	case o.LDAPServerURL != "":
-		return NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
+		svc, err = NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
 			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr,
 			o.LDAPObjClasses)
 	default:
 		// if no iam options selected, default to the single user mode
 		return IAMServiceSingle{}, nil
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if o.CacheDisable {
+		return svc, nil
+	}
+
+	return NewCache(svc,
+		time.Duration(o.CacheTTL)*time.Second,
+		time.Duration(o.CachePrune)*time.Second), nil
 }

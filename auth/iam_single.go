@@ -19,6 +19,8 @@ import "fmt"
 // IAMServiceSingle manages the single tenant (root-only) IAM service
 type IAMServiceSingle struct{}
 
+var _ IAMService = &IAMServiceSingle{}
+
 // CreateAccount not valid in single tenant mode
 func (IAMServiceSingle) CreateAccount(account Account) error {
 	return fmt.Errorf("create user not valid in single tenant mode")
@@ -37,4 +39,9 @@ func (IAMServiceSingle) DeleteUserAccount(access string) error {
 // ListUserAccounts no accounts in single tenant mode
 func (IAMServiceSingle) ListUserAccounts() ([]Account, error) {
 	return []Account{}, nil
+}
+
+// Shutdown graceful termination of service
+func (IAMServiceSingle) Shutdown() error {
+	return nil
 }
