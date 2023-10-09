@@ -16,11 +16,14 @@ package s3proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
 )
@@ -376,4 +379,122 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 		Deleted: output.Deleted,
 		Error:   output.Errors,
 	}, nil
+}
+
+func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	client, err := s.getClientFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	output, err := client.GetBucketAcl(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	var acl auth.ACL
+
+	acl.Owner = *output.Owner.ID
+	for _, el := range output.Grants {
+		acl.Grantees = append(acl.Grantees, auth.Grantee{
+			Permission: el.Permission,
+			Access:     *el.Grantee.ID,
+		})
+	}
+
+	return json.Marshal(acl)
+}
+
+func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
+	client, err := s.getClientFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+
+	acl, err := auth.ParseACL(data)
+	if err != nil {
+		return err
+	}
+
+	input := &s3.PutBucketAclInput{
+		Bucket: &bucket,
+		ACL:    acl.ACL,
+		AccessControlPolicy: &types.AccessControlPolicy{
+			Owner: &types.Owner{
+				ID: &acl.Owner,
+			},
+		},
+	}
+
+	for _, el := range acl.Grantees {
+		input.AccessControlPolicy.Grants = append(input.AccessControlPolicy.Grants, types.Grant{
+			Permission: el.Permission,
+			Grantee: &types.Grantee{
+				ID:   &el.Access,
+				Type: types.TypeCanonicalUser,
+			},
+		})
+	}
+
+	_, err = client.PutBucketAcl(ctx, input)
+	return err
+}
+
+func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
+	client, err := s.getClientFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+
+	tagging := &types.Tagging{
+		TagSet: []types.Tag{},
+	}
+	for key, val := range tags {
+		tagging.TagSet = append(tagging.TagSet, types.Tag{
+			Key:   &key,
+			Value: &val,
+		})
+	}
+
+	_, err = client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+		Bucket:  &bucket,
+		Key:     &object,
+		Tagging: tagging,
+	})
+	return err
+}
+
+func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+	client, err := s.getClientFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	output, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make(map[string]string)
+	for _, el := range output.TagSet {
+		tags[*el.Key] = *el.Value
+	}
+
+	return tags, nil
+}
+
+func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+	client, err := s.getClientFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	return err
 }
