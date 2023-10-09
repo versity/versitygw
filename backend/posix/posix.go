@@ -223,6 +223,12 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if strings.HasSuffix(*mpu.Key, "/") {
+		// directory objects can't be uploaded with mutlipart uploads
+		// because posix directories can't contain data
+		return nil, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+	}
+
 	// generate random uuid for upload id
 	uploadID := uuid.New().String()
 	// hash object name for multipart container
@@ -960,6 +966,13 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
+		if po.ContentLength != 0 {
+			// posix directories can't contain data, send error
+			// if reuests has a data payload associated with a
+			// directory object
+			return "", s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		}
+
 		err = mkdirAll(name, os.FileMode(0755), *po.Bucket, *po.Key)
 		if err != nil {
 			return "", err
@@ -1114,10 +1127,6 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 
 func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	bucket := *input.Bucket
-	object := *input.Key
-	acceptRange := *input.Range
-	var contentRange string
-
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1126,6 +1135,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	object := *input.Key
 	objPath := filepath.Join(bucket, object)
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1135,21 +1145,59 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
+	acceptRange := *input.Range
 	startOffset, length, err := backend.ParseRange(fi, acceptRange)
 	if err != nil {
 		return nil, err
 	}
 
-	if length == -1 {
-		length = fi.Size() - startOffset + 1
+	objSize := fi.Size()
+	if fi.IsDir() {
+		// directory objects are always 0 len
+		objSize = 0
+		length = 0
 	}
 
-	if startOffset+length > fi.Size()+1 {
+	if length == -1 {
+		length = objSize - startOffset + 1
+	}
+
+	if startOffset+length > objSize+1 {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
 
+	var contentRange string
 	if acceptRange != "" {
-		contentRange = fmt.Sprintf("bytes %v-%v/%v", startOffset, startOffset+length-1, fi.Size())
+		contentRange = fmt.Sprintf("bytes %v-%v/%v", startOffset, startOffset+length-1, objSize)
+	}
+
+	if fi.IsDir() {
+		userMetaData := make(map[string]string)
+
+		contentType, contentEncoding := loadUserMetaData(objPath, userMetaData)
+
+		b, err := xattr.Get(objPath, etagkey)
+		etag := string(b)
+		if err != nil {
+			etag = ""
+		}
+
+		tags, err := p.getXattrTags(bucket, object)
+		if err != nil {
+			return nil, fmt.Errorf("get object tags: %w", err)
+		}
+
+		return &s3.GetObjectOutput{
+			AcceptRanges:    &acceptRange,
+			ContentLength:   length,
+			ContentEncoding: &contentEncoding,
+			ContentType:     &contentType,
+			ETag:            &etag,
+			LastModified:    backend.GetTimePtr(fi.ModTime()),
+			Metadata:        userMetaData,
+			TagCount:        int32(len(tags)),
+			ContentRange:    &contentRange,
+		}, nil
 	}
 
 	f, err := os.Open(objPath)

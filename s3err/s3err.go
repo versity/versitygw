@@ -115,6 +115,7 @@ const (
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
+	ErrDirectoryObjectContainsData
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -407,6 +408,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "ObjectParentIsFile",
 		Description:    "Object parent already exists as a file.",
 		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrDirectoryObjectContainsData: {
+		Code:           "DirectoryObjectContainsData",
+		Description:    "Directory object contains data payload.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 }
 
