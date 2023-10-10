@@ -1035,28 +1035,6 @@ func PutObject_special_chars(s *S3Conf) {
 	})
 }
 
-func PutObject_existing_dir_obj(s *S3Conf) {
-	testName := "PutObject_existing_dir_obj"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo/bar", "foo"}, bucket)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
-func PutObject_obj_parent_is_file(s *S3Conf) {
-	testName := "PutObject_obj_parent_is_file"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "foo/bar/"}, bucket)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 func PutObject_invalid_long_tags(s *S3Conf) {
 	testName := "PutObject_invalid_long_tags"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3868,4 +3846,52 @@ func TestPerformance(s *S3Conf, upload, download bool, files int, objectSize int
 		tot, elapsed, int(math.Ceil(float64(tot)/elapsed.Seconds())/1048576))
 
 	return nil
+}
+
+// Posix related tests
+func PutObject_overwrite_dir_obj(s *S3Conf) {
+	testName := "PutObject_overwrite_dir_obj"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo/", "foo"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutObject_overwrite_file_obj(s *S3Conf) {
+	testName := "PutObject_overwrite_file_obj"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "foo/"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutObject_dir_obj_with_data(s *S3Conf) {
+	testName := "PutObject_dir_obj_with_data"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, _, err := putObjectWithData(int64(20), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj/"),
+		}, s3client)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func CreateMultipartUpload_dir_obj(s *S3Conf) {
+	testName := "CreateMultipartUpload_dir_obj"
+	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := createMp(s3client, bucket, "obj/")
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)); err != nil {
+			return err
+		}
+		return nil
+	})
 }

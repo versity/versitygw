@@ -49,8 +49,6 @@ func TestDeleteBucket(s *S3Conf) {
 func TestPutObject(s *S3Conf) {
 	PutObject_non_existing_bucket(s)
 	PutObject_special_chars(s)
-	PutObject_existing_dir_obj(s)
-	PutObject_obj_parent_is_file(s)
 	PutObject_invalid_long_tags(s)
 	PutObject_success(s)
 }
@@ -216,4 +214,11 @@ func TestFullFlow(s *S3Conf) {
 	TestCompleteMultipartUpload(s)
 	TestPutBucketAcl(s)
 	TestGetBucketAcl(s)
+}
+
+func TestPosix(s *S3Conf) {
+	PutObject_overwrite_dir_obj(s)
+	PutObject_overwrite_file_obj(s)
+	PutObject_dir_obj_with_data(s)
+	CreateMultipartUpload_dir_obj(s)
 }

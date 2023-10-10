@@ -849,6 +849,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
+	}
+
 	var restoreRequest s3.RestoreObjectInput
 	if ctx.Request().URI().QueryArgs().Has("restore") {
 		err := xml.Unmarshal(ctx.Body(), &restoreRequest)
