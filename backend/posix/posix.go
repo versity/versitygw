@@ -989,6 +989,11 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 
 	// object is file
+	d, err := os.Stat(name)
+	if err == nil && d.IsDir() {
+		return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	}
+
 	f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
 		*po.Bucket, *po.Key, po.ContentLength)
 	if err != nil {
