@@ -171,11 +171,15 @@ func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 
 	for _, acc := range accs {
 		_, err := iam.GetUserAccount(acc)
-		if err != nil && err != ErrNoSuchUser {
+		if err != nil {
+			if err == ErrNoSuchUser {
+				result = append(result, acc)
+				continue
+			}
+			if err == ErrNotSupported {
+				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+			}
 			return nil, fmt.Errorf("check user account: %w", err)
-		}
-		if err == ErrNoSuchUser {
-			result = append(result, acc)
 		}
 	}
 	return result, nil

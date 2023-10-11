@@ -14,26 +14,30 @@
 
 package auth
 
-import "fmt"
+import (
+	"errors"
+)
 
 // IAMServiceSingle manages the single tenant (root-only) IAM service
 type IAMServiceSingle struct{}
 
 var _ IAMService = &IAMServiceSingle{}
 
+var ErrNotSupported = errors.New("method is not supported")
+
 // CreateAccount not valid in single tenant mode
 func (IAMServiceSingle) CreateAccount(account Account) error {
-	return fmt.Errorf("create user not valid in single tenant mode")
+	return ErrNotSupported
 }
 
 // GetUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) GetUserAccount(access string) (Account, error) {
-	return Account{}, ErrNoSuchUser
+	return Account{}, ErrNotSupported
 }
 
 // DeleteUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) DeleteUserAccount(access string) error {
-	return ErrNoSuchUser
+	return ErrNotSupported
 }
 
 // ListUserAccounts no accounts in single tenant mode
