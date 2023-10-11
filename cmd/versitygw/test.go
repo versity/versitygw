@@ -74,6 +74,11 @@ func initTestCommands() []*cli.Command {
 			Action:      getAction(integration.TestFullFlow),
 		},
 		{
+			Name:   "posix",
+			Usage:  "Tests posix specific features",
+			Action: getAction(integration.TestPosix),
+		},
+		{
 			Name:  "bench",
 			Usage: "Runs download/upload performance test on the gateway",
 			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).
