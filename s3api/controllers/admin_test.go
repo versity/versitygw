@@ -15,7 +15,9 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +57,18 @@ func TestAdminController_CreateUser(t *testing.T) {
 		return ctx.Next()
 	})
 
+	usr := auth.Account{
+		Access: "access",
+		Secret: "secret",
+		Role:   "invalid role",
+	}
+
+	user, _ := json.Marshal(&usr)
+
+	usr.Role = "admin"
+
+	succUsr, _ := json.Marshal(&usr)
+
 	appErr.Patch("/create-user", adminController.CreateUser)
 
 	tests := []struct {
@@ -68,7 +82,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=user", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user", bytes.NewBuffer(succUsr)),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -77,7 +91,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-invalid-user-role",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=invalid", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user", bytes.NewBuffer(user)),
 			},
 			wantErr:    false,
 			statusCode: 500,
@@ -86,7 +100,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 			name: "Admin-create-user-invalid-requester-role",
 			app:  appErr,
 			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user?access=test&secret=test&role=admin", nil),
+				req: httptest.NewRequest(http.MethodPatch, "/create-user", nil),
 			},
 			wantErr:    false,
 			statusCode: 500,

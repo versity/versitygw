@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
@@ -32,19 +33,21 @@ func NewAdminController(iam auth.IAMService, be backend.Backend) AdminController
 }
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
-	access, secret, role := ctx.Query("access"), ctx.Query("secret"), ctx.Query("role")
 	acct := ctx.Locals("account").(auth.Account)
-
 	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
-	if role != "user" && role != "admin" {
+	var usr auth.Account
+	err := json.Unmarshal(ctx.Body(), &usr)
+	if err != nil {
+		return fmt.Errorf("failed to parse request body: %w", err)
+	}
+
+	if usr.Role != "user" && usr.Role != "admin" {
 		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
 	}
 
-	user := auth.Account{Access: access, Secret: secret, Role: role}
-
-	err := c.iam.CreateAccount(user)
+	err = c.iam.CreateAccount(usr)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}

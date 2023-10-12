@@ -21,9 +21,12 @@ import (
 
 // Account is a gateway IAM account
 type Account struct {
-	Access string `json:"access"`
-	Secret string `json:"secret"`
-	Role   string `json:"role"`
+	Access    string `json:"access"`
+	Secret    string `json:"secret"`
+	Role      string `json:"role"`
+	UserID    int    `json:"userID"`
+	GroupID   int    `json:"groupID"`
+	ProjectID int    `json:"projectID"`
 }
 
 // IAMService is the interface for all IAM service implementations
