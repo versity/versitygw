@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -66,6 +67,21 @@ func adminCommand() *cli.Command {
 						Usage:    "role for the new user",
 						Required: true,
 						Aliases:  []string{"r"},
+					},
+					&cli.IntFlag{
+						Name:    "user-id",
+						Usage:   "userID for the new user",
+						Aliases: []string{"ui"},
+					},
+					&cli.IntFlag{
+						Name:    "group-id",
+						Usage:   "groupID for the new user",
+						Aliases: []string{"gi"},
+					},
+					&cli.IntFlag{
+						Name:    "project-id",
+						Usage:   "projectID for the new user",
+						Aliases: []string{"pi"},
 					},
 				},
 			},
@@ -144,6 +160,7 @@ func adminCommand() *cli.Command {
 
 func createUser(ctx *cli.Context) error {
 	access, secret, role := ctx.String("access"), ctx.String("secret"), ctx.String("role")
+	userID, groupID, projectID := ctx.Int("user-id"), ctx.Int("group-id"), ctx.Int("projectID")
 	if access == "" || secret == "" {
 		return fmt.Errorf("invalid input parameters for the new user")
 	}
@@ -151,14 +168,28 @@ func createUser(ctx *cli.Context) error {
 		return fmt.Errorf("invalid input parameter for role")
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user?access=%v&secret=%v&role=%v", adminEndpoint, access, secret, role), nil)
+	acc := auth.Account{
+		Access:    access,
+		Secret:    secret,
+		Role:      role,
+		UserID:    userID,
+		GroupID:   groupID,
+		ProjectID: projectID,
+	}
+
+	accJson, err := json.Marshal(acc)
+	if err != nil {
+		return fmt.Errorf("failed to parse user data: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user", adminEndpoint), bytes.NewBuffer(accJson))
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
 
 	signer := v4.NewSigner()
 
-	hashedPayload := sha256.Sum256([]byte{})
+	hashedPayload := sha256.Sum256(accJson)
 	hexPayload := hex.EncodeToString(hashedPayload[:])
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
@@ -262,6 +293,7 @@ func listUsers(ctx *cli.Context) error {
 	if err := json.Unmarshal(body, &accs); err != nil {
 		return err
 	}
+	fmt.Println(accs)
 
 	printAcctTable(accs)
 
@@ -280,10 +312,10 @@ const (
 func printAcctTable(accs []auth.Account) {
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
-	fmt.Fprintln(w, "Account\tRole")
-	fmt.Fprintln(w, "-------\t----")
+	fmt.Fprintln(w, "Account\tRole\tUserID\tGroupID\tProjectID")
+	fmt.Fprintln(w, "-------\t----\t------\t-------\t---------")
 	for _, acc := range accs {
-		fmt.Fprintf(w, "%v\t%v\n", acc.Access, acc.Role)
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\n", acc.Access, acc.Role, acc.UserID, acc.GroupID, acc.ProjectID)
 	}
 	fmt.Fprintln(w)
 	w.Flush()
