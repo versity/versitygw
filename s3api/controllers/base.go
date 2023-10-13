@@ -889,7 +889,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 		}
 
-		if err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot); err != nil {
+		if err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "SelectObjectContent", BucketOwner: parsedAcl.Owner})
 		}
 
@@ -1042,6 +1042,7 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 		}
 
 		if len(b) > 0 {
+			ctx.Response().Header.Set("Content-Length", fmt.Sprint(len(b)))
 			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 		}
 	}

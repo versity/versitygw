@@ -131,8 +131,8 @@ type SelectObjectContentResult struct {
 	Records  *types.RecordsEvent
 	Stats    *types.StatsEvent
 	Progress *types.ProgressEvent
-	Cont     *string
-	End      *string
+	Cont     *types.ContinuationEvent
+	End      *types.EndEvent
 }
 
 type Bucket struct {
