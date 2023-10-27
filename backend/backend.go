@@ -20,6 +20,7 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -61,7 +62,7 @@ type Backend interface {
 
 	// special case object operations
 	RestoreObject(context.Context, *s3.RestoreObjectInput) error
-	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
+	SelectObjectContent(*fasthttp.RequestCtx, *s3.SelectObjectContentInput)
 
 	// object tags operations
 	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
@@ -162,8 +163,8 @@ func (BackendUnsupported) PutObjectAcl(context.Context, *s3.PutObjectAclInput) e
 func (BackendUnsupported) RestoreObject(context.Context, *s3.RestoreObjectInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
-	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) SelectObjectContent(*fasthttp.RequestCtx, *s3.SelectObjectContentInput) {
+
 }
 
 func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {

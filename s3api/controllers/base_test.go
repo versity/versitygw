@@ -1306,8 +1306,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			CreateMultipartUploadFunc: func(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 				return &s3.CreateMultipartUploadOutput{}, nil
 			},
-			SelectObjectContentFunc: func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
-				return s3response.SelectObjectContentResult{}, nil
+			SelectObjectContentFunc: func(contextMoqParam *fasthttp.RequestCtx, selectObjectContentInput *s3.SelectObjectContentInput) {
 			},
 		},
 	}

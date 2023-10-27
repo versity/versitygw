@@ -15,6 +15,7 @@
 package posix
 
 import (
+	"bufio"
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
@@ -35,10 +36,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 	"github.com/pkg/xattr"
+	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
+	"github.com/versity/versitygw/s3select"
 )
 
 type Posix struct {
@@ -1692,6 +1695,23 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	})
 
 	return buckets, nil
+}
+
+func (p *Posix) SelectObjectContent(ctx *fasthttp.RequestCtx, input *s3.SelectObjectContentInput) {
+	ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
+		var getProgress s3select.GetProgress
+		progress := input.RequestProgress
+		if progress != nil && progress.Enabled {
+			// TODO: assign getProgress function here to periodically send progress events
+			// Mock function here, this has to be removed
+			getProgress = func() (bytesScanned int64, bytesProcessed int64) {
+				return -1, -1
+			}
+		}
+		mh := s3select.NewMessageHandler(w, getProgress)
+		apiErr := s3err.GetAPIError(s3err.ErrNotImplemented)
+		mh.FinishWithError(apiErr.Code, apiErr.Description)
+	})
 }
 
 func isNoAttr(err error) bool {
