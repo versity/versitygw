@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/backend"
@@ -106,7 +107,7 @@ var _ backend.Backend = &BackendMock{}
 //			RestoreObjectFunc: func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error {
 //				panic("mock out the RestoreObject method")
 //			},
-//			SelectObjectContentFunc: func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+//			SelectObjectContentFunc: func(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer) {
 //				panic("mock out the SelectObjectContent method")
 //			},
 //			ShutdownFunc: func()  {
@@ -213,7 +214,7 @@ type BackendMock struct {
 	RestoreObjectFunc func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error
 
 	// SelectObjectContentFunc mocks the SelectObjectContent method.
-	SelectObjectContentFunc func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
+	SelectObjectContentFunc func(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer)
 
 	// ShutdownFunc mocks the Shutdown method.
 	ShutdownFunc func()
@@ -441,10 +442,10 @@ type BackendMock struct {
 		}
 		// SelectObjectContent holds details about calls to the SelectObjectContent method.
 		SelectObjectContent []struct {
-			// ContextMoqParam is the contextMoqParam argument value.
-			ContextMoqParam context.Context
-			// SelectObjectContentInput is the selectObjectContentInput argument value.
-			SelectObjectContentInput *s3.SelectObjectContentInput
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// Input is the input argument value.
+			Input *s3.SelectObjectContentInput
 		}
 		// Shutdown holds details about calls to the Shutdown method.
 		Shutdown []struct {
@@ -1539,21 +1540,21 @@ func (mock *BackendMock) RestoreObjectCalls() []struct {
 }
 
 // SelectObjectContent calls SelectObjectContentFunc.
-func (mock *BackendMock) SelectObjectContent(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
+func (mock *BackendMock) SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer) {
 	if mock.SelectObjectContentFunc == nil {
 		panic("BackendMock.SelectObjectContentFunc: method is nil but Backend.SelectObjectContent was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam          context.Context
-		SelectObjectContentInput *s3.SelectObjectContentInput
+		Ctx   context.Context
+		Input *s3.SelectObjectContentInput
 	}{
-		ContextMoqParam:          contextMoqParam,
-		SelectObjectContentInput: selectObjectContentInput,
+		Ctx:   ctx,
+		Input: input,
 	}
 	mock.lockSelectObjectContent.Lock()
 	mock.calls.SelectObjectContent = append(mock.calls.SelectObjectContent, callInfo)
 	mock.lockSelectObjectContent.Unlock()
-	return mock.SelectObjectContentFunc(contextMoqParam, selectObjectContentInput)
+	return mock.SelectObjectContentFunc(ctx, input)
 }
 
 // SelectObjectContentCalls gets all the calls that were made to SelectObjectContent.
@@ -1561,12 +1562,12 @@ func (mock *BackendMock) SelectObjectContent(contextMoqParam context.Context, se
 //
 //	len(mockedBackend.SelectObjectContentCalls())
 func (mock *BackendMock) SelectObjectContentCalls() []struct {
-	ContextMoqParam          context.Context
-	SelectObjectContentInput *s3.SelectObjectContentInput
+	Ctx   context.Context
+	Input *s3.SelectObjectContentInput
 } {
 	var calls []struct {
-		ContextMoqParam          context.Context
-		SelectObjectContentInput *s3.SelectObjectContentInput
+		Ctx   context.Context
+		Input *s3.SelectObjectContentInput
 	}
 	mock.lockSelectObjectContent.RLock()
 	calls = mock.calls.SelectObjectContent

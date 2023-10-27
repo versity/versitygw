@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1308,8 +1309,8 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			CreateMultipartUploadFunc: func(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 				return &s3.CreateMultipartUploadOutput{}, nil
 			},
-			SelectObjectContentFunc: func(contextMoqParam context.Context, selectObjectContentInput *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
-				return s3response.SelectObjectContentResult{}, nil
+			SelectObjectContentFunc: func(context.Context, *s3.SelectObjectContentInput) func(w *bufio.Writer) {
+				return func(w *bufio.Writer) {}
 			},
 		},
 	}
