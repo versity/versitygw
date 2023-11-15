@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -51,8 +52,15 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 
 func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Request, error) {
 	req := ctx.Request()
+	var body io.Reader
+	if IsBigDataAction(ctx) {
+		body = req.BodyStream()
+		fmt.Println("create ctx body: ", body)
+	} else {
+		body = bytes.NewReader(req.Body())
+	}
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), string(ctx.Context().RequestURI()), bytes.NewReader(req.Body()))
+	httpReq, err := http.NewRequest(string(req.Header.Method()), string(ctx.Context().RequestURI()), body)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
@@ -126,6 +134,15 @@ func IsValidBucketName(bucket string) bool {
 func includeHeader(hdr string, signedHdrs []string) bool {
 	for _, shdr := range signedHdrs {
 		if strings.EqualFold(hdr, shdr) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsBigDataAction(ctx *fiber.Ctx) bool {
+	if ctx.Method() == http.MethodPut && len(strings.Split(ctx.Path(), "/")) >= 3 {
+		if !ctx.Request().URI().QueryArgs().Has("tagging") && ctx.Get("X-Amz-Copy-Source") == "" && !ctx.Request().URI().QueryArgs().Has("acl") {
 			return true
 		}
 	}
