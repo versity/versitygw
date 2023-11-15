@@ -143,13 +143,19 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		ok := isSpecialPayload(hashPayloadHeader)
 
 		if !ok {
-			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.Body())
-			hexPayload := hex.EncodeToString(hashedPayload[:])
+			if utils.IsBigDataAction(ctx) {
+				rdr := ctx.Request().BodyStream()
+				r := utils.NewHashReader(rdr, sha256.New(), hashPayloadHeader, utils.HashTypeSha256)
+				ctx.Locals("body-reader", r)
+			} else {
+				// Calculate the hash of the request payload
+				hashedPayload := sha256.Sum256(ctx.Body())
+				hexPayload := hex.EncodeToString(hashedPayload[:])
 
-			// Compare the calculated hash with the hash provided
-			if hashPayloadHeader != hexPayload {
-				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), &controllers.MetaOpts{Logger: logger})
+				// Compare the calculated hash with the hash provided
+				if hashPayloadHeader != hexPayload {
+					return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), &controllers.MetaOpts{Logger: logger})
+				}
 			}
 		}
 
@@ -166,7 +172,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			SecretAccessKey: account.Secret,
 		}, req, hashPayloadHeader, creds[3], region, tdate, func(options *v4.SignerOptions) {
 			options.DisableURIPathEscaping = true
-			if debug {
+			if true {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
 			}
@@ -181,6 +187,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		}
 		calculatedSign := strings.Split(parts[3], "=")[1]
 		expectedSign := strings.Split(authParts[2], "=")[1]
+		fmt.Println(calculatedSign, expectedSign)
 
 		if expectedSign != calculatedSign {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch), &controllers.MetaOpts{Logger: logger})

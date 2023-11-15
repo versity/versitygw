@@ -15,7 +15,6 @@
 package controllers
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -516,7 +515,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "UploadPart", BucketOwner: parsedAcl.Owner})
 		}
 
-		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
+		body := ctx.Locals("body-reader").(io.Reader)
 		ctx.Locals("logReqBody", false)
 		etag, err := c.be.UploadPart(ctx.Context(), &s3.UploadPartInput{
 			Bucket:        &bucket,
@@ -655,13 +654,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "PutObject", BucketOwner: parsedAcl.Owner})
 	}
 
+	rdr := ctx.Locals("body-reader").(io.Reader)
+
 	ctx.Locals("logReqBody", false)
 	etag, err := c.be.PutObject(ctx.Context(), &s3.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &keyStart,
 		ContentLength: &contentLength,
 		Metadata:      metadata,
-		Body:          bytes.NewReader(ctx.Request().Body()),
+		Body:          rdr,
 		Tagging:       &tagging,
 	})
 	ctx.Response().Header.Set("ETag", etag)
