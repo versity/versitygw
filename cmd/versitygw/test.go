@@ -17,6 +17,7 @@ var (
 	objSize         int64
 	concurrency     int
 	files           int
+	totalReqs       int
 	upload          bool
 	download        bool
 	pathStyle       bool
@@ -175,7 +176,64 @@ func initTestCommands() []*cli.Command {
 
 				s3conf := integration.NewS3Conf(opts...)
 
-				return integration.TestPerformance(s3conf, upload, download, files, objSize, dstBucket, prefix)
+				if upload {
+					return integration.TestUpload(s3conf, files, objSize, dstBucket, prefix)
+				} else {
+					return integration.TestDownload(s3conf, files, objSize, dstBucket, prefix)
+				}
+			},
+		},
+		{
+			Name:        "throughput",
+			Usage:       "Runs throughput performance test on the gateway",
+			Description: `Calls HeadBucket action the number of times and concurrency level specified with flags by measuring gateway throughput.`,
+			Flags: []cli.Flag{
+				&cli.IntFlag{
+					Name:        "reqs",
+					Usage:       "Total number of requests to send.",
+					Value:       1000,
+					Destination: &totalReqs,
+				},
+				&cli.StringFlag{
+					Name:        "bucket",
+					Usage:       "Destination bucket name to make the requests",
+					Destination: &dstBucket,
+				},
+				&cli.IntFlag{
+					Name:        "concurrency",
+					Usage:       "threads per request",
+					Value:       1,
+					Destination: &concurrency,
+				},
+				&cli.BoolFlag{
+					Name:        "checksumDis",
+					Usage:       "Disable server checksum",
+					Value:       false,
+					Destination: &checksumDisable,
+				},
+			},
+			Action: func(ctx *cli.Context) error {
+				if dstBucket == "" {
+					return fmt.Errorf("must specify the destination bucket")
+				}
+
+				opts := []integration.Option{
+					integration.WithAccess(awsID),
+					integration.WithSecret(awsSecret),
+					integration.WithRegion(region),
+					integration.WithEndpoint(endpoint),
+					integration.WithConcurrency(concurrency),
+				}
+				if debug {
+					opts = append(opts, integration.WithDebug())
+				}
+				if checksumDisable {
+					opts = append(opts, integration.WithDisableChecksum())
+				}
+
+				s3conf := integration.NewS3Conf(opts...)
+
+				return integration.TestReqPerSec(s3conf, totalReqs, dstBucket)
 			},
 		},
 	}
