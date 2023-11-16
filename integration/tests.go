@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -3775,77 +3773,6 @@ func GetBucketAcl_success(s *S3Conf) {
 
 		return nil
 	})
-}
-
-type prefResult struct {
-	elapsed time.Duration
-	size    int64
-	err     error
-}
-
-func TestPerformance(s *S3Conf, upload, download bool, files int, objectSize int64, bucket, prefix string) error {
-	var sg sync.WaitGroup
-	results := make([]prefResult, files)
-	start := time.Now()
-	if upload {
-		if objectSize == 0 {
-			return fmt.Errorf("must specify object size for upload")
-		}
-
-		if objectSize > (int64(10000) * s.PartSize) {
-			return fmt.Errorf("object size can not exceed 10000 * chunksize")
-		}
-
-		runF("performance test: upload/download objects")
-
-		for i := 0; i < files; i++ {
-			sg.Add(1)
-			go func(i int) {
-				var r io.Reader = NewDataReader(int(objectSize), int(s.PartSize))
-
-				start := time.Now()
-				err := s.UploadData(r, bucket, fmt.Sprintf("%v%v", prefix, i))
-				results[i].elapsed = time.Since(start)
-				results[i].err = err
-				results[i].size = objectSize
-				sg.Done()
-			}(i)
-		}
-	}
-	if download {
-		for i := 0; i < files; i++ {
-			sg.Add(1)
-			go func(i int) {
-				nw := NewNullWriter()
-				start := time.Now()
-				n, err := s.DownloadData(nw, bucket, fmt.Sprintf("%v%v", prefix, i))
-				results[i].elapsed = time.Since(start)
-				results[i].err = err
-				results[i].size = n
-				sg.Done()
-			}(i)
-		}
-	}
-	sg.Wait()
-	elapsed := time.Since(start)
-
-	var tot int64
-	for i, res := range results {
-		if res.err != nil {
-			failF("%v: %v\n", i, res.err)
-			break
-		}
-		tot += res.size
-		fmt.Printf("%v: %v in %v (%v MB/s)\n",
-			i, res.size, res.elapsed,
-			int(math.Ceil(float64(res.size)/res.elapsed.Seconds())/1048576))
-	}
-
-	fmt.Println()
-	passF("run perf: %v in %v (%v MB/s)\n",
-		tot, elapsed, int(math.Ceil(float64(tot)/elapsed.Seconds())/1048576))
-
-	return nil
 }
 
 // Posix related tests
