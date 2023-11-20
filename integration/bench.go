@@ -17,16 +17,16 @@ type prefResult struct {
 	err     error
 }
 
-func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) error {
+func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) (size int64, elapsed time.Duration, err error) {
 	var sg sync.WaitGroup
 	results := make([]prefResult, files)
 	start := time.Now()
 	if objSize == 0 {
-		return fmt.Errorf("must specify object size for upload")
+		return 0, time.Since(start), fmt.Errorf("must specify object size for upload")
 	}
 
 	if objSize > (int64(10000) * s.PartSize) {
-		return fmt.Errorf("object size can not exceed 10000 * chunksize")
+		return 0, time.Since(start), fmt.Errorf("object size can not exceed 10000 * chunksize")
 	}
 
 	runF("performance test: upload objects")
@@ -45,13 +45,13 @@ func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) erro
 		}(i)
 	}
 	sg.Wait()
-	elapsed := time.Since(start)
+	elapsed = time.Since(start)
 
 	var tot int64
 	for i, res := range results {
 		if res.err != nil {
 			failF("%v: %v\n", i, res.err)
-			break
+			return 0, time.Since(start), res.err
 		}
 		tot += res.size
 		fmt.Printf("%v: %v in %v (%v MB/s)\n",
@@ -63,10 +63,10 @@ func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) erro
 	passF("run upload: %v in %v (%v MB/s)\n",
 		tot, elapsed, int(math.Ceil(float64(tot)/elapsed.Seconds())/1048576))
 
-	return nil
+	return tot, time.Since(start), nil
 }
 
-func TestDownload(s *S3Conf, files int, objSize int64, bucket, prefix string) error {
+func TestDownload(s *S3Conf, files int, objSize int64, bucket, prefix string) (size int64, elapsed time.Duration, err error) {
 	var sg sync.WaitGroup
 	results := make([]prefResult, files)
 	start := time.Now()
@@ -86,13 +86,13 @@ func TestDownload(s *S3Conf, files int, objSize int64, bucket, prefix string) er
 		}(i)
 	}
 	sg.Wait()
-	elapsed := time.Since(start)
+	elapsed = time.Since(start)
 
 	var tot int64
 	for i, res := range results {
 		if res.err != nil {
 			failF("%v: %v\n", i, res.err)
-			break
+			return 0, elapsed, err
 		}
 		tot += res.size
 		fmt.Printf("%v: %v in %v (%v MB/s)\n",
@@ -104,10 +104,10 @@ func TestDownload(s *S3Conf, files int, objSize int64, bucket, prefix string) er
 	passF("run download: %v in %v (%v MB/s)\n",
 		tot, elapsed, int(math.Ceil(float64(tot)/elapsed.Seconds())/1048576))
 
-	return nil
+	return tot, elapsed, nil
 }
 
-func TestReqPerSec(s *S3Conf, totalReqs int, bucket string) error {
+func TestReqPerSec(s *S3Conf, totalReqs int, bucket string) (time.Duration, int, error) {
 	client := s3.NewFromConfig(s.Config())
 	var wg sync.WaitGroup
 	var resErr error
@@ -132,11 +132,11 @@ func TestReqPerSec(s *S3Conf, totalReqs int, bucket string) error {
 	wg.Wait()
 	if resErr != nil {
 		failF("performance test failed with error: %w", resErr)
-		return nil
+		return time.Since(startTime), 0, resErr
 	}
 	elapsedTime := time.Since(startTime)
 	rps := int(float64(totalReqs) / elapsedTime.Seconds())
 
 	passF("Success\nTotal Requests: %d,\nConcurrency Level: %d,\nTime Taken: %s,\nRequests Per Second: %dreq/sec", totalReqs, s.Concurrency, elapsedTime, rps)
-	return nil
+	return elapsedTime, rps, nil
 }

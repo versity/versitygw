@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"os"
+	"text/tabwriter"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/integration"
@@ -13,6 +16,7 @@ var (
 	endpoint        string
 	prefix          string
 	dstBucket       string
+	proxyURL        string
 	partSize        int64
 	objSize         int64
 	concurrency     int
@@ -118,6 +122,7 @@ func initTestCommands() []*cli.Command {
 					Name:        "bucket",
 					Usage:       "Destination bucket name to read/write data",
 					Destination: &dstBucket,
+					Required:    true,
 				},
 				&cli.Int64Flag{
 					Name:        "partSize",
@@ -143,6 +148,11 @@ func initTestCommands() []*cli.Command {
 					Value:       false,
 					Destination: &checksumDisable,
 				},
+				&cli.StringFlag{
+					Name:        "proxy-url",
+					Usage:       "S3 proxy server url to compare",
+					Destination: &proxyURL,
+				},
 			},
 			Action: func(ctx *cli.Context) error {
 				if upload && download {
@@ -150,10 +160,6 @@ func initTestCommands() []*cli.Command {
 				}
 				if !upload && !download {
 					return fmt.Errorf("must specify one of upload or download")
-				}
-
-				if dstBucket == "" {
-					return fmt.Errorf("must specify bucket")
 				}
 
 				opts := []integration.Option{
@@ -177,9 +183,47 @@ func initTestCommands() []*cli.Command {
 				s3conf := integration.NewS3Conf(opts...)
 
 				if upload {
-					return integration.TestUpload(s3conf, files, objSize, dstBucket, prefix)
+					if proxyURL == "" {
+						integration.TestUpload(s3conf, files, objSize, dstBucket, prefix)
+						return nil
+					} else {
+						size, elapsed, err := integration.TestUpload(s3conf, files, objSize, dstBucket, prefix)
+						opts = append(opts, integration.WithEndpoint(proxyURL))
+						proxyS3Conf := integration.NewS3Conf(opts...)
+						proxySize, proxyElapsed, proxyErr := integration.TestUpload(proxyS3Conf, files, objSize, dstBucket, prefix)
+						if err != nil || proxyErr != nil {
+							return nil
+						}
+
+						printProxyResultsTable([][4]string{
+							{"    #    ", "Total Size", "Time Taken", "Speed(MB/S)"},
+							{"---------", "----------", "----------", "-----------"},
+							{"S3 Server", fmt.Sprint(size), fmt.Sprintf("%v", elapsed), fmt.Sprint(int(math.Ceil(float64(size)/elapsed.Seconds()) / 1048576))},
+							{"S3 Proxy", fmt.Sprint(proxySize), fmt.Sprintf("%v", proxyElapsed), fmt.Sprint(int(math.Ceil(float64(proxySize)/proxyElapsed.Seconds()) / 1048576))},
+						})
+						return nil
+					}
 				} else {
-					return integration.TestDownload(s3conf, files, objSize, dstBucket, prefix)
+					if proxyURL == "" {
+						integration.TestDownload(s3conf, files, objSize, dstBucket, prefix)
+						return nil
+					} else {
+						size, elapsed, err := integration.TestDownload(s3conf, files, objSize, dstBucket, prefix)
+						opts = append(opts, integration.WithEndpoint(proxyURL))
+						proxyS3Conf := integration.NewS3Conf(opts...)
+						proxySize, proxyElapsed, proxyErr := integration.TestDownload(proxyS3Conf, files, objSize, dstBucket, prefix)
+						if err != nil || proxyErr != nil {
+							return nil
+						}
+
+						printProxyResultsTable([][4]string{
+							{"    #    ", "Total Size", "Time Taken", "Speed(MB/S)"},
+							{"---------", "----------", "----------", "-----------"},
+							{"S3 server", fmt.Sprint(size), fmt.Sprintf("%v", elapsed), fmt.Sprint(int(math.Ceil(float64(size)/elapsed.Seconds()) / 1048576))},
+							{"S3 proxy", fmt.Sprint(proxySize), fmt.Sprintf("%v", proxyElapsed), fmt.Sprint(int(math.Ceil(float64(proxySize)/proxyElapsed.Seconds()) / 1048576))},
+						})
+						return nil
+					}
 				}
 			},
 		},
@@ -211,12 +255,13 @@ func initTestCommands() []*cli.Command {
 					Value:       false,
 					Destination: &checksumDisable,
 				},
+				&cli.StringFlag{
+					Name:        "proxy-url",
+					Usage:       "S3 proxy server url to compare",
+					Destination: &proxyURL,
+				},
 			},
 			Action: func(ctx *cli.Context) error {
-				if dstBucket == "" {
-					return fmt.Errorf("must specify the destination bucket")
-				}
-
 				opts := []integration.Option{
 					integration.WithAccess(awsID),
 					integration.WithSecret(awsSecret),
@@ -233,7 +278,27 @@ func initTestCommands() []*cli.Command {
 
 				s3conf := integration.NewS3Conf(opts...)
 
-				return integration.TestReqPerSec(s3conf, totalReqs, dstBucket)
+				if proxyURL == "" {
+					_, _, err := integration.TestReqPerSec(s3conf, totalReqs, dstBucket)
+					return err
+				} else {
+					elapsed, rps, err := integration.TestReqPerSec(s3conf, totalReqs, dstBucket)
+					opts = append(opts, integration.WithEndpoint(proxyURL))
+					s3proxy := integration.NewS3Conf(opts...)
+					proxyElapsed, proxyRPS, proxyErr := integration.TestReqPerSec(s3proxy, totalReqs, dstBucket)
+					if err != nil || proxyErr != nil {
+						return nil
+					}
+
+					printProxyResultsTable([][4]string{
+						{"    #    ", "Total Requests", "Time Taken", "Requests Per Second(Req/Sec)"},
+						{"---------", "--------------", "----------", "----------------------------"},
+						{"S3 Server", fmt.Sprint(totalReqs), fmt.Sprintf("%v", elapsed), fmt.Sprint(rps)},
+						{"S3 Proxy", fmt.Sprint(totalReqs), fmt.Sprintf("%v", proxyElapsed), fmt.Sprint(proxyRPS)},
+					})
+
+					return nil
+				}
 			},
 		},
 	}
@@ -263,4 +328,14 @@ func getAction(tf testFunc) func(*cli.Context) error {
 		}
 		return nil
 	}
+}
+
+func printProxyResultsTable(stats [][4]string) {
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
+	for _, elem := range stats {
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", elem[0], elem[1], elem[2], elem[3])
+	}
+	fmt.Fprintln(w)
+	w.Flush()
 }
