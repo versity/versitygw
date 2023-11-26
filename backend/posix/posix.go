@@ -37,7 +37,6 @@ import (
 	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -895,11 +894,6 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 		return "", fmt.Errorf("write part data: %w", err)
 	}
 
-	rdr, ok := r.(*utils.HashReader)
-	if ok && rdr.Err() != nil {
-		return "", err
-	}
-
 	err = f.link()
 	if err != nil {
 		return "", fmt.Errorf("link object in namespace: %w", err)
@@ -1106,11 +1100,6 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	_, err = io.Copy(f, rdr)
 	if err != nil {
 		return "", fmt.Errorf("write object data: %w", err)
-	}
-
-	r, ok := po.Body.(*utils.HashReader)
-	if ok && r.Err() != nil {
-		return "", r.Err()
 	}
 	dir := filepath.Dir(name)
 	if dir != "" {

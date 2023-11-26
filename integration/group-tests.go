@@ -51,6 +51,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_special_chars(s)
 	PutObject_invalid_long_tags(s)
 	PutObject_success(s)
+	PutObject_invalid_credentials(s)
 }
 
 func TestHeadObject(s *S3Conf) {
@@ -262,6 +263,7 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                             PutObject_special_chars,
 		"PutObject_invalid_long_tags":                         PutObject_invalid_long_tags,
 		"PutObject_success":                                   PutObject_success,
+		"PutObject_invalid_credentials":                       PutObject_invalid_credentials,
 		"HeadObject_non_existing_object":                      HeadObject_non_existing_object,
 		"HeadObject_success":                                  HeadObject_success,
 		"GetObject_non_existing_key":                          GetObject_non_existing_key,

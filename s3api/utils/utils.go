@@ -50,12 +50,11 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 	return
 }
 
-func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Request, error) {
+func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
 	req := ctx.Request()
 	var body io.Reader
 	if IsBigDataAction(ctx) {
 		body = req.BodyStream()
-		fmt.Println("create ctx body: ", body)
 	} else {
 		body = bytes.NewReader(req.Body())
 	}
@@ -77,6 +76,8 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Reques
 	// If content length is non 0, then the header will be included
 	if !includeHeader("Content-Length", signedHdrs) {
 		httpReq.ContentLength = 0
+	} else {
+		httpReq.ContentLength = contentLength
 	}
 
 	// Set the Host header
