@@ -10,6 +10,10 @@ COPY ./ ./
 WORKDIR /app/cmd/versitygw
 RUN go build -o versitygw
 
+FROM alpine:latest
+
 RUN mkdir /tmp/vgw
 
-ENTRYPOINT [ "./versitygw" ]
+COPY --from=0 /app/cmd/versitygw/versitygw /app/versitygw
+
+ENTRYPOINT [ "/app/versitygw" ]

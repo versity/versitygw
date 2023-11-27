@@ -78,12 +78,12 @@ dist: $(BIN).spec
 # Creates and runs S3 gateway instance in a docker container
 .PHONY: up-posix
 up-posix:
-	docker compose up posix
+	docker compose --env-file .env.dev up posix
 
 # Creates and runs S3 gateway proxy instance in a docker container
 .PHONY: up-proxy
 up-proxy:
-	docker compose up proxy
+	docker compose --env-file .env.dev up proxy
 
 # Creates and runs both S3 gateway and proxy server instances in docker containers
 .PHONY: up-app
