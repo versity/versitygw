@@ -72,5 +72,5 @@ to an s3 storage backend service.`,
 func runS3(ctx *cli.Context) error {
 	be := s3proxy.New(s3proxyEndpoint, s3proxyRegion,
 		s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
-	return runGateway(ctx, be)
+	return runGateway(ctx.Context, be)
 }

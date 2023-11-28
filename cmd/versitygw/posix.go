@@ -49,5 +49,5 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("init posix: %v", err)
 	}
 
-	return runGateway(ctx, be)
+	return runGateway(ctx.Context, be)
 }

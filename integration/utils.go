@@ -60,7 +60,7 @@ func teardown(s *S3Conf, bucket string) error {
 		})
 		cancel()
 		if err != nil {
-			return fmt.Errorf("failed to delete object %v: %v", *key, err)
+			return fmt.Errorf("failed to delete object %v: %w", *key, err)
 		}
 		return nil
 	}
@@ -71,7 +71,7 @@ func teardown(s *S3Conf, bucket string) error {
 		out, err := s3client.ListObjectsV2(ctx, in)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("failed to list objects: %v", err)
+			return fmt.Errorf("failed to list objects: %w", err)
 		}
 
 		for _, item := range out.Contents {
@@ -96,31 +96,32 @@ func teardown(s *S3Conf, bucket string) error {
 	return err
 }
 
-func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error) {
+func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error) error {
 	runF(testName)
 	bucketName := getBucketName()
 	err := setup(s, bucketName)
 	if err != nil {
-		failF("%v: failed to create a bucket: %v", testName, err.Error())
-		return
+		failF("%v: failed to create a bucket: %v", testName, err)
+		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
 	}
 	client := s3.NewFromConfig(s.Config())
 	handlerErr := handler(client, bucketName)
 	if handlerErr != nil {
-		failF("%v: %v", testName, handlerErr.Error())
+		failF("%v: %v", testName, handlerErr)
 	}
 
 	err = teardown(s, bucketName)
 	if err != nil {
+		fmt.Printf(colorRed+"%v: failed to delete the bucket: %v", testName, err)
 		if handlerErr == nil {
-			failF("%v: failed to delete the bucket: %v", testName, err.Error())
-		} else {
-			fmt.Printf(colorRed+"%v: failed to delete the bucket: %v", testName, err.Error())
+			return fmt.Errorf("%v: failed to delete the bucket: %w", testName, err)
 		}
 	}
 	if handlerErr == nil {
 		passF(testName)
 	}
+
+	return handlerErr
 }
 
 type authConfig struct {
@@ -132,20 +133,21 @@ type authConfig struct {
 	date     time.Time
 }
 
-func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) {
+func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) error {
 	runF(cfg.testName)
 	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.body, cfg.date)
 	if err != nil {
-		failF("%v: %v", cfg.testName, err.Error())
-		return
+		failF("%v: %v", cfg.testName, err)
+		return fmt.Errorf("%v: %w", cfg.testName, err)
 	}
 
 	err = handler(req)
 	if err != nil {
-		failF("%v: %v", cfg.testName, err.Error())
-		return
+		failF("%v: %v", cfg.testName, err)
+		return fmt.Errorf("%v: %w", cfg.testName, err)
 	}
 	passF(cfg.testName)
+	return nil
 }
 
 func createSignedReq(method, endpoint, path, access, secret, service, region string, body []byte, date time.Time) (*http.Request, error) {
@@ -205,9 +207,8 @@ func checkApiErr(err error, apiErr s3err.APIError) error {
 		}
 
 		return fmt.Errorf("expected %v, instead got %v", apiErr.Code, ae.ErrorCode())
-	} else {
-		return fmt.Errorf("expected aws api error, instead got: %v", err.Error())
 	}
+	return fmt.Errorf("expected aws api error, instead got: %w", err)
 }
 
 func checkSdkApiErr(err error, code string) error {
@@ -495,13 +496,12 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 		cancel()
 		if err != nil {
 			return parts, err
-		} else {
-			parts = append(parts, types.Part{
-				ETag:       out.ETag,
-				PartNumber: &pn,
-			})
-			offset += partSize
 		}
+		parts = append(parts, types.Part{
+			ETag:       out.ETag,
+			PartNumber: &pn,
+		})
+		offset += partSize
 	}
 
 	return parts, err

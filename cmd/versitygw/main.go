@@ -280,7 +280,7 @@ func initFlags() []cli.Flag {
 	}
 }
 
-func runGateway(ctx *cli.Context, be backend.Backend) error {
+func runGateway(ctx context.Context, be backend.Backend) error {
 	// int32 max for 32 bit arch
 	blimit := int64(2*1024*1024*1024 - 1)
 	if strconv.IntSize > 32 {
