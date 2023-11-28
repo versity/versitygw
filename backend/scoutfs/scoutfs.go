@@ -415,8 +415,10 @@ func (s *ScoutFS) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 	}
 
+	contentLength := fi.Size()
+
 	return &s3.HeadObjectOutput{
-		ContentLength:   fi.Size(),
+		ContentLength:   &contentLength,
 		ContentType:     &contentType,
 		ContentEncoding: &contentEncoding,
 		ETag:            &etag,
@@ -507,15 +509,17 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 		return nil, fmt.Errorf("get object tags: %w", err)
 	}
 
+	tagCount := int32(len(tags))
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
-		ContentLength:   length,
+		ContentLength:   &length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
-		TagCount:        int32(len(tags)),
+		TagCount:        &tagCount,
 		StorageClass:    types.StorageClassStandard,
 	}, nil
 }
@@ -542,11 +546,26 @@ func (s *ScoutFS) getXattrTags(bucket, object string) (map[string]string, error)
 }
 
 func (s *ScoutFS) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	bucket := *input.Bucket
-	prefix := *input.Prefix
-	marker := *input.Marker
-	delim := *input.Delimiter
-	maxkeys := input.MaxKeys
+	prefix := ""
+	if input.Prefix != nil {
+		prefix = *input.Prefix
+	}
+	marker := ""
+	if input.Marker != nil {
+		marker = *input.Marker
+	}
+	delim := ""
+	if input.Delimiter != nil {
+		delim = *input.Delimiter
+	}
+	maxkeys := int32(0)
+	if input.MaxKeys != nil {
+		maxkeys = *input.MaxKeys
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -567,9 +586,9 @@ func (s *ScoutFS) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
 		Delimiter:      &delim,
-		IsTruncated:    results.Truncated,
+		IsTruncated:    &results.Truncated,
 		Marker:         &marker,
-		MaxKeys:        maxkeys,
+		MaxKeys:        &maxkeys,
 		Name:           &bucket,
 		NextMarker:     &results.NextMarker,
 		Prefix:         &prefix,
@@ -577,11 +596,26 @@ func (s *ScoutFS) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s
 }
 
 func (s *ScoutFS) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	bucket := *input.Bucket
-	prefix := *input.Prefix
-	marker := *input.ContinuationToken
-	delim := *input.Delimiter
-	maxkeys := input.MaxKeys
+	prefix := ""
+	if input.Prefix != nil {
+		prefix = *input.Prefix
+	}
+	marker := ""
+	if input.ContinuationToken != nil {
+		marker = *input.ContinuationToken
+	}
+	delim := ""
+	if input.Delimiter != nil {
+		delim = *input.Delimiter
+	}
+	maxkeys := int32(0)
+	if input.MaxKeys != nil {
+		maxkeys = *input.MaxKeys
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -602,9 +636,9 @@ func (s *ScoutFS) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input)
 		CommonPrefixes:        results.CommonPrefixes,
 		Contents:              results.Objects,
 		Delimiter:             &delim,
-		IsTruncated:           results.Truncated,
+		IsTruncated:           &results.Truncated,
 		ContinuationToken:     &marker,
-		MaxKeys:               int32(maxkeys),
+		MaxKeys:               &maxkeys,
 		Name:                  &bucket,
 		NextContinuationToken: &results.NextMarker,
 		Prefix:                &prefix,
@@ -677,11 +711,13 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 			}
 		}
 
+		size := fi.Size()
+
 		return types.Object{
 			ETag:         &etag,
 			Key:          &path,
 			LastModified: backend.GetTimePtr(fi.ModTime()),
-			Size:         fi.Size(),
+			Size:         &size,
 			StorageClass: sc,
 		}, nil
 	}

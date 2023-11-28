@@ -1123,8 +1123,12 @@ func HeadObject_success(s *S3Conf) {
 		if !areMapsSame(out.Metadata, meta) {
 			return fmt.Errorf("incorrect object metadata")
 		}
-		if out.ContentLength != dataLen {
-			return fmt.Errorf("expected data length %v, instead got %v", dataLen, out.ContentLength)
+		contentLength := int64(0)
+		if out.ContentLength != nil {
+			contentLength = *out.ContentLength
+		}
+		if contentLength != dataLen {
+			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
 		}
 
 		return nil
@@ -1251,7 +1255,7 @@ func GetObject_success(s *S3Conf) {
 		if err != nil {
 			return err
 		}
-		if out.ContentLength != dataLength {
+		if *out.ContentLength != dataLength {
 			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
 		}
 
@@ -1396,18 +1400,18 @@ func ListObject_truncated(s *S3Conf) {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out1, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket:  &bucket,
-			MaxKeys: maxKeys,
+			MaxKeys: &maxKeys,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
-		if !out1.IsTruncated {
+		if !*out1.IsTruncated {
 			return fmt.Errorf("expected out1put to be truncated")
 		}
 
-		if out1.MaxKeys != maxKeys {
+		if *out1.MaxKeys != maxKeys {
 			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out1.MaxKeys)
 		}
 
@@ -1429,7 +1433,7 @@ func ListObject_truncated(s *S3Conf) {
 			return err
 		}
 
-		if out2.IsTruncated {
+		if *out2.IsTruncated {
 			return fmt.Errorf("expected output not to be truncated")
 		}
 
@@ -1446,11 +1450,12 @@ func ListObject_truncated(s *S3Conf) {
 
 func ListObjects_invalid_max_keys(s *S3Conf) {
 	testName := "ListObjects_invalid_max_keys"
+	maxKeys := int32(-5)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket:  &bucket,
-			MaxKeys: -5,
+			MaxKeys: &maxKeys,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
@@ -1470,16 +1475,17 @@ func ListObjects_max_keys_0(s *S3Conf) {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		maxKeys := int32(0)
 		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket:  &bucket,
-			MaxKeys: 0,
+			MaxKeys: &maxKeys,
 		})
 		cancel()
 		if err != nil {
 			return nil
 		}
 
-		if !compareObjects(objects, out.Contents) {
+		if len(out.Contents) > 0 {
 			return fmt.Errorf("unexpected output for list objects with max-keys 0")
 		}
 
@@ -1537,7 +1543,7 @@ func ListObjects_max_keys_none(s *S3Conf) {
 			return err
 		}
 
-		if out.MaxKeys != 1000 {
+		if *out.MaxKeys != 1000 {
 			return fmt.Errorf("expected max-keys to be 1000, instead got %v", out.MaxKeys)
 		}
 
@@ -1944,7 +1950,7 @@ func CopyObject_success(s *S3Conf) {
 		if err != nil {
 			return err
 		}
-		if out.ContentLength != dataLength {
+		if *out.ContentLength != dataLength {
 			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
 		}
 
@@ -2252,11 +2258,13 @@ func UploadPart_non_existing_bucket(s *S3Conf) {
 	testName := "UploadPart_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
+		partNumber := int32(1)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:   &bucketName,
-			Key:      getPtr("my-obj"),
-			UploadId: getPtr("uploadId"),
+			Bucket:     &bucketName,
+			Key:        getPtr("my-obj"),
+			UploadId:   getPtr("uploadId"),
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
@@ -2269,13 +2277,14 @@ func UploadPart_non_existing_bucket(s *S3Conf) {
 
 func UploadPart_invalid_part_number(s *S3Conf) {
 	testName := "UploadPart_invalid_part_number"
+	partNumber := int32(-10)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        getPtr("my-obj"),
 			UploadId:   getPtr("uploadId"),
-			PartNumber: -10,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
@@ -2287,13 +2296,14 @@ func UploadPart_invalid_part_number(s *S3Conf) {
 
 func UploadPart_non_existing_mp_upload(s *S3Conf) {
 	testName := "UploadPart_non_existing_mp_upload"
+	partNumber := int32(1)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        getPtr("my-obj"),
 			UploadId:   getPtr("uploadId"),
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
@@ -2305,6 +2315,7 @@ func UploadPart_non_existing_mp_upload(s *S3Conf) {
 
 func UploadPart_non_existing_key(s *S3Conf) {
 	testName := "UploadPart_non_existing_key"
+	partNumber := int32(1)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
@@ -2317,7 +2328,7 @@ func UploadPart_non_existing_key(s *S3Conf) {
 			Bucket:     &bucket,
 			Key:        getPtr("non-existing-object-key"),
 			UploadId:   out.UploadId,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
@@ -2329,6 +2340,7 @@ func UploadPart_non_existing_key(s *S3Conf) {
 
 func UploadPart_success(s *S3Conf) {
 	testName := "UploadPart_success"
+	partNumber := int32(1)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
@@ -2340,7 +2352,7 @@ func UploadPart_success(s *S3Conf) {
 			Bucket:     &bucket,
 			Key:        &obj,
 			UploadId:   out.UploadId,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err != nil {
@@ -2357,6 +2369,7 @@ func UploadPartCopy_non_existing_bucket(s *S3Conf) {
 	testName := "UploadPartCopy_non_existing_bucket"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
+		partNumber := int32(1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
@@ -2364,6 +2377,7 @@ func UploadPartCopy_non_existing_bucket(s *S3Conf) {
 			CopySource: getPtr("Copy-Source"),
 			UploadId:   getPtr("uploadId"),
 			Key:        getPtr("my-obj"),
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
@@ -2392,12 +2406,13 @@ func UploadPartCopy_incorrect_uploadId(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
 			UploadId:   getPtr("incorrect-upload-id"),
 			Key:        &obj,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
@@ -2432,12 +2447,13 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
 			UploadId:   out.UploadId,
 			Key:        getPtr("non-existing-object-key"),
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
@@ -2457,12 +2473,13 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) {
 	testName := "UploadPartCopy_invalid_part_number"
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(-10)
 		_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("Copy-Source"),
 			UploadId:   getPtr("uploadId"),
 			Key:        getPtr("non-existing-object-key"),
-			PartNumber: -10,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
@@ -2484,12 +2501,13 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("invalid-copy-source"),
 			UploadId:   out.UploadId,
 			Key:        &obj,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCopySource)); err != nil {
@@ -2511,12 +2529,13 @@ func UploadPartCopy_non_existing_source_bucket(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr("src/bucket/src/obj"),
 			UploadId:   out.UploadId,
 			Key:        &obj,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
@@ -2543,12 +2562,13 @@ func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/non/existing/obj/key"),
 			UploadId:   out.UploadId,
 			Key:        &obj,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
@@ -2587,12 +2607,13 @@ func UploadPartCopy_success(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		copyOut, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
 			CopySource: getPtr(srcBucket + "/" + srcObj),
 			UploadId:   out.UploadId,
 			Key:        &obj,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err != nil {
@@ -2613,10 +2634,10 @@ func UploadPartCopy_success(s *S3Conf) {
 		if len(res.Parts) != 1 {
 			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
 		}
-		if res.Parts[0].PartNumber != 1 {
+		if *res.Parts[0].PartNumber != 1 {
 			return fmt.Errorf("expected part-number to be 1, instead got %v", res.Parts[0].PartNumber)
 		}
-		if res.Parts[0].Size != int64(objSize) {
+		if *res.Parts[0].Size != int64(objSize) {
 			return fmt.Errorf("expected part size to be %v, instead got %v", objSize, res.Parts[0].Size)
 		}
 		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
@@ -2655,12 +2676,13 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:          &bucket,
 			CopySource:      getPtr(srcBucket + "/" + srcObj),
 			UploadId:        out.UploadId,
 			Key:             &obj,
-			PartNumber:      1,
+			PartNumber:      &partNumber,
 			CopySourceRange: getPtr("invalid-range"),
 		})
 		cancel()
@@ -2700,13 +2722,14 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:          &bucket,
 			CopySource:      getPtr(srcBucket + "/" + srcObj),
 			UploadId:        out.UploadId,
 			Key:             &obj,
 			CopySourceRange: getPtr(fmt.Sprintf("bytes=0-%v", srcObjSize+50)), // The specified range is greater than the actual object size
-			PartNumber:      1,
+			PartNumber:      &partNumber,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
@@ -2745,13 +2768,14 @@ func UploadPartCopy_by_range_success(s *S3Conf) {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		copyOut, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:          &bucket,
 			CopySource:      getPtr(srcBucket + "/" + srcObj),
 			CopySourceRange: getPtr("bytes=100-200"),
 			UploadId:        out.UploadId,
 			Key:             &obj,
-			PartNumber:      1,
+			PartNumber:      &partNumber,
 		})
 		cancel()
 		if err != nil {
@@ -2772,10 +2796,10 @@ func UploadPartCopy_by_range_success(s *S3Conf) {
 		if len(res.Parts) != 1 {
 			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
 		}
-		if res.Parts[0].PartNumber != 1 {
+		if *res.Parts[0].PartNumber != 1 {
 			return fmt.Errorf("expected part-number to be 1, instead got %v", res.Parts[0].PartNumber)
 		}
-		if res.Parts[0].Size != 101 {
+		if *res.Parts[0].Size != 101 {
 			return fmt.Errorf("expected part size to be %v, instead got %v", 101, res.Parts[0].Size)
 		}
 		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
@@ -2904,11 +2928,12 @@ func ListMultipartUploads_empty_result(s *S3Conf) {
 
 func ListMultipartUploads_invalid_max_uploads(s *S3Conf) {
 	testName := "ListMultipartUploads_invalid_max_uploads"
+	maxUploads := int32(-3)
 	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:     &bucket,
-			MaxUploads: -3,
+			MaxUploads: &maxUploads,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
@@ -2931,18 +2956,19 @@ func ListMultipartUploads_max_uploads(s *S3Conf) {
 			uploads = append(uploads, types.MultipartUpload{UploadId: out.UploadId, Key: out.Key})
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		maxUploads := int32(2)
 		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:     &bucket,
-			MaxUploads: 2,
+			MaxUploads: &maxUploads,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
-		if !out.IsTruncated {
+		if !*out.IsTruncated {
 			return fmt.Errorf("expected the output to be truncated")
 		}
-		if out.MaxUploads != 2 {
+		if *out.MaxUploads != 2 {
 			return fmt.Errorf("expected max-uploads to be 2, instead got %v", out.MaxUploads)
 		}
 		if ok := compareMultipartUploads(out.Uploads, uploads[:2]); !ok {
@@ -3227,11 +3253,12 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		res, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &obj,
 			UploadId:   out.UploadId,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err != nil {
@@ -3239,6 +3266,7 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		partNumber = int32(5)
 		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      &obj,
@@ -3247,7 +3275,7 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 				Parts: []types.CompletedPart{
 					{
 						ETag:       res.ETag,
-						PartNumber: 5,
+						PartNumber: &partNumber,
 					},
 				},
 			},
@@ -3270,11 +3298,12 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		partNumber := int32(1)
 		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &obj,
 			UploadId:   out.UploadId,
-			PartNumber: 1,
+			PartNumber: &partNumber,
 		})
 		cancel()
 		if err != nil {
@@ -3290,7 +3319,7 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
 				Parts: []types.CompletedPart{
 					{
 						ETag:       getPtr("invalidETag"),
-						PartNumber: 1,
+						PartNumber: &partNumber,
 					},
 				},
 			},
@@ -3358,7 +3387,7 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 		if *resp.ETag != *res.ETag {
 			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v", *res.ETag, *resp.ETag)
 		}
-		if resp.ContentLength != int64(objSize) {
+		if *resp.ContentLength != int64(objSize) {
 			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", objSize, resp.ContentLength)
 		}
 

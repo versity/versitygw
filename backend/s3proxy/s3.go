@@ -184,8 +184,8 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 		Delimiter:          *output.Delimiter,
 		Prefix:             *output.Prefix,
 		EncodingType:       string(output.EncodingType),
-		MaxUploads:         int(output.MaxUploads),
-		IsTruncated:        output.IsTruncated,
+		MaxUploads:         int(*output.MaxUploads),
+		IsTruncated:        *output.IsTruncated,
 		Uploads:            uploads,
 		CommonPrefixes:     cps,
 	}, nil
@@ -205,10 +205,10 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	var parts []s3response.Part
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
-			PartNumber:   int(p.PartNumber),
+			PartNumber:   int(*p.PartNumber),
 			LastModified: p.LastModified.Format(iso8601Format),
 			ETag:         *p.ETag,
-			Size:         p.Size,
+			Size:         *p.Size,
 		})
 	}
 	pnm, err := strconv.Atoi(*output.PartNumberMarker)
@@ -238,8 +238,8 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 		StorageClass:         string(output.StorageClass),
 		PartNumberMarker:     pnm,
 		NextPartNumberMarker: npmn,
-		MaxParts:             int(output.MaxParts),
-		IsTruncated:          output.IsTruncated,
+		MaxParts:             int(*output.MaxParts),
+		IsTruncated:          *output.IsTruncated,
 		Parts:                parts,
 	}, nil
 }
