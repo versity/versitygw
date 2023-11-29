@@ -148,10 +148,6 @@ func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipar
 	return err
 }
 
-const (
-	iso8601Format = "20060102T150405Z"
-)
-
 func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
@@ -178,7 +174,7 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 				DisplayName: *u.Owner.DisplayName,
 			},
 			StorageClass: string(u.StorageClass),
-			Initiated:    u.Initiated.Format(iso8601Format),
+			Initiated:    u.Initiated.Format(backend.RFC3339TimeFormat),
 		})
 	}
 
@@ -221,7 +217,7 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
 			PartNumber:   int(*p.PartNumber),
-			LastModified: p.LastModified.Format(iso8601Format),
+			LastModified: p.LastModified.Format(backend.RFC3339TimeFormat),
 			ETag:         *p.ETag,
 			Size:         *p.Size,
 		})
