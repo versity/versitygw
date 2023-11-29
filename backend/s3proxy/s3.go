@@ -74,8 +74,7 @@ func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3r
 
 	return s3response.ListAllMyBucketsResult{
 		Owner: s3response.CanonicalUser{
-			ID:          *output.Owner.ID,
-			DisplayName: *output.Owner.DisplayName,
+			ID: *output.Owner.ID,
 		},
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
