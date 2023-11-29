@@ -17,14 +17,18 @@ package s3proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -55,6 +59,7 @@ func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3r
 	}
 
 	output, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	err = handleError(err)
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{}, err
 	}
@@ -84,7 +89,10 @@ func (s *S3be) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.H
 		return nil, err
 	}
 
-	return client.HeadBucket(ctx, input)
+	out, err := client.HeadBucket(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
@@ -94,7 +102,7 @@ func (s *S3be) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) er
 	}
 
 	_, err = client.CreateBucket(ctx, input)
-	return err
+	return handleError(err)
 }
 
 func (s *S3be) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
@@ -104,7 +112,7 @@ func (s *S3be) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) er
 	}
 
 	_, err = client.DeleteBucket(ctx, input)
-	return err
+	return handleError(err)
 }
 
 func (s *S3be) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
@@ -113,7 +121,9 @@ func (s *S3be) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultip
 		return nil, err
 	}
 
-	return client.CreateMultipartUpload(ctx, input)
+	out, err := client.CreateMultipartUpload(ctx, input)
+	err = handleError(err)
+	return out, err
 }
 
 func (s *S3be) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
@@ -122,7 +132,9 @@ func (s *S3be) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMu
 		return nil, err
 	}
 
-	return client.CompleteMultipartUpload(ctx, input)
+	out, err := client.CompleteMultipartUpload(ctx, input)
+	err = handleError(err)
+	return out, err
 }
 
 func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
@@ -132,6 +144,7 @@ func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipar
 	}
 
 	_, err = client.AbortMultipartUpload(ctx, input)
+	err = handleError(err)
 	return err
 }
 
@@ -142,6 +155,7 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 	}
 
 	output, err := client.ListMultipartUploads(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return s3response.ListMultipartUploadsResult{}, err
 	}
@@ -180,8 +194,8 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 		Delimiter:          *output.Delimiter,
 		Prefix:             *output.Prefix,
 		EncodingType:       string(output.EncodingType),
-		MaxUploads:         int(output.MaxUploads),
-		IsTruncated:        output.IsTruncated,
+		MaxUploads:         int(*output.MaxUploads),
+		IsTruncated:        *output.IsTruncated,
 		Uploads:            uploads,
 		CommonPrefixes:     cps,
 	}, nil
@@ -194,6 +208,7 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	}
 
 	output, err := client.ListParts(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return s3response.ListPartsResult{}, err
 	}
@@ -201,10 +216,10 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	var parts []s3response.Part
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
-			PartNumber:   int(p.PartNumber),
+			PartNumber:   int(*p.PartNumber),
 			LastModified: p.LastModified.Format(backend.RFC3339TimeFormat),
 			ETag:         *p.ETag,
-			Size:         p.Size,
+			Size:         *p.Size,
 		})
 	}
 	pnm, err := strconv.Atoi(*output.PartNumberMarker)
@@ -234,8 +249,8 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 		StorageClass:         string(output.StorageClass),
 		PartNumberMarker:     pnm,
 		NextPartNumberMarker: npmn,
-		MaxParts:             int(output.MaxParts),
-		IsTruncated:          output.IsTruncated,
+		MaxParts:             int(*output.MaxParts),
+		IsTruncated:          *output.IsTruncated,
 		Parts:                parts,
 	}, nil
 }
@@ -247,6 +262,7 @@ func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag 
 	}
 
 	output, err := client.UploadPart(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return "", err
 	}
@@ -261,6 +277,7 @@ func (s *S3be) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput
 	}
 
 	output, err := client.UploadPartCopy(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return s3response.CopyObjectResult{}, err
 	}
@@ -278,6 +295,7 @@ func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string,
 	}
 
 	output, err := client.PutObject(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +309,10 @@ func (s *S3be) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.H
 		return nil, err
 	}
 
-	return client.HeadObject(ctx, input)
+	out, err := client.HeadObject(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
@@ -301,6 +322,7 @@ func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Wri
 	}
 
 	output, err := client.GetObject(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +342,10 @@ func (s *S3be) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttri
 		return nil, err
 	}
 
-	return client.GetObjectAttributes(ctx, input)
+	out, err := client.GetObjectAttributes(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
@@ -329,7 +354,10 @@ func (s *S3be) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.C
 		return nil, err
 	}
 
-	return client.CopyObject(ctx, input)
+	out, err := client.CopyObject(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
@@ -338,7 +366,10 @@ func (s *S3be) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3
 		return nil, err
 	}
 
-	return client.ListObjects(ctx, input)
+	out, err := client.ListObjects(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
@@ -347,7 +378,10 @@ func (s *S3be) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) 
 		return nil, err
 	}
 
-	return client.ListObjectsV2(ctx, input)
+	out, err := client.ListObjectsV2(ctx, input)
+	err = handleError(err)
+
+	return out, err
 }
 
 func (s *S3be) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
@@ -357,7 +391,7 @@ func (s *S3be) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) er
 	}
 
 	_, err = client.DeleteObject(ctx, input)
-	return err
+	return handleError(err)
 }
 
 func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
@@ -367,6 +401,7 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 	}
 
 	output, err := client.DeleteObjects(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return s3response.DeleteObjectsResult{}, err
 	}
@@ -384,6 +419,7 @@ func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([
 	}
 
 	output, err := client.GetBucketAcl(ctx, input)
+	err = handleError(err)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +469,7 @@ func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) erro
 	}
 
 	_, err = client.PutBucketAcl(ctx, input)
-	return err
+	return handleError(err)
 }
 
 func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
@@ -457,7 +493,7 @@ func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags
 		Key:     &object,
 		Tagging: tagging,
 	})
-	return err
+	return handleError(err)
 }
 
 func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
@@ -470,6 +506,7 @@ func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map
 		Bucket: &bucket,
 		Key:    &object,
 	})
+	err = handleError(err)
 	if err != nil {
 		return nil, err
 	}
@@ -492,5 +529,25 @@ func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) e
 		Bucket: &bucket,
 		Key:    &object,
 	})
+	return handleError(err)
+}
+
+func handleError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var ae smithy.APIError
+	if errors.As(err, &ae) {
+		apiErr := s3err.APIError{
+			Code:        ae.ErrorCode(),
+			Description: ae.ErrorMessage(),
+		}
+		var re *awshttp.ResponseError
+		if errors.As(err, &re) {
+			apiErr.HTTPStatusCode = re.Response.StatusCode
+		}
+		return apiErr
+	}
 	return err
 }

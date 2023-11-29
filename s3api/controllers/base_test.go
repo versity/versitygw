@@ -174,6 +174,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	now := time.Now()
 
 	app := fiber.New()
+	contentLength := int64(1000)
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -194,7 +195,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 					ContentType:     getPtr("application/xml"),
 					ContentEncoding: getPtr("gzip"),
 					ETag:            getPtr("98sda7f97sa9df798sd79f8as9df"),
-					ContentLength:   1000,
+					ContentLength:   &contentLength,
 					LastModified:    &now,
 					StorageClass:    "storage class",
 				}, nil
@@ -1198,6 +1199,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	contentType := "application/xml"
 	eTag := "Valid etag"
 	lastModifie := time.Now()
+	contentLength := int64(64)
 
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
@@ -1207,7 +1209,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 			HeadObjectFunc: func(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 				return &s3.HeadObjectOutput{
 					ContentEncoding: &contentEncoding,
-					ContentLength:   64,
+					ContentLength:   &contentLength,
 					ContentType:     &contentType,
 					LastModified:    &lastModifie,
 					ETag:            &eTag,

@@ -81,7 +81,7 @@ func teardown(s *S3Conf, bucket string) error {
 			}
 		}
 
-		if out.IsTruncated {
+		if *out.IsTruncated {
 			in.ContinuationToken = out.ContinuationToken
 		} else {
 			break
@@ -293,7 +293,7 @@ func compareParts(parts1, parts2 []types.Part) bool {
 	}
 
 	for i, prt := range parts1 {
-		if prt.PartNumber != parts2[i].PartNumber {
+		if *prt.PartNumber != *parts2[i].PartNumber {
 			return false
 		}
 		if *prt.ETag != *parts2[i].ETag {
@@ -484,18 +484,22 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 			return parts, err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		pn := int32(partNumber)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
 			Key:        &key,
 			UploadId:   &uploadId,
 			Body:       bytes.NewReader(partBuffer),
-			PartNumber: int32(partNumber),
+			PartNumber: &pn,
 		})
 		cancel()
 		if err != nil {
 			return parts, err
 		} else {
-			parts = append(parts, types.Part{ETag: out.ETag, PartNumber: int32(partNumber)})
+			parts = append(parts, types.Part{
+				ETag:       out.ETag,
+				PartNumber: &pn,
+			})
 			offset += partSize
 		}
 	}
