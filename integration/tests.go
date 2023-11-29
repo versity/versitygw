@@ -23,9 +23,9 @@ var (
 	shortTimeout = 10 * time.Second
 )
 
-func Authentication_empty_auth_header(s *S3Conf) {
+func Authentication_empty_auth_header(s *S3Conf) error {
 	testName := "Authentication_empty_auth_header"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -51,9 +51,9 @@ func Authentication_empty_auth_header(s *S3Conf) {
 	})
 }
 
-func Authentication_invalid_auth_header(s *S3Conf) {
+func Authentication_invalid_auth_header(s *S3Conf) error {
 	testName := "Authentication_invalid_auth_header"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -79,9 +79,9 @@ func Authentication_invalid_auth_header(s *S3Conf) {
 	})
 }
 
-func Authentication_unsupported_signature_version(s *S3Conf) {
+func Authentication_unsupported_signature_version(s *S3Conf) error {
 	testName := "Authentication_unsupported_signature_version"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -110,9 +110,9 @@ func Authentication_unsupported_signature_version(s *S3Conf) {
 	})
 }
 
-func Authentication_malformed_credentials(s *S3Conf) {
+func Authentication_malformed_credentials(s *S3Conf) error {
 	testName := "Authentication_malformed_credentials"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -142,9 +142,9 @@ func Authentication_malformed_credentials(s *S3Conf) {
 	})
 }
 
-func Authentication_malformed_credentials_invalid_parts(s *S3Conf) {
+func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
 	testName := "Authentication_malformed_credentials_invalid_parts"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -174,9 +174,9 @@ func Authentication_malformed_credentials_invalid_parts(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_terminated_string(s *S3Conf) {
+func Authentication_credentials_terminated_string(s *S3Conf) error {
 	testName := "Authentication_credentials_terminated_string"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -206,9 +206,9 @@ func Authentication_credentials_terminated_string(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_incorrect_service(s *S3Conf) {
+func Authentication_credentials_incorrect_service(s *S3Conf) error {
 	testName := "Authentication_credentials_incorrect_service"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -233,7 +233,7 @@ func Authentication_credentials_incorrect_service(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_incorrect_region(s *S3Conf) {
+func Authentication_credentials_incorrect_region(s *S3Conf) error {
 	testName := "Authentication_credentials_incorrect_region"
 	cfg := *s
 	if cfg.awsRegion == "us-east-1" {
@@ -241,7 +241,7 @@ func Authentication_credentials_incorrect_region(s *S3Conf) {
 	} else {
 		cfg.awsRegion = "us-east-1"
 	}
-	authHandler(&cfg, &authConfig{
+	return authHandler(&cfg, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -271,9 +271,9 @@ func Authentication_credentials_incorrect_region(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_invalid_date(s *S3Conf) {
+func Authentication_credentials_invalid_date(s *S3Conf) error {
 	testName := "Authentication_credentials_invalid_date"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -303,9 +303,9 @@ func Authentication_credentials_invalid_date(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_future_date(s *S3Conf) {
+func Authentication_credentials_future_date(s *S3Conf) error {
 	testName := "Authentication_credentials_future_date"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -347,9 +347,9 @@ func Authentication_credentials_future_date(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_past_date(s *S3Conf) {
+func Authentication_credentials_past_date(s *S3Conf) error {
 	testName := "Authentication_credentials_past_date"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -391,9 +391,9 @@ func Authentication_credentials_past_date(s *S3Conf) {
 	})
 }
 
-func Authentication_credentials_non_existing_access_key(s *S3Conf) {
+func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 	testName := "Authentication_credentials_non_existing_access_key"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -423,9 +423,9 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) {
 	})
 }
 
-func Authentication_invalid_signed_headers(s *S3Conf) {
+func Authentication_invalid_signed_headers(s *S3Conf) error {
 	testName := "Authentication_invalid_signed_headers"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -455,9 +455,9 @@ func Authentication_invalid_signed_headers(s *S3Conf) {
 	})
 }
 
-func Authentication_missing_date_header(s *S3Conf) {
+func Authentication_missing_date_header(s *S3Conf) error {
 	testName := "Authentication_missing_date_header"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -483,9 +483,9 @@ func Authentication_missing_date_header(s *S3Conf) {
 	})
 }
 
-func Authentication_invalid_date_header(s *S3Conf) {
+func Authentication_invalid_date_header(s *S3Conf) error {
 	testName := "Authentication_invalid_date_header"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -511,9 +511,9 @@ func Authentication_invalid_date_header(s *S3Conf) {
 	})
 }
 
-func Authentication_date_mismatch(s *S3Conf) {
+func Authentication_date_mismatch(s *S3Conf) error {
 	testName := "Authentication_date_mismatch"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -539,9 +539,9 @@ func Authentication_date_mismatch(s *S3Conf) {
 	})
 }
 
-func Authentication_incorrect_payload_hash(s *S3Conf) {
+func Authentication_incorrect_payload_hash(s *S3Conf) error {
 	testName := "Authentication_incorrect_payload_hash"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -567,9 +567,9 @@ func Authentication_incorrect_payload_hash(s *S3Conf) {
 	})
 }
 
-func Authentication_incorrect_md5(s *S3Conf) {
+func Authentication_incorrect_md5(s *S3Conf) error {
 	testName := "Authentication_incorrect_md5"
-	authHandler(s, &authConfig{
+	return authHandler(s, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -596,11 +596,11 @@ func Authentication_incorrect_md5(s *S3Conf) {
 	})
 }
 
-func Authentication_signature_error_incorrect_secret_key(s *S3Conf) {
+func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 	testName := "Authentication_signature_error_incorrect_secret_key"
 	cfg := *s
 	cfg.awsSecret = s.awsSecret + "a"
-	authHandler(&cfg, &authConfig{
+	return authHandler(&cfg, &authConfig{
 		testName: testName,
 		path:     "my-bucket",
 		method:   http.MethodGet,
@@ -625,36 +625,37 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) {
 	})
 }
 
-func CreateBucket_invalid_bucket_name(s *S3Conf) {
+func CreateBucket_invalid_bucket_name(s *S3Conf) error {
 	testName := "CreateBucket_invalid_bucket_name"
 	runF(testName)
 	err := setup(s, "aa")
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketName)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = setup(s, ".gitignore")
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketName)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = setup(s, "my-bucket.")
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketName)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = setup(s, "bucket-%")
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketName)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 	passF(testName)
+	return nil
 }
 
-func CreateBucket_as_user(s *S3Conf) {
+func CreateBucket_as_user(s *S3Conf) error {
 	testName := "CreateBucket_as_user"
 	runF(testName)
 	usr := user{
@@ -667,45 +668,48 @@ func CreateBucket_as_user(s *S3Conf) {
 	cfg.awsSecret = usr.secret
 	err := createUsers(s, []user{usr})
 	if err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = setup(&cfg, getBucketName())
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	passF(testName)
+	return nil
 }
 
-func CreateBucket_existing_bucket(s *S3Conf) {
+func CreateBucket_existing_bucket(s *S3Conf) error {
 	testName := "CreateBucket_existing_bucket"
 	runF(testName)
 	bucket := getBucketName()
 	err := setup(s, bucket)
 	if err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 	err = setup(s, bucket)
 	var bne *types.BucketAlreadyExists
 	if !errors.As(err, &bne) {
-		failF("%v: %v", testName, err.Error())
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err.Error())
-		return
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 	passF(testName)
+	return nil
 }
 
-func HeadBucket_non_existing_bucket(s *S3Conf) {
+func HeadBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "HeadBucket_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bcktName := getBucketName()
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -720,9 +724,9 @@ func HeadBucket_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func HeadBucket_success(s *S3Conf) {
+func HeadBucket_success(s *S3Conf) error {
 	testName := "HeadBucket_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{
 			Bucket: &bucket,
@@ -735,9 +739,9 @@ func HeadBucket_success(s *S3Conf) {
 	})
 }
 
-func ListBuckets_as_user(s *S3Conf) {
+func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
 		for i := 0; i < 6; i++ {
 			bckt := getBucketName()
@@ -803,9 +807,9 @@ func ListBuckets_as_user(s *S3Conf) {
 	})
 }
 
-func ListBuckets_as_admin(s *S3Conf) {
+func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
 		for i := 0; i < 6; i++ {
 			bckt := getBucketName()
@@ -876,9 +880,9 @@ func ListBuckets_as_admin(s *S3Conf) {
 	})
 }
 
-func ListBuckets_success(s *S3Conf) {
+func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
 		for i := 0; i < 5; i++ {
 			bckt := getBucketName()
@@ -918,27 +922,29 @@ func ListBuckets_success(s *S3Conf) {
 	})
 }
 
-func CreateDeleteBucket_success(s *S3Conf) {
+func CreateDeleteBucket_success(s *S3Conf) error {
 	testName := "CreateBucket_success"
 	runF(testName)
 	bucket := getBucketName()
 
 	err := setup(s, bucket)
 	if err != nil {
-		failF("%v: %v", err.Error())
-		return
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+
 	}
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err.Error())
-		return
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	passF(testName)
+	return nil
 }
 
-func DeleteBucket_non_existing_bucket(s *S3Conf) {
+func DeleteBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "DeleteBucket_non_existing_bucket"
 	runF(testName)
 	bucket := getBucketName()
@@ -950,15 +956,16 @@ func DeleteBucket_non_existing_bucket(s *S3Conf) {
 	})
 	cancel()
 	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 	passF(testName)
+	return nil
 }
 
-func DeleteBucket_non_empty_bucket(s *S3Conf) {
+func DeleteBucket_non_empty_bucket(s *S3Conf) error {
 	testName := "DeleteBucket_non_empty_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo"}, bucket)
 		if err != nil {
 			return err
@@ -976,21 +983,21 @@ func DeleteBucket_non_empty_bucket(s *S3Conf) {
 	})
 }
 
-func DeleteBucket_success_status_code(s *S3Conf) {
+func DeleteBucket_success_status_code(s *S3Conf) error {
 	testName := "DeleteBucket_success_status_code"
 	runF(testName)
 	bucket := getBucketName()
 
 	err := setup(s, bucket)
 	if err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
 	if err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	client := http.Client{
@@ -999,21 +1006,22 @@ func DeleteBucket_success_status_code(s *S3Conf) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		failF("%v: %v", testName, err.Error())
-		return
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	if resp.StatusCode != http.StatusNoContent {
 		failF("%v: expected response status to be %v, instead got %v", testName, http.StatusNoContent, resp.StatusCode)
-		return
+		return fmt.Errorf("%v: expected response status to be %v, instead got %v", testName, http.StatusNoContent, resp.StatusCode)
 	}
 
 	passF(testName)
+	return nil
 }
 
-func PutObject_non_existing_bucket(s *S3Conf) {
+func PutObject_non_existing_bucket(s *S3Conf) error {
 	testName := "PutObject_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"my-obj"}, "non-existing-bucket")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
@@ -1022,9 +1030,9 @@ func PutObject_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func PutObject_special_chars(s *S3Conf) {
+func PutObject_special_chars(s *S3Conf) error {
 	testName := "PutObject_special_chars"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"my%key", "my^key", "my*key", "my.key", "my-key", "my_key", "my!key", "my'key", "my(key", "my)key", "my\\key", "my{}key", "my[]key", "my`key", "my+key", "my%25key", "my@key"}, bucket)
 		if err != nil {
 			return err
@@ -1033,9 +1041,9 @@ func PutObject_special_chars(s *S3Conf) {
 	})
 }
 
-func PutObject_invalid_long_tags(s *S3Conf) {
+func PutObject_invalid_long_tags(s *S3Conf) error {
 	testName := "PutObject_invalid_long_tags"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key := "my-obj"
 		tagging := fmt.Sprintf("%v=val", genRandString(200))
 
@@ -1069,9 +1077,9 @@ func PutObject_invalid_long_tags(s *S3Conf) {
 	})
 }
 
-func PutObject_success(s *S3Conf) {
+func PutObject_success(s *S3Conf) error {
 	testName := "PutObject_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
@@ -1080,9 +1088,9 @@ func PutObject_success(s *S3Conf) {
 	})
 }
 
-func HeadObject_non_existing_object(s *S3Conf) {
+func HeadObject_non_existing_object(s *S3Conf) error {
 	testName := "HeadObject_non_existing_object"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: &bucket,
@@ -1096,9 +1104,9 @@ func HeadObject_non_existing_object(s *S3Conf) {
 	})
 }
 
-func HeadObject_success(s *S3Conf) {
+func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, dataLen := "my-obj", int64(1234567)
 		meta := map[string]string{
 			"key1": "val1",
@@ -1135,9 +1143,9 @@ func HeadObject_success(s *S3Conf) {
 	})
 }
 
-func GetObject_non_existing_key(s *S3Conf) {
+func GetObject_non_existing_key(s *S3Conf) error {
 	testName := "GetObject_non_existing_key"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
@@ -1152,9 +1160,9 @@ func GetObject_non_existing_key(s *S3Conf) {
 	})
 }
 
-func GetObject_invalid_ranges(s *S3Conf) {
+func GetObject_invalid_ranges(s *S3Conf) error {
 	testName := "GetObject_invalid_ranges"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
 
 		_, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
@@ -1201,9 +1209,9 @@ func GetObject_invalid_ranges(s *S3Conf) {
 	})
 }
 
-func GetObject_with_meta(s *S3Conf) {
+func GetObject_with_meta(s *S3Conf) error {
 	testName := "GetObject_with_meta"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		meta := map[string]string{
 			"key1": "val1",
@@ -1233,9 +1241,9 @@ func GetObject_with_meta(s *S3Conf) {
 	})
 }
 
-func GetObject_success(s *S3Conf) {
+func GetObject_success(s *S3Conf) error {
 	testName := "GetObject_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
 
 		csum, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
@@ -1272,9 +1280,9 @@ func GetObject_success(s *S3Conf) {
 	})
 }
 
-func GetObject_by_range_success(s *S3Conf) {
+func GetObject_by_range_success(s *S3Conf) error {
 	testName := "GetObject_by_range_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
 
 		_, data, err := putObjectWithData(dataLength, &s3.PutObjectInput{
@@ -1341,9 +1349,9 @@ func GetObject_by_range_success(s *S3Conf) {
 	})
 }
 
-func ListObjects_non_existing_bucket(s *S3Conf) {
+func ListObjects_non_existing_bucket(s *S3Conf) error {
 	testName := "ListObjects_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bckt := getBucketName()
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
@@ -1357,9 +1365,9 @@ func ListObjects_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func ListObjects_with_prefix(s *S3Conf) {
+func ListObjects_with_prefix(s *S3Conf) error {
 	testName := "ListObjects_with_prefix"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "obj"
 		objWithPrefix := []string{prefix + "/foo", prefix + "/bar", prefix + "/baz/bla"}
 		err := putObjects(s3client, append(objWithPrefix, []string{"xzy/csf", "hell"}...), bucket)
@@ -1388,9 +1396,9 @@ func ListObjects_with_prefix(s *S3Conf) {
 	})
 }
 
-func ListObject_truncated(s *S3Conf) {
+func ListObject_truncated(s *S3Conf) error {
 	testName := "ListObject_truncated"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		maxKeys := int32(2)
 		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
@@ -1448,10 +1456,10 @@ func ListObject_truncated(s *S3Conf) {
 	})
 }
 
-func ListObjects_invalid_max_keys(s *S3Conf) {
+func ListObjects_invalid_max_keys(s *S3Conf) error {
 	testName := "ListObjects_invalid_max_keys"
 	maxKeys := int32(-5)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket:  &bucket,
@@ -1466,9 +1474,9 @@ func ListObjects_invalid_max_keys(s *S3Conf) {
 	})
 }
 
-func ListObjects_max_keys_0(s *S3Conf) {
+func ListObjects_max_keys_0(s *S3Conf) error {
 	testName := "ListObjects_max_keys_0"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects := []string{"foo", "bar", "baz"}
 		err := putObjects(s3client, objects, bucket)
 		if err != nil {
@@ -1493,9 +1501,9 @@ func ListObjects_max_keys_0(s *S3Conf) {
 	})
 }
 
-func ListObjects_delimiter(s *S3Conf) {
+func ListObjects_delimiter(s *S3Conf) error {
 	testName := "ListObjects_delimiter"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo/bar/baz", "foo/bar/xyzzy", "quux/thud", "asdf"}, bucket)
 		if err != nil {
 			return err
@@ -1526,9 +1534,9 @@ func ListObjects_delimiter(s *S3Conf) {
 	})
 }
 
-func ListObjects_max_keys_none(s *S3Conf) {
+func ListObjects_max_keys_none(s *S3Conf) error {
 	testName := "ListObjects_max_keys_none"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
@@ -1551,9 +1559,9 @@ func ListObjects_max_keys_none(s *S3Conf) {
 	})
 }
 
-func ListObjects_marker_not_from_obj_list(s *S3Conf) {
+func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 	testName := "ListObjects_marker_not_from_obj_list"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo", "bar", "baz", "qux", "hello", "xyz"}, bucket)
 		if err != nil {
 			return err
@@ -1581,9 +1589,9 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) {
 	})
 }
 
-func DeleteObject_non_existing_object(s *S3Conf) {
+func DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_object"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &bucket,
@@ -1597,9 +1605,9 @@ func DeleteObject_non_existing_object(s *S3Conf) {
 	})
 }
 
-func DeleteObject_success(s *S3Conf) {
+func DeleteObject_success(s *S3Conf) error {
 	testName := "DeleteObject_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -1629,9 +1637,9 @@ func DeleteObject_success(s *S3Conf) {
 	})
 }
 
-func DeleteObject_success_status_code(s *S3Conf) {
+func DeleteObject_success_status_code(s *S3Conf) error {
 	testName := "DeleteObject_success_status_code"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -1660,9 +1668,9 @@ func DeleteObject_success_status_code(s *S3Conf) {
 	})
 }
 
-func DeleteObjects_empty_input(s *S3Conf) {
+func DeleteObjects_empty_input(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects := []string{"foo", "bar", "baz"}
 		err := putObjects(s3client, objects, bucket)
 		if err != nil {
@@ -1705,9 +1713,9 @@ func DeleteObjects_empty_input(s *S3Conf) {
 	})
 }
 
-func DeleteObjects_non_existing_objects(s *S3Conf) {
+func DeleteObjects_non_existing_objects(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		delObjects := []types.ObjectIdentifier{{Key: getPtr("obj1")}, {Key: getPtr("obj2")}}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -1739,9 +1747,9 @@ func DeleteObjects_non_existing_objects(s *S3Conf) {
 	})
 }
 
-func DeleteObjects_success(s *S3Conf) {
+func DeleteObjects_success(s *S3Conf) error {
 	testName := "DeleteObjects_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects, objToDel := []string{"obj1", "obj2", "obj3"}, []string{"foo", "bar", "baz"}
 		err := putObjects(s3client, append(objToDel, objects...), bucket)
 		if err != nil {
@@ -1793,9 +1801,9 @@ func DeleteObjects_success(s *S3Conf) {
 	})
 }
 
-func CopyObject_non_existing_dst_bucket(s *S3Conf) {
+func CopyObject_non_existing_dst_bucket(s *S3Conf) error {
 	testName := "CopyObject_non_existing_dst_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -1815,9 +1823,9 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) {
 	})
 }
 
-func CopyObject_not_owned_source_bucket(s *S3Conf) {
+func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 	testName := "CopyObject_not_owned_source_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		srcObj := "my-obj"
 		err := putObjects(s3client, []string{srcObj}, bucket)
 		if err != nil {
@@ -1864,9 +1872,9 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) {
 	})
 }
 
-func CopyObject_copy_to_itself(s *S3Conf) {
+func CopyObject_copy_to_itself(s *S3Conf) error {
 	testName := "CopyObject_copy_to_itself"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -1886,9 +1894,9 @@ func CopyObject_copy_to_itself(s *S3Conf) {
 	})
 }
 
-func CopyObject_to_itself_with_new_metadata(s *S3Conf) {
+func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	testName := "CopyObject_to_itself_with_new_metadata"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -1912,9 +1920,9 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) {
 	})
 }
 
-func CopyObject_success(s *S3Conf) {
+func CopyObject_success(s *S3Conf) error {
 	testName := "CopyObject_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
 		dstBucket := getBucketName()
 		err := setup(s, dstBucket)
@@ -1973,9 +1981,9 @@ func CopyObject_success(s *S3Conf) {
 	})
 }
 
-func PutObjectTagging_non_existing_object(s *S3Conf) {
+func PutObjectTagging_non_existing_object(s *S3Conf) error {
 	testName := "PutObjectTagging_non_existing_object"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
 			Bucket:  &bucket,
@@ -1989,9 +1997,9 @@ func PutObjectTagging_non_existing_object(s *S3Conf) {
 	})
 }
 
-func PutObjectTagging_long_tags(s *S3Conf) {
+func PutObjectTagging_long_tags(s *S3Conf) error {
 	testName := "PutObjectTagging_long_tags"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr(genRandString(129)), Value: getPtr("val")}}}
 		err := putObjects(s3client, []string{obj}, bucket)
@@ -2025,9 +2033,9 @@ func PutObjectTagging_long_tags(s *S3Conf) {
 	})
 }
 
-func PutObjectTagging_success(s *S3Conf) {
+func PutObjectTagging_success(s *S3Conf) error {
 	testName := "PutObjectTagging_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
 		err := putObjects(s3client, []string{obj}, bucket)
@@ -2049,9 +2057,9 @@ func PutObjectTagging_success(s *S3Conf) {
 	})
 }
 
-func GetObjectTagging_non_existing_object(s *S3Conf) {
+func GetObjectTagging_non_existing_object(s *S3Conf) error {
 	testName := "GetObjectTagging_non_existing_object"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 			Bucket: &bucket,
@@ -2065,9 +2073,9 @@ func GetObjectTagging_non_existing_object(s *S3Conf) {
 	})
 }
 
-func GetObjectTagging_success(s *S3Conf) {
+func GetObjectTagging_success(s *S3Conf) error {
 	testName := "PutObjectTagging_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
 		err := putObjects(s3client, []string{obj}, bucket)
@@ -2103,9 +2111,9 @@ func GetObjectTagging_success(s *S3Conf) {
 	})
 }
 
-func DeleteObjectTagging_non_existing_object(s *S3Conf) {
+func DeleteObjectTagging_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObjectTagging_non_existing_object"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
 			Bucket: &bucket,
@@ -2119,9 +2127,9 @@ func DeleteObjectTagging_non_existing_object(s *S3Conf) {
 	})
 }
 
-func DeleteObjectTagging_success_status(s *S3Conf) {
+func DeleteObjectTagging_success_status(s *S3Conf) error {
 	testName := "DeleteObjectTagging_success_status"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
@@ -2170,9 +2178,9 @@ func DeleteObjectTagging_success_status(s *S3Conf) {
 	})
 }
 
-func DeleteObjectTagging_success(s *S3Conf) {
+func DeleteObjectTagging_success(s *S3Conf) error {
 	testName := "DeleteObjectTagging_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
 		err := putObjects(s3client, []string{obj}, bucket)
@@ -2218,9 +2226,9 @@ func DeleteObjectTagging_success(s *S3Conf) {
 	})
 }
 
-func CreateMultipartUpload_non_existing_bucket(s *S3Conf) {
+func CreateMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	testName := "CreateMultipartUpload_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
 		_, err := createMp(s3client, bucketName, "my-obj")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
@@ -2231,9 +2239,9 @@ func CreateMultipartUpload_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func CreateMultipartUpload_success(s *S3Conf) {
+func CreateMultipartUpload_success(s *S3Conf) error {
 	testName := "CreateMultipartUpload_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -2254,9 +2262,9 @@ func CreateMultipartUpload_success(s *S3Conf) {
 	})
 }
 
-func UploadPart_non_existing_bucket(s *S3Conf) {
+func UploadPart_non_existing_bucket(s *S3Conf) error {
 	testName := "UploadPart_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
 		partNumber := int32(1)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -2275,10 +2283,10 @@ func UploadPart_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func UploadPart_invalid_part_number(s *S3Conf) {
+func UploadPart_invalid_part_number(s *S3Conf) error {
 	testName := "UploadPart_invalid_part_number"
 	partNumber := int32(-10)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
@@ -2294,10 +2302,10 @@ func UploadPart_invalid_part_number(s *S3Conf) {
 	})
 }
 
-func UploadPart_non_existing_mp_upload(s *S3Conf) {
+func UploadPart_non_existing_mp_upload(s *S3Conf) error {
 	testName := "UploadPart_non_existing_mp_upload"
 	partNumber := int32(1)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,
@@ -2313,10 +2321,10 @@ func UploadPart_non_existing_mp_upload(s *S3Conf) {
 	})
 }
 
-func UploadPart_non_existing_key(s *S3Conf) {
+func UploadPart_non_existing_key(s *S3Conf) error {
 	testName := "UploadPart_non_existing_key"
 	partNumber := int32(1)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -2338,10 +2346,10 @@ func UploadPart_non_existing_key(s *S3Conf) {
 	})
 }
 
-func UploadPart_success(s *S3Conf) {
+func UploadPart_success(s *S3Conf) error {
 	testName := "UploadPart_success"
 	partNumber := int32(1)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -2365,9 +2373,9 @@ func UploadPart_success(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_non_existing_bucket(s *S3Conf) {
+func UploadPartCopy_non_existing_bucket(s *S3Conf) error {
 	testName := "UploadPartCopy_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
 		partNumber := int32(1)
 
@@ -2387,9 +2395,9 @@ func UploadPartCopy_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_incorrect_uploadId(s *S3Conf) {
+func UploadPartCopy_incorrect_uploadId(s *S3Conf) error {
 	testName := "UploadPartCopy_incorrect_uploadId"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2428,9 +2436,9 @@ func UploadPartCopy_incorrect_uploadId(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_incorrect_object_key(s *S3Conf) {
+func UploadPartCopy_incorrect_object_key(s *S3Conf) error {
 	testName := "UploadPartCopy_incorrect_object_key"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2469,9 +2477,9 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_invalid_part_number(s *S3Conf) {
+func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_part_number"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		partNumber := int32(-10)
 		_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
@@ -2490,9 +2498,9 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_invalid_copy_source(s *S3Conf) {
+func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_copy_source"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
 		out, err := createMp(s3client, bucket, obj)
@@ -2518,9 +2526,9 @@ func UploadPartCopy_invalid_copy_source(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_non_existing_source_bucket(s *S3Conf) {
+func UploadPartCopy_non_existing_source_bucket(s *S3Conf) error {
 	testName := "UploadPartCopy_non_existing_source_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
 		out, err := createMp(s3client, bucket, obj)
@@ -2546,9 +2554,9 @@ func UploadPartCopy_non_existing_source_bucket(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
+func UploadPartCopy_non_existing_source_object_key(s *S3Conf) error {
 	testName := "UploadPartCopy_non_existing_source_object_key"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket := "my-obj", getBucketName()
 
 		err := setup(s, srcBucket)
@@ -2584,9 +2592,9 @@ func UploadPartCopy_non_existing_source_object_key(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_success(s *S3Conf) {
+func UploadPartCopy_success(s *S3Conf) error {
 	testName := "UploadPartCopy_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2653,9 +2661,9 @@ func UploadPartCopy_success(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
+func UploadPartCopy_by_range_invalid_range(s *S3Conf) error {
 	testName := "UploadPartCopy_by_range_invalid_range"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2699,9 +2707,9 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
+func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) error {
 	testName := "UploadPartCopy_greater_range_than_obj_size"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2745,9 +2753,9 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) {
 	})
 }
 
-func UploadPartCopy_by_range_success(s *S3Conf) {
+func UploadPartCopy_by_range_success(s *S3Conf) error {
 	testName := "UploadPartCopy_by_range_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
@@ -2815,9 +2823,9 @@ func UploadPartCopy_by_range_success(s *S3Conf) {
 	})
 }
 
-func ListParts_incorrect_uploadId(s *S3Conf) {
+func ListParts_incorrect_uploadId(s *S3Conf) error {
 	testName := "ListParts_incorrect_uploadId"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListParts(ctx, &s3.ListPartsInput{
 			Bucket:   &bucket,
@@ -2833,9 +2841,9 @@ func ListParts_incorrect_uploadId(s *S3Conf) {
 	})
 }
 
-func ListParts_incorrect_object_key(s *S3Conf) {
+func ListParts_incorrect_object_key(s *S3Conf) error {
 	testName := "ListParts_incorrect_object_key"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -2857,9 +2865,9 @@ func ListParts_incorrect_object_key(s *S3Conf) {
 	})
 }
 
-func ListParts_success(s *S3Conf) {
+func ListParts_success(s *S3Conf) error {
 	testName := "ListParts_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -2890,9 +2898,9 @@ func ListParts_success(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_non_existing_bucket(s *S3Conf) {
+func ListMultipartUploads_non_existing_bucket(s *S3Conf) error {
 	testName := "ListMultipartUploads_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		bucketName := getBucketName()
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
@@ -2907,9 +2915,9 @@ func ListMultipartUploads_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_empty_result(s *S3Conf) {
+func ListMultipartUploads_empty_result(s *S3Conf) error {
 	testName := "ListMultipartUploads_empty_result"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket: &bucket,
@@ -2926,10 +2934,10 @@ func ListMultipartUploads_empty_result(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_invalid_max_uploads(s *S3Conf) {
+func ListMultipartUploads_invalid_max_uploads(s *S3Conf) error {
 	testName := "ListMultipartUploads_invalid_max_uploads"
 	maxUploads := int32(-3)
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:     &bucket,
@@ -2944,9 +2952,9 @@ func ListMultipartUploads_invalid_max_uploads(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_max_uploads(s *S3Conf) {
+func ListMultipartUploads_max_uploads(s *S3Conf) error {
 	testName := "ListMultipartUploads_max_uploads"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		uploads := []types.MultipartUpload{}
 		for i := 1; i < 6; i++ {
 			out, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
@@ -2998,9 +3006,9 @@ func ListMultipartUploads_max_uploads(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) {
+func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) error {
 	testName := "ListMultipartUploads_incorrect_next_key_marker"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		for i := 1; i < 6; i++ {
 			_, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
 			if err != nil {
@@ -3025,9 +3033,9 @@ func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) {
+func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 	testName := "ListMultipartUploads_ignore_upload_id_marker"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		uploads := []types.MultipartUpload{}
 		for i := 1; i < 6; i++ {
 			out, err := createMp(s3client, bucket, fmt.Sprintf("obj%v", i))
@@ -3053,9 +3061,9 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) {
 	})
 }
 
-func ListMultipartUploads_success(s *S3Conf) {
+func ListMultipartUploads_success(s *S3Conf) error {
 	testName := "ListMultipartUploads_max_uploads"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj1, obj2 := "my-obj-1", "my-obj-2"
 		out1, err := createMp(s3client, bucket, obj1)
 		if err != nil {
@@ -3098,9 +3106,9 @@ func ListMultipartUploads_success(s *S3Conf) {
 	})
 }
 
-func AbortMultipartUpload_non_existing_bucket(s *S3Conf) {
+func AbortMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	testName := "AbortMultipartUpload_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   getPtr("incorrectBucket"),
@@ -3116,9 +3124,9 @@ func AbortMultipartUpload_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func AbortMultipartUpload_incorrect_uploadId(s *S3Conf) {
+func AbortMultipartUpload_incorrect_uploadId(s *S3Conf) error {
 	testName := "AbortMultipartUpload_incorrect_uploadId"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   &bucket,
@@ -3134,9 +3142,9 @@ func AbortMultipartUpload_incorrect_uploadId(s *S3Conf) {
 	})
 }
 
-func AbortMultipartUpload_incorrect_object_key(s *S3Conf) {
+func AbortMultipartUpload_incorrect_object_key(s *S3Conf) error {
 	testName := "AbortMultipartUpload_incorrect_object_key"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3158,9 +3166,9 @@ func AbortMultipartUpload_incorrect_object_key(s *S3Conf) {
 	})
 }
 
-func AbortMultipartUpload_success(s *S3Conf) {
+func AbortMultipartUpload_success(s *S3Conf) error {
 	testName := "AbortMultipartUpload_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3195,9 +3203,9 @@ func AbortMultipartUpload_success(s *S3Conf) {
 	})
 }
 
-func AbortMultipartUpload_success_status_code(s *S3Conf) {
+func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 	testName := "AbortMultipartUpload_success_status_code"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3226,9 +3234,9 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) {
 	})
 }
 
-func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) {
+func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	testName := "CompletedMultipartUpload_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   getPtr("non-existing-bucket"),
@@ -3244,9 +3252,9 @@ func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
+func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_part_number"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3289,9 +3297,9 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) {
 	})
 }
 
-func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
+func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_ETag"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3333,9 +3341,9 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) {
 	})
 }
 
-func CompleteMultipartUpload_success(s *S3Conf) {
+func CompleteMultipartUpload_success(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
 		if err != nil {
@@ -3395,9 +3403,9 @@ func CompleteMultipartUpload_success(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_non_existing_bucket(s *S3Conf) {
+func PutBucketAcl_non_existing_bucket(s *S3Conf) error {
 	testName := "PutBucketAcl_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: getPtr(getBucketName()),
@@ -3411,9 +3419,9 @@ func PutBucketAcl_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) {
+func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_canned_and_acp"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket:    &bucket,
@@ -3429,9 +3437,9 @@ func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) {
+func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_canned_and_grants"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
@@ -3459,9 +3467,9 @@ func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) {
+func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_acp_and_grants"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket:           &bucket,
@@ -3489,9 +3497,9 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_invalid_owner(s *S3Conf) {
+func PutBucketAcl_invalid_owner(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_acp_and_grants"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
@@ -3518,9 +3526,9 @@ func PutBucketAcl_invalid_owner(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_success_access_denied(s *S3Conf) {
+func PutBucketAcl_success_access_denied(s *S3Conf) error {
 	testName := "PutBucketAcl_success_access_denied"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {
 			return err
@@ -3563,9 +3571,9 @@ func PutBucketAcl_success_access_denied(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_success_canned_acl(s *S3Conf) {
+func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 	testName := "PutBucketAcl_success_canned_acl"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {
 			return err
@@ -3600,9 +3608,9 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_success_acp(s *S3Conf) {
+func PutBucketAcl_success_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_success_acp"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {
 			return err
@@ -3646,9 +3654,9 @@ func PutBucketAcl_success_acp(s *S3Conf) {
 	})
 }
 
-func PutBucketAcl_success_grants(s *S3Conf) {
+func PutBucketAcl_success_grants(s *S3Conf) error {
 	testName := "PutBucketAcl_success_grants"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {
 			return err
@@ -3691,9 +3699,9 @@ func PutBucketAcl_success_grants(s *S3Conf) {
 	})
 }
 
-func GetBucketAcl_non_existing_bucket(s *S3Conf) {
+func GetBucketAcl_non_existing_bucket(s *S3Conf) error {
 	testName := "GetBucketAcl_non_existing_bucket"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 			Bucket: getPtr(getBucketName()),
@@ -3707,9 +3715,9 @@ func GetBucketAcl_non_existing_bucket(s *S3Conf) {
 	})
 }
 
-func GetBucketAcl_access_denied(s *S3Conf) {
+func GetBucketAcl_access_denied(s *S3Conf) error {
 	testName := "GetBucketAcl_access_denied"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
 		if err != nil {
 			return err
@@ -3733,9 +3741,9 @@ func GetBucketAcl_access_denied(s *S3Conf) {
 	})
 }
 
-func GetBucketAcl_success(s *S3Conf) {
+func GetBucketAcl_success(s *S3Conf) error {
 	testName := "GetBucketAcl_success"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := createUsers(s, []user{
 			{"grt1", "grt1secret", "user"},
 			{"grt2", "grt2secret", "user"},
@@ -3805,9 +3813,9 @@ func GetBucketAcl_success(s *S3Conf) {
 }
 
 // Posix related tests
-func PutObject_overwrite_dir_obj(s *S3Conf) {
+func PutObject_overwrite_dir_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_dir_obj"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo/", "foo"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
 			return err
@@ -3816,9 +3824,9 @@ func PutObject_overwrite_dir_obj(s *S3Conf) {
 	})
 }
 
-func PutObject_overwrite_file_obj(s *S3Conf) {
+func PutObject_overwrite_file_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_file_obj"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		err := putObjects(s3client, []string{"foo", "foo/"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
 			return err
@@ -3827,9 +3835,9 @@ func PutObject_overwrite_file_obj(s *S3Conf) {
 	})
 }
 
-func PutObject_dir_obj_with_data(s *S3Conf) {
+func PutObject_dir_obj_with_data(s *S3Conf) error {
 	testName := "PutObject_dir_obj_with_data"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		_, _, err := putObjectWithData(int64(20), &s3.PutObjectInput{
 			Bucket: &bucket,
 			Key:    getPtr("obj/"),
@@ -3841,9 +3849,9 @@ func PutObject_dir_obj_with_data(s *S3Conf) {
 	})
 }
 
-func CreateMultipartUpload_dir_obj(s *S3Conf) {
+func CreateMultipartUpload_dir_obj(s *S3Conf) error {
 	testName := "CreateMultipartUpload_dir_obj"
-	actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		_, err := createMp(s3client, bucket, "obj/")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)); err != nil {
 			return err
