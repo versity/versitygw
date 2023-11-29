@@ -4,18 +4,18 @@ go 1.20
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.23.2
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.43.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.46.0
 	github.com/aws/smithy-go v1.17.0
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/gofiber/fiber/v2 v2.51.0
 	github.com/google/uuid v1.4.0
 	github.com/nats-io/nats.go v1.31.0
 	github.com/pkg/xattr v0.4.9
-	github.com/segmentio/kafka-go v0.4.45
+	github.com/segmentio/kafka-go v0.4.46
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/valyala/fasthttp v1.51.0
 	github.com/versity/scoutfs-go v0.0.0-20230606232754-0474b14343b9
-	golang.org/x/sys v0.14.0
+	golang.org/x/sys v0.15.0
 )
 
 require (
@@ -37,16 +37,16 @@ require (
 require (
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.1 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.25.4
+	github.com/aws/aws-sdk-go-v2/config v1.25.8
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.6
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.14.1
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.15.1
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.2.5 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.5.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.2.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.10.1 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.2.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.2.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.10.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.16.5 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/klauspost/compress v1.17.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
