@@ -55,11 +55,13 @@ func getObj(path string, d fs.DirEntry) (types.Object, error) {
 		return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
 	}
 
+	size := fi.Size()
+
 	return types.Object{
 		ETag:         &etag,
 		Key:          &path,
 		LastModified: backend.GetTimePtr(fi.ModTime()),
-		Size:         fi.Size(),
+		Size:         &size,
 	}, nil
 }
 

@@ -63,7 +63,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
-	maxParts := ctx.QueryInt("max-parts", 0)
+	maxParts := int32(ctx.QueryInt("max-parts", 0))
 	partNumberMarker := ctx.Query("part-number-marker")
 	acceptRange := ctx.Get("Range")
 	acct := ctx.Locals("account").(auth.Account)
@@ -111,7 +111,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Key:              &key,
 			UploadId:         &uploadId,
 			PartNumberMarker: &partNumberMarker,
-			MaxParts:         int32(maxParts),
+			MaxParts:         &maxParts,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListParts", BucketOwner: parsedAcl.Owner})
 	}
@@ -169,7 +169,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
-			Value: fmt.Sprint(res.ContentLength),
+			Value: fmt.Sprint(getint64(res.ContentLength)),
 		},
 		{
 			Key:   "Content-Type",
@@ -199,11 +199,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Key:   "accept-ranges",
 			Value: getstring(res.AcceptRanges),
 		},
-		{
-			Key:   "x-amz-tagging-count",
-			Value: fmt.Sprint(res.TagCount),
-		},
 	})
+
+	if res.TagCount != nil {
+		utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+			{
+				Key:   "x-amz-tagging-count",
+				Value: fmt.Sprint(*res.TagCount),
+			},
+		})
+	}
+
 	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "GetObject", BucketOwner: parsedAcl.Owner})
 }
 
@@ -212,6 +218,13 @@ func getstring(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func getint64(i *int64) int64 {
+	if i == nil {
+		return 0
+	}
+	return *i
 }
 
 func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
@@ -259,7 +272,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			Delimiter:      &delimiter,
 			Prefix:         &prefix,
 			UploadIdMarker: &uploadIdMarker,
-			MaxUploads:     maxUploads,
+			MaxUploads:     &maxUploads,
 			KeyMarker:      &keyMarker,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListMultipartUploads", BucketOwner: parsedAcl.Owner})
@@ -282,7 +295,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			Prefix:            &prefix,
 			ContinuationToken: &cToken,
 			Delimiter:         &delimiter,
-			MaxKeys:           maxkeys,
+			MaxKeys:           &maxkeys,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListObjectsV2", BucketOwner: parsedAcl.Owner})
 	}
@@ -305,7 +318,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 		Prefix:    &prefix,
 		Marker:    &marker,
 		Delimiter: &delimiter,
-		MaxKeys:   maxkeys,
+		MaxKeys:   &maxkeys,
 	})
 	return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListObjects", BucketOwner: parsedAcl.Owner})
 }
@@ -467,7 +480,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("uploadId") && ctx.Request().URI().QueryArgs().Has("partNumber") && copySource != "" {
-		partNumber := ctx.QueryInt("partNumber", -1)
+		partNumber := int32(ctx.QueryInt("partNumber", -1))
 		if partNumber < 1 || partNumber > 10000 {
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidPart), &MetaOpts{Logger: c.logger, Action: "UploadPartCopy", BucketOwner: parsedAcl.Owner})
 		}
@@ -476,7 +489,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			Bucket:              &bucket,
 			Key:                 &keyStart,
 			CopySource:          &copySource,
-			PartNumber:          int32(partNumber),
+			PartNumber:          &partNumber,
 			UploadId:            &uploadId,
 			ExpectedBucketOwner: &bucketOwner,
 			CopySourceRange:     &copySrcRange,
@@ -485,7 +498,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("uploadId") && ctx.Request().URI().QueryArgs().Has("partNumber") {
-		partNumber := ctx.QueryInt("partNumber", -1)
+		partNumber := int32(ctx.QueryInt("partNumber", -1))
 		if partNumber < 1 || partNumber > 10000 {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart), &MetaOpts{Logger: c.logger, Action: "UploadPart", BucketOwner: parsedAcl.Owner})
 		}
@@ -505,8 +518,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			Bucket:        &bucket,
 			Key:           &keyStart,
 			UploadId:      &uploadId,
-			PartNumber:    int32(partNumber),
-			ContentLength: contentLength,
+			PartNumber:    &partNumber,
+			ContentLength: &contentLength,
 			Body:          body,
 		})
 		ctx.Response().Header.Set("Etag", etag)
@@ -641,7 +654,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	etag, err := c.be.PutObject(ctx.Context(), &s3.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &keyStart,
-		ContentLength: contentLength,
+		ContentLength: &contentLength,
 		Metadata:      metadata,
 		Body:          bytes.NewReader(ctx.Request().Body()),
 		Tagging:       &tagging,
@@ -805,7 +818,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
-			Value: fmt.Sprint(res.ContentLength),
+			Value: fmt.Sprint(getint64(res.ContentLength)),
 		},
 		{
 			Key:   "Content-Type",

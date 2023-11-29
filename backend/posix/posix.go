@@ -146,6 +146,10 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 }
 
 func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Lstat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -158,6 +162,10 @@ func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.He
 }
 
 func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput) error {
+	if input.Bucket == nil {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	bucket := *input.Bucket
 	owner := string(input.ObjectOwnership)
 
@@ -183,6 +191,10 @@ func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput) err
 }
 
 func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) error {
+	if input.Bucket == nil {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	names, err := os.ReadDir(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -212,6 +224,13 @@ func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) err
 }
 
 func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	if mpu.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if mpu.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	bucket := *mpu.Bucket
 	object := *mpu.Key
 
@@ -269,6 +288,19 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 }
 
 func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if input.UploadId == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	}
+	if input.MultipartUpload == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -294,7 +326,7 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 	partsize := int64(0)
 	var totalsize int64
 	for i, p := range parts {
-		partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber))
+		partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *p.PartNumber))
 		fi, err := os.Lstat(partPath)
 		if err != nil {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
@@ -326,7 +358,7 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 	defer f.cleanup()
 
 	for _, p := range parts {
-		pf, err := os.Open(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber)))
+		pf, err := os.Open(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *p.PartNumber)))
 		if err != nil {
 			return nil, fmt.Errorf("open part %v: %v", p.PartNumber, err)
 		}
@@ -512,6 +544,16 @@ func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
 }
 
 func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUploadInput) error {
+	if mpu.Bucket == nil {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if mpu.Key == nil {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if mpu.UploadId == nil {
+		return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	}
+
 	bucket := *mpu.Bucket
 	object := *mpu.Key
 	uploadID := *mpu.UploadId
@@ -542,6 +584,12 @@ func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUp
 }
 
 func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	var lmu s3response.ListMultipartUploadsResult
+
+	if mpu.Bucket == nil {
+		return lmu, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	bucket := *mpu.Bucket
 	var delimiter string
 	if mpu.Delimiter != nil {
@@ -551,8 +599,6 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	if mpu.Prefix != nil {
 		prefix = *mpu.Prefix
 	}
-
-	var lmu s3response.ListMultipartUploadsResult
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -626,12 +672,16 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		}
 	}
 
+	maxUploads := 0
+	if mpu.MaxUploads != nil {
+		maxUploads = int(*mpu.MaxUploads)
+	}
 	if (uploadIDMarker != "" && !uploadIdMarkerFound) || (keyMarker != "" && keyMarkerInd == -1) {
 		return s3response.ListMultipartUploadsResult{
 			Bucket:         bucket,
 			Delimiter:      delimiter,
 			KeyMarker:      keyMarker,
-			MaxUploads:     int(mpu.MaxUploads),
+			MaxUploads:     maxUploads,
 			Prefix:         prefix,
 			UploadIDMarker: uploadIDMarker,
 			Uploads:        []s3response.Upload{},
@@ -643,18 +693,18 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	})
 
 	for i := keyMarkerInd + 1; i < len(uploads); i++ {
-		if mpu.MaxUploads == 0 {
+		if maxUploads == 0 {
 			break
 		}
 		if keyMarker != "" && uploadIDMarker != "" && uploads[i].UploadID < uploadIDMarker {
 			continue
 		}
-		if i != len(uploads)-1 && len(resultUpds) == int(mpu.MaxUploads) {
+		if i != len(uploads)-1 && len(resultUpds) == maxUploads {
 			return s3response.ListMultipartUploadsResult{
 				Bucket:             bucket,
 				Delimiter:          delimiter,
 				KeyMarker:          keyMarker,
-				MaxUploads:         int(mpu.MaxUploads),
+				MaxUploads:         maxUploads,
 				NextKeyMarker:      resultUpds[i-1].Key,
 				NextUploadIDMarker: resultUpds[i-1].UploadID,
 				IsTruncated:        true,
@@ -671,7 +721,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		Bucket:         bucket,
 		Delimiter:      delimiter,
 		KeyMarker:      keyMarker,
-		MaxUploads:     int(mpu.MaxUploads),
+		MaxUploads:     maxUploads,
 		Prefix:         prefix,
 		UploadIDMarker: uploadIDMarker,
 		Uploads:        resultUpds,
@@ -679,13 +729,29 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 }
 
 func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	var lpr s3response.ListPartsResult
+
+	if input.Bucket == nil {
+		return lpr, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return lpr, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if input.UploadId == nil {
+		return lpr, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
-	stringMarker := *input.PartNumberMarker
-	maxParts := int(input.MaxParts)
-
-	var lpr s3response.ListPartsResult
+	stringMarker := ""
+	if input.PartNumberMarker != nil {
+		stringMarker = *input.PartNumberMarker
+	}
+	maxParts := 0
+	if input.MaxParts != nil {
+		maxParts = int(*input.MaxParts)
+	}
 
 	var partNumberMarker int
 	if stringMarker != "" {
@@ -777,11 +843,21 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 }
 
 func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string, error) {
+	if input.Bucket == nil {
+		return "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
 	part := input.PartNumber
-	length := input.ContentLength
+	length := int64(0)
+	if input.ContentLength != nil {
+		length = *input.ContentLength
+	}
 	r := input.Body
 
 	_, err := os.Stat(bucket)
@@ -803,7 +879,7 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 		return "", fmt.Errorf("stat uploadid: %w", err)
 	}
 
-	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", part))
+	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part))
 
 	f, err := openTmpFile(filepath.Join(bucket, objdir),
 		bucket, partPath, length)
@@ -833,6 +909,13 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 }
 
 func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	if upi.Bucket == nil {
+		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if upi.Key == nil {
+		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	_, err := os.Stat(*upi.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -852,7 +935,7 @@ func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (
 		return s3response.CopyObjectResult{}, fmt.Errorf("stat uploadid: %w", err)
 	}
 
-	partPath := filepath.Join(objdir, *upi.UploadId, fmt.Sprintf("%v", upi.PartNumber))
+	partPath := filepath.Join(objdir, *upi.UploadId, fmt.Sprintf("%v", *upi.PartNumber))
 
 	substrs := strings.SplitN(*upi.CopySource, "/", 2)
 	if len(substrs) != 2 {
@@ -938,6 +1021,13 @@ func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (
 }
 
 func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
+	if po.Bucket == nil {
+		return "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if po.Key == nil {
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	tagsStr := getString(po.Tagging)
 	tags := make(map[string]string)
 	_, err := os.Stat(*po.Bucket)
@@ -964,9 +1054,13 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	name := filepath.Join(*po.Bucket, *po.Key)
 
+	contentLength := int64(0)
+	if po.ContentLength != nil {
+		contentLength = *po.ContentLength
+	}
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
-		if po.ContentLength != 0 {
+		if contentLength != 0 {
 			// posix directories can't contain data, send error
 			// if reuests has a data payload associated with a
 			// directory object
@@ -995,7 +1089,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 
 	f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
-		*po.Bucket, *po.Key, po.ContentLength)
+		*po.Bucket, *po.Key, contentLength)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
@@ -1039,6 +1133,13 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 }
 
 func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) error {
+	if input.Bucket == nil {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -1131,6 +1232,16 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 }
 
 func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if input.Range == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
 	bucket := *input.Bucket
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1192,15 +1303,17 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 			return nil, fmt.Errorf("get object tags: %w", err)
 		}
 
+		tagCount := int32(len(tags))
+
 		return &s3.GetObjectOutput{
 			AcceptRanges:    &acceptRange,
-			ContentLength:   length,
+			ContentLength:   &length,
 			ContentEncoding: &contentEncoding,
 			ContentType:     &contentType,
 			ETag:            &etag,
 			LastModified:    backend.GetTimePtr(fi.ModTime()),
 			Metadata:        userMetaData,
-			TagCount:        int32(len(tags)),
+			TagCount:        &tagCount,
 			ContentRange:    &contentRange,
 		}, nil
 	}
@@ -1235,20 +1348,28 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		return nil, fmt.Errorf("get object tags: %w", err)
 	}
 
+	tagCount := int32(len(tags))
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
-		ContentLength:   length,
+		ContentLength:   &length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
-		TagCount:        int32(len(tags)),
+		TagCount:        &tagCount,
 		ContentRange:    &contentRange,
 	}, nil
 }
 
 func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	bucket := *input.Bucket
 	object := *input.Key
 
@@ -1278,8 +1399,10 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 		etag = ""
 	}
 
+	size := fi.Size()
+
 	return &s3.HeadObjectOutput{
-		ContentLength:   fi.Size(),
+		ContentLength:   &size,
 		ContentType:     &contentType,
 		ContentEncoding: &contentEncoding,
 		ETag:            &etag,
@@ -1289,6 +1412,18 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 }
 
 func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
+	if input.CopySource == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+	}
+	if input.ExpectedBucketOwner == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
 	srcBucket, srcObject, ok := strings.Cut(*input.CopySource, "/")
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -1361,7 +1496,16 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		}
 	}
 
-	etag, err := p.PutObject(ctx, &s3.PutObjectInput{Bucket: &dstBucket, Key: &dstObject, Body: f, ContentLength: fInfo.Size(), Metadata: meta})
+	contentLength := fInfo.Size()
+
+	etag, err := p.PutObject(ctx,
+		&s3.PutObjectInput{
+			Bucket:        &dstBucket,
+			Key:           &dstObject,
+			Body:          f,
+			ContentLength: &contentLength,
+			Metadata:      meta,
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -1380,11 +1524,26 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 }
 
 func (p *Posix) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	bucket := *input.Bucket
-	prefix := *input.Prefix
-	marker := *input.Marker
-	delim := *input.Delimiter
-	maxkeys := input.MaxKeys
+	prefix := ""
+	if input.Prefix != nil {
+		prefix = *input.Prefix
+	}
+	marker := ""
+	if input.Marker != nil {
+		marker = *input.Marker
+	}
+	delim := ""
+	if input.Delimiter != nil {
+		delim = *input.Delimiter
+	}
+	maxkeys := int32(0)
+	if input.MaxKeys != nil {
+		maxkeys = *input.MaxKeys
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1405,9 +1564,9 @@ func (p *Posix) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s3.
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
 		Delimiter:      &delim,
-		IsTruncated:    results.Truncated,
+		IsTruncated:    &results.Truncated,
 		Marker:         &marker,
-		MaxKeys:        maxkeys,
+		MaxKeys:        &maxkeys,
 		Name:           &bucket,
 		NextMarker:     &results.NextMarker,
 		Prefix:         &prefix,
@@ -1466,21 +1625,38 @@ func fileToObj(bucket string) backend.GetObjFunc {
 			return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
 		}
 
+		size := fi.Size()
+
 		return types.Object{
 			ETag:         &etag,
 			Key:          &path,
 			LastModified: backend.GetTimePtr(fi.ModTime()),
-			Size:         fi.Size(),
+			Size:         &size,
 		}, nil
 	}
 }
 
 func (p *Posix) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	bucket := *input.Bucket
-	prefix := *input.Prefix
-	marker := *input.ContinuationToken
-	delim := *input.Delimiter
-	maxkeys := input.MaxKeys
+	prefix := ""
+	if input.Prefix != nil {
+		prefix = *input.Prefix
+	}
+	marker := ""
+	if input.ContinuationToken != nil {
+		marker = *input.ContinuationToken
+	}
+	delim := ""
+	if input.Delimiter != nil {
+		delim = *input.Delimiter
+	}
+	maxkeys := int32(0)
+	if input.MaxKeys != nil {
+		maxkeys = *input.MaxKeys
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1491,23 +1667,25 @@ func (p *Posix) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (
 	}
 
 	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(fileSystem, prefix, delim, marker, int32(maxkeys),
+	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
 		fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
 
+	count := int32(len(results.Objects))
+
 	return &s3.ListObjectsV2Output{
 		CommonPrefixes:        results.CommonPrefixes,
 		Contents:              results.Objects,
 		Delimiter:             &delim,
-		IsTruncated:           results.Truncated,
+		IsTruncated:           &results.Truncated,
 		ContinuationToken:     &marker,
-		MaxKeys:               int32(maxkeys),
+		MaxKeys:               &maxkeys,
 		Name:                  &bucket,
 		NextContinuationToken: &results.NextMarker,
 		Prefix:                &prefix,
-		KeyCount:              int32(len(results.Objects)),
+		KeyCount:              &count,
 	}, nil
 }
 
@@ -1528,6 +1706,9 @@ func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) erro
 }
 
 func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
