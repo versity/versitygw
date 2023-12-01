@@ -47,7 +47,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
 	}
 
-	err = c.iam.CreateAccount(usr)
+	err = c.be.CreateUser(ctx.Context(), c.iam, usr)
 	if err != nil {
 		return fmt.Errorf("failed to create a user: %w", err)
 	}
@@ -62,7 +62,7 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
 
-	err := c.iam.DeleteUserAccount(access)
+	err := c.be.DeleteUser(ctx.Context(), c.iam, access)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
 	if acct.Role != "admin" {
 		return fmt.Errorf("access denied: only admin users have access to this resource")
 	}
-	accs, err := c.iam.ListUserAccounts()
+	accs, err := c.be.ListUsers(ctx.Context(), c.iam)
 	if err != nil {
 		return err
 	}
@@ -91,15 +91,7 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
 
-	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
-	if err != nil {
-		return err
-	}
-	if len(accs) > 0 {
-		return fmt.Errorf("user specified as the new bucket owner does not exist")
-	}
-
-	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
+	err := c.be.ChangeBucketOwner(ctx.Context(), c.iam, bucket, owner)
 	if err != nil {
 		return err
 	}

@@ -34,8 +34,8 @@ func TestAdminController_CreateUser(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		iam: &IAMServiceMock{
-			CreateAccountFunc: func(account auth.Account) error {
+		be: &BackendMock{
+			CreateUserFunc: func(contextMoqParam context.Context, iam auth.IAMService, user auth.Account) error {
 				return nil
 			},
 		},
@@ -125,8 +125,8 @@ func TestAdminController_DeleteUser(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		iam: &IAMServiceMock{
-			DeleteUserAccountFunc: func(access string) error {
+		be: &BackendMock{
+			DeleteUserFunc: func(contextMoqParam context.Context, iam auth.IAMService, access string) error {
 				return nil
 			},
 		},
@@ -195,17 +195,17 @@ func TestAdminController_ListUsers(t *testing.T) {
 	}
 
 	adminController := AdminController{
-		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.Account, error) {
+		be: &BackendMock{
+			ListUsersFunc: func(contextMoqParam context.Context, iam auth.IAMService) ([]auth.Account, error) {
 				return []auth.Account{}, nil
 			},
 		},
 	}
 
 	adminControllerErr := AdminController{
-		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.Account, error) {
-				return []auth.Account{}, fmt.Errorf("server error")
+		be: &BackendMock{
+			ListUsersFunc: func(contextMoqParam context.Context, iam auth.IAMService) ([]auth.Account, error) {
+				return []auth.Account{}, fmt.Errorf("iam error")
 			},
 		},
 	}
@@ -291,29 +291,16 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	}
 	adminController := AdminController{
 		be: &BackendMock{
-			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, newOwner string) error {
+			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, iam auth.IAMService, bucket, newOwner string) error {
 				return nil
 			},
 		},
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, nil
-			},
-		},
 	}
 
-	adminControllerIamErr := AdminController{
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, fmt.Errorf("unknown server error")
-			},
-		},
-	}
-
-	adminControllerIamAccDoesNotExist := AdminController{
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, auth.ErrNoSuchUser
+	adminErrController := AdminController{
+		be: &BackendMock{
+			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, iam auth.IAMService, bucket, newOwner string) error {
+				return fmt.Errorf("account doesn't exist")
 			},
 		},
 	}
@@ -343,16 +330,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 		return ctx.Next()
 	})
 
-	appIamErr.Patch("/change-bucket-owner", adminControllerIamErr.ChangeBucketOwner)
-
-	appIamNoSuchUser := fiber.New()
-
-	appIamNoSuchUser.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
-		return ctx.Next()
-	})
-
-	appIamNoSuchUser.Patch("/change-bucket-owner", adminControllerIamAccDoesNotExist.ChangeBucketOwner)
+	appIamErr.Patch("/change-bucket-owner", adminErrController.ChangeBucketOwner)
 
 	tests := []struct {
 		name       string
@@ -373,15 +351,6 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 		{
 			name: "Change-bucket-owner-check-account-server-error",
 			app:  appIamErr,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
-			},
-			wantErr:    false,
-			statusCode: 500,
-		},
-		{
-			name: "Change-bucket-owner-acc-does-not-exist",
-			app:  appIamNoSuchUser,
 			args: args{
 				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
 			},

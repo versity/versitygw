@@ -1800,8 +1800,28 @@ func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) 
 	return p.PutObjectTagging(ctx, bucket, object, nil)
 }
 
-func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
-	_, err := os.Stat(bucket)
+func (p *Posix) CreateUser(_ context.Context, iam auth.IAMService, user auth.Account) error {
+	return iam.CreateAccount(user)
+}
+
+func (p *Posix) DeleteUser(_ context.Context, iam auth.IAMService, access string) error {
+	return iam.DeleteUserAccount(access)
+}
+
+func (p *Posix) ListUsers(_ context.Context, iam auth.IAMService) ([]auth.Account, error) {
+	return iam.ListUserAccounts()
+}
+
+func (p *Posix) ChangeBucketOwner(ctx context.Context, iam auth.IAMService, bucket, newOwner string) error {
+	accs, err := auth.CheckIfAccountsExist([]string{newOwner}, iam)
+	if err != nil {
+		return err
+	}
+	if len(accs) > 0 {
+		return fmt.Errorf("user specified as the new bucket owner does not exist")
+	}
+
+	_, err = os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}

@@ -20,6 +20,7 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -69,7 +70,10 @@ type Backend interface {
 	DeleteObjectTagging(_ context.Context, bucket, object string) error
 
 	// non AWS actions
-	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
+	CreateUser(_ context.Context, iam auth.IAMService, user auth.Account) error
+	DeleteUser(_ context.Context, iam auth.IAMService, access string) error
+	ListUsers(_ context.Context, iam auth.IAMService) ([]auth.Account, error)
+	ChangeBucketOwner(_ context.Context, iam auth.IAMService, bucket, newOwner string) error
 	ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error)
 }
 
@@ -176,9 +180,18 @@ func (BackendUnsupported) DeleteObjectTagging(_ context.Context, bucket, object 
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket, newOwner string) error {
+func (BackendUnsupported) ChangeBucketOwner(_ context.Context, iam auth.IAMService, bucket, newOwner string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error) {
 	return []s3response.Bucket{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) CreateUser(_ context.Context, iam auth.IAMService, user auth.Account) error {
+	return fmt.Errorf("action is not supported")
+}
+func (BackendUnsupported) DeleteUser(_ context.Context, iam auth.IAMService, access string) error {
+	return fmt.Errorf("action is not supported")
+}
+func (BackendUnsupported) ListUsers(_ context.Context, iam auth.IAMService) ([]auth.Account, error) {
+	return []auth.Account{}, fmt.Errorf("action is not supported")
 }

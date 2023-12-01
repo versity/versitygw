@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
 	"io"
@@ -25,7 +26,7 @@ var _ backend.Backend = &BackendMock{}
 //			AbortMultipartUploadFunc: func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 //				panic("mock out the AbortMultipartUpload method")
 //			},
-//			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, newOwner string) error {
+//			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, iam auth.IAMService, bucket string, newOwner string) error {
 //				panic("mock out the ChangeBucketOwner method")
 //			},
 //			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
@@ -40,6 +41,9 @@ var _ backend.Backend = &BackendMock{}
 //			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 //				panic("mock out the CreateMultipartUpload method")
 //			},
+//			CreateUserFunc: func(contextMoqParam context.Context, iam auth.IAMService, user auth.Account) error {
+//				panic("mock out the CreateUser method")
+//			},
 //			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 //				panic("mock out the DeleteBucket method")
 //			},
@@ -51,6 +55,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
 //				panic("mock out the DeleteObjects method")
+//			},
+//			DeleteUserFunc: func(contextMoqParam context.Context, iam auth.IAMService, access string) error {
+//				panic("mock out the DeleteUser method")
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
@@ -90,6 +97,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 //				panic("mock out the ListParts method")
+//			},
+//			ListUsersFunc: func(contextMoqParam context.Context, iam auth.IAMService) ([]auth.Account, error) {
+//				panic("mock out the ListUsers method")
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
@@ -132,7 +142,7 @@ type BackendMock struct {
 	AbortMultipartUploadFunc func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error
 
 	// ChangeBucketOwnerFunc mocks the ChangeBucketOwner method.
-	ChangeBucketOwnerFunc func(contextMoqParam context.Context, bucket string, newOwner string) error
+	ChangeBucketOwnerFunc func(contextMoqParam context.Context, iam auth.IAMService, bucket string, newOwner string) error
 
 	// CompleteMultipartUploadFunc mocks the CompleteMultipartUpload method.
 	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
@@ -146,6 +156,9 @@ type BackendMock struct {
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
 	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 
+	// CreateUserFunc mocks the CreateUser method.
+	CreateUserFunc func(contextMoqParam context.Context, iam auth.IAMService, user auth.Account) error
+
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
 
@@ -157,6 +170,9 @@ type BackendMock struct {
 
 	// DeleteObjectsFunc mocks the DeleteObjects method.
 	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error)
+
+	// DeleteUserFunc mocks the DeleteUser method.
+	DeleteUserFunc func(contextMoqParam context.Context, iam auth.IAMService, access string) error
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
@@ -196,6 +212,9 @@ type BackendMock struct {
 
 	// ListPartsFunc mocks the ListParts method.
 	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error)
+
+	// ListUsersFunc mocks the ListUsers method.
+	ListUsersFunc func(contextMoqParam context.Context, iam auth.IAMService) ([]auth.Account, error)
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
@@ -240,6 +259,8 @@ type BackendMock struct {
 		ChangeBucketOwner []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
+			// Iam is the iam argument value.
+			Iam auth.IAMService
 			// Bucket is the bucket argument value.
 			Bucket string
 			// NewOwner is the newOwner argument value.
@@ -273,6 +294,15 @@ type BackendMock struct {
 			// CreateMultipartUploadInput is the createMultipartUploadInput argument value.
 			CreateMultipartUploadInput *s3.CreateMultipartUploadInput
 		}
+		// CreateUser holds details about calls to the CreateUser method.
+		CreateUser []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Iam is the iam argument value.
+			Iam auth.IAMService
+			// User is the user argument value.
+			User auth.Account
+		}
 		// DeleteBucket holds details about calls to the DeleteBucket method.
 		DeleteBucket []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -302,6 +332,15 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// DeleteObjectsInput is the deleteObjectsInput argument value.
 			DeleteObjectsInput *s3.DeleteObjectsInput
+		}
+		// DeleteUser holds details about calls to the DeleteUser method.
+		DeleteUser []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Iam is the iam argument value.
+			Iam auth.IAMService
+			// Access is the access argument value.
+			Access string
 		}
 		// GetBucketAcl holds details about calls to the GetBucketAcl method.
 		GetBucketAcl []struct {
@@ -398,6 +437,13 @@ type BackendMock struct {
 			// ListPartsInput is the listPartsInput argument value.
 			ListPartsInput *s3.ListPartsInput
 		}
+		// ListUsers holds details about calls to the ListUsers method.
+		ListUsers []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Iam is the iam argument value.
+			Iam auth.IAMService
+		}
 		// PutBucketAcl holds details about calls to the PutBucketAcl method.
 		PutBucketAcl []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -473,10 +519,12 @@ type BackendMock struct {
 	lockCopyObject              sync.RWMutex
 	lockCreateBucket            sync.RWMutex
 	lockCreateMultipartUpload   sync.RWMutex
+	lockCreateUser              sync.RWMutex
 	lockDeleteBucket            sync.RWMutex
 	lockDeleteObject            sync.RWMutex
 	lockDeleteObjectTagging     sync.RWMutex
 	lockDeleteObjects           sync.RWMutex
+	lockDeleteUser              sync.RWMutex
 	lockGetBucketAcl            sync.RWMutex
 	lockGetObject               sync.RWMutex
 	lockGetObjectAcl            sync.RWMutex
@@ -490,6 +538,7 @@ type BackendMock struct {
 	lockListObjects             sync.RWMutex
 	lockListObjectsV2           sync.RWMutex
 	lockListParts               sync.RWMutex
+	lockListUsers               sync.RWMutex
 	lockPutBucketAcl            sync.RWMutex
 	lockPutObject               sync.RWMutex
 	lockPutObjectAcl            sync.RWMutex
@@ -539,23 +588,25 @@ func (mock *BackendMock) AbortMultipartUploadCalls() []struct {
 }
 
 // ChangeBucketOwner calls ChangeBucketOwnerFunc.
-func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, bucket string, newOwner string) error {
+func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, iam auth.IAMService, bucket string, newOwner string) error {
 	if mock.ChangeBucketOwnerFunc == nil {
 		panic("BackendMock.ChangeBucketOwnerFunc: method is nil but Backend.ChangeBucketOwner was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
+		Iam             auth.IAMService
 		Bucket          string
 		NewOwner        string
 	}{
 		ContextMoqParam: contextMoqParam,
+		Iam:             iam,
 		Bucket:          bucket,
 		NewOwner:        newOwner,
 	}
 	mock.lockChangeBucketOwner.Lock()
 	mock.calls.ChangeBucketOwner = append(mock.calls.ChangeBucketOwner, callInfo)
 	mock.lockChangeBucketOwner.Unlock()
-	return mock.ChangeBucketOwnerFunc(contextMoqParam, bucket, newOwner)
+	return mock.ChangeBucketOwnerFunc(contextMoqParam, iam, bucket, newOwner)
 }
 
 // ChangeBucketOwnerCalls gets all the calls that were made to ChangeBucketOwner.
@@ -564,11 +615,13 @@ func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, buck
 //	len(mockedBackend.ChangeBucketOwnerCalls())
 func (mock *BackendMock) ChangeBucketOwnerCalls() []struct {
 	ContextMoqParam context.Context
+	Iam             auth.IAMService
 	Bucket          string
 	NewOwner        string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
+		Iam             auth.IAMService
 		Bucket          string
 		NewOwner        string
 	}
@@ -722,6 +775,46 @@ func (mock *BackendMock) CreateMultipartUploadCalls() []struct {
 	return calls
 }
 
+// CreateUser calls CreateUserFunc.
+func (mock *BackendMock) CreateUser(contextMoqParam context.Context, iam auth.IAMService, user auth.Account) error {
+	if mock.CreateUserFunc == nil {
+		panic("BackendMock.CreateUserFunc: method is nil but Backend.CreateUser was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+		User            auth.Account
+	}{
+		ContextMoqParam: contextMoqParam,
+		Iam:             iam,
+		User:            user,
+	}
+	mock.lockCreateUser.Lock()
+	mock.calls.CreateUser = append(mock.calls.CreateUser, callInfo)
+	mock.lockCreateUser.Unlock()
+	return mock.CreateUserFunc(contextMoqParam, iam, user)
+}
+
+// CreateUserCalls gets all the calls that were made to CreateUser.
+// Check the length with:
+//
+//	len(mockedBackend.CreateUserCalls())
+func (mock *BackendMock) CreateUserCalls() []struct {
+	ContextMoqParam context.Context
+	Iam             auth.IAMService
+	User            auth.Account
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+		User            auth.Account
+	}
+	mock.lockCreateUser.RLock()
+	calls = mock.calls.CreateUser
+	mock.lockCreateUser.RUnlock()
+	return calls
+}
+
 // DeleteBucket calls DeleteBucketFunc.
 func (mock *BackendMock) DeleteBucket(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 	if mock.DeleteBucketFunc == nil {
@@ -867,6 +960,46 @@ func (mock *BackendMock) DeleteObjectsCalls() []struct {
 	mock.lockDeleteObjects.RLock()
 	calls = mock.calls.DeleteObjects
 	mock.lockDeleteObjects.RUnlock()
+	return calls
+}
+
+// DeleteUser calls DeleteUserFunc.
+func (mock *BackendMock) DeleteUser(contextMoqParam context.Context, iam auth.IAMService, access string) error {
+	if mock.DeleteUserFunc == nil {
+		panic("BackendMock.DeleteUserFunc: method is nil but Backend.DeleteUser was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+		Access          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Iam:             iam,
+		Access:          access,
+	}
+	mock.lockDeleteUser.Lock()
+	mock.calls.DeleteUser = append(mock.calls.DeleteUser, callInfo)
+	mock.lockDeleteUser.Unlock()
+	return mock.DeleteUserFunc(contextMoqParam, iam, access)
+}
+
+// DeleteUserCalls gets all the calls that were made to DeleteUser.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteUserCalls())
+func (mock *BackendMock) DeleteUserCalls() []struct {
+	ContextMoqParam context.Context
+	Iam             auth.IAMService
+	Access          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+		Access          string
+	}
+	mock.lockDeleteUser.RLock()
+	calls = mock.calls.DeleteUser
+	mock.lockDeleteUser.RUnlock()
 	return calls
 }
 
@@ -1343,6 +1476,42 @@ func (mock *BackendMock) ListPartsCalls() []struct {
 	mock.lockListParts.RLock()
 	calls = mock.calls.ListParts
 	mock.lockListParts.RUnlock()
+	return calls
+}
+
+// ListUsers calls ListUsersFunc.
+func (mock *BackendMock) ListUsers(contextMoqParam context.Context, iam auth.IAMService) ([]auth.Account, error) {
+	if mock.ListUsersFunc == nil {
+		panic("BackendMock.ListUsersFunc: method is nil but Backend.ListUsers was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+	}{
+		ContextMoqParam: contextMoqParam,
+		Iam:             iam,
+	}
+	mock.lockListUsers.Lock()
+	mock.calls.ListUsers = append(mock.calls.ListUsers, callInfo)
+	mock.lockListUsers.Unlock()
+	return mock.ListUsersFunc(contextMoqParam, iam)
+}
+
+// ListUsersCalls gets all the calls that were made to ListUsers.
+// Check the length with:
+//
+//	len(mockedBackend.ListUsersCalls())
+func (mock *BackendMock) ListUsersCalls() []struct {
+	ContextMoqParam context.Context
+	Iam             auth.IAMService
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Iam             auth.IAMService
+	}
+	mock.lockListUsers.RLock()
+	calls = mock.calls.ListUsers
+	mock.lockListUsers.RUnlock()
 	return calls
 }
 

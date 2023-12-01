@@ -15,13 +15,20 @@
 package s3proxy
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -529,6 +536,221 @@ func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) e
 		Key:    &object,
 	})
 	return handleError(err)
+}
+
+func (s *S3be) CreateUser(ctx context.Context, _ auth.IAMService, user auth.Account) error {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		return fmt.Errorf("invalid account in context")
+	}
+
+	accJson, err := json.Marshal(user)
+	if err != nil {
+		return fmt.Errorf("failed to parse user data: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user", s.endpoint), bytes.NewBuffer(accJson))
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256(accJson)
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: acct.Access, SecretAccessKey: acct.Secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	if resp.StatusCode > 300 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return fmt.Errorf(string(body))
+	}
+
+	return nil
+}
+
+func (s *S3be) DeleteUser(ctx context.Context, _ auth.IAMService, access string) error {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		return fmt.Errorf("invalid account in context")
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/delete-user?access=%v", s.endpoint, access), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: acct.Access, SecretAccessKey: acct.Secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	if resp.StatusCode > 300 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return fmt.Errorf(string(body))
+	}
+
+	return nil
+}
+
+func (s *S3be) ListUsers(ctx context.Context, _ auth.IAMService) ([]auth.Account, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		return []auth.Account{}, fmt.Errorf("invalid account in context")
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-users", s.endpoint), nil)
+	if err != nil {
+		return []auth.Account{}, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: acct.Access, SecretAccessKey: acct.Secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		return []auth.Account{}, fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return []auth.Account{}, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []auth.Account{}, err
+	}
+	defer resp.Body.Close()
+
+	var accs []auth.Account
+	if err := json.Unmarshal(body, &accs); err != nil {
+		return []auth.Account{}, err
+	}
+
+	return accs, nil
+}
+
+func (s *S3be) ChangeBucketOwner(ctx context.Context, _ auth.IAMService, bucket, newOwner string) error {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		return fmt.Errorf("invalid account in context")
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, newOwner), nil)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: acct.Access, SecretAccessKey: acct.Secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	if resp.StatusCode > 300 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return fmt.Errorf(string(body))
+	}
+
+	return nil
+}
+
+func (s *S3be) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		return []s3response.Bucket{}, fmt.Errorf("invalid account in context")
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", s.endpoint), nil)
+	if err != nil {
+		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: acct.Access, SecretAccessKey: acct.Secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		return []s3response.Bucket{}, fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []s3response.Bucket{}, err
+	}
+	defer resp.Body.Close()
+
+	var buckets []s3response.Bucket
+	if err := json.Unmarshal(body, &buckets); err != nil {
+		return []s3response.Bucket{}, err
+	}
+
+	return buckets, nil
 }
 
 func handleError(err error) error {
