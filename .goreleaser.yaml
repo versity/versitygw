@@ -9,6 +9,10 @@ builds:
       # windows is untested, we can start doing windows releases
       # if someone is interested in taking on testing
       # - windows
+    env:
+      # disable cgo to fix glibc issues: https://github.com/golang/go/issues/58550
+      # once we need to enable this, we will need to do per distro releases
+      - CGO_ENABLED=0
     main: ./cmd/versitygw
     binary: ./cmd/versitygw
     id: versitygw
