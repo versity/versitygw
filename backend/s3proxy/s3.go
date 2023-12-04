@@ -35,6 +35,8 @@ import (
 type S3be struct {
 	backend.BackendUnsupported
 
+	access          string
+	secret          string
 	endpoint        string
 	awsRegion       string
 	disableChecksum bool
@@ -42,8 +44,10 @@ type S3be struct {
 	debug           bool
 }
 
-func New(endpoint, region string, disableChecksum, sslSkipVerify, debug bool) *S3be {
+func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) *S3be {
 	return &S3be{
+		access:          access,
+		secret:          secret,
 		endpoint:        endpoint,
 		awsRegion:       region,
 		disableChecksum: disableChecksum,

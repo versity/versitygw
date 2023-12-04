@@ -20,6 +20,8 @@ import (
 )
 
 var (
+	s3proxyAccess          string
+	s3proxySecret          string
 	s3proxyEndpoint        string
 	s3proxyRegion          string
 	s3proxyDisableChecksum bool
@@ -35,6 +37,22 @@ func s3Command() *cli.Command {
 to an s3 storage backend service.`,
 		Action: runS3,
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:        "access",
+				Usage:       "s3 proxy server access key id",
+				Value:       "",
+				Required:    true,
+				Destination: &s3proxyAccess,
+				Aliases:     []string{"a"},
+			},
+			&cli.StringFlag{
+				Name:        "secret",
+				Usage:       "s3 proxy server secret access key",
+				Value:       "",
+				Required:    true,
+				Destination: &s3proxySecret,
+				Aliases:     []string{"s"},
+			},
 			&cli.StringFlag{
 				Name:        "endpoint",
 				Usage:       "s3 service endpoint, default AWS if not specified",
@@ -70,7 +88,7 @@ to an s3 storage backend service.`,
 }
 
 func runS3(ctx *cli.Context) error {
-	be := s3proxy.New(s3proxyEndpoint, s3proxyRegion,
+	be := s3proxy.New(s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
 		s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
 	return runGateway(ctx.Context, be)
 }
