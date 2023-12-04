@@ -17,7 +17,6 @@ package s3proxy
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,16 +25,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
-	"github.com/versity/versitygw/auth"
 )
 
 func (s *S3be) getClientFromCtx(ctx context.Context) (*s3.Client, error) {
-	acct, ok := ctx.Value("account").(auth.Account)
-	if !ok {
-		return nil, fmt.Errorf("invalid account in context")
-	}
-
-	cfg, err := s.getConfig(ctx, acct.Access, acct.Secret)
+	cfg, err := s.getConfig(ctx, s.access, s.secret)
 	if err != nil {
 		return nil, err
 	}
