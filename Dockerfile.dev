@@ -7,7 +7,11 @@ RUN go mod download
 
 COPY ./ ./
 
-RUN mkdir /tmp/vgw
+ARG IAM_DIR=/tmp/vgw
+ARG SETUP_DIR=/tmp/vgw
+
+RUN mkdir -p $IAM_DIR
+RUN mkdir -p $SETUP_DIR
 
 RUN go get github.com/githubnemo/CompileDaemon
 RUN go install github.com/githubnemo/CompileDaemon
