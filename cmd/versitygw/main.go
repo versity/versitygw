@@ -342,6 +342,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	var iam auth.IAMService
 
 	if s3proxyEndpoint != "" {
+		rootUserAccess = s3proxyAccess
+		rootUserSecret = s3proxySecret
 		iam = auth.NewProxy(s3proxyAccess, s3proxySecret, s3proxyRegion, s3proxyEndpoint)
 	} else {
 		var err error

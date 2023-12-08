@@ -88,8 +88,12 @@ func (s *IAMServiceProxy) CreateAccount(account Account) error {
 	return nil
 }
 
-func (IAMServiceProxy) GetUserAccount(access string) (Account, error) {
-	return Account{}, nil
+func (s *IAMServiceProxy) GetUserAccount(access string) (Account, error) {
+	return Account{
+		Access: s.access,
+		Secret: s.secret,
+		Role:   "admin",
+	}, nil
 }
 
 func (s *IAMServiceProxy) DeleteUserAccount(access string) error {
