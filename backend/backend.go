@@ -15,6 +15,7 @@
 package backend
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
+	"github.com/versity/versitygw/s3select"
 )
 
 //go:generate moq -out ../s3api/controllers/backend_moq_test.go -pkg controllers . Backend
@@ -61,7 +63,7 @@ type Backend interface {
 
 	// special case object operations
 	RestoreObject(context.Context, *s3.RestoreObjectInput) error
-	SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error)
+	SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer)
 
 	// object tags operations
 	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
@@ -162,8 +164,19 @@ func (BackendUnsupported) PutObjectAcl(context.Context, *s3.PutObjectAclInput) e
 func (BackendUnsupported) RestoreObject(context.Context, *s3.RestoreObjectInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) SelectObjectContent(context.Context, *s3.SelectObjectContentInput) (s3response.SelectObjectContentResult, error) {
-	return s3response.SelectObjectContentResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer) {
+	return func(w *bufio.Writer) {
+		var getProgress s3select.GetProgress
+		progress := input.RequestProgress
+		if progress != nil && *progress.Enabled {
+			getProgress = func() (bytesScanned int64, bytesProcessed int64) {
+				return -1, -1
+			}
+		}
+		mh := s3select.NewMessageHandler(ctx, w, getProgress)
+		apiErr := s3err.GetAPIError(s3err.ErrNotImplemented)
+		mh.FinishWithError(apiErr.Code, apiErr.Description)
+	}
 }
 
 func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {

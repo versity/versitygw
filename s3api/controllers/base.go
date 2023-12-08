@@ -906,7 +906,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "SelectObjectContent", BucketOwner: parsedAcl.Owner})
 		}
 
-		res, err := c.be.SelectObjectContent(ctx.Context(), &s3.SelectObjectContentInput{
+		sw := c.be.SelectObjectContent(ctx.Context(), &s3.SelectObjectContentInput{
 			Bucket:              &bucket,
 			Key:                 &key,
 			Expression:          payload.Expression,
@@ -916,7 +916,10 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			RequestProgress:     payload.RequestProgress,
 			ScanRange:           payload.ScanRange,
 		})
-		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "SelectObjectContent", BucketOwner: parsedAcl.Owner})
+
+		ctx.Context().SetBodyStreamWriter(sw)
+
+		return nil
 	}
 
 	if uploadId != "" {
