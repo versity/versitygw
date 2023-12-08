@@ -1,0 +1,23 @@
+version: "3"
+services:
+  posix:
+    build: 
+      context: .
+      dockerfile: ./Dockerfile.dev
+      args:
+        - IAM_DIR=${IAM_DIR}
+        - SETUP_DIR=${SETUP_DIR}
+    volumes:
+      - ./:/app
+    ports:
+      - "${POSIX_PORT}:${POSIX_PORT}"
+    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -p :$POSIX_PORT -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR posix $SETUP_DIR"]
+  proxy:
+    build: 
+      context: .
+      dockerfile: ./Dockerfile.dev
+    volumes:
+      - ./:/app
+    ports:
+      - "${PROXY_PORT}:${PROXY_PORT}"
+    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY -p :$PROXY_PORT s3 --endpoint http://posix:$POSIX_PORT"]

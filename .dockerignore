@@ -1,0 +1,46 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+cmd/versitygw/versitygw
+/versitygw
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# ignore IntelliJ directories
+.idea
+
+# auto generated VERSION file
+VERSION
+
+# build output
+/versitygw.spec
+/versitygw.spec.in
+*.tar
+*.tar.gz
+**/rand.data
+/profile.txt
+
+dist/
+
+# Release config files
+/.github
+
+# Docker configuration files
+*Dockerfile
+/docker-compose.yml
+
+# read files
+/LICENSE
+/NOTICE
+/CODE_OF_CONDUCT.md
+/README.md
