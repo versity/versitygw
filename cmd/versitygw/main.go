@@ -339,22 +339,31 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
 	}
 
-	iam, err := auth.New(&auth.Opts{
-		Dir:            iamDir,
-		LDAPServerURL:  ldapURL,
-		LDAPBindDN:     ldapBindDN,
-		LDAPPassword:   ldapPassword,
-		LDAPQueryBase:  ldapQueryBase,
-		LDAPObjClasses: ldapObjClasses,
-		LDAPAccessAtr:  ldapAccessAtr,
-		LDAPSecretAtr:  ldapSecAtr,
-		LDAPRoleAtr:    ldapRoleAtr,
-		CacheDisable:   iamCacheDisable,
-		CacheTTL:       iamCacheTTL,
-		CachePrune:     iamCachePrune,
-	})
-	if err != nil {
-		return fmt.Errorf("setup iam: %w", err)
+	var iam auth.IAMService
+
+	if s3proxyEndpoint != "" {
+		rootUserAccess = s3proxyAccess
+		rootUserSecret = s3proxySecret
+		iam = auth.NewProxy(s3proxyAccess, s3proxySecret, s3proxyRegion, s3proxyEndpoint)
+	} else {
+		var err error
+		iam, err = auth.New(&auth.Opts{
+			Dir:            iamDir,
+			LDAPServerURL:  ldapURL,
+			LDAPBindDN:     ldapBindDN,
+			LDAPPassword:   ldapPassword,
+			LDAPQueryBase:  ldapQueryBase,
+			LDAPObjClasses: ldapObjClasses,
+			LDAPAccessAtr:  ldapAccessAtr,
+			LDAPSecretAtr:  ldapSecAtr,
+			LDAPRoleAtr:    ldapRoleAtr,
+			CacheDisable:   iamCacheDisable,
+			CacheTTL:       iamCacheTTL,
+			CachePrune:     iamCachePrune,
+		})
+		if err != nil {
+			return fmt.Errorf("setup iam: %w", err)
+		}
 	}
 
 	logger, err := s3log.InitLogger(&s3log.LogConfig{
