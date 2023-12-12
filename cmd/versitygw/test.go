@@ -67,7 +67,7 @@ func initTestFlags() []cli.Flag {
 }
 
 func initTestCommands() []*cli.Command {
-	return []*cli.Command{
+	return append([]*cli.Command{
 		{
 			Name:        "full-flow",
 			Usage:       "Tests the full flow of gateway.",
@@ -236,7 +236,7 @@ func initTestCommands() []*cli.Command {
 				return integration.TestReqPerSec(s3conf, totalReqs, dstBucket)
 			},
 		},
-	}
+	}, extractIntTests()...)
 }
 
 type testFunc func(*integration.S3Conf)
@@ -263,4 +263,30 @@ func getAction(tf testFunc) func(*cli.Context) error {
 		}
 		return nil
 	}
+}
+
+func extractIntTests() (commands []*cli.Command) {
+	tests := integration.GetIntTests()
+	for key, val := range tests {
+		commands = append(commands, &cli.Command{
+			Name:  key,
+			Usage: fmt.Sprintf("Runs %v integration test", key),
+			Action: func(ctx *cli.Context) error {
+				opts := []integration.Option{
+					integration.WithAccess(awsID),
+					integration.WithSecret(awsSecret),
+					integration.WithRegion(region),
+					integration.WithEndpoint(endpoint),
+				}
+				if debug {
+					opts = append(opts, integration.WithDebug())
+				}
+
+				s := integration.NewS3Conf(opts...)
+				err := val(s)
+				return err
+			},
+		})
+	}
+	return
 }
