@@ -63,7 +63,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
-	maxParts := int32(ctx.QueryInt("max-parts", 0))
+	maxParts := int32(ctx.QueryInt("max-parts", -1))
 	partNumberMarker := ctx.Query("part-number-marker")
 	acceptRange := ctx.Get("Range")
 	acct := ctx.Locals("account").(auth.Account)
@@ -92,7 +92,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if uploadId != "" {
-		if maxParts < 0 || (maxParts == 0 && ctx.Query("max-parts") != "") {
+		if (maxParts < 0 && ctx.Request().URI().QueryArgs().Has("max-parts")) || maxParts > 2147483647 {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidMaxParts), &MetaOpts{Logger: c.logger, Action: "ListParts", BucketOwner: parsedAcl.Owner})
 		}
 		if partNumberMarker != "" {
@@ -105,13 +105,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		if err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "ListParts", BucketOwner: parsedAcl.Owner})
 		}
+		var mxParts *int32
+		if ctx.Request().URI().QueryArgs().Has("max-parts") {
+			mxParts = &maxParts
+		}
 
 		res, err := c.be.ListParts(ctx.Context(), &s3.ListPartsInput{
 			Bucket:           &bucket,
 			Key:              &key,
 			UploadId:         &uploadId,
 			PartNumberMarker: &partNumberMarker,
-			MaxParts:         &maxParts,
+			MaxParts:         mxParts,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListParts", BucketOwner: parsedAcl.Owner})
 	}

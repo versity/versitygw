@@ -25,6 +25,9 @@ go.work
 # ignore IntelliJ directories
 .idea
 
+# ignore VS code directories
+.vscode
+
 # auto generated VERSION file
 VERSION
 
