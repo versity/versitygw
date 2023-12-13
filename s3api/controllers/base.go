@@ -92,7 +92,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if uploadId != "" {
-		if (maxParts < 0 && ctx.Request().URI().QueryArgs().Has("max-parts")) || maxParts > 2147483647 {
+		if maxParts < 0 && ctx.Request().URI().QueryArgs().Has("max-parts") {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidMaxParts), &MetaOpts{Logger: c.logger, Action: "ListParts", BucketOwner: parsedAcl.Owner})
 		}
 		if partNumberMarker != "" {
