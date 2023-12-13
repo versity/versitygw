@@ -595,20 +595,21 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "CopyObject", BucketOwner: parsedAcl.Owner})
 		}
 
-		var mtime time.Time
-		var err error
+		var mtime *time.Time
+		var umtime *time.Time
 		if copySrcModifSince != "" {
-			mtime, err = time.Parse(iso8601Format, copySrcModifSince)
+			tm, err := time.Parse(iso8601Format, copySrcModifSince)
 			if err != nil {
 				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidCopySource), &MetaOpts{Logger: c.logger, Action: "CopyObject", BucketOwner: parsedAcl.Owner})
 			}
+			mtime = &tm
 		}
-		var umtime time.Time
-		if copySrcModifSince != "" {
-			mtime, err = time.Parse(iso8601Format, copySrcUnmodifSince)
+		if copySrcUnmodifSince != "" {
+			tm, err := time.Parse(iso8601Format, copySrcUnmodifSince)
 			if err != nil {
 				return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidCopySource), &MetaOpts{Logger: c.logger, Action: "CopyObject", BucketOwner: parsedAcl.Owner})
 			}
+			umtime = &tm
 		}
 
 		metadata := utils.GetUserMetaData(&ctx.Request().Header)
@@ -619,8 +620,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			CopySource:                  &copySource,
 			CopySourceIfMatch:           &copySrcIfMatch,
 			CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
-			CopySourceIfModifiedSince:   &mtime,
-			CopySourceIfUnmodifiedSince: &umtime,
+			CopySourceIfModifiedSince:   mtime,
+			CopySourceIfUnmodifiedSince: umtime,
 			ExpectedBucketOwner:         &acct.Access,
 			Metadata:                    metadata,
 		})
