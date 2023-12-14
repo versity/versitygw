@@ -409,6 +409,10 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 		return s3response.DeleteObjectsResult{}, err
 	}
 
+	if len(input.Delete.Objects) == 0 {
+		input.Delete.Objects = []types.ObjectIdentifier{}
+	}
+
 	output, err := client.DeleteObjects(ctx, input)
 	err = handleError(err)
 	if err != nil {
