@@ -468,10 +468,11 @@ func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) erro
 	}
 
 	for _, el := range acl.Grantees {
+		acc := el.Access
 		input.AccessControlPolicy.Grants = append(input.AccessControlPolicy.Grants, types.Grant{
 			Permission: el.Permission,
 			Grantee: &types.Grantee{
-				ID:   &el.Access,
+				ID:   &acc,
 				Type: types.TypeCanonicalUser,
 			},
 		})
