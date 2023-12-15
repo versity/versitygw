@@ -409,6 +409,10 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 		return s3response.DeleteObjectsResult{}, err
 	}
 
+	if len(input.Delete.Objects) == 0 {
+		input.Delete.Objects = []types.ObjectIdentifier{}
+	}
+
 	output, err := client.DeleteObjects(ctx, input)
 	err = handleError(err)
 	if err != nil {
@@ -468,10 +472,11 @@ func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) erro
 	}
 
 	for _, el := range acl.Grantees {
+		acc := el.Access
 		input.AccessControlPolicy.Grants = append(input.AccessControlPolicy.Grants, types.Grant{
 			Permission: el.Permission,
 			Grantee: &types.Grantee{
-				ID:   &el.Access,
+				ID:   &acc,
 				Type: types.TypeCanonicalUser,
 			},
 		})
