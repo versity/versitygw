@@ -289,9 +289,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:      "versitygw",
-		ServerHeader: "VERSITYGW",
-		BodyLimit:    int(blimit),
+		AppName:           "versitygw",
+		ServerHeader:      "VERSITYGW",
+		BodyLimit:         int(blimit),
+		StreamRequestBody: true,
 	})
 
 	var opts []s3api.Option

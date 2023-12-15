@@ -17,6 +17,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -516,7 +517,14 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "UploadPart", BucketOwner: parsedAcl.Owner})
 		}
 
-		body := io.ReadSeeker(bytes.NewReader([]byte(ctx.Body())))
+		var body io.Reader
+		bodyi := ctx.Locals("body-reader")
+		if bodyi != nil {
+			body = bodyi.(io.Reader)
+		} else {
+			body = bytes.NewReader([]byte{})
+		}
+
 		ctx.Locals("logReqBody", false)
 		etag, err := c.be.UploadPart(ctx.Context(), &s3.UploadPartInput{
 			Bucket:        &bucket,
@@ -655,13 +663,21 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "PutObject", BucketOwner: parsedAcl.Owner})
 	}
 
+	var body io.Reader
+	bodyi := ctx.Locals("body-reader")
+	if bodyi != nil {
+		body = bodyi.(io.Reader)
+	} else {
+		body = bytes.NewReader([]byte{})
+	}
+
 	ctx.Locals("logReqBody", false)
 	etag, err := c.be.PutObject(ctx.Context(), &s3.PutObjectInput{
 		Bucket:        &bucket,
 		Key:           &keyStart,
 		ContentLength: &contentLength,
 		Metadata:      metadata,
-		Body:          bytes.NewReader(ctx.Request().Body()),
+		Body:          body,
 		Tagging:       &tagging,
 	})
 	ctx.Response().Header.Set("ETag", etag)
@@ -1001,10 +1017,10 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 		})
 	}
 	if err != nil {
-		serr, ok := err.(s3err.APIError)
-		if ok {
-			ctx.Status(serr.HTTPStatusCode)
-			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
+		var apierr s3err.APIError
+		if errors.As(err, &apierr) {
+			ctx.Status(apierr.HTTPStatusCode)
+			return ctx.Send(s3err.GetAPIErrorResponse(apierr, "", "", ""))
 		}
 
 		log.Printf("Internal Error, %v", err)

@@ -447,7 +447,7 @@ func Authentication_invalid_signed_headers(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -1085,6 +1085,17 @@ func PutObject_success(s *S3Conf) error {
 			return err
 		}
 		return nil
+	})
+}
+
+func PutObject_invalid_credentials(s *S3Conf) error {
+	testName := "PutObject_invalid_credentials"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		newconf := *s
+		newconf.awsSecret = newconf.awsSecret + "badpassword"
+		client := s3.NewFromConfig(newconf.Config())
+		err := putObjects(client, []string{"my-obj"}, bucket)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 	})
 }
 

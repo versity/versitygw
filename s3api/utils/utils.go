@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -49,10 +50,16 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 	return
 }
 
-func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Request, error) {
+func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
 	req := ctx.Request()
+	var body io.Reader
+	if IsBigDataAction(ctx) {
+		body = req.BodyStream()
+	} else {
+		body = bytes.NewReader(req.Body())
+	}
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), string(ctx.Context().RequestURI()), bytes.NewReader(req.Body()))
+	httpReq, err := http.NewRequest(string(req.Header.Method()), string(ctx.Context().RequestURI()), body)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
@@ -69,6 +76,8 @@ func CreateHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string) (*http.Reques
 	// If content length is non 0, then the header will be included
 	if !includeHeader("Content-Length", signedHdrs) {
 		httpReq.ContentLength = 0
+	} else {
+		httpReq.ContentLength = contentLength
 	}
 
 	// Set the Host header
@@ -126,6 +135,15 @@ func IsValidBucketName(bucket string) bool {
 func includeHeader(hdr string, signedHdrs []string) bool {
 	for _, shdr := range signedHdrs {
 		if strings.EqualFold(hdr, shdr) {
+			return true
+		}
+	}
+	return false
+}
+
+func IsBigDataAction(ctx *fiber.Ctx) bool {
+	if ctx.Method() == http.MethodPut && len(strings.Split(ctx.Path(), "/")) >= 3 {
+		if !ctx.Request().URI().QueryArgs().Has("tagging") && ctx.Get("X-Amz-Copy-Source") == "" && !ctx.Request().URI().QueryArgs().Has("acl") {
 			return true
 		}
 	}

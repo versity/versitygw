@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # make temp dirs
+rm -rf /tmp/gw
 mkdir /tmp/gw
 rm -rf /tmp/covdata
 mkdir /tmp/covdata
