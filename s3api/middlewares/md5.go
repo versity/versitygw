@@ -16,10 +16,11 @@ package middlewares
 
 import (
 	"crypto/md5"
-	"encoding/base64"
+	"io"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
 )
@@ -31,8 +32,16 @@ func VerifyMD5Body(logger s3log.AuditLogger) fiber.Handler {
 			return ctx.Next()
 		}
 
+		if utils.IsBigDataAction(ctx) {
+			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+				r, _ = utils.NewHashReader(r, incomingSum, utils.HashTypeMd5)
+				return r
+			})
+			return ctx.Next()
+		}
+
 		sum := md5.Sum(ctx.Body())
-		calculatedSum := base64.StdEncoding.EncodeToString(sum[:])
+		calculatedSum := utils.Md5SumString(sum[:])
 
 		if incomingSum != calculatedSum {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest), &controllers.MetaOpts{Logger: logger})

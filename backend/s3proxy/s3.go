@@ -270,7 +270,11 @@ func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag 
 		return "", err
 	}
 
-	output, err := client.UploadPart(ctx, input)
+	// streaming backend is not seekable,
+	// use unsigned payload for streaming ops
+	output, err := client.UploadPart(ctx, input, s3.WithAPIOptions(
+		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
+	))
 	err = handleError(err)
 	if err != nil {
 		return "", err
@@ -303,7 +307,11 @@ func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string,
 		return "", err
 	}
 
-	output, err := client.PutObject(ctx, input)
+	// streaming backend is not seekable,
+	// use unsigned payload for streaming ops
+	output, err := client.PutObject(ctx, input, s3.WithAPIOptions(
+		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
+	))
 	err = handleError(err)
 	if err != nil {
 		return "", err
