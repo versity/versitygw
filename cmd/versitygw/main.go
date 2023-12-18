@@ -51,6 +51,7 @@ var (
 	s3IamAccess, s3IamSecret               string
 	s3IamRegion, s3IamBucket               string
 	s3IamEndpoint                          string
+	s3IamSslNoVerify, s3IamDebug           bool
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
@@ -290,6 +291,16 @@ func initFlags() []cli.Flag {
 			Destination: &s3IamEndpoint,
 		},
 		&cli.BoolFlag{
+			Name:        "s3-iam-noverify",
+			Usage:       "s3 IAM disable ssl verification",
+			Destination: &s3IamSslNoVerify,
+		},
+		&cli.BoolFlag{
+			Name:        "s3-iam-debug",
+			Usage:       "s3 IAM debug output",
+			Destination: &s3IamDebug,
+		},
+		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
 			Destination: &iamCacheDisable,
@@ -370,23 +381,25 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	iam, err := auth.New(&auth.Opts{
-		Dir:            iamDir,
-		LDAPServerURL:  ldapURL,
-		LDAPBindDN:     ldapBindDN,
-		LDAPPassword:   ldapPassword,
-		LDAPQueryBase:  ldapQueryBase,
-		LDAPObjClasses: ldapObjClasses,
-		LDAPAccessAtr:  ldapAccessAtr,
-		LDAPSecretAtr:  ldapSecAtr,
-		LDAPRoleAtr:    ldapRoleAtr,
-		S3Access:       s3IamAccess,
-		S3Secret:       s3IamSecret,
-		S3Region:       s3IamRegion,
-		S3Bucket:       s3IamBucket,
-		S3Endpoint:     s3IamEndpoint,
-		CacheDisable:   iamCacheDisable,
-		CacheTTL:       iamCacheTTL,
-		CachePrune:     iamCachePrune,
+		Dir:                iamDir,
+		LDAPServerURL:      ldapURL,
+		LDAPBindDN:         ldapBindDN,
+		LDAPPassword:       ldapPassword,
+		LDAPQueryBase:      ldapQueryBase,
+		LDAPObjClasses:     ldapObjClasses,
+		LDAPAccessAtr:      ldapAccessAtr,
+		LDAPSecretAtr:      ldapSecAtr,
+		LDAPRoleAtr:        ldapRoleAtr,
+		S3Access:           s3IamAccess,
+		S3Secret:           s3IamSecret,
+		S3Region:           s3IamRegion,
+		S3Bucket:           s3IamBucket,
+		S3Endpoint:         s3IamEndpoint,
+		S3DisableSSlVerfiy: s3IamSslNoVerify,
+		S3Debug:            s3IamDebug,
+		CacheDisable:       iamCacheDisable,
+		CacheTTL:           iamCacheTTL,
+		CachePrune:         iamCachePrune,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)
