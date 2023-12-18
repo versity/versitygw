@@ -31,7 +31,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/stretchr/testify v1.8.1 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 )
 
 require (
