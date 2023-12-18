@@ -38,7 +38,7 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-type S3be struct {
+type S3Proxy struct {
 	backend.BackendUnsupported
 
 	access          string
@@ -50,8 +50,8 @@ type S3be struct {
 	debug           bool
 }
 
-func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) *S3be {
-	return &S3be{
+func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) *S3Proxy {
+	return &S3Proxy{
 		access:          access,
 		secret:          secret,
 		endpoint:        endpoint,
@@ -62,7 +62,7 @@ func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify
 	}
 }
 
-func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{}, err
@@ -92,7 +92,7 @@ func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3r
 	}, nil
 }
 
-func (s *S3be) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+func (s *S3Proxy) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -104,7 +104,7 @@ func (s *S3be) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.H
 	return out, err
 }
 
-func (s *S3be) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
+func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -114,7 +114,7 @@ func (s *S3be) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) er
 	return handleError(err)
 }
 
-func (s *S3be) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
+func (s *S3Proxy) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func (s *S3be) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) er
 	return handleError(err)
 }
 
-func (s *S3be) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *S3be) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultip
 	return out, err
 }
 
-func (s *S3be) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (s *S3be) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMu
 	return out, err
 }
 
-func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -157,7 +157,7 @@ func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipar
 	return err
 }
 
-func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return s3response.ListMultipartUploadsResult{}, err
@@ -210,7 +210,7 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 	}, nil
 }
 
-func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return s3response.ListPartsResult{}, err
@@ -264,7 +264,7 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	}, nil
 }
 
-func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
+func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return "", err
@@ -283,7 +283,7 @@ func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag 
 	return *output.ETag, nil
 }
 
-func (s *S3be) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return s3response.CopyObjectResult{}, err
@@ -301,7 +301,7 @@ func (s *S3be) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput
 	}, nil
 }
 
-func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string, error) {
+func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (string, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return "", err
@@ -320,7 +320,7 @@ func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string,
 	return *output.ETag, nil
 }
 
-func (s *S3be) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -332,7 +332,7 @@ func (s *S3be) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.H
 	return out, err
 }
 
-func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
+func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -353,7 +353,7 @@ func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Wri
 	return output, nil
 }
 
-func (s *S3be) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
+func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -365,7 +365,7 @@ func (s *S3be) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttri
 	return out, err
 }
 
-func (s *S3be) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -377,7 +377,7 @@ func (s *S3be) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.C
 	return out, err
 }
 
-func (s *S3be) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -389,7 +389,7 @@ func (s *S3be) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3
 	return out, err
 }
 
-func (s *S3be) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -401,7 +401,7 @@ func (s *S3be) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) 
 	return out, err
 }
 
-func (s *S3be) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
+func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -411,7 +411,7 @@ func (s *S3be) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) er
 	return handleError(err)
 }
 
-func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return s3response.DeleteObjectsResult{}, err
@@ -433,7 +433,7 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 	}, nil
 }
 
-func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -458,7 +458,7 @@ func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([
 	return json.Marshal(acl)
 }
 
-func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
+func (s S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -494,7 +494,7 @@ func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) erro
 	return handleError(err)
 }
 
-func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
+func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -518,7 +518,7 @@ func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags
 	return handleError(err)
 }
 
-func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -541,7 +541,7 @@ func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map
 	return tags, nil
 }
 
-func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
 	client, err := s.getClientFromCtx(ctx)
 	if err != nil {
 		return err
@@ -554,7 +554,7 @@ func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) e
 	return handleError(err)
 }
 
-func (s *S3be) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
+func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, newOwner), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
@@ -591,7 +591,7 @@ func (s *S3be) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) e
 	return nil
 }
 
-func (s *S3be) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
+func (s *S3Proxy) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", s.endpoint), nil)
 	if err != nil {
 		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)
