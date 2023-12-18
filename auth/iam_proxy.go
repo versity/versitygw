@@ -28,25 +28,43 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 )
 
-type IAMServiceProxy struct {
+type IAMServiceS3 struct {
 	access   string
 	secret   string
 	region   string
+	bucket   string
 	endpoint string
 }
 
-var _ IAMService = &IAMServiceProxy{}
+var _ IAMService = &IAMServiceS3{}
 
-func NewProxy(access, secret, region, endpoint string) IAMService {
-	return &IAMServiceProxy{
+func NewS3(access, secret, region, bucket, endpoint string) (IAMService, error) {
+	if access == "" {
+		return nil, fmt.Errorf("must provide s3 IAM service access key")
+	}
+	if secret == "" {
+		return nil, fmt.Errorf("must provide s3 IAM service secret key")
+	}
+	if region == "" {
+		return nil, fmt.Errorf("must provide s3 IAM service region")
+	}
+	if bucket == "" {
+		return nil, fmt.Errorf("must provide s3 IAM service bucket")
+	}
+	if endpoint == "" {
+		return nil, fmt.Errorf("must provide s3 IAM service endpoint")
+	}
+
+	return &IAMServiceS3{
 		access:   access,
 		secret:   secret,
 		region:   region,
+		bucket:   bucket,
 		endpoint: endpoint,
-	}
+	}, nil
 }
 
-func (s *IAMServiceProxy) CreateAccount(account Account) error {
+func (s *IAMServiceS3) CreateAccount(account Account) error {
 	accJson, err := json.Marshal(account)
 	if err != nil {
 		return fmt.Errorf("failed to parse user data: %w", err)
@@ -88,7 +106,7 @@ func (s *IAMServiceProxy) CreateAccount(account Account) error {
 	return nil
 }
 
-func (s *IAMServiceProxy) GetUserAccount(access string) (Account, error) {
+func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
 	return Account{
 		Access: s.access,
 		Secret: s.secret,
@@ -96,7 +114,7 @@ func (s *IAMServiceProxy) GetUserAccount(access string) (Account, error) {
 	}, nil
 }
 
-func (s *IAMServiceProxy) DeleteUserAccount(access string) error {
+func (s *IAMServiceS3) DeleteUserAccount(access string) error {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/delete-user?access=%v", s.endpoint, access), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
@@ -133,7 +151,7 @@ func (s *IAMServiceProxy) DeleteUserAccount(access string) error {
 	return nil
 }
 
-func (s *IAMServiceProxy) ListUserAccounts() ([]Account, error) {
+func (s *IAMServiceS3) ListUserAccounts() ([]Account, error) {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-users", s.endpoint), nil)
 	if err != nil {
 		return []Account{}, fmt.Errorf("failed to send the request: %w", err)
@@ -172,6 +190,6 @@ func (s *IAMServiceProxy) ListUserAccounts() ([]Account, error) {
 	return accs, nil
 }
 
-func (IAMServiceProxy) Shutdown() error {
+func (IAMServiceS3) Shutdown() error {
 	return nil
 }
