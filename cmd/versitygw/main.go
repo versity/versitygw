@@ -48,6 +48,10 @@ var (
 	ldapURL, ldapBindDN, ldapPassword      string
 	ldapQueryBase, ldapObjClasses          string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
+	s3IamAccess, s3IamSecret               string
+	s3IamRegion, s3IamBucket               string
+	s3IamEndpoint                          string
+	s3IamSslNoVerify, s3IamDebug           bool
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
@@ -260,6 +264,42 @@ func initFlags() []cli.Flag {
 			Usage:       "ldap server user role attribute name",
 			Destination: &ldapRoleAtr,
 		},
+		&cli.StringFlag{
+			Name:        "s3-iam-access",
+			Usage:       "s3 IAM access key",
+			Destination: &s3IamAccess,
+		},
+		&cli.StringFlag{
+			Name:        "s3-iam-secret",
+			Usage:       "s3 IAM secret key",
+			Destination: &s3IamSecret,
+		},
+		&cli.StringFlag{
+			Name:        "s3-iam-region",
+			Usage:       "s3 IAM region",
+			Destination: &s3IamRegion,
+			Value:       "us-east-1",
+		},
+		&cli.StringFlag{
+			Name:        "s3-iam-bucket",
+			Usage:       "s3 IAM bucket",
+			Destination: &s3IamBucket,
+		},
+		&cli.StringFlag{
+			Name:        "s3-iam-endpoint",
+			Usage:       "s3 IAM endpoint",
+			Destination: &s3IamEndpoint,
+		},
+		&cli.BoolFlag{
+			Name:        "s3-iam-noverify",
+			Usage:       "s3 IAM disable ssl verification",
+			Destination: &s3IamSslNoVerify,
+		},
+		&cli.BoolFlag{
+			Name:        "s3-iam-debug",
+			Usage:       "s3 IAM debug output",
+			Destination: &s3IamDebug,
+		},
 		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
@@ -340,31 +380,29 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
 	}
 
-	var iam auth.IAMService
-
-	if s3proxyEndpoint != "" {
-		rootUserAccess = s3proxyAccess
-		rootUserSecret = s3proxySecret
-		iam = auth.NewProxy(s3proxyAccess, s3proxySecret, s3proxyRegion, s3proxyEndpoint)
-	} else {
-		var err error
-		iam, err = auth.New(&auth.Opts{
-			Dir:            iamDir,
-			LDAPServerURL:  ldapURL,
-			LDAPBindDN:     ldapBindDN,
-			LDAPPassword:   ldapPassword,
-			LDAPQueryBase:  ldapQueryBase,
-			LDAPObjClasses: ldapObjClasses,
-			LDAPAccessAtr:  ldapAccessAtr,
-			LDAPSecretAtr:  ldapSecAtr,
-			LDAPRoleAtr:    ldapRoleAtr,
-			CacheDisable:   iamCacheDisable,
-			CacheTTL:       iamCacheTTL,
-			CachePrune:     iamCachePrune,
-		})
-		if err != nil {
-			return fmt.Errorf("setup iam: %w", err)
-		}
+	iam, err := auth.New(&auth.Opts{
+		Dir:                iamDir,
+		LDAPServerURL:      ldapURL,
+		LDAPBindDN:         ldapBindDN,
+		LDAPPassword:       ldapPassword,
+		LDAPQueryBase:      ldapQueryBase,
+		LDAPObjClasses:     ldapObjClasses,
+		LDAPAccessAtr:      ldapAccessAtr,
+		LDAPSecretAtr:      ldapSecAtr,
+		LDAPRoleAtr:        ldapRoleAtr,
+		S3Access:           s3IamAccess,
+		S3Secret:           s3IamSecret,
+		S3Region:           s3IamRegion,
+		S3Bucket:           s3IamBucket,
+		S3Endpoint:         s3IamEndpoint,
+		S3DisableSSlVerfiy: s3IamSslNoVerify,
+		S3Debug:            s3IamDebug,
+		CacheDisable:       iamCacheDisable,
+		CacheTTL:           iamCacheTTL,
+		CachePrune:         iamCachePrune,
+	})
+	if err != nil {
+		return fmt.Errorf("setup iam: %w", err)
 	}
 
 	logger, err := s3log.InitLogger(&s3log.LogConfig{
