@@ -73,7 +73,7 @@ type ListMultipartUploadsResult struct {
 	CommonPrefixes []CommonPrefix
 }
 
-// Upload desribes in progress multipart upload
+// Upload describes in progress multipart upload
 type Upload struct {
 	Key          string
 	UploadID     string `xml:"UploadId"`
