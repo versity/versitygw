@@ -15,6 +15,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend/s3proxy"
 )
@@ -88,7 +90,10 @@ to an s3 storage backend service.`,
 }
 
 func runS3(ctx *cli.Context) error {
-	be := s3proxy.New(s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
+	be, err := s3proxy.New(s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
 		s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
+	if err != nil {
+		return fmt.Errorf("init s3 backend: %w", err)
+	}
 	return runGateway(ctx.Context, be)
 }

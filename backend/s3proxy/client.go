@@ -27,7 +27,7 @@ import (
 	"github.com/aws/smithy-go/middleware"
 )
 
-func (s *S3Proxy) getClientFromCtx(ctx context.Context) (*s3.Client, error) {
+func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 	cfg, err := s.getConfig(ctx, s.access, s.secret)
 	if err != nil {
 		return nil, err
