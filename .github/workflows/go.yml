@@ -56,3 +56,25 @@ jobs:
       - name: Build for ${{ matrix.os }}/${{ matrix.arch }}
         run: |
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o versitygw-${{ matrix.os }}-${{ matrix.arch }} cmd/versitygw/*.go
+
+  verify-plugins:
+    name: Verify Plugin Builds
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+
+      - name: Build all plugins
+        run: |
+          for dir in plugins/*/; do
+            [ -f "${dir}"*.go ] || continue
+            echo "Building plugin: ${dir}"
+            go build -buildmode=plugin -o /dev/null ./"${dir}"
+          done
