@@ -44,6 +44,7 @@ var (
 	logWebhookURL                          string
 	accessLog                              string
 	debug                                  bool
+	quiet                                  bool
 	iamDir                                 string
 	ldapURL, ldapBindDN, ldapPassword      string
 	ldapQueryBase, ldapObjClasses          string
@@ -176,6 +177,12 @@ func initFlags() []cli.Flag {
 			Name:        "debug",
 			Usage:       "enable debug output",
 			Destination: &debug,
+		},
+		&cli.BoolFlag{
+			Name:        "quiet",
+			Usage:       "silence stdout request logging output",
+			Destination: &quiet,
+			Aliases:     []string{"q"},
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
@@ -356,6 +363,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if admPort == "" {
 		opts = append(opts, s3api.WithAdminServer())
+	}
+	if quiet {
+		opts = append(opts, s3api.WithQuiet())
 	}
 
 	admApp := fiber.New(fiber.Config{
