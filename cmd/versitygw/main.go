@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/urfave/cli/v2"
@@ -321,17 +320,9 @@ func initFlags() []cli.Flag {
 }
 
 func runGateway(ctx context.Context, be backend.Backend) error {
-	// int32 max for 32 bit arch
-	blimit := int64(2*1024*1024*1024 - 1)
-	if strconv.IntSize > 32 {
-		// 5GB max for 64 bit arch
-		blimit = int64(5 * 1024 * 1024 * 1024)
-	}
-
 	app := fiber.New(fiber.Config{
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
-		BodyLimit:         int(blimit),
 		StreamRequestBody: true,
 	})
 
