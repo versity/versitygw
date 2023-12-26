@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -136,8 +137,20 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
-	// TODO: handle range request
-	blobDownloadResponse, err := az.client.DownloadStream(ctx, *input.Bucket, *input.Key, nil)
+	var opts *azblob.DownloadStreamOptions
+	if input.Range != nil {
+		offset, count, err := parseRange(*input.Range)
+		if err != nil {
+			return nil, err
+		}
+		opts = &azblob.DownloadStreamOptions{
+			Range: blob.HTTPRange{
+				Count:  count,
+				Offset: offset,
+			},
+		}
+	}
+	blobDownloadResponse, err := az.client.DownloadStream(ctx, *input.Bucket, *input.Key, opts)
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
@@ -380,6 +393,8 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 	return nil
 }
 
+// Multipart upload starts with UploadPart action.
+// Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
@@ -391,6 +406,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (eta
 		return "", err
 	}
 
+	// block id serves as etag here
 	etag = blockIDInt32ToBase64(*input.PartNumber)
 	_, err = client.StageBlock(ctx, etag, rdr, nil)
 	if err != nil {
@@ -407,7 +423,8 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 	}
 
 	//TODO: handle block copy by range
-	//TODO: the action returns not implemented
+	//TODO: the action returns not implemented on azurite, maybe in production this will work?
+	// UploadId here is the source block id
 	_, err = client.StageBlockFromURL(ctx, *input.UploadId, *input.CopySource, nil)
 	if err != nil {
 		return s3response.CopyObjectResult{}, azureErrToS3Err(err)
@@ -416,6 +433,7 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 	return s3response.CopyObjectResult{}, nil
 }
 
+// Lists all uncommitted parts from the blob
 func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
@@ -426,12 +444,34 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 	if err != nil {
 		return s3response.ListPartsResult{}, azureErrToS3Err(err)
 	}
+	var partNumberMarker int
+	var nextPartNumberMarker int
+	var maxParts int32 = math.MaxInt32
+	var isTruncated bool
+
+	if *input.PartNumberMarker != "" {
+		partNumberMarker, err = strconv.Atoi(*input.PartNumberMarker)
+		if err != nil {
+			return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker)
+		}
+	}
+	if input.MaxParts != nil {
+		maxParts = *input.MaxParts
+	}
 
 	parts := []s3response.Part{}
 	for _, el := range resp.BlockList.UncommittedBlocks {
 		partNumber, err := decodeBlockId(*el.Name)
 		if err != nil {
 			return s3response.ListPartsResult{}, err
+		}
+		if partNumberMarker != 0 && partNumberMarker < partNumber {
+			continue
+		}
+		if len(parts) >= int(maxParts) {
+			nextPartNumberMarker = partNumber
+			isTruncated = true
+			break
 		}
 		parts = append(parts, s3response.Part{
 			Size:       *el.Size,
@@ -440,12 +480,17 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 		})
 	}
 	return s3response.ListPartsResult{
-		Bucket: *input.Bucket,
-		Key:    *input.Key,
-		Parts:  parts,
+		Bucket:               *input.Bucket,
+		Key:                  *input.Key,
+		Parts:                parts,
+		NextPartNumberMarker: nextPartNumberMarker,
+		PartNumberMarker:     partNumberMarker,
+		IsTruncated:          isTruncated,
+		MaxParts:             int(maxParts),
 	}, nil
 }
 
+// Lists all block blobs, which has uncommitted blocks
 func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	client, err := az.getContainerClient(*input.Bucket)
 	if err != nil {
@@ -457,7 +502,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 		Prefix:  input.Prefix,
 	})
 
-	var maxUploads int32 = math.MaxInt32
+	var maxUploads int32
 	if input.MaxUploads != nil {
 		maxUploads = *input.MaxUploads
 	}
@@ -473,7 +518,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 		}
 		for _, el := range resp.Segment.BlobItems {
 			if el.Properties.AccessTier == nil {
-				if len(uploads) >= int(*input.MaxUploads) {
+				if len(uploads) >= int(*input.MaxUploads) && maxUploads != 0 {
 					breakFlag = true
 					nextKeyMarker = *el.Name
 					isTruncated = true
@@ -501,6 +546,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 	}, nil
 }
 
+// Deletes the block blob with committed/uncommitted blocks
 func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
@@ -509,6 +555,9 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 	return nil
 }
 
+// Commits all the uncommitted blocks inside the block blob
+// And moves the block blob from staging area into the blobs list
+// It indicates the end of the multipart upload
 func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
@@ -606,6 +655,7 @@ func getStringPtr(str string) *string {
 	return &str
 }
 
+// Parses azure ResponseError into AWS APIError
 func azureErrToS3Err(apiErr error) error {
 	var azErr *azcore.ResponseError
 	if !errors.As(apiErr, &azErr) {
@@ -621,6 +671,7 @@ func azureErrToS3Err(apiErr error) error {
 	return resp
 }
 
+// Converts io.Reader into io.ReadSeekCloser
 func getReadSeekCloser(input io.Reader) (io.ReadSeekCloser, error) {
 	var buffer bytes.Buffer
 	_, err := io.Copy(&buffer, input)
@@ -631,12 +682,14 @@ func getReadSeekCloser(input io.Reader) (io.ReadSeekCloser, error) {
 	return streaming.NopCloser(bytes.NewReader(buffer.Bytes())), nil
 }
 
+// Creates a new Base64 encoded block id from a 32 bit integer
 func blockIDInt32ToBase64(blockID int32) string {
 	binaryBlockID := &[4]byte{} // All block IDs are 4 bytes long
 	binary.LittleEndian.PutUint32(binaryBlockID[:], uint32(blockID))
 	return base64.StdEncoding.EncodeToString(binaryBlockID[:])
 }
 
+// Decodes Base64 encoded string to integer
 func decodeBlockId(blockID string) (int, error) {
 	slice, err := base64.StdEncoding.DecodeString(blockID)
 	if err != nil {
@@ -644,4 +697,37 @@ func decodeBlockId(blockID string) (int, error) {
 	}
 
 	return int(binary.LittleEndian.Uint32(slice)), nil
+}
+
+func parseRange(rg string) (offset, count int64, err error) {
+	rangeKv := strings.Split(rg, "=")
+
+	if len(rangeKv) < 2 {
+		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
+	bRange := strings.Split(rangeKv[1], "-")
+	if len(bRange) < 1 || len(bRange) > 2 {
+		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
+	offset, err = strconv.ParseInt(bRange[0], 10, 64)
+	if err != nil {
+		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
+	if len(bRange) == 1 || bRange[1] == "" {
+		return offset, count, nil
+	}
+
+	count, err = strconv.ParseInt(bRange[1], 10, 64)
+	if err != nil {
+		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
+	if count < offset {
+		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
+	}
+
+	return offset, count - offset + 1, nil
 }
