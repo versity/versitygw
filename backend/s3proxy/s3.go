@@ -361,7 +361,7 @@ func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput)
 	return json.Marshal(acl)
 }
 
-func (s S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
+func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
 	acl, err := auth.ParseACL(data)
 	if err != nil {
 		return err
