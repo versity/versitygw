@@ -38,8 +38,10 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-type S3be struct {
+type S3Proxy struct {
 	backend.BackendUnsupported
+
+	client *s3.Client
 
 	access          string
 	secret          string
@@ -50,8 +52,8 @@ type S3be struct {
 	debug           bool
 }
 
-func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) *S3be {
-	return &S3be{
+func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) (*S3Proxy, error) {
+	s := &S3Proxy{
 		access:          access,
 		secret:          secret,
 		endpoint:        endpoint,
@@ -60,15 +62,16 @@ func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify
 		sslSkipVerify:   sslSkipVerify,
 		debug:           debug,
 	}
+	client, err := s.getClientWithCtx(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	s.client = client
+	return s, nil
 }
 
-func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return s3response.ListAllMyBucketsResult{}, err
-	}
-
-	output, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
+func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{})
 	err = handleError(err)
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{}, err
@@ -92,78 +95,43 @@ func (s *S3be) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3r
 	}, nil
 }
 
-func (s *S3be) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.HeadBucket(ctx, input)
+func (s *S3Proxy) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+	out, err := s.client.HeadBucket(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = client.CreateBucket(ctx, input)
+func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
+	_, err := s.client.CreateBucket(ctx, input)
 	return handleError(err)
 }
 
-func (s *S3be) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = client.DeleteBucket(ctx, input)
+func (s *S3Proxy) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
+	_, err := s.client.DeleteBucket(ctx, input)
 	return handleError(err)
 }
 
-func (s *S3be) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.CreateMultipartUpload(ctx, input)
+func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	out, err := s.client.CreateMultipartUpload(ctx, input)
 	err = handleError(err)
 	return out, err
 }
 
-func (s *S3be) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.CompleteMultipartUpload(ctx, input)
+func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	out, err := s.client.CompleteMultipartUpload(ctx, input)
 	err = handleError(err)
 	return out, err
 }
 
-func (s *S3be) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = client.AbortMultipartUpload(ctx, input)
+func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	_, err := s.client.AbortMultipartUpload(ctx, input)
 	err = handleError(err)
 	return err
 }
 
-func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return s3response.ListMultipartUploadsResult{}, err
-	}
-
-	output, err := client.ListMultipartUploads(ctx, input)
+func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	output, err := s.client.ListMultipartUploads(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return s3response.ListMultipartUploadsResult{}, err
@@ -210,13 +178,8 @@ func (s *S3be) ListMultipartUploads(ctx context.Context, input *s3.ListMultipart
 	}, nil
 }
 
-func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return s3response.ListPartsResult{}, err
-	}
-
-	output, err := client.ListParts(ctx, input)
+func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	output, err := s.client.ListParts(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return s3response.ListPartsResult{}, err
@@ -264,15 +227,10 @@ func (s *S3be) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3respo
 	}, nil
 }
 
-func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return "", err
-	}
-
+func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
-	output, err := client.UploadPart(ctx, input, s3.WithAPIOptions(
+	output, err := s.client.UploadPart(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
 	err = handleError(err)
@@ -283,13 +241,8 @@ func (s *S3be) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag 
 	return *output.ETag, nil
 }
 
-func (s *S3be) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return s3response.CopyObjectResult{}, err
-	}
-
-	output, err := client.UploadPartCopy(ctx, input)
+func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	output, err := s.client.UploadPartCopy(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return s3response.CopyObjectResult{}, err
@@ -301,15 +254,10 @@ func (s *S3be) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput
 	}, nil
 }
 
-func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return "", err
-	}
-
+func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (string, error) {
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
-	output, err := client.PutObject(ctx, input, s3.WithAPIOptions(
+	output, err := s.client.PutObject(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
 	err = handleError(err)
@@ -320,25 +268,15 @@ func (s *S3be) PutObject(ctx context.Context, input *s3.PutObjectInput) (string,
 	return *output.ETag, nil
 }
 
-func (s *S3be) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.HeadObject(ctx, input)
+func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	out, err := s.client.HeadObject(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	output, err := client.GetObject(ctx, input)
+func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
+	output, err := s.client.GetObject(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return nil, err
@@ -353,75 +291,45 @@ func (s *S3be) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Wri
 	return output, nil
 }
 
-func (s *S3be) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.GetObjectAttributes(ctx, input)
+func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
+	out, err := s.client.GetObjectAttributes(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.CopyObject(ctx, input)
+func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	out, err := s.client.CopyObject(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.ListObjects(ctx, input)
+func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+	out, err := s.client.ListObjects(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	out, err := client.ListObjectsV2(ctx, input)
+func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	out, err := s.client.ListObjectsV2(ctx, input)
 	err = handleError(err)
 
 	return out, err
 }
 
-func (s *S3be) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = client.DeleteObject(ctx, input)
+func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
+	_, err := s.client.DeleteObject(ctx, input)
 	return handleError(err)
 }
 
-func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return s3response.DeleteObjectsResult{}, err
-	}
-
+func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
 	if len(input.Delete.Objects) == 0 {
 		input.Delete.Objects = []types.ObjectIdentifier{}
 	}
 
-	output, err := client.DeleteObjects(ctx, input)
+	output, err := s.client.DeleteObjects(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return s3response.DeleteObjectsResult{}, err
@@ -433,13 +341,8 @@ func (s *S3be) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) 
 	}, nil
 }
 
-func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	output, err := client.GetBucketAcl(ctx, input)
+func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	output, err := s.client.GetBucketAcl(ctx, input)
 	err = handleError(err)
 	if err != nil {
 		return nil, err
@@ -458,12 +361,7 @@ func (s *S3be) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([
 	return json.Marshal(acl)
 }
 
-func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
+func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
 	acl, err := auth.ParseACL(data)
 	if err != nil {
 		return err
@@ -490,16 +388,11 @@ func (s S3be) PutBucketAcl(ctx context.Context, bucket string, data []byte) erro
 		})
 	}
 
-	_, err = client.PutBucketAcl(ctx, input)
+	_, err = s.client.PutBucketAcl(ctx, input)
 	return handleError(err)
 }
 
-func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
+func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
 	tagging := &types.Tagging{
 		TagSet: []types.Tag{},
 	}
@@ -510,7 +403,7 @@ func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags
 		})
 	}
 
-	_, err = client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+	_, err := s.client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
 		Bucket:  &bucket,
 		Key:     &object,
 		Tagging: tagging,
@@ -518,13 +411,8 @@ func (s *S3be) PutObjectTagging(ctx context.Context, bucket, object string, tags
 	return handleError(err)
 }
 
-func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	output, err := client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+	output, err := s.client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 		Bucket: &bucket,
 		Key:    &object,
 	})
@@ -541,20 +429,15 @@ func (s *S3be) GetObjectTagging(ctx context.Context, bucket, object string) (map
 	return tags, nil
 }
 
-func (s *S3be) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
-	client, err := s.getClientFromCtx(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+	_, err := s.client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
 		Bucket: &bucket,
 		Key:    &object,
 	})
 	return handleError(err)
 }
 
-func (s *S3be) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
+func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, newOwner), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
@@ -591,7 +474,7 @@ func (s *S3be) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) e
 	return nil
 }
 
-func (s *S3be) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
+func (s *S3Proxy) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", s.endpoint), nil)
 	if err != nil {
 		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)

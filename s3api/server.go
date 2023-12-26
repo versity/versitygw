@@ -32,6 +32,7 @@ type S3ApiServer struct {
 	router  *S3ApiRouter
 	port    string
 	cert    *tls.Certificate
+	quiet   bool
 	debug   bool
 }
 
@@ -48,7 +49,9 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 	}
 
 	// Logging middlewares
-	app.Use(logger.New())
+	if !server.quiet {
+		app.Use(logger.New())
+	}
 	app.Use(middlewares.DecodeURL(l))
 	app.Use(middlewares.RequestLogger(server.debug))
 
@@ -78,6 +81,11 @@ func WithAdminServer() Option {
 // WithDebug sets debug output
 func WithDebug() Option {
 	return func(s *S3ApiServer) { s.debug = true }
+}
+
+// WithQuiet silences default logging output
+func WithQuiet() Option {
+	return func(s *S3ApiServer) { s.quiet = true }
 }
 
 func (sa *S3ApiServer) Serve() (err error) {
