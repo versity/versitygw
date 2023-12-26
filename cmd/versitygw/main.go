@@ -331,6 +331,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,
+		DisableKeepalive:  true,
 	})
 
 	var opts []s3api.Option
