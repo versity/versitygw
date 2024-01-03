@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -34,10 +35,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
+
+const aclKey string = "Acl"
 
 type Azure struct {
 	backend.BackendUnsupported
@@ -70,8 +74,16 @@ func (az *Azure) String() string {
 }
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
-	// TODO: handle ownership/ACLs
-	_, err := az.client.CreateContainer(ctx, *input.Bucket, nil)
+	owner := string(input.ObjectOwnership)
+	acl := auth.ACL{ACL: "private", Owner: owner, Grantees: []auth.Grantee{}}
+	jsonACL, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("marshal acl: %w", err)
+	}
+	meta := map[string]*string{
+		aclKey: getStringPtr(string(jsonACL)),
+	}
+	_, err = az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
 }
 
@@ -577,6 +589,41 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		Key:    input.Key,
 		ETag:   (*string)(resp.ETag),
 	}, nil
+}
+
+func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+	meta := map[string]*string{
+		aclKey: getStringPtr(string(data)),
+	}
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
+		Metadata: meta,
+	})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+	return nil
+}
+
+func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	client, err := az.getContainerClient(*input.Bucket)
+	if err != nil {
+		return nil, err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	aclPtr, ok := props.Metadata[aclKey]
+	if !ok {
+		return nil, s3err.GetAPIError(s3err.ErrInternalError)
+	}
+
+	return []byte(*aclPtr), nil
 }
 
 func (az *Azure) getBlobClient(container, blb string) (*blob.Client, error) {
