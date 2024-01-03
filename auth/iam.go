@@ -16,6 +16,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -43,18 +44,25 @@ type IAMService interface {
 var ErrNoSuchUser = errors.New("user not found")
 
 type Opts struct {
-	Dir            string
-	LDAPServerURL  string
-	LDAPBindDN     string
-	LDAPPassword   string
-	LDAPQueryBase  string
-	LDAPObjClasses string
-	LDAPAccessAtr  string
-	LDAPSecretAtr  string
-	LDAPRoleAtr    string
-	CacheDisable   bool
-	CacheTTL       int
-	CachePrune     int
+	Dir                string
+	LDAPServerURL      string
+	LDAPBindDN         string
+	LDAPPassword       string
+	LDAPQueryBase      string
+	LDAPObjClasses     string
+	LDAPAccessAtr      string
+	LDAPSecretAtr      string
+	LDAPRoleAtr        string
+	S3Access           string
+	S3Secret           string
+	S3Region           string
+	S3Bucket           string
+	S3Endpoint         string
+	S3DisableSSlVerfiy bool
+	S3Debug            bool
+	CacheDisable       bool
+	CacheTTL           int
+	CachePrune         int
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -64,12 +72,20 @@ func New(o *Opts) (IAMService, error) {
 	switch {
 	case o.Dir != "":
 		svc, err = NewInternal(o.Dir)
+		fmt.Printf("initializing internal IAM with %q\n", o.Dir)
 	case o.LDAPServerURL != "":
 		svc, err = NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
 			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr,
 			o.LDAPObjClasses)
+		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
+	case o.S3Endpoint != "":
+		svc, err = NewS3(o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,
+			o.S3Endpoint, o.S3DisableSSlVerfiy, o.S3Debug)
+		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
+			o.S3Endpoint, o.S3Bucket)
 	default:
 		// if no iam options selected, default to the single user mode
+		fmt.Println("No IAM service configured, enabling single account mode")
 		return IAMServiceSingle{}, nil
 	}
 

@@ -27,7 +27,7 @@ import (
 	"github.com/aws/smithy-go/middleware"
 )
 
-func (s *S3be) getClientFromCtx(ctx context.Context) (*s3.Client, error) {
+func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 	cfg, err := s.getConfig(ctx, s.access, s.secret)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func (s *S3be) getClientFromCtx(ctx context.Context) (*s3.Client, error) {
 	return s3.NewFromConfig(cfg), nil
 }
 
-func (s *S3be) getConfig(ctx context.Context, access, secret string) (aws.Config, error) {
+func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Config, error) {
 	creds := credentials.NewStaticCredentialsProvider(access, secret, "")
 
 	tr := &http.Transport{
@@ -69,7 +69,7 @@ func (s *S3be) getConfig(ctx context.Context, access, secret string) (aws.Config
 }
 
 // ResolveEndpoint is used for on prem or non-aws endpoints
-func (s *S3be) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) {
+func (s *S3Proxy) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) {
 	return aws.Endpoint{
 		PartitionID:       "aws",
 		URL:               s.endpoint,
