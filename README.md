@@ -17,8 +17,9 @@
 See project [documentation](https://github.com/versity/versitygw/wiki) on the wiki.
 
 * Share filesystem directory via S3 protocol
+* Proxy S3 requests to S3 storage
 * Simple to deploy S3 server with a single command
-* Protocol compatibility allows common access to files via posix or S3 
+* Protocol compatibility in `posix` allows common access to files via posix or S3 
 
 Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and storage systems. The Versity Gateway bridges the gap between S3-reliant applications and other storage systems, enabling enhanced compatibility and integration while offering exceptional scalability.
 
