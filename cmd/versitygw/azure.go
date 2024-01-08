@@ -35,15 +35,15 @@ func azureCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:        "account",
 				Usage:       "azure account name",
-				EnvVars:     []string{"AZ_ACCESS_KEY"},
+				EnvVars:     []string{"AZ_ACCOUNT_NAME"},
 				Aliases:     []string{"a"},
 				Destination: &azAccount,
 			},
 			&cli.StringFlag{
-				Name:        "account-key",
+				Name:        "access-key",
 				Usage:       "azure account key",
-				EnvVars:     []string{"AZ_ACCOUNT_KEY"},
-				Aliases:     []string{"s"},
+				EnvVars:     []string{"AZ_ACCESS_KEY"},
+				Aliases:     []string{"k"},
 				Destination: &azKey,
 			},
 			&cli.StringFlag{
