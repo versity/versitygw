@@ -403,7 +403,23 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 	return nil
 }
 
-// Multipart upload starts with UploadPart action.
+func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	// Multipart upload starts with UploadPart action so there is no
+	// correlating function for creating mutlipart uploads.
+	// TODO: since azure only allows for a single multipart upload
+	// for an object name at a time, we need to send an error back to
+	// the client if there is already an outstanding upload in progress
+	// for this object.
+	// Alternatively, is there something we can do with upload ids to
+	// keep concurrent uploads unique still? I haven't found an efficient
+	// way to rename final objects.
+	return &s3.CreateMultipartUploadOutput{
+		Bucket:   input.Bucket,
+		Key:      input.Key,
+		UploadId: input.Key,
+	}, nil
+}
+
 // Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
@@ -411,6 +427,10 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (eta
 		return "", err
 	}
 
+	// TODO: request streamable version of StageBlock()
+	// (*blockblob.Client).StageBlock does not have a streamable
+	// version of this function at this time, so we need to cache
+	// the body in memory to create an io.ReadSeekCloser
 	rdr, err := getReadSeekCloser(input.Body)
 	if err != nil {
 		return "", err
@@ -558,6 +578,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 
 // Deletes the block blob with committed/uncommitted blocks
 func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	// TODO: need to verify this blob has uncommitted blocks?
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
 		return azureErrToS3Err(err)
@@ -712,7 +733,6 @@ func azureErrToS3Err(apiErr error) error {
 		Description:    azErr.RawResponse.Status,
 		HTTPStatusCode: azErr.StatusCode,
 	}
-	fmt.Println(resp)
 	return resp
 }
 
