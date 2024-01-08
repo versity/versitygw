@@ -395,8 +395,6 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 		return err
 	}
 
-	//TODO: SDK has a bug here: it recommends to use the method to remove tags by passing an empty map,
-	// but the method panics because of incorrect implementation
 	_, err = client.SetTags(ctx, map[string]string{}, nil)
 	if err != nil {
 		return azureErrToS3Err(err)
