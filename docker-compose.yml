@@ -21,3 +21,18 @@ services:
     ports:
       - "${PROXY_PORT}:${PROXY_PORT}"
     command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -p :$PROXY_PORT s3 -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --endpoint http://posix:$POSIX_PORT"]
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+  azuritegw:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.dev
+    volumes:
+      - ./:/app
+    ports:
+      - 7070:7070
+    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url http://azurite:10000/$AZ_ACCOUNT_NAME"]

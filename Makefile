@@ -85,6 +85,11 @@ up-posix:
 up-proxy:
 	docker compose --env-file .env.dev up proxy
 
+# Creates and runs S3 gateway to azurite instance in a docker container
+.PHONY: up-azurite
+up-azurite:
+	docker compose --env-file .env.dev up azurite azuritegw
+
 # Creates and runs both S3 gateway and proxy server instances in docker containers
 .PHONY: up-app
 up-app:
