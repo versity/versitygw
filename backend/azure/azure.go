@@ -49,11 +49,22 @@ type Azure struct {
 	client     *azblob.Client
 	creds      *azblob.SharedKeyCredential
 	serviceURL string
+	sasToken   string
 }
 
 var _ backend.Backend = &Azure{}
 
-func New(accountName, accountKey, serviceURL string) (*Azure, error) {
+func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
+	if sasToken != "" && (accountName != "" || accountKey != "") {
+		return nil, fmt.Errorf("choose one of the authentication methods: with sas token or with access key/name")
+	}
+	if sasToken != "" {
+		client, err := azblob.NewClientWithNoCredential(serviceURL+"?"+sasToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("init client: %w", err)
+		}
+		return &Azure{client: client, serviceURL: serviceURL, sasToken: sasToken}, nil
+	}
 	cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
 		return nil, fmt.Errorf("init credentials: %w", err)
@@ -645,16 +656,36 @@ func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) 
 	return []byte(*aclPtr), nil
 }
 
+func (az *Azure) getContainerURL(container string) string {
+	return fmt.Sprintf("%v/%v", az.serviceURL, container)
+}
+
+func (az *Azure) getBlobURL(container, blob string) string {
+	return az.getContainerURL(container) + "/" + blob
+}
+
 func (az *Azure) getBlobClient(container, blb string) (*blob.Client, error) {
-	return blob.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v/%v", az.serviceURL, container, blb), az.creds, nil)
+	blobURL := az.getBlobURL(container, blb)
+	if az.sasToken != "" {
+		return blob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
+	}
+	return blob.NewClientWithSharedKeyCredential(blobURL, az.creds, nil)
 }
 
 func (az *Azure) getContainerClient(ctr string) (*container.Client, error) {
-	return container.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v", az.serviceURL, ctr), az.creds, nil)
+	containerURL := az.getContainerURL(ctr)
+	if az.sasToken != "" {
+		return container.NewClientWithNoCredential(containerURL+"?"+az.sasToken, nil)
+	}
+	return container.NewClientWithSharedKeyCredential(containerURL, az.creds, nil)
 }
 
 func (az *Azure) getBlockBlobClient(container, blob string) (*blockblob.Client, error) {
-	return blockblob.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v/%v", az.serviceURL, container, blob), az.creds, nil)
+	blobURL := az.getBlobURL(container, blob)
+	if az.sasToken != "" {
+		return blockblob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
+	}
+	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.creds, nil)
 }
 
 func parseMetadata(m map[string]string) map[string]*string {
