@@ -65,14 +65,9 @@ func azureCommand() *cli.Command {
 }
 
 func runAzure(ctx *cli.Context) error {
-	if azServiceURL == "" {
-		// if not otherwise specified, use the typical form: http(s)://<account>.blob.core.windows.net/
-		azServiceURL = fmt.Sprintf("https://%s.blob.core.windows.net/", azAccount)
-	}
-
 	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken)
 	if err != nil {
-		return fmt.Errorf("init azure: %v", err)
+		return fmt.Errorf("init azure: %w", err)
 	}
 
 	return runGateway(ctx.Context, be)
