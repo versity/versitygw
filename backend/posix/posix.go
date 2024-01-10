@@ -161,13 +161,12 @@ func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.He
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput) error {
+func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
 	bucket := *input.Bucket
-	owner := string(input.ObjectOwnership)
 
 	err := os.Mkdir(bucket, 0777)
 	if err != nil && os.IsExist(err) {
@@ -177,13 +176,7 @@ func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput) err
 		return fmt.Errorf("mkdir bucket: %w", err)
 	}
 
-	acl := auth.ACL{ACL: "private", Owner: owner, Grantees: []auth.Grantee{}}
-	jsonACL, err := json.Marshal(acl)
-	if err != nil {
-		return fmt.Errorf("marshal acl: %w", err)
-	}
-
-	if err := xattr.Set(bucket, aclkey, jsonACL); err != nil {
+	if err := xattr.Set(bucket, aclkey, acl); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 

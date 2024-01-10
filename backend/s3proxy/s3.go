@@ -17,6 +17,7 @@ package s3proxy
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,11 +33,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
-	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
+
+const aclKey string = "versitygwAcl"
 
 type S3Proxy struct {
 	backend.BackendUnsupported
@@ -72,9 +74,8 @@ func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify
 
 func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
 	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{})
-	err = handleError(err)
 	if err != nil {
-		return s3response.ListAllMyBucketsResult{}, err
+		return s3response.ListAllMyBucketsResult{}, handleError(err)
 	}
 
 	var buckets []s3response.ListAllMyBucketsEntry
@@ -97,13 +98,27 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (
 
 func (s *S3Proxy) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
 	out, err := s.client.HeadBucket(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
-func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
+func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	_, err := s.client.CreateBucket(ctx, input)
+	if err != nil {
+		return handleError(err)
+	}
+
+	var tagSet []types.Tag
+	tagSet = append(tagSet, types.Tag{
+		Key:   backend.GetStringPtr(aclKey),
+		Value: backend.GetStringPtr(base64Encode(acl)),
+	})
+
+	_, err = s.client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+		Bucket: input.Bucket,
+		Tagging: &types.Tagging{
+			TagSet: tagSet,
+		},
+	})
 	return handleError(err)
 }
 
@@ -114,27 +129,23 @@ func (s *S3Proxy) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput)
 
 func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 	out, err := s.client.CreateMultipartUpload(ctx, input)
-	err = handleError(err)
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	out, err := s.client.CompleteMultipartUpload(ctx, input)
-	err = handleError(err)
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
 	_, err := s.client.AbortMultipartUpload(ctx, input)
-	err = handleError(err)
-	return err
+	return handleError(err)
 }
 
 func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	output, err := s.client.ListMultipartUploads(ctx, input)
-	err = handleError(err)
 	if err != nil {
-		return s3response.ListMultipartUploadsResult{}, err
+		return s3response.ListMultipartUploadsResult{}, handleError(err)
 	}
 
 	var uploads []s3response.Upload
@@ -180,9 +191,8 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 
 func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	output, err := s.client.ListParts(ctx, input)
-	err = handleError(err)
 	if err != nil {
-		return s3response.ListPartsResult{}, err
+		return s3response.ListPartsResult{}, handleError(err)
 	}
 
 	var parts []s3response.Part
@@ -233,9 +243,8 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (et
 	output, err := s.client.UploadPart(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
-	err = handleError(err)
 	if err != nil {
-		return "", err
+		return "", handleError(err)
 	}
 
 	return *output.ETag, nil
@@ -243,9 +252,8 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (et
 
 func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 	output, err := s.client.UploadPartCopy(ctx, input)
-	err = handleError(err)
 	if err != nil {
-		return s3response.CopyObjectResult{}, err
+		return s3response.CopyObjectResult{}, handleError(err)
 	}
 
 	return s3response.CopyObjectResult{
@@ -260,9 +268,8 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (stri
 	output, err := s.client.PutObject(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
-	err = handleError(err)
 	if err != nil {
-		return "", err
+		return "", handleError(err)
 	}
 
 	return *output.ETag, nil
@@ -270,16 +277,13 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (stri
 
 func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	out, err := s.client.HeadObject(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
 	output, err := s.client.GetObject(ctx, input)
-	err = handleError(err)
 	if err != nil {
-		return nil, err
+		return nil, handleError(err)
 	}
 	defer output.Body.Close()
 
@@ -293,30 +297,22 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.
 
 func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 	out, err := s.client.GetObjectAttributes(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	out, err := s.client.CopyObject(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	out, err := s.client.ListObjects(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	out, err := s.client.ListObjectsV2(ctx, input)
-	err = handleError(err)
-
-	return out, err
+	return out, handleError(err)
 }
 
 func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
@@ -330,9 +326,8 @@ func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInpu
 	}
 
 	output, err := s.client.DeleteObjects(ctx, input)
-	err = handleError(err)
 	if err != nil {
-		return s3response.DeleteObjectsResult{}, err
+		return s3response.DeleteObjectsResult{}, handleError(err)
 	}
 
 	return s3response.DeleteObjectsResult{
@@ -342,53 +337,58 @@ func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInpu
 }
 
 func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	output, err := s.client.GetBucketAcl(ctx, input)
-	err = handleError(err)
+	tagout, err := s.client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+		Bucket: input.Bucket,
+	})
 	if err != nil {
-		return nil, err
+		return nil, handleError(err)
 	}
 
-	var acl auth.ACL
-
-	acl.Owner = *output.Owner.ID
-	for _, el := range output.Grants {
-		acl.Grantees = append(acl.Grantees, auth.Grantee{
-			Permission: el.Permission,
-			Access:     *el.Grantee.ID,
-		})
+	for _, tag := range tagout.TagSet {
+		if *tag.Key == aclKey {
+			acl, err := base64Decode(*tag.Value)
+			if err != nil {
+				return nil, handleError(err)
+			}
+			return acl, nil
+		}
 	}
 
-	return json.Marshal(acl)
+	return []byte{}, nil
 }
 
 func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
-	acl, err := auth.ParseACL(data)
-	if err != nil {
-		return err
-	}
-
-	input := &s3.PutBucketAclInput{
+	tagout, err := s.client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 		Bucket: &bucket,
-		ACL:    acl.ACL,
-		AccessControlPolicy: &types.AccessControlPolicy{
-			Owner: &types.Owner{
-				ID: &acl.Owner,
-			},
-		},
+	})
+	if err != nil {
+		return handleError(err)
 	}
 
-	for _, el := range acl.Grantees {
-		acc := el.Access
-		input.AccessControlPolicy.Grants = append(input.AccessControlPolicy.Grants, types.Grant{
-			Permission: el.Permission,
-			Grantee: &types.Grantee{
-				ID:   &acc,
-				Type: types.TypeCanonicalUser,
-			},
+	var found bool
+	for i, tag := range tagout.TagSet {
+		if *tag.Key == aclKey {
+			tagout.TagSet[i] = types.Tag{
+				Key:   backend.GetStringPtr(aclKey),
+				Value: backend.GetStringPtr(base64Encode(data)),
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		tagout.TagSet = append(tagout.TagSet, types.Tag{
+			Key:   backend.GetStringPtr(aclKey),
+			Value: backend.GetStringPtr(base64Encode(data)),
 		})
 	}
 
-	_, err = s.client.PutBucketAcl(ctx, input)
+	_, err = s.client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+		Bucket: &bucket,
+		Tagging: &types.Tagging{
+			TagSet: tagout.TagSet,
+		},
+	})
 	return handleError(err)
 }
 
@@ -416,9 +416,8 @@ func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (
 		Bucket: &bucket,
 		Key:    &object,
 	})
-	err = handleError(err)
 	if err != nil {
-		return nil, err
+		return nil, handleError(err)
 	}
 
 	tags := make(map[string]string)
@@ -531,4 +530,16 @@ func handleError(err error) error {
 		return apiErr
 	}
 	return err
+}
+
+func base64Encode(input []byte) string {
+	return base64.StdEncoding.EncodeToString(input)
+}
+
+func base64Decode(encoded string) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }

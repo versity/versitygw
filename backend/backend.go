@@ -35,7 +35,7 @@ type Backend interface {
 	ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error)
 	HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error)
-	CreateBucket(context.Context, *s3.CreateBucketInput) error
+	CreateBucket(_ context.Context, _ *s3.CreateBucketInput, defaultACL []byte) error
 	PutBucketAcl(_ context.Context, bucket string, data []byte) error
 	DeleteBucket(context.Context, *s3.DeleteBucketInput) error
 
@@ -95,7 +95,7 @@ func (BackendUnsupported) HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.
 func (BackendUnsupported) GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) CreateBucket(context.Context, *s3.CreateBucketInput) error {
+func (BackendUnsupported) CreateBucket(context.Context, *s3.CreateBucketInput, []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) PutBucketAcl(_ context.Context, bucket string, data []byte) error {

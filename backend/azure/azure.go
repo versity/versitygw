@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -37,7 +36,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -109,17 +107,11 @@ func (az *Azure) String() string {
 	return "Azure Blob Gateway"
 }
 
-func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
-	owner := string(input.ObjectOwnership)
-	acl := auth.ACL{ACL: "private", Owner: owner, Grantees: []auth.Grantee{}}
-	jsonACL, err := json.Marshal(acl)
-	if err != nil {
-		return fmt.Errorf("marshal acl: %w", err)
-	}
+func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		aclKey: getStringPtr(string(jsonACL)),
+		aclKey: backend.GetStringPtr(string(acl)),
 	}
-	_, err = az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
+	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
 }
 
@@ -357,8 +349,8 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 			} else {
 				errs = append(errs, types.Error{
 					Key:     obj.Key,
-					Code:    getStringPtr("InternalError"),
-					Message: getStringPtr(err.Error()),
+					Code:    backend.GetStringPtr("InternalError"),
+					Message: backend.GetStringPtr(err.Error()),
 				})
 			}
 		}
@@ -652,7 +644,7 @@ func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) e
 		return err
 	}
 	meta := map[string]*string{
-		aclKey: getStringPtr(string(data)),
+		aclKey: backend.GetStringPtr(string(data)),
 	}
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
 		Metadata: meta,
@@ -780,10 +772,6 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
-}
-
-func getStringPtr(str string) *string {
-	return &str
 }
 
 // Parses azure ResponseError into AWS APIError
