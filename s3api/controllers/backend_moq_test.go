@@ -35,7 +35,7 @@ var _ backend.Backend = &BackendMock{}
 //			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 //				panic("mock out the CopyObject method")
 //			},
-//			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error {
+//			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
 //				panic("mock out the CreateBucket method")
 //			},
 //			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
@@ -142,7 +142,7 @@ type BackendMock struct {
 	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
 
 	// CreateBucketFunc mocks the CreateBucket method.
-	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error
+	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error
 
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
 	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
@@ -266,6 +266,8 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// CreateBucketInput is the createBucketInput argument value.
 			CreateBucketInput *s3.CreateBucketInput
+			// DefaultACL is the defaultACL argument value.
+			DefaultACL []byte
 		}
 		// CreateMultipartUpload holds details about calls to the CreateMultipartUpload method.
 		CreateMultipartUpload []struct {
@@ -652,21 +654,23 @@ func (mock *BackendMock) CopyObjectCalls() []struct {
 }
 
 // CreateBucket calls CreateBucketFunc.
-func (mock *BackendMock) CreateBucket(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput) error {
+func (mock *BackendMock) CreateBucket(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
 	if mock.CreateBucketFunc == nil {
 		panic("BackendMock.CreateBucketFunc: method is nil but Backend.CreateBucket was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam   context.Context
 		CreateBucketInput *s3.CreateBucketInput
+		DefaultACL        []byte
 	}{
 		ContextMoqParam:   contextMoqParam,
 		CreateBucketInput: createBucketInput,
+		DefaultACL:        defaultACL,
 	}
 	mock.lockCreateBucket.Lock()
 	mock.calls.CreateBucket = append(mock.calls.CreateBucket, callInfo)
 	mock.lockCreateBucket.Unlock()
-	return mock.CreateBucketFunc(contextMoqParam, createBucketInput)
+	return mock.CreateBucketFunc(contextMoqParam, createBucketInput, defaultACL)
 }
 
 // CreateBucketCalls gets all the calls that were made to CreateBucket.
@@ -676,10 +680,12 @@ func (mock *BackendMock) CreateBucket(contextMoqParam context.Context, createBuc
 func (mock *BackendMock) CreateBucketCalls() []struct {
 	ContextMoqParam   context.Context
 	CreateBucketInput *s3.CreateBucketInput
+	DefaultACL        []byte
 } {
 	var calls []struct {
 		ContextMoqParam   context.Context
 		CreateBucketInput *s3.CreateBucketInput
+		DefaultACL        []byte
 	}
 	mock.lockCreateBucket.RLock()
 	calls = mock.calls.CreateBucket
