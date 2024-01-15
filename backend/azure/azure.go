@@ -19,15 +19,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -532,9 +531,10 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 			break
 		}
 		parts = append(parts, s3response.Part{
-			Size:       *el.Size,
-			ETag:       *el.Name,
-			PartNumber: partNumber,
+			Size:         *el.Size,
+			ETag:         *el.Name,
+			PartNumber:   partNumber,
+			LastModified: time.Now().Format(backend.RFC3339TimeFormat),
 		})
 	}
 	return s3response.ListPartsResult{
@@ -772,21 +772,6 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
-}
-
-// Parses azure ResponseError into AWS APIError
-func azureErrToS3Err(apiErr error) error {
-	var azErr *azcore.ResponseError
-	if !errors.As(apiErr, &azErr) {
-		return apiErr
-	}
-
-	resp := s3err.APIError{
-		Code:           azErr.ErrorCode,
-		Description:    azErr.RawResponse.Status,
-		HTTPStatusCode: azErr.StatusCode,
-	}
-	return resp
 }
 
 // Converts io.Reader into io.ReadSeekCloser
