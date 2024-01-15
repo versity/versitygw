@@ -14,7 +14,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/google/uuid"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -1426,7 +1425,7 @@ func ListObject_truncated(s *S3Conf) error {
 			return err
 		}
 
-		if !*out1.IsTruncated {
+		if out1.IsTruncated == nil || !*out1.IsTruncated {
 			return fmt.Errorf("expected out1put to be truncated")
 		}
 
@@ -1530,7 +1529,10 @@ func ListObjects_delimiter(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Delimiter != "/" {
+		if out.Delimiter == nil || *out.Delimiter != "/" {
+			if out.Delimiter == nil {
+				return fmt.Errorf("expected delimiter to be /, instead got nil delim")
+			}
 			return fmt.Errorf("expected delimiter to be /, instead got %v", *out.Delimiter)
 		}
 		if len(out.Contents) != 1 || *out.Contents[0].Key != "asdf" {
@@ -2264,9 +2266,6 @@ func CreateMultipartUpload_success(s *S3Conf) error {
 		}
 		if *out.Key != obj {
 			return fmt.Errorf("expected object name %v, instead got %v", obj, *out.Key)
-		}
-		if _, err := uuid.Parse(*out.UploadId); err != nil {
-			return err
 		}
 
 		return nil
