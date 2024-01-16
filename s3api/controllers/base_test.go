@@ -500,7 +500,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			PutBucketAclFunc: func(context.Context, string, []byte) error {
 				return nil
 			},
-			CreateBucketFunc: func(context.Context, *s3.CreateBucketInput) error {
+			CreateBucketFunc: func(context.Context, *s3.CreateBucketInput, []byte) error {
 				return nil
 			},
 		},

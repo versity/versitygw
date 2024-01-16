@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -407,10 +408,16 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName), &MetaOpts{Logger: c.logger, Action: "CreateBucket"})
 	}
 
-	err := c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
+	defACL := auth.ACL{ACL: "private", Owner: acct.Access, Grantees: []auth.Grantee{}}
+	jsonACL, err := json.Marshal(defACL)
+	if err != nil {
+		return SendResponse(ctx, fmt.Errorf("marshal acl: %w", err), &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: acct.Access})
+	}
+
+	err = c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
 		Bucket:          &bucket,
 		ObjectOwnership: types.ObjectOwnership(acct.Access),
-	})
+	}, jsonACL)
 	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: acct.Access})
 }
 

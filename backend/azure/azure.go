@@ -19,23 +19,23 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -46,25 +46,59 @@ const aclKey string = "Acl"
 type Azure struct {
 	backend.BackendUnsupported
 
-	client     *azblob.Client
-	creds      *azblob.SharedKeyCredential
-	serviceURL string
+	client         *azblob.Client
+	sharedkeyCreds *azblob.SharedKeyCredential
+	defaultCreds   *azidentity.DefaultAzureCredential
+	serviceURL     string
+	sasToken       string
 }
 
 var _ backend.Backend = &Azure{}
 
-func New(accountName, accountKey, serviceURL string) (*Azure, error) {
+func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
+	if sasToken != "" {
+		client, err := azblob.NewClientWithNoCredential(serviceURL+"?"+sasToken, nil)
+		if err != nil {
+			return nil, fmt.Errorf("init client: %w", err)
+		}
+		return &Azure{client: client, serviceURL: serviceURL, sasToken: sasToken}, nil
+	}
+
+	if accountName == "" {
+		// if account name not provided, try to get from env var
+		accountName = os.Getenv("AZURE_CLIENT_ID")
+	}
+
+	url := serviceURL
+	if serviceURL == "" && accountName != "" {
+		// if not otherwise specified, use the typical form:
+		// http(s)://<account>.blob.core.windows.net/
+		url = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
+	}
+
+	if accountName == "" || accountKey == "" {
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("init default credentials: %w", err)
+		}
+		client, err := azblob.NewClient(url, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("init client: %w", err)
+		}
+		return &Azure{client: client, serviceURL: url, defaultCreds: cred}, nil
+	}
+
 	cred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
 	if err != nil {
 		return nil, fmt.Errorf("init credentials: %w", err)
 	}
 
-	client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, cred, nil)
+	client, err := azblob.NewClientWithSharedKeyCredential(url, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("init client: %w", err)
 	}
 
-	return &Azure{client: client, serviceURL: serviceURL, creds: cred}, nil
+	return &Azure{client: client, serviceURL: url, sharedkeyCreds: cred}, nil
 }
 
 func (az *Azure) Shutdown() {}
@@ -73,17 +107,11 @@ func (az *Azure) String() string {
 	return "Azure Blob Gateway"
 }
 
-func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput) error {
-	owner := string(input.ObjectOwnership)
-	acl := auth.ACL{ACL: "private", Owner: owner, Grantees: []auth.Grantee{}}
-	jsonACL, err := json.Marshal(acl)
-	if err != nil {
-		return fmt.Errorf("marshal acl: %w", err)
-	}
+func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		aclKey: getStringPtr(string(jsonACL)),
+		aclKey: backend.GetStringPtr(string(acl)),
 	}
-	_, err = az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
+	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
 }
 
@@ -321,8 +349,8 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 			} else {
 				errs = append(errs, types.Error{
 					Key:     obj.Key,
-					Code:    getStringPtr("InternalError"),
-					Message: getStringPtr(err.Error()),
+					Code:    backend.GetStringPtr("InternalError"),
+					Message: backend.GetStringPtr(err.Error()),
 				})
 			}
 		}
@@ -395,8 +423,6 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 		return err
 	}
 
-	//TODO: SDK has a bug here: it recommends to use the method to remove tags by passing an empty map,
-	// but the method panics because of incorrect implementation
 	_, err = client.SetTags(ctx, map[string]string{}, nil)
 	if err != nil {
 		return azureErrToS3Err(err)
@@ -405,7 +431,23 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 	return nil
 }
 
-// Multipart upload starts with UploadPart action.
+func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	// Multipart upload starts with UploadPart action so there is no
+	// correlating function for creating mutlipart uploads.
+	// TODO: since azure only allows for a single multipart upload
+	// for an object name at a time, we need to send an error back to
+	// the client if there is already an outstanding upload in progress
+	// for this object.
+	// Alternatively, is there something we can do with upload ids to
+	// keep concurrent uploads unique still? I haven't found an efficient
+	// way to rename final objects.
+	return &s3.CreateMultipartUploadOutput{
+		Bucket:   input.Bucket,
+		Key:      input.Key,
+		UploadId: input.Key,
+	}, nil
+}
+
 // Each part is translated into an uncommitted block in a newly created blob in staging area
 func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
@@ -413,6 +455,10 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (eta
 		return "", err
 	}
 
+	// TODO: request streamable version of StageBlock()
+	// (*blockblob.Client).StageBlock does not have a streamable
+	// version of this function at this time, so we need to cache
+	// the body in memory to create an io.ReadSeekCloser
 	rdr, err := getReadSeekCloser(input.Body)
 	if err != nil {
 		return "", err
@@ -560,6 +606,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 
 // Deletes the block blob with committed/uncommitted blocks
 func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	// TODO: need to verify this blob has uncommitted blocks?
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
 		return azureErrToS3Err(err)
@@ -597,7 +644,7 @@ func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) e
 		return err
 	}
 	meta := map[string]*string{
-		aclKey: getStringPtr(string(data)),
+		aclKey: backend.GetStringPtr(string(data)),
 	}
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
 		Metadata: meta,
@@ -626,16 +673,45 @@ func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) 
 	return []byte(*aclPtr), nil
 }
 
-func (az *Azure) getBlobClient(container, blb string) (*blob.Client, error) {
-	return blob.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v/%v", az.serviceURL, container, blb), az.creds, nil)
+func (az *Azure) getContainerURL(cntr string) string {
+	return fmt.Sprintf("%v/%v", az.serviceURL, cntr)
 }
 
-func (az *Azure) getContainerClient(ctr string) (*container.Client, error) {
-	return container.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v", az.serviceURL, ctr), az.creds, nil)
+func (az *Azure) getBlobURL(cntr, blb string) string {
+	return fmt.Sprintf("%v/%v", az.getContainerURL(cntr), blb)
 }
 
-func (az *Azure) getBlockBlobClient(container, blob string) (*blockblob.Client, error) {
-	return blockblob.NewClientWithSharedKeyCredential(fmt.Sprintf("%v/%v/%v", az.serviceURL, container, blob), az.creds, nil)
+func (az *Azure) getBlobClient(cntr, blb string) (*blob.Client, error) {
+	blobURL := az.getBlobURL(cntr, blb)
+	if az.defaultCreds != nil {
+		return blob.NewClient(blobURL, az.defaultCreds, nil)
+	}
+	if az.sasToken != "" {
+		return blob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
+	}
+	return blob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
+}
+
+func (az *Azure) getContainerClient(cntr string) (*container.Client, error) {
+	containerURL := az.getContainerURL(cntr)
+	if az.defaultCreds != nil {
+		return container.NewClient(containerURL, az.defaultCreds, nil)
+	}
+	if az.sasToken != "" {
+		return container.NewClientWithNoCredential(containerURL+"?"+az.sasToken, nil)
+	}
+	return container.NewClientWithSharedKeyCredential(containerURL, az.sharedkeyCreds, nil)
+}
+
+func (az *Azure) getBlockBlobClient(cntr, blb string) (*blockblob.Client, error) {
+	blobURL := az.getBlobURL(cntr, blb)
+	if az.defaultCreds != nil {
+		return blockblob.NewClient(blobURL, az.defaultCreds, nil)
+	}
+	if az.sasToken != "" {
+		return blockblob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
+	}
+	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
 }
 
 func parseMetadata(m map[string]string) map[string]*string {
@@ -698,10 +774,6 @@ func getString(str *string) string {
 	return *str
 }
 
-func getStringPtr(str string) *string {
-	return &str
-}
-
 // Parses azure ResponseError into AWS APIError
 func azureErrToS3Err(apiErr error) error {
 	var azErr *azcore.ResponseError
@@ -714,7 +786,6 @@ func azureErrToS3Err(apiErr error) error {
 		Description:    azErr.RawResponse.Status,
 		HTTPStatusCode: azErr.StatusCode,
 	}
-	fmt.Println(resp)
 	return resp
 }
 

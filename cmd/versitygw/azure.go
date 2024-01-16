@@ -22,7 +22,7 @@ import (
 )
 
 var (
-	azAccount, azKey, azServiceURL string
+	azAccount, azKey, azServiceURL, azSASToken string
 )
 
 func azureCommand() *cli.Command {
@@ -47,6 +47,13 @@ func azureCommand() *cli.Command {
 				Destination: &azKey,
 			},
 			&cli.StringFlag{
+				Name:        "sas-token",
+				Usage:       "azure blob storage SAS token",
+				EnvVars:     []string{"AZ_SAS_TOKEN"},
+				Aliases:     []string{"st"},
+				Destination: &azSASToken,
+			},
+			&cli.StringFlag{
 				Name:        "url",
 				Usage:       "azure service URL",
 				EnvVars:     []string{"AZ_ENDPOINT"},
@@ -58,14 +65,9 @@ func azureCommand() *cli.Command {
 }
 
 func runAzure(ctx *cli.Context) error {
-	if azServiceURL == "" {
-		// if not otherwise specified, use the typical form: http(s)://<account>.blob.core.windows.net/
-		azServiceURL = fmt.Sprintf("https://%s.blob.core.windows.net/", azAccount)
-	}
-
-	be, err := azure.New(azAccount, azKey, azServiceURL)
+	be, err := azure.New(azAccount, azKey, azServiceURL, azSASToken)
 	if err != nil {
-		return fmt.Errorf("init azure: %v", err)
+		return fmt.Errorf("init azure: %w", err)
 	}
 
 	return runGateway(ctx.Context, be)
