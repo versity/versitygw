@@ -19,9 +19,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,12 +37,19 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
-const aclKey string = "Acl"
+// When getting container metadata with GetProperties method the sdk returns
+// the first letter capital, when accessing the metadata after listing the containers
+// it returns the first letter lower
+type aclKey string
+
+const aclKeyCapital aclKey = "Acl"
+const aclKeyLower aclKey = "acl"
 
 type Azure struct {
 	backend.BackendUnsupported
@@ -55,8 +64,15 @@ type Azure struct {
 var _ backend.Backend = &Azure{}
 
 func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
+	url := serviceURL
+	if serviceURL == "" && accountName != "" {
+		// if not otherwise specified, use the typical form:
+		// http(s)://<account>.blob.core.windows.net/
+		url = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
+	}
+
 	if sasToken != "" {
-		client, err := azblob.NewClientWithNoCredential(serviceURL+"?"+sasToken, nil)
+		client, err := azblob.NewClientWithNoCredential(url+"?"+sasToken, nil)
 		if err != nil {
 			return nil, fmt.Errorf("init client: %w", err)
 		}
@@ -66,13 +82,6 @@ func New(accountName, accountKey, serviceURL, sasToken string) (*Azure, error) {
 	if accountName == "" {
 		// if account name not provided, try to get from env var
 		accountName = os.Getenv("AZURE_CLIENT_ID")
-	}
-
-	url := serviceURL
-	if serviceURL == "" && accountName != "" {
-		// if not otherwise specified, use the typical form:
-		// http(s)://<account>.blob.core.windows.net/
-		url = fmt.Sprintf("https://%s.blob.core.windows.net/", accountName)
 	}
 
 	if accountName == "" || accountKey == "" {
@@ -108,7 +117,7 @@ func (az *Azure) String() string {
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		aclKey: backend.GetStringPtr(string(acl)),
+		string(aclKeyCapital): backend.GetStringPtr(string(acl)),
 	}
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
@@ -135,6 +144,9 @@ func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s
 	}
 
 	result.Buckets.Bucket = buckets
+	// If the gateway is initialized with shared key credentials
+	// provide user account name as the owner of the buckets
+	result.Owner.ID = az.getAccountNameFromURL()
 
 	return result, nil
 }
@@ -644,7 +656,7 @@ func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) e
 		return err
 	}
 	meta := map[string]*string{
-		aclKey: backend.GetStringPtr(string(data)),
+		string(aclKeyCapital): backend.GetStringPtr(string(data)),
 	}
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
 		Metadata: meta,
@@ -665,12 +677,65 @@ func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) 
 		return nil, azureErrToS3Err(err)
 	}
 
-	aclPtr, ok := props.Metadata[aclKey]
+	aclPtr, ok := props.Metadata[string(aclKeyCapital)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInternalError)
 	}
 
 	return []byte(*aclPtr), nil
+}
+
+func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	acl, err := getAclFromMetadata(props.Metadata, aclKeyCapital)
+	if err != nil {
+		return err
+	}
+
+	acl.Owner = newOwner
+
+	newAcl, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("marshal acl: %w", err)
+	}
+
+	err = az.PutBucketAcl(ctx, bucket, newAcl)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
+	pager := az.client.NewListContainersPager(nil)
+
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return buckets, azureErrToS3Err(err)
+		}
+		for _, v := range resp.ContainerItems {
+			acl, err := getAclFromMetadata(v.Metadata, aclKeyLower)
+			if err != nil {
+				return buckets, err
+			}
+
+			buckets = append(buckets, s3response.Bucket{
+				Name:  *v.Name,
+				Owner: acl.Owner,
+			})
+		}
+	}
+	return buckets, nil
 }
 
 func (az *Azure) getContainerURL(cntr string) string {
@@ -712,6 +777,20 @@ func (az *Azure) getBlockBlobClient(cntr, blb string) (*blockblob.Client, error)
 		return blockblob.NewClientWithNoCredential(blobURL+"?"+az.sasToken, nil)
 	}
 	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
+}
+
+func (az *Azure) getAccountNameFromURL() string {
+	urlParts, err := url.Parse(az.serviceURL)
+	if err != nil {
+		return ""
+	}
+
+	acc := urlParts.Path
+
+	if strings.HasSuffix(acc, ".blob.core.windows.net/") {
+		return strings.TrimSuffix(acc, ".blob.core.windows.net")
+	}
+	return acc[1:]
 }
 
 func parseMetadata(m map[string]string) map[string]*string {
@@ -833,4 +912,19 @@ func parseRange(rg string) (offset, count int64, err error) {
 	}
 
 	return offset, count - offset + 1, nil
+}
+
+func getAclFromMetadata(meta map[string]*string, key aclKey) (*auth.ACL, error) {
+	aclPtr, ok := meta[string(key)]
+	if !ok {
+		return nil, s3err.GetAPIError(s3err.ErrInternalError)
+	}
+
+	var acl auth.ACL
+	err := json.Unmarshal([]byte(*aclPtr), &acl)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal acl: %w", err)
+	}
+
+	return &acl, nil
 }
