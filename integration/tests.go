@@ -1426,7 +1426,7 @@ func ListObject_truncated(s *S3Conf) error {
 		}
 
 		if out1.IsTruncated == nil || !*out1.IsTruncated {
-			return fmt.Errorf("expected out1put to be truncated")
+			return fmt.Errorf("expected output to be truncated")
 		}
 
 		if *out1.MaxKeys != maxKeys {
@@ -1434,7 +1434,7 @@ func ListObject_truncated(s *S3Conf) error {
 		}
 
 		if *out1.NextMarker != "baz" {
-			return fmt.Errorf("expected nex-marker to be baz, instead got %v", *out1.NextMarker)
+			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out1.NextMarker)
 		}
 
 		if !compareObjects([]string{"bar", "baz"}, out1.Contents) {
@@ -1588,10 +1588,6 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 		cancel()
 		if err != nil {
 			return err
-		}
-
-		for _, el := range out.Contents {
-			fmt.Println(*el.Key)
 		}
 
 		if !compareObjects([]string{"foo", "qux", "hello", "xyz"}, out.Contents) {

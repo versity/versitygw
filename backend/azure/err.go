@@ -41,6 +41,8 @@ func azErrToS3err(azErr *azcore.ResponseError) s3err.APIError {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	case "TagsTooLarge":
 		return s3err.GetAPIError(s3err.ErrInvalidTag)
+	case "Requested Range Not Satisfiable":
+		return s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
 	return s3err.APIError{
 		Code:           azErr.ErrorCode,

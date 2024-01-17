@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -144,9 +143,7 @@ func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s
 	}
 
 	result.Buckets.Bucket = buckets
-	// If the gateway is initialized with shared key credentials
-	// provide user account name as the owner of the buckets
-	result.Owner.ID = az.getAccountNameFromURL()
+	result.Owner.ID = owner
 
 	return result, nil
 }
@@ -189,7 +186,7 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	var opts *azblob.DownloadStreamOptions
-	if input.Range != nil {
+	if *input.Range != "" {
 		offset, count, err := parseRange(*input.Range)
 		if err != nil {
 			return nil, err
@@ -218,7 +215,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:    blobDownloadResponse.AcceptRanges,
+		AcceptRanges:    input.Range,
 		ContentLength:   blobDownloadResponse.ContentLength,
 		ContentEncoding: blobDownloadResponse.ContentEncoding,
 		ContentType:     blobDownloadResponse.ContentType,
@@ -715,6 +712,8 @@ func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string)
 	return nil
 }
 
+// The action actually returns the containers owned by the user, who initialized the gateway
+// TODO: Not sure if there's a way to list all the containers and owners?
 func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
 	pager := az.client.NewListContainersPager(nil)
 
@@ -779,20 +778,6 @@ func (az *Azure) getBlockBlobClient(cntr, blb string) (*blockblob.Client, error)
 	return blockblob.NewClientWithSharedKeyCredential(blobURL, az.sharedkeyCreds, nil)
 }
 
-func (az *Azure) getAccountNameFromURL() string {
-	urlParts, err := url.Parse(az.serviceURL)
-	if err != nil {
-		return ""
-	}
-
-	acc := urlParts.Path
-
-	if strings.HasSuffix(acc, ".blob.core.windows.net/") {
-		return strings.TrimSuffix(acc, ".blob.core.windows.net")
-	}
-	return acc[1:]
-}
-
 func parseMetadata(m map[string]string) map[string]*string {
 	if m == nil {
 		return nil
@@ -801,7 +786,8 @@ func parseMetadata(m map[string]string) map[string]*string {
 	meta := make(map[string]*string)
 
 	for k, v := range m {
-		meta[k] = &v
+		val := v
+		meta[k] = &val
 	}
 	return meta
 }
