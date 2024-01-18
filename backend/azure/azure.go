@@ -261,14 +261,29 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*
 
 	var objects []types.Object
 	var nextMarker *string
+	var isTruncated bool
+	var maxKeys int32 = math.MaxInt32
+	var breakFlag bool
+
+	if input.MaxKeys != nil {
+		maxKeys = *input.MaxKeys
+	}
 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, azureErrToS3Err(err)
 		}
+
 		for _, v := range resp.Segment.BlobItems {
-			nextMarker = resp.NextMarker
+			if nextMarker == nil && *resp.NextMarker != "" {
+				nextMarker = resp.NextMarker
+				isTruncated = true
+			}
+			if len(objects) >= int(maxKeys) {
+				breakFlag = true
+				break
+			}
 			objects = append(objects, types.Object{
 				ETag:         (*string)(v.Properties.ETag),
 				Key:          v.Name,
@@ -277,18 +292,22 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
 		}
+
+		if breakFlag {
+			break
+		}
 	}
 
 	// TODO: generate common prefixes when appropriate
-	// TODO: set truncated response status
 
 	return &s3.ListObjectsOutput{
-		Contents:   objects,
-		Marker:     input.Marker,
-		MaxKeys:    input.MaxKeys,
-		Name:       input.Bucket,
-		NextMarker: nextMarker,
-		Prefix:     input.Prefix,
+		Contents:    objects,
+		Marker:      input.Marker,
+		MaxKeys:     input.MaxKeys,
+		Name:        input.Bucket,
+		NextMarker:  nextMarker,
+		Prefix:      input.Prefix,
+		IsTruncated: &isTruncated,
 	}, nil
 }
 
@@ -301,6 +320,13 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 
 	var objects []types.Object
 	var nextMarker *string
+	var isTruncated bool
+	var maxKeys int32 = math.MaxInt32
+	var breakFlag bool
+
+	if input.MaxKeys != nil {
+		maxKeys = *input.MaxKeys
+	}
 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
@@ -308,6 +334,14 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 			return nil, azureErrToS3Err(err)
 		}
 		for _, v := range resp.Segment.BlobItems {
+			if nextMarker == nil && *resp.NextMarker != "" {
+				nextMarker = resp.NextMarker
+				isTruncated = true
+			}
+			if len(objects) >= int(maxKeys) {
+				breakFlag = true
+				break
+			}
 			nextMarker = resp.NextMarker
 			objects = append(objects, types.Object{
 				ETag:         (*string)(v.Properties.ETag),
@@ -316,6 +350,10 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
+		}
+
+		if breakFlag {
+			break
 		}
 	}
 
@@ -329,6 +367,7 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 		Name:                  input.Bucket,
 		NextContinuationToken: nextMarker,
 		Prefix:                input.Prefix,
+		IsTruncated:           &isTruncated,
 	}, nil
 }
 
@@ -476,7 +515,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (eta
 	etag = blockIDInt32ToBase64(*input.PartNumber)
 	_, err = client.StageBlock(ctx, etag, rdr, nil)
 	if err != nil {
-		return "", azureErrToS3Err(err)
+		return "", parseMpError(err)
 	}
 
 	return etag, nil
@@ -493,7 +532,7 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 	// UploadId here is the source block id
 	_, err = client.StageBlockFromURL(ctx, *input.UploadId, *input.CopySource, nil)
 	if err != nil {
-		return s3response.CopyObjectResult{}, azureErrToS3Err(err)
+		return s3response.CopyObjectResult{}, parseMpError(err)
 	}
 
 	return s3response.CopyObjectResult{}, nil
@@ -508,7 +547,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 
 	resp, err := client.GetBlockList(ctx, blockblob.BlockListTypeUncommitted, nil)
 	if err != nil {
-		return s3response.ListPartsResult{}, azureErrToS3Err(err)
+		return s3response.ListPartsResult{}, parseMpError(err)
 	}
 	var partNumberMarker int
 	var nextPartNumberMarker int
@@ -561,7 +600,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 	client, err := az.getContainerClient(*input.Bucket)
 	if err != nil {
-		return s3response.ListMultipartUploadsResult{}, nil
+		return s3response.ListMultipartUploadsResult{}, err
 	}
 	pager := client.NewListBlobsFlatPager(&container.ListBlobsFlatOptions{
 		Include: container.ListBlobsInclude{UncommittedBlobs: true},
@@ -618,7 +657,7 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 	// TODO: need to verify this blob has uncommitted blocks?
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
-		return azureErrToS3Err(err)
+		return parseMpError(err)
 	}
 	return nil
 }
@@ -637,7 +676,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	}
 	resp, err := client.CommitBlockList(ctx, blockIds, nil)
 	if err != nil {
-		return nil, azureErrToS3Err(err)
+		return nil, parseMpError(err)
 	}
 
 	return &s3.CompleteMultipartUploadOutput{
