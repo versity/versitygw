@@ -39,3 +39,10 @@ VERSION
 /profile.txt
 
 dist/
+
+# secrets file for local github-actions testing
+.secrets
+
+# env files for testing
+.env*
+!.env.default
