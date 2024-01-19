@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -173,18 +174,20 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 	// authorization must start with:
 	// Authorization: <ALGORITHM>
 	// followed by key=value pairs separated by ","
-	authParts := strings.Fields(authorization)
+	authParts := strings.SplitN(authorization, " ", 2)
 	for i, el := range authParts {
-		authParts[i] = strings.TrimSpace(el)
+		if strings.Contains(el, " ") {
+			authParts[i] = removeSpace(el)
+		}
 	}
 
-	if len(authParts) < 3 {
+	if len(authParts) < 2 {
 		return a, s3err.GetAPIError(s3err.ErrMissingFields)
 	}
 
 	algo := authParts[0]
 
-	kvData := strings.Join(authParts[1:], "")
+	kvData := authParts[1]
 	kvPairs := strings.Split(kvData, ",")
 	// we are expecting at least Credential, SignedHeaders, and Signature
 	// key value pairs here
@@ -242,6 +245,17 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 		Signature:     signature,
 		Date:          date,
 	}, nil
+}
+
+func removeSpace(str string) string {
+	var b strings.Builder
+	b.Grow(len(str))
+	for _, ch := range str {
+		if !unicode.IsSpace(ch) {
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
 }
 
 var (

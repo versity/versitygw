@@ -81,7 +81,7 @@ func teardown(s *S3Conf, bucket string) error {
 			}
 		}
 
-		if *out.IsTruncated {
+		if out.IsTruncated != nil && *out.IsTruncated {
 			in.ContinuationToken = out.ContinuationToken
 		} else {
 			break
@@ -215,7 +215,7 @@ func checkSdkApiErr(err error, code string) error {
 	var ae smithy.APIError
 	if errors.As(err, &ae) {
 		if ae.ErrorCode() != code {
-			return fmt.Errorf("expected %v, instead got %v", ae.ErrorCode(), code)
+			return fmt.Errorf("expected %v, instead got %v", code, ae.ErrorCode())
 		}
 		return nil
 	}
