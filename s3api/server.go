@@ -57,6 +57,7 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 
 	// Authentication middlewares
 	app.Use(middlewares.VerifyV4Signature(root, iam, l, region, server.debug))
+	app.Use(middlewares.ProcessChunkedBody(root, iam, l, region))
 	app.Use(middlewares.VerifyMD5Body(l))
 	app.Use(middlewares.AclParser(be, l))
 

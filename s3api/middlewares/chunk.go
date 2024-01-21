@@ -1,4 +1,4 @@
-// Copyright 2023 Versity Software
+// Copyright 2024 Versity Software
 // This file is licensed under the Apache License, Version 2.0
 // (the "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
@@ -15,40 +15,45 @@
 package middlewares
 
 import (
-	"crypto/md5"
 	"io"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
 )
 
-func VerifyMD5Body(logger s3log.AuditLogger) fiber.Handler {
+// ProcessChunkedBody initializes the chunked upload stream if the
+// request appears to be a chunked upload
+func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, region string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		incomingSum := ctx.Get("Content-Md5")
-		if incomingSum == "" {
+		decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
+		if decodedLength == "" {
 			return ctx.Next()
 		}
+		// TODO: validate content length
+
+		authData, err := utils.ParseAuthorization(ctx.Get("Authorization"))
+		if err != nil {
+			return sendResponse(ctx, err, logger)
+		}
+
+		acct := ctx.Locals("account").(auth.Account)
+		amzdate := ctx.Get("X-Amz-Date")
+		date, _ := time.Parse(iso8601Format, amzdate)
 
 		if utils.IsBigDataAction(ctx) {
 			var err error
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				r, err = utils.NewHashReader(r, incomingSum, utils.HashTypeMd5)
-				return r
+				var cr *utils.ChunkReader
+				cr, err = utils.NewChunkReader(ctx, r, authData, region, acct.Secret, date)
+				return cr
 			})
 			if err != nil {
-				return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
+				return sendResponse(ctx, err, logger)
 			}
 			return ctx.Next()
-		}
-
-		sum := md5.Sum(ctx.Body())
-		calculatedSum := utils.Md5SumString(sum[:])
-
-		if incomingSum != calculatedSum {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest), &controllers.MetaOpts{Logger: logger})
 		}
 
 		return ctx.Next()
