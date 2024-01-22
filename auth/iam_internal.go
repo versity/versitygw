@@ -270,7 +270,7 @@ func (s *IAMServiceInternal) storeIAM(update UpdateAcctFunc) error {
 		// reset retries on successful read
 		retries = 0
 
-		err = os.Remove(iamFile)
+		err = os.Remove(fname)
 		if errors.Is(err, fs.ErrNotExist) {
 			// racing with someone else updating
 			// keep retrying after backoff
