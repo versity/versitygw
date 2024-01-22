@@ -399,12 +399,36 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 }
 
 func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	client, err := az.getBlobClient(*input.Bucket, *input.Key)
+	containerClient, err := az.getContainerClient(*input.Bucket)
 	if err != nil {
 		return nil, err
 	}
 
+	res, err := containerClient.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	dstContainerAcl, err := getAclFromMetadata(res.Metadata, aclKeyCapital)
+	if err != nil {
+		return nil, err
+	}
+
+	err = auth.VerifyACL(*dstContainerAcl, *input.ExpectedBucketOwner, types.PermissionWrite, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource && isMetaSame(res.Metadata, input.Metadata) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+	}
+
 	tags, err := parseTags(input.Tagging)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -941,4 +965,22 @@ func getAclFromMetadata(meta map[string]*string, key aclKey) (*auth.ACL, error) 
 	}
 
 	return &acl, nil
+}
+
+func isMetaSame(azMeta map[string]*string, awsMeta map[string]string) bool {
+	if len(azMeta) != len(awsMeta)+1 {
+		return false
+	}
+
+	for key, val := range azMeta {
+		if key == string(aclKeyCapital) || key == string(aclKeyLower) {
+			continue
+		}
+		awsVal, ok := awsMeta[key]
+		if !ok || awsVal != *val {
+			return false
+		}
+	}
+
+	return true
 }
