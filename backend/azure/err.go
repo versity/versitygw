@@ -50,3 +50,14 @@ func azErrToS3err(azErr *azcore.ResponseError) s3err.APIError {
 		HTTPStatusCode: azErr.StatusCode,
 	}
 }
+
+func parseMpError(mpErr error) error {
+	err := azureErrToS3Err(mpErr)
+
+	serr, ok := err.(s3err.APIError)
+	if !ok || serr.Code != "NoSuchKey" {
+		return mpErr
+	}
+
+	return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+}
