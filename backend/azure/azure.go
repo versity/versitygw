@@ -263,12 +263,12 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*
 	var nextMarker *string
 	var isTruncated bool
 	var maxKeys int32 = math.MaxInt32
-	var breakFlag bool
 
 	if input.MaxKeys != nil {
 		maxKeys = *input.MaxKeys
 	}
 
+Pager:
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
@@ -281,8 +281,7 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*
 				isTruncated = true
 			}
 			if len(objects) >= int(maxKeys) {
-				breakFlag = true
-				break
+				break Pager
 			}
 			objects = append(objects, types.Object{
 				ETag:         (*string)(v.Properties.ETag),
@@ -291,10 +290,6 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
-		}
-
-		if breakFlag {
-			break
 		}
 	}
 
@@ -322,12 +317,12 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 	var nextMarker *string
 	var isTruncated bool
 	var maxKeys int32 = math.MaxInt32
-	var breakFlag bool
 
 	if input.MaxKeys != nil {
 		maxKeys = *input.MaxKeys
 	}
 
+Pager:
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
@@ -339,8 +334,7 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 				isTruncated = true
 			}
 			if len(objects) >= int(maxKeys) {
-				breakFlag = true
-				break
+				break Pager
 			}
 			nextMarker = resp.NextMarker
 			objects = append(objects, types.Object{
@@ -351,14 +345,9 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
 		}
-
-		if breakFlag {
-			break
-		}
 	}
 
 	// TODO: generate common prefixes when appropriate
-	// TODO: set truncated response status
 
 	return &s3.ListObjectsV2Output{
 		Contents:              objects,
