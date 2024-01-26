@@ -60,6 +60,8 @@ const (
 	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 	aclkey              = "user.acl"
+	proxyAclKey         = "versitygwAcl"
+	proxyBucketAclKey   = "user.proxy.acl"
 	etagkey             = "user.etag"
 )
 
@@ -1718,6 +1720,78 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 		return nil, fmt.Errorf("get acl: %w", err)
 	}
 	return b, nil
+}
+
+func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	acl, ok := tags[proxyAclKey]
+	if ok {
+		// set proxy acl in a separate xattr key
+		err = xattr.Set(bucket, proxyBucketAclKey, []byte(acl))
+		if err != nil {
+			return fmt.Errorf("set proxy acl: %w", err)
+		}
+
+		return nil
+	}
+
+	if tags == nil {
+		err = xattr.Remove(bucket, "user."+tagHdr)
+		if err != nil {
+			return fmt.Errorf("remove tags: %w", err)
+		}
+		return nil
+	}
+
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+
+	err = xattr.Set(bucket, "user."+tagHdr, b)
+	if err != nil {
+		return fmt.Errorf("set tags: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	tags, err := p.getXattrTags(bucket, "")
+	if err != nil {
+		return nil, err
+	}
+
+	acl, err := xattr.Get(bucket, "user."+tagHdr)
+	if isNoAttr(err) {
+		return tags, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tags: %w", err)
+	}
+
+	tags[aclkey] = string(acl)
+
+	return tags, nil
+}
+
+func (p *Posix) DeleteBucketTagging(ctx context.Context, bucket string) error {
+	return p.PutBucketTagging(ctx, bucket, nil)
 }
 
 func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {

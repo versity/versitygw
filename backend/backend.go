@@ -65,6 +65,11 @@ type Backend interface {
 	RestoreObject(context.Context, *s3.RestoreObjectInput) error
 	SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer)
 
+	// bucket tagging operations
+	GetBucketTagging(_ context.Context, bucket string) (map[string]string, error)
+	PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error
+	DeleteBucketTagging(_ context.Context, bucket string) error
+
 	// object tags operations
 	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
 	PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error
@@ -177,6 +182,16 @@ func (BackendUnsupported) SelectObjectContent(ctx context.Context, input *s3.Sel
 		apiErr := s3err.GetAPIError(s3err.ErrNotImplemented)
 		mh.FinishWithError(apiErr.Code, apiErr.Description)
 	}
+}
+
+func (BackendUnsupported) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteBucketTagging(_ context.Context, bucket string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
