@@ -26,6 +26,8 @@ func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
 	CreateBucket_as_user(s)
+	CreateBucket_default_acl(s)
+	CreateBucket_non_default_acl(s)
 	CreateDeleteBucket_success(s)
 }
 
@@ -251,6 +253,8 @@ func GetIntTests() IntTests {
 		"CreateBucket_existing_bucket":                        CreateBucket_existing_bucket,
 		"CreateBucket_as_user":                                CreateBucket_as_user,
 		"CreateDeleteBucket_success":                          CreateDeleteBucket_success,
+		"CreateBucket_default_acl":                            CreateBucket_default_acl,
+		"CreateBucket_non_default_acl":                        CreateBucket_non_default_acl,
 		"HeadBucket_non_existing_bucket":                      HeadBucket_non_existing_bucket,
 		"HeadBucket_success":                                  HeadBucket_success,
 		"ListBuckets_as_user":                                 ListBuckets_as_user,
@@ -263,7 +267,6 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                             PutObject_special_chars,
 		"PutObject_invalid_long_tags":                         PutObject_invalid_long_tags,
 		"PutObject_success":                                   PutObject_success,
-		"PutObject_invalid_credentials":                       PutObject_invalid_credentials,
 		"HeadObject_non_existing_object":                      HeadObject_non_existing_object,
 		"HeadObject_success":                                  HeadObject_success,
 		"GetObject_non_existing_key":                          GetObject_non_existing_key,
