@@ -48,6 +48,23 @@ func TestDeleteBucket(s *S3Conf) {
 	DeleteBucket_success_status_code(s)
 }
 
+func TestPutBucketTagging(s *S3Conf) {
+	PutBucketTagging_non_existing_bucket(s)
+	PutBucketTagging_long_tags(s)
+	PutBucketTagging_success(s)
+}
+
+func TestGetBucketTagging(s *S3Conf) {
+	GetBucketTagging_non_existing_bucket(s)
+	GetBucketTagging_success(s)
+}
+
+func TestDeleteBucketTagging(s *S3Conf) {
+	DeleteBucketTagging_non_existing_object(s)
+	DeleteBucketTagging_success_status(s)
+	DeleteBucketTagging_success(s)
+}
+
 func TestPutObject(s *S3Conf) {
 	PutObject_non_existing_bucket(s)
 	PutObject_special_chars(s)
@@ -199,6 +216,9 @@ func TestFullFlow(s *S3Conf) {
 	TestHeadBucket(s)
 	TestListBuckets(s)
 	TestDeleteBucket(s)
+	TestPutBucketTagging(s)
+	TestGetBucketTagging(s)
+	TestDeleteBucketTagging(s)
 	TestPutObject(s)
 	TestHeadObject(s)
 	TestGetObject(s)
@@ -263,6 +283,14 @@ func GetIntTests() IntTests {
 		"DeleteBucket_non_existing_bucket":                    DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                       DeleteBucket_non_empty_bucket,
 		"DeleteBucket_success_status_code":                    DeleteBucket_success_status_code,
+		"PutBucketTagging_non_existing_bucket":                PutBucketTagging_non_existing_bucket,
+		"PutBucketTagging_long_tags":                          PutBucketTagging_long_tags,
+		"PutBucketTagging_success":                            PutBucketTagging_success,
+		"GetBucketTagging_non_existing_bucket":                GetBucketTagging_non_existing_bucket,
+		"GetBucketTagging_success":                            GetBucketTagging_success,
+		"DeleteBucketTagging_non_existing_object":             DeleteBucketTagging_non_existing_object,
+		"DeleteBucketTagging_success_status":                  DeleteBucketTagging_success_status,
+		"DeleteBucketTagging_success":                         DeleteBucketTagging_success,
 		"PutObject_non_existing_bucket":                       PutObject_non_existing_bucket,
 		"PutObject_special_chars":                             PutObject_special_chars,
 		"PutObject_invalid_long_tags":                         PutObject_invalid_long_tags,

@@ -1777,7 +1777,7 @@ func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]s
 		return nil, err
 	}
 
-	acl, err := xattr.Get(bucket, "user."+tagHdr)
+	acl, err := xattr.Get(bucket, proxyBucketAclKey)
 	if isNoAttr(err) {
 		return tags, nil
 	}
@@ -1785,7 +1785,7 @@ func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]s
 		return nil, fmt.Errorf("get tags: %w", err)
 	}
 
-	tags[aclkey] = string(acl)
+	tags[proxyAclKey] = string(acl)
 
 	return tags, nil
 }

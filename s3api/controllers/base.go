@@ -764,7 +764,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 		}
 
 		err := c.be.DeleteBucketTagging(ctx.Context(), bucket)
-		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucketTagging", BucketOwner: parsedAcl.Owner})
+		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucketTagging", BucketOwner: parsedAcl.Owner, Status: http.StatusNoContent})
 	}
 
 	if err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot); err != nil {
@@ -774,7 +774,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	err := c.be.DeleteBucket(ctx.Context(), &s3.DeleteBucketInput{
 		Bucket: &bucket,
 	})
-	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner, Status: 204})
+	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner, Status: http.StatusNoContent})
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
