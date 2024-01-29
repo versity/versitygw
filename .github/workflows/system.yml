@@ -1,0 +1,42 @@
+name: system tests
+on: pull_request
+#on:
+#  workflow_dispatch:
+#    inputs:
+#      run_workflow:
+#        description: 'Run command-line tests'
+jobs:
+  build:
+    name: RunTests
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+        id: go
+
+      - name: Get Dependencies
+        run: |
+          go get -v -t -d ./...
+
+      - name: Install BATS
+        run: |
+          git clone https://github.com/bats-core/bats-core.git
+          cd bats-core && ./install.sh $HOME
+
+      - name: Build and Run
+        run: |
+          make testbin
+          export AWS_ACCESS_KEY_ID=user
+          export AWS_SECRET_ACCESS_KEY=pass
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity 
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
+          export VERSITY_EXE=./versitygw
+          mkdir /tmp/gw
+          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.versitygw $HOME/bin/bats ./tests/s3_bucket_tests.sh
+          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.versitygw $HOME/bin/bats ./tests/posix_tests.sh
