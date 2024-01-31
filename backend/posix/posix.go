@@ -60,8 +60,6 @@ const (
 	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 	aclkey              = "user.acl"
-	proxyAclKey         = "versitygwAcl"
-	proxyBucketAclKey   = "user.proxy.acl"
 	etagkey             = "user.etag"
 )
 
@@ -1731,17 +1729,6 @@ func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[stri
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	acl, ok := tags[proxyAclKey]
-	if ok {
-		// set proxy acl in a separate xattr key
-		err = xattr.Set(bucket, proxyBucketAclKey, []byte(acl))
-		if err != nil {
-			return fmt.Errorf("set proxy acl: %w", err)
-		}
-
-		return nil
-	}
-
 	if tags == nil {
 		err = xattr.Remove(bucket, "user."+tagHdr)
 		if err != nil {
@@ -1776,16 +1763,6 @@ func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]s
 	if err != nil {
 		return nil, err
 	}
-
-	acl, err := xattr.Get(bucket, proxyBucketAclKey)
-	if isNoAttr(err) {
-		return tags, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get tags: %w", err)
-	}
-
-	tags[proxyAclKey] = string(acl)
 
 	return tags, nil
 }
