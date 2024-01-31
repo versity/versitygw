@@ -706,6 +706,116 @@ func CreateBucket_existing_bucket(s *S3Conf) error {
 	return nil
 }
 
+func CreateBucket_default_acl(s *S3Conf) error {
+	testName := "CreateBucket_default_acl"
+	runF(testName)
+
+	bucket := getBucketName()
+	client := s3.NewFromConfig(s.Config())
+
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &bucket})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	if *out.Owner.ID != s.awsID {
+		failF("%v: expected bucket owner to be %v, instead got %v", testName, s.awsID, *out.Owner.ID)
+		return fmt.Errorf("%v: expected bucket owner to be %v, instead got %v", testName, s.awsID, *out.Owner.ID)
+	}
+
+	if len(out.Grants) != 0 {
+		failF("%v: expected grants to be empty instead got %v", testName, len(out.Grants))
+		return fmt.Errorf("%v: expected grants to be empty instead got %v", testName, len(out.Grants))
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
+func CreateBucket_non_default_acl(s *S3Conf) error {
+	testName := "CreateBucket_non_default_acl"
+	runF(testName)
+
+	err := createUsers(s, []user{
+		{"grt1", "grt1secret", "user"},
+		{"grt2", "grt2secret", "user"},
+		{"grt3", "grt3secret", "user"},
+	})
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	grants := []types.Grant{
+		{
+			Grantee: &types.Grantee{
+				ID: getPtr("grt1"),
+			},
+			Permission: types.PermissionFullControl,
+		},
+		{
+			Grantee: &types.Grantee{
+				ID: getPtr("grt2"),
+			},
+			Permission: types.PermissionReadAcp,
+		},
+		{
+			Grantee: &types.Grantee{
+				ID: getPtr("grt3"),
+			},
+			Permission: types.PermissionWrite,
+		},
+	}
+
+	bucket := getBucketName()
+	client := s3.NewFromConfig(s.Config())
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucket, GrantFullControl: getPtr("grt1"), GrantReadACP: getPtr("grt2"), GrantWrite: getPtr("grt3")})
+	cancel()
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &bucket})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	if !compareGrants(out.Grants, grants) {
+		failF("%v: expected bucket acl grants to be %v, instead got %v", testName, grants, out.Grants)
+		return fmt.Errorf("%v: expected bucket acl grants to be %v, instead got %v", testName, grants, out.Grants)
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 func HeadBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "HeadBucket_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

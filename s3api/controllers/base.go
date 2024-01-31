@@ -16,7 +16,6 @@ package controllers
 
 import (
 	"bytes"
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -408,16 +407,29 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName), &MetaOpts{Logger: c.logger, Action: "CreateBucket"})
 	}
 
+	if acl != "" && grants != "" {
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "PutBucketAcl", BucketOwner: acct.Access})
+	}
+
 	defACL := auth.ACL{ACL: "private", Owner: acct.Access, Grantees: []auth.Grantee{}}
-	jsonACL, err := json.Marshal(defACL)
+
+	updAcl, err := auth.UpdateACL(&s3.PutBucketAclInput{
+		GrantFullControl:    &grantFullControl,
+		GrantRead:           &grantRead,
+		GrantReadACP:        &grantReadACP,
+		GrantWrite:          &granWrite,
+		GrantWriteACP:       &grantWriteACP,
+		AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{ID: &acct.Access}},
+		ACL:                 types.BucketCannedACL(acl),
+	}, defACL, c.iam)
 	if err != nil {
-		return SendResponse(ctx, fmt.Errorf("marshal acl: %w", err), &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: acct.Access})
+		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: acct.Access})
 	}
 
 	err = c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
 		Bucket:          &bucket,
 		ObjectOwnership: types.ObjectOwnership(acct.Access),
-	}, jsonACL)
+	}, updAcl)
 	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "CreateBucket", BucketOwner: acct.Access})
 }
 
