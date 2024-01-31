@@ -1128,6 +1128,215 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 	return nil
 }
 
+func PutBucketTagging_non_existing_bucket(s *S3Conf) error {
+	testName := "PutBucketTagging_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  getPtr(getBucketName()),
+			Tagging: &types.Tagging{TagSet: []types.Tag{}},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketTagging_long_tags(s *S3Conf) error {
+	testName := "PutBucketTagging_long_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr(genRandString(200)), Value: getPtr("val")}}}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		tagging = types.Tagging{TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr(genRandString(300))}}}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketTagging_success(s *S3Conf) error {
+	testName := "PutBucketTagging_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketTagging_non_existing_bucket(s *S3Conf) error {
+	testName := "GetBucketTagging_non_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func GetBucketTagging_success(s *S3Conf) error {
+	testName := "GetBucketTagging_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if !areTagsSame(out.TagSet, tagging.TagSet) {
+			return fmt.Errorf("expected %v instead got %v", tagging.TagSet, out.TagSet)
+		}
+
+		return nil
+	})
+}
+
+func DeleteBucketTagging_non_existing_object(s *S3Conf) error {
+	testName := "DeleteBucketTagging_non_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func DeleteBucketTagging_success_status(s *S3Conf) error {
+	testName := "DeleteBucketTagging_success_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{
+					Key:   getPtr("Hello"),
+					Value: getPtr("World"),
+				},
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v?tagging", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		if err != nil {
+			return err
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
+func DeleteBucketTagging_success(s *S3Conf) error {
+	testName := "DeleteBucketTagging_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if len(out.TagSet) > 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", out.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func PutObject_non_existing_bucket(s *S3Conf) error {
 	testName := "PutObject_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

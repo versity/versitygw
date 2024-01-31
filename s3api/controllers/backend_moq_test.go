@@ -44,6 +44,9 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 //				panic("mock out the DeleteBucket method")
 //			},
+//			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
+//				panic("mock out the DeleteBucketTagging method")
+//			},
 //			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error {
 //				panic("mock out the DeleteObject method")
 //			},
@@ -55,6 +58,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
+//			},
+//			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
+//				panic("mock out the GetBucketTagging method")
 //			},
 //			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
@@ -94,6 +100,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
+//			},
+//			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
+//				panic("mock out the PutBucketTagging method")
 //			},
 //			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error) {
 //				panic("mock out the PutObject method")
@@ -150,6 +159,9 @@ type BackendMock struct {
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
 
+	// DeleteBucketTaggingFunc mocks the DeleteBucketTagging method.
+	DeleteBucketTaggingFunc func(contextMoqParam context.Context, bucket string) error
+
 	// DeleteObjectFunc mocks the DeleteObject method.
 	DeleteObjectFunc func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error
 
@@ -161,6 +173,9 @@ type BackendMock struct {
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
+
+	// GetBucketTaggingFunc mocks the GetBucketTagging method.
+	GetBucketTaggingFunc func(contextMoqParam context.Context, bucket string) (map[string]string, error)
 
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error)
@@ -200,6 +215,9 @@ type BackendMock struct {
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
+
+	// PutBucketTaggingFunc mocks the PutBucketTagging method.
+	PutBucketTaggingFunc func(contextMoqParam context.Context, bucket string, tags map[string]string) error
 
 	// PutObjectFunc mocks the PutObject method.
 	PutObjectFunc func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error)
@@ -283,6 +301,13 @@ type BackendMock struct {
 			// DeleteBucketInput is the deleteBucketInput argument value.
 			DeleteBucketInput *s3.DeleteBucketInput
 		}
+		// DeleteBucketTagging holds details about calls to the DeleteBucketTagging method.
+		DeleteBucketTagging []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// DeleteObject holds details about calls to the DeleteObject method.
 		DeleteObject []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -312,6 +337,13 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// GetBucketAclInput is the getBucketAclInput argument value.
 			GetBucketAclInput *s3.GetBucketAclInput
+		}
+		// GetBucketTagging holds details about calls to the GetBucketTagging method.
+		GetBucketTagging []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
 		}
 		// GetObject holds details about calls to the GetObject method.
 		GetObject []struct {
@@ -410,6 +442,15 @@ type BackendMock struct {
 			// Data is the data argument value.
 			Data []byte
 		}
+		// PutBucketTagging holds details about calls to the PutBucketTagging method.
+		PutBucketTagging []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Tags is the tags argument value.
+			Tags map[string]string
+		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -477,10 +518,12 @@ type BackendMock struct {
 	lockCreateBucket            sync.RWMutex
 	lockCreateMultipartUpload   sync.RWMutex
 	lockDeleteBucket            sync.RWMutex
+	lockDeleteBucketTagging     sync.RWMutex
 	lockDeleteObject            sync.RWMutex
 	lockDeleteObjectTagging     sync.RWMutex
 	lockDeleteObjects           sync.RWMutex
 	lockGetBucketAcl            sync.RWMutex
+	lockGetBucketTagging        sync.RWMutex
 	lockGetObject               sync.RWMutex
 	lockGetObjectAcl            sync.RWMutex
 	lockGetObjectAttributes     sync.RWMutex
@@ -494,6 +537,7 @@ type BackendMock struct {
 	lockListObjectsV2           sync.RWMutex
 	lockListParts               sync.RWMutex
 	lockPutBucketAcl            sync.RWMutex
+	lockPutBucketTagging        sync.RWMutex
 	lockPutObject               sync.RWMutex
 	lockPutObjectAcl            sync.RWMutex
 	lockPutObjectTagging        sync.RWMutex
@@ -765,6 +809,42 @@ func (mock *BackendMock) DeleteBucketCalls() []struct {
 	return calls
 }
 
+// DeleteBucketTagging calls DeleteBucketTaggingFunc.
+func (mock *BackendMock) DeleteBucketTagging(contextMoqParam context.Context, bucket string) error {
+	if mock.DeleteBucketTaggingFunc == nil {
+		panic("BackendMock.DeleteBucketTaggingFunc: method is nil but Backend.DeleteBucketTagging was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockDeleteBucketTagging.Lock()
+	mock.calls.DeleteBucketTagging = append(mock.calls.DeleteBucketTagging, callInfo)
+	mock.lockDeleteBucketTagging.Unlock()
+	return mock.DeleteBucketTaggingFunc(contextMoqParam, bucket)
+}
+
+// DeleteBucketTaggingCalls gets all the calls that were made to DeleteBucketTagging.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteBucketTaggingCalls())
+func (mock *BackendMock) DeleteBucketTaggingCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockDeleteBucketTagging.RLock()
+	calls = mock.calls.DeleteBucketTagging
+	mock.lockDeleteBucketTagging.RUnlock()
+	return calls
+}
+
 // DeleteObject calls DeleteObjectFunc.
 func (mock *BackendMock) DeleteObject(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) error {
 	if mock.DeleteObjectFunc == nil {
@@ -910,6 +990,42 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 	mock.lockGetBucketAcl.RLock()
 	calls = mock.calls.GetBucketAcl
 	mock.lockGetBucketAcl.RUnlock()
+	return calls
+}
+
+// GetBucketTagging calls GetBucketTaggingFunc.
+func (mock *BackendMock) GetBucketTagging(contextMoqParam context.Context, bucket string) (map[string]string, error) {
+	if mock.GetBucketTaggingFunc == nil {
+		panic("BackendMock.GetBucketTaggingFunc: method is nil but Backend.GetBucketTagging was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketTagging.Lock()
+	mock.calls.GetBucketTagging = append(mock.calls.GetBucketTagging, callInfo)
+	mock.lockGetBucketTagging.Unlock()
+	return mock.GetBucketTaggingFunc(contextMoqParam, bucket)
+}
+
+// GetBucketTaggingCalls gets all the calls that were made to GetBucketTagging.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketTaggingCalls())
+func (mock *BackendMock) GetBucketTaggingCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketTagging.RLock()
+	calls = mock.calls.GetBucketTagging
+	mock.lockGetBucketTagging.RUnlock()
 	return calls
 }
 
@@ -1390,6 +1506,46 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
 	mock.lockPutBucketAcl.RUnlock()
+	return calls
+}
+
+// PutBucketTagging calls PutBucketTaggingFunc.
+func (mock *BackendMock) PutBucketTagging(contextMoqParam context.Context, bucket string, tags map[string]string) error {
+	if mock.PutBucketTaggingFunc == nil {
+		panic("BackendMock.PutBucketTaggingFunc: method is nil but Backend.PutBucketTagging was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Tags            map[string]string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Tags:            tags,
+	}
+	mock.lockPutBucketTagging.Lock()
+	mock.calls.PutBucketTagging = append(mock.calls.PutBucketTagging, callInfo)
+	mock.lockPutBucketTagging.Unlock()
+	return mock.PutBucketTaggingFunc(contextMoqParam, bucket, tags)
+}
+
+// PutBucketTaggingCalls gets all the calls that were made to PutBucketTagging.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketTaggingCalls())
+func (mock *BackendMock) PutBucketTaggingCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+	Tags            map[string]string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Tags            map[string]string
+	}
+	mock.lockPutBucketTagging.RLock()
+	calls = mock.calls.PutBucketTagging
+	mock.lockPutBucketTagging.RUnlock()
 	return calls
 }
 

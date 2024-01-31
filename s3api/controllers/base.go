@@ -246,6 +246,24 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		if err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot); err != nil {
+			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetBucketTagging", BucketOwner: parsedAcl.Owner})
+		}
+
+		tags, err := c.be.GetBucketTagging(ctx.Context(), bucket)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetBucketTagging", BucketOwner: parsedAcl.Owner})
+		}
+		resp := s3response.Tagging{TagSet: s3response.TagSet{Tags: []s3response.Tag{}}}
+
+		for key, val := range tags {
+			resp.TagSet.Tags = append(resp.TagSet.Tags, s3response.Tag{Key: key, Value: val})
+		}
+
+		return SendXMLResponse(ctx, resp, nil, &MetaOpts{Logger: c.logger, Action: "GetBucketTagging", BucketOwner: parsedAcl.Owner})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		if err := auth.VerifyACL(parsedAcl, acct.Access, "READ_ACP", isRoot); err != nil {
 			return SendXMLResponse(ctx, nil, err, &MetaOpts{Logger: c.logger, Action: "GetBucketAcl", BucketOwner: parsedAcl.Owner})
@@ -339,6 +357,32 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		ctx.Get("X-Amz-Grant-Write-Acp"),
 		ctx.Locals("account").(auth.Account),
 		ctx.Locals("isRoot").(bool)
+
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+
+		var bucketTagging s3response.Tagging
+		err := xml.Unmarshal(ctx.Body(), &bucketTagging)
+		if err != nil {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{Logger: c.logger, Action: "PutBucketTagging", BucketOwner: parsedAcl.Owner})
+		}
+
+		tags := make(map[string]string, len(bucketTagging.TagSet.Tags))
+
+		for _, tag := range bucketTagging.TagSet.Tags {
+			if len(tag.Key) > 128 || len(tag.Value) > 256 {
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag), &MetaOpts{Logger: c.logger, Action: "PutBucketTagging", BucketOwner: parsedAcl.Owner})
+			}
+			tags[tag.Key] = tag.Value
+		}
+
+		if err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot); err != nil {
+			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketTagging", BucketOwner: parsedAcl.Owner})
+		}
+
+		err = c.be.PutBucketTagging(ctx.Context(), bucket, tags)
+		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "PutBucketTagging", BucketOwner: parsedAcl.Owner})
+	}
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -714,6 +758,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	bucket, acct, isRoot, parsedAcl := ctx.Params("bucket"), ctx.Locals("account").(auth.Account), ctx.Locals("isRoot").(bool), ctx.Locals("parsedAcl").(auth.ACL)
 
+	if ctx.Request().URI().QueryArgs().Has("tagging") {
+		if err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot); err != nil {
+			return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucketTagging", BucketOwner: parsedAcl.Owner})
+		}
+
+		err := c.be.DeleteBucketTagging(ctx.Context(), bucket)
+		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucketTagging", BucketOwner: parsedAcl.Owner, Status: http.StatusNoContent})
+	}
+
 	if err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot); err != nil {
 		return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner})
 	}
@@ -721,7 +774,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	err := c.be.DeleteBucket(ctx.Context(), &s3.DeleteBucketInput{
 		Bucket: &bucket,
 	})
-	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner, Status: 204})
+	return SendResponse(ctx, err, &MetaOpts{Logger: c.logger, Action: "DeleteBucket", BucketOwner: parsedAcl.Owner, Status: http.StatusNoContent})
 }
 
 func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {

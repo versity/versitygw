@@ -343,6 +343,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 				return &s3.ListObjectsOutput{}, nil
 			},
+			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
+				return map[string]string{}, nil
+			},
 		},
 	}
 
@@ -365,6 +368,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
+			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
+				return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+			},
 		},
 	}
 	appError := fiber.New()
@@ -384,6 +390,24 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		wantErr    bool
 		statusCode int
 	}{
+		{
+			name: "Get-bucket-tagging-non-existing-bucket",
+			app:  appError,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 404,
+		},
+		{
+			name: "Get-bucket-tagging-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
 		{
 			name: "Get-bucket-acl-success",
 			app:  app,
@@ -492,6 +516,17 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</AccessControlPolicy>
 	`
 
+	tagBody := `
+	<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<TagSet>
+			<Tag>
+				<Key>organization</Key>
+				<Value>marketing</Value>
+			</Tag>
+		</TagSet>
+	</Tagging>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -501,6 +536,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 				return nil
 			},
 			CreateBucketFunc: func(context.Context, *s3.CreateBucketInput, []byte) error {
+				return nil
+			},
+			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
 				return nil
 			},
 		},
@@ -543,6 +581,24 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 		wantErr    bool
 		statusCode int
 	}{
+		{
+			name: "Put-bucket-tagging-invalid-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-tagging-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", strings.NewReader(tagBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
 		{
 			name: "Put-bucket-acl-invalid-acl",
 			app:  app,
@@ -869,10 +925,10 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
-				return acldata, nil
-			},
 			DeleteBucketFunc: func(context.Context, *s3.DeleteBucketInput) error {
+				return nil
+			},
+			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
 				return nil
 			},
 		},
@@ -900,6 +956,15 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket", nil),
+			},
+			wantErr:    false,
+			statusCode: 204,
+		},
+		{
+			name: "Delete-bucket-tagging-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket?tagging", nil),
 			},
 			wantErr:    false,
 			statusCode: 204,

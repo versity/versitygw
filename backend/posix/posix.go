@@ -1720,6 +1720,57 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 	return b, nil
 }
 
+func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if tags == nil {
+		err = xattr.Remove(bucket, "user."+tagHdr)
+		if err != nil {
+			return fmt.Errorf("remove tags: %w", err)
+		}
+		return nil
+	}
+
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal tags: %w", err)
+	}
+
+	err = xattr.Set(bucket, "user."+tagHdr, b)
+	if err != nil {
+		return fmt.Errorf("set tags: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	tags, err := p.getXattrTags(bucket, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return tags, nil
+}
+
+func (p *Posix) DeleteBucketTagging(ctx context.Context, bucket string) error {
+	return p.PutBucketTagging(ctx, bucket, nil)
+}
+
 func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
