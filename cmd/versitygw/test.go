@@ -268,11 +268,11 @@ func getAction(tf testFunc) func(*cli.Context) error {
 func extractIntTests() (commands []*cli.Command) {
 	tests := integration.GetIntTests()
 	for key, val := range tests {
-		testKey := key
+		k := key
 		testFunc := val
 		commands = append(commands, &cli.Command{
-			Name:  testKey,
-			Usage: fmt.Sprintf("Runs %v integration test", testKey),
+			Name:  k,
+			Usage: fmt.Sprintf("Runs %v integration test", key),
 			Action: func(ctx *cli.Context) error {
 				opts := []integration.Option{
 					integration.WithAccess(awsID),
