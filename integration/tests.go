@@ -1917,6 +1917,138 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_start_after(s *S3Conf) error {
+	testName := "ListObjectsV2_start_after"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			StartAfter: getPtr("bar"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects([]string{"baz", "foo"}, out.Contents) {
+			return fmt.Errorf("expected output to be %v, instead got %v", []string{"baz", "foo"}, out.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
+	testName := "ListObjectsV2_both_start_after_and_continuation_token"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+		var maxKeys int32 = 1
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  &bucket,
+			MaxKeys: &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.IsTruncated == nil || !*out.IsTruncated {
+			return fmt.Errorf("expected output to be truncated")
+		}
+
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out.MaxKeys)
+		}
+
+		if *out.NextContinuationToken != "bar" {
+			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out.NextContinuationToken)
+		}
+
+		if !compareObjects([]string{"bar"}, out.Contents) {
+			return fmt.Errorf("unexpected output for list objects with max-keys")
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			ContinuationToken: out.NextContinuationToken,
+			StartAfter:        getPtr("baz"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects([]string{"foo", "quxx"}, resp.Contents) {
+			return fmt.Errorf("unexpected output for list objects with max-keys")
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
+	testName := "ListObjectsV2_start_after_not_in_list"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			StartAfter: getPtr("blah"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects([]string{"foo", "quxx"}, out.Contents) {
+			return fmt.Errorf("expected output to be %v, instead got %v", []string{"foo", "quxx"}, out.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_start_after_empty_result(s *S3Conf) error {
+	testName := "ListObjectsV2_start_after_empty_result"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			StartAfter: getPtr("zzz"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Contents) != 0 {
+			return fmt.Errorf("expected empty output instead got %v", out.Contents)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

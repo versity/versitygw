@@ -236,6 +236,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	bucket := ctx.Params("bucket")
 	prefix := ctx.Query("prefix")
 	cToken := ctx.Query("continuation-token")
+	sAfter := ctx.Query("start-after")
 	marker := ctx.Query("marker")
 	delimiter := ctx.Query("delimiter")
 	maxkeysStr := ctx.Query("max-keys")
@@ -319,6 +320,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			ContinuationToken: &cToken,
 			Delimiter:         &delimiter,
 			MaxKeys:           &maxkeys,
+			StartAfter:        &sAfter,
 		})
 		return SendXMLResponse(ctx, res, err, &MetaOpts{Logger: c.logger, Action: "ListObjectsV2", BucketOwner: parsedAcl.Owner})
 	}

@@ -1640,7 +1640,15 @@ func (p *Posix) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (
 	}
 	marker := ""
 	if input.ContinuationToken != nil {
-		marker = *input.ContinuationToken
+		if input.StartAfter != nil {
+			if *input.StartAfter > *input.ContinuationToken {
+				marker = *input.StartAfter
+			} else {
+				marker = *input.ContinuationToken
+			}
+		} else {
+			marker = *input.ContinuationToken
+		}
 	}
 	delim := ""
 	if input.Delimiter != nil {

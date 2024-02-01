@@ -268,8 +268,10 @@ func getAction(tf testFunc) func(*cli.Context) error {
 func extractIntTests() (commands []*cli.Command) {
 	tests := integration.GetIntTests()
 	for key, val := range tests {
+		k := key
+		testFunc := val
 		commands = append(commands, &cli.Command{
-			Name:  key,
+			Name:  k,
 			Usage: fmt.Sprintf("Runs %v integration test", key),
 			Action: func(ctx *cli.Context) error {
 				opts := []integration.Option{
@@ -283,7 +285,7 @@ func extractIntTests() (commands []*cli.Command) {
 				}
 
 				s := integration.NewS3Conf(opts...)
-				err := val(s)
+				err := testFunc(s)
 				return err
 			},
 		})
