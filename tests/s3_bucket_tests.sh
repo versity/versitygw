@@ -1,221 +1,7 @@
 #!/usr/bin/env bats
 
-source ./tests/tests.sh
-
-# create an AWS bucket
-# param:  bucket name
-# return 0 for success, 1 for failure
-create_bucket() {
-  if [ $# -ne 1 ]; then
-    echo "create bucket missing bucket name"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 mb s3://"$1" 2>&1) || exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    echo "error creating bucket: $error"
-    return 1
-  fi
-  return 0
-}
-
-# delete an AWS bucket
-# param:  bucket name
-# return 0 for success, 1 for failure
-delete_bucket() {
-  if [ $# -ne 1 ]; then
-    echo "delete bucket missing bucket name"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 rb s3://"$1" 2>&1) || exit_code="$?"
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == *"The specified bucket does not exist"* ]]; then
-      return 0
-    else
-      echo "error deleting bucket: $error"
-      return 1
-    fi
-  fi
-  return 0
-}
-
-# check if bucket exists
-# param:  bucket name
-# return 0 for true, 1 for false, 2 for error
-bucket_exists() {
-  if [ $# -ne 1 ]; then
-    echo "bucket exists check missing bucket name"
-    return 2
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
-  echo "Exit code: $exit_code, error: $error"
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == *"The specified bucket does not exist"* ]] || [[ "$error" == *"Access Denied"* ]]; then
-      return 1
-    else
-      echo "error checking if bucket exists: $error"
-      return 2
-    fi
-  fi
-  return 0
-}
-
-# create bucket if it doesn't exist
-# param:  bucket name
-# return 0 for success, 1 for failure
-check_and_create_bucket() {
-  if [ $# -ne 1 ]; then
-    echo "bucket creation function requires bucket name"
-    return 1
-  fi
-  local exists_result
-  bucket_exists "$1" || exists_result=$?
-  if [[ $exists_result -eq 2 ]]; then
-    echo "Bucket existence check error"
-    return 1
-  fi
-  local create_result
-  if [[ $exists_result -eq 1 ]]; then
-    create_bucket "$1" || create_result=$?
-    if [[ $create_result -ne 0 ]]; then
-      echo "Error creating bucket"
-      return 1
-    fi
-  fi
-  return 0
-}
-
-# check if object exists on S3 via gateway
-# param:  object path
-# return 0 for true, 1 for false, 2 for error
-object_exists() {
-  if [ $# -ne 1 ]; then
-    echo "object exists check missing object name"
-    return 2
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == "" ]]; then
-      return 1
-    else
-      echo "error checking if object exists: $error"
-      return 2
-    fi
-  fi
-  return 0
-}
-
-# add object to versitygw
-# params:  source file, destination copy location
-# return 0 for success, 1 for failure
-put_object() {
-  if [ $# -ne 2 ]; then
-    echo "put object command requires source, destination"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 cp "$1" s3://"$2" 2>&1) || exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
-    return 1
-  fi
-  return 0
-}
-
-# add object to versitygw if it doesn't exist
-# params:  source file, destination copy location
-# return 0 for success or already exists, 1 for failure
-check_and_put_object() {
-  if [ $# -ne 2 ]; then
-    echo "check and put object function requires source, destination"
-    return 1
-  fi
-  object_exists "$2" || local exists_result=$?
-  if [ $exists_result -eq 2 ]; then
-    echo "error checking if object exists"
-    return 1
-  fi
-  if [ $exists_result -eq 1 ]; then
-    put_object "$1" "$2" || local put_result=$?
-    if [ $put_result -ne 0 ]; then
-      echo "error adding object"
-      return 1
-    fi
-  fi
-  return 0
-}
-
-# delete object from versitygw
-# param:  object location
-# return 0 for success, 1 for failure
-delete_object() {
-  if [ $# -ne 1 ]; then
-    echo "delete object command requires object parameter"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  error=$(aws s3 rm s3://"$1" 2>&1) || exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    echo "error deleting object: $error"
-    return 1
-  fi
-  return 0
-}
-
-# list buckets on versitygw
-# no params
-# export bucket_array (bucket names) on success, return 1 for failure
-list_buckets() {
-  local exit_code=0
-  local output
-  output=$(aws s3 ls 2>&1) || exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing buckets: $output"
-    return 1
-  fi
-
-  bucket_array=()
-  while IFS= read -r line; do
-    bucket_name=$(echo "$line" | awk '{print $NF}')
-    bucket_array+=("$bucket_name")
-  done <<< "$output"
-
-  export bucket_array
-}
-
-# list objects on versitygw, in bucket or folder
-# param:  path of bucket or folder
-# export object_array (object names) on success, return 1 for failure
-list_objects() {
-  if [ $# -ne 1 ]; then
-    echo "list objects command requires bucket or folder"
-    return 1
-  fi
-  local exit_code=0
-  local output
-  output=$(aws s3 ls s3://"$1" 2>&1) || exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing objects: $output"
-    return 1
-  fi
-
-  object_array=()
-  while IFS= read -r line; do
-    object_name=$(echo "$line" | awk '{print $NF}')
-    object_array+=("$object_name")
-  done <<< "$output"
-
-  export object_array
-}
+source ./tests/setup.sh
+source ./tests/util.sh
 
 # test creation and deletion of bucket on versitygw
 @test "create_delete_bucket_test" {
@@ -320,7 +106,7 @@ list_objects() {
 }
 
 # test listing a bucket's objects on versitygw
-@test test_list_objects {
+@test "test_list_objects" {
 
   bucket_name="versity-gwtest-list-object"
   object_one="test-file-one"
@@ -350,4 +136,49 @@ list_objects() {
   delete_object "$bucket_name"/"$object_two"
   delete_bucket $bucket_name
   rm $object_one $object_two
+}
+
+# test ability to retrieve bucket ACLs
+@test "test_get_bucket_acl" {
+
+  local bucket_name="versity-gwtest-get-bucket-acl"
+  check_and_create_bucket $bucket_name || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating bucket"
+  get_bucket_acl $bucket_name || local result=$?
+  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+  id=$(echo "$acl" | jq '.Owner.ID')
+  [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
+  delete_bucket $bucket_name
+}
+
+# test ability to delete multiple objects from bucket
+@test "test_delete_objects" {
+
+  local bucket_name="versity-gwtest-delete-objects"
+  local object_one="test-file-one"
+  local object_two="test-file-two"
+
+  touch "$object_one" "$object_two"
+  check_and_create_bucket $bucket_name || local result_one=$?
+  [[ $result_one -eq 0 ]] || fail "Error creating bucket"
+  put_object "$object_one" "$bucket_name"/"$object_one"  || local result_two=$?
+  [[ $result_two -eq 0 ]] || fail "Error adding object one"
+  put_object "$object_two" "$bucket_name"/"$object_two" || local result_three=$?
+  [[ $result_three -eq 0 ]] || fail "Error adding object two"
+
+  error=$(aws s3api delete-objects --bucket $bucket_name --delete '{
+    "Objects": [
+      {"Key": "test-file-one"},
+      {"Key": "test-file-two"}
+    ]
+  }') || local result=$?
+  [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
+
+  object_exists "$bucket_name"/"$object_one" || local exists_one=$?
+  [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
+  object_exists "$bucket_name"/"$object_two" || local exists_two=$?
+  [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
+
+  delete_bucket $bucket_name
+  rm "$object_one" "$object_two"
 }
