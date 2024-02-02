@@ -4,122 +4,81 @@ source ./tests/setup.sh
 source ./tests/util.sh
 
 # test creation and deletion of bucket on versitygw
-@test "create_delete_bucket_test" {
+@test "test_create_delete_bucket" {
 
-  local bucket_name="versity-gwtest-create-delete-bucket-test"
+  if [[ $RECREATE_BUCKETS != "true" ]]; then
+    return
+  fi
 
-  bucket_exists $bucket_name || local exists=$?
-  if [[ $exists -eq 2 ]]; then
-    fail "Bucket existence check error"
-  fi
-  if [[ $exists -eq 0 ]]; then
-    delete_bucket $bucket_name || local delete_result=$?
-    [[ $delete_result -eq 0 ]] || fail "Failed to delete bucket"
-    bucket_exists $bucket_name || local exists_two=$?
-    [[ $exists_two -eq 1 ]] || fail "Failed bucket deletion"
-  fi
-  create_bucket $bucket_name || local create_result=$?
+  setup_bucket "$BUCKET_ONE_NAME" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Failed to create bucket"
-  bucket_exists $bucket_name || local exists_three=$?
+  bucket_exists "$BUCKET_ONE_NAME" || local exists_three=$?
   [[ $exists_three -eq 0 ]] || fail "Failed bucket existence check"
-  delete_bucket $bucket_name || local delete_result_two=$?
+  delete_bucket_or_contents "$BUCKET_ONE_NAME" || local delete_result_two=$?
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
 }
 
 # test adding and removing an object on versitygw
-@test "put_object_test" {
+@test "test_put_object" {
 
-  local bucket_name="versity-gwtest-put-object-test"
   local object_name="test-object"
 
-  bucket_exists $bucket_name || local bucket_exists=$?
-  if [[ $bucket_exists -eq 2 ]]; then
-    fail "Bucket existence check error"
-  fi
-  local object="$bucket_name"/"$object_name"
-  if [[ $bucket_exists -eq 0 ]]; then
-    object_exists "$object" || local object_exists=$?
-    if [[ $object_exists -eq 2 ]]; then
-      fail "Object existence check error"
-    fi
-    if [[ $object_exists -eq 0 ]]; then
-      delete_object "$object" || local delete_object=$?
-      [[ $delete_object -eq 0 ]] || fail "Failed to delete object"
-    fi
-    delete_bucket $bucket_name || local delete_bucket=$?
-    [[ $delete_bucket -eq 0 ]] || fail "Failed to delete bucket"
-  fi
-  touch "$object_name"
-  create_bucket $bucket_name || local create_bucket=$?
-  [[ $create_bucket -eq 0 ]] || fail "Failed to create bucket"
-  put_object "$object_name" "$object" || local put_object=$?
+  setup_bucket "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  create_test_files "$object_name" || local create_result=$?
+
+  object="$BUCKET_ONE_NAME"/$object_name
+  put_object "$test_file_folder"/"$object_name" "$object" || local put_object=$?
   [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "$object" || local object_exists_two=$?
-  [[ $object_exists_two -eq 0 ]] || fail "Object not added to bucket"
-  delete_object "$object" || local delete_object_two=$?
-  [[ $delete_object_two -eq 0 ]] || fail "Failed to delete object"
-  delete_bucket $bucket_name || local delete_bucket=$?
-  [[ $delete_bucket -eq 0 ]] || fail "Failed to delete bucket"
-  rm "$object_name"
+  object_exists "$object" || local exists_result_one=$?
+  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+  delete_object "$object" || local delete_result=$?
+  [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
+  object_exists "$object" || local exists_result_two=$?
+  [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files "$object_name"
 }
 
 # test listing buckets on versitygw
 @test "test_list_buckets" {
 
-  bucket_name_one="versity-gwtest-list-one"
-  bucket_name_two="versity-gwtest-list-two"
-
-  bucket_exists $bucket_name_one || local exists=$?
-  if [[ $exists -eq 2 ]]; then
-    fail "Bucket existence check error"
-  fi
-  if [[ $exists -eq 1 ]]; then
-    create_bucket $bucket_name_one || local bucket_create_one=$?
-    [[ $bucket_create_one -eq 0 ]] || fail "Failed to create bucket"
-  fi
-  bucket_exists $bucket_name_two || local exists_two=$?
-  if [[ $exists_two -eq 2 ]]; then
-    fail "Bucket existence check error"
-  fi
-  if [[ $exists_two -eq 1 ]]; then
-    create_bucket $bucket_name_two || local bucket_create_two=$?
-    [[ $bucket_create_two -eq 0 ]] || fail "Failed to create bucket"
-  fi
+  setup_bucket "$BUCKET_ONE_NAME" || local setup_result_one=$?
+  [[ $setup_result_one -eq 0 ]] || fail "Bucket one setup error"
+  setup_bucket "$BUCKET_TWO_NAME" || local setup_result_two=$?
+  [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
   list_buckets
   local bucket_one_found=false
   local bucket_two_found=false
   for bucket in "${bucket_array[@]}"; do
-    if [ "$bucket" == $bucket_name_one ]; then
+    if [ "$bucket" == "$BUCKET_ONE_NAME" ]; then
       bucket_one_found=true
-    elif [ "$bucket" == $bucket_name_two ]; then
+    elif [ "$bucket" == "$BUCKET_TWO_NAME" ]; then
       bucket_two_found=true
     fi
     if [ $bucket_one_found == true ] && [ $bucket_two_found == true ]; then
       return
     fi
   done
-  fail "$bucket_name_one and/or $bucket_name_two not listed (all buckets: ${bucket_array[*]})"
-  delete_bucket $bucket_name_one || local deleted_one=$?
-  [[ $deleted_one -eq 0 ]] || fail "Failed to delete bucket one"
-  delete_bucket $bucket_name_two || local deleted_two=$?
-  [[ $deleted_two -eq 0 ]] || fail "Failed to delete bucket one"
+  fail "'$BUCKET_ONE_NAME' and/or '$BUCKET_TWO_NAME' not listed (all buckets: ${bucket_array[*]})"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "$BUCKET_TWO_NAME"
 }
 
 # test listing a bucket's objects on versitygw
 @test "test_list_objects" {
 
-  bucket_name="versity-gwtest-list-object"
   object_one="test-file-one"
   object_two="test-file-two"
 
-  touch $object_one $object_two
-  check_and_create_bucket $bucket_name || local result_one=$?
+  create_test_files $object_one $object_two
+  setup_bucket "$BUCKET_ONE_NAME" || local result_one=$?
   [[ result_one -eq 0 ]] || fail "Error creating bucket"
-  put_object $object_one "$bucket_name"/"$object_one"  || local result_two=$?
+  put_object "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
-  put_object $object_two "$bucket_name"/"$object_two" || local result_three=$?
+  put_object "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
   [[ result_three -eq 0 ]] || fail "Error adding object two"
-  list_objects $bucket_name
+  list_objects "$BUCKET_ONE_NAME"
   local object_one_found=false
   local object_two_found=false
   for object in "${object_array[@]}"; do
@@ -132,41 +91,38 @@ source ./tests/util.sh
   if [ $object_one_found != true ] || [ $object_two_found != true ]; then
     fail "$object_one and/or $object_two not listed (all objects: ${object_array[*]})"
   fi
-  delete_object "$bucket_name"/"$object_one"
-  delete_object "$bucket_name"/"$object_two"
-  delete_bucket $bucket_name
-  rm $object_one $object_two
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $object_one $object_two
 }
 
 # test ability to retrieve bucket ACLs
 @test "test_get_bucket_acl" {
 
-  local bucket_name="versity-gwtest-get-bucket-acl"
-  check_and_create_bucket $bucket_name || local created=$?
+  setup_bucket "$BUCKET_ONE_NAME" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
-  get_bucket_acl $bucket_name || local result=$?
+  get_bucket_acl "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Error retrieving acl"
   id=$(echo "$acl" | jq '.Owner.ID')
   [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
-  delete_bucket $bucket_name
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
 }
 
 # test ability to delete multiple objects from bucket
 @test "test_delete_objects" {
 
-  local bucket_name="versity-gwtest-delete-objects"
   local object_one="test-file-one"
   local object_two="test-file-two"
 
-  touch "$object_one" "$object_two"
-  check_and_create_bucket $bucket_name || local result_one=$?
+  create_test_files "$object_one" "$object_two" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result_one=$?
   [[ $result_one -eq 0 ]] || fail "Error creating bucket"
-  put_object "$object_one" "$bucket_name"/"$object_one"  || local result_two=$?
+  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
   [[ $result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "$object_two" "$bucket_name"/"$object_two" || local result_three=$?
+  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
   [[ $result_three -eq 0 ]] || fail "Error adding object two"
 
-  error=$(aws s3api delete-objects --bucket $bucket_name --delete '{
+  error=$(aws s3api delete-objects --bucket "$BUCKET_ONE_NAME" --delete '{
     "Objects": [
       {"Key": "test-file-one"},
       {"Key": "test-file-two"}
@@ -174,11 +130,142 @@ source ./tests/util.sh
   }') || local result=$?
   [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
 
-  object_exists "$bucket_name"/"$object_one" || local exists_one=$?
+  object_exists "$BUCKET_ONE_NAME"/"$object_one" || local exists_one=$?
   [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
-  object_exists "$bucket_name"/"$object_two" || local exists_two=$?
+  object_exists "$BUCKET_ONE_NAME"/"$object_two" || local exists_two=$?
   [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
 
-  delete_bucket $bucket_name
-  rm "$object_one" "$object_two"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one" "$object_two"
+}
+
+# test abilty to set and retrieve bucket tags
+@test "test-set-get-bucket-tags" {
+
+  local key="test_key"
+  local value="test_value"
+
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  get_bucket_tags "$BUCKET_ONE_NAME" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags"
+  tag_set=$(echo "$tags" | jq '.TagSet')
+  [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
+  put_bucket_tag "$BUCKET_ONE_NAME" $key $value
+  get_bucket_tags "$BUCKET_ONE_NAME" || local get_result_two=$?
+  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags"
+  tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
+  tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
+  [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
+  [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+}
+
+# test v1 s3api list objects command
+@test "test-s3api-list-objects-v1" {
+
+  local object_one="test-file-one"
+  local object_two="test-file-two"
+  local object_two_data="test data\n"
+
+  create_test_files "$object_one" "$object_two" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
+  [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
+  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
+  [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
+  list_objects_s3api_v1 "$BUCKET_ONE_NAME"
+  key_one=$(echo "$objects" | jq '.Contents[0].Key')
+  [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
+  size_one=$(echo "$objects" | jq '.Contents[0].Size')
+  [[ $size_one -eq 0 ]] || fail "Object one size mismatch"
+  key_two=$(echo "$objects" | jq '.Contents[1].Key')
+  [[ $key_two == '"'$object_two'"' ]] || fail "Object two mismatch"
+  size_two=$(echo "$objects" | jq '.Contents[1].Size')
+  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch"
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one" "$object_two"
+}
+
+# test v2 s3api list objects command
+@test "test-s3api-list-objects-v2" {
+
+  local object_one="test-file-one"
+  local object_two="test-file-two"
+  local object_two_data="test data\n"
+
+  create_test_files "$object_one" "$object_two" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
+  [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
+  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
+  [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
+  list_objects_s3api_v2 "$BUCKET_ONE_NAME"
+  key_one=$(echo "$objects" | jq '.Contents[0].Key')
+  [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
+  size_one=$(echo "$objects" | jq '.Contents[0].Size')
+  [[ $size_one -eq 0 ]] || fail "Object one size mismatch"
+  key_two=$(echo "$objects" | jq '.Contents[1].Key')
+  [[ $key_two == '"'$object_two'"' ]] || fail "Object two mismatch"
+  size_two=$(echo "$objects" | jq '.Contents[1].Size')
+  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch"
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one" "$object_two"
+}
+
+# test abilty to set and retrieve object tags
+@test "test-set-get-object-tags" {
+
+  local bucket_file="bucket-file"
+  local key="test_key"
+  local value="test_value"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
+  put_object "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+  get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "Error getting object tags"
+  tag_set=$(echo "$tags" | jq '.TagSet')
+  [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
+  put_object_tag "$BUCKET_ONE_NAME" $bucket_file $key $value
+  get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
+  [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
+  tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
+  tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
+  [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
+  [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
+
+# test multi-part upload
+@test "test-multi-part-upload" {
+
+  local bucket_file="bucket-file"
+  bucket_file_data="test file\n"
+
+  create_test_files "$bucket_file" || local created=$?
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4
+  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy"
+  copy_data=$(<"$test_file_folder"/$bucket_file-copy)
+  [[ $bucket_file_data == "$copy_data" ]] || fail "Data doesn't match"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
 }
