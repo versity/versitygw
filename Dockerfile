@@ -1,4 +1,4 @@
-FROM golang:1.20-alpine
+FROM golang:latest
 
 WORKDIR /app
 
@@ -8,6 +8,7 @@ RUN go mod download
 COPY ./ ./
 
 WORKDIR /app/cmd/versitygw
+ENV CGO_ENABLED=0
 RUN go build -o versitygw
 
 FROM alpine:latest
