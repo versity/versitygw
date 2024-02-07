@@ -1,18 +1,18 @@
 name: system tests
 on: pull_request
-#on:
-#  workflow_dispatch:
-#    inputs:
-#      run_workflow:
-#        description: 'Run command-line tests'
 jobs:
   build:
     name: RunTests
     runs-on: ubuntu-latest
     steps:
-
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
+
+      - name: Install ShellCheck
+        run: sudo apt-get install shellcheck
+
+      - name: Run ShellCheck
+        run: shellcheck -S warning ./tests/*.sh
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -38,5 +38,5 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
           export VERSITY_EXE=./versitygw
           mkdir /tmp/gw
-          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.versitygw $HOME/bin/bats ./tests/s3_bucket_tests.sh
-          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.versitygw $HOME/bin/bats ./tests/posix_tests.sh
+          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.default $HOME/bin/bats ./tests/s3_bucket_tests.sh
+          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.default $HOME/bin/bats ./tests/posix_tests.sh

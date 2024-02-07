@@ -1,4 +1,4 @@
-
+#!/usr/bin/env bats
 
 # check if object exists both on S3 and locally
 # param:  object path

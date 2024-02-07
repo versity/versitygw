@@ -15,7 +15,8 @@ setup() {
     fi
   else
     echo "$VERSITYGW_TEST_ENV"
-    source $VERSITYGW_TEST_ENV
+    # shellcheck source=./.env.default
+    source "$VERSITYGW_TEST_ENV"
   fi
 
   if [ -z "$AWS_ACCESS_KEY_ID" ]; then
@@ -42,6 +43,18 @@ setup() {
   elif [ -z "$AWS_ENDPOINT_URL" ]; then
     echo "No AWS endpoint URL set"
     return 1
+  elif [ -z "$BUCKET_ONE_NAME" ]; then
+    echo "No bucket one name set"
+    return 1
+  elif [ -z "$BUCKET_TWO_NAME" ]; then
+    echo "No bucket two name set"
+    return 1
+  elif [ -z "$RECREATE_BUCKETS" ]; then
+    echo "No recreate buckets parameter set"
+    return 1
+  elif [[ $RECREATE_BUCKETS != "true" ]] && [[ $RECREATE_BUCKETS != "false" ]]; then
+    echo "RECREATE_BUCKETS must be 'true' or 'false'"
+    return 1
   fi
 
   ROOT_ACCESS_KEY="$AWS_ACCESS_KEY_ID" ROOT_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" "$VERSITY_EXE" "$BACKEND" "$LOCAL_FOLDER" &
@@ -50,6 +63,8 @@ setup() {
   export AWS_PROFILE
   export AWS_ENDPOINT_URL
   export LOCAL_FOLDER
+  export BUCKET_ONE_NAME
+  export BUCKET_TWO_NAME
 
   versitygw_pid=$!
   export versitygw_pid
