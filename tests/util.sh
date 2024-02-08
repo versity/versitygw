@@ -497,13 +497,52 @@ list_objects_s3api_v2() {
   export objects
 }
 
-# perform a multi-part upload
-# params:  bucket, key, source file location, number of parts
+# initialize a multipart upload
+# params:  bucket, key
 # return 0 for success, 1 for failure
-multipart_upload() {
+create_multipart_upload() {
+  if [ $# -ne 2 ]; then
+    echo "create multipart upload function must have bucket, key"
+    return 1
+  fi
+
+  local multipart_data
+  multipart_data=$(aws s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
+  if [[ $created -ne 0 ]]; then
+    echo "Error creating multipart upload: $upload_id"
+    return 1
+  fi
+
+  upload_id=$(echo "$multipart_data" | jq '.UploadId')
+  upload_id="${upload_id//\"/}"
+  export upload_id
+}
+
+# upload a single part of a multipart upload
+# params: bucket, key, upload ID, original (unsplit) file name, part number
+# return: 0 for success, 1 for failure
+upload_part() {
+  if [ $# -ne 5 ]; then
+    echo "upload multipart part function must have bucket, key, upload ID, file name, part number"
+    return 1
+  fi
+  local etag_json
+  etag_json=$(aws s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))") || local uploaded=$?
+  if [[ $uploaded -ne 0 ]]; then
+    echo "Error uploading part $5: $etag_json"
+    return 1
+  fi
+  etag=$(echo "$etag_json" | jq '.ETag')
+  export etag
+}
+
+# perform all parts of a multipart upload before completion command
+# params:  bucket, key, file to split and upload, number of file parts to upload
+# return:  0 for success, 1 for failure
+multipart_upload_before_completion() {
 
   if [ $# -ne 4 ]; then
-    echo "multipart upload command missing bucket, key, file, and/or part count"
+    echo "multipart upload pre-completion command missing bucket, key, file, and/or part count"
     return 1
   fi
 
@@ -521,36 +560,67 @@ multipart_upload() {
     return 1
   fi
 
-  local multipart_data
-  multipart_data=$(aws s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
-  if [[ $created -ne 0 ]]; then
-    echo "Error creating multipart upload: $upload_id"
+  create_multipart_upload "$1" "$2" || create_result=$?
+  if [[ $create_result -ne 0 ]]; then
+    echo "error creating multpart upload"
     return 1
   fi
 
-  local upload_id
-  upload_id=$(echo "$multipart_data" | jq '.UploadId')
-  upload_id="${upload_id//\"/}"
-
-  local parts="["
+  parts="["
   for ((i = 1; i <= $4; i++)); do
-    local etag_json
-    etag_json=$(aws s3api upload-part --bucket "$1" --key "$2" --upload-id "$upload_id" --part-number "$i" --body "$3-$((i-1))") || local uploaded=$?
-    if [[ $uploaded -ne 0 ]]; then
-      echo "Error uploading part $i: $etag_json"
+    upload_part "$1" "$2" "$upload_id" "$3" "$i" || local upload_result=$?
+    if [[ $upload_result -ne 0 ]]; then
+      echo "error uploading part $i"
       return 1
     fi
-    local etag
-    etag=$(echo "$etag_json" | jq '.ETag')
     parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
     if [[ $i -ne $4 ]]; then
       parts+=","
     fi
   done
   parts+="]"
+  export parts
+}
+
+# perform a multi-part upload
+# params:  bucket, key, source file location, number of parts
+# return 0 for success, 1 for failure
+multipart_upload() {
+
+  if [ $# -ne 4 ]; then
+    echo "multipart upload command missing bucket, key, file, and/or part count"
+    return 1
+  fi
+
+  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
+  if [[ $result -ne 0 ]]; then
+    echo "error performing pre-completion multipart upload"
+    return 1
+  fi
+
   error=$(aws s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
   if [[ $completed -ne 0 ]]; then
     echo "Error completing upload: $error"
+    return 1
+  fi
+  return 0
+}
+
+abort_multipart_upload() {
+  if [ $# -ne 4 ]; then
+    echo "abort multipart upload command missing bucket, key, file, and/or part count"
+    return 1
+  fi
+
+  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
+  if [[ $result -ne 0 ]]; then
+    echo "error performing pre-completion multipart upload"
+    return 1
+  fi
+
+  error=$(aws s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id") || local aborted=$?
+  if [[ $aborted -ne 0 ]]; then
+    echo "Error aborting upload: $error"
     return 1
   fi
   return 0
@@ -567,7 +637,7 @@ copy_file() {
   local result
   error=$(aws s3 cp "$1" "$2") || result=$?
   if [[ $result -ne 0 ]]; then
-    echo "Error copying file: $error"
+    echo "error copying file: $error"
     return 1
   fi
   return 0
