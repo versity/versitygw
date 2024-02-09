@@ -269,3 +269,21 @@ source ./tests/util.sh
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
+
+# test multi-part upload abort
+@test "test-multi-part-upload-abort" {
+
+  local bucket_file="bucket-file"
+  bucket_file_data="test file\n"
+
+  create_test_files "$bucket_file" || local created=$?
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4
+  object_exists "$BUCKET_ONE_NAME/$bucket_file" || exists=$?
+  [[ $exists -eq 1 ]] || fail "Upload file exists after abort"
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
