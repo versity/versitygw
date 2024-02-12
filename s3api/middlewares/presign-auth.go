@@ -64,6 +64,6 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 			return sendResponse(ctx, err, logger)
 		}
 
-		return nil
+		return ctx.Next()
 	}
 }

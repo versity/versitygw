@@ -97,7 +97,7 @@ var (
 	}
 )
 
-func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
+func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
 	req := ctx.Request()
 	var body io.Reader
 	if IsBigDataAction(ctx) {
@@ -106,7 +106,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 		body = bytes.NewReader(req.Body())
 	}
 
-	uri := string(ctx.Request().URI().Host()) + string(ctx.Request().URI().Path())
+	uri := string(ctx.Request().URI().Path())
 	isFirst := true
 
 	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
@@ -124,6 +124,21 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx) (*http.Request, error) {
 	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
+	}
+	// Set the request headers
+	req.Header.VisitAll(func(key, value []byte) {
+		keyStr := string(key)
+		if includeHeader(keyStr, signedHdrs) {
+			httpReq.Header.Add(keyStr, string(value))
+		}
+	})
+
+	// Check if Content-Length in signed headers
+	// If content length is non 0, then the header will be included
+	if !includeHeader("Content-Length", signedHdrs) {
+		httpReq.ContentLength = 0
+	} else {
+		httpReq.ContentLength = contentLength
 	}
 
 	// Set the Host header

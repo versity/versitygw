@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,13 +74,23 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 
 // CheckPresignedSignature validates presigned request signature
 func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, debug bool) error {
+	signedHdrs := strings.Split(auth.SignedHeaders, ";")
+
+	var contentLength int64
+	var err error
+	contentLengthStr := ctx.Get("Content-Length")
+	if contentLengthStr != "" {
+		contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
+		if err != nil {
+			return s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+	}
+
 	// Create a new http request instance from fasthttp request
-	req, err := createPresignedHttpRequestFromCtx(ctx)
+	req, err := createPresignedHttpRequestFromCtx(ctx, signedHdrs, contentLength)
 	if err != nil {
 		return fmt.Errorf("create http request from context: %w", err)
 	}
-
-	fmt.Println("http request has been created")
 
 	date, _ := time.Parse(iso8601Format, auth.Date)
 
@@ -90,10 +101,8 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, debug
 	}, req, unsignedPayload, service, auth.Region, date, func(options *v4.SignerOptions) {
 		options.DisableURIPathEscaping = true
 		if debug {
-			if debug {
-				options.LogSigning = true
-				options.Logger = logging.NewStandardLogger(os.Stderr)
-			}
+			options.LogSigning = true
+			options.Logger = logging.NewStandardLogger(os.Stderr)
 		}
 	})
 	if signErr != nil {
@@ -128,14 +137,17 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 
 	// Get and verify algorithm query parameter
 	algo := ctx.Query("X-Amz-Algorithm")
+	if algo == "" {
+		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+	}
 	if algo != "AWS4-HMAC-SHA256" {
-		return a, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)
+		return a, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)
 	}
 
 	// Parse and validate credentials query parameter
 	credsQuery := ctx.Query("X-Amz-Credential")
 	if credsQuery == "" {
-		return a, s3err.GetAPIError(s3err.ErrCredMalformed)
+		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
 	}
 
 	creds := strings.Split(credsQuery, "/")
@@ -156,7 +168,7 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 	// Parse and validate Date query param
 	date := ctx.Query("X-Amz-Date")
 	if date == "" {
-		return a, s3err.GetAPIError(s3err.ErrMissingDateHeader)
+		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
 	}
 
 	tdate, err := time.Parse(iso8601Format, date)
@@ -168,25 +180,64 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 		return a, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
 	}
 
-	err = ValidateDate(tdate)
-	if err != nil {
-		return a, err
-	}
-
 	if ctx.Locals("region") != creds[2] {
 		return a, s3err.APIError{
 			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", ctx.Locals("region")),
+			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", creds[2]),
 			HTTPStatusCode: http.StatusForbidden,
 		}
 	}
 
-	a.Signature = ctx.Query("X-Amz-Signature")
+	signature := ctx.Query("X-Amz-Signature")
+	if signature == "" {
+		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+	}
+
+	signedHdrs := ctx.Query("X-Amz-SignedHeaders")
+	if signedHdrs == "" {
+		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+	}
+
+	// Validate X-Amz-Expires query param and check if request is expired
+	err = validateExpiration(ctx.Query("X-Amz-Expires"), tdate)
+	if err != nil {
+		return a, err
+	}
+
+	a.Signature = signature
 	a.Access = creds[0]
 	a.Algorithm = algo
 	a.Region = creds[2]
-	a.SignedHeaders = ctx.Query("X-Amz-SignedHeaders")
+	a.SignedHeaders = signedHdrs
 	a.Date = date
 
 	return a, nil
+}
+
+func validateExpiration(str string, date time.Time) error {
+	if str == "" {
+		return s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+	}
+
+	exp, err := strconv.Atoi(str)
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrMalformedExpires)
+	}
+
+	if exp < 0 {
+		return s3err.GetAPIError(s3err.ErrNegativeExpires)
+	}
+
+	if exp > 604800 {
+		return s3err.GetAPIError(s3err.ErrMaximumExpires)
+	}
+
+	now := time.Now()
+	passed := int(now.Sub(date).Seconds())
+
+	if passed > exp {
+		return s3err.GetAPIError(s3err.ErrExpiredPresignRequest)
+	}
+
+	return nil
 }
