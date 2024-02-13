@@ -16,6 +16,7 @@ package s3response
 
 import (
 	"encoding/xml"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -107,7 +108,8 @@ type TagSet struct {
 }
 
 type Tagging struct {
-	TagSet TagSet `xml:"TagSet"`
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ Tagging" json:"-"`
+	TagSet  TagSet   `xml:"TagSet"`
 }
 
 type DeleteObjects struct {
@@ -138,4 +140,59 @@ type SelectObjectContentResult struct {
 type Bucket struct {
 	Name  string `json:"name"`
 	Owner string `json:"owner"`
+}
+
+type ListAllMyBucketsResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListAllMyBucketsResult" json:"-"`
+	Owner   CanonicalUser
+	Buckets ListAllMyBucketsList
+}
+
+type ListAllMyBucketsEntry struct {
+	Name         string
+	CreationDate time.Time
+}
+
+type ListAllMyBucketsList struct {
+	Bucket []ListAllMyBucketsEntry
+}
+
+type CanonicalUser struct {
+	ID          string
+	DisplayName string
+}
+
+type CopyObjectResult struct {
+	XMLName      xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
+	LastModified time.Time
+	ETag         string
+}
+
+type AccessControlPolicy struct {
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AccessControlPolicy" json:"-"`
+	Owner             CanonicalUser
+	AccessControlList AccessControlList
+}
+
+type AccessControlList struct {
+	Grant []Grant
+}
+
+type Grant struct {
+	Grantee    Grantee
+	Permission string
+}
+
+// Set the following to encode correctly:
+//
+//	Grantee: s3response.Grantee{
+//		Xsi:         "http://www.w3.org/2001/XMLSchema-instance",
+//		Type:        "CanonicalUser",
+//	},
+type Grantee struct {
+	XMLName     xml.Name `xml:"Grantee"`
+	Xsi         string   `xml:"xmlns:xsi,attr,omitempty"`
+	Type        string   `xml:"xsi:type,attr,omitempty"`
+	ID          string
+	DisplayName string
 }

@@ -126,16 +126,19 @@ func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string,
 
 	signer := v4.NewSigner()
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{
-		AccessKeyID:     auth.Access,
-		SecretAccessKey: secret,
-	}, req, checksum, service, auth.Region, tdate, func(options *v4.SignerOptions) {
-		options.DisableURIPathEscaping = true
-		if debug {
-			options.LogSigning = true
-			options.Logger = logging.NewStandardLogger(os.Stderr)
-		}
-	})
+	signErr := signer.SignHTTP(req.Context(),
+		aws.Credentials{
+			AccessKeyID:     auth.Access,
+			SecretAccessKey: secret,
+		},
+		req, checksum, service, auth.Region, tdate,
+		func(options *v4.SignerOptions) {
+			options.DisableURIPathEscaping = true
+			if debug {
+				options.LogSigning = true
+				options.Logger = logging.NewStandardLogger(os.Stderr)
+			}
+		})
 	if signErr != nil {
 		return fmt.Errorf("sign generated http request: %w", err)
 	}
