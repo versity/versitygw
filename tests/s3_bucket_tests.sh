@@ -12,8 +12,10 @@ source ./tests/util.sh
 
   setup_bucket "$BUCKET_ONE_NAME" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Failed to create bucket"
+
   bucket_exists "$BUCKET_ONE_NAME" || local exists_three=$?
   [[ $exists_three -eq 0 ]] || fail "Failed bucket existence check"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME" || local delete_result_two=$?
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
 }
@@ -25,6 +27,7 @@ source ./tests/util.sh
 
   setup_bucket "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
   create_test_files "$object_name" || local create_result=$?
 
   object="$BUCKET_ONE_NAME"/$object_name
@@ -32,10 +35,12 @@ source ./tests/util.sh
   [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
   object_exists "$object" || local exists_result_one=$?
   [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+
   delete_object "$object" || local delete_result=$?
   [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
   object_exists "$object" || local exists_result_two=$?
   [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files "$object_name"
 }
@@ -47,6 +52,7 @@ source ./tests/util.sh
   [[ $setup_result_one -eq 0 ]] || fail "Bucket one setup error"
   setup_bucket "$BUCKET_TWO_NAME" || local setup_result_two=$?
   [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
+
   list_buckets
   local bucket_one_found=false
   local bucket_two_found=false
@@ -57,12 +63,16 @@ source ./tests/util.sh
       bucket_two_found=true
     fi
     if [ $bucket_one_found == true ] && [ $bucket_two_found == true ]; then
-      return
+      break
     fi
   done
-  fail "'$BUCKET_ONE_NAME' and/or '$BUCKET_TWO_NAME' not listed (all buckets: ${bucket_array[*]})"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "$BUCKET_TWO_NAME"
+
+  if [ $bucket_one_found != true ] || [ $bucket_two_found != true ]; then
+    fail "'$BUCKET_ONE_NAME' and/or '$BUCKET_TWO_NAME' not listed (all buckets: ${bucket_array[*]})"
+  fi
 }
 
 # test listing a bucket's objects on versitygw
@@ -78,6 +88,7 @@ source ./tests/util.sh
   [[ result_two -eq 0 ]] || fail "Error adding object one"
   put_object "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
   [[ result_three -eq 0 ]] || fail "Error adding object two"
+
   list_objects "$BUCKET_ONE_NAME"
   local object_one_found=false
   local object_two_found=false
@@ -88,11 +99,13 @@ source ./tests/util.sh
       object_two_found=true
     fi
   done
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $object_one $object_two
+
   if [ $object_one_found != true ] || [ $object_two_found != true ]; then
     fail "$object_one and/or $object_two not listed (all objects: ${object_array[*]})"
   fi
-  delete_bucket_or_contents "$BUCKET_ONE_NAME"
-  delete_test_files $object_one $object_two
 }
 
 # test ability to retrieve bucket ACLs
@@ -100,10 +113,13 @@ source ./tests/util.sh
 
   setup_bucket "$BUCKET_ONE_NAME" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
+
   get_bucket_acl "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
   id=$(echo "$acl" | jq '.Owner.ID')
   [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
 }
 
@@ -117,6 +133,7 @@ source ./tests/util.sh
   [[ $created -eq 0 ]] || fail "Error creating test files"
   setup_bucket "$BUCKET_ONE_NAME" || local result_one=$?
   [[ $result_one -eq 0 ]] || fail "Error creating bucket"
+
   put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
   [[ $result_two -eq 0 ]] || fail "Error adding object one"
   put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
@@ -147,10 +164,12 @@ source ./tests/util.sh
 
   setup_bucket "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
   get_bucket_tags "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting bucket tags"
   tag_set=$(echo "$tags" | jq '.TagSet')
   [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
+
   put_bucket_tag "$BUCKET_ONE_NAME" $key $value
   get_bucket_tags "$BUCKET_ONE_NAME" || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags"
@@ -158,6 +177,7 @@ source ./tests/util.sh
   tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
   [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
   [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
 }
 
@@ -177,6 +197,7 @@ source ./tests/util.sh
   [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
   put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
   [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
+
   list_objects_s3api_v1 "$BUCKET_ONE_NAME"
   key_one=$(echo "$objects" | jq '.Contents[0].Key')
   [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
@@ -207,6 +228,7 @@ source ./tests/util.sh
   [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
   put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
   [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
+
   list_objects_s3api_v2 "$BUCKET_ONE_NAME"
   key_one=$(echo "$objects" | jq '.Contents[0].Key')
   [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
@@ -232,14 +254,15 @@ source ./tests/util.sh
   [[ $created -eq 0 ]] || fail "Error creating test files"
   setup_bucket "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-
   local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
   put_object "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
   [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+
   get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting object tags"
   tag_set=$(echo "$tags" | jq '.TagSet')
   [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
+
   put_object_tag "$BUCKET_ONE_NAME" $bucket_file $key $value
   get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
@@ -247,6 +270,7 @@ source ./tests/util.sh
   tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
   [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
   [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
@@ -262,10 +286,14 @@ source ./tests/util.sh
   [[ $created -eq 0 ]] || fail "Error creating test files"
   setup_bucket "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4
+
+  multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || upload_result=$?
+  [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
+
   copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy"
   copy_data=$(<"$test_file_folder"/$bucket_file-copy)
   [[ $bucket_file_data == "$copy_data" ]] || fail "Data doesn't match"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
@@ -281,9 +309,95 @@ source ./tests/util.sh
   [[ $created -eq 0 ]] || fail "Error creating test files"
   setup_bucket "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4
+
+  abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || abort_result=$?
+  [[ $abort_result -eq 0 ]] || fail "Abort failed"
+
   object_exists "$BUCKET_ONE_NAME/$bucket_file" || exists=$?
   [[ $exists -eq 1 ]] || fail "Upload file exists after abort"
+
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
+}
+
+# test multi-part upload list parts command
+@test "test-multipart-upload-list-parts" {
+
+  local bucket_file="bucket-file"
+  local bucket_file_data="test file\n"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  list_parts "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || list_result=$?
+  [[ list_result -eq 0 ]] || fail "Listing multipart upload parts failed"
+
+  declare -a parts_map
+  for ((i=0;i<$4;i++)) {
+    local part_number
+    local etag
+    part_number=$(echo "$parts" | jq ".[$i].PartNumber")
+    if [[ $part_number -eq "" ]]; then
+      echo "error:  blank part number"
+      return 1
+    fi
+    etag=$(echo "$parts" | jq ".[$i].ETag")
+    if [[ $etag == "" ]]; then
+      echo "error:  blank etag"
+      return 1
+    fi
+    parts_map[$part_number]=$etag
+  }
+
+  for ((i=0;i<$4;i++)) {
+    local part_number
+    local etag
+    part_number=$(echo "$listed_parts" | jq ".Parts[$i].PartNumber")
+    etag=$(echo "$listed_parts" | jq ".Parts[$i].ETag")
+    if [[ ${parts_map[$part_number]} != "$etag" ]]; then
+      echo "error:  etags don't match (part number: $part_number, etags ${parts_map[$part_number]},$etag)"
+      return 1
+    fi
+  }
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
+
+# test listing of active uploads
+@test "test-multipart-upload-list-uploads" {
+
+  local bucket_file_one="bucket-file-one"
+  local bucket_file_two="bucket-file-two"
+
+  create_test_files "$bucket_file_one" "$bucket_file_two" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two"
+  [[ $? -eq 0 ]] || fail "failed to list multipart uploads"
+
+  local key_one
+  local key_two
+  key_one=$(echo "$uploads" | jq '.Uploads[0].Key')
+  key_two=$(echo "$uploads" | jq '.Uploads[1].Key')
+  key_one=${key_one//\"/}
+  key_two=${key_two//\"/}
+  echo "$test_file_folder/${bucket_file_one}abc"
+  echo "${key_one}abc"
+  echo "Length of test_file_folder/bucket_file_one: ${#test_file_folder}/${#bucket_file_one}"
+  echo "Length of key_one: ${#key_one}"
+  if [[ "$test_file_folder/$bucket_file_one" != *"$key_one" ]]; then
+    fail "Key mismatch ($test_file_folder/$bucket_file_one, $key_one)"
+  fi
+  if [[ "$test_file_folder/$bucket_file_two" != *"$key_two" ]]; then
+    fail "Key mismatch ($test_file_folder/$bucket_file_two, $key_two)"
+  fi
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files "$bucket_file_one" "$bucket_file_two"
 }

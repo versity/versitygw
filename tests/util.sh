@@ -8,6 +8,7 @@ create_bucket() {
     echo "create bucket missing bucket name"
     return 1
   fi
+
   local exit_code=0
   local error
   error=$(aws s3 mb s3://"$1" 2>&1) || exit_code=$?
@@ -26,6 +27,7 @@ delete_bucket() {
     echo "delete bucket missing bucket name"
     return 1
   fi
+
   local exit_code=0
   local error
   error=$(aws s3 rb s3://"$1" 2>&1) || exit_code="$?"
@@ -48,6 +50,7 @@ delete_bucket_recursive() {
     echo "delete bucket missing bucket name"
     return 1
   fi
+
   local exit_code=0
   local error
   error=$(aws s3 rb s3://"$1" --force 2>&1) || exit_code="$?"
@@ -70,6 +73,7 @@ delete_bucket_contents() {
     echo "delete bucket missing bucket name"
     return 1
   fi
+
   local exit_code=0
   local error
   error=$(aws s3 rm s3://"$1" --recursive 2>&1) || exit_code="$?"
@@ -88,6 +92,7 @@ bucket_exists() {
     echo "bucket exists check missing bucket name"
     return 2
   fi
+
   local exit_code=0
   local error
   error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
@@ -579,6 +584,7 @@ multipart_upload_before_completion() {
     fi
   done
   parts+="]"
+
   export parts
 }
 
@@ -606,6 +612,26 @@ multipart_upload() {
   return 0
 }
 
+# run the abort multipart command
+# params:  bucket, key, upload ID
+# return 0 for success, 1 for failure
+run_abort_command() {
+  if [ $# -ne 3 ]; then
+    echo "command to run abort requires bucket, key, upload ID"
+    return 1
+  fi
+
+  error=$(aws s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$3") || local aborted=$?
+  if [[ $aborted -ne 0 ]]; then
+    echo "Error aborting upload: $error"
+    return 1
+  fi
+  return 0
+}
+
+# run upload, then abort it
+# params:  bucket, key, local file location, number of parts to split into before uploading
+# return 0 for success, 1 for failure
 abort_multipart_upload() {
   if [ $# -ne 4 ]; then
     echo "abort multipart upload command missing bucket, key, file, and/or part count"
@@ -618,12 +644,8 @@ abort_multipart_upload() {
     return 1
   fi
 
-  error=$(aws s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id") || local aborted=$?
-  if [[ $aborted -ne 0 ]]; then
-    echo "Error aborting upload: $error"
-    return 1
-  fi
-  return 0
+  run_abort_command "$1" "$2" "$upload_id"
+  return $?
 }
 
 # copy a file to/from S3
@@ -634,6 +656,7 @@ copy_file() {
     echo "copy file command requires src and dest"
     return 1
   fi
+
   local result
   error=$(aws s3 cp "$1" "$2") || result=$?
   if [[ $result -ne 0 ]]; then
@@ -642,3 +665,56 @@ copy_file() {
   fi
   return 0
 }
+
+# list parts of an unfinished multipart upload
+# params:  bucket, key, local file location, and parts to split into before upload
+# export parts on success, return 1 for error
+list_parts() {
+  if [ $# -ne 4 ]; then
+    echo "list multipart upload parts command missing bucket, key, file, and/or part count"
+    return 1
+  fi
+
+  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
+  if [[ $result -ne 0 ]]; then
+    echo "error performing pre-completion multipart upload"
+    return 1
+  fi
+
+  listed_parts=$(aws s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id") || local listed=$?
+  if [[ $listed -ne 0 ]]; then
+    echo "Error aborting upload: $parts"
+    return 1
+  fi
+  export listed_parts
+}
+
+# list unfinished multipart uploads
+# params:  bucket, key one, key two
+# export current two uploads on success, return 1 for error
+list_multipart_uploads() {
+  if [ $# -ne 3 ]; then
+    echo "list multipart uploads command requires bucket and two keys"
+    return 1
+  fi
+
+  create_multipart_upload "$1" "$2" || local create_result=$?
+  if [[ $create_result -ne 0 ]]; then
+    echo "error creating multpart upload"
+    return 1
+  fi
+
+  create_multipart_upload "$1" "$3" || local create_result_two=$?
+  if [[ $create_result_two -ne 0 ]]; then
+    echo "error creating multpart upload two"
+    return 1
+  fi
+
+  uploads=$(aws s3api list-multipart-uploads --bucket "$1") || local list_result=$?
+  if [[ $list_result -ne 0 ]]; then
+    echo "error listing uploads: $uploads"
+    return 1
+  fi
+  export uploads
+}
+
