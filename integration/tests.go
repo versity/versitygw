@@ -1463,6 +1463,75 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 	})
 }
 
+func PresignedAuth_UploadPart(s *S3Conf) error {
+	testName := "PresignedAuth_UploadPart"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		bucket, key, partNumber := getBucketName(), "my-mp", int32(1)
+
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		clt := s3.NewFromConfig(s.Config())
+		mp, err := createMp(clt, bucket, key)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignUploadPart(ctx, &s3.UploadPartInput{Bucket: &bucket, Key: &key, UploadId: mp.UploadId, PartNumber: &partNumber})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		etag := resp.Header.Get("Etag")
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := clt.ListParts(ctx, &s3.ListPartsInput{Bucket: &bucket, Key: &key, UploadId: mp.UploadId})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Parts) != 1 {
+			return fmt.Errorf("expected mp upload parts length to be 1, instead got %v", len(out.Parts))
+		}
+		if *out.Parts[0].ETag != etag {
+			return fmt.Errorf("expected uploaded part etag to be %v, instead got %v", etag, *out.Parts[0].ETag)
+		}
+		if *out.Parts[0].PartNumber != partNumber {
+			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CreateBucket_invalid_bucket_name(s *S3Conf) error {
 	testName := "CreateBucket_invalid_bucket_name"
 	runF(testName)
