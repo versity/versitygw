@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
@@ -64,6 +65,66 @@ func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength
 		return nil, errors.New("error in creating an http request")
 	}
 
+	// Set the request headers
+	req.Header.VisitAll(func(key, value []byte) {
+		keyStr := string(key)
+		if includeHeader(keyStr, signedHdrs) {
+			httpReq.Header.Add(keyStr, string(value))
+		}
+	})
+
+	// Check if Content-Length in signed headers
+	// If content length is non 0, then the header will be included
+	if !includeHeader("Content-Length", signedHdrs) {
+		httpReq.ContentLength = 0
+	} else {
+		httpReq.ContentLength = contentLength
+	}
+
+	// Set the Host header
+	httpReq.Host = string(req.Header.Host())
+
+	return httpReq, nil
+}
+
+var (
+	signedQueryArgs = map[string]bool{
+		"X-Amz-Algorithm":     true,
+		"X-Amz-Credential":    true,
+		"X-Amz-Date":          true,
+		"X-Amz-SignedHeaders": true,
+		"X-Amz-Signature":     true,
+	}
+)
+
+func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64) (*http.Request, error) {
+	req := ctx.Request()
+	var body io.Reader
+	if IsBigDataAction(ctx) {
+		body = req.BodyStream()
+	} else {
+		body = bytes.NewReader(req.Body())
+	}
+
+	uri := string(ctx.Request().URI().Path())
+	isFirst := true
+
+	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+		_, ok := signedQueryArgs[string(key)]
+		if !ok {
+			if isFirst {
+				uri += fmt.Sprintf("?%s=%s", key, value)
+				isFirst = false
+			} else {
+				uri += fmt.Sprintf("&%s=%s", key, value)
+			}
+		}
+	})
+
+	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
+	if err != nil {
+		return nil, errors.New("error in creating an http request")
+	}
 	// Set the request headers
 	req.Header.VisitAll(func(key, value []byte) {
 		keyStr := string(key)
@@ -148,4 +209,27 @@ func IsBigDataAction(ctx *fiber.Ctx) bool {
 		}
 	}
 	return false
+}
+
+func ValidateDate(date time.Time) error {
+	now := time.Now().UTC()
+	diff := date.Unix() - now.Unix()
+
+	// Checks the dates difference to be less than a minute
+	if diff > 60 {
+		return s3err.APIError{
+			Code:           "SignatureDoesNotMatch",
+			Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
+			HTTPStatusCode: http.StatusForbidden,
+		}
+	}
+	if diff < -60 {
+		return s3err.APIError{
+			Code:           "SignatureDoesNotMatch",
+			Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
+			HTTPStatusCode: http.StatusForbidden,
+		}
+	}
+
+	return nil
 }

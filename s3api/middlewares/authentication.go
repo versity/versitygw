@@ -44,6 +44,12 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
+		// If account is set in context locals, it means it was presigned url case
+		_, ok := ctx.Locals("account").(auth.Account)
+		if ok {
+			return ctx.Next()
+		}
+
 		ctx.Locals("region", region)
 		ctx.Locals("startTime", time.Now())
 		authorization := ctx.Get("Authorization")
@@ -96,7 +102,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		}
 
 		// Validate the dates difference
-		err = validateDate(tdate)
+		err = utils.ValidateDate(tdate)
 		if err != nil {
 			return sendResponse(ctx, err, logger)
 		}
@@ -156,29 +162,6 @@ func (a accounts) getAccount(access string) (auth.Account, error) {
 	}
 
 	return a.iam.GetUserAccount(access)
-}
-
-func validateDate(date time.Time) error {
-	now := time.Now().UTC()
-	diff := date.Unix() - now.Unix()
-
-	// Checks the dates difference to be less than a minute
-	if diff > 60 {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
-			HTTPStatusCode: http.StatusForbidden,
-		}
-	}
-	if diff < -60 {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
-			HTTPStatusCode: http.StatusForbidden,
-		}
-	}
-
-	return nil
 }
 
 func sendResponse(ctx *fiber.Ctx, err error, logger s3log.AuditLogger) error {

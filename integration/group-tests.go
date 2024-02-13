@@ -22,6 +22,30 @@ func TestAuthentication(s *S3Conf) {
 	Authentication_signature_error_incorrect_secret_key(s)
 }
 
+func TestPresignedAuthentication(s *S3Conf) {
+	PresignedAuth_missing_algo_query_param(s)
+	PresignedAuth_unsupported_algorithm(s)
+	PresignedAuth_missing_credentials_query_param(s)
+	PresignedAuth_malformed_creds_invalid_parts(s)
+	PresignedAuth_malformed_creds_invalid_parts(s)
+	PresignedAuth_creds_incorrect_service(s)
+	PresignedAuth_creds_incorrect_region(s)
+	PresignedAuth_creds_invalid_date(s)
+	PresignedAuth_missing_date_query(s)
+	PresignedAuth_dates_mismatch(s)
+	PresignedAuth_non_existing_access_key_id(s)
+	PresignedAuth_missing_signed_headers_query_param(s)
+	PresignedAuth_missing_expiration_query_param(s)
+	PresignedAuth_invalid_expiration_query_param(s)
+	PresignedAuth_negative_expiration_query_param(s)
+	PresignedAuth_exceeding_expiration_query_param(s)
+	PresignedAuth_expired_request(s)
+	PresignedAuth_incorrect_secret_key(s)
+	PresignedAuth_PutObject_success(s)
+	PresignedAuth_Put_GetObject_with_data(s)
+	PresignedAuth_UploadPart(s)
+}
+
 func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
@@ -219,6 +243,7 @@ func TestGetBucketAcl(s *S3Conf) {
 
 func TestFullFlow(s *S3Conf) {
 	TestAuthentication(s)
+	TestPresignedAuthentication(s)
 	TestCreateBucket(s)
 	TestHeadBucket(s)
 	TestListBuckets(s)
@@ -277,6 +302,27 @@ func GetIntTests() IntTests {
 		"Authentication_incorrect_payload_hash":                 Authentication_incorrect_payload_hash,
 		"Authentication_incorrect_md5":                          Authentication_incorrect_md5,
 		"Authentication_signature_error_incorrect_secret_key":   Authentication_signature_error_incorrect_secret_key,
+		"PresignedAuth_missing_algo_query_param":                PresignedAuth_missing_algo_query_param,
+		"PresignedAuth_unsupported_algorithm":                   PresignedAuth_unsupported_algorithm,
+		"PresignedAuth_missing_credentials_query_param":         PresignedAuth_missing_credentials_query_param,
+		"PresignedAuth_malformed_creds_invalid_parts":           PresignedAuth_malformed_creds_invalid_parts,
+		"PresignedAuth_creds_invalid_terminator":                PresignedAuth_creds_invalid_terminator,
+		"PresignedAuth_creds_incorrect_service":                 PresignedAuth_creds_incorrect_service,
+		"PresignedAuth_creds_incorrect_region":                  PresignedAuth_creds_incorrect_region,
+		"PresignedAuth_creds_invalid_date":                      PresignedAuth_creds_invalid_date,
+		"PresignedAuth_missing_date_query":                      PresignedAuth_missing_date_query,
+		"PresignedAuth_dates_mismatch":                          PresignedAuth_dates_mismatch,
+		"PresignedAuth_non_existing_access_key_id":              PresignedAuth_non_existing_access_key_id,
+		"PresignedAuth_missing_signed_headers_query_param":      PresignedAuth_missing_signed_headers_query_param,
+		"PresignedAuth_missing_expiration_query_param":          PresignedAuth_missing_expiration_query_param,
+		"PresignedAuth_invalid_expiration_query_param":          PresignedAuth_invalid_expiration_query_param,
+		"PresignedAuth_negative_expiration_query_param":         PresignedAuth_negative_expiration_query_param,
+		"PresignedAuth_exceeding_expiration_query_param":        PresignedAuth_exceeding_expiration_query_param,
+		"PresignedAuth_expired_request":                         PresignedAuth_expired_request,
+		"PresignedAuth_incorrect_secret_key":                    PresignedAuth_incorrect_secret_key,
+		"PresignedAuth_PutObject_success":                       PresignedAuth_PutObject_success,
+		"PresignedAuth_Put_GetObject_with_data":                 PresignedAuth_Put_GetObject_with_data,
+		"PresignedAuth_UploadPart":                              PresignedAuth_UploadPart,
 		"CreateBucket_invalid_bucket_name":                      CreateBucket_invalid_bucket_name,
 		"CreateBucket_existing_bucket":                          CreateBucket_existing_bucket,
 		"CreateBucket_as_user":                                  CreateBucket_as_user,

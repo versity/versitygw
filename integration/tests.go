@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,7 +20,8 @@ import (
 )
 
 var (
-	shortTimeout = 10 * time.Second
+	shortTimeout  = 10 * time.Second
+	iso8601Format = "20060102T150405Z"
 )
 
 func Authentication_empty_auth_header(s *S3Conf) error {
@@ -617,6 +619,912 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 		}
 		defer resp.Body.Close()
 		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_missing_algo_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_missing_algo_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-Algorithm")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
+	testName := "PresignedAuth_unsupported_algorithm"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri := strings.Replace(v4req.URL, "AWS4-HMAC-SHA256", "AWS4-SHA256", 1)
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_missing_credentials_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-Credential")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
+	testName := "PresignedAuth_malformed_creds_invalid_parts"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Set("X-Amz-Credential", "access/hello/world")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
+	testName := "PresignedAuth_creds_invalid_terminator"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri, err := changeAuthCred(v4req.URL, "aws5_request", credTerminator)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
+	testName := "PresignedAuth_creds_incorrect_service"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri, err := changeAuthCred(v4req.URL, "sns", credService)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
+	testName := "PresignedAuth_creds_incorrect_region"
+	cfg := *s
+
+	if cfg.awsRegion == "us-east-1" {
+		cfg.awsRegion = "us-west-1"
+	} else {
+		cfg.awsRegion = "us-east-1"
+	}
+
+	return presignedAuthHandler(&cfg, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.APIError{
+			Code:           "SignatureDoesNotMatch",
+			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
+			HTTPStatusCode: http.StatusForbidden,
+		}); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_creds_invalid_date(s *S3Conf) error {
+	testName := "PresignedAuth_creds_invalid_date"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri, err := changeAuthCred(v4req.URL, "32234Z34", credDate)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
+	testName := "PresignedAuth_non_existing_access_key_id"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri, err := changeAuthCred(v4req.URL, "a_rarely_existing_access_key_id890asd6f807as6ydf870say", credAccess)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_missing_date_query(s *S3Conf) error {
+	testName := "PresignedAuth_missing_date_query"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-Date")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_dates_mismatch(s *S3Conf) error {
+	testName := "PresignedAuth_dates_mismatch"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		uri, err := changeAuthCred(v4req.URL, "20060102", credDate)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_missing_signed_headers_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-SignedHeaders")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_missing_expiration_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-Expires")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_invalid_expiration_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Set("X-Amz-Expires", "invalid_value")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_negative_expiration_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Set("X-Amz-Expires", "-3")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_exceeding_expiration_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Set("X-Amz-Expires", "60580000")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_expired_request(s *S3Conf) error {
+	testName := "PresignedAuth_expired_request"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		expDate := time.Now().AddDate(0, -1, 0).Format(iso8601Format)
+
+		queries := urlParsed.Query()
+		queries.Set("X-Amz-Date", expDate)
+		urlParsed.RawQuery = queries.Encode()
+
+		uri, err := changeAuthCred(urlParsed.String(), expDate[:8], credDate)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
+	testName := "PresignedAuth_incorrect_secret_key"
+	cfg := *s
+	cfg.awsSecret += "x"
+	return presignedAuthHandler(&cfg, testName, func(client *s3.PresignClient) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_PutObject_success(s *S3Conf) error {
+	testName := "PresignedAuth_PutObject_success"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		bucket := getBucketName()
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("my-obj")})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(http.MethodPut, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected my-obj to be successfully uploaded and get 200 response status, instead got %v", resp.StatusCode)
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
+	testName := "PresignedAuth_Put_GetObject_with_data"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		bucket, obj := getBucketName(), "my-obj"
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		data := "Hello world"
+		body := strings.NewReader(data)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &obj, Body: body})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, body)
+		if err != nil {
+			return err
+		}
+
+		req.Header = v4req.SignedHeader
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected my-obj to be successfully uploaded and get %v response status, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		v4GetReq, err := client.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err = http.NewRequest(v4GetReq.Method, v4GetReq.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err = httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected get object response status to be %v, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		defer resp.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read get object response body %w", err)
+		}
+
+		fmt.Println(resp.Request.Method, resp.ContentLength, string(respBody))
+
+		if string(respBody) != data {
+			return fmt.Errorf("expected get object response body to be %v, instead got %s", data, respBody)
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_UploadPart(s *S3Conf) error {
+	testName := "PresignedAuth_UploadPart"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		bucket, key, partNumber := getBucketName(), "my-mp", int32(1)
+
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		clt := s3.NewFromConfig(s.Config())
+		mp, err := createMp(clt, bucket, key)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignUploadPart(ctx, &s3.UploadPartInput{Bucket: &bucket, Key: &key, UploadId: mp.UploadId, PartNumber: &partNumber})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		etag := resp.Header.Get("Etag")
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := clt.ListParts(ctx, &s3.ListPartsInput{Bucket: &bucket, Key: &key, UploadId: mp.UploadId})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Parts) != 1 {
+			return fmt.Errorf("expected mp upload parts length to be 1, instead got %v", len(out.Parts))
+		}
+		if *out.Parts[0].ETag != etag {
+			return fmt.Errorf("expected uploaded part etag to be %v, instead got %v", etag, *out.Parts[0].ETag)
+		}
+		if *out.Parts[0].PartNumber != partNumber {
+			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
 			return err
 		}
 

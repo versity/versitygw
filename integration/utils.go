@@ -12,6 +12,7 @@ import (
 	"io"
 	rnd "math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -147,6 +148,20 @@ func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) err
 		return fmt.Errorf("%v: %w", cfg.testName, err)
 	}
 	passF(cfg.testName)
+	return nil
+}
+
+func presignedAuthHandler(s *S3Conf, testName string, handler func(client *s3.PresignClient) error) error {
+	runF(testName)
+	clt := s3.NewPresignClient(s3.NewFromConfig(s.Config()))
+
+	err := handler(clt)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
 	return nil
 }
 
@@ -550,4 +565,27 @@ func genRandString(length int) string {
 		result[i] = charset[random.Intn(len(charset))]
 	}
 	return string(result)
+}
+
+const (
+	credAccess int = iota
+	credDate
+	credRegion
+	credService
+	credTerminator
+)
+
+func changeAuthCred(uri, newVal string, index int) (string, error) {
+	urlParsed, err := url.Parse(uri)
+	if err != nil {
+		return "", err
+	}
+
+	queries := urlParsed.Query()
+	creds := strings.Split(queries.Get("X-Amz-Credential"), "/")
+	creds[index] = newVal
+	queries.Set("X-Amz-Credential", strings.Join(creds, "/"))
+	urlParsed.RawQuery = queries.Encode()
+
+	return urlParsed.String(), nil
 }
