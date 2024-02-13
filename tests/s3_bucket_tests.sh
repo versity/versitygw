@@ -123,6 +123,28 @@ source ./tests/util.sh
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
 }
 
+# test ability to retrieve object ACLs
+#@test "test_get_object_acl" {
+
+#  object_one="test-file-one"
+
+#  setup_bucket "$BUCKET_ONE_NAME" || local created=$?
+#  [[ $created -eq 0 ]] || fail "Error creating bucket"
+#  create_test_files "$object_one" || local created=$?
+#  [[ $created -eq 0 ]] || fail "Error creating test file"
+#  put_object "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result=$?
+#  [[ result -eq 0 ]] || fail "Error adding object one"
+
+#  get_object_acl "$BUCKET_ONE_NAME" "$object_one" || local result=$?
+#  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
+#  id=$(echo "$acl" | jq '.Owner.ID')
+#  [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
+
+#  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+#}
+
+
 # test ability to delete multiple objects from bucket
 @test "test_delete_objects" {
 
@@ -363,6 +385,7 @@ source ./tests/util.sh
     fi
   }
 
+  run_abort_command "$BUCKET_ONE_NAME" "$bucket_file" $upload_id
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
@@ -383,14 +406,11 @@ source ./tests/util.sh
 
   local key_one
   local key_two
+  echo $uploads
   key_one=$(echo "$uploads" | jq '.Uploads[0].Key')
   key_two=$(echo "$uploads" | jq '.Uploads[1].Key')
   key_one=${key_one//\"/}
   key_two=${key_two//\"/}
-  echo "$test_file_folder/${bucket_file_one}abc"
-  echo "${key_one}abc"
-  echo "Length of test_file_folder/bucket_file_one: ${#test_file_folder}/${#bucket_file_one}"
-  echo "Length of key_one: ${#key_one}"
   if [[ "$test_file_folder/$bucket_file_one" != *"$key_one" ]]; then
     fail "Key mismatch ($test_file_folder/$bucket_file_one, $key_one)"
   fi
@@ -400,4 +420,25 @@ source ./tests/util.sh
 
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file_one" "$bucket_file_two"
+}
+
+@test "test-multipart-upload-from-bucket" {
+  local bucket_file="bucket-file"
+  bucket_file_data="test file\n"
+
+  create_test_files "$bucket_file" || local created=$?
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || upload_result=$?
+  [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
+
+  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file-copy" "$test_file_folder/$bucket_file-copy"
+  copy_data=$(<"$test_file_folder"/$bucket_file-copy)
+  [[ $bucket_file_data == "$copy_data" ]] || fail "Data doesn't match"
+
+  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
 }
