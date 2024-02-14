@@ -15,7 +15,6 @@ builds:
       - CGO_ENABLED=0
     main: ./cmd/versitygw
     binary: versitygw
-    id: versitygw
     goarch:
       - amd64
       - arm64
@@ -26,8 +25,7 @@ archives:
   - format: tar.gz
     # this name template makes the OS and Arch compatible with the results of uname.
     name_template: >-
-      {{ .ProjectName }}_
-      v{{ .Version }}_
+      {{ .ProjectName }}_v{{ .Version }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
@@ -51,6 +49,39 @@ changelog:
       - '^docs:'
       - '^test:'
       - '^Merge '
+
+nfpms:
+  - id: packages
+    package_name: versitygw
+    vendor: Versity Software
+    homepage: https://github.com/versity/versitygw
+    maintainer: Ben McClelland <ben.mcclelland@versity.com>
+
+    description: |-
+      The Versity S3 Gateway.
+      A high-performance tool facilitating translation between AWS S3 API
+      requests and various backend storage systems, including POSIX file
+      backend storage. Its stateless architecture enables deployment in
+      clusters for increased throughput, distributing requests across gateways
+      for optimal performance. With a focus on modularity, it supports future
+      extensions for additional backend systems.
+
+    license: Apache 2.0
+
+    builds:
+      - versitygw
+
+    formats:
+      - deb
+      - rpm
+
+    umask: 0o002
+    bindir: /usr/bin
+    epoch: "1"
+    release: "1"
+
+    rpm:
+      group: "System Environment/Daemons"
 
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
