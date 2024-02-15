@@ -184,6 +184,63 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 	return string(*uploadResp.ETag), nil
 }
 
+func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if tags == nil {
+		_, err := client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: map[string]*string{
+			string(aclKeyCapital): resp.Metadata[string(aclKeyCapital)],
+		}})
+		if err != nil {
+			return azureErrToS3Err(err)
+		}
+
+		return nil
+	}
+
+	_, ok := tags[string(aclKeyLower)]
+	if ok {
+		delete(tags, string(aclKeyLower))
+	}
+
+	tags[string(aclKeyCapital)] = *resp.Metadata[string(aclKeyCapital)]
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: parseMetadata(tags)})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
+}
+
+func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[string]string, error) {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	delete(resp.Metadata, string(aclKeyCapital))
+
+	return parseAzMetadata(resp.Metadata), nil
+}
+
+func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
+	return az.PutBucketTagging(ctx, bucket, nil)
+}
+
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
