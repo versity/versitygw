@@ -815,3 +815,19 @@ split_file() {
   fi
   return 0
 }
+
+# compare files
+# input:  two files
+# return 0 for same data, 1 for different data, 2 for error
+compare_files() {
+  if [ $# -ne 2 ]; then
+    echo "file comparison requires two files"
+    return 2
+  fi
+  file_one_md5=$(md5 -q "$1")
+  file_two_md5=$(md5 -q "$2")
+  if [[ $file_one_md5 == "$file_two_md5" ]]; then
+    return 0
+  fi
+  return 1
+}

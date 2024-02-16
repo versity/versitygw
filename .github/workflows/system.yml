@@ -29,25 +29,15 @@ jobs:
           git clone https://github.com/bats-core/bats-core.git
           cd bats-core && ./install.sh $HOME
 
-      - name: Build
+      - name: Build and run
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=user
           export AWS_SECRET_ACCESS_KEY=pass
+          export AWS_REGION=us-east-1
           aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
+          aws configure set aws_region $AWS_REGION --profile versity
           mkdir /tmp/gw
-
-      - name: Run tests
-        run: |
-          export AWS_ACCESS_KEY_ID=user
-          export AWS_SECRET_ACCESS_KEY=pass
           export WORKSPACE=$GITHUB_WORKSPACE
-          ./tests/run.sh
-
-      - name: Run tests with static buckets
-        run: |
-          export AWS_ACCESS_KEY_ID=user
-          export AWS_SECRET_ACCESS_KEY=pass
-          export WORKSPACE=$GITHUB_WORKSPACE
-          ./tests/run_static.sh
+          ./tests/run_all.sh

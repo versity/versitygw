@@ -1,0 +1,59 @@
+FROM --platform=linux/arm64 ubuntu:latest
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    make \
+    wget \
+    curl \
+    unzip \
+    jq \
+    ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /tmp
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
+
+# Download Go 1.21 (adjust the version and platform as needed)
+RUN wget https://golang.org/dl/go1.21.7.linux-arm64.tar.gz
+
+# Extract the downloaded archive
+RUN tar -xvf go1.21.7.linux-arm64.tar.gz -C /usr/local
+
+# Set Go environment variables
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV GOBIN="$GOPATH/bin"
+
+# Make the directory for Go packages
+RUN mkdir -p "$GOPATH/src" "$GOPATH/bin" && chmod -R 777 "$GOPATH"
+
+# Create tester user
+RUN groupadd -r tester && useradd -r -g tester tester
+RUN mkdir /home/tester && chown tester:tester /home/tester
+ENV HOME=/home/tester
+
+RUN git clone https://github.com/bats-core/bats-core.git && \
+    cd bats-core && \
+    ./install.sh /home/tester
+
+USER tester
+COPY . /home/tester
+
+WORKDIR /home/tester
+RUN make
+
+RUN . tests/.secrets && \
+    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE && \
+    aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile $AWS_PROFILE && \
+    aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile $AWS_PROFILE && \
+    aws configure set aws_region $AWS_REGION --profile $AWS_PROFILE
+
+RUN mkdir /tmp/gw
+
+ENV WORKSPACE=.
+
+CMD ["tests/run_all.sh"]

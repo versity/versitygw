@@ -41,7 +41,7 @@ VERSION
 dist/
 
 # secrets file for local github-actions testing
-.secrets
+tests/.secrets
 
 # env files for testing
 .env*

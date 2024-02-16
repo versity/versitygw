@@ -2,8 +2,8 @@
 
 setup() {
 
-  if [ "$GITHUB_ACTIONS" != "true" ] && [ -r .secrets ]; then
-    source .secrets
+  if [ "$GITHUB_ACTIONS" != "true" ] && [ -r tests/.secrets ]; then
+    source tests/.secrets
   else
     echo "Warning: no secrets file found"
   fi
@@ -31,9 +31,6 @@ setup() {
   elif [ -z "$BACKEND" ]; then
     echo "No backend parameter set (options: 'posix')"
     return 1
-  elif [ -z "$AWS_REGION" ]; then
-    echo "No AWS region set"
-    return 1
   elif [ -z "$AWS_PROFILE" ]; then
     echo "No AWS profile set"
     return 1
@@ -56,10 +53,12 @@ setup() {
     echo "RECREATE_BUCKETS must be 'true' or 'false'"
     return 1
   fi
+  key_len=${#AWS_ACCESS_KEY_ID}
+  secret_len=${#AWS_SECRET_ACCESS_KEY}
+  echo "$key_len $secret_len $VERSITY_EXE $BACKEND $LOCAL_FOLDER $AWS_ENDPOINT_URL $AWS_PROFILE $BUCKET_ONE_NAME $BUCKET_TWO_NAME"
 
   ROOT_ACCESS_KEY="$AWS_ACCESS_KEY_ID" ROOT_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" "$VERSITY_EXE" "$BACKEND" "$LOCAL_FOLDER" &
 
-  export AWS_REGION
   export AWS_PROFILE
   export AWS_ENDPOINT_URL
   export LOCAL_FOLDER

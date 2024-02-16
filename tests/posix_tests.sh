@@ -13,6 +13,10 @@ source ./tests/util_posix.sh
 
   local object_name="test-object"
 
+  if [[ -e "$LOCAL_FOLDER"/"$BUCKET_ONE_NAME" ]]; then
+    rm -rf "${LOCAL_FOLDER:?}"/"${BUCKET_ONE_NAME:?}"
+  fi
+
   mkdir "$LOCAL_FOLDER"/"$BUCKET_ONE_NAME"
   local object="$BUCKET_ONE_NAME"/"$object_name"
   touch "$LOCAL_FOLDER"/"$object"
