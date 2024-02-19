@@ -29,14 +29,25 @@ jobs:
           git clone https://github.com/bats-core/bats-core.git
           cd bats-core && ./install.sh $HOME
 
-      - name: Build and Run
+      - name: Build
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=user
           export AWS_SECRET_ACCESS_KEY=pass
-          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity 
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
-          export VERSITY_EXE=./versitygw
           mkdir /tmp/gw
-          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.default $HOME/bin/bats ./tests/s3_bucket_tests.sh
-          VERSITYGW_TEST_ENV=$GITHUB_WORKSPACE/tests/.env.default $HOME/bin/bats ./tests/posix_tests.sh
+
+      - name: Run tests
+        run: |
+          export AWS_ACCESS_KEY_ID=user
+          export AWS_SECRET_ACCESS_KEY=pass
+          export WORKSPACE=$GITHUB_WORKSPACE
+          ./tests/run.sh
+
+      - name: Run tests with static buckets
+        run: |
+          export AWS_ACCESS_KEY_ID=user
+          export AWS_SECRET_ACCESS_KEY=pass
+          export WORKSPACE=$GITHUB_WORKSPACE
+          ./tests/run_static.sh

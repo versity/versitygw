@@ -78,7 +78,7 @@ delete_bucket_contents() {
   local error
   error=$(aws s3 rm s3://"$1" --recursive 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
-    echo "error deleting bucket: $error"
+    echo "error deleting bucket contents: $error"
     return 1
   fi
   return 0
@@ -93,6 +93,7 @@ bucket_exists() {
     return 2
   fi
 
+  echo "checking bucket $1"
   local exit_code=0
   local error
   error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
@@ -116,7 +117,7 @@ delete_bucket_or_contents() {
     echo "delete bucket or contents function requires bucket name"
     return 1
   fi
-  if [[ $RECREATE_BUCKETS != "true" ]]; then
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
     delete_bucket_contents "$1" || local delete_result=$?
     if [[ $delete_result -ne 0 ]]; then
       echo "error deleting bucket contents"
@@ -141,6 +142,7 @@ setup_bucket() {
     echo "bucket creation function requires bucket name"
     return 1
   fi
+  echo "$1"
   local exists_result
   bucket_exists "$1" || exists_result=$?
   if [[ $exists_result -eq 2 ]]; then
@@ -153,8 +155,11 @@ setup_bucket() {
       echo "error deleting bucket or contents"
       return 1
     fi
+    if [[ $RECREATE_BUCKETS == "false" ]]; then
+      return 0
+    fi
   fi
-  if [[ $RECREATE_BUCKETS != "true" ]]; then
+  if [[ $exists_result -eq 1 ]] && [[ $RECREATE_BUCKETS == "false" ]]; then
     echo "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
     return 1
   fi
@@ -354,6 +359,23 @@ get_bucket_acl() {
   export acl
 }
 
+# get object acl
+# param:  object path
+# export acl for success, return 1 for error
+get_object_acl() {
+  if [ $# -ne 2 ]; then
+    echo "object ACL command missing object name"
+    return 1
+  fi
+  local exit_code=0
+  acl=$(aws s3api get-object-acl --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
+  if [ $exit_code -ne 0 ]; then
+    echo "Error getting object ACLs: $acl"
+    return 1
+  fi
+  export acl
+}
+
 # add tags to bucket
 # params:  bucket, key, value
 # return:  0 for success, 1 for error
@@ -545,23 +567,14 @@ upload_part() {
 # params:  bucket, key, file to split and upload, number of file parts to upload
 # return:  0 for success, 1 for failure
 multipart_upload_before_completion() {
-
   if [ $# -ne 4 ]; then
     echo "multipart upload pre-completion command missing bucket, key, file, and/or part count"
     return 1
   fi
 
-  file_size=$(stat -c %s "$3" 2>/dev/null || stat -f %z "$3" 2>/dev/null)
-  part_size=$((file_size / $4))
-  remainder=$((file_size % $4))
-  if [[ remainder -ne 0 ]]; then
-    part_size=$((part_size+1))
-  fi
-  local error
-  local split_result
-  error=$(split -a 1 -d -b "$part_size" "$3" "$3"-) || split_result=$?
+  split_file "$3" "$4" || split_result=$?
   if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file: $error"
+    echo "error splitting file"
     return 1
   fi
 
@@ -592,7 +605,6 @@ multipart_upload_before_completion() {
 # params:  bucket, key, source file location, number of parts
 # return 0 for success, 1 for failure
 multipart_upload() {
-
   if [ $# -ne 4 ]; then
     echo "multipart upload command missing bucket, key, file, and/or part count"
     return 1
@@ -718,3 +730,88 @@ list_multipart_uploads() {
   export uploads
 }
 
+# perform a multi-part upload within bucket
+# params:  bucket, key, file, number of parts
+# return 0 for success, 1 for failure
+multipart_upload_from_bucket() {
+  if [ $# -ne 4 ]; then
+    echo "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
+    return 1
+  fi
+
+  split_file "$3" "$4" || split_result=$?
+  if [[ $split_result -ne 0 ]]; then
+    echo "error splitting file"
+    return 1
+  fi
+
+  for ((i=0;i<$4;i++)) {
+    put_object "$3"-"$i" "$1" || put_result=$?
+    if [[ $put_result -ne 0 ]]; then
+      echo "error putting object"
+      return 1
+    fi
+  }
+
+  create_multipart_upload "$1" "$2-copy" || upload_result=$?
+  if [[ $upload_result -ne 0 ]]; then
+    echo "error running first multpart upload"
+    return 1
+  fi
+
+  parts="["
+  for ((i = 1; i <= $4; i++)); do
+    upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i" || local upload_result=$?
+    if [[ $upload_result -ne 0 ]]; then
+      echo "error uploading part $i"
+      return 1
+    fi
+    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
+    if [[ $i -ne $4 ]]; then
+      parts+=","
+    fi
+  done
+  parts+="]"
+
+  error=$(aws s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
+    if [[ $completed -ne 0 ]]; then
+      echo "Error completing upload: $error"
+      return 1
+    fi
+    return 0
+
+  parts+="]"
+}
+
+upload_part_copy() {
+  if [ $# -ne 5 ]; then
+    echo "upload multipart part copy function must have bucket, key, upload ID, file name, part number"
+    return 1
+  fi
+  local etag_json
+  etag_json=$(aws s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
+  if [[ $uploaded -ne 0 ]]; then
+    echo "Error uploading part $5: $etag_json"
+    return 1
+  fi
+  etag=$(echo "$etag_json" | jq '.CopyPartResult.ETag')
+  export etag
+}
+
+split_file() {
+  file_size=$(stat -c %s "$1" 2>/dev/null || stat -f %z "$1" 2>/dev/null)
+  part_size=$((file_size / $2))
+  remainder=$((file_size % $2))
+  if [[ remainder -ne 0 ]]; then
+    part_size=$((part_size+1))
+  fi
+
+  local error
+  local split_result
+  error=$(split -a 1 -d -b "$part_size" "$1" "$1"-) || split_result=$?
+  if [[ $split_result -ne 0 ]]; then
+    echo "error splitting file: $error"
+    return 1
+  fi
+  return 0
+}
