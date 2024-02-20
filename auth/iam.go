@@ -20,11 +20,19 @@ import (
 	"time"
 )
 
+type Role string
+
+const (
+	RoleUser     Role = "user"
+	RoleAdmin    Role = "admin"
+	RoleUserPlus Role = "userplus"
+)
+
 // Account is a gateway IAM account
 type Account struct {
 	Access    string `json:"access"`
 	Secret    string `json:"secret"`
-	Role      string `json:"role"`
+	Role      Role   `json:"role"`
 	UserID    int    `json:"userID"`
 	GroupID   int    `json:"groupID"`
 	ProjectID int    `json:"projectID"`

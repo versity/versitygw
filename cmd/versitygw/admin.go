@@ -164,14 +164,14 @@ func createUser(ctx *cli.Context) error {
 	if access == "" || secret == "" {
 		return fmt.Errorf("invalid input parameters for the new user")
 	}
-	if role != "admin" && role != "user" {
-		return fmt.Errorf("invalid input parameter for role")
+	if role != string(auth.RoleAdmin) && role != string(auth.RoleUser) && role != string(auth.RoleUserPlus) {
+		return fmt.Errorf("invalid input parameter for role: %v", role)
 	}
 
 	acc := auth.Account{
 		Access:    access,
 		Secret:    secret,
-		Role:      role,
+		Role:      auth.Role(role),
 		UserID:    userID,
 		GroupID:   groupID,
 		ProjectID: projectID,

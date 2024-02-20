@@ -43,8 +43,8 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 		return fmt.Errorf("failed to parse request body: %w", err)
 	}
 
-	if usr.Role != "user" && usr.Role != "admin" {
-		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin'")
+	if usr.Role != auth.RoleAdmin && usr.Role != auth.RoleUser && usr.Role != auth.RoleUserPlus {
+		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin', 'userplus'")
 	}
 
 	err = c.iam.CreateAccount(usr)

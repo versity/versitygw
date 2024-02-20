@@ -46,7 +46,7 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	userEntry.Attribute("objectClass", ld.objClasses)
 	userEntry.Attribute(ld.accessAtr, []string{account.Access})
 	userEntry.Attribute(ld.secretAtr, []string{account.Secret})
-	userEntry.Attribute(ld.roleAtr, []string{account.Role})
+	userEntry.Attribute(ld.roleAtr, []string{string(account.Role)})
 
 	err := ld.conn.Add(userEntry)
 	if err != nil {
@@ -78,7 +78,7 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	return Account{
 		Access: entry.GetAttributeValue(ld.accessAtr),
 		Secret: entry.GetAttributeValue(ld.secretAtr),
-		Role:   entry.GetAttributeValue(ld.roleAtr),
+		Role:   Role(entry.GetAttributeValue(ld.roleAtr)),
 	}, nil
 }
 
@@ -120,7 +120,7 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 		result = append(result, Account{
 			Access: el.GetAttributeValue(ld.accessAtr),
 			Secret: el.GetAttributeValue(ld.secretAtr),
-			Role:   el.GetAttributeValue(ld.roleAtr),
+			Role:   Role(el.GetAttributeValue(ld.roleAtr)),
 		})
 	}
 
