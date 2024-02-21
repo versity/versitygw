@@ -14,7 +14,7 @@ builds:
       # once we need to enable this, we will need to do per distro releases
       - CGO_ENABLED=0
     main: ./cmd/versitygw
-    binary: ./cmd/versitygw
+    binary: versitygw
     id: versitygw
     goarch:
       - amd64
