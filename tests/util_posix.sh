@@ -56,7 +56,7 @@ bucket_not_exists_remote_and_local() {
     echo "bucket existence check requires single name parameter"
     return 2
   fi
-  bucket_exists "$1" || local exist_result=$?
+  bucket_exists "aws" "$1" || local exist_result=$?
   if [[ $exist_result -eq 2 ]]; then
     echo "Error checking if bucket exists"
     return 2
@@ -80,7 +80,7 @@ bucket_exists_remote_and_local() {
     echo "bucket existence check requires single name parameter"
     return 2
   fi
-  bucket_exists "$1" || local exist_result=$?
+  bucket_exists "aws" "$1" || local exist_result=$?
   if [[ $exist_result -eq 2 ]]; then
     echo "Error checking if bucket exists"
     return 2

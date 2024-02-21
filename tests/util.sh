@@ -11,7 +11,7 @@ create_bucket() {
 
   local exit_code=0
   local error
-  error=$(aws s3 mb s3://"$1" 2>&1) || exit_code=$?
+  error=$(aws --no-verify-ssl s3 mb s3://"$1" 2>&1) || exit_code=$?
   if [ $exit_code -ne 0 ]; then
     echo "error creating bucket: $error"
     return 1
@@ -30,7 +30,7 @@ delete_bucket() {
 
   local exit_code=0
   local error
-  error=$(aws s3 rb s3://"$1" 2>&1) || exit_code="$?"
+  error=$(aws --no-verify-ssl s3 rb s3://"$1" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
@@ -46,14 +46,22 @@ delete_bucket() {
 # param:  bucket name
 # return 0 for success, 1 for failure
 delete_bucket_recursive() {
-  if [ $# -ne 1 ]; then
-    echo "delete bucket missing bucket name"
+  if [ $# -ne 2 ]; then
+    echo "delete bucket missing command type, bucket name"
     return 1
   fi
 
   local exit_code=0
   local error
-  error=$(aws s3 rb s3://"$1" --force 2>&1) || exit_code="$?"
+  if [[ $1 == "aws" ]]; then
+    error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
+  elif [[ $1 == "s3cmd" ]]; then
+    error=$(s3cmd --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
+  else
+    echo "invalid command type '$1'"
+    return 1
+  fi
+
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
@@ -66,17 +74,24 @@ delete_bucket_recursive() {
 }
 
 # delete contents of a bucket
-# param:  bucket name
+# param:  command type, bucket name
 # return 0 for success, 1 for failure
 delete_bucket_contents() {
-  if [ $# -ne 1 ]; then
+  if [ $# -ne 2 ]; then
     echo "delete bucket missing bucket name"
     return 1
   fi
 
   local exit_code=0
   local error
-  error=$(aws s3 rm s3://"$1" --recursive 2>&1) || exit_code="$?"
+  if [[ $1 == "aws" ]]; then
+    error=$(aws --no-verify-ssl s3 rm s3://"$2" --recursive 2>&1) || exit_code="$?"
+  elif [[ $1 == "s3cmd" ]]; then
+    error=$(s3cmd --no-check-certificate del s3://"$2" --recursive 2>&1) || exit_code="$?"
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
   if [ $exit_code -ne 0 ]; then
     echo "error deleting bucket contents: $error"
     return 1
@@ -88,16 +103,22 @@ delete_bucket_contents() {
 # param:  bucket name
 # return 0 for true, 1 for false, 2 for error
 bucket_exists() {
-  if [ $# -ne 1 ]; then
-    echo "bucket exists check missing bucket name"
+  if [ $# -ne 2 ]; then
+    echo "bucket exists check missing command type, bucket name"
     return 2
   fi
 
-  echo "checking bucket $1"
   local exit_code=0
   local error
-  error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
-  echo "Exit code: $exit_code, error: $error"
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code="$?"
+  elif [[ $1 == 's3cmd' ]]; then
+    error=$(s3cmd --no-check-certificate -c "$S3CMD_CONFIG" ls s3://"$2" 2>&1) || exit_code="$?"
+  else
+    echo "invalid command type: $1"
+    return 2
+  fi
+
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]] || [[ "$error" == *"Access Denied"* ]]; then
       return 1
@@ -110,22 +131,22 @@ bucket_exists() {
 }
 
 # delete buckets or just the contents depending on RECREATE_BUCKETS parameter
-# param:  bucket name
+# params:  command type, bucket name
 # return:  0 for success, 1 for failure
 delete_bucket_or_contents() {
-  if [ $# -ne 1 ]; then
-    echo "delete bucket or contents function requires bucket name"
+  if [ $# -ne 2 ]; then
+    echo "delete bucket or contents function requires command type, bucket name"
     return 1
   fi
   if [[ $RECREATE_BUCKETS == "false" ]]; then
-    delete_bucket_contents "$1" || local delete_result=$?
+    delete_bucket_contents "$1" "$2" || local delete_result=$?
     if [[ $delete_result -ne 0 ]]; then
       echo "error deleting bucket contents"
       return 1
     fi
     return 0
   fi
-  delete_bucket_recursive "$1" || local delete_result=$?
+  delete_bucket_recursive "$1" "$2" || local delete_result=$?
   if [[ $delete_result -ne 0 ]]; then
     echo "Bucket deletion error"
     return 1
@@ -138,19 +159,18 @@ delete_bucket_or_contents() {
 # param:  bucket name
 # return 0 for success, 1 for failure
 setup_bucket() {
-  if [ $# -ne 1 ]; then
-    echo "bucket creation function requires bucket name"
+  if [ $# -ne 2 ]; then
+    echo "bucket creation function requires command type, bucket name"
     return 1
   fi
-  echo "$1"
   local exists_result
-  bucket_exists "$1" || exists_result=$?
+  bucket_exists "$1" "$2" || exists_result=$?
   if [[ $exists_result -eq 2 ]]; then
     echo "Bucket existence check error"
     return 1
   fi
   if [[ $exists_result -eq 0 ]]; then
-    delete_bucket_or_contents "$1" || delete_result=$?
+    delete_bucket_or_contents "$1" "$2" || delete_result=$?
     if [[ delete_result -ne 0 ]]; then
       echo "error deleting bucket or contents"
       return 1
@@ -164,7 +184,7 @@ setup_bucket() {
     return 1
   fi
   local create_result
-  create_bucket "$1" || create_result=$?
+  create_bucket "$2" || create_result=$?
   if [[ $create_result -ne 0 ]]; then
     echo "Error creating bucket"
     return 1
@@ -183,9 +203,9 @@ object_exists() {
   fi
   local exit_code=0
   local error
-  error=$(aws s3 ls s3://"$1" 2>&1) || exit_code="$?"
+  error=$(aws --no-verify-ssl s3 ls s3://"$1" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == "" ]]; then
+    if [[ "$error" == "" ]] || [[ $error == *"InsecureRequestWarning"* ]]; then
       return 1
     else
       echo "error checking if object exists: $error"
@@ -205,7 +225,7 @@ put_object() {
   fi
   local exit_code=0
   local error
-  error=$(aws s3 cp "$1" s3://"$2" 2>&1) || exit_code=$?
+  error=$(aws --no-verify-ssl s3 cp "$1" s3://"$2" 2>&1) || exit_code=$?
   if [ $exit_code -ne 0 ]; then
     echo "error copying object to bucket: $error"
     return 1
@@ -246,7 +266,7 @@ delete_object() {
   fi
   local exit_code=0
   local error
-  error=$(aws s3 rm s3://"$1" 2>&1) || exit_code=$?
+  error=$(aws --no-verify-ssl s3 rm s3://"$1" 2>&1) || exit_code=$?
   if [ $exit_code -ne 0 ]; then
     echo "error deleting object: $error"
     return 1
@@ -255,12 +275,25 @@ delete_object() {
 }
 
 # list buckets on versitygw
-# no params
+# params:  format (aws, s3cmd)
 # export bucket_array (bucket names) on success, return 1 for failure
 list_buckets() {
+  if [[ $# -ne 1 ]]; then
+    echo "List buckets command mssing format"
+    return 1
+  fi
+
   local exit_code=0
   local output
-  output=$(aws s3 ls 2>&1) || exit_code=$?
+  if [[ $1 == "aws" ]]; then
+    output=$(aws --no-verify-ssl s3 ls s3:// 2>&1) || exit_code=$?
+  elif [[ $1 == "s3cmd" ]]; then
+    output=$(s3cmd --no-check-certificate -c "$S3CMD_CONFIG" ls s3://) || exit_code=$?
+  else
+    echo "invalid format:  $1"
+    return 1
+  fi
+
   if [ $exit_code -ne 0 ]; then
     echo "error listing buckets: $output"
     return 1
@@ -285,7 +318,7 @@ list_objects() {
   fi
   local exit_code=0
   local output
-  output=$(aws s3 ls s3://"$1" 2>&1) || exit_code=$?
+  output=$(aws --no-verify-ssl s3 ls s3://"$1" 2>&1) || exit_code=$?
   if [ $exit_code -ne 0 ]; then
     echo "error listing objects: $output"
     return 1
@@ -310,7 +343,7 @@ bucket_is_accessible() {
   fi
   local exit_code=0
   local error
-  error=$(aws s3api head-bucket --bucket "$1" 2>&1) || exit_code="$?"
+  error=$(aws --no-verify-ssl s3api head-bucket --bucket "$1" 2>&1) || exit_code="$?"
   if [ $exit_code -eq 0 ]; then
     return 0
   fi
@@ -330,12 +363,12 @@ object_is_accessible() {
     return 2
   fi
   local exit_code=0
-  object_data=$(aws s3api head-object --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
+  object_data=$(aws --no-verify-ssl s3api head-object --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
     echo "Error obtaining object data: $object_data"
     return 2
   fi
-  etag=$(echo "$object_data" | jq '.ETag')
+  etag=$(echo "$object_data" | grep -v "InsecureRequestWarning" | jq '.ETag')
   if [[ "$etag" == '""' ]]; then
     return 1
   fi
@@ -351,7 +384,7 @@ get_bucket_acl() {
     return 1
   fi
   local exit_code=0
-  acl=$(aws s3api get-bucket-acl --bucket "$1" 2>&1) || exit_code="$?"
+  acl=$(aws --no-verify-ssl s3api get-bucket-acl --bucket "$1" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
     echo "Error getting bucket ACLs: $acl"
     return 1
@@ -368,7 +401,7 @@ get_object_acl() {
     return 1
   fi
   local exit_code=0
-  acl=$(aws s3api get-object-acl --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
+  acl=$(aws --no-verify-ssl s3api get-object-acl --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
     echo "Error getting object ACLs: $acl"
     return 1
@@ -386,7 +419,7 @@ put_bucket_tag() {
   fi
   local error
   local result
-  error=$(aws s3api put-bucket-tagging --bucket "$1" --tagging "TagSet=[{Key=$2,Value=$3}]") || result=$?
+  error=$(aws --no-verify-ssl s3api put-bucket-tagging --bucket "$1" --tagging "TagSet=[{Key=$2,Value=$3}]") || result=$?
   if [[ $result -ne 0 ]]; then
     echo "Error adding bucket tag: $error"
     return 1
@@ -403,7 +436,7 @@ get_bucket_tags() {
     return 1
   fi
   local result
-  tags=$(aws s3api get-bucket-tagging --bucket "$1") || result=$?
+  tags=$(aws --no-verify-ssl s3api get-bucket-tagging --bucket "$1") || result=$?
   if [[ $result -ne 0 ]]; then
     echo "error getting bucket tags: $tags"
     return 1
@@ -421,7 +454,7 @@ put_object_tag() {
   fi
   local error
   local result
-  error=$(aws s3api put-object-tagging --bucket "$1" --key "$2" --tagging "TagSet=[{Key=$3,Value=$4}]") || result=$?
+  error=$(aws --no-verify-ssl s3api put-object-tagging --bucket "$1" --key "$2" --tagging "TagSet=[{Key=$3,Value=$4}]") || result=$?
   if [[ $result -ne 0 ]]; then
     echo "Error adding object tag: $error"
     return 1
@@ -438,58 +471,12 @@ get_object_tags() {
     return 1
   fi
   local result
-  tags=$(aws s3api get-object-tagging --bucket "$1" --key "$2") || result=$?
+  tags=$(aws --no-verify-ssl s3api get-object-tagging --bucket "$1" --key "$2") || result=$?
   if [[ $result -ne 0 ]]; then
     echo "error getting object tags: $tags"
     return 1
   fi
   export tags
-}
-
-# create a test file and export folder.  do so in temp folder
-# params:  filename
-# export test file folder on success, return 1 for error
-create_test_files() {
-  if [ $# -lt 1 ]; then
-    echo "create test files command missing filename"
-    return 1
-  fi
-  test_file_folder=.
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    test_file_folder=${TMPDIR}versity-gwtest
-    mkdir -p "$test_file_folder" || local mkdir_result=$?
-    if [[ $mkdir_result -ne 0 ]]; then
-      echo "error creating test file folder"
-    fi
-  fi
-  for name in "$@"; do
-    touch "$test_file_folder"/"$name" || local touch_result=$?
-    if [[ $touch_result -ne 0 ]]; then
-      echo "error creating file $name"
-    fi
-  done
-  export test_file_folder
-}
-
-# delete a test file
-# params:  filename
-# return:  0 for success, 1 for error
-delete_test_files() {
-  if [ $# -lt 1 ]; then
-    echo "delete test files command missing filenames"
-    return 1
-  fi
-  if [ -z "$test_file_folder" ]; then
-    echo "no test file folder defined, not deleting"
-    return 1
-  fi
-  for name in "$@"; do
-    rm "$test_file_folder"/"$name" || rm_result=$?
-    if [[ $rm_result -ne 0 ]]; then
-      echo "error deleting file $name"
-    fi
-  done
-  return 0
 }
 
 # list objects in bucket, v1
@@ -500,7 +487,7 @@ list_objects_s3api_v1() {
     echo "list objects command missing bucket"
     return 1
   fi
-  objects=$(aws s3api list-objects --bucket "$1") || local result=$?
+  objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
   if [[ $result -ne 0 ]]; then
     echo "error listing objects: $objects"
     return 1
@@ -516,7 +503,7 @@ list_objects_s3api_v2() {
     echo "list objects command missing bucket and/or path"
     return 1
   fi
-  objects=$(aws s3api list-objects-v2 --bucket "$1") || local result=$?
+  objects=$(aws --no-verify-ssl s3api list-objects-v2 --bucket "$1") || local result=$?
   if [[ $result -ne 0 ]]; then
     echo "error listing objects: $objects"
     return 1
@@ -534,7 +521,7 @@ create_multipart_upload() {
   fi
 
   local multipart_data
-  multipart_data=$(aws s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
+  multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
   if [[ $created -ne 0 ]]; then
     echo "Error creating multipart upload: $upload_id"
     return 1
@@ -554,7 +541,7 @@ upload_part() {
     return 1
   fi
   local etag_json
-  etag_json=$(aws s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))") || local uploaded=$?
+  etag_json=$(aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))") || local uploaded=$?
   if [[ $uploaded -ne 0 ]]; then
     echo "Error uploading part $5: $etag_json"
     return 1
@@ -616,7 +603,7 @@ multipart_upload() {
     return 1
   fi
 
-  error=$(aws s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
+  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
   if [[ $completed -ne 0 ]]; then
     echo "Error completing upload: $error"
     return 1
@@ -633,7 +620,7 @@ run_abort_command() {
     return 1
   fi
 
-  error=$(aws s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$3") || local aborted=$?
+  error=$(aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$3") || local aborted=$?
   if [[ $aborted -ne 0 ]]; then
     echo "Error aborting upload: $error"
     return 1
@@ -670,7 +657,7 @@ copy_file() {
   fi
 
   local result
-  error=$(aws s3 cp "$1" "$2") || result=$?
+  error=$(aws --no-verify-ssl s3 cp "$1" "$2") || result=$?
   if [[ $result -ne 0 ]]; then
     echo "error copying file: $error"
     return 1
@@ -693,7 +680,7 @@ list_parts() {
     return 1
   fi
 
-  listed_parts=$(aws s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id") || local listed=$?
+  listed_parts=$(aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id") || local listed=$?
   if [[ $listed -ne 0 ]]; then
     echo "Error aborting upload: $parts"
     return 1
@@ -722,7 +709,7 @@ list_multipart_uploads() {
     return 1
   fi
 
-  uploads=$(aws s3api list-multipart-uploads --bucket "$1") || local list_result=$?
+  uploads=$(aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1") || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     echo "error listing uploads: $uploads"
     return 1
@@ -773,7 +760,7 @@ multipart_upload_from_bucket() {
   done
   parts+="]"
 
-  error=$(aws s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
+  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
     if [[ $completed -ne 0 ]]; then
       echo "Error completing upload: $error"
       return 1
@@ -789,45 +776,11 @@ upload_part_copy() {
     return 1
   fi
   local etag_json
-  etag_json=$(aws s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
+  etag_json=$(aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
   if [[ $uploaded -ne 0 ]]; then
     echo "Error uploading part $5: $etag_json"
     return 1
   fi
   etag=$(echo "$etag_json" | jq '.CopyPartResult.ETag')
   export etag
-}
-
-split_file() {
-  file_size=$(stat -c %s "$1" 2>/dev/null || stat -f %z "$1" 2>/dev/null)
-  part_size=$((file_size / $2))
-  remainder=$((file_size % $2))
-  if [[ remainder -ne 0 ]]; then
-    part_size=$((part_size+1))
-  fi
-
-  local error
-  local split_result
-  error=$(split -a 1 -d -b "$part_size" "$1" "$1"-) || split_result=$?
-  if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file: $error"
-    return 1
-  fi
-  return 0
-}
-
-# compare files
-# input:  two files
-# return 0 for same data, 1 for different data, 2 for error
-compare_files() {
-  if [ $# -ne 2 ]; then
-    echo "file comparison requires two files"
-    return 2
-  fi
-  file_one_md5=$(md5 -q "$1")
-  file_two_md5=$(md5 -q "$2")
-  if [[ $file_one_md5 == "$file_two_md5" ]]; then
-    return 0
-  fi
-  return 1
 }

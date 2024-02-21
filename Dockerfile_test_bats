@@ -41,9 +41,10 @@ RUN git clone https://github.com/bats-core/bats-core.git && \
     ./install.sh /home/tester
 
 USER tester
-COPY . /home/tester
+COPY --chown=tester:tester . /home/tester
 
 WORKDIR /home/tester
+RUN cp tests/.env.docker tests/.env
 RUN make
 
 RUN . tests/.secrets && \
@@ -53,6 +54,10 @@ RUN . tests/.secrets && \
     aws configure set aws_region $AWS_REGION --profile $AWS_PROFILE
 
 RUN mkdir /tmp/gw
+
+RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen_bits:2048 && \
+    openssl req -new -x509 -key versitygw-docker.pem -out cert-docker.pem -days 365 \
+        -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
 ENV WORKSPACE=.
 

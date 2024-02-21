@@ -17,7 +17,13 @@
     aws configure set aws_region $AWS_REGION --profile $AWS_PROFILE
 ```
 6. Create an environment file (`.env`) similar to the ones in this folder, setting the `AWS_PROFILE` parameter to the name of the profile you created.
-7. In the root repo folder, run with `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+7. If using SSL, create a local private key and certificate, such as with the commands below.  Afterwards, set the `KEY` and `CERT` fields in the `.env` file to these, respectively.
+```
+    openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
+    openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365
+```
+8.  Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
+9. In the root repo folder, run with `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
 
 ## Instructions - Running With Docker
 

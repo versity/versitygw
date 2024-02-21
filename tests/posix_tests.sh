@@ -2,6 +2,7 @@
 
 source ./tests/setup.sh
 source ./tests/util.sh
+source ./tests/util_file.sh
 source ./tests/util_posix.sh
 
 # test that changes to local folders and files are reflected on S3
@@ -47,7 +48,7 @@ source ./tests/util_posix.sh
   if [ -e "$LOCAL_FOLDER"/"$bucket_name"/$object_name ]; then
     chmod 755 "$LOCAL_FOLDER"/"$bucket_name"/$object_name
   fi
-  setup_bucket "$bucket_name" || local created=$?
+  setup_bucket "aws" "$bucket_name" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
   put_object "$test_file_folder"/"$object_name" "$bucket_name"/"$object_name"  || local result="$?"
   [[ result -eq 0 ]] || fail "Error adding object one"
@@ -63,7 +64,7 @@ source ./tests/util_posix.sh
   [[ $accessible_two -eq 0 ]] || fail "Object should be accessible"
 
   delete_object "$bucket_name"/$object_name
-  delete_bucket_or_contents "$bucket_name"
+  delete_bucket_or_contents "aws" "$bucket_name"
   delete_test_files $object_name
 }
 
@@ -74,7 +75,7 @@ source ./tests/util_posix.sh
     chmod 755 "$LOCAL_FOLDER"/"$BUCKET_ONE_NAME"
     sleep 1
   else
-    setup_bucket "$BUCKET_ONE_NAME" || local created=$?
+    setup_bucket "aws" "$BUCKET_ONE_NAME" || local created=$?
     [[ $created -eq 0 ]] || fail "Error creating bucket"
   fi
 
@@ -88,5 +89,5 @@ source ./tests/util_posix.sh
   bucket_is_accessible "$BUCKET_ONE_NAME" || local accessible_two=$?
   [[ $accessible_two -eq 0 ]] || fail "Bucket should be accessible"
 
-  delete_bucket_or_contents "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
