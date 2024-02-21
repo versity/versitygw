@@ -313,8 +313,8 @@ source ./tests/util.sh
   [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
 
   copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy"
-  copy_data=$(<"$test_file_folder"/$bucket_file-copy)
-  [[ $bucket_file_data == "$copy_data" ]] || fail "Data doesn't match"
+  compare_files "$test_file_folder/$bucket_file-copy" "$test_file_folder"/$bucket_file || compare_result=$?
+  [[ $compare_result -eq 0 ]] || fail "Files do not match"
 
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -436,8 +436,8 @@ source ./tests/util.sh
   [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
 
   copy_file "s3://$BUCKET_ONE_NAME/$bucket_file-copy" "$test_file_folder/$bucket_file-copy"
-  copy_data=$(<"$test_file_folder"/$bucket_file-copy)
-  [[ $bucket_file_data == "$copy_data" ]] || fail "Data doesn't match"
+  compare_files "$test_file_folder"/$bucket_file-copy "$test_file_folder"/$bucket_file || compare_result=$?
+  [[ $compare_result -eq 0 ]] || fail "Data doesn't match"
 
   delete_bucket_or_contents "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
