@@ -1,6 +1,6 @@
 module github.com/versity/versitygw
 
-go 1.20
+go 1.21
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.2

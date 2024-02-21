@@ -27,6 +27,11 @@ services:
       - "10000:10000"
       - "10001:10001"
       - "10002:10002"
+    restart: always
+    hostname: azurite
+    command: "azurite --oauth basic --cert /certs/azurite.pem --key /certs/azurite-key.pem --blobHost 0.0.0.0"
+    volumes:
+      - ./certs:/certs
   azuritegw:
     build:
       context: .
@@ -35,4 +40,4 @@ services:
       - ./:/app
     ports:
       - 7070:7070
-    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url http://azurite:10000/$AZ_ACCOUNT_NAME"]
+    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url https://azurite:10000/$AZ_ACCOUNT_NAME"]
