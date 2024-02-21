@@ -239,14 +239,14 @@ func VerifyACL(acl ACL, access string, permission types.Permission, isRoot bool)
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }
 
-func IsAdmin(acct Account, isRoot bool) error {
+func MayCreateBucket(acct Account, isRoot bool) error {
 	if isRoot {
 		return nil
 	}
 
-	if acct.Role == "admin" {
-		return nil
+	if acct.Role == RoleUser {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
-	return s3err.GetAPIError(s3err.ErrAccessDenied)
+	return nil
 }

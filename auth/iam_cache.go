@@ -130,7 +130,7 @@ func (c *IAMCache) CreateAccount(account Account) error {
 	acct := Account{
 		Access: strings.Clone(account.Access),
 		Secret: strings.Clone(account.Secret),
-		Role:   strings.Clone(account.Role),
+		Role:   Role(strings.Clone(string(account.Role))),
 	}
 
 	c.iamcache.set(acct.Access, acct)
