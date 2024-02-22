@@ -279,6 +279,13 @@ func TestPosix(s *S3Conf) {
 	CreateMultipartUpload_dir_obj(s)
 }
 
+func TestIAM(s *S3Conf) {
+	IAM_user_access_denied(s)
+	IAM_userplus_access_denied(s)
+	IAM_userplus_CreateBucket(s)
+	IAM_admin_ChangeBucketOwner(s)
+}
+
 type IntTests map[string]func(s *S3Conf) error
 
 func GetIntTests() IntTests {
@@ -440,5 +447,9 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_file_obj":                          PutObject_overwrite_file_obj,
 		"PutObject_dir_obj_with_data":                           PutObject_dir_obj_with_data,
 		"CreateMultipartUpload_dir_obj":                         CreateMultipartUpload_dir_obj,
+		"IAM_user_access_denied":                                IAM_user_access_denied,
+		"IAM_userplus_access_denied":                            IAM_userplus_access_denied,
+		"IAM_userplus_CreateBucket":                             IAM_userplus_CreateBucket,
+		"IAM_admin_ChangeBucketOwner":                           IAM_admin_ChangeBucketOwner,
 	}
 }

@@ -5177,6 +5177,162 @@ func GetBucketAcl_success(s *S3Conf) error {
 	})
 }
 
+// IAM related tests
+// multi-user iam tests
+func IAM_user_access_denied(s *S3Conf) error {
+	testName := "IAM_user_access_denied"
+	runF(testName)
+
+	usr := user{
+		access: "grt1",
+		secret: "grt1secret",
+		role:   "user",
+	}
+	err := deleteUser(s, usr.access)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	err = createUsers(s, []user{usr})
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+	if !strings.Contains(string(out), adminAccessDeniedMsg) {
+		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+	}
+
+	passF(testName)
+
+	return nil
+}
+
+func IAM_userplus_access_denied(s *S3Conf) error {
+	testName := "IAM_userplus_access_denied"
+	runF(testName)
+
+	usr := user{
+		access: "grt1",
+		secret: "grt1secret",
+		role:   "userplus",
+	}
+	err := deleteUser(s, usr.access)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	err = createUsers(s, []user{usr})
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+	if !strings.Contains(string(out), adminAccessDeniedMsg) {
+		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+	}
+
+	passF(testName)
+
+	return nil
+}
+
+func IAM_userplus_CreateBucket(s *S3Conf) error {
+	testName := "IAM_userplus_CreateBucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "userplus",
+		}
+		err := deleteUser(s, usr.access)
+		if err != nil {
+			return err
+		}
+
+		err = createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = usr.access
+		cfg.awsSecret = usr.secret
+
+		bckt := getBucketName()
+		err = setup(&cfg, bckt)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bckt})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		err = teardown(&cfg, bckt)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
+	testName := "IAM_admin_ChangeBucketOwner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		admin := user{
+			access: "admin1",
+			secret: "admin1secret",
+			role:   "admin",
+		}
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		err := createUsers(s, []user{admin, usr})
+		if err != nil {
+			return err
+		}
+
+		err = changeBucketsOwner(s, []string{bucket}, usr.access)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *resp.Owner.ID != usr.access {
+			return fmt.Errorf("expected the bucket owner to be %v, instead got %v", usr.access, *resp.Owner.ID)
+		}
+
+		return nil
+	})
+}
+
 // Posix related tests
 func PutObject_overwrite_dir_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_dir_obj"

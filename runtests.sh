@@ -20,8 +20,21 @@ if ! kill -0 $GW_PID; then
 fi
 
 # run tests
+# full flow tests
 if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow; then
-	echo "tests failed"
+	echo "full flow tests failed"
+	kill $GW_PID
+	exit 1
+fi
+# posix tests
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 posix; then
+	echo "posix tests failed"
+	kill $GW_PID
+	exit 1
+fi
+# iam tests
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 iam; then
+	echo "iam tests failed"
 	kill $GW_PID
 	exit 1
 fi
