@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.50.1
 	github.com/aws/smithy-go v1.20.0
 	github.com/go-ldap/ldap/v3 v3.4.6
-	github.com/gofiber/fiber/v2 v2.52.0
+	github.com/gofiber/fiber/v2 v2.52.1
 	github.com/google/uuid v1.6.0
 	github.com/nats-io/nats.go v1.33.1
 	github.com/pkg/xattr v0.4.9
