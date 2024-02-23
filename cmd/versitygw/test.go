@@ -80,6 +80,11 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestPosix),
 		},
 		{
+			Name:   "iam",
+			Usage:  "Tests iam service",
+			Action: getAction(integration.TestIAM),
+		},
+		{
 			Name:  "bench",
 			Usage: "Runs download/upload performance test on the gateway",
 			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).

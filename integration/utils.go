@@ -28,9 +28,11 @@ import (
 )
 
 var (
-	bcktCount  = 0
-	succUsrCrt = "The user has been created successfully"
-	failUsrCrt = "failed to create a user: update iam data: account already exists"
+	bcktCount            = 0
+	succUsrCrt           = "The user has been created successfully"
+	failUsrCrt           = "failed to create a user: update iam data: account already exists"
+	adminAccessDeniedMsg = "access denied: only admin users have access to this resource"
+	succDeleteUserMsg    = "The user has been deleted successfully"
 )
 
 func getBucketName() string {
@@ -538,6 +540,18 @@ func createUsers(s *S3Conf, users []user) error {
 			return fmt.Errorf("failed to create a user account")
 		}
 	}
+	return nil
+}
+
+func deleteUser(s *S3Conf, access string) error {
+	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", access)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(out), succDeleteUserMsg) {
+		return fmt.Errorf("failed to delete the user account")
+	}
+
 	return nil
 }
 

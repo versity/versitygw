@@ -289,11 +289,14 @@ func listUsers(ctx *cli.Context) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
+
 	var accs []auth.Account
 	if err := json.Unmarshal(body, &accs); err != nil {
 		return err
 	}
-	fmt.Println(accs)
 
 	printAcctTable(accs)
 
@@ -402,7 +405,7 @@ func listBuckets(ctx *cli.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf(string(body))
+		return fmt.Errorf("%s", body)
 	}
 
 	var buckets []s3response.Bucket
