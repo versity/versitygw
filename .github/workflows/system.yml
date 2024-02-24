@@ -40,4 +40,6 @@ jobs:
           aws configure set aws_region $AWS_REGION --profile versity
           mkdir /tmp/gw
           export WORKSPACE=$GITHUB_WORKSPACE
+          openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
+          openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
           ./tests/run_all.sh

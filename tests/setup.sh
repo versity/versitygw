@@ -1,7 +1,7 @@
-#!/usr/bin/env bats
+#!/usr/bin/env bash
 
+# bats setup function
 setup() {
-
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r tests/.secrets ]; then
     source tests/.secrets
   else
@@ -19,6 +19,22 @@ setup() {
     source "$VERSITYGW_TEST_ENV"
   fi
 
+  check_params
+
+  base_command="ROOT_ACCESS_KEY=$AWS_ACCESS_KEY_ID ROOT_SECRET_KEY=$AWS_SECRET_ACCESS_KEY $VERSITY_EXE"
+  if [ -n "$CERT" ] && [ -n "$KEY" ]; then
+    base_command+=" --cert $CERT --key $KEY"
+  fi
+  base_command+=" $BACKEND $LOCAL_FOLDER &"
+  eval "$base_command"
+
+  versitygw_pid=$!
+  export versitygw_pid AWS_PROFILE AWS_ENDPOINT_URL LOCAL_FOLDER BUCKET_ONE_NAME BUCKET_TWO_NAME S3CMD_CONFIG
+}
+
+# make sure required environment variables are defined properly
+# return 0 for yes, 1 for no
+check_params() {
   if [ -z "$AWS_ACCESS_KEY_ID" ]; then
     echo "No AWS access key set"
     return 1
@@ -53,27 +69,16 @@ setup() {
     echo "RECREATE_BUCKETS must be 'true' or 'false'"
     return 1
   fi
-  key_len=${#AWS_ACCESS_KEY_ID}
-  secret_len=${#AWS_SECRET_ACCESS_KEY}
-  echo "$key_len $secret_len $VERSITY_EXE $BACKEND $LOCAL_FOLDER $AWS_ENDPOINT_URL $AWS_PROFILE $BUCKET_ONE_NAME $BUCKET_TWO_NAME"
-
-  ROOT_ACCESS_KEY="$AWS_ACCESS_KEY_ID" ROOT_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" "$VERSITY_EXE" "$BACKEND" "$LOCAL_FOLDER" &
-
-  export AWS_PROFILE
-  export AWS_ENDPOINT_URL
-  export LOCAL_FOLDER
-  export BUCKET_ONE_NAME
-  export BUCKET_TWO_NAME
-
-  versitygw_pid=$!
-  export versitygw_pid
 }
 
+# fail a test
+# param:  error message
 fail() {
   echo "$1"
   return 1
 }
 
+# bats teardown function
 teardown() {
   if [ -n "$versitygw_pid" ]; then
     if ps -p "$versitygw_pid" > /dev/null; then
