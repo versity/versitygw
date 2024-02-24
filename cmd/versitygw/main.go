@@ -42,6 +42,7 @@ var (
 	natsURL, natsTopic                     string
 	logWebhookURL                          string
 	accessLog                              string
+	healthPath                             string
 	debug                                  bool
 	quiet                                  bool
 	iamDir                                 string
@@ -324,6 +325,12 @@ func initFlags() []cli.Flag {
 			Value:       3600,
 			Destination: &iamCachePrune,
 		},
+		&cli.StringFlag{
+			Name: "health",
+			Usage: `health check endpoint path. Health endpoint will be configured on GET http method: GET <health>
+					NOTICE: the path has to be specified with '/'. e.g /health`,
+			Destination: &healthPath,
+		},
 	}
 }
 
@@ -359,6 +366,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if quiet {
 		opts = append(opts, s3api.WithQuiet())
+	}
+	if healthPath != "" {
+		opts = append(opts, s3api.WithHealth(healthPath))
 	}
 
 	admApp := fiber.New(fiber.Config{

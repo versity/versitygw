@@ -16,6 +16,7 @@ package s3api
 
 import (
 	"crypto/tls"
+	"net/http"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -34,6 +35,7 @@ type S3ApiServer struct {
 	cert    *tls.Certificate
 	quiet   bool
 	debug   bool
+	health  string
 }
 
 func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, evs s3event.S3EventSender, opts ...Option) (*S3ApiServer, error) {
@@ -51,6 +53,12 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 	// Logging middlewares
 	if !server.quiet {
 		app.Use(logger.New())
+	}
+	// Set up health endpoint if specified
+	if server.health != "" {
+		app.Get(server.health, func(ctx *fiber.Ctx) error {
+			return ctx.SendStatus(http.StatusOK)
+		})
 	}
 	app.Use(middlewares.DecodeURL(l))
 	app.Use(middlewares.RequestLogger(server.debug))
@@ -88,6 +96,11 @@ func WithDebug() Option {
 // WithQuiet silences default logging output
 func WithQuiet() Option {
 	return func(s *S3ApiServer) { s.quiet = true }
+}
+
+// WithHealth sets up a GET health endpoint
+func WithHealth(health string) Option {
+	return func(s *S3ApiServer) { s.health = health }
 }
 
 func (sa *S3ApiServer) Serve() (err error) {
