@@ -27,30 +27,42 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"golang.org/x/sys/unix"
 )
 
 const procfddir = "/proc/self/fd"
 
 type tmpfile struct {
-	f       *os.File
-	bucket  string
-	objname string
-	isOTmp  bool
-	size    int64
+	f          *os.File
+	bucket     string
+	objname    string
+	isOTmp     bool
+	size       int64
+	needsChown bool
+	uid        int
+	gid        int
 }
 
-func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
+var (
+	// TODO: make this configurable
+	defaultFilePerm uint32 = 0644
+)
+
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account) (*tmpfile, error) {
+	uid, gid, doChown := p.getChownIDs(acct)
+
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
 	// etc. And will auto cleanup the inode on close if we never link this
 	// file descriptor into the namespace.
 	// Not all filesystems support this, so fallback to CreateTemp for when
 	// this is not supported.
-	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, 0666)
+	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
 	if err != nil {
 		// O_TMPFILE not supported, try fallback
-		err := os.MkdirAll(dir, 0700)
+		err = backend.MkdirAll(dir, uid, gid, doChown)
 		if err != nil {
 			return nil, fmt.Errorf("make temp dir: %w", err)
 		}
@@ -59,11 +71,27 @@ func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 		if err != nil {
 			return nil, err
 		}
-		tmp := &tmpfile{f: f, bucket: bucket, objname: obj, size: size}
+		tmp := &tmpfile{
+			f:          f,
+			bucket:     bucket,
+			objname:    obj,
+			size:       size,
+			needsChown: doChown,
+			uid:        uid,
+			gid:        gid,
+		}
 		// falloc is best effort, its fine if this fails
 		if size > 0 {
 			tmp.falloc()
 		}
+
+		if doChown {
+			err := f.Chown(uid, gid)
+			if err != nil {
+				return nil, fmt.Errorf("set temp file ownership: %w", err)
+			}
+		}
+
 		return tmp, nil
 	}
 
@@ -71,11 +99,29 @@ func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 
-	tmp := &tmpfile{f: f, bucket: bucket, objname: obj, isOTmp: true, size: size}
+	tmp := &tmpfile{
+		f:          f,
+		bucket:     bucket,
+		objname:    obj,
+		isOTmp:     true,
+		size:       size,
+		needsChown: doChown,
+		uid:        uid,
+		gid:        gid,
+	}
+
 	// falloc is best effort, its fine if this fails
 	if size > 0 {
 		tmp.falloc()
 	}
+
+	if doChown {
+		err := f.Chown(uid, gid)
+		if err != nil {
+			return nil, fmt.Errorf("set temp file ownership: %w", err)
+		}
+	}
+
 	return tmp, nil
 }
 
@@ -100,6 +146,13 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("remove stale path: %w", err)
 	}
 
+	dir := filepath.Dir(objPath)
+
+	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown)
+	if err != nil {
+		return fmt.Errorf("make parent dir: %w", err)
+	}
+
 	if !tmp.isOTmp {
 		// O_TMPFILE not suported, use fallback
 		return tmp.fallbackLink()
@@ -111,14 +164,14 @@ func (tmp *tmpfile) link() error {
 	}
 	defer procdir.Close()
 
-	dir, err := os.Open(filepath.Dir(objPath))
+	dirf, err := os.Open(dir)
 	if err != nil {
 		return fmt.Errorf("open parent dir: %w", err)
 	}
-	defer dir.Close()
+	defer dirf.Close()
 
 	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dir.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
+		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
 	if err != nil {
 		return fmt.Errorf("link tmpfile (%q in %q): %w",
 			filepath.Dir(objPath), filepath.Base(tmp.f.Name()), err)
@@ -137,6 +190,9 @@ func (tmp *tmpfile) fallbackLink() error {
 	// cleanup in case anything goes wrong, if rename succeeds then
 	// this will no longer exist
 	defer os.Remove(tempname)
+
+	// reset default file mode because CreateTemp uses 0600
+	tmp.f.Chmod(fs.FileMode(defaultFilePerm))
 
 	err := tmp.f.Close()
 	if err != nil {

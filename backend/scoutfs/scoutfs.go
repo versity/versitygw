@@ -29,10 +29,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/pkg/xattr"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/s3err"
 )
+
+type ScoutfsOpts struct {
+	ChownUID    bool
+	ChownGID    bool
+	GlacierMode bool
+}
 
 type ScoutFS struct {
 	*posix.Posix
@@ -49,6 +56,16 @@ type ScoutFS struct {
 	// ListObjects: if file offline, set obj storage class to GLACIER
 	// RestoreObject: add batch stage request to file
 	glaciermode bool
+
+	// chownuid/gid enable chowning of files to the account uid/gid
+	// when objects are uploaded
+	chownuid bool
+	chowngid bool
+
+	// euid/egid are the effective uid/gid of the running versitygw process
+	// used to determine if chowning is needed
+	euid int
+	egid int
 }
 
 var _ backend.Backend = &ScoutFS{}
@@ -92,14 +109,6 @@ const (
 	ExtCacheDone
 )
 
-// Option sets various options for scoutfs
-type Option func(s *ScoutFS)
-
-// WithGlacierEmulation sets glacier mode emulation
-func WithGlacierEmulation() Option {
-	return func(s *ScoutFS) { s.glaciermode = true }
-}
-
 func (s *ScoutFS) Shutdown() {
 	s.Posix.Shutdown()
 	s.rootfd.Close()
@@ -110,10 +119,47 @@ func (*ScoutFS) String() string {
 	return "ScoutFS Gateway"
 }
 
+// getChownIDs returns the uid and gid that should be used for chowning
+// the object to the account uid/gid. It also returns a boolean indicating
+// if chowning is needed.
+func (s *ScoutFS) getChownIDs(acct auth.Account) (int, int, bool) {
+	uid := s.euid
+	gid := s.egid
+	var needsChown bool
+	if s.chownuid && acct.UserID != s.euid {
+		uid = acct.UserID
+		needsChown = true
+	}
+	if s.chowngid && acct.GroupID != s.egid {
+		gid = acct.GroupID
+		needsChown = true
+	}
+
+	return uid, gid, needsChown
+}
+
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
-func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
+	if input.Bucket == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+	if input.Key == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if input.UploadId == nil {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	}
+	if input.MultipartUpload == nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
@@ -174,7 +220,7 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 
 	// use totalsize=0 because we wont be writing to the file, only moving
 	// extents around.  so we dont want to fallocate this.
-	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0)
+	f, err := s.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0, acct)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
@@ -203,9 +249,10 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
 	if dir != "" {
-		err = backend.MkdirAll(dir, os.FileMode(0755))
+		uid, gid, doChown := s.getChownIDs(acct)
+		err = backend.MkdirAll(dir, uid, gid, doChown)
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+			return nil, err
 		}
 	}
 	err = f.link()

@@ -46,6 +46,16 @@ type Posix struct {
 
 	rootfd  *os.File
 	rootdir string
+
+	// chownuid/gid enable chowning of files to the account uid/gid
+	// when objects are uploaded
+	chownuid bool
+	chowngid bool
+
+	// euid/egid are the effective uid/gid of the running versitygw process
+	// used to determine if chowning is needed
+	euid int
+	egid int
 }
 
 var _ backend.Backend = &Posix{}
@@ -64,7 +74,12 @@ const (
 	policykey           = "user.policy"
 )
 
-func New(rootdir string) (*Posix, error) {
+type PosixOpts struct {
+	ChownUID bool
+	ChownGID bool
+}
+
+func New(rootdir string, opts PosixOpts) (*Posix, error) {
 	err := os.Chdir(rootdir)
 	if err != nil {
 		return nil, fmt.Errorf("chdir %v: %w", rootdir, err)
@@ -81,7 +96,14 @@ func New(rootdir string) (*Posix, error) {
 		return nil, fmt.Errorf("xattr not supported on %v", rootdir)
 	}
 
-	return &Posix{rootfd: f, rootdir: rootdir}, nil
+	return &Posix{
+		rootfd:   f,
+		rootdir:  rootdir,
+		euid:     os.Geteuid(),
+		egid:     os.Getegid(),
+		chownuid: opts.ChownUID,
+		chowngid: opts.ChownGID,
+	}, nil
 }
 
 func (p *Posix) Shutdown() {
@@ -168,19 +190,38 @@ func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.He
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (p *Posix) CreateBucket(_ context.Context, input *s3.CreateBucketInput, acl []byte) error {
+var (
+	// TODO: make this configurable
+	defaultDirPerm fs.FileMode = 0755
+)
+
+func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
+	uid, gid, doChown := p.getChownIDs(acct)
+
 	bucket := *input.Bucket
 
-	err := os.Mkdir(bucket, 0777)
+	err := os.Mkdir(bucket, defaultDirPerm)
 	if err != nil && os.IsExist(err) {
 		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
 	if err != nil {
 		return fmt.Errorf("mkdir bucket: %w", err)
+	}
+
+	if doChown {
+		err := os.Chown(bucket, uid, gid)
+		if err != nil {
+			return fmt.Errorf("chown bucket: %w", err)
+		}
 	}
 
 	if err := xattr.Set(bucket, aclkey, acl); err != nil {
@@ -287,7 +328,31 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 	}, nil
 }
 
-func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+// getChownIDs returns the uid and gid that should be used for chowning
+// the object to the account uid/gid. It also returns a boolean indicating
+// if chowning is needed.
+func (p *Posix) getChownIDs(acct auth.Account) (int, int, bool) {
+	uid := p.euid
+	gid := p.egid
+	var needsChown bool
+	if p.chownuid && acct.UserID != p.euid {
+		uid = acct.UserID
+		needsChown = true
+	}
+	if p.chowngid && acct.GroupID != p.egid {
+		gid = acct.GroupID
+		needsChown = true
+	}
+
+	return uid, gid, needsChown
+}
+
+func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -351,7 +416,8 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 		}
 	}
 
-	f, err := openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, totalsize)
+	f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object,
+		totalsize, acct)
 	if err != nil {
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
@@ -376,9 +442,10 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
 	if dir != "" {
-		err = backend.MkdirAll(dir, os.FileMode(0755))
+		uid, gid, doChown := p.getChownIDs(acct)
+		err = backend.MkdirAll(dir, uid, gid, doChown)
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+			return nil, err
 		}
 	}
 	err = f.link()
@@ -796,7 +863,12 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 	}, nil
 }
 
-func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string, error) {
+func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (string, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
 	if input.Bucket == nil {
 		return "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -835,8 +907,8 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 
 	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part))
 
-	f, err := openTmpFile(filepath.Join(bucket, objdir),
-		bucket, partPath, length)
+	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
+		bucket, partPath, length, acct)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
@@ -862,7 +934,12 @@ func (p *Posix) UploadPart(_ context.Context, input *s3.UploadPartInput) (string
 	return etag, nil
 }
 
-func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
 	if upi.Bucket == nil {
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -929,8 +1006,8 @@ func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
 
-	f, err := openTmpFile(filepath.Join(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length)
+	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
+		*upi.Bucket, partPath, length, acct)
 	if err != nil {
 		return s3response.CopyObjectResult{}, fmt.Errorf("open temp file: %w", err)
 	}
@@ -975,6 +1052,11 @@ func (p *Posix) UploadPartCopy(_ context.Context, upi *s3.UploadPartCopyInput) (
 }
 
 func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
 	if po.Bucket == nil {
 		return "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1008,6 +1090,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	name := filepath.Join(*po.Bucket, *po.Key)
 
+	uid, gid, doChown := p.getChownIDs(acct)
+
 	contentLength := int64(0)
 	if po.ContentLength != nil {
 		contentLength = *po.ContentLength
@@ -1021,7 +1105,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 			return "", s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 
-		err = backend.MkdirAll(name, os.FileMode(0755))
+		err = backend.MkdirAll(name, uid, gid, doChown)
 		if err != nil {
 			return "", err
 		}
@@ -1042,8 +1126,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	f, err := openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
-		*po.Bucket, *po.Key, contentLength)
+	f, err := p.openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
+		*po.Bucket, *po.Key, contentLength, acct)
 	if err != nil {
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
@@ -1057,7 +1141,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 	dir := filepath.Dir(name)
 	if dir != "" {
-		err = backend.MkdirAll(dir, os.FileMode(0755))
+		err = backend.MkdirAll(dir, uid, gid, doChown)
 		if err != nil {
 			return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}

@@ -51,6 +51,18 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_SCOUTFS_GLACIER"},
 				Destination: &glacier,
 			},
+			&cli.BoolFlag{
+				Name:        "chuid",
+				Usage:       "chown newly created files and directories to client account UID",
+				EnvVars:     []string{"VGW_CHOWN_UID"},
+				Destination: &chownuid,
+			},
+			&cli.BoolFlag{
+				Name:        "chgid",
+				Usage:       "chown newly created files and directories to client account GID",
+				EnvVars:     []string{"VGW_CHOWN_GID"},
+				Destination: &chowngid,
+			},
 		},
 	}
 }
@@ -60,12 +72,12 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("no directory provided for operation")
 	}
 
-	var opts []scoutfs.Option
-	if glacier {
-		opts = append(opts, scoutfs.WithGlacierEmulation())
-	}
+	var opts scoutfs.ScoutfsOpts
+	opts.GlacierMode = glacier
+	opts.ChownUID = chownuid
+	opts.ChownGID = chowngid
 
-	be, err := scoutfs.New(ctx.Args().Get(0), opts...)
+	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
 		return fmt.Errorf("init scoutfs: %v", err)
 	}

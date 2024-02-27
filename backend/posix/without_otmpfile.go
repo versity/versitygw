@@ -24,6 +24,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 )
 
 type tmpfile struct {
@@ -33,19 +36,35 @@ type tmpfile struct {
 	size    int64
 }
 
-func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account) (*tmpfile, error) {
+	uid, gid, doChown := p.getChownIDs(acct)
+
 	// Create a temp file for upload while in progress (see link comments below).
-	err := os.MkdirAll(dir, 0700)
+	var err error
+	err = backend.MkdirAll(dir, uid, gid, doChown)
 	if err != nil {
 		return nil, fmt.Errorf("make temp dir: %w", err)
 	}
 	f, err := os.CreateTemp(dir,
 		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create temp file: %w", err)
 	}
+
+	if doChown {
+		err := f.Chown(uid, gid)
+		if err != nil {
+			return nil, fmt.Errorf("set temp file ownership: %w", err)
+		}
+	}
+
 	return &tmpfile{f: f, bucket: bucket, objname: obj, size: size}, nil
 }
+
+var (
+	// TODO: make this configurable
+	defaultFilePerm fs.FileMode = 0644
+)
 
 func (tmp *tmpfile) link() error {
 	tempname := tmp.f.Name()
@@ -63,6 +82,9 @@ func (tmp *tmpfile) link() error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove stale path: %w", err)
 	}
+
+	// reset default file mode because CreateTemp uses 0600
+	tmp.f.Chmod(defaultFilePerm)
 
 	err = tmp.f.Close()
 	if err != nil {
