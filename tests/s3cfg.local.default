@@ -1,0 +1,8 @@
+# Setup endpoint
+host_base = 127.0.0.1:7070
+host_bucket = 127.0.0.1:7070
+bucket_location = us-east-1
+use_https = True
+
+# Enable S3 v4 signature APIs
+signature_v2 = False

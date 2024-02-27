@@ -56,7 +56,7 @@ delete_bucket_recursive() {
   if [[ $1 == "aws" ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
   else
     echo "invalid command type '$1'"
     return 1
@@ -87,7 +87,7 @@ delete_bucket_contents() {
   if [[ $1 == "aws" ]]; then
     error=$(aws --no-verify-ssl s3 rm s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd --no-check-certificate del s3://"$2" --recursive 2>&1) || exit_code="$?"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
   else
     echo "invalid command type $1"
     return 1
@@ -113,7 +113,7 @@ bucket_exists() {
   if [[ $1 == 'aws' ]]; then
     error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code="$?"
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd --no-check-certificate -c "$S3CMD_CONFIG" ls s3://"$2" 2>&1) || exit_code="$?"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code="$?"
   else
     echo "invalid command type: $1"
     return 2
@@ -194,16 +194,23 @@ setup_bucket() {
 }
 
 # check if object exists on S3 via gateway
-# param:  object path
+# param:  command, object path
 # return 0 for true, 1 for false, 2 for error
 object_exists() {
-  if [ $# -ne 1 ]; then
-    echo "object exists check missing object name"
+  if [ $# -ne 2 ]; then
+    echo "object exists check missing command, object name"
     return 2
   fi
   local exit_code=0
   local error
-  error=$(aws --no-verify-ssl s3 ls s3://"$1" 2>&1) || exit_code="$?"
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code="$?"
+  elif [[ $1 == 's3cmd' ]]; then
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code="$?"
+  else
+    echo "invalid command type $1"
+    return 2
+  fi
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == "" ]] || [[ $error == *"InsecureRequestWarning"* ]]; then
       return 1
@@ -211,6 +218,9 @@ object_exists() {
       echo "error checking if object exists: $error"
       return 2
     fi
+  # s3cmd returns empty when object doesn't exist, rather than error
+  elif [[ $1 == 's3cmd' ]] && [[ $error == "" ]]; then
+    return 1
   fi
   return 0
 }
@@ -219,13 +229,21 @@ object_exists() {
 # params:  source file, destination copy location
 # return 0 for success, 1 for failure
 put_object() {
-  if [ $# -ne 2 ]; then
-    echo "put object command requires source, destination"
+  if [ $# -ne 3 ]; then
+    echo "put object command requires command type, source, destination"
     return 1
   fi
   local exit_code=0
   local error
-  error=$(aws --no-verify-ssl s3 cp "$1" s3://"$2" 2>&1) || exit_code=$?
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3 cp "$2" s3://"$3" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    echo "2: $2 3: $(dirname $3)"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$(dirname "$3")" 2>&1) || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
   if [ $exit_code -ne 0 ]; then
     echo "error copying object to bucket: $error"
     return 1
@@ -241,7 +259,7 @@ check_and_put_object() {
     echo "check and put object function requires source, destination"
     return 1
   fi
-  object_exists "$2" || local exists_result=$?
+  object_exists "aws" "$2" || local exists_result=$?
   if [ "$exists_result" -eq 2 ]; then
     echo "error checking if object exists"
     return 1
@@ -260,13 +278,22 @@ check_and_put_object() {
 # param:  object path, including bucket name
 # return 0 for success, 1 for failure
 delete_object() {
-  if [ $# -ne 1 ]; then
-    echo "delete object command requires object parameter"
+  if [ $# -ne 2 ]; then
+    echo "delete object command requires command type, object parameter"
     return 1
   fi
   local exit_code=0
   local error
-  error=$(aws --no-verify-ssl s3 rm s3://"$1" 2>&1) || exit_code=$?
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3 rm s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    echo "delete object s3cmd"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rm s3://"$2" 2>&1) || exit_code=$?
+    echo "$error"
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
   if [ $exit_code -ne 0 ]; then
     echo "error deleting object: $error"
     return 1
@@ -288,7 +315,7 @@ list_buckets() {
   if [[ $1 == "aws" ]]; then
     output=$(aws --no-verify-ssl s3 ls s3:// 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
-    output=$(s3cmd --no-check-certificate -c "$S3CMD_CONFIG" ls s3://) || exit_code=$?
+    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://) || exit_code=$?
   else
     echo "invalid format:  $1"
     return 1
@@ -312,13 +339,20 @@ list_buckets() {
 # param:  path of bucket or folder
 # export object_array (object names) on success, return 1 for failure
 list_objects() {
-  if [ $# -ne 1 ]; then
-    echo "list objects command requires bucket or folder"
+  if [ $# -ne 2 ]; then
+    echo "list objects command requires command type, and bucket or folder"
     return 1
   fi
   local exit_code=0
   local output
-  output=$(aws --no-verify-ssl s3 ls s3://"$1" 2>&1) || exit_code=$?
+  if [[ $1 == "aws" ]]; then
+    output=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
   if [ $exit_code -ne 0 ]; then
     echo "error listing objects: $output"
     return 1
@@ -733,7 +767,7 @@ multipart_upload_from_bucket() {
   fi
 
   for ((i=0;i<$4;i++)) {
-    put_object "$3"-"$i" "$1" || put_result=$?
+    put_object "aws" "$3"-"$i" "$1" || put_result=$?
     if [[ $put_result -ne 0 ]]; then
       echo "error putting object"
       return 1
