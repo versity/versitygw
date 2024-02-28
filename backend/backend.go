@@ -38,6 +38,8 @@ type Backend interface {
 	CreateBucket(_ context.Context, _ *s3.CreateBucketInput, defaultACL []byte) error
 	PutBucketAcl(_ context.Context, bucket string, data []byte) error
 	DeleteBucket(context.Context, *s3.DeleteBucketInput) error
+	PutBucketVersioning(context.Context, *s3.PutBucketVersioningInput) error
+	GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
 
 	// multipart operations
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
@@ -60,6 +62,7 @@ type Backend interface {
 	DeleteObject(context.Context, *s3.DeleteObjectInput) error
 	DeleteObjects(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error)
 	PutObjectAcl(context.Context, *s3.PutObjectAclInput) error
+	ListObjectVersions(context.Context, *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error)
 
 	// special case object operations
 	RestoreObject(context.Context, *s3.RestoreObjectInput) error
@@ -70,7 +73,7 @@ type Backend interface {
 	PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error
 	DeleteBucketTagging(_ context.Context, bucket string) error
 
-	// object tags operations
+	// object tagging operations
 	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
 	PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error
 	DeleteObjectTagging(_ context.Context, bucket, object string) error
@@ -108,6 +111,12 @@ func (BackendUnsupported) PutBucketAcl(_ context.Context, bucket string, data []
 }
 func (BackendUnsupported) DeleteBucket(context.Context, *s3.DeleteBucketInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutBucketVersioning(context.Context, *s3.PutBucketVersioningInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
@@ -182,6 +191,10 @@ func (BackendUnsupported) SelectObjectContent(ctx context.Context, input *s3.Sel
 		apiErr := s3err.GetAPIError(s3err.ErrNotImplemented)
 		mh.FinishWithError(apiErr.Code, apiErr.Description)
 	}
+}
+
+func (BackendUnsupported) ListObjectVersions(context.Context, *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {

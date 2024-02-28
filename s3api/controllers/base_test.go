@@ -346,6 +346,12 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 				return map[string]string{}, nil
 			},
+			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+				return &s3.GetBucketVersioningOutput{}, nil
+			},
+			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
+				return &s3.ListObjectVersionsOutput{}, nil
+			},
 		},
 	}
 
@@ -453,6 +459,24 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			wantErr:    false,
 			statusCode: 501,
 		},
+		{
+			name: "List-actions-get-bucket-versioning-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?versioning", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "List-actions-list-object-versions-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?versions", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -527,6 +551,13 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</Tagging>
 	`
 
+	versioningBody := `
+	<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"> 
+		<Status>Enabled</Status> 
+		<MfaDelete>Enabled</MfaDelete>
+	</VersioningConfiguration>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -539,6 +570,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 				return nil
 			},
 			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
+				return nil
+			},
+			PutBucketVersioningFunc: func(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error {
 				return nil
 			},
 		},
@@ -595,6 +629,24 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", strings.NewReader(tagBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-bucket-versioning-invalid-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?versioning", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-versioning-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?versioning", strings.NewReader(versioningBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -906,12 +958,12 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		resp, err := tt.app.Test(tt.args.req)
 
 		if (err != nil) != tt.wantErr {
-			t.Errorf("S3ApiController.GetActions() %v error = %v, wantErr %v",
+			t.Errorf("S3ApiController.PutActions() %v error = %v, wantErr %v",
 				tt.name, err, tt.wantErr)
 		}
 
 		if resp.StatusCode != tt.statusCode {
-			t.Errorf("S3ApiController.GetActions() %v statusCode = %v, wantStatusCode = %v",
+			t.Errorf("S3ApiController.PutActions() %v statusCode = %v, wantStatusCode = %v",
 				tt.name, resp.StatusCode, tt.statusCode)
 		}
 	}
