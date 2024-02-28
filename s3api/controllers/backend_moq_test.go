@@ -62,6 +62,9 @@ var _ backend.Backend = &BackendMock{}
 //			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 //				panic("mock out the GetBucketTagging method")
 //			},
+//			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+//				panic("mock out the GetBucketVersioning method")
+//			},
 //			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
 //			},
@@ -89,6 +92,9 @@ var _ backend.Backend = &BackendMock{}
 //			ListMultipartUploadsFunc: func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 //				panic("mock out the ListMultipartUploads method")
 //			},
+//			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
+//				panic("mock out the ListObjectVersions method")
+//			},
 //			ListObjectsFunc: func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 //				panic("mock out the ListObjects method")
 //			},
@@ -103,6 +109,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
 //				panic("mock out the PutBucketTagging method")
+//			},
+//			PutBucketVersioningFunc: func(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error {
+//				panic("mock out the PutBucketVersioning method")
 //			},
 //			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error) {
 //				panic("mock out the PutObject method")
@@ -177,6 +186,9 @@ type BackendMock struct {
 	// GetBucketTaggingFunc mocks the GetBucketTagging method.
 	GetBucketTaggingFunc func(contextMoqParam context.Context, bucket string) (map[string]string, error)
 
+	// GetBucketVersioningFunc mocks the GetBucketVersioning method.
+	GetBucketVersioningFunc func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
+
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error)
 
@@ -204,6 +216,9 @@ type BackendMock struct {
 	// ListMultipartUploadsFunc mocks the ListMultipartUploads method.
 	ListMultipartUploadsFunc func(contextMoqParam context.Context, listMultipartUploadsInput *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
 
+	// ListObjectVersionsFunc mocks the ListObjectVersions method.
+	ListObjectVersionsFunc func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error)
+
 	// ListObjectsFunc mocks the ListObjects method.
 	ListObjectsFunc func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
 
@@ -218,6 +233,9 @@ type BackendMock struct {
 
 	// PutBucketTaggingFunc mocks the PutBucketTagging method.
 	PutBucketTaggingFunc func(contextMoqParam context.Context, bucket string, tags map[string]string) error
+
+	// PutBucketVersioningFunc mocks the PutBucketVersioning method.
+	PutBucketVersioningFunc func(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error
 
 	// PutObjectFunc mocks the PutObject method.
 	PutObjectFunc func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (string, error)
@@ -345,6 +363,13 @@ type BackendMock struct {
 			// Bucket is the bucket argument value.
 			Bucket string
 		}
+		// GetBucketVersioning holds details about calls to the GetBucketVersioning method.
+		GetBucketVersioning []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// GetObject holds details about calls to the GetObject method.
 		GetObject []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -412,6 +437,13 @@ type BackendMock struct {
 			// ListMultipartUploadsInput is the listMultipartUploadsInput argument value.
 			ListMultipartUploadsInput *s3.ListMultipartUploadsInput
 		}
+		// ListObjectVersions holds details about calls to the ListObjectVersions method.
+		ListObjectVersions []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// ListObjectVersionsInput is the listObjectVersionsInput argument value.
+			ListObjectVersionsInput *s3.ListObjectVersionsInput
+		}
 		// ListObjects holds details about calls to the ListObjects method.
 		ListObjects []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -450,6 +482,13 @@ type BackendMock struct {
 			Bucket string
 			// Tags is the tags argument value.
 			Tags map[string]string
+		}
+		// PutBucketVersioning holds details about calls to the PutBucketVersioning method.
+		PutBucketVersioning []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// PutBucketVersioningInput is the putBucketVersioningInput argument value.
+			PutBucketVersioningInput *s3.PutBucketVersioningInput
 		}
 		// PutObject holds details about calls to the PutObject method.
 		PutObject []struct {
@@ -524,6 +563,7 @@ type BackendMock struct {
 	lockDeleteObjects           sync.RWMutex
 	lockGetBucketAcl            sync.RWMutex
 	lockGetBucketTagging        sync.RWMutex
+	lockGetBucketVersioning     sync.RWMutex
 	lockGetObject               sync.RWMutex
 	lockGetObjectAcl            sync.RWMutex
 	lockGetObjectAttributes     sync.RWMutex
@@ -533,11 +573,13 @@ type BackendMock struct {
 	lockListBuckets             sync.RWMutex
 	lockListBucketsAndOwners    sync.RWMutex
 	lockListMultipartUploads    sync.RWMutex
+	lockListObjectVersions      sync.RWMutex
 	lockListObjects             sync.RWMutex
 	lockListObjectsV2           sync.RWMutex
 	lockListParts               sync.RWMutex
 	lockPutBucketAcl            sync.RWMutex
 	lockPutBucketTagging        sync.RWMutex
+	lockPutBucketVersioning     sync.RWMutex
 	lockPutObject               sync.RWMutex
 	lockPutObjectAcl            sync.RWMutex
 	lockPutObjectTagging        sync.RWMutex
@@ -1029,6 +1071,42 @@ func (mock *BackendMock) GetBucketTaggingCalls() []struct {
 	return calls
 }
 
+// GetBucketVersioning calls GetBucketVersioningFunc.
+func (mock *BackendMock) GetBucketVersioning(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+	if mock.GetBucketVersioningFunc == nil {
+		panic("BackendMock.GetBucketVersioningFunc: method is nil but Backend.GetBucketVersioning was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketVersioning.Lock()
+	mock.calls.GetBucketVersioning = append(mock.calls.GetBucketVersioning, callInfo)
+	mock.lockGetBucketVersioning.Unlock()
+	return mock.GetBucketVersioningFunc(contextMoqParam, bucket)
+}
+
+// GetBucketVersioningCalls gets all the calls that were made to GetBucketVersioning.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketVersioningCalls())
+func (mock *BackendMock) GetBucketVersioningCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketVersioning.RLock()
+	calls = mock.calls.GetBucketVersioning
+	mock.lockGetBucketVersioning.RUnlock()
+	return calls
+}
+
 // GetObject calls GetObjectFunc.
 func (mock *BackendMock) GetObject(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	if mock.GetObjectFunc == nil {
@@ -1361,6 +1439,42 @@ func (mock *BackendMock) ListMultipartUploadsCalls() []struct {
 	return calls
 }
 
+// ListObjectVersions calls ListObjectVersionsFunc.
+func (mock *BackendMock) ListObjectVersions(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
+	if mock.ListObjectVersionsFunc == nil {
+		panic("BackendMock.ListObjectVersionsFunc: method is nil but Backend.ListObjectVersions was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam         context.Context
+		ListObjectVersionsInput *s3.ListObjectVersionsInput
+	}{
+		ContextMoqParam:         contextMoqParam,
+		ListObjectVersionsInput: listObjectVersionsInput,
+	}
+	mock.lockListObjectVersions.Lock()
+	mock.calls.ListObjectVersions = append(mock.calls.ListObjectVersions, callInfo)
+	mock.lockListObjectVersions.Unlock()
+	return mock.ListObjectVersionsFunc(contextMoqParam, listObjectVersionsInput)
+}
+
+// ListObjectVersionsCalls gets all the calls that were made to ListObjectVersions.
+// Check the length with:
+//
+//	len(mockedBackend.ListObjectVersionsCalls())
+func (mock *BackendMock) ListObjectVersionsCalls() []struct {
+	ContextMoqParam         context.Context
+	ListObjectVersionsInput *s3.ListObjectVersionsInput
+} {
+	var calls []struct {
+		ContextMoqParam         context.Context
+		ListObjectVersionsInput *s3.ListObjectVersionsInput
+	}
+	mock.lockListObjectVersions.RLock()
+	calls = mock.calls.ListObjectVersions
+	mock.lockListObjectVersions.RUnlock()
+	return calls
+}
+
 // ListObjects calls ListObjectsFunc.
 func (mock *BackendMock) ListObjects(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
 	if mock.ListObjectsFunc == nil {
@@ -1546,6 +1660,42 @@ func (mock *BackendMock) PutBucketTaggingCalls() []struct {
 	mock.lockPutBucketTagging.RLock()
 	calls = mock.calls.PutBucketTagging
 	mock.lockPutBucketTagging.RUnlock()
+	return calls
+}
+
+// PutBucketVersioning calls PutBucketVersioningFunc.
+func (mock *BackendMock) PutBucketVersioning(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error {
+	if mock.PutBucketVersioningFunc == nil {
+		panic("BackendMock.PutBucketVersioningFunc: method is nil but Backend.PutBucketVersioning was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam          context.Context
+		PutBucketVersioningInput *s3.PutBucketVersioningInput
+	}{
+		ContextMoqParam:          contextMoqParam,
+		PutBucketVersioningInput: putBucketVersioningInput,
+	}
+	mock.lockPutBucketVersioning.Lock()
+	mock.calls.PutBucketVersioning = append(mock.calls.PutBucketVersioning, callInfo)
+	mock.lockPutBucketVersioning.Unlock()
+	return mock.PutBucketVersioningFunc(contextMoqParam, putBucketVersioningInput)
+}
+
+// PutBucketVersioningCalls gets all the calls that were made to PutBucketVersioning.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketVersioningCalls())
+func (mock *BackendMock) PutBucketVersioningCalls() []struct {
+	ContextMoqParam          context.Context
+	PutBucketVersioningInput *s3.PutBucketVersioningInput
+} {
+	var calls []struct {
+		ContextMoqParam          context.Context
+		PutBucketVersioningInput *s3.PutBucketVersioningInput
+	}
+	mock.lockPutBucketVersioning.RLock()
+	calls = mock.calls.PutBucketVersioning
+	mock.lockPutBucketVersioning.RUnlock()
 	return calls
 }
 

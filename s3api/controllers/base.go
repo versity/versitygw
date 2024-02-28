@@ -74,6 +74,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+	versionId := ctx.Query("versionId")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
@@ -229,9 +230,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	ctx.Locals("logResBody", false)
 	res, err := c.be.GetObject(ctx.Context(), &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-		Range:  &acceptRange,
+		Bucket:    &bucket,
+		Key:       &key,
+		Range:     &acceptRange,
+		VersionId: &versionId,
 	}, ctx.Response().BodyWriter())
 	if err != nil {
 		return SendResponse(ctx, err,
@@ -333,6 +335,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	keyMarker := ctx.Query("key-marker")
 	maxUploadsStr := ctx.Query("max-uploads")
 	uploadIdMarker := ctx.Query("upload-id-marker")
+	versionIdMarker := ctx.Query("version-id-marker")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
@@ -370,6 +373,72 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "GetBucketTagging",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("versioning") {
+		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetBucketVersioning",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+		// Only admin users and the bucket owner are allowed to get the versioning state of a bucket.
+		if err := auth.IsAdminOrOwner(acct, isRoot, parsedAcl); err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetBucketVersioning",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		data, err := c.be.GetBucketVersioning(ctx.Context(), bucket)
+		return SendXMLResponse(ctx, data, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "GetBucketVersioning",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("versions") {
+		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "ListObjectVersions",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		maxkeys, err := utils.ParseUint(maxkeysStr)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "ListObjectVersions",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		data, err := c.be.ListObjectVersions(ctx.Context(), &s3.ListObjectVersionsInput{
+			Bucket:          &bucket,
+			Delimiter:       &delimiter,
+			KeyMarker:       &keyMarker,
+			MaxKeys:         &maxkeys,
+			Prefix:          &prefix,
+			VersionIdMarker: &versionIdMarker,
+		})
+		return SendXMLResponse(ctx, data, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "ListObjectVersions",
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -518,6 +587,8 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
 	granWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
+	mfa := ctx.Get("X-Amz-Mfa")
+	contentMD5 := ctx.Get("Content-MD5")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 
@@ -564,6 +635,43 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "PutBucketTagging",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("versioning") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutBucketVersioning",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		var versioningConf types.VersioningConfiguration
+		err = xml.Unmarshal(ctx.Body(), &versioningConf)
+		if err != nil {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutBucketVersioning",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.PutBucketVersioning(ctx.Context(), &s3.PutBucketVersioningInput{
+			Bucket:                  &bucket,
+			MFA:                     &mfa,
+			VersioningConfiguration: &versioningConf,
+			ContentMD5:              &contentMD5,
+		})
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "PutBucketVersioning",
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -1218,6 +1326,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
+	versionId := ctx.Query("versionId")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
@@ -1291,8 +1400,9 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 
 	err = c.be.DeleteObject(ctx.Context(),
 		&s3.DeleteObjectInput{
-			Bucket: &bucket,
-			Key:    &key,
+			Bucket:    &bucket,
+			Key:       &key,
+			VersionId: &versionId,
 		})
 	return SendResponse(ctx, err,
 		&MetaOpts{

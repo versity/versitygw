@@ -250,3 +250,23 @@ func MayCreateBucket(acct Account, isRoot bool) error {
 
 	return nil
 }
+
+func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
+	// Owner check
+	if acct.Access == acl.Owner {
+		return nil
+	}
+
+	// Root user has access over almost everything
+	if isRoot {
+		return nil
+	}
+
+	// Admin user case
+	if acct.Role == RoleAdmin {
+		return nil
+	}
+
+	// Return access denied in all other cases
+	return s3err.GetAPIError(s3err.ErrAccessDenied)
+}
