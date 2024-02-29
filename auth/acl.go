@@ -99,34 +99,34 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, er
 		grantees := []Grantee{}
 		accs := []string{}
 
-		if input.GrantRead != nil {
+		if input.GrantRead != nil || input.GrantReadACP != nil || input.GrantFullControl != nil || input.GrantWrite != nil || input.GrantWriteACP != nil {
 			fullControlList, readList, readACPList, writeList, writeACPList := []string{}, []string{}, []string{}, []string{}, []string{}
 
-			if *input.GrantFullControl != "" {
+			if input.GrantFullControl != nil && *input.GrantFullControl != "" {
 				fullControlList = splitUnique(*input.GrantFullControl, ",")
 				for _, str := range fullControlList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "FULL_CONTROL"})
 				}
 			}
-			if *input.GrantRead != "" {
+			if input.GrantRead != nil && *input.GrantRead != "" {
 				readList = splitUnique(*input.GrantRead, ",")
 				for _, str := range readList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "READ"})
 				}
 			}
-			if *input.GrantReadACP != "" {
+			if input.GrantReadACP != nil && *input.GrantReadACP != "" {
 				readACPList = splitUnique(*input.GrantReadACP, ",")
 				for _, str := range readACPList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "READ_ACP"})
 				}
 			}
-			if *input.GrantWrite != "" {
+			if input.GrantWrite != nil && *input.GrantWrite != "" {
 				writeList = splitUnique(*input.GrantWrite, ",")
 				for _, str := range writeList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "WRITE"})
 				}
 			}
-			if *input.GrantWriteACP != "" {
+			if input.GrantWriteACP != nil && *input.GrantWriteACP != "" {
 				writeACPList = splitUnique(*input.GrantWriteACP, ",")
 				for _, str := range writeACPList {
 					grantees = append(grantees, Grantee{Access: str, Permission: "WRITE_ACP"})
@@ -137,6 +137,9 @@ func UpdateACL(input *s3.PutBucketAclInput, acl ACL, iam IAMService) ([]byte, er
 		} else {
 			cache := make(map[string]bool)
 			for _, grt := range input.AccessControlPolicy.Grants {
+				if grt.Grantee == nil || grt.Grantee.ID == nil || grt.Permission == "" {
+					return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+				}
 				grantees = append(grantees, Grantee{Access: *grt.Grantee.ID, Permission: grt.Permission})
 				if _, ok := cache[*grt.Grantee.ID]; !ok {
 					cache[*grt.Grantee.ID] = true
