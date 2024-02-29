@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -24,6 +25,10 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3log"
+)
+
+var (
+	singlePath = regexp.MustCompile(`^/[^/]+/?$`)
 )
 
 func AclParser(be backend.Backend, logger s3log.AuditLogger) fiber.Handler {
@@ -38,8 +43,7 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger) fiber.Handler {
 		if ctx.Method() == http.MethodPatch {
 			return ctx.Next()
 		}
-		if len(pathParts) == 2 &&
-			pathParts[1] != "" &&
+		if singlePath.MatchString(path) &&
 			ctx.Method() == http.MethodPut &&
 			!ctx.Request().URI().QueryArgs().Has("acl") &&
 			!ctx.Request().URI().QueryArgs().Has("tagging") &&
