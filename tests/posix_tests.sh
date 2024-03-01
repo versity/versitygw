@@ -50,7 +50,7 @@ source ./tests/util_posix.sh
   fi
   setup_bucket "aws" "$bucket_name" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
-  put_object "$test_file_folder"/"$object_name" "$bucket_name"/"$object_name"  || local result="$?"
+  put_object "aws" "$test_file_folder"/"$object_name" "$bucket_name"/"$object_name"  || local result="$?"
   [[ result -eq 0 ]] || fail "Error adding object one"
 
   chmod 000 "$LOCAL_FOLDER"/"$bucket_name"/$object_name
@@ -63,7 +63,7 @@ source ./tests/util_posix.sh
   object_is_accessible "$bucket_name" $object_name || local accessible_two=$?
   [[ $accessible_two -eq 0 ]] || fail "Object should be accessible"
 
-  delete_object "$bucket_name"/$object_name
+  delete_object "aws" "$bucket_name"/$object_name
   delete_bucket_or_contents "aws" "$bucket_name"
   delete_test_files $object_name
 }

@@ -29,6 +29,10 @@ jobs:
           git clone https://github.com/bats-core/bats-core.git
           cd bats-core && ./install.sh $HOME
 
+      - name: Install s3cmd
+        run: |
+          sudo apt-get install s3cmd
+
       - name: Build and run
         run: |
           make testbin
@@ -42,4 +46,4 @@ jobs:
           export WORKSPACE=$GITHUB_WORKSPACE
           openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
           openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
-          ./tests/run_all.sh
+          VERSITYGW_TEST_ENV=./tests/.env.default ./tests/run_all.sh

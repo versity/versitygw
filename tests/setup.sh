@@ -14,7 +14,6 @@ setup() {
       echo "Warning: no .env file found in tests folder"
     fi
   else
-    echo "$VERSITYGW_TEST_ENV"
     # shellcheck source=./.env.default
     source "$VERSITYGW_TEST_ENV"
   fi
@@ -29,7 +28,19 @@ setup() {
   eval "$base_command"
 
   versitygw_pid=$!
-  export versitygw_pid AWS_PROFILE AWS_ENDPOINT_URL LOCAL_FOLDER BUCKET_ONE_NAME BUCKET_TWO_NAME S3CMD_CONFIG
+  S3CMD_OPTS=()
+  S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
+  S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
+  S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+  export versitygw_pid \
+    AWS_PROFILE \
+    AWS_ENDPOINT_URL \
+    LOCAL_FOLDER \
+    BUCKET_ONE_NAME \
+    BUCKET_TWO_NAME \
+    S3CMD_CONFIG \
+    S3CMD_OPTS \
+    RECREATE_BUCKETS
 }
 
 # make sure required environment variables are defined properly

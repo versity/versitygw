@@ -8,7 +8,7 @@ object_exists_remote_and_local() {
     echo "object existence check requires single name parameter"
     return 2
   fi
-  object_exists "$1" || local exist_result=$?
+  object_exists "aws" "$1" || local exist_result=$?
   if [[ $exist_result -eq 2 ]]; then
     echo "Error checking if object exists"
     return 2
@@ -32,7 +32,7 @@ object_not_exists_remote_and_local() {
     echo "object non-existence check requires single name parameter"
     return 2
   fi
-  object_exists "$1" || local exist_result=$?
+  object_exists "aws" "$1" || local exist_result=$?
   if [[ $exist_result -eq 2 ]]; then
     echo "Error checking if object doesn't exist"
     return 2

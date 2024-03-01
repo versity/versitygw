@@ -10,11 +10,7 @@ create_test_files() {
   fi
   test_file_folder=.
   if [[ -z "$GITHUB_ACTIONS" ]]; then
-    test_file_folder=${TMPDIR}versity-gwtest
-    mkdir -p "$test_file_folder" || local mkdir_result=$?
-    if [[ $mkdir_result -ne 0 ]]; then
-      echo "error creating test file folder"
-    fi
+    create_test_file_folder
   fi
   for name in "$@"; do
     touch "$test_file_folder"/"$name" || local touch_result=$?
@@ -81,4 +77,36 @@ compare_files() {
     return 0
   fi
   return 1
+}
+
+create_test_file_folder() {
+  test_file_folder=${TMPDIR}versity-gwtest
+  mkdir -p "$test_file_folder" || local mkdir_result=$?
+  if [[ $mkdir_result -ne 0 ]]; then
+    echo "error creating test file folder"
+  fi
+  export test_file_folder
+}
+
+# generate 16MB file
+# input: filename
+# return 0 for success, 1 for error
+create_large_file() {
+  if [[ $# -ne 1 ]]; then
+    echo "generate large file function requires filename"
+    return 1
+  fi
+
+  test_file_folder=.
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    create_test_file_folder
+  fi
+
+  filesize=$((160*1024*1024))
+  error=$(dd if=/dev/urandom of=$test_file_folder/"$1" bs=1024 count=$((filesize/1024))) || dd_result=$?
+  if [[ $dd_result -ne 0 ]]; then
+    echo "error creating file: $error"
+    return 1
+  fi
+  return 0
 }

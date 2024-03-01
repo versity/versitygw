@@ -12,26 +12,7 @@ source ./tests/test_common.sh
 
 # test adding and removing an object on versitygw
 @test "test_put_object" {
-  local object_name="test-object"
-
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-
-  create_test_files "$object_name" || local create_result=$?
-
-  object="$BUCKET_ONE_NAME"/$object_name
-  put_object "$test_file_folder"/"$object_name" "$object" || local put_object=$?
-  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "$object" || local exists_result_one=$?
-  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
-
-  delete_object "$object" || local delete_result=$?
-  [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
-  object_exists "$object" || local exists_result_two=$?
-  [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_name"
+  test_common_put_object "aws"
 }
 
 # test listing buckets on versitygw
@@ -41,35 +22,7 @@ source ./tests/test_common.sh
 
 # test listing a bucket's objects on versitygw
 @test "test_list_objects" {
-
-  object_one="test-file-one"
-  object_two="test-file-two"
-
-  create_test_files $object_one $object_two
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result_one=$?
-  [[ result_one -eq 0 ]] || fail "Error creating bucket"
-  put_object "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
-  [[ result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
-  [[ result_three -eq 0 ]] || fail "Error adding object two"
-
-  list_objects "$BUCKET_ONE_NAME"
-  local object_one_found=false
-  local object_two_found=false
-  for object in "${object_array[@]}"; do
-    if [ "$object" == $object_one ]; then
-      object_one_found=true
-    elif [ "$object" == $object_two ]; then
-      object_two_found=true
-    fi
-  done
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $object_one $object_two
-
-  if [ $object_one_found != true ] || [ $object_two_found != true ]; then
-    fail "$object_one and/or $object_two not listed (all objects: ${object_array[*]})"
-  fi
+  test_common_list_objects "aws"
 }
 
 # test ability to retrieve bucket ACLs
@@ -120,9 +73,9 @@ source ./tests/test_common.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result_one=$?
   [[ $result_one -eq 0 ]] || fail "Error creating bucket"
 
-  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
+  put_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
   [[ $result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
+  put_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
   [[ $result_three -eq 0 ]] || fail "Error adding object two"
 
   error=$(aws --no-verify-ssl s3api delete-objects --bucket "$BUCKET_ONE_NAME" --delete '{
@@ -133,9 +86,9 @@ source ./tests/test_common.sh
   }') || local result=$?
   [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
 
-  object_exists "$BUCKET_ONE_NAME"/"$object_one" || local exists_one=$?
+  object_exists "aws" "$BUCKET_ONE_NAME"/"$object_one" || local exists_one=$?
   [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
-  object_exists "$BUCKET_ONE_NAME"/"$object_two" || local exists_two=$?
+  object_exists "aws" "$BUCKET_ONE_NAME"/"$object_two" || local exists_two=$?
   [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
@@ -179,9 +132,9 @@ source ./tests/test_common.sh
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
+  put_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
   [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
-  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
+  put_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
   [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
 
   list_objects_s3api_v1 "$BUCKET_ONE_NAME"
@@ -210,9 +163,9 @@ source ./tests/test_common.sh
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  put_object "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
+  put_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local put_object_one=$?
   [[ $put_object_one -eq 0 ]] || fail "Failed to add object $object_one"
-  put_object "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
+  put_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local put_object_two=$?
   [[ $put_object_two -eq 0 ]] || fail "Failed to add object $object_two"
 
   list_objects_s3api_v2 "$BUCKET_ONE_NAME"
@@ -241,7 +194,7 @@ source ./tests/test_common.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
   local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
-  put_object "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
+  put_object "aws" "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
   [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
@@ -299,7 +252,7 @@ source ./tests/test_common.sh
   abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || abort_result=$?
   [[ $abort_result -eq 0 ]] || fail "Abort failed"
 
-  object_exists "$BUCKET_ONE_NAME/$bucket_file" || exists=$?
+  object_exists "aws" "$BUCKET_ONE_NAME/$bucket_file" || exists=$?
   [[ $exists -eq 1 ]] || fail "Upload file exists after abort"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
@@ -370,7 +323,6 @@ source ./tests/test_common.sh
 
   local key_one
   local key_two
-  echo $uploads
   key_one=$(echo "$uploads" | jq '.Uploads[0].Key')
   key_two=$(echo "$uploads" | jq '.Uploads[1].Key')
   key_one=${key_one//\"/}

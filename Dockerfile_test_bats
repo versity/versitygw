@@ -1,5 +1,7 @@
 FROM --platform=linux/arm64 ubuntu:latest
 
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     git \
@@ -7,6 +9,8 @@ RUN apt-get update && \
     wget \
     curl \
     unzip \
+    tzdata \
+    s3cmd \
     jq \
     ca-certificates && \
     update-ca-certificates && \
@@ -44,7 +48,8 @@ USER tester
 COPY --chown=tester:tester . /home/tester
 
 WORKDIR /home/tester
-RUN cp tests/.env.docker tests/.env
+RUN cp tests/.env.docker.default tests/.env.docker
+RUN cp tests/s3cfg.local.default tests/s3cfg.local
 RUN make
 
 RUN . tests/.secrets && \
@@ -60,5 +65,6 @@ RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen
         -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
 ENV WORKSPACE=.
+ENV VERSITYGW_TEST_ENV=tests/.env.docker
 
 CMD ["tests/run_all.sh"]
