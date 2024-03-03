@@ -43,6 +43,9 @@ dist/
 # secrets file for local github-actions testing
 tests/.secrets
 
+# IAM users files often created in testing
+users.json
+
 # env files for testing
 .env*
 !.env.default
