@@ -4,8 +4,9 @@ package v4
 var IgnoredHeaders = Rules{
 	ExcludeList{
 		MapRule{
-			"Authorization":   struct{}{},
-			"User-Agent":      struct{}{},
+			"Authorization": struct{}{},
+			// some clients use user-agent in signed headers
+			// "User-Agent":      struct{}{},
 			"X-Amzn-Trace-Id": struct{}{},
 			"Expect":          struct{}{},
 		},

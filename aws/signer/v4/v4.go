@@ -54,6 +54,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -139,6 +140,7 @@ type httpSigner struct {
 	Credentials  aws.Credentials
 	KeyDerivator keyDerivator
 	IsPreSign    bool
+	SignedHdrs   []string
 
 	PayloadHash string
 
@@ -277,7 +279,7 @@ func buildAuthorizationHeader(credentialStr, signedHeadersStr, signingSignature 
 // will not be lost.
 //
 // The passed in request will be modified in place.
-func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, optFns ...func(options *SignerOptions)) error {
+func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *http.Request, payloadHash string, service string, region string, signingTime time.Time, signedHdrs []string, optFns ...func(options *SignerOptions)) error {
 	options := s.options
 
 	for _, fn := range optFns {
@@ -295,6 +297,7 @@ func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *ht
 		DisableURIPathEscaping: options.DisableURIPathEscaping,
 		DisableSessionToken:    options.DisableSessionToken,
 		KeyDerivator:           s.keyDerivator,
+		SignedHdrs:             signedHdrs,
 	}
 
 	signedRequest, err := signer.Build()
@@ -352,6 +355,7 @@ func (s Signer) SignHTTP(ctx context.Context, credentials aws.Credentials, r *ht
 func (s *Signer) PresignHTTP(
 	ctx context.Context, credentials aws.Credentials, r *http.Request,
 	payloadHash string, service string, region string, signingTime time.Time,
+	signedHdrs []string,
 	optFns ...func(*SignerOptions),
 ) (signedURI string, signedHeaders http.Header, err error) {
 	options := s.options
@@ -372,6 +376,7 @@ func (s *Signer) PresignHTTP(
 		DisableURIPathEscaping: options.DisableURIPathEscaping,
 		DisableSessionToken:    options.DisableSessionToken,
 		KeyDerivator:           s.keyDerivator,
+		SignedHdrs:             signedHdrs,
 	}
 
 	signedRequest, err := signer.Build()
@@ -421,7 +426,7 @@ func (s *httpSigner) buildCanonicalHeaders(host string, rule v4Internal.Rule, he
 	signed[hostHeader] = append(signed[hostHeader], host)
 
 	const contentLengthHeader = "content-length"
-	if length > 0 {
+	if slices.Contains(s.SignedHdrs, contentLengthHeader) {
 		headers = append(headers, contentLengthHeader)
 		signed[contentLengthHeader] = append(signed[contentLengthHeader], strconv.FormatInt(length, 10))
 	}

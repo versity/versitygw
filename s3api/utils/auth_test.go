@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp/fasthttputil"
+	v4 "github.com/versity/versitygw/aws/signer/v4"
 )
 
 func TestAuthParse(t *testing.T) {
@@ -93,7 +93,7 @@ func Test_Client_UserAgent(t *testing.T) {
 				AccessKeyID:     access,
 				SecretAccessKey: secret,
 			},
-			req, zeroLenSig, service, region, tdate,
+			req, zeroLenSig, service, region, tdate, signedHdrs,
 			func(options *v4.SignerOptions) {
 				options.DisableURIPathEscaping = true
 			})
