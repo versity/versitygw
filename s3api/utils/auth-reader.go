@@ -24,9 +24,9 @@ import (
 	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v2"
+	v4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -131,7 +131,7 @@ func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string,
 			AccessKeyID:     auth.Access,
 			SecretAccessKey: secret,
 		},
-		req, checksum, service, auth.Region, tdate,
+		req, checksum, service, auth.Region, tdate, signedHdrs,
 		func(options *v4.SignerOptions) {
 			options.DisableURIPathEscaping = true
 			if debug {
