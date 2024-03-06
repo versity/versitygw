@@ -33,11 +33,17 @@ jobs:
         run: |
           sudo apt-get install s3cmd
 
+      - name: Install mc
+        run: |
+          curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
+          chmod 755 /usr/local/bin/mc
+
       - name: Build and run
         run: |
           make testbin
-          export AWS_ACCESS_KEY_ID=user
-          export AWS_SECRET_ACCESS_KEY=pass
+          echo $PATH
+          export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
+          export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
           export AWS_REGION=us-east-1
           aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity

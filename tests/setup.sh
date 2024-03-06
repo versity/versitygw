@@ -1,73 +1,44 @@
 #!/usr/bin/env bash
 
+source ./tests/setup_mc.sh
+source ./tests/versity.sh
+
 # bats setup function
 setup() {
-  if [ "$GITHUB_ACTIONS" != "true" ] && [ -r tests/.secrets ]; then
-    source tests/.secrets
-  else
-    echo "Warning: no secrets file found"
-  fi
-  if [ -z "$VERSITYGW_TEST_ENV" ]; then
-    if [ -r tests/.env ]; then
-      source tests/.env
-    else
-      echo "Warning: no .env file found in tests folder"
-    fi
-  else
-    # shellcheck source=./.env.default
-    source "$VERSITYGW_TEST_ENV"
+  start_versity || start_result=$?
+  if [[ $start_result -ne 0 ]]; then
+    echo "error starting versity executable"
+    return 1
   fi
 
-  check_params
-
-  base_command="ROOT_ACCESS_KEY=$AWS_ACCESS_KEY_ID ROOT_SECRET_KEY=$AWS_SECRET_ACCESS_KEY $VERSITY_EXE"
-  if [ -n "$CERT" ] && [ -n "$KEY" ]; then
-    base_command+=" --cert $CERT --key $KEY"
+  check_params || check_result=$?
+  if [[ $check_result -ne 0 ]]; then
+    echo "parameter check failed"
+    return 1
   fi
-  base_command+=" $BACKEND $LOCAL_FOLDER &"
-  eval "$base_command"
 
-  versitygw_pid=$!
   S3CMD_OPTS=()
   S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
   S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
   S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
-  export versitygw_pid \
-    AWS_PROFILE \
-    AWS_ENDPOINT_URL \
-    LOCAL_FOLDER \
+
+  check_add_mc_alias || check_result=$?
+  if [[ $check_result -ne 0 ]]; then
+    echo "mc alias check/add failed"
+    return 1
+  fi
+
+  export AWS_PROFILE \
     BUCKET_ONE_NAME \
     BUCKET_TWO_NAME \
     S3CMD_CONFIG \
-    S3CMD_OPTS \
-    RECREATE_BUCKETS
+    S3CMD_OPTS
 }
 
-# make sure required environment variables are defined properly
+# make sure required environment variables for tests are defined properly
 # return 0 for yes, 1 for no
 check_params() {
-  if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-    echo "No AWS access key set"
-    return 1
-  elif [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-    echo "No AWS secret access key set"
-    return 1
-  elif [ -z "$VERSITY_EXE" ]; then
-    echo "No versity executable location set"
-    return 1
-  elif [ -z "$BACKEND" ]; then
-    echo "No backend parameter set (options: 'posix')"
-    return 1
-  elif [ -z "$AWS_PROFILE" ]; then
-    echo "No AWS profile set"
-    return 1
-  elif [ -z "$LOCAL_FOLDER" ]; then
-    echo "No local storage folder set"
-    return 1
-  elif [ -z "$AWS_ENDPOINT_URL" ]; then
-    echo "No AWS endpoint URL set"
-    return 1
-  elif [ -z "$BUCKET_ONE_NAME" ]; then
+  if [ -z "$BUCKET_ONE_NAME" ]; then
     echo "No bucket one name set"
     return 1
   elif [ -z "$BUCKET_TWO_NAME" ]; then
@@ -80,6 +51,7 @@ check_params() {
     echo "RECREATE_BUCKETS must be 'true' or 'false'"
     return 1
   fi
+  return 0
 }
 
 # fail a test
@@ -91,14 +63,5 @@ fail() {
 
 # bats teardown function
 teardown() {
-  if [ -n "$versitygw_pid" ]; then
-    if ps -p "$versitygw_pid" > /dev/null; then
-      kill "$versitygw_pid"
-      wait "$versitygw_pid" || true
-    else
-      echo "Process with PID $versitygw_pid does not exist."
-    fi
-  else
-    echo "versitygw_pid is not set or empty."
-  fi
+  stop_versity
 }
