@@ -352,6 +352,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
 				return &s3.ListObjectVersionsOutput{}, nil
 			},
+			GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+				return []byte{}, nil
+			},
 		},
 	}
 
@@ -469,6 +472,15 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			statusCode: 200,
 		},
 		{
+			name: "List-actions-get-bucket-policy-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?policy", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
 			name: "List-actions-list-object-versions-success",
 			app:  app,
 			args: args{
@@ -575,6 +587,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			PutBucketVersioningFunc: func(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error {
 				return nil
 			},
+			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
+				return nil
+			},
 		},
 	}
 	// Mock ctx.Locals
@@ -647,6 +662,15 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?versioning", strings.NewReader(versioningBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-bucket-policy-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?policy", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
