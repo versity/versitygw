@@ -406,6 +406,26 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("policy") {
+		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetBucketPolicy",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		data, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
+		return SendXMLResponse(ctx, data, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "GetBucketPolicy",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("versions") {
 		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
 		if err != nil {
@@ -672,6 +692,27 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "PutBucketVersioning",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("policy") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutBucketPolicy",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.PutBucketPolicy(ctx.Context(), bucket, ctx.Body())
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "PutBucketPolicy",
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -1788,7 +1829,13 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 
 	var b []byte
 
-	if resp != nil {
+	// Handle already encoded responses(text, json...)
+	encodedResp, ok := resp.([]byte)
+	if ok {
+		b = encodedResp
+	}
+
+	if resp != nil && !ok {
 		if b, err = xml.Marshal(resp); err != nil {
 			return err
 		}
@@ -1816,6 +1863,14 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 			VersionId:   l.VersionId,
 			EventName:   l.EventName,
 		})
+	}
+
+	if ok {
+		if len(b) > 0 {
+			ctx.Response().Header.Set("Content-Length", fmt.Sprint(len(b)))
+		}
+
+		return ctx.Send(b)
 	}
 
 	msglen := len(xmlhdr) + len(b)

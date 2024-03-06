@@ -59,6 +59,9 @@ var _ backend.Backend = &BackendMock{}
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
 //			},
+//			GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+//				panic("mock out the GetBucketPolicy method")
+//			},
 //			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 //				panic("mock out the GetBucketTagging method")
 //			},
@@ -106,6 +109,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
+//			},
+//			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
+//				panic("mock out the PutBucketPolicy method")
 //			},
 //			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
 //				panic("mock out the PutBucketTagging method")
@@ -183,6 +189,9 @@ type BackendMock struct {
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
 
+	// GetBucketPolicyFunc mocks the GetBucketPolicy method.
+	GetBucketPolicyFunc func(contextMoqParam context.Context, bucket string) ([]byte, error)
+
 	// GetBucketTaggingFunc mocks the GetBucketTagging method.
 	GetBucketTaggingFunc func(contextMoqParam context.Context, bucket string) (map[string]string, error)
 
@@ -230,6 +239,9 @@ type BackendMock struct {
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
+
+	// PutBucketPolicyFunc mocks the PutBucketPolicy method.
+	PutBucketPolicyFunc func(contextMoqParam context.Context, bucket string, policy []byte) error
 
 	// PutBucketTaggingFunc mocks the PutBucketTagging method.
 	PutBucketTaggingFunc func(contextMoqParam context.Context, bucket string, tags map[string]string) error
@@ -356,6 +368,13 @@ type BackendMock struct {
 			// GetBucketAclInput is the getBucketAclInput argument value.
 			GetBucketAclInput *s3.GetBucketAclInput
 		}
+		// GetBucketPolicy holds details about calls to the GetBucketPolicy method.
+		GetBucketPolicy []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// GetBucketTagging holds details about calls to the GetBucketTagging method.
 		GetBucketTagging []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -474,6 +493,15 @@ type BackendMock struct {
 			// Data is the data argument value.
 			Data []byte
 		}
+		// PutBucketPolicy holds details about calls to the PutBucketPolicy method.
+		PutBucketPolicy []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Policy is the policy argument value.
+			Policy []byte
+		}
 		// PutBucketTagging holds details about calls to the PutBucketTagging method.
 		PutBucketTagging []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -562,6 +590,7 @@ type BackendMock struct {
 	lockDeleteObjectTagging     sync.RWMutex
 	lockDeleteObjects           sync.RWMutex
 	lockGetBucketAcl            sync.RWMutex
+	lockGetBucketPolicy         sync.RWMutex
 	lockGetBucketTagging        sync.RWMutex
 	lockGetBucketVersioning     sync.RWMutex
 	lockGetObject               sync.RWMutex
@@ -578,6 +607,7 @@ type BackendMock struct {
 	lockListObjectsV2           sync.RWMutex
 	lockListParts               sync.RWMutex
 	lockPutBucketAcl            sync.RWMutex
+	lockPutBucketPolicy         sync.RWMutex
 	lockPutBucketTagging        sync.RWMutex
 	lockPutBucketVersioning     sync.RWMutex
 	lockPutObject               sync.RWMutex
@@ -1032,6 +1062,42 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 	mock.lockGetBucketAcl.RLock()
 	calls = mock.calls.GetBucketAcl
 	mock.lockGetBucketAcl.RUnlock()
+	return calls
+}
+
+// GetBucketPolicy calls GetBucketPolicyFunc.
+func (mock *BackendMock) GetBucketPolicy(contextMoqParam context.Context, bucket string) ([]byte, error) {
+	if mock.GetBucketPolicyFunc == nil {
+		panic("BackendMock.GetBucketPolicyFunc: method is nil but Backend.GetBucketPolicy was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketPolicy.Lock()
+	mock.calls.GetBucketPolicy = append(mock.calls.GetBucketPolicy, callInfo)
+	mock.lockGetBucketPolicy.Unlock()
+	return mock.GetBucketPolicyFunc(contextMoqParam, bucket)
+}
+
+// GetBucketPolicyCalls gets all the calls that were made to GetBucketPolicy.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketPolicyCalls())
+func (mock *BackendMock) GetBucketPolicyCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketPolicy.RLock()
+	calls = mock.calls.GetBucketPolicy
+	mock.lockGetBucketPolicy.RUnlock()
 	return calls
 }
 
@@ -1620,6 +1686,46 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
 	mock.lockPutBucketAcl.RUnlock()
+	return calls
+}
+
+// PutBucketPolicy calls PutBucketPolicyFunc.
+func (mock *BackendMock) PutBucketPolicy(contextMoqParam context.Context, bucket string, policy []byte) error {
+	if mock.PutBucketPolicyFunc == nil {
+		panic("BackendMock.PutBucketPolicyFunc: method is nil but Backend.PutBucketPolicy was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Policy          []byte
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Policy:          policy,
+	}
+	mock.lockPutBucketPolicy.Lock()
+	mock.calls.PutBucketPolicy = append(mock.calls.PutBucketPolicy, callInfo)
+	mock.lockPutBucketPolicy.Unlock()
+	return mock.PutBucketPolicyFunc(contextMoqParam, bucket, policy)
+}
+
+// PutBucketPolicyCalls gets all the calls that were made to PutBucketPolicy.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketPolicyCalls())
+func (mock *BackendMock) PutBucketPolicyCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+	Policy          []byte
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Policy          []byte
+	}
+	mock.lockPutBucketPolicy.RLock()
+	calls = mock.calls.PutBucketPolicy
+	mock.lockPutBucketPolicy.RUnlock()
 	return calls
 }
 
