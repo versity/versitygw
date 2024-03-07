@@ -8,8 +8,6 @@
 
  [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE)  
 
-**Current status:** Ready for general testing, Issue reports welcome.
-
 **News:**<br>
 * New performance analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
 
