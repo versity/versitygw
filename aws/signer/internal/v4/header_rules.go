@@ -1,7 +1,7 @@
 package v4
 
 import (
-	sdkstrings "github.com/versity/versitygw/aws/internal/strings"
+	"strings"
 )
 
 // Rules houses a set of Rule needed for validation of a
@@ -61,7 +61,7 @@ type Patterns []string
 // been found
 func (p Patterns) IsValid(value string) bool {
 	for _, pattern := range p {
-		if sdkstrings.HasPrefixFold(value, pattern) {
+		if hasPrefixFold(value, pattern) {
 			return true
 		}
 	}
@@ -79,4 +79,10 @@ func (r InclusiveRules) IsValid(value string) bool {
 		}
 	}
 	return true
+}
+
+// hasPrefixFold tests whether the string s begins with prefix, interpreted as UTF-8 strings,
+// under Unicode case-folding.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[0:len(prefix)], prefix)
 }
