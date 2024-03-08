@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+source ./tests/util.sh
 source ./tests/util_file.sh
 
 # common test for creating, deleting buckets

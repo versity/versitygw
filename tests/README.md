@@ -3,7 +3,10 @@
 ## Instructions - Running Locally
 
 1. Build the `versitygw` binary.
-2. Install the aws command-line interface if unavailable on your machine.  Instructions are [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+2. Install the command-line interface(s) you want to test if unavailable on your machine.  
+   * **aws cli**: Instructions are [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+   * **s3cmd**:  Instructions are [here](https://github.com/s3tools/s3cmd/blob/master/INSTALL.md).
+   * **mc**:  Instructions are [here](https://min.io/docs/minio/linux/reference/minio-mc.html).
 3. Install BATS.  Instructions are [here](https://bats-core.readthedocs.io/en/stable/installation.html).
 4. Create a `.secrets` file in the `tests` folder, and add the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values to the file.
 5. Create a local AWS profile for connection to S3, and add the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` values for your account to the profile.  Example:
@@ -22,8 +25,8 @@
     openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
     openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365
 ```
-8.  Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
-9. In the root repo folder, run with `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+8. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
+9. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests, run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
 
 ## Instructions - Running With Docker
 

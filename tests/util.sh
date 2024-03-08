@@ -1,17 +1,28 @@
 #!/usr/bin/env bats
 
+source ./tests/util_mc.sh
+
 # create an AWS bucket
 # param:  bucket name
 # return 0 for success, 1 for failure
 create_bucket() {
-  if [ $# -ne 1 ]; then
-    echo "create bucket missing bucket name"
+  if [ $# -ne 2 ]; then
+    echo "create bucket missing command type, bucket name"
     return 1
   fi
 
   local exit_code=0
   local error
-  error=$(aws --no-verify-ssl s3 mb s3://"$1" 2>&1) || exit_code=$?
+  if [[ $1 == "aws" ]]; then
+    error=$(aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == "s3cmd" ]]; then
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == "mc" ]]; then
+    error=$(mc --insecure mb versity/"$2" 2>&1) || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
   if [ $exit_code -ne 0 ]; then
     echo "error creating bucket: $error"
     return 1
@@ -57,6 +68,8 @@ delete_bucket_recursive() {
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
+  elif [[ $1 == "mc" ]]; then
+    error=$(delete_bucket_recursive_mc "$2") || exit_code="$?"
   else
     echo "invalid command type '$1'"
     return 1
@@ -88,6 +101,8 @@ delete_bucket_contents() {
     error=$(aws --no-verify-ssl s3 rm s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
+  elif [[ $1 == "mc" ]]; then
+    error=$(mc --insecure rm --force --recursive versity/"$2" 2>&1) || exit_code="$?"
   else
     echo "invalid command type $1"
     return 1
@@ -114,6 +129,8 @@ bucket_exists() {
     error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code="$?"
   elif [[ $1 == 's3cmd' ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code="$?"
+  elif [[ $1 == 'mc' ]]; then
+    error=$(mc --insecure ls versity)
   else
     echo "invalid command type: $1"
     return 2
@@ -184,7 +201,7 @@ setup_bucket() {
     return 1
   fi
   local create_result
-  create_bucket "$2" || create_result=$?
+  create_bucket "$1" "$2" || create_result=$?
   if [[ $create_result -ne 0 ]]; then
     echo "Error creating bucket"
     return 1
@@ -287,7 +304,6 @@ delete_object() {
   if [[ $1 == 'aws' ]]; then
     error=$(aws --no-verify-ssl s3 rm s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    echo "delete object s3cmd"
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rm s3://"$2" 2>&1) || exit_code=$?
     echo "$error"
   else

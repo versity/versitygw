@@ -19,7 +19,15 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /tmp
 
+# Install AWS cli
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
+
+# Install mc
+RUN curl https://dl.min.io/client/mc/release/linux-arm64/mc \
+  --create-dirs \
+  -o /usr/local/minio-binaries/mc && \
+chmod -R 755 /usr/local/minio-binaries
+ENV PATH="/usr/local/minio-binaries":${PATH}
 
 # Download Go 1.21 (adjust the version and platform as needed)
 RUN wget https://golang.org/dl/go1.21.7.linux-arm64.tar.gz
@@ -40,6 +48,7 @@ RUN groupadd -r tester && useradd -r -g tester tester
 RUN mkdir /home/tester && chown tester:tester /home/tester
 ENV HOME=/home/tester
 
+# install bats
 RUN git clone https://github.com/bats-core/bats-core.git && \
     cd bats-core && \
     ./install.sh /home/tester
