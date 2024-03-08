@@ -37,6 +37,7 @@ import (
 	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/acl"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -1224,7 +1225,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 	}, nil
 }
 
-func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1234,6 +1235,8 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	if input.Range == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
+
+	account := ctx.Value("account").(auth.Account)
 
 	bucket := *input.Bucket
 	_, err := os.Stat(bucket)
@@ -1252,6 +1255,27 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	var permDenied bool
+	// check posix permssions for this file
+	if account.UserID != 0 {
+		permDenied = !acl.IsReadAllowed(fi, uint32(account.UserID), uint32(account.GroupID))
+	}
+	if permDenied {
+		// check posix acl access for this file
+		b, err := xattr.Get(objPath, "system.posix_acl_access")
+		if err != nil {
+			// no acl set, return permission denied due to failed posix permissions check
+			return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+		acl, err := acl.AclFromXattr(b)
+		if err != nil {
+			return nil, fmt.Errorf("parse acl: %w", err)
+		}
+		if !acl.IsReadAllowed(uint32(account.UserID), uint32(account.GroupID)) {
+			return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
 	}
 
 	acceptRange := *input.Range
