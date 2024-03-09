@@ -34,7 +34,7 @@ var (
 	errNotSupported = errors.New("not supported")
 )
 
-func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
+func openTmpFile(_, _, _ string, _ int64) (*tmpfile, error) {
 	return nil, errNotSupported
 }
 
@@ -49,10 +49,10 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 func (tmp *tmpfile) cleanup() {
 }
 
-func moveData(from *os.File, to *os.File) error {
+func moveData(_, _ *os.File) error {
 	return errNotSupported
 }
 
-func statMore(path string) (stat, error) {
+func statMore(_ string) (stat, error) {
 	return stat{}, errNotSupported
 }
