@@ -422,7 +422,7 @@ func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) 
 	return azureErrToS3Err(err)
 }
 
-func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
 		err := az.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -449,7 +449,7 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 		}
 	}
 
-	return s3response.DeleteObjectsResult{
+	return s3response.DeleteResult{
 		Deleted: delResult,
 		Error:   errs,
 	}, nil

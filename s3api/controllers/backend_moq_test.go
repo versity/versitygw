@@ -184,7 +184,7 @@ type BackendMock struct {
 	DeleteObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string) error
 
 	// DeleteObjectsFunc mocks the DeleteObjects method.
-	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error)
+	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error)
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
@@ -994,7 +994,7 @@ func (mock *BackendMock) DeleteObjectTaggingCalls() []struct {
 }
 
 // DeleteObjects calls DeleteObjectsFunc.
-func (mock *BackendMock) DeleteObjects(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+func (mock *BackendMock) DeleteObjects(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 	if mock.DeleteObjectsFunc == nil {
 		panic("BackendMock.DeleteObjectsFunc: method is nil but Backend.DeleteObjects was just called")
 	}

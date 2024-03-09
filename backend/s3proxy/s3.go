@@ -320,17 +320,17 @@ func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput)
 	return handleError(err)
 }
 
-func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 	if len(input.Delete.Objects) == 0 {
 		input.Delete.Objects = []types.ObjectIdentifier{}
 	}
 
 	output, err := s.client.DeleteObjects(ctx, input)
 	if err != nil {
-		return s3response.DeleteObjectsResult{}, handleError(err)
+		return s3response.DeleteResult{}, handleError(err)
 	}
 
-	return s3response.DeleteObjectsResult{
+	return s3response.DeleteResult{
 		Deleted: output.Deleted,
 		Error:   output.Errors,
 	}, nil
