@@ -25,24 +25,38 @@ test_common_create_delete_bucket() {
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
 }
 
-test_common_put_object() {
-
+test_common_put_object_with_data() {
   if [[ $# -ne 1 ]]; then
     fail "put object test requires command type"
   fi
 
   local object_name="test-object"
+  create_test_files "$object_name" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  echo "test data" > "$test_file_folder"/"$object_name"
+}
+
+test_common_put_object_no_data() {
+  if [[ $# -ne 1 ]]; then
+    fail "put object test requires command type"
+  fi
+
+  local object_name="test-object"
+  create_test_files "$object_name" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  test_common_put_object "$1" "$object_name"
+}
+
+test_common_put_object() {
+  if [[ $# -ne 2 ]]; then
+    fail "put object test requires command type, file"
+  fi
 
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
-
-  echo "test data" > "$test_file_folder"/"$object_name"
-
-  object="$BUCKET_ONE_NAME"/$object_name
-  put_object "$1" "$test_file_folder"/"$object_name" "$object" || local put_object=$?
+  object="$BUCKET_ONE_NAME"/"$2"
+  put_object "$1" "$test_file_folder"/"$2" "$object" || local put_object=$?
   [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
   object_exists "$1" "$object" || local exists_result_one=$?
   [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
@@ -53,7 +67,7 @@ test_common_put_object() {
   [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_name"
+  delete_test_files "$2"
 }
 
 # common test for listing buckets
@@ -95,7 +109,6 @@ test_common_list_buckets() {
 }
 
 test_common_list_objects() {
-
   if [[ $# -ne 1 ]]; then
     echo "common test function for listing objects requires command type"
     return 1
@@ -132,4 +145,88 @@ test_common_list_objects() {
   if [ $object_one_found != true ] || [ $object_two_found != true ]; then
     fail "$object_one and/or $object_two not listed (all objects: ${object_array[*]})"
   fi
+}
+
+test_common_set_get_bucket_tags() {
+
+  if [[ $# -ne 1 ]]; then
+    fail "set/get bucket tags test requires command type"
+  fi
+
+  local key="test_key"
+  local value="test_value"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags"
+
+  if [[ $1 == 'aws' ]]; then
+    if [[ $tags != "" ]]; then
+      tag_set=$(echo "$tags" | sed '1d' | jq '.TagSet')
+      [[ $tag_set == "[]" ]] || fail "Error:  tags not empty: $tags"
+    fi
+  else
+    [[ $tags == "" ]] || [[ $tags =~ "No tags found" ]] || fail "Error:  tags not empty: $tags"
+  fi
+
+  put_bucket_tag "$1" "$BUCKET_ONE_NAME" $key $value
+  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result_two=$?
+  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags"
+
+  local tag_set_key
+  local tag_set_value
+  if [[ $1 == 'aws' ]]; then
+    tag_set_key=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Value')
+    [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
+    [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+  else
+    read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
+    [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
+    [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
+  fi
+  delete_bucket_tags "$1" "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+}
+
+test_common_set_get_object_tags() {
+  local bucket_file="bucket-file"
+  local key="test_key"
+  local value="test_value"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+
+  get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "Error getting object tags"
+  if [[ $1 == 'aws' ]]; then
+    tag_set=$(echo "$tags" | sed '1d' | jq '.TagSet')
+    [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
+  elif [[ ! $tags == *"No tags found"* ]]; then
+    fail "no tags found (tags: $tags)"
+  fi
+
+  put_object_tag "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value
+  get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
+  [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
+  if [[ $1 == 'aws' ]]; then
+    tag_set_key=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Value')
+    [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
+    [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+  else
+    read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
+    [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
+    [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
+  fi
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
 }

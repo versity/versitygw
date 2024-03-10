@@ -41,7 +41,6 @@ jobs:
       - name: Build and run
         run: |
           make testbin
-          echo $PATH
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
           export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
           export AWS_REGION=us-east-1

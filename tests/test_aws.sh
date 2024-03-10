@@ -11,8 +11,12 @@ source ./tests/test_common.sh
 }
 
 # test adding and removing an object on versitygw
-@test "test_put_object" {
-  test_common_put_object "aws"
+@test "test_put_object-with-data" {
+  test_common_put_object_with_data "aws"
+}
+
+@test "test_put_object-no-data" {
+  test_common_put_object_no_data "aws"
 }
 
 # test listing buckets on versitygw
@@ -97,27 +101,7 @@ source ./tests/test_common.sh
 
 # test abilty to set and retrieve bucket tags
 @test "test-set-get-bucket-tags" {
-
-  local key="test_key"
-  local value="test_value"
-
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-
-  get_bucket_tags "$BUCKET_ONE_NAME" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags"
-  tag_set=$(echo "$tags" | jq '.TagSet')
-  [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
-
-  put_bucket_tag "$BUCKET_ONE_NAME" $key $value
-  get_bucket_tags "$BUCKET_ONE_NAME" || local get_result_two=$?
-  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags"
-  tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
-  tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
-  [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
-  [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  test_common_set_get_bucket_tags "aws"
 }
 
 # test v1 s3api list objects command
@@ -184,34 +168,7 @@ source ./tests/test_common.sh
 
 # test abilty to set and retrieve object tags
 @test "test-set-get-object-tags" {
-
-  local bucket_file="bucket-file"
-  local key="test_key"
-  local value="test_value"
-
-  create_test_files "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
-  put_object "aws" "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
-  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
-
-  get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting object tags"
-  tag_set=$(echo "$tags" | jq '.TagSet')
-  [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
-
-  put_object_tag "$BUCKET_ONE_NAME" $bucket_file $key $value
-  get_object_tags "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
-  [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
-  tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
-  tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
-  [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
-  [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
+  test_common_set_get_object_tags "aws"
 }
 
 # test multi-part upload
