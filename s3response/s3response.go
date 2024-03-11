@@ -116,7 +116,7 @@ type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
 }
 
-type DeleteObjectsResult struct {
+type DeleteResult struct {
 	Deleted []types.DeletedObject
 	Error   []types.Error
 }
