@@ -435,7 +435,7 @@ func loadUserMetaData(path string, m map[string]string) (contentType, contentEnc
 			continue
 		}
 		b, err := xattr.Get(path, e)
-		if err == syscall.ENODATA {
+		if err == errNoData {
 			m[strings.TrimPrefix(e, fmt.Sprintf("user.%v.", metaHdr))] = ""
 			continue
 		}
@@ -1934,7 +1934,7 @@ func isNoAttr(err error) bool {
 	if ok && xerr.Err == xattr.ENOATTR {
 		return true
 	}
-	if err == syscall.ENODATA {
+	if err == errNoData {
 		return true
 	}
 	return false
