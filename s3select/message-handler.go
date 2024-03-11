@@ -123,8 +123,7 @@ func generatePrelude(msgLen int, headerLen int) []byte {
 }
 
 const (
-	maxHeaderSize  = 1024 * 1024
-	maxMessageSize = 5 * 1024 * 1024 * 1024
+	maxHeaderSize = 1024 * 1024
 )
 
 func genMessage(header, payload []byte) []byte {

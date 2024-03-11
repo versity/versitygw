@@ -12,6 +12,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+//go:build !linux
+// +build !linux
+
 package posix
 
 import (
