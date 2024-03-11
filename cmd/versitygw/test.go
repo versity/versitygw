@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v2"
-	"github.com/versity/versitygw/integration"
+	"github.com/versity/versitygw/tests/integration"
 )
 
 var (

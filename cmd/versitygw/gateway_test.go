@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/versity/versitygw/backend/posix"
-	"github.com/versity/versitygw/integration"
+	"github.com/versity/versitygw/tests/integration"
 )
 
 const (
