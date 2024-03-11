@@ -201,10 +201,9 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
 	if dir != "" {
-		if err = mkdirAll(dir, os.FileMode(0755), bucket, object); err != nil {
-			if err != nil {
-				return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
-			}
+		err = mkdirAll(dir, os.FileMode(0755), bucket, object)
+		if err != nil {
+			return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
 	}
 	err = f.link()
