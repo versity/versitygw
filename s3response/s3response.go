@@ -112,6 +112,10 @@ type Tagging struct {
 	TagSet  TagSet   `xml:"TagSet"`
 }
 
+type TaggingInput struct {
+	TagSet TagSet `xml:"TagSet"`
+}
+
 type DeleteObjects struct {
 	Objects []types.ObjectIdentifier `xml:"Object"`
 }
