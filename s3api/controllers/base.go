@@ -615,7 +615,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
-		var bucketTagging s3response.Tagging
+		var bucketTagging s3response.TaggingInput
 		err := xml.Unmarshal(ctx.Body(), &bucketTagging)
 		if err != nil {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -922,7 +922,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		var objTagging s3response.Tagging
+		var objTagging s3response.TaggingInput
 		err := xml.Unmarshal(ctx.Body(), &objTagging)
 		if err != nil {
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
