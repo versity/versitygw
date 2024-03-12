@@ -909,6 +909,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	// Other headers
 	contentLengthStr := ctx.Get("Content-Length")
+	if contentLengthStr == "" {
+		contentLengthStr = "0"
+	}
 	bucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
