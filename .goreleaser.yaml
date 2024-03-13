@@ -32,10 +32,27 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
+
+    # Set this to true if you want all files in the archive to be in a single directory.
+    # If set to true and you extract the archive 'goreleaser_Linux_arm64.tar.gz',
+    # you'll get a folder 'goreleaser_Linux_arm64'.
+    # If set to false, all files are extracted separately.
+    # You can also set it to a custom folder name (templating is supported).
+    wrap_in_directory: true
+
     # use zip for windows archives
     format_overrides:
     - goos: windows
       format: zip
+
+    # Additional files/globs you want to add to the archive.
+    #
+    # Default: [ 'LICENSE*', 'README*', 'CHANGELOG', 'license*', 'readme*', 'changelog']
+    # Templates: allowed
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
 
 checksum:
   name_template: 'checksums.txt'
