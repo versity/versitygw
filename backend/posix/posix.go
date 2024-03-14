@@ -74,6 +74,12 @@ func New(rootdir string) (*Posix, error) {
 		return nil, fmt.Errorf("open %v: %w", rootdir, err)
 	}
 
+	_, err = xattr.FGet(f, "user.test")
+	if errors.Is(err, syscall.ENOTSUP) {
+		f.Close()
+		return nil, fmt.Errorf("xattr not supported on %v", rootdir)
+	}
+
 	return &Posix{rootfd: f, rootdir: rootdir}, nil
 }
 
