@@ -41,7 +41,7 @@ VERSION
 dist/
 
 # secrets file for local github-actions testing
-tests/.secrets
+tests/.secrets*
 
 # IAM users files often created in testing
 users.json

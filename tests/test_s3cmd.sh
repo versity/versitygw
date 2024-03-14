@@ -10,8 +10,12 @@ source ./tests/util.sh
 }
 
 # test s3cmd put object
-@test "test_put_object_s3cmd" {
-  test_common_put_object "s3cmd"
+@test "test_put_object_with_data_s3cmd" {
+  test_common_put_object_with_data "s3cmd"
+}
+
+@test "test_put_object_no_data_s3cmd" {
+  test_common_put_object_no_data "s3cmd"
 }
 
 # test listing buckets on versitygw

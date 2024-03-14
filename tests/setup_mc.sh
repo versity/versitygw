@@ -8,7 +8,7 @@ check_for_alias() {
     return 2
   fi
   while IFS= read -r line; do
-    if [[ $line =~ ^versity$ ]]; then
+    if [[ $line =~ ^"$MC_ALIAS"$ ]]; then
       return 0
     fi
   done <<< "$aliases"
@@ -25,7 +25,7 @@ check_add_mc_alias() {
     return 0
   fi
   local set_result
-  error=$(mc alias set --insecure versity "$AWS_ENDPOINT_URL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY") || set_result=$?
+  error=$(mc alias set --insecure "$MC_ALIAS" "$AWS_ENDPOINT_URL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY") || set_result=$?
   if [[ $set_result -ne 0 ]]; then
     echo "error setting alias: $error"
     return 1
