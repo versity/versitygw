@@ -35,6 +35,7 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 		args    args
 		want    *http.Request
 		wantErr bool
+		hdrs    []string
 	}{
 		{
 			name: "Success-response",
@@ -43,6 +44,7 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 			},
 			want:    request,
 			wantErr: false,
+			hdrs:    []string{},
 		},
 		{
 			name: "Success-response-With-Headers",
@@ -51,11 +53,12 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 			},
 			want:    request2,
 			wantErr: false,
+			hdrs:    []string{"X-Amz-Mfa"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := createHttpRequestFromCtx(tt.args.ctx, []string{"X-Amz-Mfa"}, 0)
+			got, err := createHttpRequestFromCtx(tt.args.ctx, tt.hdrs, 0)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateHttpRequestFromCtx() error = %v, wantErr %v", err, tt.wantErr)
 				return
