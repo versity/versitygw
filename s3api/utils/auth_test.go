@@ -84,7 +84,7 @@ func Test_Client_UserAgent(t *testing.T) {
 		}
 
 		req.Host = host
-		req.Header.Add("X-Amz-Content-Sha256", zeroLenSig)
+		req.Header.Set("X-Amz-Content-Sha256", zeroLenSig)
 
 		signer := v4.NewSigner()
 
