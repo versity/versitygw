@@ -44,6 +44,9 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 //				panic("mock out the DeleteBucket method")
 //			},
+//			DeleteBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) error {
+//				panic("mock out the DeleteBucketPolicy method")
+//			},
 //			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucketTagging method")
 //			},
@@ -53,7 +56,7 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string) error {
 //				panic("mock out the DeleteObjectTagging method")
 //			},
-//			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteObjectsResult, error) {
+//			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 //				panic("mock out the DeleteObjects method")
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
@@ -173,6 +176,9 @@ type BackendMock struct {
 
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
+
+	// DeleteBucketPolicyFunc mocks the DeleteBucketPolicy method.
+	DeleteBucketPolicyFunc func(contextMoqParam context.Context, bucket string) error
 
 	// DeleteBucketTaggingFunc mocks the DeleteBucketTagging method.
 	DeleteBucketTaggingFunc func(contextMoqParam context.Context, bucket string) error
@@ -330,6 +336,13 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// DeleteBucketInput is the deleteBucketInput argument value.
 			DeleteBucketInput *s3.DeleteBucketInput
+		}
+		// DeleteBucketPolicy holds details about calls to the DeleteBucketPolicy method.
+		DeleteBucketPolicy []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
 		}
 		// DeleteBucketTagging holds details about calls to the DeleteBucketTagging method.
 		DeleteBucketTagging []struct {
@@ -585,6 +598,7 @@ type BackendMock struct {
 	lockCreateBucket            sync.RWMutex
 	lockCreateMultipartUpload   sync.RWMutex
 	lockDeleteBucket            sync.RWMutex
+	lockDeleteBucketPolicy      sync.RWMutex
 	lockDeleteBucketTagging     sync.RWMutex
 	lockDeleteObject            sync.RWMutex
 	lockDeleteObjectTagging     sync.RWMutex
@@ -878,6 +892,42 @@ func (mock *BackendMock) DeleteBucketCalls() []struct {
 	mock.lockDeleteBucket.RLock()
 	calls = mock.calls.DeleteBucket
 	mock.lockDeleteBucket.RUnlock()
+	return calls
+}
+
+// DeleteBucketPolicy calls DeleteBucketPolicyFunc.
+func (mock *BackendMock) DeleteBucketPolicy(contextMoqParam context.Context, bucket string) error {
+	if mock.DeleteBucketPolicyFunc == nil {
+		panic("BackendMock.DeleteBucketPolicyFunc: method is nil but Backend.DeleteBucketPolicy was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockDeleteBucketPolicy.Lock()
+	mock.calls.DeleteBucketPolicy = append(mock.calls.DeleteBucketPolicy, callInfo)
+	mock.lockDeleteBucketPolicy.Unlock()
+	return mock.DeleteBucketPolicyFunc(contextMoqParam, bucket)
+}
+
+// DeleteBucketPolicyCalls gets all the calls that were made to DeleteBucketPolicy.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteBucketPolicyCalls())
+func (mock *BackendMock) DeleteBucketPolicyCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockDeleteBucketPolicy.RLock()
+	calls = mock.calls.DeleteBucketPolicy
+	mock.lockDeleteBucketPolicy.RUnlock()
 	return calls
 }
 

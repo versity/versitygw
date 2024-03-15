@@ -708,6 +708,17 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		err = auth.ValidatePolicyDocument(ctx.Body(), bucket, c.iam)
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutBucketPolicy",
+					BucketOwner: parsedAcl.Owner,
+				},
+			)
+		}
+
 		err = c.be.PutBucketPolicy(ctx.Context(), bucket, ctx.Body())
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1293,6 +1304,27 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "DeleteBucketTagging",
+				BucketOwner: parsedAcl.Owner,
+				Status:      http.StatusNoContent,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("policy") {
+		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "DeleteBucketPolicy",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.DeleteBucketPolicy(ctx.Context(), bucket)
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "DeleteBucketPolicy",
 				BucketOwner: parsedAcl.Owner,
 				Status:      http.StatusNoContent,
 			})
