@@ -197,13 +197,13 @@ func initFlags() []cli.Flag {
 		&cli.StringFlag{
 			Name:        "access-log",
 			Usage:       "enable server access logging to specified file",
-			EnvVars:     []string{"LOGFILE"},
+			EnvVars:     []string{"LOGFILE", "VGW_ACCESS_LOG"},
 			Destination: &accessLog,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
 			Usage:       "webhook url to send the audit logs",
-			EnvVars:     []string{"WEBHOOK"},
+			EnvVars:     []string{"WEBHOOK", "VGW_LOG_WEBHOOK_URL"},
 			Destination: &logWebhookURL,
 		},
 		&cli.StringFlag{

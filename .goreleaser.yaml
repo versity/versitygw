@@ -100,6 +100,27 @@ nfpms:
 
     rpm:
       group: "System Environment/Daemons"
+      # RPM specific scripts.
+      scripts:
+        # The pretrans script runs before all RPM package transactions / stages.
+        #pretrans: ./extra/pretrans.sh
+        # The posttrans script runs after all RPM package transactions / stages.
+        posttrans: ./extra/posttrans.sh
+
+    contents:
+      - src: extra/versitygw@.service
+        dst: /lib/systemd/system/versitygw@.service
+
+      - src: extra/example.conf
+        dst: /etc/versitygw.d/example.conf
+        type: config
+  
+      - dst: /etc/versitygw.d
+        type: dir
+        file_info:
+          mode: 0700
+
+
 
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
