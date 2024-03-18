@@ -192,6 +192,12 @@ test_common_set_get_bucket_tags() {
 }
 
 test_common_set_get_object_tags() {
+
+  if [[ $# -ne 1 ]]; then
+    echo "get/set object tags missing command type"
+    return 1
+  fi
+
   local bucket_file="bucket-file"
   local key="test_key"
   local value="test_value"
@@ -226,6 +232,26 @@ test_common_set_get_object_tags() {
     [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
     [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
   fi
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
+
+test_common_multipart_upload() {
+  if [[ $# -ne 1 ]]; then
+    echo "multipart upload command missing command type"
+    return 1
+  fi
+  bucket_file="largefile"
+
+  create_large_file "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test file for multipart upload"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  put_object "$1" "$test_file_folder"/$bucket_file "$BUCKET_ONE_NAME/$bucket_file" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "failed to copy file"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
