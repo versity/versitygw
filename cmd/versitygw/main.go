@@ -369,6 +369,10 @@ func initFlags() []cli.Flag {
 }
 
 func runGateway(ctx context.Context, be backend.Backend) error {
+	if rootUserAccess == "" || rootUserSecret == "" {
+		return fmt.Errorf("root user access and secret key must be provided")
+	}
+
 	app := fiber.New(fiber.Config{
 		AppName:           "versitygw",
 		ServerHeader:      "VERSITYGW",
