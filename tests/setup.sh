@@ -17,22 +17,25 @@ setup() {
     return 1
   fi
 
-  S3CMD_OPTS=()
-  S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
-  S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
-  S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+  if [[ $RUN_S3CMD == true ]]; then
+    S3CMD_OPTS=()
+    S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
+    S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
+    S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+    export S3CMD_CONFIG S3CMD_OPTS
+  fi
 
-  check_add_mc_alias || check_result=$?
-  if [[ $check_result -ne 0 ]]; then
-    echo "mc alias check/add failed"
-    return 1
+  if [[ $RUN_MC == true ]]; then
+    check_add_mc_alias || check_result=$?
+    if [[ $check_result -ne 0 ]]; then
+      echo "mc alias check/add failed"
+      return 1
+    fi
   fi
 
   export AWS_PROFILE \
     BUCKET_ONE_NAME \
-    BUCKET_TWO_NAME \
-    S3CMD_CONFIG \
-    S3CMD_OPTS
+    BUCKET_TWO_NAME
 }
 
 # make sure required environment variables for tests are defined properly

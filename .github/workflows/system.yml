@@ -51,4 +51,9 @@ jobs:
           export WORKSPACE=$GITHUB_WORKSPACE
           openssl genpkey -algorithm RSA -out versitygw.pem -pkeyopt rsa_keygen_bits:2048
           openssl req -new -x509 -key versitygw.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
-          VERSITYGW_TEST_ENV=./tests/.env.default ./tests/run_all.sh
+          mkdir /tmp/cover
+          VERSITYGW_TEST_ENV=./tests/.env.default GOCOVERDIR=/tmp/cover ./tests/run_all.sh
+
+      - name: Coverage report
+        run: |
+          go tool covdata percent -i=/tmp/cover

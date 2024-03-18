@@ -3,6 +3,8 @@
 source ./tests/test_common.sh
 source ./tests/setup.sh
 
+export RUN_MC=true
+
 # test mc bucket creation/deletion
 @test "test_create_delete_bucket_mc" {
   test_common_create_delete_bucket "mc"
@@ -30,4 +32,8 @@ source ./tests/setup.sh
 
 @test "test_set_get_object_tags_mc" {
   test_common_set_get_object_tags "mc"
+}
+
+@test "test_multipart_upload_mc" {
+  test_common_multipart_upload "mc"
 }
