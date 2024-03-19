@@ -492,7 +492,6 @@ Loop:
 	for {
 		select {
 		case <-ctx.Done():
-			err = ctx.Err()
 			break Loop
 		case err = <-c:
 			break Loop
@@ -512,12 +511,18 @@ Loop:
 
 	err = iam.Shutdown()
 	if err != nil {
+		if saveErr == nil {
+			saveErr = err
+		}
 		fmt.Fprintf(os.Stderr, "shutdown iam: %v\n", err)
 	}
 
 	if logger != nil {
 		err := logger.Shutdown()
 		if err != nil {
+			if saveErr == nil {
+				saveErr = err
+			}
 			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", err)
 		}
 	}
