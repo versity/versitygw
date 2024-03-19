@@ -315,3 +315,7 @@ source ./tests/test_common.sh
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
+
+@test "test-presigned-url-utf8-chars" {
+  test_common_presigned_url_utf8_chars "aws"
+}

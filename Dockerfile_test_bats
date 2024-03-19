@@ -1,6 +1,9 @@
 FROM --platform=linux/arm64 ubuntu:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG SECRETS_FILE=tests/.secrets
+ARG CONFIG_FILE=tests/.env.docker
+
 ENV TZ=Etc/UTC
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -12,6 +15,7 @@ RUN apt-get update && \
     tzdata \
     s3cmd \
     jq \
+    bc \
     ca-certificates && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
@@ -57,11 +61,12 @@ USER tester
 COPY --chown=tester:tester . /home/tester
 
 WORKDIR /home/tester
-RUN cp tests/.env.docker.default tests/.env.docker
+RUN cp ${CONFIG_FILE}.default $CONFIG_FILE
+#RUN cp tests/.env.docker.s3.default tests/.env.docker.s3
 RUN cp tests/s3cfg.local.default tests/s3cfg.local
 RUN make
 
-RUN . tests/.secrets && \
+RUN . $SECRETS_FILE && \
     export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE && \
     aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile $AWS_PROFILE && \
     aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile $AWS_PROFILE && \
@@ -74,6 +79,6 @@ RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen
         -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
 ENV WORKSPACE=.
-ENV VERSITYGW_TEST_ENV=tests/.env.docker
+ENV VERSITYGW_TEST_ENV=$CONFIG_FILE
 
 CMD ["tests/run_all.sh"]
