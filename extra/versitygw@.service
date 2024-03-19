@@ -1,0 +1,33 @@
+[Unit]
+Description=VersityGW
+Documentation=https://github.com/versity/versitygw/wiki
+Wants=network-online.target
+After=network-online.target remote-fs.target
+AssertFileIsExecutable=/usr/bin/versitygw
+AssertPathExists=/etc/versitygw.d/%i.conf
+
+[Service]
+WorkingDirectory=/root
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=versitygw-%i
+
+User=root
+Group=root
+
+EnvironmentFile=/etc/versitygw.d/%i.conf
+
+ExecStart=/bin/bash -c 'if [[ ! ("${VGW_BACKEND}" == "posix" || "${VGW_BACKEND}" == "scoutfs" || "${VGW_BACKEND}" == "s3") ]]; then echo "VGW_BACKEND environment variable not set to one of posix, scoutfs, or s3"; exit 1; fi && exec /usr/bin/versitygw "$VGW_BACKEND" "$VGW_BACKEND_ARG"'
+
+# Let systemd restart this service always
+Restart=always
+
+# Specifies the maximum file descriptor number that can be opened by this process
+LimitNOFILE=65536
+
+# Specifies the maximum number of threads this process can create
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
+
