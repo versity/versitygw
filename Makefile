@@ -59,20 +59,13 @@ cleanall: clean
 	rm -f $(BIN)
 	rm -f versitygw-*.tar
 	rm -f versitygw-*.tar.gz
-	rm -f versitygw.spec
-
-%.spec: %.spec.in
-	sed -e 's/@@VERSION@@/$(VERSION)/g' < $< > $@+
-	mv $@+ $@
 
 TARFILE = $(BIN)-$(VERSION).tar
 
-dist: $(BIN).spec
+dist:
 	echo $(VERSION) >VERSION
 	git archive --format=tar --prefix $(BIN)-$(VERSION)/ HEAD > $(TARFILE)
-	@ tar rf $(TARFILE) --transform="s@\(.*\)@$(BIN)-$(VERSION)/\1@" $(BIN).spec VERSION
 	rm -f VERSION
-	rm -f $(BIN).spec
 	gzip -f $(TARFILE)
 
 # Creates and runs S3 gateway instance in a docker container
