@@ -43,6 +43,7 @@ func TestPresignedAuthentication(s *S3Conf) {
 	PresignedAuth_incorrect_secret_key(s)
 	PresignedAuth_PutObject_success(s)
 	PresignedAuth_Put_GetObject_with_data(s)
+	PresignedAuth_Put_GetObject_with_UTF8_chars(s)
 	PresignedAuth_UploadPart(s)
 }
 
@@ -329,6 +330,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_incorrect_secret_key":                    PresignedAuth_incorrect_secret_key,
 		"PresignedAuth_PutObject_success":                       PresignedAuth_PutObject_success,
 		"PresignedAuth_Put_GetObject_with_data":                 PresignedAuth_Put_GetObject_with_data,
+		"PresignedAuth_Put_GetObject_with_UTF8_chars":           PresignedAuth_Put_GetObject_with_UTF8_chars,
 		"PresignedAuth_UploadPart":                              PresignedAuth_UploadPart,
 		"CreateBucket_invalid_bucket_name":                      CreateBucket_invalid_bucket_name,
 		"CreateBucket_existing_bucket":                          CreateBucket_existing_bucket,

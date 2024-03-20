@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/smithy-go/encoding/httpbinding"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/s3err"
@@ -114,16 +116,18 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 	}
 
 	uri := string(ctx.Request().URI().Path())
+	uri = httpbinding.EscapePath(uri, false)
 	isFirst := true
 
 	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
 		_, ok := signedQueryArgs[string(key)]
 		if !ok {
+			escapeValue := url.QueryEscape(string(value))
 			if isFirst {
-				uri += fmt.Sprintf("?%s=%s", key, value)
+				uri += fmt.Sprintf("?%s=%s", key, escapeValue)
 				isFirst = false
 			} else {
-				uri += fmt.Sprintf("&%s=%s", key, value)
+				uri += fmt.Sprintf("&%s=%s", key, escapeValue)
 			}
 		}
 	})
