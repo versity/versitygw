@@ -79,7 +79,7 @@ func (p Principals) Validate(iam IAMService) error {
 		return err
 	}
 	if len(accs) > 0 {
-		return fmt.Errorf("users doesn't exist: %v", accs)
+		return fmt.Errorf("user accounts don't exist: %v", accs)
 	}
 
 	return nil

@@ -219,12 +219,17 @@ func checkApiErr(err error, apiErr s3err.APIError) error {
 	}
 	var ae smithy.APIError
 	if errors.As(err, &ae) {
-		if ae.ErrorCode() == apiErr.Code && ae.ErrorMessage() == apiErr.Description {
-			return nil
+		if ae.ErrorCode() != apiErr.Code {
+			return fmt.Errorf("expected error code to be %v, instead got %v", apiErr.Code, ae.ErrorCode())
 		}
 
-		return fmt.Errorf("expected %v, instead got %v", apiErr.Code, ae.ErrorCode())
+		if ae.ErrorMessage() != apiErr.Description {
+			return fmt.Errorf("expected error message to be %v, instead got %v", apiErr.Description, ae.ErrorMessage())
+		}
+
+		return nil
 	}
+
 	return fmt.Errorf("expected aws api error, instead got: %w", err)
 }
 
@@ -602,4 +607,29 @@ func changeAuthCred(uri, newVal string, index int) (string, error) {
 	urlParsed.RawQuery = queries.Encode()
 
 	return urlParsed.String(), nil
+}
+
+func genPolicyDoc(effect, principal, action, resource string) string {
+	jsonTemplate := `
+	{
+		"Statement": [
+			{
+				"Effect":  "%s",
+				"Principal": %s,
+				"Action":  %s,
+				"Resource":  %s
+			}
+		]
+	}
+	`
+
+	return fmt.Sprintf(jsonTemplate, effect, principal, action, resource)
+}
+
+func getMalformedPolicyError(msg string) s3err.APIError {
+	return s3err.APIError{
+		Code:           "MalformedPolicy",
+		Description:    msg,
+		HTTPStatusCode: http.StatusBadRequest,
+	}
 }

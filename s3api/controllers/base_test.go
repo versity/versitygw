@@ -570,6 +570,19 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</VersioningConfiguration>
 	`
 
+	policyBody := `
+	{
+		"Statement": [
+			{
+				"Effect": "Allow",
+				"Principal": "*",
+				"Action": "s3:GetObject",
+				"Resource": "arn:aws:s3:::my-bucket/*"
+			}
+		]
+	}
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -667,10 +680,19 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			statusCode: 200,
 		},
 		{
-			name: "Put-bucket-policy-success",
+			name: "Put-bucket-policy-invalid-body",
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?policy", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-policy-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?policy", strings.NewReader(policyBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,

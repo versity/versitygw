@@ -58,15 +58,14 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 
 // Adds and validates a new resource to Resources map
 func (r Resources) Add(rc string) error {
-	_, found := r[rc]
-	if found {
-		return fmt.Errorf("duplicate resource")
+	ok, pattern := isValidResource(rc)
+	if !ok {
+		return fmt.Errorf("invalid resource: %v", rc)
 	}
 
-	ok, pattern := isValidResource(rc)
-
-	if !ok {
-		return fmt.Errorf("invalid resource")
+	_, found := r[pattern]
+	if found {
+		return fmt.Errorf("duplicate resource: %v", rc)
 	}
 
 	r[pattern] = struct{}{}
@@ -100,7 +99,7 @@ func (r Resources) ContainsBucketPattern() bool {
 func (r Resources) Validate(bucket string) error {
 	for resource := range r {
 		if !strings.HasPrefix(resource, bucket) {
-			return fmt.Errorf("invalid bucket resource")
+			return fmt.Errorf("incorrect bucket name in %v", resource)
 		}
 	}
 
@@ -118,7 +117,7 @@ func isValidResource(rc string) (isValid bool, pattern string) {
 		return false, ""
 	}
 	// The resource can't start with / (bucket name comes first)
-	if res == "/" {
+	if strings.HasPrefix(res, "/") {
 		return false, ""
 	}
 

@@ -241,6 +241,41 @@ func TestGetBucketAcl(s *S3Conf) {
 	GetBucketAcl_success(s)
 }
 
+func TestPutBucketPolicy(s *S3Conf) {
+	PutBucketPolicy_non_existing_bucket(s)
+	PutBucketPolicy_invalid_effect(s)
+	PutBucketPolicy_empty_actions_string(s)
+	PutBucketPolicy_empty_actions_array(s)
+	PutBucketPolicy_invalid_action(s)
+	PutBucketPolicy_unsupported_action(s)
+	PutBucketPolicy_incorrect_action_wildcard_usage(s)
+	PutBucketPolicy_empty_principals_string(s)
+	PutBucketPolicy_empty_principals_array(s)
+	PutBucketPolicy_principals_incorrect_wildcard_usage(s)
+	PutBucketPolicy_non_existing_principals(s)
+	PutBucketPolicy_empty_resources_string(s)
+	PutBucketPolicy_empty_resources_array(s)
+	PutBucketPolicy_invalid_resource_prefix(s)
+	PutBucketPolicy_invalid_resource_with_starting_slash(s)
+	PutBucketPolicy_duplicate_resource(s)
+	PutBucketPolicy_incorrect_bucket_name(s)
+	PutBucketPolicy_object_action_on_bucket_resource(s)
+	PutBucketPolicy_bucket_action_on_object_resource(s)
+	PutBucketPolicy_success(s)
+}
+
+func TestGetBucketPolicy(s *S3Conf) {
+	GetBucketPolicy_non_existing_bucket(s)
+	GetBucketPolicy_default_empty_policy(s)
+	GetBucketPolicy_success(s)
+}
+
+func TestDeleteBucketPolicy(s *S3Conf) {
+	DeleteBucketPolicy_non_existing_bucket(s)
+	DeleteBucketPolicy_remove_before_setting(s)
+	DeleteBucketPolicy_success(s)
+}
+
 func TestFullFlow(s *S3Conf) {
 	TestAuthentication(s)
 	TestPresignedAuthentication(s)
@@ -270,6 +305,9 @@ func TestFullFlow(s *S3Conf) {
 	TestCompleteMultipartUpload(s)
 	TestPutBucketAcl(s)
 	TestGetBucketAcl(s)
+	TestPutBucketPolicy(s)
+	TestGetBucketPolicy(s)
+	TestDeleteBucketPolicy(s)
 }
 
 func TestPosix(s *S3Conf) {
@@ -443,6 +481,32 @@ func GetIntTests() IntTests {
 		"GetBucketAcl_non_existing_bucket":                      GetBucketAcl_non_existing_bucket,
 		"GetBucketAcl_access_denied":                            GetBucketAcl_access_denied,
 		"GetBucketAcl_success":                                  GetBucketAcl_success,
+		"PutBucketPolicy_non_existing_bucket":                   PutBucketPolicy_non_existing_bucket,
+		"PutBucketPolicy_invalid_effect":                        PutBucketPolicy_invalid_effect,
+		"PutBucketPolicy_empty_actions_string":                  PutBucketPolicy_empty_actions_string,
+		"PutBucketPolicy_empty_actions_array":                   PutBucketPolicy_empty_actions_array,
+		"PutBucketPolicy_invalid_action":                        PutBucketPolicy_invalid_action,
+		"PutBucketPolicy_unsupported_action":                    PutBucketPolicy_unsupported_action,
+		"PutBucketPolicy_incorrect_action_wildcard_usage":       PutBucketPolicy_incorrect_action_wildcard_usage,
+		"PutBucketPolicy_empty_principals_string":               PutBucketPolicy_empty_principals_string,
+		"PutBucketPolicy_empty_principals_array":                PutBucketPolicy_empty_principals_array,
+		"PutBucketPolicy_principals_incorrect_wildcard_usage":   PutBucketPolicy_principals_incorrect_wildcard_usage,
+		"PutBucketPolicy_non_existing_principals":               PutBucketPolicy_non_existing_principals,
+		"PutBucketPolicy_empty_resources_string":                PutBucketPolicy_empty_resources_string,
+		"PutBucketPolicy_empty_resources_array":                 PutBucketPolicy_empty_resources_array,
+		"PutBucketPolicy_invalid_resource_prefix":               PutBucketPolicy_invalid_resource_prefix,
+		"PutBucketPolicy_invalid_resource_with_starting_slash":  PutBucketPolicy_invalid_resource_with_starting_slash,
+		"PutBucketPolicy_duplicate_resource":                    PutBucketPolicy_duplicate_resource,
+		"PutBucketPolicy_incorrect_bucket_name":                 PutBucketPolicy_incorrect_bucket_name,
+		"PutBucketPolicy_object_action_on_bucket_resource":      PutBucketPolicy_object_action_on_bucket_resource,
+		"PutBucketPolicy_bucket_action_on_object_resource":      PutBucketPolicy_bucket_action_on_object_resource,
+		"PutBucketPolicy_success":                               PutBucketPolicy_success,
+		"GetBucketPolicy_non_existing_bucket":                   GetBucketPolicy_non_existing_bucket,
+		"GetBucketPolicy_default_empty_policy":                  GetBucketPolicy_default_empty_policy,
+		"GetBucketPolicy_success":                               GetBucketPolicy_success,
+		"DeleteBucketPolicy_non_existing_bucket":                DeleteBucketPolicy_non_existing_bucket,
+		"DeleteBucketPolicy_remove_before_setting":              DeleteBucketPolicy_remove_before_setting,
+		"DeleteBucketPolicy_success":                            DeleteBucketPolicy_success,
 		"PutObject_overwrite_dir_obj":                           PutObject_overwrite_dir_obj,
 		"PutObject_overwrite_file_obj":                          PutObject_overwrite_file_obj,
 		"PutObject_dir_obj_with_data":                           PutObject_dir_obj_with_data,

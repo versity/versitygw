@@ -133,20 +133,31 @@ var supportedObjectActionList = map[Action]struct{}{
 }
 
 // Validates Action: it should either wildcard match with supported actions list or be in it
-func (a Action) IsValid() bool {
+func (a Action) IsValid() error {
+	if !strings.HasPrefix(string(a), "s3:") {
+		return fmt.Errorf("invalid action: %v", a)
+	}
+
+	if a == AllActions {
+		return nil
+	}
+
 	if a[len(a)-1] == '*' {
 		pattern := strings.TrimSuffix(string(a), "*")
 		for act := range supportedActionList {
 			if strings.HasPrefix(string(act), pattern) {
-				return true
+				return nil
 			}
 		}
 
-		return false
+		return fmt.Errorf("invalid wildcard usage: %v prefix is not in the supported actions list", pattern)
 	}
 
 	_, found := supportedActionList[a]
-	return found
+	if !found {
+		return fmt.Errorf("unsupported action: %v", a)
+	}
+	return nil
 }
 
 // Checks if the action is object action
@@ -203,8 +214,9 @@ func (a *Actions) UnmarshalJSON(data []byte) error {
 // Validates and adds a new Action to Actions map
 func (a Actions) Add(str string) error {
 	action := Action(str)
-	if !action.IsValid() {
-		return fmt.Errorf("invalid action")
+	err := action.IsValid()
+	if err != nil {
+		return err
 	}
 
 	a[action] = struct{}{}

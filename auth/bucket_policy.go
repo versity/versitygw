@@ -45,10 +45,13 @@ type BucketPolicyItem struct {
 }
 
 func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
+	if err := bpi.Effect.Validate(); err != nil {
+		return err
+	}
 	if err := bpi.Principals.Validate(iam); err != nil {
 		return err
 	}
-	if err := bpi.Effect.Validate(); err != nil {
+	if err := bpi.Resources.Validate(bucket); err != nil {
 		return err
 	}
 
@@ -61,7 +64,7 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 			return fmt.Errorf("unsupported object action '%v' on the specified resources", action)
 		}
 		if !isObjectAction && !containsBucketAction {
-			return fmt.Errorf("unsupported bucket action '%v', on the specified resources", action)
+			return fmt.Errorf("unsupported bucket action '%v' on the specified resources", action)
 		}
 	}
 

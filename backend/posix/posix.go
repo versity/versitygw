@@ -1863,6 +1863,10 @@ func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byt
 
 	if policy == nil {
 		if err := xattr.Remove(bucket, policykey); err != nil {
+			if isNoAttr(err) {
+				return nil
+			}
+
 			return fmt.Errorf("remove policy: %w", err)
 		}
 
