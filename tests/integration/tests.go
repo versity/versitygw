@@ -1448,10 +1448,74 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return fmt.Errorf("read get object response body %w", err)
 		}
 
-		fmt.Println(resp.Request.Method, resp.ContentLength, string(respBody))
-
 		if string(respBody) != data {
 			return fmt.Errorf("expected get object response body to be %v, instead got %s", data, respBody)
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
+	testName := "PresignedAuth_Put_GetObject_with_data"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+		bucket, obj := getBucketName(), "my-$%^&*;"
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		httpClient := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header = v4req.SignedHeader
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected my-obj to be successfully uploaded and get %v response status, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		v4GetReq, err := client.PresignGetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &obj})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		req, err = http.NewRequest(v4GetReq.Method, v4GetReq.URL, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err = httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected get object response status to be %v, instead got %v", http.StatusOK, resp.StatusCode)
 		}
 
 		err = teardown(s, bucket)
