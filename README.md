@@ -8,17 +8,33 @@
 
  [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE)  
 
-**News:**<br>
+### Binary release builds
+Download [latest release](https://github.com/versity/versitygw/releases)
+ | Linux/amd64 | Linux/arm64 | MacOS/amd64 | MacOS/arm64 | BSD/amd64 | BSD/arm64 |
+ |:-----------:|:-----------:|:-----------:|:-----------:|:---------:|:---------:|
+ |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
+ 
+### News
 * New performance analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
 
+### Mailing List
+Keep up to date with latest gateway announcements by signing up to the [versitygw mailing list](https://www.versity.com/products/versitygw#signup).
 
+### Documentation
 See project [documentation](https://github.com/versity/versitygw/wiki) on the wiki.
 
+### Need help?
+Ask questions in the [community discussions](https://github.com/versity/versitygw/discussions).
+<br>
+Contact [Versity Sales](https://www.versity.com/contact/) to discuss enterprise support.
+
+### Use Cases
 * Share filesystem directory via S3 protocol
 * Proxy S3 requests to S3 storage
 * Simple to deploy S3 server with a single command
 * Protocol compatibility in `posix` allows common access to files via posix or S3 
 
+### Overview
 Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and storage systems. The Versity Gateway bridges the gap between S3-reliant applications and other storage systems, enabling enhanced compatibility and integration while offering exceptional scalability.
 
 The server translates incoming S3 API requests and transforms them into equivalent operations to the backend service. By leveraging this gateway server, applications can interact with the S3-compatible API on top of already existing storage systems. This project enables leveraging existing infrastructure investments while seamlessly integrating with S3-compatible systems, offering increased flexibility and compatibility in managing data storage.
