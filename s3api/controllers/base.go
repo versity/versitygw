@@ -80,7 +80,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.GetObjectTaggingAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -139,7 +147,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			}
 		}
 
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.ListMultipartUploadPartsAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -169,7 +185,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ_ACP", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionReadAcp,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.GetObjectAclAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -191,7 +215,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if attrs := ctx.Get("X-Amz-Object-Attributes"); attrs != "" {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.GetObjectAttributesAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -218,7 +250,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "READ_ACP", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionRead,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Object:        key,
+		Action:        auth.GetObjectAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -341,7 +381,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketTaggingAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -378,7 +425,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("versioning") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketVersioningAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -407,7 +461,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("policy") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketPolicyAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -427,7 +488,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("versions") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.ListBucketVersionsAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -464,7 +532,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ_ACP", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionReadAcp,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketAclAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -490,7 +565,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("uploads") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.ListBucketMultipartUploadsAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -525,7 +607,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.QueryInt("list-type") == 2 {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.ListBucketAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -560,7 +649,14 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionRead,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Action:        auth.ListBucketAction,
+	})
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{
@@ -640,7 +736,14 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			tags[tag.Key] = tag.Value
 		}
 
-		err = auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketTaggingAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -661,7 +764,14 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("versioning") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketVersioningAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -698,7 +808,14 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("policy") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketPolicyAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -735,7 +852,14 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		var accessControlPolicy auth.AccessControlPolicy
 
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE_ACP", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWriteAcp,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketAclAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -855,9 +979,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	}
 
 	defACL := auth.ACL{
-		ACL:      "private",
-		Owner:    acct.Access,
-		Grantees: []auth.Grantee{},
+		Owner: acct.Access,
 	}
 
 	updAcl, err := auth.UpdateACL(&s3.PutBucketAclInput{
@@ -958,7 +1080,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			tags[tag.Key] = tag.Value
 		}
 
-		err = auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        keyStart,
+			Action:        auth.PutBucketTaggingAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -985,6 +1115,24 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		if partNumber < 1 || partNumber > 10000 {
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrInvalidPart),
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "UploadPartCopy",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err := auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        keyStart,
+			Action:        auth.PutObjectAction,
+		})
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
 					Action:      "UploadPartCopy",
@@ -1021,7 +1169,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        keyStart,
+			Action:        auth.PutObjectAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1160,7 +1316,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if copySource != "" {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        keyStart,
+			Action:        auth.PutObjectAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -1233,7 +1397,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionWrite,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Object:        keyStart,
+		Action:        auth.PutObjectAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1289,7 +1461,14 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketTaggingAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1310,7 +1489,14 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("policy") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.DeleteBucketPolicyAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1330,7 +1516,14 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionWrite,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Action:        auth.DeleteBucketAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1369,7 +1562,14 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+	err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionWrite,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Action:        auth.DeleteObjectAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1409,12 +1609,20 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.DeleteObjectTaggingAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
 					Logger:      c.logger,
-					Action:      "RemoveObjectTagging",
+					Action:      "DeleteObjectTagging",
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
@@ -1434,7 +1642,15 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 		expectedBucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
 		requestPayer := ctx.Get("X-Amz-Request-Payer")
 
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.AbortMultipartUploadAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1461,7 +1677,15 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionWrite,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Object:        key,
+		Action:        auth.DeleteObjectAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1494,7 +1718,14 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionRead,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Action:        auth.ListBucketAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1531,7 +1762,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionRead,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Object:        key,
+		Action:        auth.GetObjectAction,
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1637,7 +1876,15 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.RestoreObjectAction,
+		})
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1675,7 +1922,15 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = auth.VerifyACL(parsedAcl, acct.Access, "READ", isRoot)
+		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.GetObjectAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -1717,7 +1972,15 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Object:        key,
+			Action:        auth.PutObjectAction,
+		})
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -1756,7 +2019,15 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := auth.VerifyACL(parsedAcl, acct.Access, "WRITE", isRoot)
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Acl:           parsedAcl,
+		AclPermission: types.PermissionWrite,
+		IsRoot:        isRoot,
+		Acc:           acct,
+		Bucket:        bucket,
+		Object:        key,
+		Action:        auth.PutObjectAction,
+	})
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{

@@ -1448,8 +1448,6 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return fmt.Errorf("read get object response body %w", err)
 		}
 
-		fmt.Println(resp.Request.Method, resp.ContentLength, string(respBody))
-
 		if string(respBody) != data {
 			return fmt.Errorf("expected get object response body to be %v, instead got %s", data, respBody)
 		}
@@ -3201,14 +3199,16 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 		}
 
 		usr := user{
-			access: "admin1",
-			secret: "admin1secret",
-			role:   "admin",
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
 		}
 
 		cfg := *s
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
+
+		userS3Client := s3.NewFromConfig(cfg.Config())
 
 		err = createUsers(s, []user{usr})
 		if err != nil {
@@ -3216,13 +3216,18 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 		}
 
 		dstBucket := getBucketName()
-		err = setup(&cfg, dstBucket)
+		err = setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		err = changeBucketsOwner(s, []string{bucket}, usr.access)
 		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+		_, err = userS3Client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     &dstBucket,
 			Key:        getPtr("obj-1"),
 			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
@@ -5378,9 +5383,16 @@ func PutBucketPolicy_non_existing_principals(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_1", "a_rarely_existing_user_account_2"}))); err != nil {
-			return err
+		apiErr1 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_1", "a_rarely_existing_user_account_2"}))
+		apiErr2 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_2", "a_rarely_existing_user_account_1"}))
+
+		err1 := checkApiErr(err, apiErr1)
+		err2 := checkApiErr(err, apiErr2)
+
+		if err1 != nil && err2 != nil {
+			return err1
 		}
+
 		return nil
 	})
 }
@@ -5507,7 +5519,7 @@ func PutBucketPolicy_object_action_on_bucket_resource(s *S3Conf) error {
 	testName := "PutBucketPolicy_object_action_on_bucket_resource"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		resource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
-		doc := genPolicyDoc("Allow", `["*"]`, `"s3:ListObjects"`, resource)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:PutObjectTagging"`, resource)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
@@ -5516,7 +5528,7 @@ func PutBucketPolicy_object_action_on_bucket_resource(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("unsupported object action 's3:ListObjects' on the specified resources")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("unsupported object action 's3:PutObjectTagging' on the specified resources")); err != nil {
 			return err
 		}
 		return nil
@@ -5560,7 +5572,7 @@ func PutBucketPolicy_success(s *S3Conf) error {
 		for _, doc := range []string{
 			genPolicyDoc("Allow", `["grt1", "grt2"]`, `["s3:DeleteBucket", "s3:GetBucketAcl"]`, bucketResource),
 			genPolicyDoc("Deny", `"*"`, `"s3:DeleteBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
-			genPolicyDoc("Allow", `"grt1"`, `["s3:CompleteMultipartUpload", "s3:UploadPart", "s3:HeadBucket"]`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
+			genPolicyDoc("Allow", `"grt1"`, `["s3:PutBucketVersioning", "s3:ListMultipartUploadParts", "s3:ListBucket"]`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
 			genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
 			genPolicyDoc("Allow", `"*"`, `"s3:Get*"`, objectResource),
 			genPolicyDoc("Deny", `"*"`, `"s3:Create*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),

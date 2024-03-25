@@ -15,10 +15,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -35,6 +37,16 @@ func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
 	}
 
 	return nil
+}
+
+func (bp *BucketPolicy) isAllowed(principal string, action Action, resource string) bool {
+	for _, statement := range bp.Statement {
+		if statement.isAllowed(principal, action, resource) {
+			return true
+		}
+	}
+
+	return false
 }
 
 type BucketPolicyItem struct {
@@ -71,6 +83,19 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 	return nil
 }
 
+func (bpi *BucketPolicyItem) isAllowed(principal string, action Action, resource string) bool {
+	if bpi.Principals.Contains(principal) && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource) {
+		switch bpi.Effect {
+		case BucketPolicyAccessTypeAllow:
+			return true
+		case BucketPolicyAccessTypeDeny:
+			return false
+		}
+	}
+
+	return false
+}
+
 func getMalformedPolicyError(err error) error {
 	return s3err.APIError{
 		Code:           "MalformedPolicy",
@@ -87,6 +112,33 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 
 	if err := policy.Validate(bucket, iam); err != nil {
 		return getMalformedPolicyError(err)
+	}
+
+	return nil
+}
+
+func verifyBucketPolicy(ctx context.Context, be backend.Backend, access, bucket, object string, action Action) error {
+	policyDoc, err := be.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	// If bucket policy is not set
+	if len(policyDoc) == 0 {
+		return nil
+	}
+
+	var bucketPolicy BucketPolicy
+	if err := json.Unmarshal(policyDoc, &bucketPolicy); err != nil {
+		return err
+	}
+
+	resource := bucket
+	if object != "" {
+		resource += "" + object
+	}
+
+	if !bucketPolicy.isAllowed(access, action, resource) {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	return nil

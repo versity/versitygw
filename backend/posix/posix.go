@@ -1423,7 +1423,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
-	owner := *input.ExpectedBucketOwner
 
 	_, err := os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1439,22 +1438,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat bucket: %w", err)
-	}
-
-	dstBucketACLBytes, err := xattr.Get(dstBucket, aclkey)
-	if err != nil {
-		return nil, fmt.Errorf("get dst bucket acl tag: %w", err)
-	}
-
-	var dstBucketACL auth.ACL
-	err = json.Unmarshal(dstBucketACLBytes, &dstBucketACL)
-	if err != nil {
-		return nil, fmt.Errorf("parse dst bucket acl: %w", err)
-	}
-
-	err = auth.VerifyACL(dstBucketACL, owner, types.PermissionWrite, false)
-	if err != nil {
-		return nil, err
 	}
 
 	objPath := filepath.Join(srcBucket, srcObject)

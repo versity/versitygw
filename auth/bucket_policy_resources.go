@@ -106,6 +106,23 @@ func (r Resources) Validate(bucket string) error {
 	return nil
 }
 
+func (r Resources) FindMatch(resource string) bool {
+	for res := range r {
+		if strings.HasSuffix(res, "*") {
+			pattern := strings.TrimSuffix(res, "*")
+			if strings.HasPrefix(resource, pattern) {
+				return true
+			}
+		} else {
+			if res == resource {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // Checks the resource to have arn prefix and not starting with /
 func isValidResource(rc string) (isValid bool, pattern string) {
 	if !strings.HasPrefix(rc, ResourceArnPrefix) {

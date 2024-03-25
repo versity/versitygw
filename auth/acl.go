@@ -15,12 +15,14 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -203,13 +205,14 @@ func splitUnique(s, divider string) []string {
 	return result
 }
 
-func VerifyACL(acl ACL, access string, permission types.Permission, isRoot bool) error {
-	if isRoot {
-		return nil
-	}
+func verifyACL(acl ACL, access string, permission types.Permission) error {
+	// Default disabled ACL case
+	if acl.ACL == "" && len(acl.Grantees) == 0 {
+		if acl.Owner == access {
+			return nil
+		}
 
-	if acl.Owner == access {
-		return nil
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	if acl.ACL != "" {
@@ -272,4 +275,79 @@ func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
 
 	// Return access denied in all other cases
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
+}
+
+type AccessOptions struct {
+	Acl           ACL
+	AclPermission types.Permission
+	IsRoot        bool
+	Acc           Account
+	Bucket        string
+	Object        string
+	Action        Action
+}
+
+func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
+	if opts.IsRoot {
+		return nil
+	}
+	if opts.Acc.Role == RoleAdmin {
+		return nil
+	}
+	if opts.Acc.Access == opts.Acl.Owner {
+		return nil
+	}
+
+	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {
+		return err
+	}
+	if err := verifyBucketPolicy(ctx, be, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource string, opts AccessOptions) error {
+	if opts.IsRoot {
+		return nil
+	}
+	if opts.Acc.Role == RoleAdmin {
+		return nil
+	}
+
+	// Verify destination bucket access
+	if err := VerifyAccess(ctx, be, opts); err != nil {
+		return err
+	}
+	// Verify source bucket access
+	srcBucket, srcObject, found := strings.Cut(copySource, "/")
+	if !found {
+		return s3err.GetAPIError(s3err.ErrInvalidCopySource)
+	}
+
+	// Get source bucket ACL
+	srcBucketACLBytes, err := be.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &srcBucket})
+	if err != nil {
+		return err
+	}
+
+	var srcBucketAcl ACL
+	if err := json.Unmarshal(srcBucketACLBytes, &srcBucketAcl); err != nil {
+		return err
+	}
+
+	if err := VerifyAccess(ctx, be, AccessOptions{
+		Acl:           srcBucketAcl,
+		AclPermission: types.PermissionRead,
+		IsRoot:        opts.IsRoot,
+		Acc:           opts.Acc,
+		Bucket:        srcBucket,
+		Object:        srcObject,
+		Action:        GetObjectAction,
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }

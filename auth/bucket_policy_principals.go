@@ -84,3 +84,14 @@ func (p Principals) Validate(iam IAMService) error {
 
 	return nil
 }
+
+func (p Principals) Contains(userAccess string) bool {
+	// "*" means it matches for any user account
+	_, ok := p["*"]
+	if ok {
+		return true
+	}
+
+	_, found := p[userAccess]
+	return found
+}
