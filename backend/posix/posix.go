@@ -61,6 +61,7 @@ const (
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 	aclkey              = "user.acl"
 	etagkey             = "user.etag"
+	policykey           = "user.policy"
 )
 
 func New(rootdir string) (*Posix, error) {
@@ -1428,7 +1429,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
-	owner := *input.ExpectedBucketOwner
 
 	_, err := os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1444,22 +1444,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat bucket: %w", err)
-	}
-
-	dstBucketACLBytes, err := xattr.Get(dstBucket, aclkey)
-	if err != nil {
-		return nil, fmt.Errorf("get dst bucket acl tag: %w", err)
-	}
-
-	var dstBucketACL auth.ACL
-	err = json.Unmarshal(dstBucketACLBytes, &dstBucketACL)
-	if err != nil {
-		return nil, fmt.Errorf("parse dst bucket acl: %w", err)
-	}
-
-	err = auth.VerifyACL(dstBucketACL, owner, types.PermissionWrite, false)
-	if err != nil {
-		return nil, err
 	}
 
 	objPath := filepath.Join(srcBucket, srcObject)
@@ -1855,6 +1839,58 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 
 func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
 	return p.PutObjectTagging(ctx, bucket, object, nil)
+}
+
+func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if policy == nil {
+		if err := xattr.Remove(bucket, policykey); err != nil {
+			if isNoAttr(err) {
+				return nil
+			}
+
+			return fmt.Errorf("remove policy: %w", err)
+		}
+
+		return nil
+	}
+
+	if err := xattr.Set(bucket, policykey, policy); err != nil {
+		return fmt.Errorf("set policy: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	policy, err := xattr.Get(bucket, policykey)
+	if isNoAttr(err) {
+		return []byte{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get bucket policy: %w", err)
+	}
+
+	return policy, nil
+}
+
+func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	return p.PutBucketPolicy(ctx, bucket, nil)
 }
 
 func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {

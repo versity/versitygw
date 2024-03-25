@@ -466,16 +466,6 @@ func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3
 		return nil, azureErrToS3Err(err)
 	}
 
-	dstContainerAcl, err := getAclFromMetadata(res.Metadata, aclKeyCapital)
-	if err != nil {
-		return nil, err
-	}
-
-	err = auth.VerifyACL(*dstContainerAcl, *input.ExpectedBucketOwner, types.PermissionWrite, false)
-	if err != nil {
-		return nil, err
-	}
-
 	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource && isMetaSame(res.Metadata, input.Metadata) {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}

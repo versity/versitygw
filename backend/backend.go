@@ -42,6 +42,8 @@ type Backend interface {
 	GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
 	PutBucketPolicy(_ context.Context, bucket string, policy []byte) error
 	GetBucketPolicy(_ context.Context, bucket string) ([]byte, error)
+	DeleteBucketPolicy(_ context.Context, bucket string) error
+
 	// multipart operations
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
 	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
@@ -124,6 +126,9 @@ func (BackendUnsupported) PutBucketPolicy(_ context.Context, bucket string, poli
 }
 func (BackendUnsupported) GetBucketPolicy(_ context.Context, bucket string) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteBucketPolicy(_ context.Context, bucket string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {

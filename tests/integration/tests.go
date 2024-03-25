@@ -3265,14 +3265,16 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 		}
 
 		usr := user{
-			access: "admin1",
-			secret: "admin1secret",
-			role:   "admin",
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
 		}
 
 		cfg := *s
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
+
+		userS3Client := s3.NewFromConfig(cfg.Config())
 
 		err = createUsers(s, []user{usr})
 		if err != nil {
@@ -3280,13 +3282,18 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 		}
 
 		dstBucket := getBucketName()
-		err = setup(&cfg, dstBucket)
+		err = setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		err = changeBucketsOwner(s, []string{bucket}, usr.access)
 		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+		_, err = userS3Client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     &dstBucket,
 			Key:        getPtr("obj-1"),
 			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
@@ -5238,6 +5245,555 @@ func GetBucketAcl_success(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
+	testName := "PutBucketPolicy_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		doc := genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: getPtr("non_existing_bucket"),
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_invalid_effect(s *S3Conf) error {
+	testName := "PutBucketPolicy_invalid_effect"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("invalid_effect", `"*"`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("invalid effect: invalid_effect")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_actions_string(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_actions_string"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `""`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("actions can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_actions_array(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_actions_array"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `[]`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("actions can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_invalid_action(s *S3Conf) error {
+	testName := "PutBucketPolicy_invalid_action"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `"ListObjects"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("invalid action: ListObjects")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_unsupported_action(s *S3Conf) error {
+	testName := "PutBucketPolicy_unsupported_action"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `"s3:PutLifecycleConfiguration"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("unsupported action: s3:PutLifecycleConfiguration")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_incorrect_action_wildcard_usage(s *S3Conf) error {
+	testName := "PutBucketPolicy_incorrect_action_wildcard_usage"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `"s3:hello*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("invalid wildcard usage: s3:hello prefix is not in the supported actions list")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_principals_string(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_principals_string"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `""`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_principals_array(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_principals_array"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `[]`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_principals_incorrect_wildcard_usage(s *S3Conf) error {
+	testName := "PutBucketPolicy_principals_incorrect_wildcard_usage"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `["*", "grt1"]`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("principals should either contain * or user access keys")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_non_existing_principals(s *S3Conf) error {
+	testName := "PutBucketPolicy_non_existing_principals"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `["a_rarely_existing_user_account_1", "a_rarely_existing_user_account_2"]`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		apiErr1 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_1", "a_rarely_existing_user_account_2"}))
+		apiErr2 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_2", "a_rarely_existing_user_account_1"}))
+
+		err1 := checkApiErr(err, apiErr1)
+		err2 := checkApiErr(err, apiErr2)
+
+		if err1 != nil && err2 != nil {
+			return err1
+		}
+
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_resources_string(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_resources_string"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, `""`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("resources can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_empty_resources_array(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_resources_array"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, `[]`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("resources can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_invalid_resource_prefix(s *S3Conf) error {
+	testName := "PutBucketPolicy_invalid_resource_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:iam:::%v"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("invalid resource: %v", resource[1:len(resource)-1]))); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_invalid_resource_with_starting_slash(s *S3Conf) error {
+	testName := "PutBucketPolicy_invalid_resource_with_starting_slash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:s3:::/%v"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("invalid resource: %v", resource[1:len(resource)-1]))); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_duplicate_resource(s *S3Conf) error {
+	testName := "PutBucketPolicy_duplicate_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, fmt.Sprintf("[%v, %v]", resource, resource))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("duplicate resource: %v", resource[1:len(resource)-1]))); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_incorrect_bucket_name(s *S3Conf) error {
+	testName := "PutBucketPolicy_incorrect_bucket_name"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:s3:::prefix-%v"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:*"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("incorrect bucket name in prefix-%v", bucket))); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_object_action_on_bucket_resource(s *S3Conf) error {
+	testName := "PutBucketPolicy_object_action_on_bucket_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:PutObjectTagging"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("unsupported object action 's3:PutObjectTagging' on the specified resources")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
+	testName := "PutBucketPolicy_object_action_on_bucket_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		resource := fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)
+		doc := genPolicyDoc("Allow", `["*"]`, `"s3:DeleteBucket"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("unsupported bucket action 's3:DeleteBucket' on the specified resources")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_success(s *S3Conf) error {
+	testName := "PutBucketPolicy_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{
+			{"grt1", "grt1secret", "user"},
+			{"grt2", "grt2secret", "user"},
+		})
+		if err != nil {
+			return err
+		}
+
+		bucketResource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
+		objectResource := fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)
+
+		for _, doc := range []string{
+			genPolicyDoc("Allow", `["grt1", "grt2"]`, `["s3:DeleteBucket", "s3:GetBucketAcl"]`, bucketResource),
+			genPolicyDoc("Deny", `"*"`, `"s3:DeleteBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
+			genPolicyDoc("Allow", `"grt1"`, `["s3:PutBucketVersioning", "s3:ListMultipartUploadParts", "s3:ListBucket"]`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
+			genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
+			genPolicyDoc("Allow", `"*"`, `"s3:Get*"`, objectResource),
+			genPolicyDoc("Deny", `"*"`, `"s3:Create*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetBucketPolicy_non_existing_bucket(s *S3Conf) error {
+	testName := "GetBucketPolicy_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: getPtr("non_existing_bucket"),
+		})
+		cancel()
+
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func GetBucketPolicy_default_empty_policy(s *S3Conf) error {
+	testName := "GetBucketPolicy_default_empty_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.Policy != nil {
+			return fmt.Errorf("expected policy to be nil, instead got %s", *out.Policy)
+		}
+
+		return nil
+	})
+}
+
+func GetBucketPolicy_success(s *S3Conf) error {
+	testName := "GetBucketPolicy_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `["s3:DeleteBucket", "s3:GetBucketTagging"]`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.Policy == nil {
+			return fmt.Errorf("expected non nil policy result")
+		}
+
+		if *out.Policy != doc {
+			return fmt.Errorf("expected the bucket policy to be %v, instead got %v", doc, *out.Policy)
+		}
+
+		return nil
+	})
+}
+
+func DeleteBucketPolicy_non_existing_bucket(s *S3Conf) error {
+	testName := "DeleteBucketPolicy_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: getPtr("non_existing_bucket"),
+		})
+		cancel()
+
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func DeleteBucketPolicy_remove_before_setting(s *S3Conf) error {
+	testName := "DeleteBucketPolicy_remove_before_setting"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+
+		return err
+	})
+}
+
+func DeleteBucketPolicy_success(s *S3Conf) error {
+	testName := "DeleteBucketPolicy_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `["s3:DeleteBucket", "s3:GetBucketTagging"]`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.Policy != nil {
+			return fmt.Errorf("expected policy to be nil, instead got %s", *out.Policy)
+		}
+
+		return err
 	})
 }
 
