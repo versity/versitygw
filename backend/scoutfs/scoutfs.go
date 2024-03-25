@@ -457,12 +457,24 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 		return nil, err
 	}
 
+	objSize := fi.Size()
+	if fi.IsDir() {
+		// directory objects are always 0 len
+		objSize = 0
+		length = 0
+	}
+
 	if length == -1 {
 		length = fi.Size() - startOffset + 1
 	}
 
 	if startOffset+length > fi.Size() {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	var contentRange string
+	if acceptRange != "" {
+		contentRange = fmt.Sprintf("bytes %v-%v/%v", startOffset, startOffset+length-1, objSize)
 	}
 
 	if s.glaciermode {
@@ -522,6 +534,7 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 		Metadata:        userMetaData,
 		TagCount:        &tagCount,
 		StorageClass:    types.StorageClassStandard,
+		ContentRange:    &contentRange,
 	}, nil
 }
 
