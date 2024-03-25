@@ -139,7 +139,10 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 	partsize := int64(0)
 	var totalsize int64
 	for i, p := range parts {
-		partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber))
+		if p.PartNumber == nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *p.PartNumber))
 		fi, err := os.Lstat(partPath)
 		if err != nil {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
@@ -178,9 +181,9 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 	defer f.cleanup()
 
 	for _, p := range parts {
-		pf, err := os.Open(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", p.PartNumber)))
+		pf, err := os.Open(filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *p.PartNumber)))
 		if err != nil {
-			return nil, fmt.Errorf("open part %v: %v", p.PartNumber, err)
+			return nil, fmt.Errorf("open part %v: %v", *p.PartNumber, err)
 		}
 
 		// scoutfs move data is a metadata only operation that moves the data
@@ -189,7 +192,7 @@ func (s *ScoutFS) CompleteMultipartUpload(_ context.Context, input *s3.CompleteM
 		err = moveData(pf, f.f)
 		pf.Close()
 		if err != nil {
-			return nil, fmt.Errorf("move blocks part %v: %v", p.PartNumber, err)
+			return nil, fmt.Errorf("move blocks part %v: %v", *p.PartNumber, err)
 		}
 	}
 
