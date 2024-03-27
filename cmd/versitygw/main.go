@@ -19,6 +19,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"github.com/gofiber/fiber/v2"
@@ -44,6 +46,7 @@ var (
 	accessLog                              string
 	healthPath                             string
 	debug                                  bool
+	pprof                                  string
 	quiet                                  bool
 	iamDir                                 string
 	ldapURL, ldapBindDN, ldapPassword      string
@@ -186,6 +189,12 @@ func initFlags() []cli.Flag {
 			Usage:       "enable debug output",
 			EnvVars:     []string{"VGW_DEBUG"},
 			Destination: &debug,
+		},
+		&cli.StringFlag{
+			Name:        "pprof",
+			Usage:       "enable pprof debug on specified port",
+			EnvVars:     []string{"VGW_PPROF"},
+			Destination: &pprof,
 		},
 		&cli.BoolFlag{
 			Name:        "quiet",
@@ -371,6 +380,14 @@ func initFlags() []cli.Flag {
 func runGateway(ctx context.Context, be backend.Backend) error {
 	if rootUserAccess == "" || rootUserSecret == "" {
 		return fmt.Errorf("root user access and secret key must be provided")
+	}
+
+	if pprof != "" {
+		// listen on specified port for pprof debug
+		// point browser to http://<ip:port>/debug/pprof/
+		go func() {
+			log.Fatal(http.ListenAndServe(pprof, nil))
+		}()
 	}
 
 	app := fiber.New(fiber.Config{
