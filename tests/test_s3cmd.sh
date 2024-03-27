@@ -32,3 +32,7 @@ export RUN_S3CMD=true
 @test "test_multipart_upload_s3cmd" {
   test_common_multipart_upload "s3cmd"
 }
+
+#@test "test_presigned_url_utf8_chars_s3cmd" {
+#  test_common_presigned_url_utf8_chars "s3cmd"
+#}

@@ -37,3 +37,7 @@ export RUN_MC=true
 @test "test_multipart_upload_mc" {
   test_common_multipart_upload "mc"
 }
+
+@test "test_presigned_url_utf8_chars_mc" {
+  test_common_presigned_url_utf8_chars "mc"
+}

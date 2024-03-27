@@ -256,3 +256,40 @@ test_common_multipart_upload() {
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
+
+test_common_presigned_url_utf8_chars() {
+
+  if [[ $# -ne 1 ]]; then
+    echo "presigned url command missing command type"
+    return 1
+  fi
+
+  local bucket_file="my-$%^&*;"
+  local bucket_file_copy="bucket-file-copy"
+  bucket_file_data="test file\n"
+
+  create_test_files "$bucket_file" || local created=$?
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/"$bucket_file"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || put_result=$?
+  [[ $put_result -eq 0 ]] || fail "Failed to add object $bucket_file"
+
+  create_presigned_url "$1" "$BUCKET_ONE_NAME" "$bucket_file" || presigned_result=$?
+  [[ $presigned_result -eq 0 ]] || fail "presigned url creation failure"
+
+  error=$(curl -k -v "$presigned_url" -o "$test_file_folder"/"$bucket_file_copy") || curl_result=$?
+  if [[ $curl_result -ne 0 ]]; then
+    fail "error downloading file with curl: $error"
+  fi
+  compare_files "$test_file_folder"/"$bucket_file" "$test_file_folder"/"$bucket_file_copy" || compare_result=$?
+  if [[ $compare_result -ne 0 ]]; then
+    echo "file one: $(cat "$test_file_folder"/"$bucket_file")"
+    echo "file two: $(cat "$test_file_folder"/"$bucket_file_copy")"
+    fail "files don't match"
+  fi
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_test_files "$bucket_file" "$bucket_file_copy"
+}
