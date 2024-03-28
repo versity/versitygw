@@ -85,6 +85,11 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestIAM),
 		},
 		{
+			Name:   "access-control",
+			Usage:  "Tests gateway access control with bucket ACLs and Policies",
+			Action: getAction(integration.TestAccessControl),
+		},
+		{
 			Name:  "bench",
 			Usage: "Runs download/upload performance test on the gateway",
 			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).

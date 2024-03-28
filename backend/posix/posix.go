@@ -1728,9 +1728,10 @@ func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[stri
 
 	if tags == nil {
 		err = xattr.Remove(bucket, "user."+tagHdr)
-		if err != nil {
+		if err != nil && !isNoAttr(err) {
 			return fmt.Errorf("remove tags: %w", err)
 		}
+
 		return nil
 	}
 

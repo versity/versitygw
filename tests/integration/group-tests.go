@@ -309,6 +309,7 @@ func TestFullFlow(s *S3Conf) {
 	TestPutBucketPolicy(s)
 	TestGetBucketPolicy(s)
 	TestDeleteBucketPolicy(s)
+	TestAccessControl(s)
 }
 
 func TestPosix(s *S3Conf) {
@@ -323,6 +324,16 @@ func TestIAM(s *S3Conf) {
 	IAM_userplus_access_denied(s)
 	IAM_userplus_CreateBucket(s)
 	IAM_admin_ChangeBucketOwner(s)
+}
+
+func TestAccessControl(s *S3Conf) {
+	AccessControl_default_ACL_user_access_denied(s)
+	AccessControl_default_ACL_userplus_access_denied(s)
+	AccessControl_default_ACL_admin_successful_access(s)
+	AccessControl_bucket_resource_single_action(s)
+	AccessControl_bucket_resource_all_action(s)
+	AccessControl_single_object_resource_actions(s)
+	AccessControl_multi_statement_policy(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error

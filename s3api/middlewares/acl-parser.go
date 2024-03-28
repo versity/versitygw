@@ -54,7 +54,6 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger) fiber.Handler {
 			}
 			return ctx.Next()
 		}
-		//TODO: provide correct action names for the logger, after implementing DetectAction middleware
 		data, err := be.GetBucketAcl(ctx.Context(), &s3.GetBucketAclInput{Bucket: &bucket})
 		if err != nil {
 			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})

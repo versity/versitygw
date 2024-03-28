@@ -5797,6 +5797,320 @@ func DeleteBucketPolicy_success(s *S3Conf) error {
 	})
 }
 
+// Access control tests (with bucket ACLs and Policies)
+func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
+	testName := "AccessControl_default_ACL_user_access_denied"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		err := createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = usr.access
+		cfg.awsSecret = usr.secret
+
+		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_default_ACL_userplus_access_denied(s *S3Conf) error {
+	testName := "AccessControl_default_ACL_userplus_access_denied"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "userplus1",
+			secret: "userplus1secret",
+			role:   "userplus",
+		}
+		err := createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = usr.access
+		cfg.awsSecret = usr.secret
+
+		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_default_ACL_admin_successful_access(s *S3Conf) error {
+	testName := "AccessControl_default_ACL_admin_successful_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		admin := user{
+			access: "admin1",
+			secret: "admin1secret",
+			role:   "admin",
+		}
+		err := createUsers(s, []user{admin})
+		if err != nil {
+			return err
+		}
+
+		cfg := *s
+		cfg.awsID = admin.access
+		cfg.awsSecret = admin.secret
+
+		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_bucket_resource_single_action(s *S3Conf) error {
+	testName := "AccessControl_bucket_resource_single_action"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr1 := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		usr2 := user{
+			access: "grt2",
+			secret: "grt2secret",
+			role:   "user",
+		}
+		err := createUsers(s, []user{usr1, usr2})
+		if err != nil {
+			return err
+		}
+
+		doc := genPolicyDoc("Allow", `["grt1"]`, `"s3:PutBucketTagging"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		user1Client := getUserS3Client(usr1, s)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user1Client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		user2Client := getUserS3Client(usr2, s)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user2Client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_bucket_resource_all_action(s *S3Conf) error {
+	testName := "AccessControl_bucket_resource_all_action"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr1 := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		usr2 := user{
+			access: "grt2",
+			secret: "grt2secret",
+			role:   "user",
+		}
+		err := createUsers(s, []user{usr1, usr2})
+		if err != nil {
+			return err
+		}
+
+		bucketResource := fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)
+		objectResource := fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)
+		doc := genPolicyDoc("Allow", `["grt1"]`, `"s3:*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		user1Client := getUserS3Client(usr1, s)
+		err = putObjects(user1Client, []string{"my-obj"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		user2Client := getUserS3Client(usr2, s)
+
+		err = putObjects(user2Client, []string{"my-obj"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_single_object_resource_actions(s *S3Conf) error {
+	testName := "AccessControl_single_object_resource_actions"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj/nested-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		usr1 := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		err = createUsers(s, []user{usr1})
+		if err != nil {
+			return err
+		}
+
+		doc := genPolicyDoc("Allow", `["grt1"]`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%v/%v"`, bucket, obj))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		user1Client := getUserS3Client(usr1, s)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user1Client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = user1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func AccessControl_multi_statement_policy(s *S3Conf) error {
+	testName := "AccessControl_multi_statement_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		policy := fmt.Sprintf(`
+		{
+			"Statement": [
+				{
+					"Effect": "Deny",
+					"Principal": ["grt1"],
+					"Action":  "s3:DeleteBucket",
+					"Resource":  "arn:aws:s3:::%s"
+				},
+				{
+					"Effect": "Allow",
+					"Principal": "grt1",
+					"Action": "s3:*",
+					"Resource": ["arn:aws:s3:::%s", "arn:aws:s3:::%s/*"]
+				}
+			]
+		}	
+		`, bucket, bucket, bucket)
+
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+		err := createUsers(s, []user{usr})
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // IAM related tests
 // multi-user iam tests
 func IAM_user_access_denied(s *S3Conf) error {
@@ -5808,13 +6122,8 @@ func IAM_user_access_denied(s *S3Conf) error {
 		secret: "grt1secret",
 		role:   "user",
 	}
-	err := deleteUser(s, usr.access)
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
 
-	err = createUsers(s, []user{usr})
+	err := createUsers(s, []user{usr})
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -5844,13 +6153,8 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 		secret: "grt1secret",
 		role:   "userplus",
 	}
-	err := deleteUser(s, usr.access)
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
 
-	err = createUsers(s, []user{usr})
+	err := createUsers(s, []user{usr})
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -5879,12 +6183,8 @@ func IAM_userplus_CreateBucket(s *S3Conf) error {
 			secret: "grt1secret",
 			role:   "userplus",
 		}
-		err := deleteUser(s, usr.access)
-		if err != nil {
-			return err
-		}
 
-		err = createUsers(s, []user{usr})
+		err := createUsers(s, []user{usr})
 		if err != nil {
 			return err
 		}
