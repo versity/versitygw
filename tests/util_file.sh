@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+source ./tests/logger.sh
+
 # create a test file and export folder.  do so in temp folder
 # params:  filename
 # export test file folder on success, return 1 for error
@@ -8,7 +10,7 @@ create_test_files() {
     echo "create test files command missing filename"
     return 1
   fi
-  test_file_folder=.
+  test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     create_test_file_folder
   fi
@@ -19,6 +21,23 @@ create_test_files() {
     fi
   done
   export test_file_folder
+}
+
+create_test_folder() {
+  if [ $# -lt 1 ]; then
+    echo "create test folder command missing folder name"
+    return 1
+  fi
+  test_file_folder=$PWD
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    create_test_file_folder
+  fi
+  for name in "$@"; do
+    mkdir -p "$test_file_folder"/"$name" || local mkdir_result=$?
+    if [[ $mkdir_result -ne 0 ]]; then
+      echo "error creating file $name"
+    fi
+  done
 }
 
 # delete a test file
@@ -34,7 +53,7 @@ delete_test_files() {
     return 1
   fi
   for name in "$@"; do
-    rm "$test_file_folder"/"$name" || rm_result=$?
+    rm -rf "${test_file_folder:?}"/"${name:?}" || rm_result=$?
     if [[ $rm_result -ne 0 ]]; then
       echo "error deleting file $name"
     fi
@@ -80,7 +99,11 @@ compare_files() {
 }
 
 create_test_file_folder() {
-  test_file_folder=${TMPDIR}versity-gwtest
+  if [[ -v $TMPDIR ]]; then
+    test_file_folder=${TMPDIR}versity-gwtest
+  else
+    test_file_folder=$PWD/versity-gwtest
+  fi
   mkdir -p "$test_file_folder" || local mkdir_result=$?
   if [[ $mkdir_result -ne 0 ]]; then
     echo "error creating test file folder"
@@ -97,16 +120,40 @@ create_large_file() {
     return 1
   fi
 
-  test_file_folder=.
+  test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     create_test_file_folder
   fi
 
   filesize=$((160*1024*1024))
-  error=$(dd if=/dev/urandom of=$test_file_folder/"$1" bs=1024 count=$((filesize/1024))) || dd_result=$?
+  error=$(dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1024 count=$((filesize/1024))) || dd_result=$?
   if [[ $dd_result -ne 0 ]]; then
     echo "error creating file: $error"
     return 1
+  fi
+  return 0
+}
+
+create_test_file_count() {
+  if [[ $# -ne 1 ]]; then
+    echo "create test file count function missing bucket name, count"
+    return 1
+  fi
+  test_file_folder=$PWD
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    create_test_file_folder
+  fi
+  local touch_result
+  for ((i=1;i<=$1;i++)) {
+    error=$(touch "$test_file_folder/file_$i") || touch_result=$?
+    if [[ $touch_result -ne 0 ]]; then
+      echo "error creating file_$i:  $error"
+      return 1
+    fi
+  }
+  if [[ $LOG_LEVEL -ge 5 ]]; then
+    ls_result=$(ls "$test_file_folder"/file_*)
+    log 5 "$ls_result"
   fi
   return 0
 }

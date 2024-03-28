@@ -10,6 +10,19 @@ source ./tests/test_common.sh
   test_common_create_delete_bucket "aws"
 }
 
+@test "test_create_bucket_invalid_name" {
+  if [[ $RECREATE_BUCKETS != "true" ]]; then
+    return
+  fi
+
+  create_bucket_invalid_name "aws" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Invalid name test failed"
+
+  [[ "$bucket_create_error" == *"Invalid bucket name "* ]] || fail "unexpected error:  $bucket_create_error"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
 # test adding and removing an object on versitygw
 @test "test_put_object-with-data" {
   test_common_put_object_with_data "aws"
@@ -300,8 +313,8 @@ source ./tests/test_common.sh
   bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || local created=$?
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
   [[ $created -eq 0 ]] || fail "Error creating test files"
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
@@ -319,3 +332,48 @@ source ./tests/test_common.sh
 @test "test-presigned-url-utf8-chars" {
   test_common_presigned_url_utf8_chars "aws"
 }
+
+@test "test-list-objects-delimiter" {
+  folder_name="two"
+  object_name="three"
+  create_test_folder "$folder_name" || local created=$?
+  [[ $created -eq 0 ]] || fail "error creating folder"
+  create_test_files "$folder_name"/"$object_name" || created=$?
+  [[ $created -eq 0 ]] || fail "error creating file"
+
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  put_object "aws" "$test_file_folder"/"$folder_name"/"$object_name" "$BUCKET_ONE_NAME"/"$folder_name"/"$object_name" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+
+  list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"
+  prefix=$(echo "${objects[@]}" | jq ".CommonPrefixes[0].Prefix")
+  [[ $prefix == "\""$folder_name/"\"" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
+
+  list_objects_s3api_v1 "$BUCKET_ONE_NAME" "#"
+  key=$(echo "${objects[@]}" | jq ".Contents[0].Key")
+  [[ $key == "\""$folder_name/$object_name"\"" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files $folder_name
+}
+
+# ensure that lists of files greater than a size of 1000 (pagination) are returned properly
+@test "test_list_objects_file_count" {
+  test_common_list_objects_file_count "aws"
+}
+
+#@test "test_filename_length" {
+#  file_name=$(printf "%0.sa" $(seq 1 1025))
+#  echo "$file_name"
+
+#  create_test_files "$file_name" || created=$?
+#  [[ $created -eq 0 ]] || fail "error creating file"
+
+#  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+#  put_object "aws" "$test_file_folder"/"$file_name" "$BUCKET_ONE_NAME"/"$file_name" || local put_object=$?
+#  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+#}
