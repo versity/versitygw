@@ -537,6 +537,10 @@ type user struct {
 
 func createUsers(s *S3Conf, users []user) error {
 	for _, usr := range users {
+		err := deleteUser(s, usr.access)
+		if err != nil {
+			return err
+		}
 		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)
 		if err != nil {
 			return err
@@ -632,4 +636,12 @@ func getMalformedPolicyError(msg string) s3err.APIError {
 		Description:    msg,
 		HTTPStatusCode: http.StatusBadRequest,
 	}
+}
+
+func getUserS3Client(usr user, cfg *S3Conf) *s3.Client {
+	config := *cfg
+	config.awsID = usr.access
+	config.awsSecret = usr.secret
+
+	return s3.NewFromConfig(config.Config())
 }

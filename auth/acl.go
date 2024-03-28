@@ -206,15 +206,6 @@ func splitUnique(s, divider string) []string {
 }
 
 func verifyACL(acl ACL, access string, permission types.Permission) error {
-	// Default disabled ACL case
-	if acl.ACL == "" && len(acl.Grantees) == 0 {
-		if acl.Owner == access {
-			return nil
-		}
-
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
-	}
-
 	if acl.ACL != "" {
 		if (permission == "READ" || permission == "READ_ACP") && (acl.ACL != "public-read" && acl.ACL != "public-read-write") {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
@@ -225,6 +216,9 @@ func verifyACL(acl ACL, access string, permission types.Permission) error {
 
 		return nil
 	} else {
+		if len(acl.Grantees) == 0 {
+			return nil
+		}
 		grantee := Grantee{Access: access, Permission: permission}
 		granteeFullCtrl := Grantee{Access: access, Permission: "FULL_CONTROL"}
 
@@ -298,10 +292,20 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 		return nil
 	}
 
-	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {
+	policy, err := be.GetBucketPolicy(ctx, opts.Bucket)
+	if err != nil {
 		return err
 	}
-	if err := verifyBucketPolicy(ctx, be, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action); err != nil {
+
+	// If bucket policy is not set and the ACL is default, only the owner has access
+	if len(policy) == 0 && opts.Acl.ACL == "" && len(opts.Acl.Grantees) == 0 {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
+	if err := verifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action); err != nil {
+		return err
+	}
+	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {
 		return err
 	}
 
