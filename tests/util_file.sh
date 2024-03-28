@@ -110,3 +110,23 @@ create_large_file() {
   fi
   return 0
 }
+
+create_test_file_count() {
+  if [[ $# -ne 1 ]]; then
+    echo "create test file count function missing bucket name, count"
+    return 1
+  fi
+  test_file_folder=.
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    create_test_file_folder
+  fi
+  local touch_result
+  for ((i=1;i<=$1;i++)) {
+    error=$(touch $test_file_folder/file_"$i") || touch_result=$?
+    if [[ $touch_result -ne 0 ]]; then
+      echo "error creating file_$i:  $error"
+      return 1
+    fi
+  }
+  return 0
+}

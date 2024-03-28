@@ -293,3 +293,20 @@ test_common_presigned_url_utf8_chars() {
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file" "$bucket_file_copy"
 }
+
+test_common_list_objects_file_count() {
+  if [[ $# -ne 1 ]]; then
+    echo "list objects greater than 1000 missing command type"
+    return 1
+  fi
+  create_test_file_count 1001 || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "error creating test files"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  put_object_multiple "$1" "$test_file_folder/file_*" "$BUCKET_ONE_NAME" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "Failed to copy files to bucket"
+  list_objects "$1" "$BUCKET_ONE_NAME"
+  local file_count="${#object_array[@]}"
+  [[ $file_count == 1001 ]] || fail "file count should be 1001, is $file_count"
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+}

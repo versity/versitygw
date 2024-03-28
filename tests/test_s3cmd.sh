@@ -36,3 +36,7 @@ export RUN_S3CMD=true
 #@test "test_presigned_url_utf8_chars_s3cmd" {
 #  test_common_presigned_url_utf8_chars "s3cmd"
 #}
+
+@test "test_list_objects_file_count" {
+  test_common_list_objects_file_count "s3cmd"
+}

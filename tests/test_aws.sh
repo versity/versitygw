@@ -319,3 +319,13 @@ source ./tests/test_common.sh
 @test "test-presigned-url-utf8-chars" {
   test_common_presigned_url_utf8_chars "aws"
 }
+
+#@test "test-list-objects-delimiter" {
+
+#}
+
+# ensure that lists of files greater than a size of 1000 (pagination) are returned properly
+@test "test_list_objects_file_count" {
+  test_common_list_objects_file_count "aws"
+}
+

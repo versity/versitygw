@@ -2,6 +2,8 @@
 
 ## Instructions - Running Locally
 
+### Posix Backend
+
 1. Build the `versitygw` binary.
 2. Install the command-line interface(s) you want to test if unavailable on your machine.  
    * **aws cli**: Instructions are [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
@@ -27,6 +29,10 @@
 ```
 8. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
 9. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests, run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
+
+### S3 Backend
+
+Instructions are mostly the same; however, testing with the S3 backend requires two S3 accounts.  Ideally, these are two real accounts, but one can also be a dummy account that versity uses internally.
 
 ## Instructions - Running With Docker
 

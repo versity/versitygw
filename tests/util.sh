@@ -281,6 +281,32 @@ put_object() {
   return 0
 }
 
+put_object_multiple() {
+  if [ $# -ne 3 ]; then
+    echo "put object command requires command type, source, destination"
+    return 1
+  fi
+  local exit_code=0
+  local error
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude=* --include="$2" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    # shellcheck disable=SC2086
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put $2 "s3://$3/" 2>&1) || exit_code=$?
+  elif [[ $1 == 'mc' ]]; then
+    # shellcheck disable=SC2086
+    error=$(mc --insecure cp $2 "$MC_ALIAS"/"$3" 2>&1) || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -ne 0 ]; then
+    echo "error copying object to bucket: $error"
+    return 1
+  fi
+  return 0
+}
+
 # add object to versitygw if it doesn't exist
 # params:  source file, destination copy location
 # return 0 for success or already exists, 1 for failure
@@ -394,8 +420,10 @@ list_objects() {
 
   object_array=()
   while IFS= read -r line; do
-    object_name=$(echo "$line" | awk '{print $NF}')
-    object_array+=("$object_name")
+    if [[ $line != *InsecureRequestWarning* ]]; then
+      object_name=$(echo "$line" | awk '{print $NF}')
+      object_array+=("$object_name")
+    fi
   done <<< "$output"
 
   export object_array
