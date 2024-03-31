@@ -376,7 +376,7 @@ func (p *Posix) CompleteMultipartUpload(_ context.Context, input *s3.CompleteMul
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
 	if dir != "" {
-		err = mkdirAll(dir, os.FileMode(0755), bucket, object)
+		err = backend.MkdirAll(dir, os.FileMode(0755))
 		if err != nil {
 			return nil, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
@@ -495,51 +495,6 @@ func isValidMeta(val string) bool {
 		return true
 	}
 	return false
-}
-
-// mkdirAll is similar to os.MkdirAll but it will return ErrObjectParentIsFile
-// when appropriate
-func mkdirAll(path string, perm os.FileMode, bucket, object string) error {
-	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
-	dir, err := os.Stat(path)
-	if err == nil {
-		if dir.IsDir() {
-			return nil
-		}
-		return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-	}
-
-	// Slow path: make sure parent exists and then call Mkdir for path.
-	i := len(path)
-	for i > 0 && os.IsPathSeparator(path[i-1]) { // Skip trailing path separator.
-		i--
-	}
-
-	j := i
-	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
-		j--
-	}
-
-	if j > 1 {
-		// Create parent.
-		err = mkdirAll(path[:j-1], perm, bucket, object)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Parent now exists; invoke Mkdir and use its result.
-	err = os.Mkdir(path, perm)
-	if err != nil {
-		// Handle arguments like "foo/." by
-		// double-checking that directory doesn't exist.
-		dir, err1 := os.Lstat(path)
-		if err1 == nil && dir.IsDir() {
-			return nil
-		}
-		return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-	}
-	return nil
 }
 
 func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUploadInput) error {
@@ -1066,7 +1021,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 			return "", s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 
-		err = mkdirAll(name, os.FileMode(0755), *po.Bucket, *po.Key)
+		err = backend.MkdirAll(name, os.FileMode(0755))
 		if err != nil {
 			return "", err
 		}
@@ -1102,7 +1057,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 	dir := filepath.Dir(name)
 	if dir != "" {
-		err = mkdirAll(dir, os.FileMode(0755), *po.Bucket, *po.Key)
+		err = backend.MkdirAll(dir, os.FileMode(0755))
 		if err != nil {
 			return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}
