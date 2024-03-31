@@ -52,6 +52,9 @@ type Posix struct {
 	chownuid bool
 	chowngid bool
 
+	// read only mode prevents any backend modifications
+	readonly bool
+
 	// euid/egid are the effective uid/gid of the running versitygw process
 	// used to determine if chowning is needed
 	euid int
@@ -77,6 +80,7 @@ const (
 type PosixOpts struct {
 	ChownUID bool
 	ChownGID bool
+	ReadOnly bool
 }
 
 func New(rootdir string, opts PosixOpts) (*Posix, error) {
@@ -103,6 +107,7 @@ func New(rootdir string, opts PosixOpts) (*Posix, error) {
 		egid:     os.Getegid(),
 		chownuid: opts.ChownUID,
 		chowngid: opts.ChownGID,
+		readonly: opts.ReadOnly,
 	}, nil
 }
 
@@ -196,6 +201,10 @@ var (
 )
 
 func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -232,6 +241,10 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 }
 
 func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -265,6 +278,10 @@ func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) err
 }
 
 func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+	if p.readonly {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if mpu.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -348,6 +365,10 @@ func (p *Posix) getChownIDs(acct auth.Account) (int, int, bool) {
 }
 
 func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	if p.readonly {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -571,6 +592,10 @@ func isValidMeta(val string) bool {
 }
 
 func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUploadInput) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if mpu.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -870,6 +895,10 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 }
 
 func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (string, error) {
+	if p.readonly {
+		return "", s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -947,6 +976,10 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 }
 
 func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+	if p.readonly {
+		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -1070,6 +1103,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 }
 
 func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
+	if p.readonly {
+		return "", s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -1198,6 +1235,10 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 }
 
 func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1262,6 +1303,10 @@ func (p *Posix) removeParents(bucket, object string) error {
 }
 
 func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+	if p.readonly {
+		return s3response.DeleteResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	// delete object already checks bucket
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
@@ -1477,6 +1522,10 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 }
 
 func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	if p.readonly {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1746,6 +1795,10 @@ func (p *Posix) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input) (
 }
 
 func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1784,6 +1837,10 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 }
 
 func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1869,6 +1926,10 @@ func (p *Posix) getXattrTags(bucket, object string) (map[string]string, error) {
 }
 
 func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1909,6 +1970,10 @@ func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) 
 }
 
 func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	if p.readonly {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)

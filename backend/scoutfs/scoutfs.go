@@ -39,6 +39,7 @@ import (
 type ScoutfsOpts struct {
 	ChownUID    bool
 	ChownGID    bool
+	ReadOnly    bool
 	GlacierMode bool
 }
 
@@ -62,6 +63,9 @@ type ScoutFS struct {
 	// when objects are uploaded
 	chownuid bool
 	chowngid bool
+
+	// read only mode prevents any backend modifications
+	readonly bool
 
 	// euid/egid are the effective uid/gid of the running versitygw process
 	// used to determine if chowning is needed
@@ -143,6 +147,10 @@ func (s *ScoutFS) getChownIDs(acct auth.Account) (int, int, bool) {
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
 func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	if s.readonly {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}

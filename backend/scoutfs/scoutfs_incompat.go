@@ -42,6 +42,7 @@ func (s *ScoutFS) openTmpFile(_, _, _ string, _ int64, _ auth.Account) (*tmpfile
 	_ = s.chowngid
 	_ = s.euid
 	_ = s.egid
+	_ = s.readonly
 	return nil, errNotSupported
 }
 

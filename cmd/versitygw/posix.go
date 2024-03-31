@@ -23,6 +23,7 @@ import (
 
 var (
 	chownuid, chowngid bool
+	readonly           bool
 )
 
 func posixCommand() *cli.Command {
@@ -53,6 +54,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
 			},
+			&cli.BoolFlag{
+				Name:        "readonly",
+				Usage:       "allow only read operations to backend",
+				EnvVars:     []string{"VGW_READ_ONLY"},
+				Destination: &readonly,
+			},
 		},
 	}
 }
@@ -65,6 +72,7 @@ func runPosix(ctx *cli.Context) error {
 	be, err := posix.New(ctx.Args().Get(0), posix.PosixOpts{
 		ChownUID: chownuid,
 		ChownGID: chowngid,
+		ReadOnly: readonly,
 	})
 	if err != nil {
 		return fmt.Errorf("init posix: %v", err)

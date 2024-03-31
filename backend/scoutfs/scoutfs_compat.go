@@ -37,6 +37,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	p, err := posix.New(rootdir, posix.PosixOpts{
 		ChownUID: opts.ChownUID,
 		ChownGID: opts.ChownGID,
+		ReadOnly: opts.ReadOnly,
 	})
 	if err != nil {
 		return nil, err
@@ -53,6 +54,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		rootdir:  rootdir,
 		chownuid: opts.ChownUID,
 		chowngid: opts.ChownGID,
+		readonly: opts.ReadOnly,
 	}, nil
 }
 

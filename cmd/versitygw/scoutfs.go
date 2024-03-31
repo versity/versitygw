@@ -23,6 +23,10 @@ import (
 
 var (
 	glacier bool
+
+	// defined in posix.go:
+	// chownuid, chowngid bool
+	// readonly           bool
 )
 
 func scoutfsCommand() *cli.Command {
@@ -63,6 +67,12 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
 			},
+			&cli.BoolFlag{
+				Name:        "readonly",
+				Usage:       "allow only read operations to backend",
+				EnvVars:     []string{"VGW_READ_ONLY"},
+				Destination: &readonly,
+			},
 		},
 	}
 }
@@ -76,6 +86,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.GlacierMode = glacier
 	opts.ChownUID = chownuid
 	opts.ChownGID = chowngid
+	opts.ReadOnly = readonly
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
