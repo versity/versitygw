@@ -42,6 +42,7 @@ var (
 	certFile, keyFile                      string
 	kafkaURL, kafkaTopic, kafkaKey         string
 	natsURL, natsTopic                     string
+	eventWebhookURL                        string
 	logWebhookURL                          string
 	accessLog                              string
 	healthPath                             string
@@ -249,6 +250,13 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_EVENT_NATS_TOPIC"},
 			Destination: &natsTopic,
 			Aliases:     []string{"ent"},
+		},
+		&cli.StringFlag{
+			Name:        "event-webhook-url",
+			Usage:       "webhook url to send bucket notifications",
+			EnvVars:     []string{"VGW_EVENT_WEBHOOK_URL"},
+			Destination: &eventWebhookURL,
+			Aliases:     []string{"ewu"},
 		},
 		&cli.StringFlag{
 			Name:        "iam-dir",
@@ -487,9 +495,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		KafkaTopicKey: kafkaKey,
 		NatsURL:       natsURL,
 		NatsTopic:     natsTopic,
+		WebhookURL:    eventWebhookURL,
 	})
 	if err != nil {
-		return fmt.Errorf("unable to connect to the message broker: %w", err)
+		return fmt.Errorf("init bucket event notifications: %w", err)
 	}
 
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
@@ -545,6 +554,16 @@ Loop:
 				saveErr = err
 			}
 			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", err)
+		}
+	}
+
+	if evSender != nil {
+		err := evSender.Close()
+		if err != nil {
+			if saveErr == nil {
+				saveErr = err
+			}
+			fmt.Fprintf(os.Stderr, "close event sender: %v\n", err)
 		}
 	}
 

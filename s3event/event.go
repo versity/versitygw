@@ -15,13 +15,18 @@
 package s3event
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 )
 
 type S3EventSender interface {
 	SendEvent(ctx *fiber.Ctx, meta EventMeta)
+	Close() error
 }
 
 type EventMeta struct {
@@ -78,9 +83,18 @@ type EventResponseElements struct {
 	HostId    string `json:"x-amz-id-2"`
 }
 
+type ConfigurationId string
+
+// This field will be changed after implementing per bucket notifications
+const (
+	ConfigurationIdKafka   ConfigurationId = "kafka-global"
+	ConfigurationIdNats    ConfigurationId = "nats-global"
+	ConfigurationIdWebhook ConfigurationId = "webhook-global"
+)
+
 type EventS3Data struct {
 	S3SchemaVersion string            `json:"s3SchemaVersion"`
-	ConfigurationId string            `json:"configurationId"`
+	ConfigurationId ConfigurationId   `json:"configurationId"`
 	Bucket          EventS3BucketData `json:"bucket"`
 	Object          EventObjectData   `json:"object"`
 }
@@ -114,17 +128,86 @@ type EventConfig struct {
 	KafkaTopicKey string
 	NatsURL       string
 	NatsTopic     string
+	WebhookURL    string
 }
 
 func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
-	if cfg.KafkaURL != "" && cfg.NatsURL != "" {
-		return nil, fmt.Errorf("there should be specified one of the following: kafka, nats")
+	var evSender S3EventSender
+	var err error
+	switch {
+	case cfg.WebhookURL != "":
+		evSender, err = InitWebhookEventSender(cfg.WebhookURL)
+		fmt.Printf("initializing S3 Event Notifications with webhook URL %v\n", cfg.WebhookURL)
+	case cfg.KafkaURL != "":
+		evSender, err = InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
+		fmt.Printf("initializing S3 Event Notifications with kafka. URL: %v, topic: %v\n", cfg.WebhookURL, cfg.KafkaTopic)
+	case cfg.NatsURL != "":
+		evSender, err = InitNatsEventService(cfg.NatsURL, cfg.NatsTopic)
+		fmt.Printf("initializing S3 Event Notifications with Nats. URL: %v, topic: %v\n", cfg.NatsURL, cfg.NatsTopic)
+	default:
+		return nil, nil
 	}
-	if cfg.NatsURL != "" {
-		return InitNatsEventService(cfg.NatsURL, cfg.NatsTopic)
+
+	return evSender, err
+}
+
+func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId) ([]byte, error) {
+	path := strings.Split(ctx.Path(), "/")
+	bucket, object := path[1], strings.Join(path[2:], "/")
+	acc := ctx.Locals("account").(auth.Account)
+
+	event := []EventSchema{
+		{
+			EventVersion: "2.2",
+			EventSource:  "aws:s3",
+			AwsRegion:    ctx.Locals("region").(string),
+			EventTime:    time.Now().Format(time.RFC3339),
+			EventName:    meta.EventName,
+			UserIdentity: EventUserIdentity{
+				PrincipalId: acc.Access,
+			},
+			RequestParameters: EventRequestParams{
+				SourceIPAddress: ctx.IP(),
+			},
+			ResponseElements: EventResponseElements{
+				RequestId: ctx.Get("X-Amz-Request-Id"),
+				HostId:    ctx.Get("X-Amz-Id-2"),
+			},
+			S3: EventS3Data{
+				S3SchemaVersion: "1.0",
+				ConfigurationId: configId,
+				Bucket: EventS3BucketData{
+					Name: bucket,
+					OwnerIdentity: EventUserIdentity{
+						PrincipalId: meta.BucketOwner,
+					},
+					Arn: fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/")),
+				},
+				Object: EventObjectData{
+					Key:       object,
+					Size:      meta.ObjectSize,
+					ETag:      meta.ObjectETag,
+					VersionId: meta.VersionId,
+					Sequencer: genSequencer(),
+				},
+			},
+			GlacierEventData: EventGlacierData{
+				// Not supported
+				RestoreEventData: EventRestoreData{},
+			},
+		},
 	}
-	if cfg.KafkaURL != "" {
-		return InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
+
+	return json.Marshal(event)
+}
+
+func generateTestEvent() ([]byte, error) {
+	msg := map[string]string{
+		"Service": "S3",
+		"Event":   "s3:TestEvent",
+		"Time":    time.Now().Format(time.RFC3339),
+		"Bucket":  "Test-Bucket",
 	}
-	return nil, nil
+
+	return json.Marshal(msg)
 }

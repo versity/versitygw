@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -88,9 +89,9 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 		}
 	}
 
-	switch ctx.Locals("access").(type) {
-	case string:
-		access = ctx.Locals("access").(string)
+	switch ctx.Locals("account").(type) {
+	case auth.Account:
+		access = ctx.Locals("account").(auth.Account).Access
 	}
 
 	lf.BucketOwner = meta.BucketOwner
