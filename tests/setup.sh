@@ -54,6 +54,11 @@ check_params() {
     echo "RECREATE_BUCKETS must be 'true' or 'false'"
     return 1
   fi
+  if [[ -z "$LOG_LEVEL" ]]; then
+    export LOG_LEVEL=2
+  else
+    export LOG_LEVEL
+  fi
   return 0
 }
 

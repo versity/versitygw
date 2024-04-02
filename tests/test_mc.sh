@@ -41,3 +41,7 @@ export RUN_MC=true
 @test "test_presigned_url_utf8_chars_mc" {
   test_common_presigned_url_utf8_chars "mc"
 }
+
+@test "test_list_objects_file_count" {
+  test_common_list_objects_file_count "mc"
+}
