@@ -56,7 +56,7 @@ func initPosix(ctx context.Context) {
 		log.Fatalf("make temp directory: %v", err)
 	}
 
-	be, err := posix.New(tempdir)
+	be, err := posix.New(tempdir, posix.PosixOpts{})
 	if err != nil {
 		log.Fatalf("init posix: %v", err)
 	}

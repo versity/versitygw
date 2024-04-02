@@ -17,7 +17,6 @@
 package scoutfs
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -29,11 +28,16 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/versity/scoutfs-go"
+	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/posix"
 )
 
-func New(rootdir string, opts ...Option) (*ScoutFS, error) {
-	p, err := posix.New(rootdir)
+func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
+	p, err := posix.New(rootdir, posix.PosixOpts{
+		ChownUID: opts.ChownUID,
+		ChownGID: opts.ChownGID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -43,60 +47,70 @@ func New(rootdir string, opts ...Option) (*ScoutFS, error) {
 		return nil, fmt.Errorf("open %v: %w", rootdir, err)
 	}
 
-	s := &ScoutFS{Posix: p, rootfd: f, rootdir: rootdir}
-	for _, opt := range opts {
-		opt(s)
-	}
-
-	return s, nil
+	return &ScoutFS{
+		Posix:    p,
+		rootfd:   f,
+		rootdir:  rootdir,
+		chownuid: opts.ChownUID,
+		chowngid: opts.ChownGID,
+	}, nil
 }
 
 const procfddir = "/proc/self/fd"
 
 type tmpfile struct {
-	f       *os.File
-	bucket  string
-	objname string
-	isOTmp  bool
-	size    int64
+	f          *os.File
+	bucket     string
+	objname    string
+	size       int64
+	needsChown bool
+	uid        int
+	gid        int
 }
 
-func openTmpFile(dir, bucket, obj string, size int64) (*tmpfile, error) {
+var (
+	// TODO: make this configurable
+	defaultFilePerm uint32 = 0644
+)
+
+func (s *ScoutFS) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account) (*tmpfile, error) {
+	uid, gid, doChown := s.getChownIDs(acct)
+
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
 	// etc. And will auto cleanup the inode on close if we never link this
 	// file descriptor into the namespace.
-	// Not all filesystems support this, so fallback to CreateTemp for when
-	// this is not supported.
-	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, 0666)
+	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
 	if err != nil {
-		// O_TMPFILE not supported, try fallback
-		err := os.MkdirAll(dir, 0700)
-		if err != nil {
-			return nil, fmt.Errorf("make temp dir: %w", err)
-		}
-		f, err := os.CreateTemp(dir,
-			fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
-		if err != nil {
-			return nil, err
-		}
-		tmp := &tmpfile{f: f, bucket: bucket, objname: obj, size: size}
-		// falloc is best effort, its fine if this fails
-		if size > 0 {
-			tmp.falloc()
-		}
-		return tmp, nil
+		return nil, err
 	}
 
 	// for O_TMPFILE, filename is /proc/self/fd/<fd> to be used
 	// later to link file into namespace
 	f := os.NewFile(uintptr(fd), filepath.Join(procfddir, strconv.Itoa(fd)))
 
-	tmp := &tmpfile{f: f, bucket: bucket, objname: obj, isOTmp: true, size: size}
+	tmp := &tmpfile{
+		f:          f,
+		bucket:     bucket,
+		objname:    obj,
+		size:       size,
+		needsChown: doChown,
+		uid:        uid,
+		gid:        gid,
+	}
+
 	// falloc is best effort, its fine if this fails
 	if size > 0 {
 		tmp.falloc()
 	}
+
+	if doChown {
+		err := f.Chown(uid, gid)
+		if err != nil {
+			return nil, fmt.Errorf("set temp file ownership: %w", err)
+		}
+	}
+
 	return tmp, nil
 }
 
@@ -121,9 +135,11 @@ func (tmp *tmpfile) link() error {
 		return fmt.Errorf("remove stale path: %w", err)
 	}
 
-	if !tmp.isOTmp {
-		// O_TMPFILE not suported, use fallback
-		return tmp.fallbackLink()
+	dir := filepath.Dir(objPath)
+
+	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown)
+	if err != nil {
+		return fmt.Errorf("make parent dir: %w", err)
 	}
 
 	procdir, err := os.Open(procfddir)
@@ -132,14 +148,14 @@ func (tmp *tmpfile) link() error {
 	}
 	defer procdir.Close()
 
-	dir, err := os.Open(filepath.Dir(objPath))
+	dirf, err := os.Open(dir)
 	if err != nil {
 		return fmt.Errorf("open parent dir: %w", err)
 	}
-	defer dir.Close()
+	defer dirf.Close()
 
 	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dir.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
+		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
 	if err != nil {
 		return fmt.Errorf("link tmpfile: %w", err)
 	}
@@ -147,26 +163,6 @@ func (tmp *tmpfile) link() error {
 	err = tmp.f.Close()
 	if err != nil {
 		return fmt.Errorf("close tmpfile: %w", err)
-	}
-
-	return nil
-}
-
-func (tmp *tmpfile) fallbackLink() error {
-	tempname := tmp.f.Name()
-	// cleanup in case anything goes wrong, if rename succeeds then
-	// this will no longer exist
-	defer os.Remove(tempname)
-
-	err := tmp.f.Close()
-	if err != nil {
-		return fmt.Errorf("close tmpfile: %w", err)
-	}
-
-	objPath := filepath.Join(tmp.bucket, tmp.objname)
-	err = os.Rename(tempname, objPath)
-	if err != nil {
-		return fmt.Errorf("rename tmpfile: %w", err)
 	}
 
 	return nil

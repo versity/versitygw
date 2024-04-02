@@ -20,9 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/versity/versitygw/auth"
 )
 
-func New(rootdir string, opts ...Option) (*ScoutFS, error) {
+func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	return nil, fmt.Errorf("scoutfs only available on linux")
 }
 
@@ -34,7 +36,12 @@ var (
 	errNotSupported = errors.New("not supported")
 )
 
-func openTmpFile(_, _, _ string, _ int64) (*tmpfile, error) {
+func (s *ScoutFS) openTmpFile(_, _, _ string, _ int64, _ auth.Account) (*tmpfile, error) {
+	// make these look used for static check
+	_ = s.chownuid
+	_ = s.chowngid
+	_ = s.euid
+	_ = s.egid
 	return nil, errNotSupported
 }
 

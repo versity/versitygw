@@ -21,6 +21,10 @@ import (
 	"github.com/versity/versitygw/backend/posix"
 )
 
+var (
+	chownuid, chowngid bool
+)
+
 func posixCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "posix",
@@ -36,6 +40,20 @@ bucket: mybucket
 object: a/b/c/myobject
 will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 		Action: runPosix,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:        "chuid",
+				Usage:       "chown newly created files and directories to client account UID",
+				EnvVars:     []string{"VGW_CHOWN_UID"},
+				Destination: &chownuid,
+			},
+			&cli.BoolFlag{
+				Name:        "chgid",
+				Usage:       "chown newly created files and directories to client account GID",
+				EnvVars:     []string{"VGW_CHOWN_GID"},
+				Destination: &chowngid,
+			},
+		},
 	}
 }
 
@@ -44,7 +62,10 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("no directory provided for operation")
 	}
 
-	be, err := posix.New(ctx.Args().Get(0))
+	be, err := posix.New(ctx.Args().Get(0), posix.PosixOpts{
+		ChownUID: chownuid,
+		ChownGID: chowngid,
+	})
 	if err != nil {
 		return fmt.Errorf("init posix: %v", err)
 	}
