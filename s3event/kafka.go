@@ -16,10 +16,8 @@ package s3event
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -47,26 +45,19 @@ func InitKafkaEventService(url, topic, key string) (S3EventSender, error) {
 		BatchTimeout: 5 * time.Millisecond,
 	})
 
-	msg := map[string]string{
-		"Service": "S3",
-		"Event":   "s3:TestEvent",
-		"Time":    time.Now().Format(time.RFC3339),
-		"Bucket":  "Test-Bucket",
-	}
-
-	msgJSON, err := json.Marshal(msg)
+	msg, err := generateTestEvent()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kafka generate test event: %w", err)
 	}
 
 	message := kafka.Message{
 		Key:   []byte(key),
-		Value: msgJSON,
+		Value: msg,
 	}
 
-	ctx := context.Background()
-
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	err = w.WriteMessages(ctx, message)
+	cancel()
 	if err != nil {
 		return nil, err
 	}
@@ -81,67 +72,27 @@ func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 
-	path := strings.Split(ctx.Path(), "/")
-	bucket, object := path[1], strings.Join(path[2:], "/")
-
-	schema := EventSchema{
-		EventVersion: "2.2",
-		EventSource:  "aws:s3",
-		AwsRegion:    ctx.Locals("region").(string),
-		EventTime:    time.Now().Format(time.RFC3339),
-		EventName:    meta.EventName,
-		UserIdentity: EventUserIdentity{
-			PrincipalId: ctx.Locals("access").(string),
-		},
-		RequestParameters: EventRequestParams{
-			SourceIPAddress: ctx.IP(),
-		},
-		ResponseElements: EventResponseElements{
-			RequestId: ctx.Get("X-Amz-Request-Id"),
-			HostId:    ctx.Get("X-Amx-Id-2"),
-		},
-		S3: EventS3Data{
-			S3SchemaVersion: "1.0",
-			// This field will come up after implementing per bucket notifications
-			ConfigurationId: "kafka-global",
-			Bucket: EventS3BucketData{
-				Name: bucket,
-				OwnerIdentity: EventUserIdentity{
-					PrincipalId: ctx.Locals("access").(string),
-				},
-				Arn: fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/")),
-			},
-			Object: EventObjectData{
-				Key:       object,
-				Size:      meta.ObjectSize,
-				ETag:      meta.ObjectETag,
-				VersionId: meta.VersionId,
-				Sequencer: genSequencer(),
-			},
-		},
-		GlacierEventData: EventGlacierData{
-			// Not supported
-			RestoreEventData: EventRestoreData{},
-		},
-	}
-
-	ks.send([]EventSchema{schema})
-}
-
-func (ks *Kafka) send(evnt []EventSchema) {
-	msg, err := json.Marshal(evnt)
+	schema, err := createEventSchema(ctx, meta, ConfigurationIdKafka)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse the event data: %v\n", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to create kafka event: %v\n", err.Error())
 		return
 	}
 
+	go ks.send(schema)
+}
+
+func (ks *Kafka) Close() error {
+	return ks.writer.Close()
+}
+
+func (ks *Kafka) send(event []byte) {
 	message := kafka.Message{
 		Key:   []byte(ks.key),
-		Value: msg,
+		Value: event,
 	}
 
 	ctx := context.Background()
-	err = ks.writer.WriteMessages(ctx, message)
+	err := ks.writer.WriteMessages(ctx, message)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to send kafka event: %v\n", err.Error())
 	}

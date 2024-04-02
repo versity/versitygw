@@ -15,12 +15,9 @@
 package s3event
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/nats-io/nats.go"
@@ -42,6 +39,16 @@ func InitNatsEventService(url, topic string) (S3EventSender, error) {
 		return nil, err
 	}
 
+	msg, err := generateTestEvent()
+	if err != nil {
+		return nil, fmt.Errorf("nats generate test event: %w", err)
+	}
+
+	err = client.Publish(topic, msg)
+	if err != nil {
+		return nil, fmt.Errorf("nats publish test event: %v", err)
+	}
+
 	return &NatsEventSender{
 		topic:  topic,
 		client: client,
@@ -52,60 +59,22 @@ func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
-	path := strings.Split(ctx.Path(), "/")
-	bucket, object := path[1], strings.Join(path[2:], "/")
-
-	schema := EventSchema{
-		EventVersion: "2.2",
-		EventSource:  "aws:s3",
-		AwsRegion:    ctx.Locals("region").(string),
-		EventTime:    time.Now().Format(time.RFC3339),
-		EventName:    meta.EventName,
-		UserIdentity: EventUserIdentity{
-			PrincipalId: ctx.Locals("access").(string),
-		},
-		RequestParameters: EventRequestParams{
-			SourceIPAddress: ctx.IP(),
-		},
-		ResponseElements: EventResponseElements{
-			RequestId: ctx.Get("X-Amz-Request-Id"),
-			HostId:    ctx.Get("X-Amx-Id-2"),
-		},
-		S3: EventS3Data{
-			S3SchemaVersion: "1.0",
-			// This field will come up after implementing per bucket notifications
-			ConfigurationId: "nats-global",
-			Bucket: EventS3BucketData{
-				Name: bucket,
-				OwnerIdentity: EventUserIdentity{
-					PrincipalId: ctx.Locals("access").(string),
-				},
-				Arn: fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/")),
-			},
-			Object: EventObjectData{
-				Key:       object,
-				Size:      meta.ObjectSize,
-				ETag:      meta.ObjectETag,
-				VersionId: meta.VersionId,
-				Sequencer: genSequencer(),
-			},
-		},
-		GlacierEventData: EventGlacierData{
-			// Not supported
-			RestoreEventData: EventRestoreData{},
-		},
+	schema, err := createEventSchema(ctx, meta, ConfigurationIdNats)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create nats event: %v\n", err.Error())
+		return
 	}
 
-	ns.send([]EventSchema{schema})
+	go ns.send(schema)
 }
 
-func (ns *NatsEventSender) send(evnt []EventSchema) {
-	msg, err := json.Marshal(evnt)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse the event data: %v\n", err.Error())
-	}
+func (ns *NatsEventSender) Close() error {
+	ns.client.Close()
+	return nil
+}
 
-	err = ns.client.Publish(ns.topic, msg)
+func (ns *NatsEventSender) send(event []byte) {
+	err := ns.client.Publish(ns.topic, event)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to send nats event: %v\n", err.Error())
 	}
