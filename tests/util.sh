@@ -37,11 +37,14 @@ create_bucket_invalid_name() {
     return 1
   fi
   local exit_code=0
-  local error
   if [[ $1 == "aws" ]]; then
     bucket_create_error=$(aws --no-verify-ssl s3 mb "s3://" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    bucket_create_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb "s3://" 2>&1) || exit_code=$?
+  elif [[ $1 == 'mc' ]]; then
+    bucket_create_error=$(mc --insecure mb "$MC_ALIAS" 2>&1) || exit_code=$?
   else
-    echo "invalid command type $i"
+    echo "invalid command type $1"
     return 1
   fi
   if [ $exit_code -eq 0 ]; then
@@ -311,7 +314,7 @@ put_object_multiple() {
   local error
   if [[ $1 == 'aws' ]]; then
     # shellcheck disable=SC2086
-    error=$(aws --debug --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
+    error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     # shellcheck disable=SC2086
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put $2 "s3://$3/" 2>&1) || exit_code=$?
@@ -981,4 +984,28 @@ create_presigned_url() {
     return 1
   fi
   export presigned_url
+}
+
+head_bucket() {
+  if [ $# -ne 2 ]; then
+    echo "head bucket command missing command type, bucket name"
+    return 1
+  fi
+  local exit_code=0
+  local error
+  if [[ $1 == "aws" ]]; then
+    bucket_info=$(aws --no-verify-ssl s3api head-bucket --bucket "$2" 2>&1) || exit_code=$?
+  elif [[ $1 == "s3cmd" ]]; then
+    bucket_info=$(s3cmd --no-check-certificate info "s3://$2" 2>&1) || exit_code=$?
+  elif [[ $1 == 'mc' ]]; then
+    bucket_info=$(mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -ne 0 ]; then
+    echo "error getting bucket info: $bucket_info"
+    return 1
+  fi
+  export bucket_info
 }
