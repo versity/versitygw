@@ -29,10 +29,11 @@ import (
 type Webhook struct {
 	url    string
 	client *http.Client
+	filter EventFilter
 	mu     sync.Mutex
 }
 
-func InitWebhookEventSender(url string) (S3EventSender, error) {
+func InitWebhookEventSender(url string, filter EventFilter) (S3EventSender, error) {
 	if url == "" {
 		return nil, fmt.Errorf("webhook url should be specified")
 	}
@@ -63,13 +64,18 @@ func InitWebhookEventSender(url string) (S3EventSender, error) {
 		client: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		url: url,
+		url:    url,
+		filter: filter,
 	}, nil
 }
 
 func (w *Webhook) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if w.filter != nil && !w.filter.Filter(meta.EventName) {
+		return
+	}
 
 	schema, err := createEventSchema(ctx, meta, ConfigurationIdWebhook)
 	if err != nil {

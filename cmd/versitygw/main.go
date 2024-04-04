@@ -43,6 +43,7 @@ var (
 	kafkaURL, kafkaTopic, kafkaKey         string
 	natsURL, natsTopic                     string
 	eventWebhookURL                        string
+	eventConfigFilePath                    string
 	logWebhookURL                          string
 	accessLog                              string
 	healthPath                             string
@@ -83,6 +84,7 @@ func main() {
 		azureCommand(),
 		adminCommand(),
 		testCommand(),
+		utilsCommand(),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -257,6 +259,13 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_EVENT_WEBHOOK_URL"},
 			Destination: &eventWebhookURL,
 			Aliases:     []string{"ewu"},
+		},
+		&cli.StringFlag{
+			Name:        "event-filter",
+			Usage:       "bucket event notifications filters configuration file path",
+			EnvVars:     []string{"VGW_EVENT_FILTER"},
+			Destination: &eventConfigFilePath,
+			Aliases:     []string{"ef"},
 		},
 		&cli.StringFlag{
 			Name:        "iam-dir",
@@ -490,12 +499,13 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	evSender, err := s3event.InitEventSender(&s3event.EventConfig{
-		KafkaURL:      kafkaURL,
-		KafkaTopic:    kafkaTopic,
-		KafkaTopicKey: kafkaKey,
-		NatsURL:       natsURL,
-		NatsTopic:     natsTopic,
-		WebhookURL:    eventWebhookURL,
+		KafkaURL:             kafkaURL,
+		KafkaTopic:           kafkaTopic,
+		KafkaTopicKey:        kafkaKey,
+		NatsURL:              natsURL,
+		NatsTopic:            natsTopic,
+		WebhookURL:           eventWebhookURL,
+		FilterConfigFilePath: eventConfigFilePath,
 	})
 	if err != nil {
 		return fmt.Errorf("init bucket event notifications: %w", err)
