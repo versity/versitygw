@@ -3,7 +3,7 @@ module github.com/versity/versitygw
 go 1.21
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.0
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.5.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.1
 	github.com/aws/aws-sdk-go-v2 v1.26.1
@@ -13,7 +13,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.4
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
-	github.com/nats-io/nats.go v1.34.0
+	github.com/nats-io/nats.go v1.34.1
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/urfave/cli/v2 v2.27.1
