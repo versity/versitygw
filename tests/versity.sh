@@ -45,6 +45,9 @@ check_exe_params() {
     echo "RUN_VERSITYGW must be 'true' or 'false'"
     return 1
   fi
+  if [[ -r $GOCOVERDIR ]]; then
+    export GOCOVERDIR=$GOCOVERDIR
+  fi
   if [[ $RUN_VERSITYGW == "true" ]]; then
     local check_result
     check_exe_params_versity || check_result=$?

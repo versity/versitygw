@@ -99,7 +99,7 @@ compare_files() {
 }
 
 create_test_file_folder() {
-  if [[ -v $TMPDIR ]]; then
+  if [[ -n $TMPDIR ]]; then
     test_file_folder=${TMPDIR}versity-gwtest
   else
     test_file_folder=$PWD/versity-gwtest

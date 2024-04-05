@@ -377,3 +377,43 @@ source ./tests/test_common.sh
 #  put_object "aws" "$test_file_folder"/"$file_name" "$BUCKET_ONE_NAME"/"$file_name" || local put_object=$?
 #  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
 #}
+
+@test "test_head_bucket" {
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  head_bucket "aws" "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_head_bucket_doesnt_exist" {
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
+  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
+  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_copy_object_aws" {
+
+  bucket_file="bucket_file"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "aws" "$BUCKET_TWO_NAME" || local setup_result_two=$?
+  [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
+  put_object "aws" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+  error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME"/"$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Error copying file: $error"
+  copy_file "s3://$BUCKET_TWO_NAME"/"$bucket_file" "$test_file_folder/${bucket_file}_copy" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+  compare_files "$test_file_folder/$bucket_file" "$test_file_folder/${bucket_file}_copy" || local compare_result=$?
+  [[ $compare_result -eq 0 ]] || file "files don't match"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "aws" "$BUCKET_TWO_NAME"
+  delete_test_files "$bucket_file"
+}
