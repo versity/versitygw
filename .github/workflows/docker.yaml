@@ -12,7 +12,7 @@ jobs:
       packages: write
       contents: read
     steps:
-      - name: Check out the repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Log in to Docker Hub

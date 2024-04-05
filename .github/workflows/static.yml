@@ -7,16 +7,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: 'stable'
       id: go
  
     - name: "staticcheck"
-      uses: dominikh/staticcheck-action@v1.3.0
-      with: 
-        install-go: false
+      uses: dominikh/staticcheck-action@v1
+      with:
+        version: "latest"
