@@ -419,6 +419,9 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object,
 		totalsize, acct)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -431,6 +434,9 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		_, err = io.Copy(f, pf)
 		pf.Close()
 		if err != nil {
+			if errors.Is(err, syscall.EDQUOT) {
+				return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			}
 			return nil, fmt.Errorf("copy part %v: %v", p.PartNumber, err)
 		}
 	}
@@ -910,6 +916,9 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
 		bucket, partPath, length, acct)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
 
@@ -917,6 +926,9 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 	tr := io.TeeReader(r, hash)
 	_, err = io.Copy(f, tr)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return "", fmt.Errorf("write part data: %w", err)
 	}
 
@@ -1009,6 +1021,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
 		*upi.Bucket, partPath, length, acct)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return s3response.CopyObjectResult{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -1028,6 +1043,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	_, err = io.Copy(f, tr)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return s3response.CopyObjectResult{}, fmt.Errorf("copy part data: %w", err)
 	}
 
@@ -1107,6 +1125,9 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 		err = backend.MkdirAll(name, uid, gid, doChown)
 		if err != nil {
+			if errors.Is(err, syscall.EDQUOT) {
+				return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			}
 			return "", err
 		}
 
@@ -1129,6 +1150,9 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	f, err := p.openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
 		*po.Bucket, *po.Key, contentLength, acct)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
@@ -1137,6 +1161,9 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	rdr := io.TeeReader(po.Body, hash)
 	_, err = io.Copy(f, rdr)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return "", fmt.Errorf("write object data: %w", err)
 	}
 	dir := filepath.Dir(name)

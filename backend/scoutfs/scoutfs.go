@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -222,6 +223,9 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	// extents around.  so we dont want to fallocate this.
 	f, err := s.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0, acct)
 	if err != nil {
+		if errors.Is(err, syscall.EDQUOT) {
+			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
 		return nil, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
