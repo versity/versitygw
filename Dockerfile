@@ -1,5 +1,15 @@
 FROM golang:latest
 
+# Set build arguments with default values
+ARG VERSION="none"
+ARG BUILD="none"
+ARG TIME="none"
+
+# Set environment variables
+ENV VERSION=${VERSION}
+ENV BUILD=${BUILD}
+ENV TIME=${TIME}
+
 WORKDIR /app
 
 COPY go.mod ./
@@ -9,7 +19,7 @@ COPY ./ ./
 
 WORKDIR /app/cmd/versitygw
 ENV CGO_ENABLED=0
-RUN go build -o versitygw
+RUN go build -ldflags "-X=main.Build=${BUILD} -X=main.BuildTime=${TIME} -X=main.Version=${VERSION}" -o versitygw
 
 FROM alpine:latest
 

@@ -43,3 +43,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.event.release.tag_name }}
+            TIME=${{ github.event.release.published_at }}
+            BUILD=${{ github.sha }}
