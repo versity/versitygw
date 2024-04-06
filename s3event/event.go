@@ -41,22 +41,6 @@ type EventFields struct {
 	Records []EventSchema
 }
 
-type EventType string
-
-const (
-	EventObjectPut               EventType = "s3:ObjectCreated:Put"
-	EventObjectCopy              EventType = "s3:ObjectCreated:Copy"
-	EventCompleteMultipartUpload EventType = "s3:ObjectCreated:CompleteMultipartUpload"
-	EventObjectDelete            EventType = "s3:ObjectRemoved:Delete"
-	EventObjectRestoreCompleted  EventType = "s3:ObjectRestore:Completed"
-	EventObjectTaggingPut        EventType = "s3:ObjectTagging:Put"
-	EventObjectTaggingDelete     EventType = "s3:ObjectTagging:Delete"
-	EventObjectAclPut            EventType = "s3:ObjectAcl:Put"
-	// Not supported
-	// EventObjectRestorePost       EventType = "s3:ObjectRestore:Post"
-	// EventObjectRestoreDelete     EventType = "s3:ObjectRestore:Delete"
-)
-
 type EventSchema struct {
 	EventVersion      string                `json:"eventVersion"`
 	EventSource       string                `json:"eventSource"`
@@ -123,26 +107,30 @@ type EventObjectData struct {
 }
 
 type EventConfig struct {
-	KafkaURL      string
-	KafkaTopic    string
-	KafkaTopicKey string
-	NatsURL       string
-	NatsTopic     string
-	WebhookURL    string
+	KafkaURL             string
+	KafkaTopic           string
+	KafkaTopicKey        string
+	NatsURL              string
+	NatsTopic            string
+	WebhookURL           string
+	FilterConfigFilePath string
 }
 
 func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
+	filter, err := parseEventFilters(cfg.FilterConfigFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("parse event filter config file %w", err)
+	}
 	var evSender S3EventSender
-	var err error
 	switch {
 	case cfg.WebhookURL != "":
-		evSender, err = InitWebhookEventSender(cfg.WebhookURL)
+		evSender, err = InitWebhookEventSender(cfg.WebhookURL, filter)
 		fmt.Printf("initializing S3 Event Notifications with webhook URL %v\n", cfg.WebhookURL)
 	case cfg.KafkaURL != "":
-		evSender, err = InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey)
+		evSender, err = InitKafkaEventService(cfg.KafkaURL, cfg.KafkaTopic, cfg.KafkaTopicKey, filter)
 		fmt.Printf("initializing S3 Event Notifications with kafka. URL: %v, topic: %v\n", cfg.WebhookURL, cfg.KafkaTopic)
 	case cfg.NatsURL != "":
-		evSender, err = InitNatsEventService(cfg.NatsURL, cfg.NatsTopic)
+		evSender, err = InitNatsEventService(cfg.NatsURL, cfg.NatsTopic, filter)
 		fmt.Printf("initializing S3 Event Notifications with Nats. URL: %v, topic: %v\n", cfg.NatsURL, cfg.NatsTopic)
 	default:
 		return nil, nil

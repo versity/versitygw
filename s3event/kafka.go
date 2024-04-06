@@ -30,10 +30,11 @@ var sequencer = 0
 type Kafka struct {
 	key    string
 	writer *kafka.Writer
+	filter EventFilter
 	mu     sync.Mutex
 }
 
-func InitKafkaEventService(url, topic, key string) (S3EventSender, error) {
+func InitKafkaEventService(url, topic, key string, filter EventFilter) (S3EventSender, error) {
 	if topic == "" {
 		return nil, fmt.Errorf("kafka message topic should be specified")
 	}
@@ -65,12 +66,17 @@ func InitKafkaEventService(url, topic, key string) (S3EventSender, error) {
 	return &Kafka{
 		key:    key,
 		writer: w,
+		filter: filter,
 	}, nil
 }
 
 func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
+
+	if ks.filter != nil && !ks.filter.Filter(meta.EventName) {
+		return
+	}
 
 	schema, err := createEventSchema(ctx, meta, ConfigurationIdKafka)
 	if err != nil {

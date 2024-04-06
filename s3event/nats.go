@@ -27,9 +27,10 @@ type NatsEventSender struct {
 	topic  string
 	client *nats.Conn
 	mu     sync.Mutex
+	filter EventFilter
 }
 
-func InitNatsEventService(url, topic string) (S3EventSender, error) {
+func InitNatsEventService(url, topic string, filter EventFilter) (S3EventSender, error) {
 	if topic == "" {
 		return nil, fmt.Errorf("nats message topic should be specified")
 	}
@@ -52,12 +53,17 @@ func InitNatsEventService(url, topic string) (S3EventSender, error) {
 	return &NatsEventSender{
 		topic:  topic,
 		client: client,
+		filter: filter,
 	}, nil
 }
 
 func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
+
+	if ns.filter != nil && !ns.filter.Filter(meta.EventName) {
+		return
+	}
 
 	schema, err := createEventSchema(ctx, meta, ConfigurationIdNats)
 	if err != nil {

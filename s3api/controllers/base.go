@@ -1387,7 +1387,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				BucketOwner: parsedAcl.Owner,
 				ObjectETag:  res.CopyObjectResult.ETag,
 				VersionId:   res.VersionId,
-				EventName:   s3event.EventObjectCopy,
+				EventName:   s3event.EventObjectCreatedCopy,
 			})
 		} else {
 			return SendXMLResponse(ctx, res, err, &MetaOpts{
@@ -1453,7 +1453,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		BucketOwner: parsedAcl.Owner,
 		ObjectETag:  &etag,
 		ObjectSize:  contentLength,
-		EventName:   s3event.EventObjectPut,
+		EventName:   s3event.EventObjectCreatedPut,
 	})
 }
 
@@ -1710,7 +1710,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			EvSender:    c.evSender,
 			Action:      "DeleteObject",
 			BucketOwner: parsedAcl.Owner,
-			EventName:   s3event.EventObjectDelete,
+			EventName:   s3event.EventObjectDeleted,
 			Status:      http.StatusNoContent,
 		})
 }
