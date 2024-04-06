@@ -8,3 +8,7 @@ updates:
       dev-dependencies:
         patterns:
           - "*"
+    allow:
+      # Allow both direct and indirect updates for all packages
+      - dependency-type: "all"
+
