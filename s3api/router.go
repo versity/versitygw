@@ -27,8 +27,8 @@ type S3ApiRouter struct {
 	WithAdmSrv bool
 }
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender) {
-	s3ApiController := controllers.New(be, iam, logger, evs)
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, debug bool) {
+	s3ApiController := controllers.New(be, iam, logger, evs, debug)
 
 	if sa.WithAdmSrv {
 		adminController := controllers.NewAdminController(iam, be)
