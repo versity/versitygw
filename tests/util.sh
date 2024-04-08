@@ -1,58 +1,7 @@
-#!/usr/bin/env bats
+#!/usr/bin/env bash
 
 source ./tests/util_mc.sh
 source ./tests/logger.sh
-
-# create an AWS bucket
-# param:  bucket name
-# return 0 for success, 1 for failure
-create_bucket() {
-  if [ $# -ne 2 ]; then
-    echo "create bucket missing command type, bucket name"
-    return 1
-  fi
-
-  local exit_code=0
-  local error
-  if [[ $1 == "aws" ]]; then
-    error=$(aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == "mc" ]]; then
-    error=$(mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    echo "error creating bucket: $error"
-    return 1
-  fi
-  return 0
-}
-
-create_bucket_invalid_name() {
-  if [ $# -ne 1 ]; then
-    echo "create bucket w/invalid name missing command type"
-    return 1
-  fi
-  local exit_code=0
-  if [[ $1 == "aws" ]]; then
-    bucket_create_error=$(aws --no-verify-ssl s3 mb "s3://" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    bucket_create_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb "s3://" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    bucket_create_error=$(mc --insecure mb "$MC_ALIAS" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -eq 0 ]; then
-    echo "error:  bucket should have not been created but was"
-    return 1
-  fi
-  export bucket_create_error
-}
 
 # delete an AWS bucket
 # param:  bucket name
@@ -298,6 +247,7 @@ put_object() {
     echo "invalid command type $1"
     return 1
   fi
+  log 5 "put object exit code: $exit_code"
   if [ $exit_code -ne 0 ]; then
     echo "error copying object to bucket: $error"
     return 1
@@ -401,6 +351,35 @@ list_buckets() {
     output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3:// 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     output=$(mc --insecure ls "$MC_ALIAS" 2>&1) || exit_code=$?
+  else
+    echo "invalid format:  $1"
+    return 1
+  fi
+
+  if [ $exit_code -ne 0 ]; then
+    echo "error listing buckets: $output"
+    return 1
+  fi
+
+  bucket_array=()
+  while IFS= read -r line; do
+    bucket_name=$(echo "$line" | awk '{print $NF}')
+    bucket_array+=("${bucket_name%/}")
+  done <<< "$output"
+
+  export bucket_array
+}
+
+list_buckets_with_user() {
+  if [[ $# -ne 3 ]]; then
+    echo "List buckets command missing format, user id, key"
+    return 1
+  fi
+
+  local exit_code=0
+  local output
+  if [[ $1 == "aws" ]]; then
+    output=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3 ls s3:// 2>&1) || exit_code=$?
   else
     echo "invalid format:  $1"
     return 1
@@ -574,6 +553,8 @@ get_bucket_tags() {
     echo "invalid command type $1"
     return 1
   fi
+  log 5 "Tags: $tags"
+  tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
   if [[ $result -ne 0 ]]; then
     if [[ $tags =~ "No tags found" ]] || [[ $tags =~ "The TagSet does not exist" ]]; then
       export tags=
@@ -648,6 +629,8 @@ get_object_tags() {
     echo "error getting object tags: $tags"
     return 1
   fi
+  log 5 "$tags"
+  tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
   export tags
 }
 

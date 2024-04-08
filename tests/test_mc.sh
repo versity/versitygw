@@ -2,6 +2,7 @@
 
 source ./tests/test_common.sh
 source ./tests/setup.sh
+source ./tests/util_bucket_create.sh
 
 export RUN_MC=true
 

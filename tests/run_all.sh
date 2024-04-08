@@ -16,16 +16,7 @@ fi
 if ! ./tests/run.sh mc; then
   exit 1
 fi
-if ! ./tests/run.sh -s aws; then
-  exit 1
-fi
-if ! ./tests/run.sh -s aws-posix; then
-  exit 1
-fi
-if ! ./tests/run.sh -s s3cmd; then
-  exit 1
-fi
-if ! ./tests/run.sh -s mc; then
+if ! ./tests/run.sh user; then
   exit 1
 fi
 exit 0
