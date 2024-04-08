@@ -116,6 +116,7 @@ const (
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
 	ErrDirectoryObjectContainsData
+	ErrQuotaExceeded
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -413,6 +414,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "DirectoryObjectContainsData",
 		Description:    "Directory object contains data payload.",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrQuotaExceeded: {
+		Code:           "QuotaExceeded",
+		Description:    "Your request was denied due to quota exceeded.",
+		HTTPStatusCode: http.StatusForbidden,
 	},
 }
 
