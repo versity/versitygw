@@ -205,12 +205,16 @@ func createUser(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
 
 	fmt.Printf("%s\n", body)
 
@@ -246,12 +250,16 @@ func deleteUser(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
 
 	fmt.Printf("%s\n", body)
 
@@ -282,12 +290,12 @@ func listUsers(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("%s", body)
@@ -397,12 +405,12 @@ func listBuckets(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("%s", body)
