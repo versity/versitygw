@@ -70,7 +70,7 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 	app.Use(middlewares.VerifyMD5Body(l))
 	app.Use(middlewares.AclParser(be, l))
 
-	server.router.Init(app, be, iam, l, evs)
+	server.router.Init(app, be, iam, l, evs, server.debug)
 
 	return server, nil
 }
