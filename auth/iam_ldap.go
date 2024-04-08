@@ -22,7 +22,7 @@ func NewLDAPService(url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, objCl
 	if url == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" || secAtr == "" || roleAtr == "" || objClasses == "" {
 		return nil, fmt.Errorf("required parameters list not fully provided")
 	}
-	conn, err := ldap.Dial("tcp", url)
+	conn, err := ldap.DialURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to LDAP server: %w", err)
 	}
