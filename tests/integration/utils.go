@@ -30,7 +30,7 @@ import (
 var (
 	bcktCount            = 0
 	succUsrCrt           = "The user has been created successfully"
-	failUsrCrt           = "failed to create a user: update iam data: account already exists"
+	failUsrCrt           = "failed to create user: update iam data: account already exists"
 	adminAccessDeniedMsg = "access denied: only admin users have access to this resource"
 	succDeleteUserMsg    = "The user has been deleted successfully"
 )
@@ -546,7 +546,7 @@ func createUsers(s *S3Conf, users []user) error {
 			return err
 		}
 		if !strings.Contains(string(out), succUsrCrt) && !strings.Contains(string(out), failUsrCrt) {
-			return fmt.Errorf("failed to create a user account")
+			return fmt.Errorf("failed to create user account")
 		}
 	}
 	return nil

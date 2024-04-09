@@ -49,7 +49,7 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 
 	err = c.iam.CreateAccount(usr)
 	if err != nil {
-		return fmt.Errorf("failed to create a user: %w", err)
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 
 	return ctx.SendString("The user has been created successfully")

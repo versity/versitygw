@@ -6130,9 +6130,9 @@ func IAM_user_access_denied(s *S3Conf) error {
 	}
 
 	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
+	if err == nil {
+		failF("%v: expected cmd error", testName)
+		return fmt.Errorf("%v: expected cmd error", testName)
 	}
 	if !strings.Contains(string(out), adminAccessDeniedMsg) {
 		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
@@ -6161,9 +6161,9 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 	}
 
 	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
+	if err == nil {
+		failF("%v: expected cmd error", testName)
+		return fmt.Errorf("%v: expected cmd error", testName)
 	}
 	if !strings.Contains(string(out), adminAccessDeniedMsg) {
 		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
