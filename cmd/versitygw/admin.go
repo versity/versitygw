@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -37,6 +38,7 @@ var (
 	adminAccess   string
 	adminSecret   string
 	adminEndpoint string
+	allowInsecure bool
 )
 
 func adminCommand() *cli.Command {
@@ -154,8 +156,22 @@ func adminCommand() *cli.Command {
 				Required:    true,
 				Destination: &adminEndpoint,
 			},
+			&cli.BoolFlag{
+				Name:        "allow-insecure",
+				Usage:       "disable tls certificate verification for the admin endpoint",
+				EnvVars:     []string{"ADMIN_ALLOW_INSECURE"},
+				Aliases:     []string{"ai"},
+				Destination: &allowInsecure,
+			},
 		},
 	}
+}
+
+func initHTTPClient() *http.Client {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: allowInsecure},
+	}
+	return &http.Client{Transport: tr}
 }
 
 func createUser(ctx *cli.Context) error {
@@ -199,7 +215,7 @@ func createUser(ctx *cli.Context) error {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
 
-	client := http.Client{}
+	client := initHTTPClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -244,7 +260,7 @@ func deleteUser(ctx *cli.Context) error {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
 
-	client := http.Client{}
+	client := initHTTPClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -284,7 +300,7 @@ func listUsers(ctx *cli.Context) error {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
 
-	client := http.Client{}
+	client := initHTTPClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -399,7 +415,7 @@ func listBuckets(ctx *cli.Context) error {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
 
-	client := http.Client{}
+	client := initHTTPClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
