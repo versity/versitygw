@@ -373,12 +373,16 @@ func changeBucketOwner(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
 
 	fmt.Println(string(body))
 
