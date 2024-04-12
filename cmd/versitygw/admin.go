@@ -367,18 +367,22 @@ func changeBucketOwner(ctx *cli.Context) error {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
 
-	client := http.Client{}
+	client := initHTTPClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
 
 	fmt.Println(string(body))
 
