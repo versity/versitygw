@@ -2,6 +2,7 @@
 
 source ./tests/setup.sh
 source ./tests/util.sh
+source ./tests/util_bucket_create.sh
 source ./tests/util_file.sh
 source ./tests/test_common.sh
 

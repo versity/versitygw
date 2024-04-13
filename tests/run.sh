@@ -20,7 +20,7 @@ handle_param() {
       -s|--static)
           export RECREATE_BUCKETS=false
           ;;
-      aws|aws-posix|s3cmd|mc)
+      aws|aws-posix|s3cmd|mc|user)
           set_command_type "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -39,7 +39,14 @@ set_command_type() {
   export command_type
 }
 
-export RECREATE_BUCKETS=true
+if [[ -z $RECREATE_BUCKETS ]]; then
+  export RECREATE_BUCKETS=true
+elif [[ $RECREATE_BUCKETS != true ]] && [[ $RECREATE_BUCKETS != false ]]; then
+  echo "Invalid RECREATE_BUCKETS value: $RECREATE_BUCKETS"
+  exit 1
+else
+  export RECREATE_BUCKETS=$RECREATE_BUCKETS
+fi
 while [[ "$#" -gt 0 ]]; do
   handle_param "$1"
   shift # past argument or value
@@ -69,6 +76,9 @@ case $command_type in
     ;;
   mc)
     "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
+    ;;
+  user)
+    "$HOME"/bin/bats ./tests/test_user.sh || exit_code=$?
     ;;
 esac
 

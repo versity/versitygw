@@ -163,7 +163,7 @@ test_common_set_get_bucket_tags() {
 
   if [[ $1 == 'aws' ]]; then
     if [[ $tags != "" ]]; then
-      tag_set=$(echo "$tags" | sed '1d' | jq '.TagSet')
+      tag_set=$(echo "$tags" | jq '.TagSet')
       [[ $tag_set == "[]" ]] || fail "Error:  tags not empty: $tags"
     fi
   else
@@ -177,8 +177,9 @@ test_common_set_get_bucket_tags() {
   local tag_set_key
   local tag_set_value
   if [[ $1 == 'aws' ]]; then
-    tag_set_key=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Key')
-    tag_set_value=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Value')
+    log 5 "Post-export tags: $tags"
+    tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
     [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
     [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
   else
@@ -211,7 +212,7 @@ test_common_set_get_object_tags() {
   get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
-    tag_set=$(echo "$tags" | sed '1d' | jq '.TagSet')
+    tag_set=$(echo "$tags" | jq '.TagSet')
     [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
   elif [[ ! $tags == *"No tags found"* ]]; then
     fail "no tags found (tags: $tags)"
@@ -221,8 +222,8 @@ test_common_set_get_object_tags() {
   get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
-    tag_set_key=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Key')
-    tag_set_value=$(echo "$tags" | sed '1d' | jq '.TagSet[0].Value')
+    tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
     [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
     [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
   else

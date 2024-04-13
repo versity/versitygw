@@ -3,6 +3,7 @@
 source ./tests/setup.sh
 source ./tests/test_common.sh
 source ./tests/util.sh
+source ./tests/util_bucket_create.sh
 
 export RUN_S3CMD=true
 

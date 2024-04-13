@@ -44,6 +44,9 @@ check_exe_params() {
   elif [[ $RUN_VERSITYGW != "true" ]] && [[ $RUN_VERSITYGW != "false" ]]; then
     echo "RUN_VERSITYGW must be 'true' or 'false'"
     return 1
+  elif [ -z "$USERS_FOLDER" ]; then
+    echo "No users folder parameter set"
+    return 1
   fi
   if [[ -r $GOCOVERDIR ]]; then
     export GOCOVERDIR=$GOCOVERDIR
@@ -89,7 +92,7 @@ start_versity() {
     fi
   fi
 
-  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL VERSITY_EXE
 }
 
 start_versity_process() {
@@ -128,7 +131,7 @@ run_versity_app_posix() {
     echo "run versity app w/posix command requires access ID, secret key, process number"
     return 1
   fi
-  base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION")
+  base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION"  --iam-dir="$USERS_FOLDER")
   if [ -n "$CERT" ] && [ -n "$KEY" ]; then
     base_command+=(--cert "$CERT" --key "$KEY")
   fi
