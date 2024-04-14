@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/tests/integration"
 )
@@ -56,7 +57,7 @@ func initPosix(ctx context.Context) {
 		log.Fatalf("make temp directory: %v", err)
 	}
 
-	be, err := posix.New(tempdir, posix.PosixOpts{})
+	be, err := posix.New(tempdir, meta.XattrMeta{}, posix.PosixOpts{})
 	if err != nil {
 		log.Fatalf("init posix: %v", err)
 	}
