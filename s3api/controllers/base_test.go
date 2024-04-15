@@ -205,6 +205,12 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			GetObjectTaggingFunc: func(_ context.Context, bucket, object string) (map[string]string, error) {
 				return map[string]string{"hello": "world"}, nil
 			},
+			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*types.ObjectLockRetention, error) {
+				return &types.ObjectLockRetention{}, nil
+			},
+			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*types.ObjectLockLegalHold, error) {
+				return &types.ObjectLockLegalHold{}, nil
+			},
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
@@ -232,6 +238,24 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodGet, "/my-bucket/key/key.json?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Get-actions-get-object-retention-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/my-obj?retention", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Get-actions-get-object-legal-hold-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket/my-obj?legal-hold", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -329,6 +353,11 @@ func TestS3ApiController_ListActions(t *testing.T) {
 		req *http.Request
 	}
 
+	objectLockResult, err := json.Marshal(auth.BucketLockConfig{})
+	if err != nil {
+		t.Errorf("failed to parse object lock result %v", err)
+	}
+
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
@@ -356,6 +385,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 				return []byte{}, nil
 			},
+			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+				return objectLockResult, nil
+			},
 		},
 	}
 
@@ -369,7 +401,7 @@ func TestS3ApiController_ListActions(t *testing.T) {
 
 	app.Get("/:bucket", s3ApiController.ListActions)
 
-	//Error case
+	// Error case
 	s3ApiControllerError := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -414,6 +446,15 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodGet, "/my-bucket?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Get-object-lock-configuration-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?object-lock", nil),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -584,6 +625,18 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 	`
 
+	objectLockBody := `
+	<ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<ObjectLockEnabled>Enabled</ObjectLockEnabled>
+		<Rule>
+			<DefaultRetention>
+				<Mode>GOVERNANCE</Mode>
+				<Years>2</Years>
+			</DefaultRetention>
+		</Rule>
+	</ObjectLockConfiguration>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -602,6 +655,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 				return nil
 			},
 			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
+				return nil
+			},
+			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, putObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput) error {
 				return nil
 			},
 		},
@@ -658,6 +714,24 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", strings.NewReader(tagBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-object-lock-configuration-invalid-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?object-lock", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-object-lock-configuration-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?object-lock", strings.NewReader(objectLockBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -806,6 +880,19 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	</Tagging>
 	`
 
+	retentionBody := `
+	<Retention xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Mode>GOVERNANCE</Mode>
+		<RetainUntilDate>2025-01-01T00:00:00Z</RetainUntilDate>
+	</Retention>
+	`
+
+	legalHoldBody := `
+	<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Status>string</Status>
+	</LegalHold>
+	`
+
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
@@ -831,6 +918,15 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			},
 			UploadPartCopyFunc: func(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 				return s3response.CopyObjectResult{}, nil
+			},
+			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, putObjectLegalHoldInput *s3.PutObjectLegalHoldInput) error {
+				return nil
+			},
+			PutObjectRetentionFunc: func(contextMoqParam context.Context, putObjectRetentionInput *s3.PutObjectRetentionInput) error {
+				return nil
+			},
+			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 			},
 		},
 	}
@@ -906,6 +1002,42 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?tagging", strings.NewReader(tagBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "put-object-retention-invalid-request",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?retention", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "put-object-retention-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?retention", strings.NewReader(retentionBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "put-legal-hold-invalid-request",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?legal-hold", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "put-legal-hold-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?legal-hold", strings.NewReader(legalHoldBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -1096,6 +1228,9 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 			DeleteObjectsFunc: func(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 				return s3response.DeleteResult{}, nil
 			},
+			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+			},
 		},
 	}
 
@@ -1173,6 +1308,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 			DeleteObjectTaggingFunc: func(_ context.Context, bucket, object string) error {
 				return nil
 			},
+			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+				return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+			},
 		},
 	}
 
@@ -1194,6 +1332,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 		},
 		DeleteObjectFunc: func(context.Context, *s3.DeleteObjectInput) error {
 			return s3err.GetAPIError(7)
+		},
+		GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 		},
 	}}
 

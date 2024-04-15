@@ -21,6 +21,7 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 	"github.com/versity/versitygw/s3select"
@@ -80,6 +81,14 @@ type Backend interface {
 	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
 	PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error
 	DeleteObjectTagging(_ context.Context, bucket, object string) error
+
+	// object lock operations
+	PutObjectLockConfiguration(context.Context, *s3.PutObjectLockConfigurationInput) error
+	GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error)
+	PutObjectRetention(context.Context, *s3.PutObjectRetentionInput) error
+	GetObjectRetention(_ context.Context, bucket, object, versionId string) (*types.ObjectLockRetention, error)
+	PutObjectLegalHold(context.Context, *s3.PutObjectLegalHoldInput) error
+	GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*types.ObjectLockLegalHold, error)
 
 	// non AWS actions
 	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
@@ -227,6 +236,25 @@ func (BackendUnsupported) PutObjectTagging(_ context.Context, bucket, object str
 }
 func (BackendUnsupported) DeleteObjectTagging(_ context.Context, bucket, object string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+
+func (BackendUnsupported) PutObjectLockConfiguration(context.Context, *s3.PutObjectLockConfigurationInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutObjectRetention(context.Context, *s3.PutObjectRetentionInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetObjectRetention(_ context.Context, bucket, object, versionId string) (*types.ObjectLockRetention, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutObjectLegalHold(context.Context, *s3.PutObjectLegalHoldInput) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*types.ObjectLockLegalHold, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket, newOwner string) error {

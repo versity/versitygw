@@ -111,6 +111,11 @@ const (
 	ErrInvalidObjectState
 	ErrInvalidRange
 	ErrInvalidURI
+	ErrObjectLockConfigurationNotFound
+	ErrNoSuchObjectLockConfiguration
+	ErrInvalidBucketObjectLockConfiguration
+	ErrObjectLocked
+	ErrPastObjectLockRetainDate
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -398,6 +403,31 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidURI: {
 		Code:           "InvalidURI",
 		Description:    "The specified URI couldn't be parsed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLockConfigurationNotFound: {
+		Code:           "ObjectLockConfigurationNotFoundError",
+		Description:    "Object Lock configuration does not exist for this bucket",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrNoSuchObjectLockConfiguration: {
+		Code:           "NoSuchObjectLockConfiguration",
+		Description:    "The specified object does not have an ObjectLock configuration",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidBucketObjectLockConfiguration: {
+		Code:           "InvalidRequest",
+		Description:    "Bucket is missing ObjectLockConfiguration",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLocked: {
+		Code:           "InvalidRequest",
+		Description:    "Object is WORM protected and cannot be overwritten",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrPastObjectLockRetainDate: {
+		Code:           "InvalidRequest",
+		Description:    "the retain until date must be in the future",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrExistingObjectIsDirectory: {

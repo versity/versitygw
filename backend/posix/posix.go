@@ -30,10 +30,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
+	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
@@ -75,6 +77,8 @@ const (
 	aclkey              = "acl"
 	etagkey             = "etag"
 	policykey           = "policy"
+	bucketLockKey       = "bucket-lock"
+	objectLockKey       = "object-lock"
 )
 
 type PosixOpts struct {
@@ -2009,6 +2013,259 @@ func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, err
 
 func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return p.PutBucketPolicy(ctx, bucket, nil)
+}
+
+func (p *Posix) PutObjectLockConfiguration(_ context.Context, input *s3.PutObjectLockConfigurationInput) error {
+	_, err := os.Stat(*input.Bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	lockConfig := input.ObjectLockConfiguration
+
+	config := auth.BucketLockConfig{
+		Enabled: lockConfig.ObjectLockEnabled == types.ObjectLockEnabledEnabled,
+	}
+
+	if lockConfig.Rule != nil && lockConfig.Rule.DefaultRetention != nil {
+		retentation := lockConfig.Rule.DefaultRetention
+		if retentation.Years != nil && retentation.Days != nil {
+			return s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+
+		config.DefaultRetention = retentation
+		now := time.Now()
+		config.CreatedAt = &now
+	}
+
+	configParsed, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("parse object lock config: %w", err)
+	}
+
+	if err := xattr.Set(*input.Bucket, bucketLockKey, configParsed); err != nil {
+		return fmt.Errorf("set tags: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	cfg, err := xattr.Get(bucket, bucketLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get object lock config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+func (p *Posix) PutObjectLegalHold(_ context.Context, input *s3.PutObjectLegalHoldInput) error {
+	_, err := os.Stat(*input.Bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	cfg, err := xattr.Get(*input.Bucket, bucketLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+	if err != nil {
+		return fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	path := filepath.Join(*input.Bucket, *input.Key)
+	var config auth.ObjectLockConfig
+
+	data, err := xattr.Get(path, objectLockKey)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get object lock config: %w", err)
+		}
+
+		config = auth.ObjectLockConfig{}
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parse object lock data %w", err)
+		}
+	}
+
+	switch input.LegalHold.Status {
+	case types.ObjectLockLegalHoldStatusOff:
+		config.LegalHoldEnabled = false
+	case types.ObjectLockLegalHoldStatusOn:
+		config.LegalHoldEnabled = true
+	default:
+		return s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	b, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshal object lock config: %w", err)
+	}
+
+	err = xattr.Set(path, objectLockKey, b)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("set object lock config: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*types.ObjectLockLegalHold, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	data, err := xattr.Get(filepath.Join(bucket, object), objectLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var config auth.ObjectLockConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("pare object lock config: %w", err)
+	}
+
+	result := &types.ObjectLockLegalHold{}
+
+	if config.LegalHoldEnabled {
+		result.Status = types.ObjectLockLegalHoldStatusOn
+	} else {
+		result.Status = types.ObjectLockLegalHoldStatusOff
+	}
+
+	return result, nil
+}
+
+func (p *Posix) PutObjectRetention(_ context.Context, input *s3.PutObjectRetentionInput) error {
+	_, err := os.Stat(*input.Bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	cfg, err := xattr.Get(*input.Bucket, bucketLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+	if err != nil {
+		return fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	path := filepath.Join(*input.Bucket, *input.Key)
+	var config auth.ObjectLockConfig
+
+	data, err := xattr.Get(path, objectLockKey)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get object lock config: %w", err)
+		}
+
+		config = auth.ObjectLockConfig{}
+	} else {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("parse object lock data %w", err)
+		}
+	}
+
+	config.Retention = input.Retention
+
+	b, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshal object lock config: %w", err)
+	}
+
+	err = xattr.Set(path, objectLockKey, b)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("set object lock config: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId string) (*types.ObjectLockRetention, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	data, err := xattr.Get(filepath.Join(bucket, object), objectLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var config auth.ObjectLockConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("pare object lock config: %w", err)
+	}
+
+	if config.Retention == nil {
+		return &types.ObjectLockRetention{}, nil
+	}
+
+	return config.Retention, nil
 }
 
 func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go/encoding/httpbinding"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
@@ -243,4 +244,12 @@ func ValidateDate(date time.Time) error {
 	}
 
 	return nil
+}
+
+func ParseDeleteObjects(objs []types.ObjectIdentifier) (result []string) {
+	for _, obj := range objs {
+		result = append(result, *obj.Key)
+	}
+
+	return
 }
