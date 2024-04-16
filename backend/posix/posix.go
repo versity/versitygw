@@ -71,6 +71,9 @@ type Posix struct {
 
 	// newDirPerm is the permission to set on newly created directories
 	newDirPerm fs.FileMode
+
+	// skip these prefixes when walking
+	skipprefix []string
 }
 
 var _ backend.Backend = &Posix{}
@@ -99,6 +102,8 @@ const (
 
 	doFalloc   = true
 	skipFalloc = false
+
+	sidecardir = ".vgw_meta"
 )
 
 type PosixOpts struct {
@@ -107,6 +112,7 @@ type PosixOpts struct {
 	BucketLinks   bool
 	VersioningDir string
 	NewDirPerm    fs.FileMode
+	SideCar       bool
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -161,6 +167,11 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 
 	fmt.Printf("Bucket versioning enabled with directory: %v\n", verioningdirAbs)
 
+	var skipprefx []string
+	if opts.SideCar {
+		skipprefx = []string{sidecardir}
+	}
+
 	return &Posix{
 		meta:          meta,
 		rootfd:        f,
@@ -172,6 +183,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		bucketlinks:   opts.BucketLinks,
 		versioningDir: verioningdirAbs,
 		newDirPerm:    opts.NewDirPerm,
+		skipprefix:    skipprefx,
 	}, nil
 }
 
@@ -219,6 +231,16 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, entry := range entries {
+		if !entry.IsDir() {
+			// buckets must be a directory
+			continue
+		}
+
+		if containsprefix(entry.Name(), p.skipprefix) {
+			// skip directories that match the skip prefix
+			continue
+		}
+
 		fi, err := entry.Info()
 		if err != nil {
 			// skip entries returning errors
@@ -293,6 +315,15 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 		Prefix:            input.Prefix,
 		ContinuationToken: cToken,
 	}, nil
+}
+
+func containsprefix(a string, strs []string) bool {
+	for _, s := range strs {
+		if strings.HasPrefix(a, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
@@ -3355,7 +3386,7 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket), []string{metaTmpDir})
+		p.fileToObj(bucket), []string{metaTmpDir}, p.skipprefix)
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -3487,7 +3518,7 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket), []string{metaTmpDir})
+		p.fileToObj(bucket), []string{metaTmpDir}, p.skipprefix)
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
