@@ -34,6 +34,7 @@ test_common_put_object_with_data() {
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
   echo "test data" > "$test_file_folder"/"$object_name"
+  test_common_put_object "$1" "$object_name"
 }
 
 test_common_put_object_no_data() {

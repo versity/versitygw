@@ -67,18 +67,24 @@ fi
 case $command_type in
   aws)
     "$HOME"/bin/bats ./tests/test_aws.sh || exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+      "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
+    fi
     ;;
   aws-posix)
     "$HOME"/bin/bats ./tests/test_aws_posix.sh || exit_code=$?
     ;;
   s3cmd)
     "$HOME"/bin/bats ./tests/test_s3cmd.sh || exit_code=$?
+    if [[ $exit_code -eq 0 ]]; then
+      "$HOME"/bin/bats ./tests/test_user_s3cmd.sh || exit_code=$?
+    fi
     ;;
   mc)
     "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
     ;;
   user)
-    "$HOME"/bin/bats ./tests/test_user.sh || exit_code=$?
+    "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
     ;;
 esac
 
