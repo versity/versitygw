@@ -29,6 +29,7 @@ var (
 	bucketlinks        bool
 	versioningDir      string
 	dirPerms           uint
+	sidecar            string
 )
 
 func posixCommand() *cli.Command {
@@ -79,6 +80,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				DefaultText: "0755",
 				Value:       0755,
 			},
+			&cli.StringFlag{
+				Name:        "sidecar",
+				Usage:       "use provided sidecar directory to store metadata",
+				EnvVars:     []string{"VGW_META_SIDECAR"},
+				Destination: &sidecar,
+			},
 		},
 	}
 }
@@ -89,24 +96,39 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	gwroot := (ctx.Args().Get(0))
-	err := meta.XattrMeta{}.Test(gwroot)
-	if err != nil {
-		return fmt.Errorf("posix xattr check: %v", err)
-	}
 
 	if dirPerms > math.MaxUint32 {
 		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
 	}
 
-	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
+	opts := posix.PosixOpts{
 		ChownUID:      chownuid,
 		ChownGID:      chowngid,
 		BucketLinks:   bucketlinks,
 		VersioningDir: versioningDir,
 		NewDirPerm:    fs.FileMode(dirPerms),
-	})
+	}
+
+	var ms meta.MetadataStorer
+	switch {
+	case sidecar != "":
+		sc, err := meta.NewSideCar(sidecar)
+		if err != nil {
+			return fmt.Errorf("failed to init sidecar metadata: %w", err)
+		}
+		ms = sc
+		opts.SideCarDir = sidecar
+	default:
+		ms = meta.XattrMeta{}
+		err := meta.XattrMeta{}.Test(gwroot)
+		if err != nil {
+			return fmt.Errorf("xattr check failed: %w", err)
+		}
+	}
+
+	be, err := posix.New(gwroot, ms, opts)
 	if err != nil {
-		return fmt.Errorf("init posix: %v", err)
+		return fmt.Errorf("failed to init posix backend: %w", err)
 	}
 
 	return runGateway(ctx.Context, be)
