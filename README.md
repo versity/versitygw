@@ -15,7 +15,8 @@ Download [latest release](https://github.com/versity/versitygw/releases)
  |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
  
 ### News
-* New performance analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
+* New performance (scale up) analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
+* New performance (scale out) Part 2 analysis article [https://github.com/versity/versitygw/wiki/Performance-Part-2](https://github.com/versity/versitygw/wiki/Performance-Part-2)
 
 ### Mailing List
 Keep up to date with latest gateway announcements by signing up to the [versitygw mailing list](https://www.versity.com/products/versitygw#signup).
