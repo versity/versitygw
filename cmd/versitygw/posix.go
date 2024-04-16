@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
 )
 
@@ -62,7 +63,13 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("no directory provided for operation")
 	}
 
-	be, err := posix.New(ctx.Args().Get(0), posix.PosixOpts{
+	gwroot := (ctx.Args().Get(0))
+	ok := meta.XattrMeta{}.Test(gwroot)
+	if !ok {
+		return fmt.Errorf("posix backend requires extended attributes support")
+	}
+
+	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
 		ChownUID: chownuid,
 		ChownGID: chowngid,
 	})

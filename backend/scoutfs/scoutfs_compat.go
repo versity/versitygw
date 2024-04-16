@@ -30,11 +30,12 @@ import (
 	"github.com/versity/scoutfs-go"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
 )
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
-	p, err := posix.New(rootdir, posix.PosixOpts{
+	p, err := posix.New(rootdir, meta.XattrMeta{}, posix.PosixOpts{
 		ChownUID: opts.ChownUID,
 		ChownGID: opts.ChownGID,
 	})
