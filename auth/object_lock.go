@@ -75,10 +75,13 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		return nil
 	}
 
+	objExists := true
+
 	for _, obj := range objects {
 		retention, err := be.GetObjectRetention(ctx, bucket, obj, "")
 		if err != nil {
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				objExists = false
 				continue
 			}
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
@@ -96,6 +99,9 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 						policy, err := be.GetBucketPolicy(ctx, bucket)
 						if err != nil {
 							return err
+						}
+						if len(policy) == 0 {
+							return s3err.GetAPIError(s3err.ErrObjectLocked)
 						}
 						err = verifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
 						if err != nil {
@@ -118,7 +124,7 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		}
 	}
 
-	if bucketLockConfig.DefaultRetention != nil && bucketLockConfig.CreatedAt != nil {
+	if bucketLockConfig.DefaultRetention != nil && bucketLockConfig.CreatedAt != nil && objExists {
 		expirationDate := *bucketLockConfig.CreatedAt
 		if bucketLockConfig.DefaultRetention.Days != nil {
 			expirationDate = expirationDate.AddDate(0, 0, int(*bucketLockConfig.DefaultRetention.Days))

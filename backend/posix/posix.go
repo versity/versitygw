@@ -2153,6 +2153,9 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 	}
 
 	data, err := xattr.Get(filepath.Join(bucket, object), objectLockKey)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
 	}
@@ -2249,6 +2252,9 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 	}
 
 	data, err := xattr.Get(filepath.Join(bucket, object), objectLockKey)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
 	}
