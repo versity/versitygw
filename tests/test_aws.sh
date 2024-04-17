@@ -2,6 +2,7 @@
 
 source ./tests/setup.sh
 source ./tests/util.sh
+source ./tests/util_aws.sh
 source ./tests/util_bucket_create.sh
 source ./tests/util_file.sh
 source ./tests/test_common.sh
@@ -82,7 +83,6 @@ source ./tests/test_common.sh
 
 # test ability to delete multiple objects from bucket
 @test "test_delete_objects" {
-
   local object_one="test-file-one"
   local object_two="test-file-two"
 
@@ -120,7 +120,6 @@ source ./tests/test_common.sh
 
 # test v1 s3api list objects command
 @test "test-s3api-list-objects-v1" {
-
   local object_one="test-file-one"
   local object_two="test-file-two"
   local object_two_data="test data\n"
@@ -151,7 +150,6 @@ source ./tests/test_common.sh
 
 # test v2 s3api list objects command
 @test "test-s3api-list-objects-v2" {
-
   local object_one="test-file-one"
   local object_two="test-file-two"
   local object_two_data="test data\n"
@@ -187,7 +185,6 @@ source ./tests/test_common.sh
 
 # test multi-part upload
 @test "test-multi-part-upload" {
-
   local bucket_file="bucket-file"
   bucket_file_data="test file\n"
 
@@ -210,7 +207,6 @@ source ./tests/test_common.sh
 
 # test multi-part upload abort
 @test "test-multi-part-upload-abort" {
-
   local bucket_file="bucket-file"
   bucket_file_data="test file\n"
 
@@ -232,7 +228,6 @@ source ./tests/test_common.sh
 
 # test multi-part upload list parts command
 @test "test-multipart-upload-list-parts" {
-
   local bucket_file="bucket-file"
   local bucket_file_data="test file\n"
 
@@ -280,9 +275,13 @@ source ./tests/test_common.sh
 
 # test listing of active uploads
 @test "test-multipart-upload-list-uploads" {
-
   local bucket_file_one="bucket-file-one"
   local bucket_file_two="bucket-file-two"
+
+  if [[ $RECREATE_BUCKETS == false ]]; then
+    abort_all_multipart_uploads "$BUCKET_ONE_NAME" || local abort_result=$?
+    [[ $abort_result -eq 0 ]] || fail "error aborting all uploads"
+  fi
 
   create_test_files "$bucket_file_one" "$bucket_file_two" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
@@ -294,6 +293,7 @@ source ./tests/test_common.sh
 
   local key_one
   local key_two
+  log 5 "$uploads"
   key_one=$(echo "$uploads" | jq '.Uploads[0].Key')
   key_two=$(echo "$uploads" | jq '.Uploads[1].Key')
   key_one=${key_one//\"/}

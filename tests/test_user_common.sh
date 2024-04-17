@@ -5,7 +5,11 @@ source ./tests/util_users.sh
 source ./tests/util.sh
 source ./tests/util_bucket_create.sh
 
-@test "test_admin_user" {
+test_admin_user() {
+  if [[ $# -ne 1 ]]; then
+    fail "test admin user command requires command type"
+  fi
+
   admin_username="ABCDEF"
   user_username="GHIJKL"
   admin_password="123456"
@@ -57,7 +61,11 @@ source ./tests/util_bucket_create.sh
   delete_user "$admin_username"
 }
 
-@test "test_create_user_already_exists" {
+test_create_user_already_exists() {
+  if [[ $# -ne 1 ]]; then
+    fail "test admin user command requires command type"
+  fi
+
   username="ABCDEG"
   password="123456"
 
@@ -76,7 +84,11 @@ source ./tests/util_bucket_create.sh
   delete_user "$username"
 }
 
-@test "test_user_user" {
+test_user_user() {
+  if [[ $# -ne 1 ]]; then
+    fail "test admin user command requires command type"
+  fi
+
   username="ABCDEG"
   password="123456"
 
@@ -121,7 +133,11 @@ source ./tests/util_bucket_create.sh
   delete_user "$username"
 }
 
-@test "test_userplus_operation" {
+test_userplus_operation() {
+  if [[ $# -ne 1 ]]; then
+    fail "test admin user command requires command type"
+  fi
+
   username="ABCDEG"
   password="123456"
 
