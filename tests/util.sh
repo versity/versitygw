@@ -255,6 +255,52 @@ put_object() {
   return 0
 }
 
+put_object_with_metadata() {
+  if [ $# -ne 5 ]; then
+    echo "put object command requires command type, source, destination, key, value"
+    return 1
+  fi
+
+  local exit_code=0
+  local error
+  if [[ $1 == 'aws' ]]; then
+    error=$(aws --no-verify-ssl s3api put-object --bucket "$3" --key "$2" --body "$2" --metadata "{\"$4\":\"$5\"}") || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
+  log 5 "put object exit code: $exit_code"
+  if [ $exit_code -ne 0 ]; then
+    echo "error copying object to bucket: $error"
+    return 1
+  fi
+  return 0
+}
+
+get_object_metadata() {
+  if [ $# -ne 3 ]; then
+    echo "get object metadata command requires command type, bucket, key"
+    return 1
+  fi
+
+  local exit_code=0
+  if [[ $1 == 'aws' ]]; then
+    metadata_struct=$(aws --no-verify-ssl s3api head-object --bucket "$2" --key "$3") || exit_code=$?
+  else
+    echo "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -ne 0 ]; then
+    echo "error copying object to bucket: $error"
+    return 1
+  fi
+  log 5 "$metadata_struct"
+  metadata=$(echo "$metadata_struct" | jq '.Metadata')
+  echo $metadata
+  export metadata
+  return 0
+}
+
 put_object_multiple() {
   if [ $# -ne 3 ]; then
     echo "put object command requires command type, source, destination"
@@ -435,6 +481,20 @@ list_objects() {
   export object_array
 }
 
+remove_insecure_request_warning() {
+  if [[ $# -ne 1 ]]; then
+    echo "remove insecure request warning requires input lines"
+    return 1
+  fi
+  parsed_output=()
+  while IFS= read -r line; do
+    if [[ $line != *InsecureRequestWarning* ]]; then
+      parsed_output+=("$line")
+    fi
+  done <<< "$1"
+  export parsed_output
+}
+
 # check if bucket info can be retrieved
 # param:  path of bucket or folder
 # return 0 for yes, 1 for no, 2 for error
@@ -564,6 +624,28 @@ get_bucket_tags() {
     return 1
   fi
   export tags
+}
+
+check_bucket_tags_empty() {
+  if [[ $# -ne 1 ]]; then
+    echo "bucket tags empty check requires command type"
+    return 2
+  fi
+  if [[ $1 == 'aws' ]]; then
+    if [[ $tags != "" ]]; then
+      tag_set=$(echo "$tags" | jq '.TagSet')
+      if [[ $tag_set != "[]" ]]; then
+        echo "error:  tags not empty: $tags"
+        return 1
+      fi
+    fi
+  else
+    if [[ $tags != "" ]] && [[ $tags != *"No tags found"* ]]; then
+      echo "Error:  tags not empty: $tags"
+      return 1
+    fi
+  fi
+  return 0
 }
 
 delete_bucket_tags() {

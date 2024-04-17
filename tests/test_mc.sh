@@ -28,7 +28,7 @@ export RUN_MC=true
 }
 
 @test "test_set_get_bucket_tags_mc" {
-  test_common_set_get_bucket_tags "mc"
+  test_common_set_get_delete_bucket_tags "mc"
 }
 
 @test "test_set_get_object_tags_mc" {

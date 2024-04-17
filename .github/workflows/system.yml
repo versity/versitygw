@@ -66,7 +66,7 @@ jobs:
       #    export AWS_ACCESS_KEY_ID_TWO=ABCDEFGHIJKLMNOPQRST
       #    export AWS_SECRET_ACCESS_KEY_TWO=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
       #    export WORKSPACE=$GITHUB_WORKSPACE
-      #    VERSITYGW_TEST_ENV=./tests/.env.s3.default GOCOVERDIR=/tmp/cover ./tests/run_all.sh
+      #    VERSITYGW_TEST_ENV=./tests/.env.s3 GOCOVERDIR=/tmp/cover ./tests/run_all.sh
 
       - name: Coverage report
         run: |
