@@ -32,7 +32,7 @@ func (IAMServiceSingle) CreateAccount(account Account) error {
 
 // GetUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) GetUserAccount(access string) (Account, error) {
-	return Account{}, ErrNotSupported
+	return Account{}, ErrNoSuchUser
 }
 
 // DeleteUserAccount no accounts in single tenant mode
