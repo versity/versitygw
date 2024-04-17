@@ -193,10 +193,10 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		cr.chunkHash.Write(p[:chunkSize])
 		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
 		return n + int(chunkSize), err
-	} else {
-		cr.chunkDataLeft = chunkSize - int64(n)
-		cr.chunkHash.Write(p[:n])
 	}
+
+	cr.chunkDataLeft = chunkSize - int64(n)
+	cr.chunkHash.Write(p[:n])
 
 	return n, nil
 }
@@ -231,6 +231,7 @@ const (
 // error if any. See the AWS documentation for the chunk header format. The
 // header[0] byte is expected to be the first byte of the chunk size here.
 func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int, error) {
+	stashLen := len(cr.stash)
 	if cr.stash != nil {
 		tmp := make([]byte, maxHeaderSize)
 		copy(tmp, cr.stash)
@@ -265,5 +266,5 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	signature := string(header[sigIndex:(sigIndex + sigEndIndex)])
 	dataStartOffset := sigIndex + sigEndIndex + len(chunkHdrDelim)
 
-	return chunkSize, signature, dataStartOffset, nil
+	return chunkSize, signature, dataStartOffset - stashLen, nil
 }
