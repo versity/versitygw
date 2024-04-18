@@ -1809,13 +1809,21 @@ func HeadBucket_success(s *S3Conf) error {
 	testName := "HeadBucket_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{
+		resp, err := s3client.HeadBucket(ctx, &s3.HeadBucketInput{
 			Bucket: &bucket,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
+
+		if resp.AccessPointAlias != nil && *resp.AccessPointAlias {
+			return fmt.Errorf("expected bucket access point alias to be false")
+		}
+		if *resp.BucketRegion != s.awsRegion {
+			return fmt.Errorf("expected bucket region to be %v, instead got %v", s.awsRegion, *resp.BucketRegion)
+		}
+
 		return nil
 	})
 }

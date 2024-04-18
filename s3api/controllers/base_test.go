@@ -1285,6 +1285,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
+		ctx.Locals("region", "us-east-1")
 		return ctx.Next()
 	})
 
@@ -1308,6 +1309,7 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 		ctx.Locals("isRoot", true)
 		ctx.Locals("isDebug", false)
 		ctx.Locals("parsedAcl", auth.ACL{})
+		ctx.Locals("region", "us-east-1")
 		return ctx.Next()
 	})
 
