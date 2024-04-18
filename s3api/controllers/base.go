@@ -1844,6 +1844,7 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 	bucket := ctx.Params("bucket")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
+	region := ctx.Locals("region").(string)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -1868,7 +1869,17 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 		&s3.HeadBucketInput{
 			Bucket: &bucket,
 		})
-	// TODO: set bucket response headers
+
+	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+		{
+			Key:   "X-Amz-Access-Point-Alias",
+			Value: "false",
+		},
+		{
+			Key:   "X-Amz-Bucket-Region",
+			Value: region,
+		},
+	})
 	return SendResponse(ctx, err,
 		&MetaOpts{
 			Logger:      c.logger,
