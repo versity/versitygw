@@ -64,9 +64,9 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	gwroot := (ctx.Args().Get(0))
-	ok := meta.XattrMeta{}.Test(gwroot)
-	if !ok {
-		return fmt.Errorf("posix backend requires extended attributes support")
+	err := meta.XattrMeta{}.Test(gwroot)
+	if err != nil {
+		return fmt.Errorf("posix xattr check: %v", err)
 	}
 
 	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
