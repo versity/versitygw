@@ -45,10 +45,14 @@ import (
 // When getting container metadata with GetProperties method the sdk returns
 // the first letter capital, when accessing the metadata after listing the containers
 // it returns the first letter lower
-type aclKey string
+type key string
 
-const aclKeyCapital aclKey = "Acl"
-const aclKeyLower aclKey = "acl"
+const (
+	keyAclCapital key = "Acl"
+	keyAclLower   key = "acl"
+	keyTags       key = "Tags"
+	keyPolicy     key = "Policy"
+)
 
 type Azure struct {
 	backend.BackendUnsupported
@@ -116,7 +120,7 @@ func (az *Azure) String() string {
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		string(aclKeyCapital): backend.GetStringPtr(string(acl)),
+		string(keyAclCapital): backend.GetStringPtr(string(acl)),
 	}
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
@@ -196,24 +200,17 @@ func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[s
 	}
 
 	if tags == nil {
-		_, err := client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: map[string]*string{
-			string(aclKeyCapital): resp.Metadata[string(aclKeyCapital)],
-		}})
+		delete(resp.Metadata, string(keyTags))
+	} else {
+		tagsJson, err := json.Marshal(tags)
 		if err != nil {
-			return azureErrToS3Err(err)
+			return err
 		}
 
-		return nil
+		resp.Metadata[string(keyTags)] = backend.GetStringPtr(string(tagsJson))
 	}
 
-	_, ok := tags[string(aclKeyLower)]
-	if ok {
-		delete(tags, string(aclKeyLower))
-	}
-
-	tags[string(aclKeyCapital)] = *resp.Metadata[string(aclKeyCapital)]
-
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: parseMetadata(tags)})
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
 	if err != nil {
 		return azureErrToS3Err(err)
 	}
@@ -232,9 +229,17 @@ func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[strin
 		return nil, azureErrToS3Err(err)
 	}
 
-	delete(resp.Metadata, string(aclKeyCapital))
+	tagsJson, ok := resp.Metadata[string(keyTags)]
+	if !ok {
+		return map[string]string{}, nil
+	}
 
-	return parseAzMetadata(resp.Metadata), nil
+	var tags map[string]string
+	if json.Unmarshal([]byte(*tagsJson), &tags); err != nil {
+		return nil, err
+	}
+
+	return tags, nil
 }
 
 func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
@@ -625,7 +630,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 	}
 
 	parts := []s3response.Part{}
-	for _, el := range resp.BlockList.UncommittedBlocks {
+	for _, el := range resp.UncommittedBlocks {
 		partNumber, err := decodeBlockId(*el.Name)
 		if err != nil {
 			return s3response.ListPartsResult{}, err
@@ -751,11 +756,14 @@ func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) e
 	if err != nil {
 		return err
 	}
-	meta := map[string]*string{
-		string(aclKeyCapital): backend.GetStringPtr(string(data)),
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
 	}
+
+	props.Metadata[string(keyAclCapital)] = backend.GetStringPtr(string(data))
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
-		Metadata: meta,
+		Metadata: props.Metadata,
 	})
 	if err != nil {
 		return azureErrToS3Err(err)
@@ -773,12 +781,67 @@ func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) 
 		return nil, azureErrToS3Err(err)
 	}
 
-	aclPtr, ok := props.Metadata[string(aclKeyCapital)]
+	aclPtr, ok := props.Metadata[string(keyAclCapital)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInternalError)
 	}
 
 	return []byte(*aclPtr), nil
+}
+
+func (az *Azure) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if policy == nil {
+		delete(props.Metadata, string(keyPolicy))
+	} else {
+		// Store policy as base64 encoded, because storing raw json causes an SDK error
+		policyEncoded := base64.StdEncoding.EncodeToString(policy)
+		props.Metadata[string(keyPolicy)] = &policyEncoded
+	}
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
+		Metadata: props.Metadata,
+	})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+	return nil
+}
+
+func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return nil, err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	policyPtr, ok := props.Metadata[string(keyPolicy)]
+	if !ok {
+		return []byte{}, nil
+	}
+
+	policy, err := base64.StdEncoding.DecodeString(*policyPtr)
+	if err != nil {
+		return nil, err
+	}
+
+	return policy, nil
+}
+
+func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	return az.PutBucketPolicy(ctx, bucket, nil)
 }
 
 func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
@@ -791,7 +854,7 @@ func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string)
 		return azureErrToS3Err(err)
 	}
 
-	acl, err := getAclFromMetadata(props.Metadata, aclKeyCapital)
+	acl, err := getAclFromMetadata(props.Metadata, keyAclCapital)
 	if err != nil {
 		return err
 	}
@@ -822,7 +885,7 @@ func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response
 			return buckets, azureErrToS3Err(err)
 		}
 		for _, v := range resp.ContainerItems {
-			acl, err := getAclFromMetadata(v.Metadata, aclKeyLower)
+			acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
 			if err != nil {
 				return buckets, err
 			}
@@ -999,7 +1062,7 @@ func parseRange(rg string) (offset, count int64, err error) {
 	return offset, count - offset + 1, nil
 }
 
-func getAclFromMetadata(meta map[string]*string, key aclKey) (*auth.ACL, error) {
+func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 	aclPtr, ok := meta[string(key)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInternalError)
@@ -1020,7 +1083,7 @@ func isMetaSame(azMeta map[string]*string, awsMeta map[string]string) bool {
 	}
 
 	for key, val := range azMeta {
-		if key == string(aclKeyCapital) || key == string(aclKeyLower) {
+		if key == string(keyAclCapital) || key == string(keyAclLower) {
 			continue
 		}
 		awsVal, ok := awsMeta[key]

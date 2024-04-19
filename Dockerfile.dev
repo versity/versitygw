@@ -6,7 +6,7 @@ COPY go.mod ./
 RUN go mod download
 
 COPY ./ ./
-COPY certs/* /etc/pki/tls/certs/
+COPY ./tests/certs/* /etc/pki/tls/certs/
 
 ARG IAM_DIR=/tmp/vgw
 ARG SETUP_DIR=/tmp/vgw
