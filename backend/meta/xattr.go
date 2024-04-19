@@ -2,6 +2,7 @@ package meta
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -23,7 +24,7 @@ type XattrMeta struct{}
 // RetrieveAttribute retrieves the value of a specific attribute for an object in a bucket.
 func (x XattrMeta) RetrieveAttribute(bucket, object, attribute string) ([]byte, error) {
 	b, err := xattr.Get(filepath.Join(bucket, object), xattrPrefix+attribute)
-	if errors.Is(err, errNoData) {
+	if errors.Is(err, xattr.ENOATTR) {
 		return nil, ErrNoSuchKey
 	}
 	return b, err
@@ -37,7 +38,7 @@ func (x XattrMeta) StoreAttribute(bucket, object, attribute string, value []byte
 // DeleteAttribute removes the value of a specific attribute for an object in a bucket.
 func (x XattrMeta) DeleteAttribute(bucket, object, attribute string) error {
 	err := xattr.Remove(filepath.Join(bucket, object), xattrPrefix+attribute)
-	if errors.Is(err, errNoData) {
+	if errors.Is(err, xattr.ENOATTR) {
 		return ErrNoSuchKey
 	}
 	return err
@@ -70,7 +71,17 @@ func isUserAttr(attr string) bool {
 }
 
 // Test is a helper function to test if xattrs are supported.
-func (x XattrMeta) Test(path string) bool {
+func (x XattrMeta) Test(path string) error {
+	// check for platform support
+	if !xattr.XATTR_SUPPORTED {
+		return fmt.Errorf("xattrs are not supported on this platform")
+	}
+
+	// check if the filesystem supports xattrs
 	_, err := xattr.Get(path, "user.test")
-	return !errors.Is(err, syscall.ENOTSUP)
+	if errors.Is(err, syscall.ENOTSUP) {
+		return fmt.Errorf("xattrs are not supported on this filesystem")
+	}
+
+	return nil
 }
