@@ -31,7 +31,7 @@ services:
     hostname: azurite
     command: "azurite --oauth basic --cert /tests/certs/azurite.pem --key /tests/certs/azurite-key.pem --blobHost 0.0.0.0"
     volumes:
-      - ./certs:/certs
+      - ./tests/certs:/tests/certs
   azuritegw:
     build:
       context: .
