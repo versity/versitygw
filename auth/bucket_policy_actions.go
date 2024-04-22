@@ -23,79 +23,97 @@ import (
 type Action string
 
 const (
-	GetBucketAclAction               Action = "s3:GetBucketAcl"
-	CreateBucketAction               Action = "s3:CreateBucket"
-	PutBucketAclAction               Action = "s3:PutBucketAcl"
-	DeleteBucketAction               Action = "s3:DeleteBucket"
-	PutBucketVersioningAction        Action = "s3:PutBucketVersioning"
-	GetBucketVersioningAction        Action = "s3:GetBucketVersioning"
-	PutBucketPolicyAction            Action = "s3:PutBucketPolicy"
-	GetBucketPolicyAction            Action = "s3:GetBucketPolicy"
-	DeleteBucketPolicyAction         Action = "s3:DeleteBucketPolicy"
-	AbortMultipartUploadAction       Action = "s3:AbortMultipartUpload"
-	ListMultipartUploadPartsAction   Action = "s3:ListMultipartUploadParts"
-	ListBucketMultipartUploadsAction Action = "s3:ListBucketMultipartUploads"
-	PutObjectAction                  Action = "s3:PutObject"
-	GetObjectAction                  Action = "s3:GetObject"
-	DeleteObjectAction               Action = "s3:DeleteObject"
-	GetObjectAclAction               Action = "s3:GetObjectAcl"
-	GetObjectAttributesAction        Action = "s3:GetObjectAttributes"
-	PutObjectAclAction               Action = "s3:PutObjectAcl"
-	RestoreObjectAction              Action = "s3:RestoreObject"
-	GetBucketTaggingAction           Action = "s3:GetBucketTagging"
-	PutBucketTaggingAction           Action = "s3:PutBucketTagging"
-	GetObjectTaggingAction           Action = "s3:GetObjectTagging"
-	PutObjectTaggingAction           Action = "s3:PutObjectTagging"
-	DeleteObjectTaggingAction        Action = "s3:DeleteObjectTagging"
-	ListBucketVersionsAction         Action = "s3:ListBucketVersions"
-	ListBucketAction                 Action = "s3:ListBucket"
-	AllActions                       Action = "s3:*"
+	GetBucketAclAction                     Action = "s3:GetBucketAcl"
+	CreateBucketAction                     Action = "s3:CreateBucket"
+	PutBucketAclAction                     Action = "s3:PutBucketAcl"
+	DeleteBucketAction                     Action = "s3:DeleteBucket"
+	PutBucketVersioningAction              Action = "s3:PutBucketVersioning"
+	GetBucketVersioningAction              Action = "s3:GetBucketVersioning"
+	PutBucketPolicyAction                  Action = "s3:PutBucketPolicy"
+	GetBucketPolicyAction                  Action = "s3:GetBucketPolicy"
+	DeleteBucketPolicyAction               Action = "s3:DeleteBucketPolicy"
+	AbortMultipartUploadAction             Action = "s3:AbortMultipartUpload"
+	ListMultipartUploadPartsAction         Action = "s3:ListMultipartUploadParts"
+	ListBucketMultipartUploadsAction       Action = "s3:ListBucketMultipartUploads"
+	PutObjectAction                        Action = "s3:PutObject"
+	GetObjectAction                        Action = "s3:GetObject"
+	DeleteObjectAction                     Action = "s3:DeleteObject"
+	GetObjectAclAction                     Action = "s3:GetObjectAcl"
+	GetObjectAttributesAction              Action = "s3:GetObjectAttributes"
+	PutObjectAclAction                     Action = "s3:PutObjectAcl"
+	RestoreObjectAction                    Action = "s3:RestoreObject"
+	GetBucketTaggingAction                 Action = "s3:GetBucketTagging"
+	PutBucketTaggingAction                 Action = "s3:PutBucketTagging"
+	GetObjectTaggingAction                 Action = "s3:GetObjectTagging"
+	PutObjectTaggingAction                 Action = "s3:PutObjectTagging"
+	DeleteObjectTaggingAction              Action = "s3:DeleteObjectTagging"
+	ListBucketVersionsAction               Action = "s3:ListBucketVersions"
+	ListBucketAction                       Action = "s3:ListBucket"
+	GetBucketObjectLockConfigurationAction Action = "s3:GetBucketObjectLockConfiguration"
+	PutBucketObjectLockConfigurationAction Action = "s3:PutBucketObjectLockConfiguration"
+	GetObjectLegalHoldAction               Action = "s3:GetObjectLegalHold"
+	PutObjectLegalHoldAction               Action = "s3:PutObjectLegalHold"
+	GetObjectRetentionAction               Action = "s3:GetObjectRetention"
+	PutObjectRetentionAction               Action = "s3:PutObjectRetention"
+	BypassGovernanceRetentionAction        Action = "s3:BypassGovernanceRetention"
+	AllActions                             Action = "s3:*"
 )
 
 var supportedActionList = map[Action]struct{}{
-	GetBucketAclAction:               {},
-	CreateBucketAction:               {},
-	PutBucketAclAction:               {},
-	DeleteBucketAction:               {},
-	PutBucketVersioningAction:        {},
-	GetBucketVersioningAction:        {},
-	PutBucketPolicyAction:            {},
-	GetBucketPolicyAction:            {},
-	DeleteBucketPolicyAction:         {},
-	AbortMultipartUploadAction:       {},
-	ListMultipartUploadPartsAction:   {},
-	ListBucketMultipartUploadsAction: {},
-	PutObjectAction:                  {},
-	GetObjectAction:                  {},
-	DeleteObjectAction:               {},
-	GetObjectAclAction:               {},
-	GetObjectAttributesAction:        {},
-	PutObjectAclAction:               {},
-	RestoreObjectAction:              {},
-	GetBucketTaggingAction:           {},
-	PutBucketTaggingAction:           {},
-	GetObjectTaggingAction:           {},
-	PutObjectTaggingAction:           {},
-	DeleteObjectTaggingAction:        {},
-	ListBucketVersionsAction:         {},
-	ListBucketAction:                 {},
-	AllActions:                       {},
+	GetBucketAclAction:                     {},
+	CreateBucketAction:                     {},
+	PutBucketAclAction:                     {},
+	DeleteBucketAction:                     {},
+	PutBucketVersioningAction:              {},
+	GetBucketVersioningAction:              {},
+	PutBucketPolicyAction:                  {},
+	GetBucketPolicyAction:                  {},
+	DeleteBucketPolicyAction:               {},
+	AbortMultipartUploadAction:             {},
+	ListMultipartUploadPartsAction:         {},
+	ListBucketMultipartUploadsAction:       {},
+	PutObjectAction:                        {},
+	GetObjectAction:                        {},
+	DeleteObjectAction:                     {},
+	GetObjectAclAction:                     {},
+	GetObjectAttributesAction:              {},
+	PutObjectAclAction:                     {},
+	RestoreObjectAction:                    {},
+	GetBucketTaggingAction:                 {},
+	PutBucketTaggingAction:                 {},
+	GetObjectTaggingAction:                 {},
+	PutObjectTaggingAction:                 {},
+	DeleteObjectTaggingAction:              {},
+	ListBucketVersionsAction:               {},
+	ListBucketAction:                       {},
+	PutBucketObjectLockConfigurationAction: {},
+	GetObjectLegalHoldAction:               {},
+	PutObjectLegalHoldAction:               {},
+	GetObjectRetentionAction:               {},
+	PutObjectRetentionAction:               {},
+	BypassGovernanceRetentionAction:        {},
+	AllActions:                             {},
 }
 
 var supportedObjectActionList = map[Action]struct{}{
-	AbortMultipartUploadAction:     {},
-	ListMultipartUploadPartsAction: {},
-	PutObjectAction:                {},
-	GetObjectAction:                {},
-	DeleteObjectAction:             {},
-	GetObjectAclAction:             {},
-	GetObjectAttributesAction:      {},
-	PutObjectAclAction:             {},
-	RestoreObjectAction:            {},
-	GetObjectTaggingAction:         {},
-	PutObjectTaggingAction:         {},
-	DeleteObjectTaggingAction:      {},
-	AllActions:                     {},
+	AbortMultipartUploadAction:      {},
+	ListMultipartUploadPartsAction:  {},
+	PutObjectAction:                 {},
+	GetObjectAction:                 {},
+	DeleteObjectAction:              {},
+	GetObjectAclAction:              {},
+	GetObjectAttributesAction:       {},
+	PutObjectAclAction:              {},
+	RestoreObjectAction:             {},
+	GetObjectTaggingAction:          {},
+	PutObjectTaggingAction:          {},
+	DeleteObjectTaggingAction:       {},
+	GetObjectLegalHoldAction:        {},
+	PutObjectLegalHoldAction:        {},
+	GetObjectRetentionAction:        {},
+	PutObjectRetentionAction:        {},
+	BypassGovernanceRetentionAction: {},
+	AllActions:                      {},
 }
 
 // Validates Action: it should either wildcard match with supported actions list or be in it

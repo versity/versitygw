@@ -645,3 +645,62 @@ func getUserS3Client(usr user, cfg *S3Conf) *s3.Client {
 
 	return s3.NewFromConfig(config.Config())
 }
+
+// if true enables, otherwise disables
+func changeBucketObjectLockStatus(client *s3.Client, bucket string, status bool) error {
+	cfg := types.ObjectLockConfiguration{}
+	if status {
+		cfg.ObjectLockEnabled = types.ObjectLockEnabledEnabled
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+		Bucket:                  &bucket,
+		ObjectLockConfiguration: &cfg,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func checkWORMProtection(client *s3.Client, bucket, object string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		return err
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		return err
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: &bucket,
+		Delete: &types.Delete{
+			Objects: []types.ObjectIdentifier{
+				{
+					Key: &object,
+				},
+			},
+		},
+	})
+	cancel()
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		return err
+	}
+
+	return nil
+}

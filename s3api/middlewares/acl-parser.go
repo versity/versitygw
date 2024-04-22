@@ -48,7 +48,8 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger) fiber.Handler {
 			!ctx.Request().URI().QueryArgs().Has("acl") &&
 			!ctx.Request().URI().QueryArgs().Has("tagging") &&
 			!ctx.Request().URI().QueryArgs().Has("versioning") &&
-			!ctx.Request().URI().QueryArgs().Has("policy") {
+			!ctx.Request().URI().QueryArgs().Has("policy") &&
+			!ctx.Request().URI().QueryArgs().Has("object-lock") {
 			if err := auth.MayCreateBucket(acct, isRoot); err != nil {
 				return controllers.SendXMLResponse(ctx, nil, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
 			}

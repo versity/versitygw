@@ -131,7 +131,6 @@ func verifyBucketPolicy(policy []byte, access, bucket, object string, action Act
 		resource += "/" + object
 	}
 
-	fmt.Println(access, action, resource)
 	if !bucketPolicy.isAllowed(access, action, resource) {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
