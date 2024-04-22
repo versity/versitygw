@@ -16,6 +16,7 @@ require (
 	github.com/nats-io/nats.go v1.35.0
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.47
+	github.com/smira/go-statsd v1.3.3
 	github.com/urfave/cli/v2 v2.27.2
 	github.com/valyala/fasthttp v1.54.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
