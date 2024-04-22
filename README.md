@@ -15,10 +15,11 @@ Download [latest release](https://github.com/versity/versitygw/releases)
  |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
  
 ### Use Cases
-* Turn your local filesystem into an S3 server wiht a single command!
+* Turn your local filesystem into an S3 server with a single command!
 * Proxy S3 requests to S3 storage
 * Simple to deploy S3 server with a single command
-* Protocol compatibility in `posix` allows common access to files via posix or S3 
+* Protocol compatibility in `posix` allows common access to files via posix or S3
+* Simplified interface for adding new storage system support
 
 ### News
 * New performance (scale up) analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
