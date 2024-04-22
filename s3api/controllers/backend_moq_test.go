@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
 	"io"
@@ -81,13 +80,13 @@ var _ backend.Backend = &BackendMock{}
 //			GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
 //				panic("mock out the GetObjectAttributes method")
 //			},
-//			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockLegalHold, error) {
+//			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) (*bool, error) {
 //				panic("mock out the GetObjectLegalHold method")
 //			},
 //			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 //				panic("mock out the GetObjectLockConfiguration method")
 //			},
-//			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockRetention, error) {
+//			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) ([]byte, error) {
 //				panic("mock out the GetObjectRetention method")
 //			},
 //			GetObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error) {
@@ -138,13 +137,13 @@ var _ backend.Backend = &BackendMock{}
 //			PutObjectAclFunc: func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error {
 //				panic("mock out the PutObjectAcl method")
 //			},
-//			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, putObjectLegalHoldInput *s3.PutObjectLegalHoldInput) error {
+//			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, status bool) error {
 //				panic("mock out the PutObjectLegalHold method")
 //			},
-//			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, putObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput) error {
+//			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string, config []byte) error {
 //				panic("mock out the PutObjectLockConfiguration method")
 //			},
-//			PutObjectRetentionFunc: func(contextMoqParam context.Context, putObjectRetentionInput *s3.PutObjectRetentionInput) error {
+//			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error {
 //				panic("mock out the PutObjectRetention method")
 //			},
 //			PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
@@ -233,13 +232,13 @@ type BackendMock struct {
 	GetObjectAttributesFunc func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error)
 
 	// GetObjectLegalHoldFunc mocks the GetObjectLegalHold method.
-	GetObjectLegalHoldFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockLegalHold, error)
+	GetObjectLegalHoldFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) (*bool, error)
 
 	// GetObjectLockConfigurationFunc mocks the GetObjectLockConfiguration method.
 	GetObjectLockConfigurationFunc func(contextMoqParam context.Context, bucket string) ([]byte, error)
 
 	// GetObjectRetentionFunc mocks the GetObjectRetention method.
-	GetObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockRetention, error)
+	GetObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) ([]byte, error)
 
 	// GetObjectTaggingFunc mocks the GetObjectTagging method.
 	GetObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error)
@@ -290,13 +289,13 @@ type BackendMock struct {
 	PutObjectAclFunc func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error
 
 	// PutObjectLegalHoldFunc mocks the PutObjectLegalHold method.
-	PutObjectLegalHoldFunc func(contextMoqParam context.Context, putObjectLegalHoldInput *s3.PutObjectLegalHoldInput) error
+	PutObjectLegalHoldFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, status bool) error
 
 	// PutObjectLockConfigurationFunc mocks the PutObjectLockConfiguration method.
-	PutObjectLockConfigurationFunc func(contextMoqParam context.Context, putObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput) error
+	PutObjectLockConfigurationFunc func(contextMoqParam context.Context, bucket string, config []byte) error
 
 	// PutObjectRetentionFunc mocks the PutObjectRetention method.
-	PutObjectRetentionFunc func(contextMoqParam context.Context, putObjectRetentionInput *s3.PutObjectRetentionInput) error
+	PutObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error
 
 	// PutObjectTaggingFunc mocks the PutObjectTagging method.
 	PutObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error
@@ -615,22 +614,36 @@ type BackendMock struct {
 		PutObjectLegalHold []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// PutObjectLegalHoldInput is the putObjectLegalHoldInput argument value.
-			PutObjectLegalHoldInput *s3.PutObjectLegalHoldInput
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Object is the object argument value.
+			Object string
+			// VersionId is the versionId argument value.
+			VersionId string
+			// Status is the status argument value.
+			Status bool
 		}
 		// PutObjectLockConfiguration holds details about calls to the PutObjectLockConfiguration method.
 		PutObjectLockConfiguration []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// PutObjectLockConfigurationInput is the putObjectLockConfigurationInput argument value.
-			PutObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Config is the config argument value.
+			Config []byte
 		}
 		// PutObjectRetention holds details about calls to the PutObjectRetention method.
 		PutObjectRetention []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// PutObjectRetentionInput is the putObjectRetentionInput argument value.
-			PutObjectRetentionInput *s3.PutObjectRetentionInput
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Object is the object argument value.
+			Object string
+			// VersionId is the versionId argument value.
+			VersionId string
+			// Retention is the retention argument value.
+			Retention []byte
 		}
 		// PutObjectTagging holds details about calls to the PutObjectTagging method.
 		PutObjectTagging []struct {
@@ -1429,7 +1442,7 @@ func (mock *BackendMock) GetObjectAttributesCalls() []struct {
 }
 
 // GetObjectLegalHold calls GetObjectLegalHoldFunc.
-func (mock *BackendMock) GetObjectLegalHold(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockLegalHold, error) {
+func (mock *BackendMock) GetObjectLegalHold(contextMoqParam context.Context, bucket string, object string, versionId string) (*bool, error) {
 	if mock.GetObjectLegalHoldFunc == nil {
 		panic("BackendMock.GetObjectLegalHoldFunc: method is nil but Backend.GetObjectLegalHold was just called")
 	}
@@ -1509,7 +1522,7 @@ func (mock *BackendMock) GetObjectLockConfigurationCalls() []struct {
 }
 
 // GetObjectRetention calls GetObjectRetentionFunc.
-func (mock *BackendMock) GetObjectRetention(contextMoqParam context.Context, bucket string, object string, versionId string) (*types.ObjectLockRetention, error) {
+func (mock *BackendMock) GetObjectRetention(contextMoqParam context.Context, bucket string, object string, versionId string) ([]byte, error) {
 	if mock.GetObjectRetentionFunc == nil {
 		panic("BackendMock.GetObjectRetentionFunc: method is nil but Backend.GetObjectRetention was just called")
 	}
@@ -2145,21 +2158,27 @@ func (mock *BackendMock) PutObjectAclCalls() []struct {
 }
 
 // PutObjectLegalHold calls PutObjectLegalHoldFunc.
-func (mock *BackendMock) PutObjectLegalHold(contextMoqParam context.Context, putObjectLegalHoldInput *s3.PutObjectLegalHoldInput) error {
+func (mock *BackendMock) PutObjectLegalHold(contextMoqParam context.Context, bucket string, object string, versionId string, status bool) error {
 	if mock.PutObjectLegalHoldFunc == nil {
 		panic("BackendMock.PutObjectLegalHoldFunc: method is nil but Backend.PutObjectLegalHold was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam         context.Context
-		PutObjectLegalHoldInput *s3.PutObjectLegalHoldInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		VersionId       string
+		Status          bool
 	}{
-		ContextMoqParam:         contextMoqParam,
-		PutObjectLegalHoldInput: putObjectLegalHoldInput,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Object:          object,
+		VersionId:       versionId,
+		Status:          status,
 	}
 	mock.lockPutObjectLegalHold.Lock()
 	mock.calls.PutObjectLegalHold = append(mock.calls.PutObjectLegalHold, callInfo)
 	mock.lockPutObjectLegalHold.Unlock()
-	return mock.PutObjectLegalHoldFunc(contextMoqParam, putObjectLegalHoldInput)
+	return mock.PutObjectLegalHoldFunc(contextMoqParam, bucket, object, versionId, status)
 }
 
 // PutObjectLegalHoldCalls gets all the calls that were made to PutObjectLegalHold.
@@ -2167,12 +2186,18 @@ func (mock *BackendMock) PutObjectLegalHold(contextMoqParam context.Context, put
 //
 //	len(mockedBackend.PutObjectLegalHoldCalls())
 func (mock *BackendMock) PutObjectLegalHoldCalls() []struct {
-	ContextMoqParam         context.Context
-	PutObjectLegalHoldInput *s3.PutObjectLegalHoldInput
+	ContextMoqParam context.Context
+	Bucket          string
+	Object          string
+	VersionId       string
+	Status          bool
 } {
 	var calls []struct {
-		ContextMoqParam         context.Context
-		PutObjectLegalHoldInput *s3.PutObjectLegalHoldInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		VersionId       string
+		Status          bool
 	}
 	mock.lockPutObjectLegalHold.RLock()
 	calls = mock.calls.PutObjectLegalHold
@@ -2181,21 +2206,23 @@ func (mock *BackendMock) PutObjectLegalHoldCalls() []struct {
 }
 
 // PutObjectLockConfiguration calls PutObjectLockConfigurationFunc.
-func (mock *BackendMock) PutObjectLockConfiguration(contextMoqParam context.Context, putObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput) error {
+func (mock *BackendMock) PutObjectLockConfiguration(contextMoqParam context.Context, bucket string, config []byte) error {
 	if mock.PutObjectLockConfigurationFunc == nil {
 		panic("BackendMock.PutObjectLockConfigurationFunc: method is nil but Backend.PutObjectLockConfiguration was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam                 context.Context
-		PutObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Config          []byte
 	}{
-		ContextMoqParam:                 contextMoqParam,
-		PutObjectLockConfigurationInput: putObjectLockConfigurationInput,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Config:          config,
 	}
 	mock.lockPutObjectLockConfiguration.Lock()
 	mock.calls.PutObjectLockConfiguration = append(mock.calls.PutObjectLockConfiguration, callInfo)
 	mock.lockPutObjectLockConfiguration.Unlock()
-	return mock.PutObjectLockConfigurationFunc(contextMoqParam, putObjectLockConfigurationInput)
+	return mock.PutObjectLockConfigurationFunc(contextMoqParam, bucket, config)
 }
 
 // PutObjectLockConfigurationCalls gets all the calls that were made to PutObjectLockConfiguration.
@@ -2203,12 +2230,14 @@ func (mock *BackendMock) PutObjectLockConfiguration(contextMoqParam context.Cont
 //
 //	len(mockedBackend.PutObjectLockConfigurationCalls())
 func (mock *BackendMock) PutObjectLockConfigurationCalls() []struct {
-	ContextMoqParam                 context.Context
-	PutObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput
+	ContextMoqParam context.Context
+	Bucket          string
+	Config          []byte
 } {
 	var calls []struct {
-		ContextMoqParam                 context.Context
-		PutObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Config          []byte
 	}
 	mock.lockPutObjectLockConfiguration.RLock()
 	calls = mock.calls.PutObjectLockConfiguration
@@ -2217,21 +2246,27 @@ func (mock *BackendMock) PutObjectLockConfigurationCalls() []struct {
 }
 
 // PutObjectRetention calls PutObjectRetentionFunc.
-func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, putObjectRetentionInput *s3.PutObjectRetentionInput) error {
+func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error {
 	if mock.PutObjectRetentionFunc == nil {
 		panic("BackendMock.PutObjectRetentionFunc: method is nil but Backend.PutObjectRetention was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam         context.Context
-		PutObjectRetentionInput *s3.PutObjectRetentionInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		VersionId       string
+		Retention       []byte
 	}{
-		ContextMoqParam:         contextMoqParam,
-		PutObjectRetentionInput: putObjectRetentionInput,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Object:          object,
+		VersionId:       versionId,
+		Retention:       retention,
 	}
 	mock.lockPutObjectRetention.Lock()
 	mock.calls.PutObjectRetention = append(mock.calls.PutObjectRetention, callInfo)
 	mock.lockPutObjectRetention.Unlock()
-	return mock.PutObjectRetentionFunc(contextMoqParam, putObjectRetentionInput)
+	return mock.PutObjectRetentionFunc(contextMoqParam, bucket, object, versionId, retention)
 }
 
 // PutObjectRetentionCalls gets all the calls that were made to PutObjectRetention.
@@ -2239,12 +2274,18 @@ func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, put
 //
 //	len(mockedBackend.PutObjectRetentionCalls())
 func (mock *BackendMock) PutObjectRetentionCalls() []struct {
-	ContextMoqParam         context.Context
-	PutObjectRetentionInput *s3.PutObjectRetentionInput
+	ContextMoqParam context.Context
+	Bucket          string
+	Object          string
+	VersionId       string
+	Retention       []byte
 } {
 	var calls []struct {
-		ContextMoqParam         context.Context
-		PutObjectRetentionInput *s3.PutObjectRetentionInput
+		ContextMoqParam context.Context
+		Bucket          string
+		Object          string
+		VersionId       string
+		Retention       []byte
 	}
 	mock.lockPutObjectRetention.RLock()
 	calls = mock.calls.PutObjectRetention

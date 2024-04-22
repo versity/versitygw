@@ -151,7 +151,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 
 		data, err := c.be.GetObjectRetention(ctx.Context(), bucket, key, versionId)
-		return SendXMLResponse(ctx, data, err,
+		if err != nil {
+			return SendXMLResponse(ctx, data, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetObjectRetention",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		retention, err := auth.ParseObjectLockRetentionOutput(data)
+		return SendXMLResponse(ctx, retention, err,
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "GetObjectRetention",
@@ -179,7 +189,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 
 		data, err := c.be.GetObjectLegalHold(ctx.Context(), bucket, key, versionId)
-		return SendXMLResponse(ctx, data, err,
+		return SendXMLResponse(ctx, auth.ParseObjectLegalHoldOutput(data), err,
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "GetObjectLegalHold",
@@ -941,16 +951,6 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("object-lock") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
-		var input types.ObjectLockConfiguration
-		if err := xml.Unmarshal(ctx.Body(), &input); err != nil {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
-				&MetaOpts{
-					Logger:      c.logger,
-					Action:      "PutObjectLockConfiguration",
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-
 		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
@@ -967,10 +967,17 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err := c.be.PutObjectLockConfiguration(ctx.Context(), &s3.PutObjectLockConfigurationInput{
-			Bucket:                  &bucket,
-			ObjectLockConfiguration: &input,
-		})
+		config, err := auth.ParseBucketLockConfigurationInput(ctx.Body())
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutObjectLockConfiguration",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.PutObjectLockConfiguration(ctx.Context(), bucket, config)
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -1211,7 +1218,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
 	versionId := ctx.Query("versionId")
-	bypassGovernanceRetention := ctx.Get("X-Amz-Bypass-Governance-Retention")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
@@ -1313,24 +1319,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("retention") {
-		var retention types.ObjectLockRetention
-		if err := xml.Unmarshal(ctx.Body(), &retention); err != nil {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), &MetaOpts{
-				Logger:      c.logger,
-				Action:      "PutObjectRetention",
-				BucketOwner: parsedAcl.Owner,
-			})
-		}
-
-		if retention.RetainUntilDate == nil || retention.RetainUntilDate.Before(time.Now()) {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate),
-				&MetaOpts{
-					Logger:      c.logger,
-					Action:      "PutObjectRetention",
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-
 		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
@@ -1348,15 +1336,16 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		pass := bypassGovernanceRetention == "True"
+		retention, err := auth.ParseObjectLockRetentionInput(ctx.Body())
+		if err != nil {
+			return SendResponse(ctx, err, &MetaOpts{
+				Logger:      c.logger,
+				Action:      "PutObjectRetention",
+				BucketOwner: parsedAcl.Owner,
+			})
+		}
 
-		err := c.be.PutObjectRetention(ctx.Context(), &s3.PutObjectRetentionInput{
-			Bucket:                    &bucket,
-			Key:                       &keyStart,
-			VersionId:                 &versionId,
-			Retention:                 &retention,
-			BypassGovernanceRetention: &pass,
-		})
+		err = c.be.PutObjectRetention(ctx.Context(), bucket, keyStart, versionId, retention)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			Action:      "PutObjectRetention",
@@ -1391,12 +1380,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err := c.be.PutObjectLegalHold(ctx.Context(), &s3.PutObjectLegalHoldInput{
-			Bucket:    &bucket,
-			Key:       &keyStart,
-			VersionId: &versionId,
-			LegalHold: &legalHold,
-		})
+		err := c.be.PutObjectLegalHold(ctx.Context(), bucket, keyStart, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			Action:      "PutObjectLegalHold",

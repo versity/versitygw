@@ -205,11 +205,18 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			GetObjectTaggingFunc: func(_ context.Context, bucket, object string) (map[string]string, error) {
 				return map[string]string{"hello": "world"}, nil
 			},
-			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*types.ObjectLockRetention, error) {
-				return &types.ObjectLockRetention{}, nil
+			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+				result, err := json.Marshal(types.ObjectLockRetention{
+					Mode: types.ObjectLockRetentionModeCompliance,
+				})
+				if err != nil {
+					return nil, err
+				}
+				return result, nil
 			},
-			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*types.ObjectLockLegalHold, error) {
-				return &types.ObjectLockLegalHold{}, nil
+			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string) (*bool, error) {
+				result := true
+				return &result, nil
 			},
 		},
 	}
@@ -657,7 +664,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
 				return nil
 			},
-			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, putObjectLockConfigurationInput *s3.PutObjectLockConfigurationInput) error {
+			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string, config []byte) error {
 				return nil
 			},
 		},
@@ -919,10 +926,10 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			UploadPartCopyFunc: func(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
 				return s3response.CopyObjectResult{}, nil
 			},
-			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, putObjectLegalHoldInput *s3.PutObjectLegalHoldInput) error {
+			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string, status bool) error {
 				return nil
 			},
-			PutObjectRetentionFunc: func(contextMoqParam context.Context, putObjectRetentionInput *s3.PutObjectRetentionInput) error {
+			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, retention []byte) error {
 				return nil
 			},
 			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
