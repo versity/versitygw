@@ -14,6 +14,12 @@ Download [latest release](https://github.com/versity/versitygw/releases)
  |:-----------:|:-----------:|:-----------:|:-----------:|:---------:|:---------:|
  |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
  
+### Use Cases
+* Turn your local filesystem into an S3 server wiht a single command!
+* Proxy S3 requests to S3 storage
+* Simple to deploy S3 server with a single command
+* Protocol compatibility in `posix` allows common access to files via posix or S3 
+
 ### News
 * New performance (scale up) analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
 * New performance (scale out) Part 2 analysis article [https://github.com/versity/versitygw/wiki/Performance-Part-2](https://github.com/versity/versitygw/wiki/Performance-Part-2)
@@ -28,12 +34,6 @@ See project [documentation](https://github.com/versity/versitygw/wiki) on the wi
 Ask questions in the [community discussions](https://github.com/versity/versitygw/discussions).
 <br>
 Contact [Versity Sales](https://www.versity.com/contact/) to discuss enterprise support.
-
-### Use Cases
-* Share filesystem directory via S3 protocol
-* Proxy S3 requests to S3 storage
-* Simple to deploy S3 server with a single command
-* Protocol compatibility in `posix` allows common access to files via posix or S3 
 
 ### Overview
 Versity Gateway, a simple to use tool for seamless inline translation between AWS S3 object commands and storage systems. The Versity Gateway bridges the gap between S3-reliant applications and other storage systems, enabling enhanced compatibility and integration while offering exceptional scalability.
@@ -68,7 +68,7 @@ The command format is
 ```
 versitygw [global options] command [command options] [arguments...]
 ```
-The global options are specified before the backend type and the backend options are specified after.
+The [global options](https://github.com/versity/versitygw/wiki/Global-Options) are specified before the backend type and the backend options are specified after.
 
 ***
 
