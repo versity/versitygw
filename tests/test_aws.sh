@@ -114,8 +114,8 @@ source ./tests/test_common.sh
 }
 
 # test abilty to set and retrieve bucket tags
-@test "test-set-get-bucket-tags" {
-  test_common_set_get_bucket_tags "aws"
+@test "test-set-get-delete-bucket-tags" {
+  test_common_set_get_delete_bucket_tags "aws"
 }
 
 # test v1 s3api list objects command
@@ -417,4 +417,30 @@ source ./tests/test_common.sh
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "aws" "$BUCKET_TWO_NAME"
   delete_test_files "$bucket_file"
+}
+
+@test "test_add_object_metadata" {
+
+  object_one="object-one"
+  test_key="x-test-data"
+  test_value="test-value"
+
+  create_test_files "$object_one" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  object="$test_file_folder"/"$object_one"
+  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$test_key" "$test_value" || put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+  object_exists "aws" "$object" || local exists_result_one=$?
+  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+
+  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object" || get_result=$?
+  [[ $get_result -eq 0 ]] || fail "error getting object metadata"
+  key=$(echo "$metadata" | jq 'keys[]')
+  value=$(echo "$metadata" | jq '.[]')
+  [[ $key == "\"$test_key\"" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
+  [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
 }

@@ -148,7 +148,7 @@ test_common_list_objects() {
   fi
 }
 
-test_common_set_get_bucket_tags() {
+test_common_set_get_delete_bucket_tags() {
   if [[ $# -ne 1 ]]; then
     fail "set/get bucket tags test requires command type"
   fi
@@ -160,20 +160,14 @@ test_common_set_get_bucket_tags() {
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
   get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags"
+  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags first time"
 
-  if [[ $1 == 'aws' ]]; then
-    if [[ $tags != "" ]]; then
-      tag_set=$(echo "$tags" | jq '.TagSet')
-      [[ $tag_set == "[]" ]] || fail "Error:  tags not empty: $tags"
-    fi
-  else
-    [[ $tags == "" ]] || [[ $tags =~ "No tags found" ]] || fail "Error:  tags not empty: $tags"
-  fi
+  check_bucket_tags_empty "$1" || local check_result=$?
+  [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
 
   put_bucket_tag "$1" "$BUCKET_ONE_NAME" $key $value
   get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result_two=$?
-  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags"
+  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags second time"
 
   local tag_set_key
   local tag_set_value
@@ -189,6 +183,12 @@ test_common_set_get_bucket_tags() {
     [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
   fi
   delete_bucket_tags "$1" "$BUCKET_ONE_NAME"
+
+  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags third time"
+
+  check_bucket_tags_empty "$1" || local check_result=$?
+  [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }
 

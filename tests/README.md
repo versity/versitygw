@@ -36,12 +36,38 @@ Instructions are mostly the same; however, testing with the S3 backend requires 
 
 To set up the latter:
 1. Create a new AWS profile with ID and key values set to dummy 20-char allcaps and 40-char alphabetical values respectively.
-1. In the `.secrets` file being used, create the fields `AWS_ACCESS_KEY_ID_TWO` and `AWS_SECRET_ACCESS_KEY_TWO`.  Set these values to the actual AWS ID and key.  
-2. Set the values for `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` the same dummy values set in the AWS profile, and set `AWS_PROFILE` to the profile you just created.
-3. Create a new AWS profile with these dummy values.  In the `.env` file being used, set the `AWS_PROFILE` parameter to the name of this new profile, and the ID and key fields to the dummy values.  
-4. Set `BACKEND` to `s3`.  Also, change the `MC_ALIAS` value if testing **mc** in this configuration.
+2. In the `.secrets` file being used, create the fields `AWS_ACCESS_KEY_ID_TWO` and `AWS_SECRET_ACCESS_KEY_TWO`.  Set these values to the actual AWS ID and key.  
+3. Set the values for `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` the same dummy values set in the AWS profile, and set `AWS_PROFILE` to the profile you just created.
+4. Create a new AWS profile with these dummy values.  In the `.env` file being used, set the `AWS_PROFILE` parameter to the name of this new profile, and the ID and key fields to the dummy values.  
+5. Set `BACKEND` to `s3`.  Also, change the `MC_ALIAS` value if testing **mc** in this configuration.
+
+### Direct Mode
+
+To communicate directly with s3, in order to compare the gateway results to direct results:
+1.  Create an AWS profile with the direct connection info.  Set `AWS_PROFILE` to this.
+2.  Set `RUN_VERSITYGW` to false.
+3.  Set `AWS_ENDPOINT_URL` to the typical endpoint location (usually `https://s3.amazonaws.com`).
+4.  If testing **s3cmd**, create a new `s3cfg.local` file with `host_base` and `host_bucket` set to `s3.amazonaws.com`.
+5.  If testing **mc**, change the `MC_ALIAS` value to a new value such as `versity-direct`.
 
 ## Instructions - Running With Docker
 
-1.  Create a `.secrets` file in the `tests` folder, and add the `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and the `AWS_PROFILE` fields.
-2.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to an S3-backend-friendly config.  Example:  `docker build -t <tag> -f Dockerfile_test_bats --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" .`.
+1.  Create a `.secrets` file in the `tests` folder, and add the `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and the `AWS_PROFILE` fields, as well as the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
+2.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively.  Example:  `docker build -t <tag> -f Dockerfile_test_bats --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" .`.
+
+## Instructions - Running with docker-compose
+
+A file named `docker-compose-bats.yml` is provided in the root folder.  Four configurations are provided:
+* insecure (without certificates), with creation/removal of buckets
+* secure, posix backend, with static buckets
+* secure, posix backend, with creation/removal of buckets
+* secure, s3 backend, with creation/removal of buckets
+* direct mode
+
+To use each of these, creating a separate `.env` file for each is suggested.  How to do so is explained below.
+
+To run in insecure mode, comment out the `CERT` and `KEY` parameters in the `.env` file, and change the prefix for the `AWS_ENDPOINT_URL` parameter to `http://`.  Also, set `S3CMD_CONFIG` to point to a copy of the default s3cmd config file that has `use_https` set to false.  Finally, change `MC_ALIAS` to something new to avoid overwriting the secure `MC_ALIAS` values.
+
+To use static buckets set the `RECREATE_BUCKETS` value to `false`.
+
+For the s3 backend, see the **S3 Backend** instructions above.

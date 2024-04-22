@@ -61,8 +61,6 @@ USER tester
 COPY --chown=tester:tester . /home/tester
 
 WORKDIR /home/tester
-#RUN cp tests/.env.docker.s3.default tests/.env.docker.s3
-RUN cp tests/s3cfg.local.default tests/s3cfg.local
 RUN make
 
 RUN . $SECRETS_FILE && \

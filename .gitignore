@@ -47,5 +47,15 @@ tests/.secrets*
 users.json
 
 # env files for testing
-.env*
-!.env.default
+**/.env*
+**/!.env.default
+
+# s3cmd config files (testing)
+tests/s3cfg.local*
+tests/!s3cfg.local.default
+
+# keys
+*.pem
+
+# patches
+*.patch

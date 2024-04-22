@@ -1,0 +1,35 @@
+version: '3'
+
+services:
+  no_certs:
+    build:
+      context: .
+      dockerfile: Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.nocerts
+  static_buckets:
+    build:
+      context: .
+      dockerfile: Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.static
+  posix_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.default
+  s3_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.s3
+        - SECRETS_FILE=tests/.secrets.s3
+  direct:
+    build:
+      context: .
+      dockerfile: Dockerfile_test_bats
+      args:
+        - CONFIG_FILE=tests/.env.direct
+        - SECRETS_FILE=tests/.secrets.direct
