@@ -48,10 +48,13 @@ import (
 type key string
 
 const (
-	keyAclCapital key = "Acl"
-	keyAclLower   key = "acl"
-	keyTags       key = "Tags"
-	keyPolicy     key = "Policy"
+	keyAclCapital   key = "Acl"
+	keyAclLower     key = "acl"
+	keyTags         key = "Tags"
+	keyPolicy       key = "Policy"
+	keyBucketLock   key = "Bucket-Lock"
+	keyObjRetention key = "Object_retention"
+	keyObjLegalHold key = "Object_legal_hold"
 )
 
 type Azure struct {
@@ -842,6 +845,194 @@ func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 
 func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return az.PutBucketPolicy(ctx, bucket, nil)
+}
+
+func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	props.Metadata[string(keyBucketLock)] = backend.GetStringPtr(string(config))
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
+		Metadata: props.Metadata,
+	})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
+}
+
+func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return nil, err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	config, ok := props.Metadata[string(keyBucketLock)]
+	if !ok {
+		return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
+	}
+
+	return []byte(*config), nil
+}
+
+func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+	contClient, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+	contProps, err := contClient.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	contCfg, ok := contProps.Metadata[string(keyBucketLock)]
+	if !ok {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal([]byte(*contCfg), &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	blobClient, err := az.getBlobClient(bucket, object)
+	if err != nil {
+		return err
+	}
+
+	blobProps, err := blobClient.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	meta := blobProps.Metadata
+	if meta == nil {
+		meta = map[string]*string{
+			string(keyObjRetention): backend.GetStringPtr(string(retention)),
+		}
+	} else {
+		meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+	}
+
+	_, err = blobClient.SetMetadata(ctx, meta, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
+}
+
+func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, versionId string) ([]byte, error) {
+	client, err := az.getBlobClient(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	retentionPtr, ok := props.Metadata[string(keyObjRetention)]
+	if !ok {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+
+	return []byte(*retentionPtr), nil
+}
+
+func (az *Azure) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
+	contClient, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+	contProps, err := contClient.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	contCfg, ok := contProps.Metadata[string(keyBucketLock)]
+	if !ok {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal([]byte(*contCfg), &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	blobClient, err := az.getBlobClient(bucket, object)
+	if err != nil {
+		return err
+	}
+
+	blobProps, err := blobClient.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	var statusData string
+	if status {
+		statusData = "1"
+	} else {
+		statusData = "0"
+	}
+
+	meta := blobProps.Metadata
+	if meta == nil {
+		meta = map[string]*string{
+			string(keyObjLegalHold): &statusData,
+		}
+	} else {
+		meta[string(keyObjLegalHold)] = &statusData
+	}
+
+	_, err = blobClient.SetMetadata(ctx, meta, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
+}
+
+func (az *Azure) GetObjectLegalHold(ctx context.Context, bucket, object, versionId string) (*bool, error) {
+	client, err := az.getBlobClient(bucket, object)
+	if err != nil {
+		return nil, err
+	}
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	retentionPtr, ok := props.Metadata[string(keyObjLegalHold)]
+	if !ok {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
+	}
+
+	status := *retentionPtr == "1"
+
+	return &status, nil
 }
 
 func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
