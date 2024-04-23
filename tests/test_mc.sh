@@ -76,3 +76,11 @@ export RUN_MC=true
   [[ $bucket_info == *"does not exist"* ]] || fail "404 not returned for non-existent bucket info"
   delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
 }
+
+@test "test_delete_object_tagging" {
+  test_common_delete_object_tagging "mc"
+}
+
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "mc"
+}

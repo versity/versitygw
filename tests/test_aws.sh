@@ -6,6 +6,7 @@ source ./tests/util_aws.sh
 source ./tests/util_bucket_create.sh
 source ./tests/util_file.sh
 source ./tests/test_common.sh
+source ./tests/commands/delete_object_tagging.sh
 
 # test creation and deletion of bucket on versitygw
 @test "test_create_delete_bucket_aws" {
@@ -205,6 +206,7 @@ source ./tests/test_common.sh
   delete_test_files $bucket_file
 }
 
+# ADDED
 # test multi-part upload abort
 @test "test-multi-part-upload-abort" {
   local bucket_file="bucket-file"
@@ -443,4 +445,12 @@ source ./tests/test_common.sh
   value=$(echo "$metadata" | jq '.[]')
   [[ $key == "\"$test_key\"" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
   [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+}
+
+@test "test_delete_object_tagging" {
+  test_common_delete_object_tagging "aws"
+}
+
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "aws"
 }

@@ -2,6 +2,9 @@
 
 source ./tests/util.sh
 source ./tests/util_file.sh
+source ./tests/commands/delete_object_tagging.sh
+source ./tests/commands/get_bucket_location.sh
+source ./tests/commands/get_bucket_tagging.sh
 
 # common test for creating, deleting buckets
 # param:  "aws" or "s3cmd"
@@ -159,14 +162,14 @@ test_common_set_get_delete_bucket_tags() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting bucket tags first time"
 
-  check_bucket_tags_empty "$1" || local check_result=$?
+  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || local check_result=$?
   [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
 
   put_bucket_tag "$1" "$BUCKET_ONE_NAME" $key $value
-  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result_two=$?
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags second time"
 
   local tag_set_key
@@ -184,10 +187,10 @@ test_common_set_get_delete_bucket_tags() {
   fi
   delete_bucket_tags "$1" "$BUCKET_ONE_NAME"
 
-  get_bucket_tags "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting bucket tags third time"
 
-  check_bucket_tags_empty "$1" || local check_result=$?
+  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || local check_result=$?
   [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }
@@ -312,4 +315,46 @@ test_common_list_objects_file_count() {
   local file_count="${#object_array[@]}"
   [[ $file_count == 1001 ]] || fail "file count should be 1001, is $file_count"
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+}
+
+test_common_delete_object_tagging() {
+
+  [[ $# -eq 1 ]] || fail "test common delete object tagging requires command type"
+
+  bucket_file="bucket_file"
+  tag_key="key"
+  tag_value="value"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local put_object=$?
+  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+
+  put_object_tag "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || put_result=$?
+  [[ $put_result -eq 0 ]] || fail "failed to add tags to object"
+
+  get_and_verify_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || get_result=$?
+  [[ $get_result -eq 0 ]] || fail "failed to get tags"
+
+  delete_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || delete_result=$?
+  [[ $delete_result -eq 0 ]] || fail "error deleting object tagging"
+
+  check_object_tags_empty "$1" "$BUCKET_ONE_NAME" "$bucket_file" || get_result=$?
+  [[ $get_result -eq 0 ]] || fail "failed to get tags"
+
+  delete_bucket_or_contents "aws" "$BUCKET_TWO_NAME"
+  delete_test_files "$bucket_file"
+}
+
+test_common_get_bucket_location() {
+  [[ $# -eq 1 ]] || fail "test common get bucket location missing command type"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  get_bucket_location "aws" "$BUCKET_ONE_NAME"
+  # shellcheck disable=SC2154
+  [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
 }
