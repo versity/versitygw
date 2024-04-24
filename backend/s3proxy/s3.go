@@ -33,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -434,6 +435,128 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string
 		Key:    &object,
 	})
 	return handleError(err)
+}
+
+func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	_, err := s.client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+		Bucket: &bucket,
+		Policy: backend.GetStringPtr(string(policy)),
+	})
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
+	policy, err := s.client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+		Bucket: &bucket,
+	})
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	result := []byte{}
+	if policy.Policy != nil {
+		result = []byte(*policy.Policy)
+	}
+
+	return result, nil
+}
+
+func (s *S3Proxy) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	_, err := s.client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+		Bucket: &bucket,
+	})
+	return handleError(err)
+}
+
+func (s *S3Proxy) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
+	cfg, err := auth.ParseBucketLockConfigurationOutput(config)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+		Bucket:                  &bucket,
+		ObjectLockConfiguration: cfg,
+	})
+
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
+	resp, err := s.client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+		Bucket: &bucket,
+	})
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	config := auth.BucketLockConfig{
+		Enabled:          resp.ObjectLockConfiguration.ObjectLockEnabled == types.ObjectLockEnabledEnabled,
+		DefaultRetention: resp.ObjectLockConfiguration.Rule.DefaultRetention,
+	}
+
+	return json.Marshal(config)
+}
+
+func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+	ret, err := auth.ParseObjectLockRetentionOutput(retention)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
+		Retention: ret,
+	})
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetObjectRetention(ctx context.Context, bucket, object, versionId string) ([]byte, error) {
+	resp, err := s.client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
+	})
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return json.Marshal(resp.Retention)
+}
+
+func (s *S3Proxy) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
+	var st types.ObjectLockLegalHoldStatus
+	if status {
+		st = types.ObjectLockLegalHoldStatusOn
+	} else {
+		st = types.ObjectLockLegalHoldStatusOff
+	}
+
+	_, err := s.client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
+		LegalHold: &types.ObjectLockLegalHold{
+			Status: st,
+		},
+	})
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versionId string) (*bool, error) {
+	resp, err := s.client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
+	})
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	status := resp.LegalHold.Status == types.ObjectLockLegalHoldStatusOn
+	return &status, nil
 }
 
 func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
