@@ -16,6 +16,8 @@ package s3event
 
 import (
 	"bytes"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/s3response"
 )
 
 type Webhook struct {
@@ -77,11 +80,28 @@ func (w *Webhook) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 		return
 	}
 
-	schema, err := createEventSchema(ctx, meta, ConfigurationIdWebhook)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create webhook event: %v\n", err.Error())
+	if meta.EventName == EventObjectRemovedDeleteObjects {
+		var dObj s3response.DeleteObjects
+
+		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
+			return
+		}
+
+		// Events aren't send in correct order
+		for _, obj := range dObj.Objects {
+			key := *obj.Key
+			schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
+			schema.Records[0].S3.Object.Key = key
+			schema.Records[0].S3.Object.VersionId = obj.VersionId
+
+			go w.send(schema)
+		}
+
 		return
 	}
+
+	schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
 
 	go w.send(schema)
 }
@@ -90,8 +110,14 @@ func (w *Webhook) Close() error {
 	return nil
 }
 
-func (w *Webhook) send(event []byte) {
-	req, err := http.NewRequest(http.MethodPost, w.url, bytes.NewReader(event))
+func (w *Webhook) send(event EventSchema) {
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse event data: %v\n", err.Error())
+		return
+	}
+
+	req, err := http.NewRequest(http.MethodPost, w.url, bytes.NewReader(eventBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create webhook event request: %v\n", err.Error())
 		return

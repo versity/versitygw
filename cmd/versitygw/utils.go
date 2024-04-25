@@ -54,19 +54,21 @@ func generateEventFiltersConfig(ctx *cli.Context) error {
 	}
 
 	config := s3event.EventFilter{
-		s3event.EventObjectCreated:           true,
-		s3event.EventObjectCreatedPut:        true,
-		s3event.EventObjectCreatedPost:       true,
-		s3event.EventObjectCreatedCopy:       true,
-		s3event.EventCompleteMultipartUpload: true,
-		s3event.EventObjectDeleted:           true,
-		s3event.EventObjectTagging:           true,
-		s3event.EventObjectTaggingPut:        true,
-		s3event.EventObjectTaggingDelete:     true,
-		s3event.EventObjectAclPut:            true,
-		s3event.EventObjectRestore:           true,
-		s3event.EventObjectRestorePost:       true,
-		s3event.EventObjectRestoreCompleted:  true,
+		s3event.EventObjectCreated:              true,
+		s3event.EventObjectCreatedPut:           true,
+		s3event.EventObjectCreatedPost:          true,
+		s3event.EventObjectCreatedCopy:          true,
+		s3event.EventCompleteMultipartUpload:    true,
+		s3event.EventObjectRemoved:              true,
+		s3event.EventObjectRemovedDelete:        true,
+		s3event.EventObjectRemovedDeleteObjects: true,
+		s3event.EventObjectTagging:              true,
+		s3event.EventObjectTaggingPut:           true,
+		s3event.EventObjectTaggingDelete:        true,
+		s3event.EventObjectAclPut:               true,
+		s3event.EventObjectRestore:              true,
+		s3event.EventObjectRestorePost:          true,
+		s3event.EventObjectRestoreCompleted:     true,
 	}
 
 	configBytes, err := json.Marshal(config)

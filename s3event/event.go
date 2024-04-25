@@ -37,11 +37,11 @@ type EventMeta struct {
 	VersionId   *string
 }
 
-type EventFields struct {
-	Records []EventSchema
+type EventSchema struct {
+	Records []EventRecord
 }
 
-type EventSchema struct {
+type EventRecord struct {
 	EventVersion      string                `json:"eventVersion"`
 	EventSource       string                `json:"eventSource"`
 	AwsRegion         string                `json:"awsRegion"`
@@ -139,54 +139,54 @@ func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
 	return evSender, err
 }
 
-func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId) ([]byte, error) {
+func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId) EventSchema {
 	path := strings.Split(ctx.Path(), "/")
 	bucket, object := path[1], strings.Join(path[2:], "/")
 	acc := ctx.Locals("account").(auth.Account)
 
-	event := []EventSchema{
-		{
-			EventVersion: "2.2",
-			EventSource:  "aws:s3",
-			AwsRegion:    ctx.Locals("region").(string),
-			EventTime:    time.Now().Format(time.RFC3339),
-			EventName:    meta.EventName,
-			UserIdentity: EventUserIdentity{
-				PrincipalId: acc.Access,
-			},
-			RequestParameters: EventRequestParams{
-				SourceIPAddress: ctx.IP(),
-			},
-			ResponseElements: EventResponseElements{
-				RequestId: ctx.Get("X-Amz-Request-Id"),
-				HostId:    ctx.Get("X-Amz-Id-2"),
-			},
-			S3: EventS3Data{
-				S3SchemaVersion: "1.0",
-				ConfigurationId: configId,
-				Bucket: EventS3BucketData{
-					Name: bucket,
-					OwnerIdentity: EventUserIdentity{
-						PrincipalId: meta.BucketOwner,
+	return EventSchema{
+		Records: []EventRecord{
+			{
+				EventVersion: "2.2",
+				EventSource:  "aws:s3",
+				AwsRegion:    ctx.Locals("region").(string),
+				EventTime:    time.Now().Format(time.RFC3339),
+				EventName:    meta.EventName,
+				UserIdentity: EventUserIdentity{
+					PrincipalId: acc.Access,
+				},
+				RequestParameters: EventRequestParams{
+					SourceIPAddress: ctx.IP(),
+				},
+				ResponseElements: EventResponseElements{
+					RequestId: ctx.Get("X-Amz-Request-Id"),
+					HostId:    ctx.Get("X-Amz-Id-2"),
+				},
+				S3: EventS3Data{
+					S3SchemaVersion: "1.0",
+					ConfigurationId: configId,
+					Bucket: EventS3BucketData{
+						Name: bucket,
+						OwnerIdentity: EventUserIdentity{
+							PrincipalId: meta.BucketOwner,
+						},
+						Arn: fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/")),
 					},
-					Arn: fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/")),
+					Object: EventObjectData{
+						Key:       object,
+						Size:      meta.ObjectSize,
+						ETag:      meta.ObjectETag,
+						VersionId: meta.VersionId,
+						Sequencer: genSequencer(),
+					},
 				},
-				Object: EventObjectData{
-					Key:       object,
-					Size:      meta.ObjectSize,
-					ETag:      meta.ObjectETag,
-					VersionId: meta.VersionId,
-					Sequencer: genSequencer(),
+				GlacierEventData: EventGlacierData{
+					// Not supported
+					RestoreEventData: EventRestoreData{},
 				},
-			},
-			GlacierEventData: EventGlacierData{
-				// Not supported
-				RestoreEventData: EventRestoreData{},
 			},
 		},
 	}
-
-	return json.Marshal(event)
 }
 
 func generateTestEvent() ([]byte, error) {

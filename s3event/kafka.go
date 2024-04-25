@@ -16,6 +16,8 @@ package s3event
 
 import (
 	"context"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"sync"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/segmentio/kafka-go"
+	"github.com/versity/versitygw/s3response"
 )
 
 var sequencer = 0
@@ -78,11 +81,28 @@ func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 		return
 	}
 
-	schema, err := createEventSchema(ctx, meta, ConfigurationIdKafka)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create kafka event: %v\n", err.Error())
+	if meta.EventName == EventObjectRemovedDeleteObjects {
+		var dObj s3response.DeleteObjects
+
+		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
+			return
+		}
+
+		// Events aren't send in correct order
+		for _, obj := range dObj.Objects {
+			key := *obj.Key
+			schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
+			schema.Records[0].S3.Object.Key = key
+			schema.Records[0].S3.Object.VersionId = obj.VersionId
+
+			go ks.send(schema)
+		}
+
 		return
 	}
+
+	schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
 
 	go ks.send(schema)
 }
@@ -91,14 +111,20 @@ func (ks *Kafka) Close() error {
 	return ks.writer.Close()
 }
 
-func (ks *Kafka) send(event []byte) {
+func (ks *Kafka) send(event EventSchema) {
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse event data: %v\n", err.Error())
+		return
+	}
+
 	message := kafka.Message{
 		Key:   []byte(ks.key),
-		Value: event,
+		Value: eventBytes,
 	}
 
 	ctx := context.Background()
-	err := ks.writer.WriteMessages(ctx, message)
+	err = ks.writer.WriteMessages(ctx, message)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to send kafka event: %v\n", err.Error())
 	}

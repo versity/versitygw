@@ -1947,6 +1947,8 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 			Logger:      c.logger,
 			Action:      "DeleteObjects",
 			BucketOwner: parsedAcl.Owner,
+			EvSender:    c.evSender,
+			EventName:   s3event.EventObjectRemovedDeleteObjects,
 		})
 }
 
@@ -2077,7 +2079,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			EvSender:    c.evSender,
 			Action:      "DeleteObject",
 			BucketOwner: parsedAcl.Owner,
-			EventName:   s3event.EventObjectDeleted,
+			EventName:   s3event.EventObjectRemovedDelete,
 			Status:      http.StatusNoContent,
 		})
 }

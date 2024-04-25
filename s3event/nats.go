@@ -15,12 +15,15 @@
 package s3event
 
 import (
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"sync"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/nats-io/nats.go"
+	"github.com/versity/versitygw/s3response"
 )
 
 type NatsEventSender struct {
@@ -65,11 +68,28 @@ func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 		return
 	}
 
-	schema, err := createEventSchema(ctx, meta, ConfigurationIdNats)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create nats event: %v\n", err.Error())
+	if meta.EventName == EventObjectRemovedDeleteObjects {
+		var dObj s3response.DeleteObjects
+
+		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
+			return
+		}
+
+		// Events aren't send in correct order
+		for _, obj := range dObj.Objects {
+			key := *obj.Key
+			schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
+			schema.Records[0].S3.Object.Key = key
+			schema.Records[0].S3.Object.VersionId = obj.VersionId
+
+			go ns.send(schema)
+		}
+
 		return
 	}
+
+	schema := createEventSchema(ctx, meta, ConfigurationIdWebhook)
 
 	go ns.send(schema)
 }
@@ -79,8 +99,13 @@ func (ns *NatsEventSender) Close() error {
 	return nil
 }
 
-func (ns *NatsEventSender) send(event []byte) {
-	err := ns.client.Publish(ns.topic, event)
+func (ns *NatsEventSender) send(event EventSchema) {
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to parse event data: %v\n", err.Error())
+		return
+	}
+	err = ns.client.Publish(ns.topic, eventBytes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to send nats event: %v\n", err.Error())
 	}
