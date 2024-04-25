@@ -2,6 +2,7 @@
 
 source ./tests/util_mc.sh
 source ./tests/logger.sh
+source ./tests/commands/get_bucket_tagging.sh
 
 # delete an AWS bucket
 # param:  bucket name
@@ -596,40 +597,12 @@ put_bucket_tag() {
   return 0
 }
 
-# get bucket tags
-# params:  bucket
-# export 'tags' on success, return 1 for error
-get_bucket_tags() {
-  if [ $# -ne 2 ]; then
-    echo "get bucket tag command missing command type, bucket name"
-    return 1
-  fi
-  local result
-  if [[ $1 == 'aws' ]]; then
-    tags=$(aws --no-verify-ssl s3api get-bucket-tagging --bucket "$2" 2>&1) || result=$?
-  elif [[ $1 == 'mc' ]]; then
-    tags=$(mc --insecure tag list "$MC_ALIAS"/"$2" 2>&1) || result=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  log 5 "Tags: $tags"
-  tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
-  if [[ $result -ne 0 ]]; then
-    if [[ $tags =~ "No tags found" ]] || [[ $tags =~ "The TagSet does not exist" ]]; then
-      export tags=
-      return 0
-    fi
-    echo "error getting bucket tags: $tags"
-    return 1
-  fi
-  export tags
-}
 
-check_bucket_tags_empty() {
+
+check_tags_empty() {
   if [[ $# -ne 1 ]]; then
-    echo "bucket tags empty check requires command type"
-    return 2
+    echo "check tags empty requires command type"
+    return 1
   fi
   if [[ $1 == 'aws' ]]; then
     if [[ $tags != "" ]]; then
@@ -646,6 +619,34 @@ check_bucket_tags_empty() {
     fi
   fi
   return 0
+}
+
+check_object_tags_empty() {
+  if [[ $# -ne 3 ]]; then
+    echo "bucket tags empty check requires command type, bucket, and key"
+    return 2
+  fi
+  get_object_tags "$1" "$2" "$3" || get_result=$?
+  if [[ $get_result -ne 0 ]]; then
+    echo "failed to get tags"
+    return 2
+  fi
+  check_tags_empty "$1" || check_result=$?
+  return $check_result
+}
+
+check_bucket_tags_empty() {
+  if [[ $# -ne 2 ]]; then
+    echo "bucket tags empty check requires command type, bucket"
+    return 2
+  fi
+  get_bucket_tagging "$1" "$2" || get_result=$?
+  if [[ $get_result -ne 0 ]]; then
+    echo "failed to get tags"
+    return 2
+  fi
+  check_tags_empty "$1" || check_result=$?
+  return $check_result
 }
 
 delete_bucket_tags() {
@@ -686,6 +687,35 @@ put_object_tag() {
   if [[ $result -ne 0 ]]; then
     echo "Error adding object tag: $error"
     return 1
+  fi
+  return 0
+}
+
+get_and_verify_object_tags() {
+  if [[ $# -ne 5 ]]; then
+    echo "get and verify object tags missing command type, bucket, key, tag key, tag value"
+    return 1
+  fi
+  get_object_tags "$1" "$2" "$3" || get_result=$?
+  if [[ $get_result -ne 0 ]]; then
+    echo "failed to get tags"
+    return 1
+  fi
+  if [[ $1 == 'aws' ]]; then
+    tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
+    if [[ $tag_set_key != '"'$4'"' ]]; then
+      echo "Key mismatch ($tag_set_key, \"$4\")"
+      return 1
+    fi
+    if [[ $tag_set_value != '"'$5'"' ]]; then
+      echo "Value mismatch ($tag_set_value, \"$5\")"
+      return 1
+    fi
+  else
+    read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
+    [[ $tag_set_key == "$4" ]] || fail "Key mismatch"
+    [[ $tag_set_value == "$5" ]] || fail "Value mismatch"
   fi
   return 0
 }

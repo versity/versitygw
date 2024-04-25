@@ -71,3 +71,7 @@ export RUN_S3CMD=true
   [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
   delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
 }
+
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "s3cmd"
+}
