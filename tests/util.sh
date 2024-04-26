@@ -228,34 +228,6 @@ object_exists() {
   return 0
 }
 
-# add object to versitygw
-# params:  source file, destination copy location
-# return 0 for success, 1 for failure
-put_object() {
-  if [ $# -ne 3 ]; then
-    echo "put object command requires command type, source, destination"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3 cp "$2" s3://"$3" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$(dirname "$3")" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure cp "$2" "$MC_ALIAS"/"$(dirname "$3")" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  log 5 "put object exit code: $exit_code"
-  if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
-    return 1
-  fi
-  return 0
-}
-
 put_object_with_metadata() {
   if [ $# -ne 5 ]; then
     echo "put object command requires command type, source, destination, key, value"
@@ -345,8 +317,8 @@ check_and_put_object() {
     return 1
   fi
   if [ "$exists_result" -eq 1 ]; then
-    put_object "$1" "$2" || local put_result=$?
-    if [ "$put_result" -ne 0 ]; then
+    copy_object "$1" "$2" || local copy_result=$?
+    if [ "$copy_result" -ne 0 ]; then
       echo "error adding object"
       return 1
     fi
@@ -1004,9 +976,9 @@ multipart_upload_from_bucket() {
   fi
 
   for ((i=0;i<$4;i++)) {
-    put_object "aws" "$3"-"$i" "$1" || put_result=$?
-    if [[ $put_result -ne 0 ]]; then
-      echo "error putting object"
+    copy_object "aws" "$3"-"$i" "$1" || copy_result=$?
+    if [[ $copy_result -ne 0 ]]; then
+      echo "error copying object"
       return 1
     fi
   }

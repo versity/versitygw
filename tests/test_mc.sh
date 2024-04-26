@@ -3,8 +3,15 @@
 source ./tests/test_common.sh
 source ./tests/setup.sh
 source ./tests/util_bucket_create.sh
+source ./tests/commands/delete_bucket_policy.sh
+source ./tests/commands/get_bucket_policy.sh
+source ./tests/commands/put_bucket_policy.sh
 
 export RUN_MC=true
+
+@test "test_multipart_upload_mc" {
+  test_common_multipart_upload "mc"
+}
 
 # test mc bucket creation/deletion
 @test "test_create_delete_bucket_mc" {
@@ -12,11 +19,11 @@ export RUN_MC=true
 }
 
 @test "test_put_object-with-data-mc" {
-  test_common_put_object_with_data "mc"
+  test_common_copy_object_with_data "mc"
 }
 
 @test "test_put_object-no-data-mc" {
-  test_common_put_object_no_data "mc"
+  test_common_copy_object_no_data "mc"
 }
 
 @test "test_list_buckets_mc" {
@@ -33,10 +40,6 @@ export RUN_MC=true
 
 @test "test_set_get_object_tags_mc" {
   test_common_set_get_object_tags "mc"
-}
-
-@test "test_multipart_upload_mc" {
-  test_common_multipart_upload "mc"
 }
 
 @test "test_presigned_url_utf8_chars_mc" {
@@ -83,4 +86,8 @@ export RUN_MC=true
 
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "mc"
+}
+
+@test "test_get_put_delete_bucket_policy" {
+  test_common_get_put_delete_bucket_policy "mc"
 }
