@@ -521,6 +521,18 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
+func (p *Posix) retrieveUploadId(bucket, object string) (string, error) {
+	sum := sha256.Sum256([]byte(object))
+	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
+
+	entries, err := os.ReadDir(objdir)
+	if err != nil || len(entries) == 0 {
+		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	return entries[0].Name(), nil
+}
+
 // fll out the user metadata map with the metadata for the object
 // and return the content type and encoding
 func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (string, string) {
@@ -1505,6 +1517,9 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 
 	size := fi.Size()
 
+	//TODO: Add object lock status properties
+	//TODO: the method must handle multipart upload case
+
 	return &s3.HeadObjectOutput{
 		ContentLength:   &size,
 		ContentType:     &contentType,
@@ -1512,6 +1527,65 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
+	}, nil
+}
+
+func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+	data, err := p.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: input.Bucket,
+		Key:    input.Key,
+	})
+	if err == nil {
+		return s3response.GetObjectAttributesResult{
+			ETag:         data.ETag,
+			LastModified: data.LastModified,
+			ObjectSize:   data.ContentLength,
+			StorageClass: &data.StorageClass,
+			VersionId:    data.VersionId,
+		}, nil
+	}
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return s3response.GetObjectAttributesResult{}, err
+	}
+
+	uploadId, err := p.retrieveUploadId(*input.Bucket, *input.Key)
+	if err != nil {
+		return s3response.GetObjectAttributesResult{}, err
+	}
+
+	resp, err := p.ListParts(ctx, &s3.ListPartsInput{
+		Bucket:           input.Bucket,
+		Key:              input.Key,
+		UploadId:         &uploadId,
+		PartNumberMarker: input.PartNumberMarker,
+		MaxParts:         input.MaxParts,
+	})
+	if err != nil {
+		return s3response.GetObjectAttributesResult{}, err
+	}
+
+	parts := []types.ObjectPart{}
+
+	for _, p := range resp.Parts {
+		partNumber := int32(p.PartNumber)
+		size := p.Size
+
+		parts = append(parts, types.ObjectPart{
+			Size:       &size,
+			PartNumber: &partNumber,
+		})
+	}
+
+	//TODO: handle PartsCount prop
+	//TODO: Maybe simply calling ListParts isn't a good option
+	return s3response.GetObjectAttributesResult{
+		ObjectParts: &s3response.ObjectParts{
+			IsTruncated:          resp.IsTruncated,
+			MaxParts:             resp.MaxParts,
+			PartNumberMarker:     resp.PartNumberMarker,
+			NextPartNumberMarker: resp.NextPartNumberMarker,
+			Parts:                parts,
+		},
 	}, nil
 }
 

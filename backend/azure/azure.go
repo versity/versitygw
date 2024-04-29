@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -314,6 +315,61 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		LastModified:       resp.LastModified,
 		Metadata:           parseAzMetadata(resp.Metadata),
 		Expires:            resp.ExpiresOn,
+	}, nil
+}
+
+func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+	data, err := az.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: input.Bucket,
+		Key:    input.Key,
+	})
+	if err == nil {
+		return s3response.GetObjectAttributesResult{
+			ETag:         data.ETag,
+			LastModified: data.LastModified,
+			ObjectSize:   data.ContentLength,
+			StorageClass: &data.StorageClass,
+			VersionId:    data.VersionId,
+		}, nil
+	}
+	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return s3response.GetObjectAttributesResult{}, err
+	}
+
+	resp, err := az.ListParts(ctx, &s3.ListPartsInput{
+		Bucket:           input.Bucket,
+		Key:              input.Key,
+		PartNumberMarker: input.PartNumberMarker,
+		MaxParts:         input.MaxParts,
+	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)) {
+		return s3response.GetObjectAttributesResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return s3response.GetObjectAttributesResult{}, err
+	}
+
+	parts := []types.ObjectPart{}
+
+	for _, p := range resp.Parts {
+		partNumber := int32(p.PartNumber)
+		size := p.Size
+
+		parts = append(parts, types.ObjectPart{
+			Size:       &size,
+			PartNumber: &partNumber,
+		})
+	}
+
+	//TODO: handle PartsCount prop
+	return s3response.GetObjectAttributesResult{
+		ObjectParts: &s3response.ObjectParts{
+			IsTruncated:          resp.IsTruncated,
+			MaxParts:             resp.MaxParts,
+			PartNumberMarker:     resp.PartNumberMarker,
+			NextPartNumberMarker: resp.PartNumberMarker,
+			Parts:                parts,
+		},
 	}, nil
 }
 

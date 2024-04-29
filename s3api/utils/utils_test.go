@@ -6,8 +6,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/s3response"
 )
 
 func TestCreateHttpRequestFromCtx(t *testing.T) {
@@ -260,6 +262,61 @@ func TestParseUint(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("ParseMaxKeys() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterObjectAttributes(t *testing.T) {
+	type args struct {
+		attrs  map[types.ObjectAttributes]struct{}
+		output s3response.GetObjectAttributesResult
+	}
+	etag, objSize := "etag", int64(3222)
+	tests := []struct {
+		name string
+		args args
+		want s3response.GetObjectAttributesResult
+	}{
+		{
+			name: "keep only ETag",
+			args: args{
+				attrs: map[types.ObjectAttributes]struct{}{
+					types.ObjectAttributesEtag: {},
+				},
+				output: s3response.GetObjectAttributesResult{
+					ObjectSize: &objSize,
+					ETag:       &etag,
+				},
+			},
+			want: s3response.GetObjectAttributesResult{ETag: &etag},
+		},
+		{
+			name: "keep multiple props",
+			args: args{
+				attrs: map[types.ObjectAttributes]struct{}{
+					types.ObjectAttributesEtag:         {},
+					types.ObjectAttributesObjectSize:   {},
+					types.ObjectAttributesStorageClass: {},
+				},
+				output: s3response.GetObjectAttributesResult{
+					ObjectSize:  &objSize,
+					ETag:        &etag,
+					ObjectParts: &s3response.ObjectParts{},
+					VersionId:   &etag,
+				},
+			},
+			want: s3response.GetObjectAttributesResult{
+				ETag:       &etag,
+				ObjectSize: &objSize,
+				VersionId:  &etag,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FilterObjectAttributes(tt.args.attrs, tt.args.output); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("FilterObjectAttributes() = %v, want %v", got, tt.want)
 			}
 		})
 	}
