@@ -291,7 +291,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	if attrs := ctx.Get("X-Amz-Object-Attributes"); attrs != "" {
+	if ctx.Request().URI().QueryArgs().Has("attributes") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
@@ -309,17 +309,36 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		var oattrs []types.ObjectAttributes
-		for _, a := range strings.Split(attrs, ",") {
-			oattrs = append(oattrs, types.ObjectAttributes(a))
+		maxParts := ctx.Get("X-Amz-Max-Parts")
+		partNumberMarker := ctx.Get("X-Amz-Part-Number-Marker")
+		maxPartsParsed, err := utils.ParseUint(maxParts)
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetObjectAttributes",
+					BucketOwner: parsedAcl.Owner,
+				})
 		}
+		attrs := utils.ParseObjectAttributes(ctx)
+
 		res, err := c.be.GetObjectAttributes(ctx.Context(),
 			&s3.GetObjectAttributesInput{
 				Bucket:           &bucket,
 				Key:              &key,
-				ObjectAttributes: oattrs,
+				PartNumberMarker: &partNumberMarker,
+				MaxParts:         &maxPartsParsed,
+				VersionId:        &versionId,
 			})
-		return SendXMLResponse(ctx, res, err,
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "GetObjectAttributes",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+		return SendXMLResponse(ctx, utils.FilterObjectAttributes(attrs, res), err,
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "GetObjectAttributes",

@@ -296,9 +296,41 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.
 	return output, nil
 }
 
-func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (*s3.GetObjectAttributesOutput, error) {
+func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
 	out, err := s.client.GetObjectAttributes(ctx, input)
-	return out, handleError(err)
+
+	parts := s3response.ObjectParts{}
+	objParts := out.ObjectParts
+	if objParts != nil {
+		if objParts.PartNumberMarker != nil {
+			partNumberMarker, err := strconv.Atoi(*objParts.PartNumberMarker)
+			if err != nil {
+				parts.PartNumberMarker = partNumberMarker
+			}
+			if objParts.NextPartNumberMarker != nil {
+				nextPartNumberMarker, err := strconv.Atoi(*objParts.NextPartNumberMarker)
+				if err != nil {
+					parts.NextPartNumberMarker = nextPartNumberMarker
+				}
+			}
+			if objParts.IsTruncated != nil {
+				parts.IsTruncated = *objParts.IsTruncated
+			}
+			if objParts.MaxParts != nil {
+				parts.MaxParts = int(*objParts.MaxParts)
+			}
+			parts.Parts = objParts.Parts
+		}
+	}
+
+	return s3response.GetObjectAttributesResult{
+		ETag:         out.ETag,
+		LastModified: out.LastModified,
+		ObjectSize:   out.ObjectSize,
+		StorageClass: &out.StorageClass,
+		VersionId:    out.VersionId,
+		ObjectParts:  &parts,
+	}, handleError(err)
 }
 
 func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {

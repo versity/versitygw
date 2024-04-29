@@ -1,7 +1,9 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/xml"
 	"errors"
@@ -2446,6 +2448,247 @@ func HeadObject_success(s *S3Conf) error {
 		}
 		if contentLength != dataLen {
 			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_non_existing_bucket(s *S3Conf) error {
+	testName := "GetObjectAttributes_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket:           getPtr(getBucketName()),
+			Key:              getPtr("my-obj"),
+			ObjectAttributes: []types.ObjectAttributes{},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_non_existing_object(s *S3Conf) error {
+	testName := "GetObjectAttributes_non_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket:           &bucket,
+			Key:              getPtr("my-obj"),
+			ObjectAttributes: []types.ObjectAttributes{},
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_existing_object(s *S3Conf) error {
+	testName := "GetObjectAttributes_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, data_len := "my-obj", int64(45679)
+		data := make([]byte, data_len)
+
+		_, err := rand.Read(data)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   bytes.NewReader(data),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+				types.ObjectAttributesObjectSize,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ETag == nil || out.ETag == nil {
+			return fmt.Errorf("nil ETag output")
+		}
+		if *resp.ETag != *out.ETag {
+			return fmt.Errorf("expected ETag to be %v, instead got %v", *resp.ETag, *out.ETag)
+		}
+		if out.ObjectSize == nil {
+			return fmt.Errorf("nil object size output")
+		}
+		if *out.ObjectSize != data_len {
+			return fmt.Errorf("expected object size to be %v, instead got %v", data_len, *out.ObjectSize)
+		}
+		if out.Checksum != nil {
+			return fmt.Errorf("expected checksum do be nil, instead got %v", *out.Checksum)
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_multipart_upload(s *S3Conf) error {
+	testName := "GetObjectAttributes_multipart_upload"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesObjectParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectParts == nil {
+			return fmt.Errorf("expected non nil object parts")
+		}
+
+		for i, p := range resp.ObjectParts.Parts {
+			if *p.PartNumber != *parts[i].PartNumber {
+				return fmt.Errorf("expected part number to be %v, instead got %v", *parts[i].PartNumber, *p.PartNumber)
+			}
+			if *p.Size != *parts[i].Size {
+				return fmt.Errorf("expected part size to be %v, instead got %v", *parts[i].Size, *p.Size)
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_multipart_upload_truncated(s *S3Conf) error {
+	testName := "GetObjectAttributes_multipart_upload_truncated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		maxParts := int32(3)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesObjectParts,
+			},
+			MaxParts: &maxParts,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectParts == nil {
+			return fmt.Errorf("expected non nil object parts")
+		}
+		if resp.ObjectParts.IsTruncated == nil {
+			return fmt.Errorf("expected non nil isTruncated")
+		}
+		if !*resp.ObjectParts.IsTruncated {
+			return fmt.Errorf("expected object parts to be truncated")
+		}
+		if resp.ObjectParts.MaxParts == nil {
+			return fmt.Errorf("expected non nil max-parts")
+		}
+		if *resp.ObjectParts.MaxParts != maxParts {
+			return fmt.Errorf("expected max-parts to be %v, instead got %v", maxParts, *resp.ObjectParts.MaxParts)
+		}
+		if resp.ObjectParts.NextPartNumberMarker == nil {
+			return fmt.Errorf("expected non nil NextPartNumberMarker")
+		}
+		if *resp.ObjectParts.NextPartNumberMarker != fmt.Sprint(*parts[2].PartNumber) {
+			return fmt.Errorf("expected NextPartNumberMarker to be %v, instead got %v", fmt.Sprint(*parts[2].PartNumber), *resp.ObjectParts.NextPartNumberMarker)
+		}
+		if len(resp.ObjectParts.Parts) != int(maxParts) {
+			return fmt.Errorf("expected length of parts to be %v, instead got %v", maxParts, len(resp.ObjectParts.Parts))
+		}
+
+		for i, p := range resp.ObjectParts.Parts {
+			if *p.PartNumber != *parts[i].PartNumber {
+				return fmt.Errorf("expected part number to be %v, instead got %v", *parts[i].PartNumber, *p.PartNumber)
+			}
+			if *p.Size != *parts[i].Size {
+				return fmt.Errorf("expected part size to be %v, instead got %v", *parts[i].Size, *p.Size)
+			}
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesObjectParts,
+			},
+			PartNumberMarker: resp.ObjectParts.NextPartNumberMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectParts == nil {
+			return fmt.Errorf("expected non nil object parts")
+		}
+		if resp.ObjectParts.IsTruncated == nil {
+			return fmt.Errorf("expected non nil isTruncated")
+		}
+		if *resp.ObjectParts.IsTruncated {
+			return fmt.Errorf("expected object parts to not be truncated")
+		}
+
+		if len(resp.ObjectParts.Parts) != len(parts)-int(maxParts) {
+			return fmt.Errorf("expected length of parts to be %v, instead got %v", len(parts)-int(maxParts), len(resp.ObjectParts.Parts))
+		}
+
+		for i, p := range resp.ObjectParts.Parts {
+			if *p.PartNumber != *parts[i+int(maxParts)].PartNumber {
+				return fmt.Errorf("expected part number to be %v, instead got %v", *parts[i+int(maxParts)].PartNumber, *p.PartNumber)
+			}
+			if *p.Size != *parts[i+int(maxParts)].Size {
+				return fmt.Errorf("expected part size to be %v, instead got %v", *parts[i+int(maxParts)].Size, *p.Size)
+			}
 		}
 
 		return nil

@@ -31,6 +31,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -252,4 +253,35 @@ func ParseDeleteObjects(objs []types.ObjectIdentifier) (result []string) {
 	}
 
 	return
+}
+
+func FilterObjectAttributes(attrs map[types.ObjectAttributes]struct{}, output s3response.GetObjectAttributesResult) s3response.GetObjectAttributesResult {
+	if _, ok := attrs[types.ObjectAttributesEtag]; !ok {
+		output.ETag = nil
+	}
+	if _, ok := attrs[types.ObjectAttributesObjectParts]; !ok {
+		output.ObjectParts = nil
+	}
+	if _, ok := attrs[types.ObjectAttributesObjectSize]; !ok {
+		output.ObjectSize = nil
+	}
+	if _, ok := attrs[types.ObjectAttributesStorageClass]; !ok {
+		output.StorageClass = nil
+	}
+
+	return output
+}
+
+func ParseObjectAttributes(ctx *fiber.Ctx) map[types.ObjectAttributes]struct{} {
+	attrs := map[types.ObjectAttributes]struct{}{}
+	ctx.Request().Header.VisitAll(func(key, value []byte) {
+		if string(key) == "X-Amz-Object-Attributes" {
+			oattrs := strings.Split(string(value), ",")
+			for _, a := range oattrs {
+				attrs[types.ObjectAttributes(a)] = struct{}{}
+			}
+		}
+	})
+
+	return attrs
 }

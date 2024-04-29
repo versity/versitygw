@@ -52,6 +52,23 @@ type ListPartsResult struct {
 	Parts []Part `xml:"Part"`
 }
 
+type GetObjectAttributesResult struct {
+	ETag         *string
+	LastModified *time.Time
+	ObjectSize   *int64
+	StorageClass *types.StorageClass
+	VersionId    *string
+	ObjectParts  *ObjectParts
+}
+
+type ObjectParts struct {
+	PartNumberMarker     int
+	NextPartNumberMarker int
+	MaxParts             int
+	IsTruncated          bool
+	Parts                []types.ObjectPart `xml:"Part"`
+}
+
 // ListMultipartUploadsResponse - s3 api list multipart uploads response.
 type ListMultipartUploadsResult struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListMultipartUploadsResult" json:"-"`

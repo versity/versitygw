@@ -522,6 +522,7 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 		parts = append(parts, types.Part{
 			ETag:       out.ETag,
 			PartNumber: &pn,
+			Size:       &partSize,
 		})
 		offset += partSize
 	}
