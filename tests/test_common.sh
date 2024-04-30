@@ -2,9 +2,31 @@
 
 source ./tests/util.sh
 source ./tests/util_file.sh
+source ./tests/util_policy.sh
+source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/get_bucket_tagging.sh
+
+test_common_multipart_upload() {
+  if [[ $# -ne 1 ]]; then
+    echo "multipart upload command missing command type"
+    return 1
+  fi
+  bucket_file="largefile"
+
+  create_large_file "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test file for multipart upload"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  copy_object "$1" "$test_file_folder"/$bucket_file "$BUCKET_ONE_NAME/$bucket_file" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "failed to copy file"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
 
 # common test for creating, deleting buckets
 # param:  "aws" or "s3cmd"
@@ -28,7 +50,7 @@ test_common_create_delete_bucket() {
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
 }
 
-test_common_put_object_with_data() {
+test_common_copy_object_with_data() {
   if [[ $# -ne 1 ]]; then
     fail "put object test requires command type"
   fi
@@ -37,10 +59,10 @@ test_common_put_object_with_data() {
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
   echo "test data" > "$test_file_folder"/"$object_name"
-  test_common_put_object "$1" "$object_name"
+  test_common_copy_object "$1" "$object_name"
 }
 
-test_common_put_object_no_data() {
+test_common_copy_object_no_data() {
   if [[ $# -ne 1 ]]; then
     fail "put object test requires command type"
   fi
@@ -48,10 +70,10 @@ test_common_put_object_no_data() {
   local object_name="test-object"
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
-  test_common_put_object "$1" "$object_name"
+  test_common_copy_object "$1" "$object_name"
 }
 
-test_common_put_object() {
+test_common_copy_object() {
   if [[ $# -ne 2 ]]; then
     fail "put object test requires command type, file"
   fi
@@ -60,8 +82,8 @@ test_common_put_object() {
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
   object="$BUCKET_ONE_NAME"/"$2"
-  put_object "$1" "$test_file_folder"/"$2" "$object" || local put_object=$?
-  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+  copy_object "$1" "$test_file_folder"/"$2" "$object" || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
   object_exists "$1" "$object" || local exists_result_one=$?
   [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
 
@@ -126,9 +148,9 @@ test_common_list_objects() {
   echo "test data 2" > "$test_file_folder"/"$object_two"
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result_one=$?
   [[ result_one -eq 0 ]] || fail "Error creating bucket"
-  put_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
+  copy_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
+  copy_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
   [[ result_three -eq 0 ]] || fail "Error adding object two"
 
   list_objects "$1" "$BUCKET_ONE_NAME"
@@ -210,8 +232,8 @@ test_common_set_get_object_tags() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
   local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$object_path" || local put_object=$?
-  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+  copy_object "$1" "$test_file_folder"/"$bucket_file" "$object_path" || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting object tags"
@@ -240,26 +262,6 @@ test_common_set_get_object_tags() {
   delete_test_files $bucket_file
 }
 
-test_common_multipart_upload() {
-  if [[ $# -ne 1 ]]; then
-    echo "multipart upload command missing command type"
-    return 1
-  fi
-  bucket_file="largefile"
-
-  create_large_file "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test file for multipart upload"
-
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-
-  put_object "$1" "$test_file_folder"/$bucket_file "$BUCKET_ONE_NAME/$bucket_file" || local put_result=$?
-  [[ $put_result -eq 0 ]] || fail "failed to copy file"
-
-  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
-}
-
 test_common_presigned_url_utf8_chars() {
 
   if [[ $# -ne 1 ]]; then
@@ -276,7 +278,7 @@ test_common_presigned_url_utf8_chars() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || put_result=$?
+  copy_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to add object $bucket_file"
 
   create_presigned_url "$1" "$BUCKET_ONE_NAME" "$bucket_file" || presigned_result=$?
@@ -331,8 +333,8 @@ test_common_delete_object_tagging() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local put_object=$?
-  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
+  copy_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
 
   put_object_tag "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "failed to add tags to object"
@@ -357,4 +359,61 @@ test_common_get_bucket_location() {
   get_bucket_location "aws" "$BUCKET_ONE_NAME"
   # shellcheck disable=SC2154
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
+}
+
+test_common_get_put_delete_bucket_policy() {
+  [[ $# -eq 1 ]] || fail "get/put/delete policy test requires command type"
+
+  policy_file="policy_file"
+
+  create_test_files "$policy_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating policy file"
+
+  effect="Allow"
+  principal="*"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+           "Effect": "$effect",
+           "Principal": "$principal",
+           "Action": "$action",
+           "Resource": "$resource"
+        }
+      ]
+    }
+EOF
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || check_result=$?
+  [[ $get_result -eq 0 ]] || fail "policy not empty"
+
+  put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$policy_file" || put_result=$?
+  [[ $put_result -eq 0 ]] || fail "error putting bucket"
+
+  get_bucket_policy "$1" "$BUCKET_ONE_NAME" || get_result=$?
+  [[ $get_result -eq 0 ]] || fail "error getting bucket policy after setting"
+
+  returned_effect=$(echo "$bucket_policy" | jq -r '.Statement[0].Effect')
+  [[ $effect == "$returned_effect" ]] || fail "effect mismatch ($effect, $returned_effect)"
+  returned_principal=$(echo "$bucket_policy" | jq -r '.Statement[0].Principal')
+  [[ $principal == "$returned_principal" ]] || fail "principal mismatch ($principal, $returned_principal)"
+  returned_action=$(echo "$bucket_policy" | jq -r '.Statement[0].Action')
+  [[ $action == "$returned_action" ]] || fail "action mismatch ($action, $returned_action)"
+  returned_resource=$(echo "$bucket_policy" | jq -r '.Statement[0].Resource')
+  [[ $resource == "$returned_resource" ]] || fail "resource mismatch ($resource, $returned_resource)"
+
+  delete_bucket_policy "$1" "$BUCKET_ONE_NAME" || delete_result=$?
+  [[ $delete_result -eq 0 ]] || fail "error deleting policy"
+
+  check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || check_result=$?
+  [[ $get_result -eq 0 ]] || fail "policy not empty after deletion"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }

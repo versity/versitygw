@@ -5,6 +5,7 @@ source ./tests/util.sh
 source ./tests/util_bucket_create.sh
 source ./tests/util_file.sh
 source ./tests/util_posix.sh
+source ./tests/commands/copy_object.sh
 
 # test that changes to local folders and files are reflected on S3
 @test "test_local_creation_deletion" {
@@ -51,7 +52,7 @@ source ./tests/util_posix.sh
   fi
   setup_bucket "aws" "$bucket_name" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
-  put_object "aws" "$test_file_folder"/"$object_name" "$bucket_name"/"$object_name"  || local result="$?"
+  copy_object "aws" "$test_file_folder"/"$object_name" "$bucket_name"/"$object_name"  || local result="$?"
   [[ result -eq 0 ]] || fail "Error adding object one"
 
   chmod 000 "$LOCAL_FOLDER"/"$bucket_name"/$object_name
