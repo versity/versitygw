@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"math"
 	"strconv"
 	"time"
 
@@ -192,6 +193,9 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		cr.chunkDataLeft = 0
 		cr.chunkHash.Write(p[:chunkSize])
 		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
+		if (chunkSize + int64(n)) > math.MaxInt {
+			return 0, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+		}
 		return n + int(chunkSize), err
 	}
 
