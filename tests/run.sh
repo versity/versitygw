@@ -6,7 +6,6 @@ show_help() {
     echo "   -h, --help          Display this help message and exit"
     echo "   -s, --static        Don't remove buckets between tests"
     echo "   aws                 Run tests with aws cli"
-    echo "   aws-posix           Run posix tests with aws cli"
     echo "   s3cmd               Run tests with s3cmd utility"
     echo "   mc                  Run tests with mc utility"
 }
@@ -20,7 +19,7 @@ handle_param() {
       -s|--static)
           export RECREATE_BUCKETS=false
           ;;
-      aws|aws-posix|s3cmd|mc|user)
+      s3|s3api|aws|s3cmd|mc|user)
           set_command_type "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -65,16 +64,16 @@ if [[ $RECREATE_BUCKETS == false ]]; then
 fi
 
 case $command_type in
-  aws)
+  s3api|aws)
     echo "Running aws tests ..."
     "$HOME"/bin/bats ./tests/test_aws.sh || exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
       "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
     fi
     ;;
-  aws-posix)
-    echo "Running aws posix-specific tests ..."
-    "$HOME"/bin/bats ./tests/test_aws_posix.sh || exit_code=$?
+  s3)
+    echo "Running s3 tests ..."
+    "$HOME"/bin/bats ./tests/test_s3.sh || exit_code=$?
     ;;
   s3cmd)
     echo "Running s3cmd tests ..."

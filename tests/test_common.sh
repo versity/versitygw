@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+source ./tests/setup.sh
 source ./tests/util.sh
 source ./tests/util_file.sh
 source ./tests/util_policy.sh
@@ -7,6 +8,8 @@ source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/get_bucket_tagging.sh
+source ./tests/commands/list_buckets.sh
+source ./tests/commands/put_object.sh
 
 test_common_multipart_upload() {
   if [[ $# -ne 1 ]]; then
@@ -21,7 +24,7 @@ test_common_multipart_upload() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  copy_object "$1" "$test_file_folder"/$bucket_file "$BUCKET_ONE_NAME/$bucket_file" || local put_result=$?
+  put_object "$1" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local put_result=$?
   [[ $put_result -eq 0 ]] || fail "failed to copy file"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
@@ -50,7 +53,7 @@ test_common_create_delete_bucket() {
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
 }
 
-test_common_copy_object_with_data() {
+test_common_put_object_with_data() {
   if [[ $# -ne 1 ]]; then
     fail "put object test requires command type"
   fi
@@ -59,10 +62,10 @@ test_common_copy_object_with_data() {
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
   echo "test data" > "$test_file_folder"/"$object_name"
-  test_common_copy_object "$1" "$object_name"
+  test_common_put_object "$1" "$object_name"
 }
 
-test_common_copy_object_no_data() {
+test_common_put_object_no_data() {
   if [[ $# -ne 1 ]]; then
     fail "put object test requires command type"
   fi
@@ -70,10 +73,10 @@ test_common_copy_object_no_data() {
   local object_name="test-object"
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
-  test_common_copy_object "$1" "$object_name"
+  test_common_put_object "$1" "$object_name"
 }
 
-test_common_copy_object() {
+test_common_put_object() {
   if [[ $# -ne 2 ]]; then
     fail "put object test requires command type, file"
   fi
@@ -81,15 +84,14 @@ test_common_copy_object() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-  object="$BUCKET_ONE_NAME"/"$2"
-  copy_object "$1" "$test_file_folder"/"$2" "$object" || local copy_result=$?
+  put_object "$1" "$test_file_folder/$2" "$BUCKET_ONE_NAME" "$2" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "$1" "$object" || local exists_result_one=$?
+  object_exists "$1" "$BUCKET_ONE_NAME" "$2" || local exists_result_one=$?
   [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
 
-  delete_object "$1" "$object" || local delete_result=$?
+  delete_object "$1" "$BUCKET_ONE_NAME" "$2" || local delete_result=$?
   [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
-  object_exists "$1" "$object" || local exists_result_two=$?
+  object_exists "$1" "$BUCKET_ONE_NAME" "$2" || local exists_result_two=$?
   [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
@@ -115,6 +117,7 @@ test_common_list_buckets() {
   if [ -z "$bucket_array" ]; then
     fail "bucket_array parameter not exported"
   fi
+  log 5 "bucket array: ${bucket_array[*]}"
   for bucket in "${bucket_array[@]}"; do
     if [ "$bucket" == "$BUCKET_ONE_NAME" ] || [ "$bucket" == "s3://$BUCKET_ONE_NAME" ]; then
       bucket_one_found=true
@@ -148,9 +151,9 @@ test_common_list_objects() {
   echo "test data 2" > "$test_file_folder"/"$object_two"
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result_one=$?
   [[ result_one -eq 0 ]] || fail "Error creating bucket"
-  copy_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
+  put_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME" "$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
-  copy_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
+  put_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
   [[ result_three -eq 0 ]] || fail "Error adding object two"
 
   list_objects "$1" "$BUCKET_ONE_NAME"
@@ -231,8 +234,7 @@ test_common_set_get_object_tags() {
   [[ $created -eq 0 ]] || fail "Error creating test files"
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  local object_path="$BUCKET_ONE_NAME"/"$bucket_file"
-  copy_object "$1" "$test_file_folder"/"$bucket_file" "$object_path" || local copy_result=$?
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
@@ -245,13 +247,13 @@ test_common_set_get_object_tags() {
   fi
 
   put_object_tag "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value
-  get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result_two=$?
+  get_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
-    tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
-    tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
-    [[ $tag_set_key == '"'$key'"' ]] || fail "Key mismatch"
-    [[ $tag_set_value == '"'$value'"' ]] || fail "Value mismatch"
+    tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key')
+    tag_set_value=$(echo "$tags" | jq -r '.TagSet[0].Value')
+    [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
+    [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
   else
     read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
     [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
@@ -263,7 +265,6 @@ test_common_set_get_object_tags() {
 }
 
 test_common_presigned_url_utf8_chars() {
-
   if [[ $# -ne 1 ]]; then
     echo "presigned url command missing command type"
     return 1
@@ -278,7 +279,7 @@ test_common_presigned_url_utf8_chars() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  copy_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || put_result=$?
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to add object $bucket_file"
 
   create_presigned_url "$1" "$BUCKET_ONE_NAME" "$bucket_file" || presigned_result=$?
@@ -320,7 +321,6 @@ test_common_list_objects_file_count() {
 }
 
 test_common_delete_object_tagging() {
-
   [[ $# -eq 1 ]] || fail "test common delete object tagging requires command type"
 
   bucket_file="bucket_file"
@@ -333,7 +333,7 @@ test_common_delete_object_tagging() {
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-  copy_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local copy_result=$?
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
 
   put_object_tag "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || put_result=$?
@@ -348,7 +348,7 @@ test_common_delete_object_tagging() {
   check_object_tags_empty "$1" "$BUCKET_ONE_NAME" "$bucket_file" || get_result=$?
   [[ $get_result -eq 0 ]] || fail "failed to get tags"
 
-  delete_bucket_or_contents "aws" "$BUCKET_TWO_NAME"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file"
 }
 

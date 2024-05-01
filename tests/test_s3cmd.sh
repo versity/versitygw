@@ -21,11 +21,11 @@ export RUN_S3CMD=true
 
 # test s3cmd put object
 @test "test_copy_object_with_data" {
-  test_common_copy_object_with_data "s3cmd"
+  test_common_put_object_with_data "s3cmd"
 }
 
 @test "test_copy_object_no_data" {
-  test_common_copy_object_no_data "s3cmd"
+  test_common_put_object_no_data "s3cmd"
 }
 
 # test listing buckets on versitygw

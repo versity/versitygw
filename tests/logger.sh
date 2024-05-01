@@ -11,4 +11,7 @@ log() {
     return 0
   fi
   echo "$2"
+  if [[ -n "$TEST_LOG_FILE" ]]; then
+    echo "$2" >> "$TEST_LOG_FILE"
+  fi
 }
