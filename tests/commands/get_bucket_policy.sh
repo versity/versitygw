@@ -5,17 +5,18 @@ get_bucket_policy() {
     echo "get bucket policy command requires command type, bucket"
     return 1
   fi
+  local get_bucket_policy_result=0
   if [[ $1 == 'aws' ]]; then
-    get_bucket_policy_aws "$2" || get_result=$?
+    get_bucket_policy_aws "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
-    get_bucket_policy_s3cmd "$2" || get_result=$?
+    get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
-    get_bucket_policy_mc "$2" || get_result=$?
+    get_bucket_policy_mc "$2" || get_bucket_policy_result=$?
   else
     echo "command 'get bucket policy' not implemented for '$1'"
     return 1
   fi
-  if [[ $get_result -ne 0 ]]; then
+  if [[ $get_bucket_policy_result -ne 0 ]]; then
     echo "error getting policy: $bucket_policy"
     return 1
   fi
@@ -28,12 +29,20 @@ get_bucket_policy_aws() {
     echo "aws 'get bucket policy' command requires bucket"
     return 1
   fi
-  policy_json=$(aws --no-verify-ssl s3api get-bucket-policy --bucket "$1") || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
-    echo "error getting policy: $policy_json"
-    return 1
+  policy_json=$(aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || get_result=$?
+  if [[ $policy_json == *"InsecureRequestWarning"* ]]; then
+    policy_json=$(awk 'NR>2' <<< "$policy_json")
   fi
-  bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
+  if [[ $get_result -ne 0 ]]; then
+    if [[ "$policy_json" == *"(NoSuchBucketPolicy)"* ]]; then
+      bucket_policy=
+    else
+      echo "error getting policy: $policy_json"
+      return 1
+    fi
+  else
+    bucket_policy=$(echo "{$policy_json}" | jq -r '.Policy')
+  fi
   export bucket_policy
   return 0
 }

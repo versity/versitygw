@@ -710,11 +710,16 @@ get_object_tags() {
     return 1
   fi
   if [[ $result -ne 0 ]]; then
-    echo "error getting object tags: $tags"
-    return 1
+    if [[ "$tags" == *"NoSuchTagSet"* ]] || [[ "$tags" == *"No tags found"* ]]; then
+      tags=
+    else
+      echo "error getting object tags: $tags"
+      return 1
+    fi
+  else
+    log 5 "$tags"
+    tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
   fi
-  log 5 "$tags"
-  tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
   export tags
 }
 

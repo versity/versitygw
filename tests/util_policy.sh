@@ -6,6 +6,7 @@ check_for_empty_policy() {
     return 1
   fi
 
+  local get_result=0
   get_bucket_policy "$1" "$2" || get_result=$?
   if [[ $get_result -ne 0 ]]; then
     echo "error getting bucket policy"
@@ -13,6 +14,10 @@ check_for_empty_policy() {
   fi
 
   # shellcheck disable=SC2154
+  if [[ $bucket_policy == "" ]]; then
+    return 0
+  fi
+
   policy=$(echo "$bucket_policy" | jq -r '.Policy')
   statement=$(echo "$policy" | jq -r '.Statement[0]')
   if [[ "" != "$statement" ]] && [[ "null" != "$statement" ]]; then
