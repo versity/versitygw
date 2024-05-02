@@ -239,8 +239,8 @@ test_common_set_get_object_tags() {
   [[ $get_result -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
     tag_set=$(echo "$tags" | jq '.TagSet')
-    [[ $tag_set == "[]" ]] || fail "Error:  tags not empty"
-  elif [[ ! $tags == *"No tags found"* ]]; then
+    [[ $tag_set == "[]" ]] || [[ $tag_set == "" ]] || fail "Error:  tags not empty"
+  elif [[ $tags != *"No tags found"* ]] && [[ $tags != "" ]]; then
     fail "no tags found (tags: $tags)"
   fi
 
@@ -397,7 +397,7 @@ EOF
   put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$policy_file" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "error putting bucket"
 
-  get_bucket_policy "$1" "$BUCKET_ONE_NAME" || get_result=$?
+  get_bucket_policy "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "error getting bucket policy after setting"
 
   returned_effect=$(echo "$bucket_policy" | jq -r '.Statement[0].Effect')

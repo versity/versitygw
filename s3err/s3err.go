@@ -116,6 +116,9 @@ const (
 	ErrInvalidBucketObjectLockConfiguration
 	ErrObjectLocked
 	ErrPastObjectLockRetainDate
+	ErrNoSuchBucketPolicy
+	ErrBucketTaggingNotFound
+	ErrObjectLockInvalidHeaders
 	ErrRequestTimeTooSkewed
 
 	// Non-AWS errors
@@ -429,6 +432,21 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrPastObjectLockRetainDate: {
 		Code:           "InvalidRequest",
 		Description:    "the retain until date must be in the future",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrNoSuchBucketPolicy: {
+		Code:           "NoSuchBucketPolicy",
+		Description:    "The bucket policy does not exist",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrBucketTaggingNotFound: {
+		Code:           "NoSuchTagSet",
+		Description:    "The TagSet does not exist",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrObjectLockInvalidHeaders: {
+		Code:           "InvalidRequest",
+		Description:    "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrRequestTimeTooSkewed: {

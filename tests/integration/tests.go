@@ -1784,6 +1784,51 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	return nil
 }
 
+func CreateBucket_default_object_lock(s *S3Conf) error {
+	testName := "CreateBucket_default_object_lock"
+	runF(testName)
+
+	bucket := getBucketName()
+	lockEnabled := true
+
+	client := s3.NewFromConfig(s.Config())
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:                     &bucket,
+		ObjectLockEnabledForBucket: &lockEnabled,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	resp, err := client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
+		Bucket: &bucket,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	if resp.ObjectLockConfiguration.ObjectLockEnabled != types.ObjectLockEnabledEnabled {
+		failF("%v: expected object lock to be enabled", testName)
+		return fmt.Errorf("%v: expected object lock to be enabled", testName)
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 func HeadBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "HeadBucket_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2183,6 +2228,21 @@ func GetBucketTagging_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func GetBucketTagging_unset_tags(s *S3Conf) error {
+	testName := "GetBucketTagging_unset_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func GetBucketTagging_success(s *S3Conf) error {
 	testName := "GetBucketTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2371,6 +2431,107 @@ func PutObject_invalid_long_tags(s *S3Conf) error {
 	})
 }
 
+func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
+	testName := "PutObject_missing_object_lock_retention_config"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:         &bucket,
+			Key:            &key,
+			ObjectLockMode: types.ObjectLockModeCompliance,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+			return err
+		}
+
+		retainDate := time.Now().Add(time.Hour * 48)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &key,
+			ObjectLockRetainUntilDate: &retainDate,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutObject_with_object_lock(s *S3Conf) error {
+	testName := "PutObject_with_object_lock"
+	runF(testName)
+	bucket, obj, lockStatus := getBucketName(), "my-obj", true
+
+	client := s3.NewFromConfig(s.Config())
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:                     &bucket,
+		ObjectLockEnabledForBucket: &lockStatus,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	retainDate := time.Now().Add(time.Hour * 48)
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:                    &bucket,
+		Key:                       &obj,
+		ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		ObjectLockMode:            types.ObjectLockModeCompliance,
+		ObjectLockRetainUntilDate: &retainDate,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &obj,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	if out.ObjectLockMode != types.ObjectLockModeCompliance {
+		failF("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockModeCompliance, out.ObjectLockMode)
+		return fmt.Errorf("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockModeCompliance, out.ObjectLockMode)
+	}
+	if out.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+		failF("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
+		return fmt.Errorf("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
+	}
+
+	if err := changeBucketObjectLockStatus(client, bucket, false); err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 func PutObject_success(s *S3Conf) error {
 	testName := "PutObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2418,7 +2579,11 @@ func HeadObject_success(s *S3Conf) error {
 			"key2": "val2",
 		}
 
-		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{Bucket: &bucket, Key: &obj, Metadata: meta}, s3client)
+		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			Metadata: meta,
+		}, s3client)
 		if err != nil {
 			return err
 		}
@@ -3751,6 +3916,26 @@ func GetObjectTagging_non_existing_object(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func GetObjectTagging_unset_tags(s *S3Conf) error {
+	testName := "GetObjectTagging_unset_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)); err != nil {
 			return err
 		}
 		return nil
@@ -5919,20 +6104,16 @@ func GetBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
-func GetBucketPolicy_default_empty_policy(s *S3Conf) error {
-	testName := "GetBucketPolicy_default_empty_policy"
+func GetBucketPolicy_not_set(s *S3Conf) error {
+	testName := "GetBucketPolicy_not_set"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+		_, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: &bucket,
 		})
 		cancel()
-		if err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)); err != nil {
 			return err
-		}
-
-		if out.Policy != nil {
-			return fmt.Errorf("expected policy to be nil, instead got %s", *out.Policy)
 		}
 
 		return nil
@@ -6026,19 +6207,15 @@ func DeleteBucketPolicy_success(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+		_, err = s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: &bucket,
 		})
 		cancel()
-		if err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)); err != nil {
 			return err
 		}
 
-		if out.Policy != nil {
-			return fmt.Errorf("expected policy to be nil, instead got %s", *out.Policy)
-		}
-
-		return err
+		return nil
 	})
 }
 

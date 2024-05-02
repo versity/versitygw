@@ -54,6 +54,7 @@ func TestCreateBucket(s *S3Conf) {
 	CreateBucket_default_acl(s)
 	CreateBucket_non_default_acl(s)
 	CreateDeleteBucket_success(s)
+	CreateBucket_default_object_lock(s)
 }
 
 func TestHeadBucket(s *S3Conf) {
@@ -81,6 +82,7 @@ func TestPutBucketTagging(s *S3Conf) {
 
 func TestGetBucketTagging(s *S3Conf) {
 	GetBucketTagging_non_existing_bucket(s)
+	GetBucketTagging_unset_tags(s)
 	GetBucketTagging_success(s)
 }
 
@@ -94,6 +96,8 @@ func TestPutObject(s *S3Conf) {
 	PutObject_non_existing_bucket(s)
 	PutObject_special_chars(s)
 	PutObject_invalid_long_tags(s)
+	PutObject_missing_object_lock_retention_config(s)
+	PutObject_with_object_lock(s)
 	PutObject_success(s)
 	PutObject_invalid_credentials(s)
 }
@@ -165,6 +169,7 @@ func TestPutObjectTagging(s *S3Conf) {
 
 func TestGetObjectTagging(s *S3Conf) {
 	GetObjectTagging_non_existing_object(s)
+	GetObjectTagging_unset_tags(s)
 	GetObjectTagging_success(s)
 }
 
@@ -275,7 +280,7 @@ func TestPutBucketPolicy(s *S3Conf) {
 
 func TestGetBucketPolicy(s *S3Conf) {
 	GetBucketPolicy_non_existing_bucket(s)
-	GetBucketPolicy_default_empty_policy(s)
+	GetBucketPolicy_not_set(s)
 	GetBucketPolicy_success(s)
 }
 
@@ -449,6 +454,8 @@ func GetIntTests() IntTests {
 		"PresignedAuth_expired_request":                                      PresignedAuth_expired_request,
 		"PresignedAuth_incorrect_secret_key":                                 PresignedAuth_incorrect_secret_key,
 		"PresignedAuth_PutObject_success":                                    PresignedAuth_PutObject_success,
+		"PutObject_missing_object_lock_retention_config":                     PutObject_missing_object_lock_retention_config,
+		"PutObject_with_object_lock":                                         PutObject_with_object_lock,
 		"PresignedAuth_Put_GetObject_with_data":                              PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                        PresignedAuth_Put_GetObject_with_UTF8_chars,
 		"PresignedAuth_UploadPart":                                           PresignedAuth_UploadPart,
@@ -458,6 +465,7 @@ func GetIntTests() IntTests {
 		"CreateDeleteBucket_success":                                         CreateDeleteBucket_success,
 		"CreateBucket_default_acl":                                           CreateBucket_default_acl,
 		"CreateBucket_non_default_acl":                                       CreateBucket_non_default_acl,
+		"CreateBucket_default_object_lock":                                   CreateBucket_default_object_lock,
 		"HeadBucket_non_existing_bucket":                                     HeadBucket_non_existing_bucket,
 		"HeadBucket_success":                                                 HeadBucket_success,
 		"ListBuckets_as_user":                                                ListBuckets_as_user,
@@ -470,6 +478,7 @@ func GetIntTests() IntTests {
 		"PutBucketTagging_long_tags":                                         PutBucketTagging_long_tags,
 		"PutBucketTagging_success":                                           PutBucketTagging_success,
 		"GetBucketTagging_non_existing_bucket":                               GetBucketTagging_non_existing_bucket,
+		"GetBucketTagging_unset_tags":                                        GetBucketTagging_unset_tags,
 		"GetBucketTagging_success":                                           GetBucketTagging_success,
 		"DeleteBucketTagging_non_existing_object":                            DeleteBucketTagging_non_existing_object,
 		"DeleteBucketTagging_success_status":                                 DeleteBucketTagging_success_status,
@@ -517,6 +526,7 @@ func GetIntTests() IntTests {
 		"PutObjectTagging_long_tags":                                         PutObjectTagging_long_tags,
 		"PutObjectTagging_success":                                           PutObjectTagging_success,
 		"GetObjectTagging_non_existing_object":                               GetObjectTagging_non_existing_object,
+		"GetObjectTagging_unset_tags":                                        GetObjectTagging_unset_tags,
 		"GetObjectTagging_success":                                           GetObjectTagging_success,
 		"DeleteObjectTagging_non_existing_object":                            DeleteObjectTagging_non_existing_object,
 		"DeleteObjectTagging_success_status":                                 DeleteObjectTagging_success_status,
@@ -591,7 +601,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_bucket_action_on_object_resource":                   PutBucketPolicy_bucket_action_on_object_resource,
 		"PutBucketPolicy_success":                                            PutBucketPolicy_success,
 		"GetBucketPolicy_non_existing_bucket":                                GetBucketPolicy_non_existing_bucket,
-		"GetBucketPolicy_default_empty_policy":                               GetBucketPolicy_default_empty_policy,
+		"GetBucketPolicy_not_set":                                            GetBucketPolicy_not_set,
 		"GetBucketPolicy_success":                                            GetBucketPolicy_success,
 		"DeleteBucketPolicy_non_existing_bucket":                             DeleteBucketPolicy_non_existing_bucket,
 		"DeleteBucketPolicy_remove_before_setting":                           DeleteBucketPolicy_remove_before_setting,
