@@ -224,24 +224,17 @@ func IsBigDataAction(ctx *fiber.Ctx) bool {
 	return false
 }
 
+// expiration time window
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html#RESTAuthenticationTimeStamp
+const timeExpirationSec = 15 * 60
+
 func ValidateDate(date time.Time) error {
 	now := time.Now().UTC()
 	diff := date.Unix() - now.Unix()
 
-	// Checks the dates difference to be less than a minute
-	if diff > 60 {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature not yet current: %s is still later than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
-			HTTPStatusCode: http.StatusForbidden,
-		}
-	}
-	if diff < -60 {
-		return s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Signature expired: %s is now earlier than %s", date.Format(iso8601Format), now.Format(iso8601Format)),
-			HTTPStatusCode: http.StatusForbidden,
-		}
+	// Checks the dates difference to be within allotted window
+	if diff > timeExpirationSec || diff < -timeExpirationSec {
+		return s3err.GetAPIError(s3err.ErrRequestTimeTooSkewed)
 	}
 
 	return nil

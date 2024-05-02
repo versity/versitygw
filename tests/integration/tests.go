@@ -339,11 +339,8 @@ func Authentication_credentials_future_date(s *S3Conf) error {
 		if resp.StatusCode != http.StatusForbidden {
 			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusForbidden, resp.StatusCode)
 		}
-		if errResp.Code != "SignatureDoesNotMatch" {
-			return fmt.Errorf("expected error code to be %v, instead got %v", "SignatureDoesNotMatch", errResp.Code)
-		}
-		if !strings.Contains(errResp.Message, "Signature not yet current:") {
-			return fmt.Errorf("expected future date error message, instead got %v", errResp.Message)
+		if errResp.Code != "RequestTimeTooSkewed" {
+			return fmt.Errorf("expected error code to be %v, instead got %v", "RequestTimeTooSkewed", errResp.Code)
 		}
 
 		return nil
@@ -383,11 +380,8 @@ func Authentication_credentials_past_date(s *S3Conf) error {
 		if resp.StatusCode != http.StatusForbidden {
 			return fmt.Errorf("expected response status code to be %v, instead got %v", http.StatusForbidden, resp.StatusCode)
 		}
-		if errResp.Code != "SignatureDoesNotMatch" {
-			return fmt.Errorf("expected error code to be %v, instead got %v", "SignatureDoesNotMatch", errResp.Code)
-		}
-		if !strings.Contains(errResp.Message, "Signature expired:") {
-			return fmt.Errorf("expected past date error message, instead got %v", errResp.Message)
+		if errResp.Code != "RequestTimeTooSkewed" {
+			return fmt.Errorf("expected error code to be %v, instead got %v", "RequestTimeTooSkewed", errResp.Code)
 		}
 
 		return nil

@@ -116,6 +116,7 @@ const (
 	ErrInvalidBucketObjectLockConfiguration
 	ErrObjectLocked
 	ErrPastObjectLockRetainDate
+	ErrRequestTimeTooSkewed
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -430,6 +431,13 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "the retain until date must be in the future",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrRequestTimeTooSkewed: {
+		Code:           "RequestTimeTooSkewed",
+		Description:    "The difference between the request time and the server's time is too large.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+
+	// non aws errors
 	ErrExistingObjectIsDirectory: {
 		Code:           "ExistingObjectIsDirectory",
 		Description:    "Existing Object is a directory.",
