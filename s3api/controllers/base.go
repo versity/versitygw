@@ -1219,9 +1219,14 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	lockHeader := ctx.Get("X-Amz-Bucket-Object-Lock-Enabled")
+	// CLI provides "True", SDK - "true"
+	lockEnabled := lockHeader == "True" || lockHeader == "true"
+
 	err = c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
-		Bucket:          &bucket,
-		ObjectOwnership: types.ObjectOwnership(acct.Access),
+		Bucket:                     &bucket,
+		ObjectOwnership:            types.ObjectOwnership(acct.Access),
+		ObjectLockEnabledForBucket: &lockEnabled,
 	}, updAcl)
 	return SendResponse(ctx, err,
 		&MetaOpts{
@@ -1780,6 +1785,52 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
+	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
+	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
+
+	if (objLockDate != "" && objLockModeHdr == "") || (objLockDate == "" && objLockModeHdr != "") {
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders),
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "PutObject",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	var retainUntilDate *time.Time
+	if objLockDate != "" {
+		rDate, err := time.Parse(time.RFC3339, objLockDate)
+		if err != nil {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutObject",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+		if rDate.Before(time.Now()) {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate),
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "PutObject",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+		retainUntilDate = &rDate
+	}
+
+	if objLockModeHdr != "" &&
+		objLockModeHdr != string(types.ObjectLockModeCompliance) &&
+		objLockModeHdr != string(types.ObjectLockModeGovernance) {
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "PutObject",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
 	var body io.Reader
 	bodyi := ctx.Locals("body-reader")
 	if bodyi != nil {
@@ -1791,12 +1842,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	ctx.Locals("logReqBody", false)
 	etag, err := c.be.PutObject(ctx.Context(),
 		&s3.PutObjectInput{
-			Bucket:        &bucket,
-			Key:           &keyStart,
-			ContentLength: &contentLength,
-			Metadata:      metadata,
-			Body:          body,
-			Tagging:       &tagging,
+			Bucket:                    &bucket,
+			Key:                       &keyStart,
+			ContentLength:             &contentLength,
+			Metadata:                  metadata,
+			Body:                      body,
+			Tagging:                   &tagging,
+			ObjectLockRetainUntilDate: retainUntilDate,
+			ObjectLockMode:            types.ObjectLockMode(objLockModeHdr),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus(legalHoldHdr),
 		})
 	ctx.Response().Header.Set("ETag", etag)
 	return SendResponse(ctx, err,
@@ -2212,7 +2266,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	if res.LastModified != nil {
 		lastmod = res.LastModified.Format(timefmt)
 	}
-	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+	headers := []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
 			Value: fmt.Sprint(getint64(res.ContentLength)),
@@ -2241,7 +2295,27 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Key:   "x-amz-restore",
 			Value: getstring(res.Restore),
 		},
-	})
+	}
+	if res.ObjectLockMode != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-object-lock-mode",
+			Value: string(res.ObjectLockMode),
+		})
+	}
+	if res.ObjectLockLegalHoldStatus != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-object-lock-legal-hold",
+			Value: string(res.ObjectLockLegalHoldStatus),
+		})
+	}
+	if res.ObjectLockRetainUntilDate != nil {
+		retainUntilDate := res.ObjectLockRetainUntilDate.Format(time.RFC3339)
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-object-lock-retain-until-date",
+			Value: retainUntilDate,
+		})
+	}
+	utils.SetResponseHeaders(ctx, headers)
 
 	return SendResponse(ctx, nil,
 		&MetaOpts{

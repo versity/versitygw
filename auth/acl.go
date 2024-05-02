@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -292,13 +293,13 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 		return nil
 	}
 
-	policy, err := be.GetBucketPolicy(ctx, opts.Bucket)
-	if err != nil {
-		return err
+	policy, policyErr := be.GetBucketPolicy(ctx, opts.Bucket)
+	if policyErr != nil && !errors.Is(policyErr, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+		return policyErr
 	}
 
 	// If bucket policy is not set and the ACL is default, only the owner has access
-	if len(policy) == 0 && opts.Acl.ACL == "" && len(opts.Acl.Grantees) == 0 {
+	if errors.Is(policyErr, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) && opts.Acl.ACL == "" && len(opts.Acl.Grantees) == 0 {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 

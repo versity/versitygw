@@ -126,6 +126,21 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 	meta := map[string]*string{
 		string(keyAclCapital): backend.GetStringPtr(string(acl)),
 	}
+
+	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
+		now := time.Now()
+		defaultLock := auth.BucketLockConfig{
+			Enabled:   true,
+			CreatedAt: &now,
+		}
+
+		defaultLockParsed, err := json.Marshal(defaultLock)
+		if err != nil {
+			return fmt.Errorf("parse default bucket lock state: %w", err)
+		}
+
+		meta[string(keyBucketLock)] = backend.GetStringPtr(string(defaultLockParsed))
+	}
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	return azureErrToS3Err(err)
 }
@@ -189,6 +204,28 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 		return "", azureErrToS3Err(err)
 	}
 
+	// Set object legal hold
+	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
+		if err := az.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true); err != nil {
+			return "", err
+		}
+	}
+
+	// Set object retention
+	if po.ObjectLockMode != "" {
+		retention := types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
+			RetainUntilDate: po.ObjectLockRetainUntilDate,
+		}
+		retParsed, err := json.Marshal(retention)
+		if err != nil {
+			return "", fmt.Errorf("parse object lock retention: %w", err)
+		}
+		if err := az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed); err != nil {
+			return "", err
+		}
+	}
+
 	return string(*uploadResp.ETag), nil
 }
 
@@ -235,7 +272,7 @@ func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[strin
 
 	tagsJson, ok := resp.Metadata[string(keyTags)]
 	if !ok {
-		return map[string]string{}, nil
+		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)
 	}
 
 	var tags map[string]string
@@ -888,7 +925,7 @@ func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 
 	policyPtr, ok := props.Metadata[string(keyPolicy)]
 	if !ok {
-		return []byte{}, nil
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 
 	policy, err := base64.StdEncoding.DecodeString(*policyPtr)

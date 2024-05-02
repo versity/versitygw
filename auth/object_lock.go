@@ -33,11 +33,6 @@ type BucketLockConfig struct {
 	CreatedAt        *time.Time
 }
 
-type ObjectLockConfig struct {
-	LegalHoldEnabled bool
-	Retention        *types.ObjectLockRetention
-}
-
 func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 	var lockConfig types.ObjectLockConfiguration
 	if err := xml.Unmarshal(input, &lockConfig); err != nil {
@@ -172,11 +167,11 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 					case types.ObjectLockRetentionModeGovernance:
 						if !isAdminOrRoot {
 							policy, err := be.GetBucketPolicy(ctx, bucket)
+							if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+								return s3err.GetAPIError(s3err.ErrObjectLocked)
+							}
 							if err != nil {
 								return err
-							}
-							if len(policy) == 0 {
-								return s3err.GetAPIError(s3err.ErrObjectLocked)
 							}
 							err = verifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
 							if err != nil {

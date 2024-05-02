@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -227,6 +228,23 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 
 	if err := p.meta.StoreAttribute(bucket, "", aclkey, acl); err != nil {
 		return fmt.Errorf("set acl: %w", err)
+	}
+
+	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
+		now := time.Now()
+		defaultLock := auth.BucketLockConfig{
+			Enabled:   true,
+			CreatedAt: &now,
+		}
+
+		defaultLockParsed, err := json.Marshal(defaultLock)
+		if err != nil {
+			return fmt.Errorf("parse default bucket lock state: %w", err)
+		}
+
+		if err := p.meta.StoreAttribute(bucket, "", bucketLockKey, defaultLockParsed); err != nil {
+			return fmt.Errorf("set default bucket lock: %w", err)
+		}
 	}
 
 	return nil
@@ -1226,9 +1244,32 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		}
 	}
 
+	// Set object tagging
 	if tagsStr != "" {
 		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, tags)
 		if err != nil {
+			return "", err
+		}
+	}
+
+	// Set object legal hold
+	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
+		if err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true); err != nil {
+			return "", err
+		}
+	}
+
+	// Set object retention
+	if po.ObjectLockMode != "" {
+		retention := types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(po.ObjectLockMode),
+			RetainUntilDate: po.ObjectLockRetainUntilDate,
+		}
+		retParsed, err := json.Marshal(retention)
+		if err != nil {
+			return "", fmt.Errorf("parse object lock retention: %w", err)
+		}
+		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed); err != nil {
 			return "", err
 		}
 	}
@@ -1414,12 +1455,15 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 			etag = ""
 		}
 
+		var tagCount *int32
 		tags, err := p.getAttrTags(bucket, object)
-		if err != nil {
-			return nil, fmt.Errorf("get object tags: %w", err)
+		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+			return nil, err
 		}
-
-		tagCount := int32(len(tags))
+		if tags != nil {
+			tgCount := int32(len(tags))
+			tagCount = &tgCount
+		}
 
 		return &s3.GetObjectOutput{
 			AcceptRanges:    &acceptRange,
@@ -1429,7 +1473,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 			ETag:            &etag,
 			LastModified:    backend.GetTimePtr(fi.ModTime()),
 			Metadata:        userMetaData,
-			TagCount:        &tagCount,
+			TagCount:        tagCount,
 			ContentRange:    &contentRange,
 		}, nil
 	}
@@ -1459,12 +1503,15 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		etag = ""
 	}
 
+	var tagCount *int32
 	tags, err := p.getAttrTags(bucket, object)
-	if err != nil {
-		return nil, fmt.Errorf("get object tags: %w", err)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+		return nil, err
 	}
-
-	tagCount := int32(len(tags))
+	if tags != nil {
+		tgCount := int32(len(tags))
+		tagCount = &tgCount
+	}
 
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
@@ -1474,12 +1521,12 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		ETag:            &etag,
 		LastModified:    backend.GetTimePtr(fi.ModTime()),
 		Metadata:        userMetaData,
-		TagCount:        &tagCount,
+		TagCount:        tagCount,
 		ContentRange:    &contentRange,
 	}, nil
 }
 
-func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1517,16 +1564,39 @@ func (p *Posix) HeadObject(_ context.Context, input *s3.HeadObjectInput) (*s3.He
 
 	size := fi.Size()
 
-	//TODO: Add object lock status properties
+	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
+	status, err := p.GetObjectLegalHold(ctx, bucket, object, "")
+	if err == nil {
+		if *status {
+			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
+		} else {
+			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
+		}
+	}
+
+	var objectLockMode types.ObjectLockMode
+	var objectLockRetainUntilDate *time.Time
+	retention, err := p.GetObjectRetention(ctx, bucket, object, "")
+	if err == nil {
+		var config types.ObjectLockRetention
+		if err := json.Unmarshal(retention, &config); err == nil {
+			objectLockMode = types.ObjectLockMode(config.Mode)
+			objectLockRetainUntilDate = config.RetainUntilDate
+		}
+	}
+
 	//TODO: the method must handle multipart upload case
 
 	return &s3.HeadObjectOutput{
-		ContentLength:   &size,
-		ContentType:     &contentType,
-		ContentEncoding: &contentEncoding,
-		ETag:            &etag,
-		LastModified:    backend.GetTimePtr(fi.ModTime()),
-		Metadata:        userMetaData,
+		ContentLength:             &size,
+		ContentType:               &contentType,
+		ContentEncoding:           &contentEncoding,
+		ETag:                      &etag,
+		LastModified:              backend.GetTimePtr(fi.ModTime()),
+		Metadata:                  userMetaData,
+		ObjectLockLegalHoldStatus: objectLockLegalHoldStatus,
+		ObjectLockMode:            objectLockMode,
+		ObjectLockRetainUntilDate: objectLockRetainUntilDate,
 	}, nil
 }
 
@@ -1974,7 +2044,7 @@ func (p *Posix) getAttrTags(bucket, object string) (map[string]string, error) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return tags, nil
+		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get tags: %w", err)
@@ -2072,7 +2142,7 @@ func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, err
 
 	policy, err := p.meta.RetrieveAttribute(bucket, "", policykey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return []byte{}, nil
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 	}
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
