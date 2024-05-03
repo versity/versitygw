@@ -2570,6 +2570,84 @@ func HeadObject_non_existing_object(s *S3Conf) error {
 	})
 }
 
+func HeadObject_invalid_part_number(s *S3Conf) error {
+	testName := "HeadObject_invalid_part_number"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		partNumber := int32(-3)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("my-obj"),
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func HeadObject_non_existing_mp(s *S3Conf) error {
+	testName := "HeadObject_non_existing_mp"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		partNumber := int32(4)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("my-obj"),
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func HeadObject_mp_success(s *S3Conf) error {
+	testName := "HeadObject_mp_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		partCount, partSize := 5, 1024
+		partNumber := int32(3)
+
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, partCount*partSize, partCount, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.ContentLength != int64(partSize) {
+			return fmt.Errorf("expected content length to be %v, instead got %v", partSize, *out.ContentLength)
+		}
+		if *out.ETag != *parts[partNumber-1].ETag {
+			return fmt.Errorf("expected ETag to be %v, instead got %v", *parts[partNumber-1].ETag, *out.ETag)
+		}
+		if *out.PartsCount != int32(partCount) {
+			return fmt.Errorf("expected part count to be %v, instead got %v", partCount, *out.PartsCount)
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4356,7 +4434,7 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 			PartNumber: &partNumber,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumber)); err != nil {
 			return err
 		}
 

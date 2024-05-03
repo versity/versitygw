@@ -104,6 +104,9 @@ func TestPutObject(s *S3Conf) {
 
 func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_object(s)
+	HeadObject_invalid_part_number(s)
+	HeadObject_non_existing_mp(s)
+	HeadObject_mp_success(s)
 	HeadObject_success(s)
 }
 
@@ -488,6 +491,9 @@ func GetIntTests() IntTests {
 		"PutObject_invalid_long_tags":                                        PutObject_invalid_long_tags,
 		"PutObject_success":                                                  PutObject_success,
 		"HeadObject_non_existing_object":                                     HeadObject_non_existing_object,
+		"HeadObject_invalid_part_number":                                     HeadObject_invalid_part_number,
+		"HeadObject_non_existing_mp":                                         HeadObject_non_existing_mp,
+		"HeadObject_mp_success":                                              HeadObject_mp_success,
 		"HeadObject_success":                                                 HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                            GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                            GetObjectAttributes_non_existing_object,
