@@ -1,38 +1,16 @@
 #!/usr/bin/env bash
 
+source ./tests/util_bucket_create.sh
 source ./tests/util_mc.sh
 source ./tests/logger.sh
+source ./tests/commands/abort_multipart_upload.sh
+source ./tests/commands/create_bucket.sh
+source ./tests/commands/delete_bucket.sh
+source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_tagging.sh
-
-# delete an AWS bucket
-# param:  bucket name
-# return 0 for success, 1 for failure
-delete_bucket() {
-  if [ $# -ne 2 ]; then
-    echo "delete bucket missing command type, bucket name"
-    return 1
-  fi
-
-  local exit_code=0
-  local error
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3 rb s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure rb "$MC_ALIAS/$2" 2>&1) || exit_code=$?
-  else
-    echo "Invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == *"The specified bucket does not exist"* ]]; then
-      return 0
-    else
-      echo "error deleting bucket: $error"
-      return 1
-    fi
-  fi
-  return 0
-}
+source ./tests/commands/head_bucket.sh
+source ./tests/commands/head_object.sh
+source ./tests/commands/list_objects.sh
 
 # recursively delete an AWS bucket
 # param:  bucket name
@@ -45,8 +23,10 @@ delete_bucket_recursive() {
 
   local exit_code=0
   local error
-  if [[ $1 == "aws" ]]; then
+  if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
+  elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+    delete_bucket_recursive_s3api "$2" 2>&1 || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
@@ -63,6 +43,33 @@ delete_bucket_recursive() {
       echo "error deleting bucket recursively: $error"
       return 1
     fi
+  fi
+  return 0
+}
+
+delete_bucket_recursive_s3api() {
+  if [[ $# -ne 1 ]]; then
+    echo "delete bucket recursive command for s3api requires bucket name"
+    return 1
+  fi
+  list_objects 's3api' "$1" || list_result=$?
+  if [[ $list_result -ne 0 ]]; then
+    echo "error listing objects"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  for object in "${object_array[@]}"; do
+    delete_object 's3api' "$1" "$object" || delete_result=$?
+    if [[ $delete_result -ne 0 ]]; then
+      echo "error deleting object $object"
+      return 1
+    fi
+  done
+
+  delete_bucket 's3api' "$1" || delete_result=$?
+  if [[ $delete_result -ne 0 ]]; then
+    echo "error deleting bucket"
+    return 1
   fi
   return 0
 }
@@ -104,28 +111,14 @@ bucket_exists() {
     return 2
   fi
 
-  local exit_code=0
-  local error
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    # NOTE:  s3cmd sometimes takes longer with direct connection
-    sleep 1
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure ls "$MC_ALIAS/$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type: $1"
-    return 2
-  fi
-
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == *"does not exist"* ]] || [[ "$error" == *"Access Denied"* ]]; then
+  head_bucket "$1" "$2" || local check_result=$?
+  if [[ $check_result -ne 0 ]]; then
+    # shellcheck disable=SC2154
+    if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
       return 1
-    else
-      echo "error checking if bucket exists: $error"
-      return 2
     fi
+    echo "error checking if bucket exists"
+    return 2
   fi
   return 0
 }
@@ -198,18 +191,28 @@ setup_bucket() {
 # param:  command, object path
 # return 0 for true, 1 for false, 2 for error
 object_exists() {
-  if [ $# -ne 2 ]; then
-    echo "object exists check missing command, object name"
+  if [ $# -ne 3 ]; then
+    echo "object exists check missing command, bucket name, object name"
     return 2
   fi
+  head_object "$1" "$2" "$3" || head_result=$?
+  if [[ $head_result -eq 2 ]]; then
+    echo "error checking if object exists"
+    return 2
+  fi
+  return $head_result
+
+  return 0
   local exit_code=0
   local error=""
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code="$?"
+  if [[ $1 == 's3' ]]; then
+    error=$(aws --no-verify-ssl s3 ls "s3://$2/$3" 2>&1) || exit_code="$?"
+  elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+    error=$(aws --no-verify-ssl s3api head-object --bucket "$2" --prefix "$3" 2>&1) || exit_code="$?"
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code="$?"
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2/$3" 2>&1) || exit_code="$?"
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
+    error=$(mc --insecure ls "$MC_ALIAS/$2/$3" 2>&1) || exit_code=$?
   else
     echo "invalid command type $1"
     return 2
@@ -229,15 +232,15 @@ object_exists() {
 }
 
 put_object_with_metadata() {
-  if [ $# -ne 5 ]; then
-    echo "put object command requires command type, source, destination, key, value"
+  if [ $# -ne 6 ]; then
+    echo "put object command requires command type, source, destination, key, metadata key, metadata value"
     return 1
   fi
 
   local exit_code=0
   local error
   if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api put-object --bucket "$3" --key "$2" --body "$2" --metadata "{\"$4\":\"$5\"}") || exit_code=$?
+    error=$(aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" --metadata "{\"$5\":\"$6\"}") || exit_code=$?
   else
     echo "invalid command type $1"
     return 1
@@ -281,7 +284,7 @@ put_object_multiple() {
   fi
   local exit_code=0
   local error
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 'aws' ]] || [[ $1 == 's3' ]]; then
     # shellcheck disable=SC2086
     error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
@@ -307,11 +310,11 @@ put_object_multiple() {
 # params:  source file, destination copy location
 # return 0 for success or already exists, 1 for failure
 check_and_put_object() {
-  if [ $# -ne 2 ]; then
-    echo "check and put object function requires source, destination"
+  if [ $# -ne 3 ]; then
+    echo "check and put object function requires source, bucket, destination"
     return 1
   fi
-  object_exists "aws" "$2" || local exists_result=$?
+  object_exists "aws" "$2" "$3" || local exists_result=$?
   if [ "$exists_result" -eq 2 ]; then
     echo "error checking if object exists"
     return 1
@@ -324,69 +327,6 @@ check_and_put_object() {
     fi
   fi
   return 0
-}
-
-# delete object from versitygw
-# param:  object path, including bucket name
-# return 0 for success, 1 for failure
-delete_object() {
-  if [ $# -ne 2 ]; then
-    echo "delete object command requires command type, object parameter"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3 rm s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rm s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure rm "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    echo "error deleting object: $error"
-    return 1
-  fi
-  return 0
-}
-
-# list buckets on versitygw
-# params:  format (aws, s3cmd)
-# export bucket_array (bucket names) on success, return 1 for failure
-list_buckets() {
-  if [[ $# -ne 1 ]]; then
-    echo "List buckets command missing format"
-    return 1
-  fi
-
-  local exit_code=0
-  local output
-  if [[ $1 == "aws" ]]; then
-    output=$(aws --no-verify-ssl s3 ls s3:// 2>&1) || exit_code=$?
-  elif [[ $1 == "s3cmd" ]]; then
-    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3:// 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    output=$(mc --insecure ls "$MC_ALIAS" 2>&1) || exit_code=$?
-  else
-    echo "invalid format:  $1"
-    return 1
-  fi
-
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing buckets: $output"
-    return 1
-  fi
-
-  bucket_array=()
-  while IFS= read -r line; do
-    bucket_name=$(echo "$line" | awk '{print $NF}')
-    bucket_array+=("${bucket_name%/}")
-  done <<< "$output"
-
-  export bucket_array
 }
 
 list_buckets_with_user() {
@@ -416,42 +356,6 @@ list_buckets_with_user() {
   done <<< "$output"
 
   export bucket_array
-}
-
-# list objects on versitygw, in bucket or folder
-# param:  path of bucket or folder
-# export object_array (object names) on success, return 1 for failure
-list_objects() {
-  if [ $# -ne 2 ]; then
-    echo "list objects command requires command type, and bucket or folder"
-    return 1
-  fi
-  local exit_code=0
-  local output
-  if [[ $1 == "aws" ]]; then
-    output=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    output=$(mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing objects: $output"
-    return 1
-  fi
-
-  object_array=()
-  while IFS= read -r line; do
-    if [[ $line != *InsecureRequestWarning* ]]; then
-      object_name=$(echo "$line" | awk '{print $NF}')
-      object_array+=("$object_name")
-    fi
-  done <<< "$output"
-
-  export object_array
 }
 
 remove_insecure_request_warning() {
@@ -603,7 +507,7 @@ check_object_tags_empty() {
     echo "failed to get tags"
     return 2
   fi
-  check_tags_empty "$1" || check_result=$?
+  check_tags_empty "$1" || local check_result=$?
   return $check_result
 }
 
@@ -617,7 +521,7 @@ check_bucket_tags_empty() {
     echo "failed to get tags"
     return 2
   fi
-  check_tags_empty "$1" || check_result=$?
+  check_tags_empty "$1" || local check_result=$?
   return $check_result
 }
 
@@ -859,29 +763,12 @@ multipart_upload() {
   return 0
 }
 
-# run the abort multipart command
-# params:  bucket, key, upload ID
-# return 0 for success, 1 for failure
-run_abort_command() {
-  if [ $# -ne 3 ]; then
-    echo "command to run abort requires bucket, key, upload ID"
-    return 1
-  fi
-
-  error=$(aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" --key "$2" --upload-id "$3") || local aborted=$?
-  if [[ $aborted -ne 0 ]]; then
-    echo "Error aborting upload: $error"
-    return 1
-  fi
-  return 0
-}
-
 # run upload, then abort it
 # params:  bucket, key, local file location, number of parts to split into before uploading
 # return 0 for success, 1 for failure
-abort_multipart_upload() {
+run_then_abort_multipart_upload() {
   if [ $# -ne 4 ]; then
-    echo "abort multipart upload command missing bucket, key, file, and/or part count"
+    echo "run then abort multipart upload command missing bucket, key, file, and/or part count"
     return 1
   fi
 
@@ -891,7 +778,7 @@ abort_multipart_upload() {
     return 1
   fi
 
-  run_abort_command "$1" "$2" "$upload_id"
+  abort_multipart_upload "$1" "$2" "$upload_id"
   return $?
 }
 
@@ -981,7 +868,8 @@ multipart_upload_from_bucket() {
   fi
 
   for ((i=0;i<$4;i++)) {
-    copy_object "aws" "$3"-"$i" "$1" || copy_result=$?
+    echo "key: $3"
+    put_object "s3api" "$3-$i" "$1" "$2-$i" || copy_result=$?
     if [[ $copy_result -ne 0 ]]; then
       echo "error copying object"
       return 1
@@ -1024,6 +912,7 @@ upload_part_copy() {
     return 1
   fi
   local etag_json
+  echo "$1 $2 $3 $4 $5"
   etag_json=$(aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
   if [[ $uploaded -ne 0 ]]; then
     echo "Error uploading part $5: $etag_json"
@@ -1056,28 +945,4 @@ create_presigned_url() {
     return 1
   fi
   export presigned_url
-}
-
-head_bucket() {
-  if [ $# -ne 2 ]; then
-    echo "head bucket command missing command type, bucket name"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  if [[ $1 == "aws" ]]; then
-    bucket_info=$(aws --no-verify-ssl s3api head-bucket --bucket "$2" 2>&1) || exit_code=$?
-  elif [[ $1 == "s3cmd" ]]; then
-    bucket_info=$(s3cmd --no-check-certificate info "s3://$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    bucket_info=$(mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    echo "error getting bucket info: $bucket_info"
-    return 1
-  fi
-  export bucket_info
 }

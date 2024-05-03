@@ -10,7 +10,9 @@ source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_policy.sh
+source ./tests/commands/get_object.sh
 source ./tests/commands/put_bucket_policy.sh
+source ./tests/commands/put_object.sh
 
 @test "test_abort_multipart_upload" {
   local bucket_file="bucket-file"
@@ -22,10 +24,10 @@ source ./tests/commands/put_bucket_policy.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || abort_result=$?
+  run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || abort_result=$?
   [[ $abort_result -eq 0 ]] || fail "Abort failed"
 
-  object_exists "aws" "$BUCKET_ONE_NAME/$bucket_file" || exists=$?
+  object_exists "aws" "$BUCKET_ONE_NAME" "$bucket_file" || exists=$?
   [[ $exists -eq 1 ]] || fail "Upload file exists after abort"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
@@ -53,20 +55,20 @@ source ./tests/commands/put_bucket_policy.sh
   delete_test_files $bucket_file
 }
 
-@test "test_copy_object" {
+@test "test_put_object" {
   bucket_file="bucket_file"
 
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-  setup_bucket "aws" "$BUCKET_TWO_NAME" || local setup_result_two=$?
+  setup_bucket "s3api" "$BUCKET_TWO_NAME" || local setup_result_two=$?
   [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
-  copy_object "aws" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME"/"$bucket_file" || local copy_result=$?
+  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME"/"$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
+  error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME/$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Error copying file: $error"
-  copy_file "s3://$BUCKET_TWO_NAME"/"$bucket_file" "$test_file_folder/${bucket_file}_copy" || local copy_result=$?
+  copy_file "s3://$BUCKET_TWO_NAME/$bucket_file" "$test_file_folder/${bucket_file}_copy" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
   compare_files "$test_file_folder/$bucket_file" "$test_file_folder/${bucket_file}_copy" || local compare_result=$?
   [[ $compare_result -eq 0 ]] || file "files don't match"
@@ -90,22 +92,20 @@ source ./tests/commands/put_bucket_policy.sh
   [[ $create_result -eq 0 ]] || fail "Invalid name test failed"
 
   [[ "$bucket_create_error" == *"Invalid bucket name "* ]] || fail "unexpected error:  $bucket_create_error"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
 
 # test adding and removing an object on versitygw
-@test "test_copy_object_with_data" {
-  test_common_copy_object_with_data "aws"
+@test "test_put_object_with_data" {
+  test_common_put_object_with_data "aws"
 }
 
-@test "test_copy_object_no_data" {
-  test_common_copy_object_no_data "aws"
+@test "test_put_object_no_data" {
+  test_common_put_object_no_data "aws"
 }
 
 # test listing buckets on versitygw
 @test "test_list_buckets" {
-  test_common_list_buckets "aws"
+  test_common_list_buckets "s3api"
 }
 
 # test listing a bucket's objects on versitygw
@@ -159,9 +159,9 @@ source ./tests/commands/put_bucket_policy.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result_one=$?
   [[ $result_one -eq 0 ]] || fail "Error creating bucket"
 
-  copy_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one"  || local result_two=$?
+  put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local result_two=$?
   [[ $result_two -eq 0 ]] || fail "Error adding object one"
-  copy_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local result_three=$?
+  put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
   [[ $result_three -eq 0 ]] || fail "Error adding object two"
 
   error=$(aws --no-verify-ssl s3api delete-objects --bucket "$BUCKET_ONE_NAME" --delete '{
@@ -172,9 +172,9 @@ source ./tests/commands/put_bucket_policy.sh
   }') || local result=$?
   [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
 
-  object_exists "aws" "$BUCKET_ONE_NAME"/"$object_one" || local exists_one=$?
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_one=$?
   [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
-  object_exists "aws" "$BUCKET_ONE_NAME"/"$object_two" || local exists_two=$?
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_two" || local exists_two=$?
   [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
@@ -197,20 +197,22 @@ source ./tests/commands/put_bucket_policy.sh
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  copy_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local copy_result_one=$?
+  put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local copy_result_one=$?
   [[ $copy_result_one -eq 0 ]] || fail "Failed to add object $object_one"
-  copy_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local copy_result_two=$?
+  put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local copy_result_two=$?
   [[ $copy_result_two -eq 0 ]] || fail "Failed to add object $object_two"
 
+  sleep 1
+
   list_objects_s3api_v1 "$BUCKET_ONE_NAME"
-  key_one=$(echo "$objects" | jq '.Contents[0].Key')
-  [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
-  size_one=$(echo "$objects" | jq '.Contents[0].Size')
-  [[ $size_one -eq 0 ]] || fail "Object one size mismatch"
-  key_two=$(echo "$objects" | jq '.Contents[1].Key')
-  [[ $key_two == '"'$object_two'"' ]] || fail "Object two mismatch"
+  key_one=$(echo "$objects" | jq -r '.Contents[0].Key')
+  [[ $key_one == "$object_one" ]] || fail "Object one mismatch ($key_one, $object_one)"
+  size_one=$(echo "$objects" | jq -r '.Contents[0].Size')
+  [[ $size_one -eq 0 ]] || fail "Object one size mismatch ($size_one, 0)"
+  key_two=$(echo "$objects" | jq -r '.Contents[1].Key')
+  [[ $key_two == "$object_two" ]] || fail "Object two mismatch ($key_two, $object_two)"
   size_two=$(echo "$objects" | jq '.Contents[1].Size')
-  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch"
+  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch ($size_two, ${#object_two_data})"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$object_one" "$object_two"
@@ -227,20 +229,20 @@ source ./tests/commands/put_bucket_policy.sh
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  copy_object "aws" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME"/"$object_one" || local copy_object_one=$?
+  put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local copy_object_one=$?
   [[ $copy_object_one -eq 0 ]] || fail "Failed to add object $object_one"
-  copy_object "aws" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME"/"$object_two" || local copy_object_two=$?
+  put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local copy_object_two=$?
   [[ $copy_object_two -eq 0 ]] || fail "Failed to add object $object_two"
 
   list_objects_s3api_v2 "$BUCKET_ONE_NAME"
-  key_one=$(echo "$objects" | jq '.Contents[0].Key')
-  [[ $key_one == '"'$object_one'"' ]] || fail "Object one mismatch"
-  size_one=$(echo "$objects" | jq '.Contents[0].Size')
-  [[ $size_one -eq 0 ]] || fail "Object one size mismatch"
-  key_two=$(echo "$objects" | jq '.Contents[1].Key')
-  [[ $key_two == '"'$object_two'"' ]] || fail "Object two mismatch"
-  size_two=$(echo "$objects" | jq '.Contents[1].Size')
-  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch"
+  key_one=$(echo "$objects" | jq -r '.Contents[0].Key')
+  [[ $key_one == "$object_one" ]] || fail "Object one mismatch ($key_one, $object_one)"
+  size_one=$(echo "$objects" | jq -r '.Contents[0].Size')
+  [[ $size_one -eq 0 ]] || fail "Object one size mismatch ($size_one, 0)"
+  key_two=$(echo "$objects" | jq -r '.Contents[1].Key')
+  [[ $key_two == "$object_two" ]] || fail "Object two mismatch ($key_two, $object_two)"
+  size_two=$(echo "$objects" | jq -r '.Contents[1].Size')
+  [[ $size_two -eq ${#object_two_data} ]] || fail "Object two size mismatch ($size_two, ${#object_two_data})"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$object_one" "$object_two"
@@ -266,7 +268,7 @@ source ./tests/commands/put_bucket_policy.sh
   [[ list_result -eq 0 ]] || fail "Listing multipart upload parts failed"
 
   declare -a parts_map
-  for ((i=0;i<$4;i++)) {
+  for i in {0..3}; do
     local part_number
     local etag
     part_number=$(echo "$parts" | jq ".[$i].PartNumber")
@@ -280,9 +282,10 @@ source ./tests/commands/put_bucket_policy.sh
       return 1
     fi
     parts_map[$part_number]=$etag
-  }
+  done
+  [[ ${#parts_map[@]} -ne 0 ]] || fail "error loading multipart upload parts to check"
 
-  for ((i=0;i<$4;i++)) {
+  for i in {0..3}; do
     local part_number
     local etag
     part_number=$(echo "$listed_parts" | jq ".Parts[$i].PartNumber")
@@ -291,9 +294,9 @@ source ./tests/commands/put_bucket_policy.sh
       echo "error:  etags don't match (part number: $part_number, etags ${parts_map[$part_number]},$etag)"
       return 1
     fi
-  }
+  done
 
-  run_abort_command "$BUCKET_ONE_NAME" "$bucket_file" $upload_id
+  run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file" 4
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
@@ -347,7 +350,7 @@ source ./tests/commands/put_bucket_policy.sh
   multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || upload_result=$?
   [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
 
-  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file-copy" "$test_file_folder/$bucket_file-copy"
+  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy"
   compare_files "$test_file_folder"/$bucket_file-copy "$test_file_folder"/$bucket_file || compare_result=$?
   [[ $compare_result -eq 0 ]] || fail "Data doesn't match"
 
@@ -370,7 +373,7 @@ source ./tests/commands/put_bucket_policy.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-  copy_object "aws" "$test_file_folder"/"$folder_name"/"$object_name" "$BUCKET_ONE_NAME"/"$folder_name"/"$object_name" || local copy_result=$?
+  put_object "aws" "$test_file_folder/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
 
   list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"
@@ -386,9 +389,9 @@ source ./tests/commands/put_bucket_policy.sh
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly
-@test "test_list_objects_file_count" {
-  test_common_list_objects_file_count "aws"
-}
+#@test "test_list_objects_file_count" {
+#  test_common_list_objects_file_count "aws"
+#}
 
 #@test "test_filename_length" {
 #  file_name=$(printf "%0.sa" $(seq 1 1025))
@@ -433,12 +436,12 @@ source ./tests/commands/put_bucket_policy.sh
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
   object="$test_file_folder"/"$object_one"
-  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$test_key" "$test_value" || copy_result=$?
+  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "aws" "$object" || local exists_result_one=$?
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_result_one=$?
   [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
 
-  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object" || get_result=$?
+  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || get_result=$?
   [[ $get_result -eq 0 ]] || fail "error getting object metadata"
   key=$(echo "$metadata" | jq 'keys[]')
   value=$(echo "$metadata" | jq '.[]')

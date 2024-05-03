@@ -17,6 +17,12 @@ setup() {
     return 1
   fi
 
+  log 4 "Running test $BATS_TEST_NAME"
+  if [[ $LOG_LEVEL -ge 5 ]]; then
+    start_time=$(date +%s)
+    export start_time
+  fi
+
   if [[ $RUN_S3CMD == true ]]; then
     S3CMD_OPTS=()
     S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
@@ -59,6 +65,9 @@ check_params() {
   else
     export LOG_LEVEL
   fi
+  if [[ -n "$TEST_LOG_FILE" ]]; then
+    export TEST_LOG_FILE
+  fi
   return 0
 }
 
@@ -72,4 +81,8 @@ fail() {
 # bats teardown function
 teardown() {
   stop_versity
+  if [[ $LOG_LEVEL -ge 5 ]]; then
+    end_time=$(date +%s)
+    log 4 "Total test time: $((end_time - start_time))"
+  fi
 }

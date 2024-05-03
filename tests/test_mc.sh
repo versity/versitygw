@@ -19,11 +19,11 @@ export RUN_MC=true
 }
 
 @test "test_put_object-with-data-mc" {
-  test_common_copy_object_with_data "mc"
+  test_common_put_object_with_data "mc"
 }
 
 @test "test_put_object-no-data-mc" {
-  test_common_copy_object_no_data "mc"
+  test_common_put_object_no_data "mc"
 }
 
 @test "test_list_buckets_mc" {

@@ -12,7 +12,7 @@ export RECREATE_BUCKETS
 if ! ./tests/run.sh aws; then
   exit 1
 fi
-if ! ./tests/run.sh aws-posix; then
+if ! ./tests/run.sh s3; then
   exit 1
 fi
 if ! ./tests/run.sh s3cmd; then
