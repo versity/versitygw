@@ -1421,7 +1421,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				log.Printf("invalid part number: %d", partNumber)
 			}
 			return SendXMLResponse(ctx, nil,
-				s3err.GetAPIError(s3err.ErrInvalidPart),
+				s3err.GetAPIError(s3err.ErrInvalidPartNumber),
 				&MetaOpts{
 					Logger:      c.logger,
 					Action:      "UploadPartCopy",
@@ -2214,10 +2214,28 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
+	}
+
+	var partNumber *int32
+	if ctx.Request().URI().QueryArgs().Has("partNumber") {
+		if partNumberQuery < 1 || partNumberQuery > 10000 {
+			if c.debug {
+				log.Printf("invalid part number: %d", partNumberQuery)
+			}
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPartNumber),
+				&MetaOpts{
+					Logger:      c.logger,
+					Action:      "HeadObject",
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		partNumber = &partNumberQuery
 	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -2241,8 +2259,9 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 
 	res, err := c.be.HeadObject(ctx.Context(),
 		&s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &key,
+			Bucket:     &bucket,
+			Key:        &key,
+			PartNumber: partNumber,
 		})
 	if err != nil {
 		return SendResponse(ctx, err,
@@ -2262,30 +2281,14 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	}
 
 	utils.SetMetaHeaders(ctx, res.Metadata)
-	var lastmod string
-	if res.LastModified != nil {
-		lastmod = res.LastModified.Format(timefmt)
-	}
 	headers := []utils.CustomHeader{
 		{
 			Key:   "Content-Length",
 			Value: fmt.Sprint(getint64(res.ContentLength)),
 		},
 		{
-			Key:   "Content-Type",
-			Value: getstring(res.ContentType),
-		},
-		{
-			Key:   "Content-Encoding",
-			Value: getstring(res.ContentEncoding),
-		},
-		{
 			Key:   "ETag",
 			Value: getstring(res.ETag),
-		},
-		{
-			Key:   "Last-Modified",
-			Value: lastmod,
 		},
 		{
 			Key:   "x-amz-storage-class",
@@ -2313,6 +2316,31 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-object-lock-retain-until-date",
 			Value: retainUntilDate,
+		})
+	}
+	if res.PartsCount != nil {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-mp-parts-count",
+			Value: fmt.Sprintf("%v", *res.PartsCount),
+		})
+	}
+	if res.LastModified != nil {
+		lastmod := res.LastModified.Format(timefmt)
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Last-Modified",
+			Value: lastmod,
+		})
+	}
+	if res.ContentEncoding != nil {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Encoding",
+			Value: getstring(res.ContentEncoding),
+		})
+	}
+	if res.ContentType != nil {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Type",
+			Value: getstring(res.ContentType),
 		})
 	}
 	utils.SetResponseHeaders(ctx, headers)

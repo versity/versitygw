@@ -69,6 +69,7 @@ const (
 	ErrInvalidMaxParts
 	ErrInvalidPartNumberMarker
 	ErrInvalidPart
+	ErrInvalidPartNumber
 	ErrInternalError
 	ErrInvalidCopyDest
 	ErrInvalidCopySource
@@ -207,6 +208,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPart: {
 		Code:           "InvalidPart",
 		Description:    "One or more of the specified parts could not be found.  The part may not have been uploaded, or the specified entity tag may not match the part's entity tag.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidPartNumber: {
+		Code:           "InvalidArgument",
+		Description:    "Part number must be an integer between 1 and 10000, inclusive",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidCopyDest: {

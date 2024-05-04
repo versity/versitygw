@@ -539,16 +539,16 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
-func (p *Posix) retrieveUploadId(bucket, object string) (string, error) {
+func (p *Posix) retrieveUploadId(bucket, object string) (string, [32]byte, error) {
 	sum := sha256.Sum256([]byte(object))
 	objdir := filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	entries, err := os.ReadDir(objdir)
 	if err != nil || len(entries) == 0 {
-		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return "", [32]byte{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	return entries[0].Name(), nil
+	return entries[0].Name(), sum, nil
 }
 
 // fll out the user metadata map with the metadata for the object
@@ -1536,6 +1536,46 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	bucket := *input.Bucket
 	object := *input.Key
 
+	if input.PartNumber != nil {
+		uploadId, sum, err := p.retrieveUploadId(bucket, object)
+		if err != nil {
+			return nil, err
+		}
+
+		ents, err := os.ReadDir(filepath.Join(bucket, metaTmpMultipartDir, fmt.Sprintf("%x", sum), uploadId))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read parts: %w", err)
+		}
+
+		partPath := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum), uploadId, fmt.Sprintf("%v", *input.PartNumber))
+
+		part, err := os.Stat(filepath.Join(bucket, partPath))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("stat part: %w", err)
+		}
+
+		b, err := p.meta.RetrieveAttribute(bucket, partPath, etagkey)
+		etag := string(b)
+		if err != nil {
+			etag = ""
+		}
+		partsCount := int32(len(ents))
+		size := part.Size()
+
+		return &s3.HeadObjectOutput{
+			LastModified:  backend.GetTimePtr(part.ModTime()),
+			ETag:          &etag,
+			PartsCount:    &partsCount,
+			ContentLength: &size,
+		}, nil
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1618,7 +1658,7 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 		return s3response.GetObjectAttributesResult{}, err
 	}
 
-	uploadId, err := p.retrieveUploadId(*input.Bucket, *input.Key)
+	uploadId, _, err := p.retrieveUploadId(*input.Bucket, *input.Key)
 	if err != nil {
 		return s3response.GetObjectAttributesResult{}, err
 	}
