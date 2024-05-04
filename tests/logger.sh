@@ -10,7 +10,16 @@ log() {
   if [[ $1 -gt $LOG_LEVEL ]]; then
     return 0
   fi
-  echo "$2"
+  log_level=""
+  case "$1" in
+    1) log_level="CRIT";;
+    2) log_level="ERROR";;
+    3) log_level="WARN";;
+    4) log_level="INFO";;
+    5) log_level="DEBUG";;
+    6) log_level="TRACE";;
+  esac
+  echo "$log_level $2"
   if [[ -n "$TEST_LOG_FILE" ]]; then
     echo "$2" >> "$TEST_LOG_FILE"
   fi

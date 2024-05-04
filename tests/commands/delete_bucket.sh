@@ -5,7 +5,7 @@
 # return 0 for success, 1 for failure
 delete_bucket() {
   if [ $# -ne 2 ]; then
-    echo "delete bucket missing command type, bucket name"
+    log 2 "delete bucket missing command type, bucket name"
     return 1
   fi
 
@@ -20,14 +20,14 @@ delete_bucket() {
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure rb "$MC_ALIAS/$2" 2>&1) || exit_code=$?
   else
-    echo "Invalid command type $1"
+    log 2 "Invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
     else
-      echo "error deleting bucket: $error"
+      log 2 "error deleting bucket: $error"
       return 1
     fi
   fi

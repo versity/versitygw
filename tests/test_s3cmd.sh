@@ -4,19 +4,15 @@ source ./tests/setup.sh
 source ./tests/test_common.sh
 source ./tests/util.sh
 source ./tests/util_bucket_create.sh
+source ./tests/util_users.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh
 
 export RUN_S3CMD=true
 
-@test "test_multipart_upload_s3cmd" {
+@test "test_complete_multipart_upload" {
   test_common_multipart_upload "s3cmd"
-}
-
-# test s3cmd bucket creation/deletion
-@test "test_create_delete_bucket_s3cmd" {
-  test_common_create_delete_bucket "s3cmd"
 }
 
 # test s3cmd put object
@@ -27,6 +23,15 @@ export RUN_S3CMD=true
 @test "test_copy_object_no_data" {
   test_common_put_object_no_data "s3cmd"
 }
+
+# test s3cmd bucket creation/deletion
+@test "test_create_delete_bucket" {
+  test_common_create_delete_bucket "s3cmd"
+}
+
+#@test "test_put_bucket_acl" {
+#  test_common_put_bucket_acl "s3cmd"
+#}
 
 # test listing buckets on versitygw
 @test "test_list_buckets_s3cmd" {

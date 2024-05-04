@@ -17,7 +17,7 @@ source ./tests/commands/list_objects.sh
 # return 0 for success, 1 for failure
 delete_bucket_recursive() {
   if [ $# -ne 2 ]; then
-    echo "delete bucket missing command type, bucket name"
+    log 2 "delete bucket missing command type, bucket name"
     return 1
   fi
 
@@ -32,7 +32,7 @@ delete_bucket_recursive() {
   elif [[ $1 == "mc" ]]; then
     error=$(delete_bucket_recursive_mc "$2") || exit_code="$?"
   else
-    echo "invalid command type '$1'"
+    log 2 "invalid command type '$1'"
     return 1
   fi
 
@@ -40,7 +40,7 @@ delete_bucket_recursive() {
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
     else
-      echo "error deleting bucket recursively: $error"
+      log 2 "error deleting bucket recursively: $error"
       return 1
     fi
   fi
@@ -79,24 +79,24 @@ delete_bucket_recursive_s3api() {
 # return 0 for success, 1 for failure
 delete_bucket_contents() {
   if [ $# -ne 2 ]; then
-    echo "delete bucket missing command id, bucket name"
+    log 2 "delete bucket missing command id, bucket name"
     return 1
   fi
 
   local exit_code=0
   local error
-  if [[ $1 == "aws" ]]; then
+  if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
     error=$(aws --no-verify-ssl s3 rm s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
     error=$(mc --insecure rm --force --recursive "$MC_ALIAS"/"$2" 2>&1) || exit_code="$?"
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error deleting bucket contents: $error"
+    log 2 "error deleting bucket contents: $error"
     return 1
   fi
   return 0
@@ -414,23 +414,6 @@ object_is_accessible() {
   return 0
 }
 
-# get bucket acl
-# param:  bucket path
-# export acl for success, return 1 for error
-get_bucket_acl() {
-  if [ $# -ne 1 ]; then
-    echo "bucket ACL command missing bucket name"
-    return 1
-  fi
-  local exit_code=0
-  acl=$(aws --no-verify-ssl s3api get-bucket-acl --bucket "$1" 2>&1) || exit_code="$?"
-  if [ $exit_code -ne 0 ]; then
-    echo "Error getting bucket ACLs: $acl"
-    return 1
-  fi
-  export acl
-}
-
 # get object acl
 # param:  object path
 # export acl for success, return 1 for error
@@ -463,7 +446,7 @@ put_bucket_tag() {
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure tag set "$MC_ALIAS"/"$2" "$3=$4" 2>&1) || result=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [[ $result -ne 0 ]]; then

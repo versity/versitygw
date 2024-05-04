@@ -14,7 +14,7 @@ copy_object() {
   elif [[ $1 == 's3cmd' ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate cp "s3://$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure cp "$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
+    error=$(mc --insecure cp "$MC_ALIAS/$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
   else
     echo "'copy-object' not implemented for '$1'"
     return 1

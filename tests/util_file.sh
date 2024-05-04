@@ -90,8 +90,14 @@ compare_files() {
     echo "file comparison requires two files"
     return 2
   fi
-  file_one_md5=$(md5 -q "$1")
-  file_two_md5=$(md5 -q "$2")
+  os=$(uname)
+  if [[ $os == "Darwin" ]]; then
+    file_one_md5=$(md5 -q "$1")
+    file_two_md5=$(md5 -q "$2")
+  else
+    file_one_md5=$(md5sum "$1" | cut -d " " -f 1)
+    file_two_md5=$(md5sum "$2" | cut -d " " -f 1)
+  fi
   if [[ $file_one_md5 == "$file_two_md5" ]]; then
     return 0
   fi

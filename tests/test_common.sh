@@ -6,9 +6,12 @@ source ./tests/util_file.sh
 source ./tests/util_policy.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_object_tagging.sh
+source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/get_bucket_tagging.sh
+source ./tests/commands/get_object.sh
 source ./tests/commands/list_buckets.sh
+source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_object.sh
 
 test_common_multipart_upload() {
@@ -51,6 +54,42 @@ test_common_create_delete_bucket() {
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME" || local delete_result_two=$?
   [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
+}
+
+test_common_copy_object() {
+  if [[ $# -ne 1 ]]; then
+    fail "copy object test requires command type"
+  fi
+  local object_name="test-object"
+  create_test_files "$object_name" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  echo "test data" > "$test_file_folder/$object_name"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket one"
+  setup_bucket "$1" "$BUCKET_TWO_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket two"
+
+  if [[ $1 == 's3' ]]; then
+    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local put_result=$?
+  else
+    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local put_result=$?
+  fi
+  [[ $put_result -eq 0 ]] || fail "Failed to add object to bucket"
+  if [[ $1 == 's3' ]]; then
+    copy_object "$1" "s3://$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || local copy_result_one=$?
+  else
+    copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || local copy_result_one=$?
+  fi
+  [[ $copy_result_one -eq 0 ]] || fail "Object not added to bucket"
+  get_object "$1" "$BUCKET_TWO_NAME" "$object_name" "$test_file_folder/$object_name-copy" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "failed to retrieve object"
+
+  compare_files "$test_file_folder/$object_name" "$test_file_folder/$object_name-copy" || local compare_result=$?
+  [[ $compare_result -eq 0 ]] || fail "files not the same"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents "$1" "$BUCKET_TWO_NAME"
 }
 
 test_common_put_object_with_data() {
@@ -96,6 +135,56 @@ test_common_put_object() {
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_test_files "$2"
+}
+
+test_common_put_get_object() {
+  if [[ $# -ne 1 ]]; then
+    fail "put, get object test requires command type"
+  fi
+
+  local object_name="test-object"
+  create_test_files "$object_name" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  echo "test data" > "$test_file_folder"/"$object_name"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
+  object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || local exists_result_one=$?
+  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+
+  get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$test_file_folder/${object_name}_copy" || local delete_result=$?
+  [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
+  object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || local exists_result_two=$?
+  [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
+
+  compare_files "$test_file_folder"/"$object_name" "$test_file_folder/${object_name}_copy" || compare_result=$?
+  [[ $compare_result -ne 0 ]] || fail "objects are different"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_file_folder/$object_name" "$test_file_folder/${object_name}_copy"
+}
+
+test_common_get_set_versioning() {
+  local object_name="test-object"
+  create_test_files "$object_name" || local create_result=$?
+  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  get_bucket_versioning "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "error getting bucket versioning"
+
+  put_bucket_versioning "$1" "$BUCKET_ONE_NAME" "Enabled" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "error putting bucket versioning"
+
+  get_bucket_versioning "$1" "$BUCKET_ONE_NAME" || local get_result=$?
+  [[ $get_result -eq 0 ]] || fail "error getting bucket versioning"
+
+  fail "test fail"
 }
 
 # common test for listing buckets
@@ -359,6 +448,91 @@ test_common_get_bucket_location() {
   get_bucket_location "aws" "$BUCKET_ONE_NAME"
   # shellcheck disable=SC2154
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
+}
+
+test_common_put_bucket_acl() {
+  [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating bucket"
+
+  if ! user_exists "ABCDEFG"; then
+    create_user "ABCDEFG" "HIJKLMN" user || create_result=$?
+    [[ $create_result -eq 0 ]] || fail "Error creating user"
+  fi
+
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
+  log 5 "Initial ACLs: $acl"
+  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID')
+  if [[ $id != '"'"$AWS_ACCESS_KEY_ID"'"' ]]; then
+    # in some cases, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
+    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID') || local list_result=$?
+    [[ $list_result -eq 0 ]] || fail "error getting canonical ID: $canonical_id"
+    [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
+  fi
+
+  acl_file="test-acl"
+
+cat <<EOF > "$test_file_folder"/"$acl_file"
+  {
+    "Grants": [
+      {
+        "Grantee": {
+          "ID": "ABCDEFG",
+          "Type": "CanonicalUser"
+        },
+        "Permission": "READ"
+      }
+    ],
+    "Owner": {
+      "ID": "$AWS_ACCESS_KEY_ID"
+    }
+  }
+EOF
+
+  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "Error putting acl"
+
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
+  log 5 "Acls after 1st put: $acl"
+  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants[0]')
+  permission=$(echo "$public_grants" | jq -r '.Permission')
+  [[ $permission == "READ" ]] || fail "incorrect permission ($permission)"
+
+cat <<EOF > "$test_file_folder"/"$acl_file"
+  {
+    "Grants": [
+      {
+        "Grantee": {
+          "ID": "ABCDEFG",
+          "Type": "CanonicalUser"
+        },
+        "Permission": "FULL_CONTROL"
+      }
+    ],
+    "Owner": {
+      "ID": "$AWS_ACCESS_KEY_ID"
+    }
+  }
+EOF
+
+  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || local put_result=$?
+  [[ $put_result -eq 0 ]] || fail "Error putting acl"
+
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
+  log 5 "Acls after 2nd put: $acl"
+  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants')
+  public_grant_length=$(echo "$public_grants" | jq 'length')
+  [[ $public_grant_length -eq 1 ]] || fail "incorrect grant length for private ACL ($public_grant_length)"
+  permission=$(echo "$public_grants" | jq -r '.[0].Permission')
+  [[ $permission == "FULL_CONTROL" ]] || fail "incorrect permission ($permission)"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }
 
 test_common_get_put_delete_bucket_policy() {

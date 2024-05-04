@@ -5,13 +5,18 @@ source ./tests/util.sh
 source ./tests/util_aws.sh
 source ./tests/util_bucket_create.sh
 source ./tests/util_file.sh
+source ./tests/util_users.sh
 source ./tests/test_common.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object_tagging.sh
+source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_policy.sh
+source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/get_object.sh
+source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_policy.sh
+source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object.sh
 
 @test "test_abort_multipart_upload" {
@@ -55,6 +60,15 @@ source ./tests/commands/put_object.sh
   delete_test_files $bucket_file
 }
 
+@test "test_copy_object" {
+  test_common_copy_object "s3api"
+}
+
+# test creation and deletion of bucket on versitygw
+@test "test_create_delete_bucket_aws" {
+  test_common_create_delete_bucket "aws"
+}
+
 @test "test_put_object" {
   bucket_file="bucket_file"
 
@@ -76,11 +90,6 @@ source ./tests/commands/put_object.sh
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "aws" "$BUCKET_TWO_NAME"
   delete_test_files "$bucket_file"
-}
-
-# test creation and deletion of bucket on versitygw
-@test "test_create_delete_bucket_aws" {
-  test_common_create_delete_bucket "aws"
 }
 
 @test "test_create_bucket_invalid_name" {
@@ -119,13 +128,17 @@ source ./tests/commands/put_object.sh
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating bucket"
 
-  get_bucket_acl "$BUCKET_ONE_NAME" || local result=$?
+  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Error retrieving acl"
 
   id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID')
   [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_put_bucket_acl" {
+  test_common_put_bucket_acl "s3api"
 }
 
 # test ability to retrieve object ACLs
@@ -185,6 +198,10 @@ source ./tests/commands/put_object.sh
 @test "test-set-get-delete-bucket-tags" {
   test_common_set_get_delete_bucket_tags "aws"
 }
+
+#@test "test_get_set_versioning" {
+#  test_common_get_set_versioning "s3api"
+#}
 
 # test v1 s3api list objects command
 @test "test-s3api-list-objects-v1" {
