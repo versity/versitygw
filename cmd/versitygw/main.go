@@ -50,6 +50,7 @@ var (
 	debug                                  bool
 	pprof                                  string
 	quiet                                  bool
+	readonly                               bool
 	iamDir                                 string
 	ldapURL, ldapBindDN, ldapPassword      string
 	ldapQueryBase, ldapObjClasses          string
@@ -391,6 +392,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_HEALTH"},
 			Destination: &healthPath,
 		},
+		&cli.BoolFlag{
+			Name:        "readonly",
+			Usage:       "allow only read operations across all the gateway",
+			EnvVars:     []string{"VGW_READ_ONLY"},
+			Destination: &readonly,
+		},
 	}
 }
 
@@ -441,6 +448,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if healthPath != "" {
 		opts = append(opts, s3api.WithHealth(healthPath))
+	}
+	if readonly {
+		opts = append(opts, s3api.WithReadOnly())
 	}
 
 	admApp := fiber.New(fiber.Config{
