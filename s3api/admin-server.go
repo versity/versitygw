@@ -51,7 +51,6 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 	// Authentication middlewares
 	app.Use(middlewares.VerifyV4Signature(root, iam, nil, region, false))
 	app.Use(middlewares.VerifyMD5Body(nil))
-	app.Use(middlewares.AclParser(be, nil))
 
 	server.router.Init(app, be, iam)
 

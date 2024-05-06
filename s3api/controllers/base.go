@@ -44,19 +44,21 @@ type S3ApiController struct {
 	logger   s3log.AuditLogger
 	evSender s3event.S3EventSender
 	debug    bool
+	readonly bool
 }
 
 const (
 	iso8601Format = "20060102T150405Z"
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, debug bool) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, debug bool, readonly bool) S3ApiController {
 	return S3ApiController{
 		be:       be,
 		iam:      iam,
 		logger:   logger,
 		evSender: evs,
 		debug:    debug,
+		readonly: readonly,
 	}
 }
 
@@ -88,6 +90,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -133,6 +136,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("retention") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -171,6 +175,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("legal-hold") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -225,6 +230,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -263,6 +269,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionReadAcp,
 			IsRoot:        isRoot,
@@ -293,6 +300,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("attributes") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -347,6 +355,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:      c.readonly,
 		Acl:           parsedAcl,
 		AclPermission: types.PermissionRead,
 		IsRoot:        isRoot,
@@ -478,6 +487,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -522,6 +532,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("versioning") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -558,6 +569,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("policy") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -585,6 +597,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("versions") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -634,6 +647,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("object-lock") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -671,6 +685,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionReadAcp,
 			IsRoot:        isRoot,
@@ -707,6 +722,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("uploads") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -753,6 +769,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 
 	if ctx.QueryInt("list-type") == 2 {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -799,6 +816,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:      c.readonly,
 		Acl:           parsedAcl,
 		AclPermission: types.PermissionRead,
 		IsRoot:        isRoot,
@@ -893,6 +911,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		}
 
 		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -921,6 +940,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("versioning") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -971,6 +991,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
 		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1008,6 +1029,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("policy") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1053,6 +1075,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWriteAcp,
 				IsRoot:        isRoot,
@@ -1314,6 +1337,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1344,6 +1368,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("retention") {
 		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1388,6 +1413,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1483,6 +1509,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -1744,6 +1771,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1874,6 +1902,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -1903,6 +1932,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("policy") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -1931,6 +1961,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -1982,6 +2013,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 
 	err = auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -2042,6 +2074,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -2077,6 +2110,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -2113,6 +2147,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,
@@ -2166,6 +2201,7 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -2240,6 +2276,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
 			IsRoot:        isRoot,
@@ -2388,6 +2425,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -2438,6 +2476,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionRead,
 				IsRoot:        isRoot,
@@ -2493,6 +2532,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
+				Readonly:      c.readonly,
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
 				IsRoot:        isRoot,
@@ -2541,6 +2581,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
+			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionWrite,
 			IsRoot:        isRoot,

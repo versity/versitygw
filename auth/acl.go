@@ -280,9 +280,15 @@ type AccessOptions struct {
 	Bucket        string
 	Object        string
 	Action        Action
+	Readonly      bool
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
+	if opts.Readonly {
+		if opts.AclPermission == types.PermissionWrite || opts.AclPermission == types.PermissionWriteAcp {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+	}
 	if opts.IsRoot {
 		return nil
 	}
