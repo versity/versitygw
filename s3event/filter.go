@@ -121,7 +121,7 @@ func (ef EventFilter) Filter(event EventType) bool {
 	}
 
 	// check wildcard match
-	wildCardEv := EventType(string(event[strings.LastIndex(string(event), ":")+1]) + "*")
+	wildCardEv := EventType(string(event[:strings.LastIndex(string(event), ":")+1]) + "*")
 	wildcard, found := ef[wildCardEv]
 	if found {
 		return wildcard
