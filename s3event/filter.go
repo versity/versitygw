@@ -17,6 +17,7 @@ package s3event
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,7 @@ var supportedEventFilters = map[EventType]struct{}{
 
 type EventFilter map[EventType]bool
 
-func parseEventFilters(path string) (EventFilter, error) {
+func parseEventFiltersFile(path string) (EventFilter, error) {
 	// if no filter config file path is specified return nil map
 	if path == "" {
 		return nil, nil
@@ -87,8 +88,12 @@ func parseEventFilters(path string) (EventFilter, error) {
 	}
 	defer file.Close()
 
+	return parseEventFilters(file)
+}
+
+func parseEventFilters(r io.Reader) (EventFilter, error) {
 	var filter EventFilter
-	if err := json.NewDecoder(file).Decode(&filter); err != nil {
+	if err := json.NewDecoder(r).Decode(&filter); err != nil {
 		return nil, err
 	}
 
