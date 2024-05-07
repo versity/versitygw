@@ -117,7 +117,7 @@ type EventConfig struct {
 }
 
 func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
-	filter, err := parseEventFilters(cfg.FilterConfigFilePath)
+	filter, err := parseEventFiltersFile(cfg.FilterConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("parse event filter config file %w", err)
 	}
