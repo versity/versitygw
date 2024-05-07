@@ -1747,7 +1747,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				Metadata:                    metadata,
 			})
 		if err == nil {
-			return SendXMLResponse(ctx, res, err,
+			return SendXMLResponse(ctx, res.CopyObjectResult, err,
 				&MetaOpts{
 					Logger:      c.logger,
 					EvSender:    c.evSender,
