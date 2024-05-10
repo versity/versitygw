@@ -46,10 +46,10 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 
 	// Logging middlewares
 	app.Use(logger.New())
-	app.Use(middlewares.DecodeURL(nil))
+	app.Use(middlewares.DecodeURL(nil, nil))
 
 	// Authentication middlewares
-	app.Use(middlewares.VerifyV4Signature(root, iam, nil, region, false))
+	app.Use(middlewares.VerifyV4Signature(root, iam, nil, nil, region, false))
 	app.Use(middlewares.VerifyMD5Body(nil))
 
 	server.router.Init(app, be, iam)

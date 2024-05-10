@@ -20,13 +20,14 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3log"
 )
 
 // ProcessChunkedBody initializes the chunked upload stream if the
 // request appears to be a chunked upload
-func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, region string) fiber.Handler {
+func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, mm *metrics.Manager, region string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
 		if decodedLength == "" {
@@ -36,7 +37,7 @@ func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.A
 
 		authData, err := utils.ParseAuthorization(ctx.Get("Authorization"))
 		if err != nil {
-			return sendResponse(ctx, err, logger)
+			return sendResponse(ctx, err, logger, mm)
 		}
 
 		acct := ctx.Locals("account").(auth.Account)
@@ -51,7 +52,7 @@ func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.A
 				return cr
 			})
 			if err != nil {
-				return sendResponse(ctx, err, logger)
+				return sendResponse(ctx, err, logger, mm)
 			}
 			return ctx.Next()
 		}

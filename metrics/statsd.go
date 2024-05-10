@@ -45,16 +45,16 @@ func (s *Statsd) Close() {
 }
 
 // Add adds value to key
-func (s *Statsd) Add(module, key string, value int, tags ...Tag) {
+func (s *Statsd) Add(module, key string, value int64, tags ...Tag) {
 	stags := make([]statsd.Tag, len(tags))
 	for i, t := range tags {
 		stags[i] = statsd.StringTag(t.Key, t.Value)
 	}
-	s.c.Incr(fmt.Sprintf("%v.%v", module, key), int64(value), stags...)
+	s.c.Incr(fmt.Sprintf("%v.%v", module, key), value, stags...)
 }
 
 // Gauge sets key to value
-func (s *Statsd) Gauge(module, key string, value int, tags ...Tag) {
+func (s *Statsd) Gauge(module, key string, value int64, tags ...Tag) {
 	stags := make([]statsd.Tag, len(tags))
 	for i, t := range tags {
 		stags[i] = statsd.StringTag(t.Key, t.Value)

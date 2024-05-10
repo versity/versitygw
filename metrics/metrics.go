@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -46,11 +47,14 @@ type Manager struct {
 }
 
 type Config struct {
-	StatsdServers []string
+	StatsdServers string
 }
 
 // NewManager initializes metrics plugins and returns a new metrics manager
 func NewManager(ctx context.Context, conf Config) (*Manager, error) {
+	if len(conf.StatsdServers) == 0 {
+		return nil, nil
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get hostname: %w", err)
@@ -65,7 +69,9 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 		ctx:           ctx,
 	}
 
-	for _, server := range conf.StatsdServers {
+	statsdServers := strings.Split(conf.StatsdServers, ",")
+
+	for _, server := range statsdServers {
 		statsd, err := NewStatsd(server, hostname)
 		if err != nil {
 			return nil, err
@@ -81,13 +87,42 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	return mgr, nil
 }
 
+func (m *Manager) Send(err error, action string, objSize int64, objCount int64) {
+	// In case of Authentication failures, url parsing ...
+	if action == "" {
+		action = "s3:UnDetected"
+	}
+	if err != nil {
+		m.Increment(action, "failed_count")
+	}
+	m.Increment(action, "success_count")
+
+	switch action {
+	case "s3:PutObject":
+		m.Add(action, "bytes_written", objSize)
+		m.Increment(action, "object_created_count")
+	case "s3:CompleteMultipartUpload":
+		m.Increment(action, "object_created_count")
+	case "s3:UploadPart":
+		m.Add(action, "bytes_written", objSize)
+	case "s3:GetObject":
+		m.Add(action, "bytes_read", objSize)
+	case "s3:DeleteObject":
+		m.Increment(action, "object_removed_count")
+	case "s3:DeleteObjects":
+		m.Add(action, "object_removed_count", objCount)
+	}
+	//TODO: Handle UploadPartCopy case
+	//TODO: Handle CopyObject case
+}
+
 // Increment increments the key by one
 func (m *Manager) Increment(module, key string, tags ...Tag) {
 	m.Add(module, key, 1, tags...)
 }
 
 // Add adds value to key
-func (m *Manager) Add(module, key string, value int, tags ...Tag) {
+func (m *Manager) Add(module, key string, value int64, tags ...Tag) {
 	if m.ctx.Err() != nil {
 		return
 	}
@@ -107,7 +142,7 @@ func (m *Manager) Add(module, key string, value int, tags ...Tag) {
 }
 
 // Gauge sets key to value
-func (m *Manager) Gauge(module, key string, value int, tags ...Tag) {
+func (m *Manager) Gauge(module, key string, value int64, tags ...Tag) {
 	if m.ctx.Err() != nil {
 		return
 	}
@@ -126,7 +161,7 @@ func (m *Manager) Gauge(module, key string, value int, tags ...Tag) {
 	}
 }
 
-// Close closes metrics channels, waits for data to cmplete, closes all plugins
+// Close closes metrics channels, waits for data to complete, closes all plugins
 func (m *Manager) Close() {
 	// drain the datapoint channels
 	close(m.addDataChan)
@@ -141,8 +176,8 @@ func (m *Manager) Close() {
 
 // publisher is the interface for interacting with the metrics plugins
 type publisher interface {
-	Add(module, key string, value int, tags ...Tag)
-	Gauge(module, key string, value int, tags ...Tag)
+	Add(module, key string, value int64, tags ...Tag)
+	Gauge(module, key string, value int64, tags ...Tag)
 	Close()
 }
 
@@ -167,6 +202,6 @@ func (m *Manager) gaugeForwarder(gaugeChan <-chan datapoint) {
 type datapoint struct {
 	module string
 	key    string
-	value  int
+	value  int64
 	tags   []Tag
 }
