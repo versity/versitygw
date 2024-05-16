@@ -49,6 +49,13 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 
+		if retention.Days != nil && *retention.Days <= 0 {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)
+		}
+		if retention.Years != nil && *retention.Years <= 0 {
+			return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)
+		}
+
 		config.DefaultRetention = retention
 		now := time.Now()
 		config.CreatedAt = &now

@@ -6392,6 +6392,47 @@ func PutObjectLockConfiguration_both_years_and_days(s *S3Conf) error {
 	})
 }
 
+func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_invalid_years"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var days, years int32 = -3, -5
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Days: &days,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)); err != nil {
+			return err
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Years: &years,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidRetentionPeriod)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func PutObjectLockConfiguration_success(s *S3Conf) error {
 	testName := "PutObjectLockConfiguration_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
