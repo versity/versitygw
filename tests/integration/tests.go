@@ -6343,6 +6343,30 @@ func PutObjectLockConfiguration_empty_config(s *S3Conf) error {
 	})
 }
 
+func PutObjectLockConfiguration_not_enabled_on_bucket_creation(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_not_enabled_on_bucket_creation"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var days int32 = 12
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Days: &days,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutObjectLockConfiguration_both_years_and_days(s *S3Conf) error {
 	testName := "PutObjectLockConfiguration_both_years_and_days"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6383,7 +6407,7 @@ func PutObjectLockConfiguration_success(s *S3Conf) error {
 			return err
 		}
 		return nil
-	})
+	}, withLock())
 }
 
 func GetObjectLockConfiguration_non_existing_bucket(s *S3Conf) error {
@@ -6467,7 +6491,7 @@ func GetObjectLockConfiguration_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectRetention_non_existing_bucket(s *S3Conf) error {
@@ -6510,7 +6534,7 @@ func PutObjectRetention_non_existing_object(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectRetention_unset_bucket_object_lock_config(s *S3Conf) error {
@@ -6576,7 +6600,7 @@ func PutObjectRetention_disabled_bucket_object_lock_config(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectRetention_expired_retain_until_date(s *S3Conf) error {
@@ -6603,7 +6627,7 @@ func PutObjectRetention_expired_retain_until_date(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectRetention_success(s *S3Conf) error {
@@ -6639,7 +6663,7 @@ func PutObjectRetention_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func GetObjectRetention_non_existing_bucket(s *S3Conf) error {
@@ -6755,7 +6779,7 @@ func GetObjectRetention_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectLegalHold_non_existing_bucket(s *S3Conf) error {
@@ -6796,7 +6820,7 @@ func PutObjectLegalHold_non_existing_object(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectLegalHold_invalid_body(s *S3Conf) error {
@@ -6875,7 +6899,7 @@ func PutObjectLegalHold_disabled_bucket_object_lock_config(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func PutObjectLegalHold_success(s *S3Conf) error {
@@ -6909,7 +6933,7 @@ func PutObjectLegalHold_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func GetObjectLegalHold_non_existing_bucket(s *S3Conf) error {
@@ -7011,7 +7035,7 @@ func GetObjectLegalHold_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
@@ -7049,7 +7073,7 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_bucket_object_lock_governance_root_overwrite(s *S3Conf) error {
@@ -7090,7 +7114,7 @@ func WORMProtection_bucket_object_lock_governance_root_overwrite(s *S3Conf) erro
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_object_lock_retention_compliance_root_access_denied(s *S3Conf) error {
@@ -7129,7 +7153,7 @@ func WORMProtection_object_lock_retention_compliance_root_access_denied(s *S3Con
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_object_lock_retention_governance_root_overwrite(s *S3Conf) error {
@@ -7169,7 +7193,7 @@ func WORMProtection_object_lock_retention_governance_root_overwrite(s *S3Conf) e
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_object_lock_retention_governance_user_access_denied(s *S3Conf) error {
@@ -7226,7 +7250,7 @@ func WORMProtection_object_lock_retention_governance_user_access_denied(s *S3Con
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_object_lock_legal_hold_user_access_denied(s *S3Conf) error {
@@ -7281,7 +7305,7 @@ func WORMProtection_object_lock_legal_hold_user_access_denied(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func WORMProtection_object_lock_legal_hold_root_overwrite(s *S3Conf) error {
@@ -7319,7 +7343,7 @@ func WORMProtection_object_lock_legal_hold_root_overwrite(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 // Access control tests (with bucket ACLs and Policies)

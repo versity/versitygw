@@ -2207,6 +2207,23 @@ func (p *Posix) PutObjectLockConfiguration(_ context.Context, bucket string, con
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
+	cfg, err := p.meta.RetrieveAttribute(bucket, "", bucketLockKey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+	}
+	if err != nil {
+		return fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var bucketLockCfg auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockCfg); err != nil {
+		return fmt.Errorf("unmarshal object lock config: %w", err)
+	}
+
+	if !bucketLockCfg.Enabled {
+		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+	}
+
 	if err := p.meta.StoreAttribute(bucket, "", bucketLockKey, config); err != nil {
 		return fmt.Errorf("set object lock config: %w", err)
 	}

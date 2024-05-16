@@ -54,12 +54,18 @@ func getBucketName() string {
 	return fmt.Sprintf("test-bucket-%v", bcktCount)
 }
 
-func setup(s *S3Conf, bucket string) error {
+func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
 	s3client := s3.NewFromConfig(s.Config())
+
+	cfg := new(setupCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: &bucket,
+		Bucket:                     &bucket,
+		ObjectLockEnabledForBucket: &cfg.LockEnabled,
 	})
 	cancel()
 	return err
@@ -113,10 +119,20 @@ func teardown(s *S3Conf, bucket string) error {
 	return err
 }
 
-func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error) error {
+type setupCfg struct {
+	LockEnabled bool
+}
+
+type setupOpt func(*setupCfg)
+
+func withLock() setupOpt {
+	return func(s *setupCfg) { s.LockEnabled = true }
+}
+
+func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, opts ...setupOpt) error {
 	runF(testName)
 	bucketName := getBucketName()
-	err := setup(s, bucketName)
+	err := setup(s, bucketName, opts...)
 	if err != nil {
 		failF("%v: failed to create a bucket: %v", testName, err)
 		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)

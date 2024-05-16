@@ -951,6 +951,20 @@ func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, 
 		return azureErrToS3Err(err)
 	}
 
+	cfg, exists := props.Metadata[string(keyBucketLock)]
+	if !exists {
+		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+	}
+
+	var bucketLockCfg auth.BucketLockConfig
+	if err := json.Unmarshal([]byte(*cfg), &bucketLockCfg); err != nil {
+		return fmt.Errorf("unmarshal object lock config: %w", err)
+	}
+
+	if !bucketLockCfg.Enabled {
+		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+	}
+
 	props.Metadata[string(keyBucketLock)] = backend.GetStringPtr(string(config))
 
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
