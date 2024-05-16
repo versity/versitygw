@@ -115,6 +115,7 @@ const (
 	ErrObjectLockConfigurationNotFound
 	ErrNoSuchObjectLockConfiguration
 	ErrInvalidBucketObjectLockConfiguration
+	ErrObjectLockConfigurationNotAllowed
 	ErrObjectLocked
 	ErrPastObjectLockRetainDate
 	ErrNoSuchBucketPolicy
@@ -429,6 +430,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidRequest",
 		Description:    "Bucket is missing ObjectLockConfiguration",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLockConfigurationNotAllowed: {
+		Code:           "InvalidBucketState",
+		Description:    "Object Lock configuration cannot be enabled on existing buckets",
+		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrObjectLocked: {
 		Code:           "InvalidRequest",
