@@ -6336,7 +6336,7 @@ func PutObjectLockConfiguration_empty_config(s *S3Conf) error {
 			Bucket: &bucket,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
 		}
 		return nil
@@ -6385,7 +6385,7 @@ func PutObjectLockConfiguration_both_years_and_days(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
 		}
 		return nil

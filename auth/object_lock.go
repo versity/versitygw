@@ -36,7 +36,7 @@ type BucketLockConfig struct {
 func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 	var lockConfig types.ObjectLockConfiguration
 	if err := xml.Unmarshal(input, &lockConfig); err != nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	config := BucketLockConfig{
@@ -46,7 +46,7 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 	if lockConfig.Rule != nil && lockConfig.Rule.DefaultRetention != nil {
 		retention := lockConfig.Rule.DefaultRetention
 		if retention.Years != nil && retention.Days != nil {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
 
 		config.DefaultRetention = retention
