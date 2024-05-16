@@ -312,6 +312,7 @@ func TestPutObjectLockConfiguration(s *S3Conf) {
 	PutObjectLockConfiguration_empty_config(s)
 	PutObjectLockConfiguration_not_enabled_on_bucket_creation(s)
 	PutObjectLockConfiguration_both_years_and_days(s)
+	PutObjectLockConfiguration_invalid_years_days(s)
 	PutObjectLockConfiguration_success(s)
 }
 
@@ -631,6 +632,7 @@ func GetIntTests() IntTests {
 		"PutObjectLockConfiguration_empty_config":                            PutObjectLockConfiguration_empty_config,
 		"PutObjectLockConfiguration_not_enabled_on_bucket_creation":          PutObjectLockConfiguration_not_enabled_on_bucket_creation,
 		"PutObjectLockConfiguration_both_years_and_days":                     PutObjectLockConfiguration_both_years_and_days,
+		"PutObjectLockConfiguration_invalid_years_days":                      PutObjectLockConfiguration_invalid_years_days,
 		"PutObjectLockConfiguration_success":                                 PutObjectLockConfiguration_success,
 		"GetObjectLockConfiguration_non_existing_bucket":                     GetObjectLockConfiguration_non_existing_bucket,
 		"GetObjectLockConfiguration_unset_config":                            GetObjectLockConfiguration_unset_config,

@@ -118,6 +118,7 @@ const (
 	ErrObjectLockConfigurationNotAllowed
 	ErrObjectLocked
 	ErrPastObjectLockRetainDate
+	ErrObjectLockInvalidRetentionPeriod
 	ErrNoSuchBucketPolicy
 	ErrBucketTaggingNotFound
 	ErrObjectLockInvalidHeaders
@@ -444,6 +445,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrPastObjectLockRetainDate: {
 		Code:           "InvalidRequest",
 		Description:    "the retain until date must be in the future",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectLockInvalidRetentionPeriod: {
+		Code:           "InvalidRetentionPeriod",
+		Description:    "the retention days/years must be positive integer",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchBucketPolicy: {
