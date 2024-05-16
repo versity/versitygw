@@ -1596,6 +1596,11 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	userMetaData := make(map[string]string)
 	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
 
+	if fi.IsDir() {
+		// this is the media type for directories in AWS and Nextcloud
+		contentType = "application/x-directory"
+	}
+
 	b, err := p.meta.RetrieveAttribute(bucket, object, etagkey)
 	etag := string(b)
 	if err != nil {
