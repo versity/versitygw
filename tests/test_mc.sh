@@ -13,8 +13,12 @@ export RUN_MC=true
   test_common_multipart_upload "mc"
 }
 
+@test "test_copy_object" {
+  test_common_copy_object "mc"
+}
+
 # test mc bucket creation/deletion
-@test "test_create_delete_bucket_mc" {
+@test "test_create_delete_bucket" {
   test_common_create_delete_bucket "mc"
 }
 

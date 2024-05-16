@@ -2,7 +2,7 @@
 
 delete_bucket_policy() {
   if [[ $# -ne 2 ]]; then
-    echo "delete bucket policy command requires command type, bucket"
+    log 2 "delete bucket policy command requires command type, bucket"
     return 1
   fi
   if [[ $1 == 'aws' ]]; then
@@ -12,11 +12,11 @@ delete_bucket_policy() {
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure anonymous set none "$MC_ALIAS/$2") || delete_result=$?
   else
-    echo "command 'get bucket policy' not implemented for '$1'"
+    log 2 "command 'get bucket policy' not implemented for '$1'"
     return 1
   fi
   if [[ $delete_result -ne 0 ]]; then
-    echo "error deleting bucket policy: $error"
+    log 2 "error deleting bucket policy: $error"
     return 1
   fi
   return 0

@@ -5,7 +5,7 @@ source ./tests/logger.sh
 
 create_bucket_with_user() {
   if [ $# -ne 4 ]; then
-    echo "create bucket missing command type, bucket name, access, secret"
+    log 2 "create bucket missing command type, bucket name, access, secret"
     return 1
   fi
   local exit_code=0
@@ -16,11 +16,11 @@ create_bucket_with_user() {
   elif [[ $1 == "mc" ]]; then
     error=$(mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error creating bucket: $error"
+    log 2 "error creating bucket: $error"
     export error
     return 1
   fi
@@ -29,7 +29,7 @@ create_bucket_with_user() {
 
 create_bucket_invalid_name() {
   if [ $# -ne 1 ]; then
-    echo "create bucket w/invalid name missing command type"
+    log 2 "create bucket w/invalid name missing command type"
     return 1
   fi
   local exit_code=0
@@ -42,11 +42,11 @@ create_bucket_invalid_name() {
   elif [[ $1 == 'mc' ]]; then
     bucket_create_error=$(mc --insecure mb "$MC_ALIAS" 2>&1) || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -eq 0 ]; then
-    echo "error:  bucket should have not been created but was"
+    log 2 "error:  bucket should have not been created but was"
     return 1
   fi
   export bucket_create_error

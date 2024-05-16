@@ -74,7 +74,7 @@ check_params() {
 # fail a test
 # param:  error message
 fail() {
-  echo "$1"
+  log 1 "$1"
   return 1
 }
 

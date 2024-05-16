@@ -58,8 +58,13 @@ list_objects_s3api() {
   done <<< "$output"
 
   object_array=()
-  keys=$(jq -r '.Contents[].Key' <<<"$modified_output")
-  IFS=$'\n' read -rd '' -a object_array <<<"$keys"
+  log 5 "modified output: $modified_output"
+  if echo "$modified_output" | jq -e 'has("Contents")'; then
+    contents=$(echo "$modified_output" | jq -r '.Contents[]')
+    log 5 "contents: $contents"
+    keys=$(echo "$contents" | jq -r '.Key')
+    IFS=$'\n' read -rd '' -a object_array <<<"$keys"
+  fi
 
   export object_array
 }
