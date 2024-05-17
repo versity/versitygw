@@ -330,6 +330,7 @@ func TestPutObjectRetention(s *S3Conf) {
 	PutObjectRetention_unset_bucket_object_lock_config(s)
 	PutObjectRetention_disabled_bucket_object_lock_config(s)
 	PutObjectRetention_expired_retain_until_date(s)
+	PutObjectRetention_invalid_mode(s)
 	PutObjectRetention_success(s)
 }
 
@@ -646,6 +647,7 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_unset_bucket_object_lock_config":                 PutObjectRetention_unset_bucket_object_lock_config,
 		"PutObjectRetention_disabled_bucket_object_lock_config":              PutObjectRetention_disabled_bucket_object_lock_config,
 		"PutObjectRetention_expired_retain_until_date":                       PutObjectRetention_expired_retain_until_date,
+		"PutObjectRetention_invalid_mode":                                    PutObjectRetention_invalid_mode,
 		"PutObjectRetention_success":                                         PutObjectRetention_success,
 		"GetObjectRetention_non_existing_bucket":                             GetObjectRetention_non_existing_bucket,
 		"GetObjectRetention_non_existing_object":                             GetObjectRetention_non_existing_object,

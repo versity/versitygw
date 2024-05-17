@@ -6723,6 +6723,28 @@ func PutObjectRetention_expired_retain_until_date(s *S3Conf) error {
 	}, withLock())
 }
 
+func PutObjectRetention_invalid_mode(s *S3Conf) error {
+	testName := "PutObjectRetention_invalid_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(time.Hour * 3)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionMode("invalid_mode"),
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
 func PutObjectRetention_success(s *S3Conf) error {
 	testName := "PutObjectRetention_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
