@@ -345,6 +345,7 @@ func TestPutObjectLegalHold(s *S3Conf) {
 	PutObjectLegalHold_non_existing_bucket(s)
 	PutObjectLegalHold_non_existing_object(s)
 	PutObjectLegalHold_invalid_body(s)
+	PutObjectLegalHold_invalid_status(s)
 	PutObjectLegalHold_unset_bucket_object_lock_config(s)
 	PutObjectLegalHold_disabled_bucket_object_lock_config(s)
 	PutObjectLegalHold_success(s)
@@ -656,6 +657,7 @@ func GetIntTests() IntTests {
 		"PutObjectLegalHold_non_existing_bucket":                             PutObjectLegalHold_non_existing_bucket,
 		"PutObjectLegalHold_non_existing_object":                             PutObjectLegalHold_non_existing_object,
 		"PutObjectLegalHold_invalid_body":                                    PutObjectLegalHold_invalid_body,
+		"PutObjectLegalHold_invalid_status":                                  PutObjectLegalHold_invalid_status,
 		"PutObjectLegalHold_unset_bucket_object_lock_config":                 PutObjectLegalHold_unset_bucket_object_lock_config,
 		"PutObjectLegalHold_disabled_bucket_object_lock_config":              PutObjectLegalHold_disabled_bucket_object_lock_config,
 		"PutObjectLegalHold_success":                                         PutObjectLegalHold_success,

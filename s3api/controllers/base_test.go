@@ -896,7 +896,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 
 	legalHoldBody := `
 	<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-		<Status>string</Status>
+		<Status>ON</Status>
 	</LegalHold>
 	`
 
