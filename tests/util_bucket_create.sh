@@ -12,7 +12,7 @@ create_bucket_with_user() {
   if [[ $1 == "aws" ]]; then
     error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb s3://"$2" 2>&1) || exit_code=$?
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb --access_key="$3" --secret_key="$4" s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == "mc" ]]; then
     error=$(mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   else

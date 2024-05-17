@@ -9,17 +9,31 @@ source ./tests/commands/put_bucket_policy.sh
 
 export RUN_MC=true
 
+# complete-multipart-upload
 @test "test_multipart_upload_mc" {
   test_common_multipart_upload "mc"
 }
 
+# copy-object
 @test "test_copy_object" {
   test_common_copy_object "mc"
 }
 
-# test mc bucket creation/deletion
+# create-bucket
 @test "test_create_delete_bucket" {
   test_common_create_delete_bucket "mc"
+}
+
+# delete-bucket - test_create_delete_bucket
+
+# delete-bucket-policy
+@test "test_get_put_delete_bucket_policy" {
+  test_common_get_put_delete_bucket_policy "mc"
+}
+
+# delete-bucket-tagging
+@test "test_set_get_delete_bucket_tags" {
+  test_common_set_get_delete_bucket_tags "mc"
 }
 
 @test "test_put_object-with-data-mc" {
@@ -36,10 +50,6 @@ export RUN_MC=true
 
 @test "test_list_objects_mc" {
   test_common_list_objects "mc"
-}
-
-@test "test_set_get_bucket_tags_mc" {
-  test_common_set_get_delete_bucket_tags "mc"
 }
 
 @test "test_set_get_object_tags_mc" {
@@ -90,8 +100,4 @@ export RUN_MC=true
 
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "mc"
-}
-
-@test "test_get_put_delete_bucket_policy" {
-  test_common_get_put_delete_bucket_policy "mc"
 }

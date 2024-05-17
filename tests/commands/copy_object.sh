@@ -26,3 +26,16 @@ copy_object() {
   fi
   return 0
 }
+
+copy_object_empty() {
+  error=$(aws --no-verify-ssl s3api copy-object 2>&1) || local result=$?
+  if [[ $result -eq 0 ]]; then
+    log 2 "copy object with empty parameters returned no error"
+    return 1
+  fi
+  if [[ $error != *"the following arguments are required: --bucket, --copy-source, --key" ]]; then
+    log 2 "copy object with no params returned mismatching error: $error"
+    return 1
+  fi
+  return 0
+}

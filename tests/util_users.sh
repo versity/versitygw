@@ -13,6 +13,19 @@ create_user() {
   return 0
 }
 
+create_user_if_nonexistent() {
+  if [[ $# -ne 3 ]]; then
+    echo "create user command requires user ID, key, and role"
+    return 1
+  fi
+  if user_exists "$1"; then
+    log 5 "user $1 already exists"
+    return 0
+  fi
+  create_user "$1" "$2" "$3"
+  return $?
+}
+
 create_user_with_user() {
   if [[ $# -ne 5 ]]; then
     echo "create user with user command requires creator ID, key, and new user ID, key, and role"

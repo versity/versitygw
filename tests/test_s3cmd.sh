@@ -11,22 +11,31 @@ source ./tests/commands/put_bucket_policy.sh
 
 export RUN_S3CMD=true
 
+# complete-multipart-upload
 @test "test_complete_multipart_upload" {
   test_common_multipart_upload "s3cmd"
 }
 
-# test s3cmd put object
+# copy-object
 @test "test_copy_object_with_data" {
   test_common_put_object_with_data "s3cmd"
 }
 
+# copy-object
 @test "test_copy_object_no_data" {
   test_common_put_object_no_data "s3cmd"
 }
 
-# test s3cmd bucket creation/deletion
+# create-bucket
 @test "test_create_delete_bucket" {
   test_common_create_delete_bucket "s3cmd"
+}
+
+# delete-bucket - test_create_delete_bucket
+
+# delete-bucket-policy
+@test "test_get_put_delete_bucket_policy" {
+  test_common_get_put_delete_bucket_policy "s3cmd"
 }
 
 #@test "test_put_bucket_acl" {
@@ -82,8 +91,4 @@ export RUN_S3CMD=true
 
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "s3cmd"
-}
-
-@test "test_get_put_delete_bucket_policy" {
-  test_common_get_put_delete_bucket_policy "s3cmd"
 }
