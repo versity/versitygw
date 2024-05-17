@@ -96,7 +96,7 @@ func ParseObjectLockRetentionInput(input []byte) ([]byte, error) {
 	case types.ObjectLockRetentionModeCompliance:
 	case types.ObjectLockRetentionModeGovernance:
 	default:
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	return json.Marshal(retention)
