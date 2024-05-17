@@ -6933,6 +6933,26 @@ func PutObjectLegalHold_invalid_body(s *S3Conf) error {
 	})
 }
 
+func PutObjectLegalHold_invalid_status(s *S3Conf) error {
+	testName := "PutObjectLegalHold_invalid_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatus("invalid_status"),
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func PutObjectLegalHold_unset_bucket_object_lock_config(s *S3Conf) error {
 	testName := "PutObjectLegalHold_unset_bucket_object_lock_config"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
