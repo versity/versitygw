@@ -39,12 +39,20 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
+	if lockConfig.ObjectLockEnabled != "" && lockConfig.ObjectLockEnabled != types.ObjectLockEnabledEnabled {
+		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
 	config := BucketLockConfig{
 		Enabled: lockConfig.ObjectLockEnabled == types.ObjectLockEnabledEnabled,
 	}
 
 	if lockConfig.Rule != nil && lockConfig.Rule.DefaultRetention != nil {
 		retention := lockConfig.Rule.DefaultRetention
+
+		if retention.Mode != types.ObjectLockRetentionModeCompliance && retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
 		if retention.Years != nil && retention.Days != nil {
 			return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
