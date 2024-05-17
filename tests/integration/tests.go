@@ -6355,12 +6355,62 @@ func PutObjectLockConfiguration_not_enabled_on_bucket_creation(s *S3Conf) error 
 				Rule: &types.ObjectLockRule{
 					DefaultRetention: &types.DefaultRetention{
 						Days: &days,
+						Mode: types.ObjectLockRetentionModeCompliance,
 					},
 				},
 			},
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutObjectLockConfiguration_invalid_status(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_invalid_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var days int32 = 12
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabled("invalid_status"),
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Days: &days,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutObjectLockConfiguration_invalid_mode(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_invalid_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var days int32 = 12
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Days: &days,
+						Mode: types.ObjectLockRetentionMode("invalid_mode"),
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
 		}
 		return nil
@@ -6404,6 +6454,7 @@ func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
 				Rule: &types.ObjectLockRule{
 					DefaultRetention: &types.DefaultRetention{
 						Days: &days,
+						Mode: types.ObjectLockRetentionModeCompliance,
 					},
 				},
 			},
@@ -6420,6 +6471,7 @@ func PutObjectLockConfiguration_invalid_years_days(s *S3Conf) error {
 				Rule: &types.ObjectLockRule{
 					DefaultRetention: &types.DefaultRetention{
 						Years: &years,
+						Mode:  types.ObjectLockRetentionModeCompliance,
 					},
 				},
 			},
