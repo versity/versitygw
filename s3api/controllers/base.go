@@ -388,14 +388,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
-	if res == nil {
-		return SendResponse(ctx, fmt.Errorf("get object nil response"),
-			&MetaOpts{
-				Logger:      c.logger,
-				Action:      "GetObject",
-				BucketOwner: parsedAcl.Owner,
-			})
-	}
 
 	utils.SetMetaHeaders(ctx, res.Metadata)
 	var lastmod string
@@ -447,11 +439,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		})
 	}
 
-	return SendResponse(ctx, err,
+	status := http.StatusOK
+	if acceptRange != "" {
+		status = http.StatusPartialContent
+	}
+
+	return SendResponse(ctx, nil,
 		&MetaOpts{
 			Logger:      c.logger,
 			Action:      "GetObject",
 			BucketOwner: parsedAcl.Owner,
+			Status:      status,
 		})
 }
 

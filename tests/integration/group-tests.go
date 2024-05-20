@@ -138,6 +138,7 @@ func TestGetObject(s *S3Conf) {
 	GetObject_with_meta(s)
 	GetObject_success(s)
 	GetObject_by_range_success(s)
+	GetObject_by_range_resp_status(s)
 }
 
 func TestListObjects(s *S3Conf) {
@@ -525,6 +526,7 @@ func GetIntTests() IntTests {
 		"GetObject_with_meta":                                                GetObject_with_meta,
 		"GetObject_success":                                                  GetObject_success,
 		"GetObject_by_range_success":                                         GetObject_by_range_success,
+		"GetObject_by_range_resp_status":                                     GetObject_by_range_resp_status,
 		"ListObjects_non_existing_bucket":                                    ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                            ListObjects_with_prefix,
 		"ListObject_truncated":                                               ListObject_truncated,

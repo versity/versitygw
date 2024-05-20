@@ -168,7 +168,7 @@ type authConfig struct {
 
 func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) error {
 	runF(cfg.testName)
-	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.body, cfg.date)
+	req, err := createSignedReq(cfg.method, s.endpoint, cfg.path, s.awsID, s.awsSecret, cfg.service, s.awsRegion, cfg.body, cfg.date, nil)
 	if err != nil {
 		failF("%v: %v", cfg.testName, err)
 		return fmt.Errorf("%v: %w", cfg.testName, err)
@@ -197,7 +197,7 @@ func presignedAuthHandler(s *S3Conf, testName string, handler func(client *s3.Pr
 	return nil
 }
 
-func createSignedReq(method, endpoint, path, access, secret, service, region string, body []byte, date time.Time) (*http.Request, error) {
+func createSignedReq(method, endpoint, path, access, secret, service, region string, body []byte, date time.Time, headers map[string]string) (*http.Request, error) {
 	req, err := http.NewRequest(method, fmt.Sprintf("%v/%v", endpoint, path), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to send the request: %w", err)
@@ -209,6 +209,9 @@ func createSignedReq(method, endpoint, path, access, secret, service, region str
 	hexPayload := hex.EncodeToString(hashedPayload[:])
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+	for key, val := range headers {
+		req.Header.Add(key, val)
+	}
 
 	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: access, SecretAccessKey: secret}, req, hexPayload, service, region, date)
 	if signErr != nil {
