@@ -64,6 +64,7 @@ func TestPresignedAuthentication(s *S3Conf) {
 func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
+	CreateBucket_owned_by_you(s)
 	CreateBucket_as_user(s)
 	CreateBucket_default_acl(s)
 	CreateBucket_non_default_acl(s)
@@ -484,6 +485,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_UploadPart":                                           PresignedAuth_UploadPart,
 		"CreateBucket_invalid_bucket_name":                                   CreateBucket_invalid_bucket_name,
 		"CreateBucket_existing_bucket":                                       CreateBucket_existing_bucket,
+		"CreateBucket_owned_by_you":                                          CreateBucket_owned_by_you,
 		"CreateBucket_as_user":                                               CreateBucket_as_user,
 		"CreateDeleteBucket_success":                                         CreateDeleteBucket_success,
 		"CreateBucket_default_acl":                                           CreateBucket_default_acl,
