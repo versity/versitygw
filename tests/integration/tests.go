@@ -2169,7 +2169,7 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+	req, err := createSignedReq(http.MethodDelete, s.endpoint, bucket, s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -2356,7 +2356,7 @@ func DeleteBucketTagging_success_status(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v?tagging", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v?tagging", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -3183,6 +3183,53 @@ func GetObject_by_range_success(s *S3Conf) error {
 	})
 }
 
+func GetObject_by_range_resp_status(s *S3Conf) error {
+	testName := "GetObject_by_range_resp_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dLen := "my-obj", int64(4000)
+		_, _, err := putObjectWithData(dLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		req, err := createSignedReq(
+			http.MethodGet,
+			s.endpoint,
+			fmt.Sprintf("%v/%v", bucket, obj),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			nil,
+			time.Now(),
+			map[string]string{
+				"Range": "bytes=100-200",
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusPartialContent {
+			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusPartialContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func ListObjects_non_existing_bucket(s *S3Conf) error {
 	testName := "ListObjects_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3611,7 +3658,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -4148,7 +4195,7 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -5201,7 +5248,7 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now())
+		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
