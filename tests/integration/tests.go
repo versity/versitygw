@@ -1667,7 +1667,21 @@ func CreateBucket_existing_bucket(s *S3Conf) error {
 	testName := "CreateBucket_existing_bucket"
 	runF(testName)
 	bucket := getBucketName()
-	err := setup(s, bucket)
+	admin := user{
+		access: "admin1",
+		secret: "admin1secret",
+		role:   "admin",
+	}
+	if err := createUsers(s, []user{admin}); err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	adminCfg := *s
+	adminCfg.awsID = admin.access
+	adminCfg.awsSecret = admin.secret
+
+	err := setup(&adminCfg, bucket)
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -1686,6 +1700,23 @@ func CreateBucket_existing_bucket(s *S3Conf) error {
 	}
 	passF(testName)
 	return nil
+}
+
+func CreateBucket_owned_by_you(s *S3Conf) error {
+	testName := "CreateBucket_owned_by_you"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		var bErr *types.BucketAlreadyOwnedByYou
+		if !errors.As(err, &bErr) {
+			return fmt.Errorf("expected error to be %w, instead got %w", s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou), err)
+		}
+
+		return nil
+	})
 }
 
 func CreateBucket_default_acl(s *S3Conf) error {

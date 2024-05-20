@@ -213,6 +213,18 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 
 	err := os.Mkdir(bucket, defaultDirPerm)
 	if err != nil && os.IsExist(err) {
+		aclJSON, err := p.meta.RetrieveAttribute(bucket, "", aclkey)
+		if err != nil {
+			return fmt.Errorf("get bucket acl: %w", err)
+		}
+		var acl auth.ACL
+		if err := json.Unmarshal(aclJSON, &acl); err != nil {
+			return fmt.Errorf("unmarshal acl: %w", err)
+		}
+
+		if acl.Owner == acct.Access {
+			return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+		}
 		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
 	if err != nil {

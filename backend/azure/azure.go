@@ -127,6 +127,11 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		string(keyAclCapital): backend.GetStringPtr(string(acl)),
 	}
 
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
 	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
 		now := time.Now()
 		defaultLock := auth.BucketLockConfig{
@@ -142,6 +147,30 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		meta[string(keyBucketLock)] = backend.GetStringPtr(string(defaultLockParsed))
 	}
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
+	if errors.Is(s3err.GetAPIError(s3err.ErrBucketAlreadyExists), azureErrToS3Err(err)) {
+		client, err := az.getContainerClient(*input.Bucket)
+		if err != nil {
+			return err
+		}
+
+		props, err := client.GetProperties(ctx, nil)
+		if err != nil {
+			return azureErrToS3Err(err)
+		}
+
+		aclPtr, ok := props.Metadata[string(keyAclCapital)]
+		if !ok {
+			return fmt.Errorf("missing acl in the bucket")
+		}
+
+		var acl auth.ACL
+		if err := json.Unmarshal([]byte(*aclPtr), &acl); err != nil {
+			return fmt.Errorf("unmarshal bucket acl: %w", err)
+		}
+		if acl.Owner == acct.Access {
+			return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+		}
+	}
 	return azureErrToS3Err(err)
 }
 
