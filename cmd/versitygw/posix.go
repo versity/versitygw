@@ -24,6 +24,7 @@ import (
 
 var (
 	chownuid, chowngid bool
+	metadata           string
 )
 
 func posixCommand() *cli.Command {
@@ -54,6 +55,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
 			},
+			&cli.StringFlag{
+				Name:        "metadata",
+				Usage:       "specify storage option for metadata, default is xattr",
+				EnvVars:     []string{"VGW_META_STORE"},
+				Destination: &metadata,
+			},
 		},
 	}
 }
@@ -64,15 +71,28 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	gwroot := (ctx.Args().Get(0))
-	err := meta.XattrMeta{}.Test(gwroot)
-	if err != nil {
-		return fmt.Errorf("posix xattr check: %v", err)
-	}
 
-	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
+	opts := posix.PosixOpts{
 		ChownUID: chownuid,
 		ChownGID: chowngid,
-	})
+	}
+
+	var ms meta.MetadataStorer
+	switch metadata {
+	case "sidecar":
+		ms = meta.SideCar{}
+		opts.SideCar = true
+	case "xattr", "":
+		ms = meta.XattrMeta{}
+		err := meta.XattrMeta{}.Test(gwroot)
+		if err != nil {
+			return fmt.Errorf("xattr check failed: %v", err)
+		}
+	default:
+		return fmt.Errorf("unknown metadata storage option: %s", metadata)
+	}
+
+	be, err := posix.New(gwroot, ms, opts)
 	if err != nil {
 		return fmt.Errorf("init posix: %v", err)
 	}

@@ -108,7 +108,7 @@ func TestWalk(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.getobj, []string{})
+		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.getobj, []string{}, []string{})
 		if err != nil {
 			t.Fatalf("walk: %v", err)
 		}

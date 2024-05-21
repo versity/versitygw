@@ -597,7 +597,7 @@ func (s *ScoutFS) ListObjects(_ context.Context, input *s3.ListObjectsInput) (*s
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, maxkeys,
-		s.fileToObj(bucket), []string{metaTmpDir})
+		s.fileToObj(bucket), []string{metaTmpDir}, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -647,7 +647,7 @@ func (s *ScoutFS) ListObjectsV2(_ context.Context, input *s3.ListObjectsV2Input)
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(fileSystem, prefix, delim, marker, int32(maxkeys),
-		s.fileToObj(bucket), []string{metaTmpDir})
+		s.fileToObj(bucket), []string{metaTmpDir}, []string{})
 	if err != nil {
 		return nil, fmt.Errorf("walk %v: %w", bucket, err)
 	}
