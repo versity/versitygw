@@ -79,6 +79,9 @@ const (
 	bucketLockKey       = "bucket-lock"
 	objectRetentionKey  = "object-retention"
 	objectLegalHoldKey  = "object-legal-hold"
+
+	doFalloc   = true
+	skipFalloc = false
 )
 
 type PosixOpts struct {
@@ -461,7 +464,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object,
-		totalsize, acct)
+		totalsize, acct, skipFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -477,7 +480,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		if err != nil {
 			return nil, fmt.Errorf("open part %v: %v", *part.PartNumber, err)
 		}
-		_, err = io.Copy(f, pf)
+		_, err = io.Copy(f.File(), pf)
 		pf.Close()
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
@@ -970,7 +973,7 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
-		bucket, partPath, length, acct)
+		bucket, partPath, length, acct, doFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -1078,7 +1081,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct)
+		*upi.Bucket, partPath, length, acct, doFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -1217,7 +1220,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
-		*po.Bucket, *po.Key, contentLength, acct)
+		*po.Bucket, *po.Key, contentLength, acct, doFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
