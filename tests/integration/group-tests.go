@@ -284,6 +284,8 @@ func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_incorrect_action_wildcard_usage(s)
 	PutBucketPolicy_empty_principals_string(s)
 	PutBucketPolicy_empty_principals_array(s)
+	PutBucketPolicy_principals_aws_struct_empty_string(s)
+	PutBucketPolicy_principals_aws_struct_empty_string_slice(s)
 	PutBucketPolicy_principals_incorrect_wildcard_usage(s)
 	PutBucketPolicy_non_existing_principals(s)
 	PutBucketPolicy_empty_resources_string(s)
@@ -619,6 +621,8 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_incorrect_action_wildcard_usage":                    PutBucketPolicy_incorrect_action_wildcard_usage,
 		"PutBucketPolicy_empty_principals_string":                            PutBucketPolicy_empty_principals_string,
 		"PutBucketPolicy_empty_principals_array":                             PutBucketPolicy_empty_principals_array,
+		"PutBucketPolicy_principals_aws_struct_empty_string":                 PutBucketPolicy_principals_aws_struct_empty_string,
+		"PutBucketPolicy_principals_aws_struct_empty_string_slice":           PutBucketPolicy_principals_aws_struct_empty_string_slice,
 		"PutBucketPolicy_principals_incorrect_wildcard_usage":                PutBucketPolicy_principals_incorrect_wildcard_usage,
 		"PutBucketPolicy_non_existing_principals":                            PutBucketPolicy_non_existing_principals,
 		"PutBucketPolicy_empty_resources_string":                             PutBucketPolicy_empty_resources_string,

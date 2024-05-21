@@ -28,7 +28,13 @@ func (p Principals) Add(key string) {
 // Override UnmarshalJSON method to decode both []string and string properties
 func (p *Principals) UnmarshalJSON(data []byte) error {
 	ss := []string{}
+	var s string
+	var k struct {
+		AWS string
+	}
+
 	var err error
+
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
 			return fmt.Errorf("principals can't be empty")
@@ -37,14 +43,35 @@ func (p *Principals) UnmarshalJSON(data []byte) error {
 		for _, s := range ss {
 			p.Add(s)
 		}
+		return nil
+	} else if err = json.Unmarshal(data, &s); err == nil {
+		if s == "" {
+			return fmt.Errorf("principals can't be empty")
+		}
+		*p = make(Principals)
+		p.Add(s)
+
+		return nil
+	} else if err = json.Unmarshal(data, &k); err == nil {
+		if k.AWS == "" {
+			return fmt.Errorf("principals can't be empty")
+		}
+		*p = make(Principals)
+		p.Add(k.AWS)
+
+		return nil
 	} else {
-		var s string
-		if err = json.Unmarshal(data, &s); err == nil {
-			if s == "" {
+		var sk struct {
+			AWS []string
+		}
+		if err = json.Unmarshal(data, &sk); err == nil {
+			if len(sk.AWS) == 0 {
 				return fmt.Errorf("principals can't be empty")
 			}
 			*p = make(Principals)
-			p.Add(s)
+			for _, s := range sk.AWS {
+				p.Add(s)
+			}
 		}
 	}
 

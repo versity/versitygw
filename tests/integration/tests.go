@@ -6018,6 +6018,44 @@ func PutBucketPolicy_empty_principals_array(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_principals_aws_struct_empty_string(s *S3Conf) error {
+	testName := "PutBucketPolicy_principals_aws_struct_empty_string"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `{"AWS": ""}`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func PutBucketPolicy_principals_aws_struct_empty_string_slice(s *S3Conf) error {
+	testName := "PutBucketPolicy_principals_aws_struct_empty_string_slice"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `{"AWS": []}`, `"s3:*"`, `"arn:aws:s3:::*"`)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+
+		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutBucketPolicy_principals_incorrect_wildcard_usage(s *S3Conf) error {
 	testName := "PutBucketPolicy_principals_incorrect_wildcard_usage"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6237,7 +6275,9 @@ func PutBucketPolicy_success(s *S3Conf) error {
 
 		for _, doc := range []string{
 			genPolicyDoc("Allow", `["grt1", "grt2"]`, `["s3:DeleteBucket", "s3:GetBucketAcl"]`, bucketResource),
+			genPolicyDoc("Allow", `{"AWS": ["grt1", "grt2"]}`, `["s3:DeleteBucket", "s3:GetBucketAcl"]`, bucketResource),
 			genPolicyDoc("Deny", `"*"`, `"s3:DeleteBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
+			genPolicyDoc("Deny", `{"AWS": "*"}`, `"s3:DeleteBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
 			genPolicyDoc("Allow", `"grt1"`, `["s3:PutBucketVersioning", "s3:ListMultipartUploadParts", "s3:ListBucket"]`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
 			genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`[%v, %v]`, bucketResource, objectResource)),
 			genPolicyDoc("Allow", `"*"`, `"s3:Get*"`, objectResource),
