@@ -29,3 +29,18 @@ create_bucket() {
   fi
   return 0
 }
+
+create_bucket_object_lock_enabled() {
+  if [ $# -ne 1 ]; then
+    log 2 "create bucket missing bucket name"
+    return 1
+  fi
+
+  local exit_code=0
+  error=$(aws --no-verify-ssl s3api create-bucket --bucket "$1" 2>&1 --object-lock-enabled-for-bucket) || local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    log 2 "error creating bucket: $error"
+    return 1
+  fi
+  return 0
+}

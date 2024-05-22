@@ -49,26 +49,26 @@ delete_bucket_recursive() {
 
 delete_bucket_recursive_s3api() {
   if [[ $# -ne 1 ]]; then
-    echo "delete bucket recursive command for s3api requires bucket name"
+    log 2 "delete bucket recursive command for s3api requires bucket name"
     return 1
   fi
-  list_objects 's3api' "$1" || list_result=$?
+  list_objects 's3api' "$1" || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
-    echo "error listing objects"
+    log 2 "error listing objects"
     return 1
   fi
   # shellcheck disable=SC2154
   for object in "${object_array[@]}"; do
-    delete_object 's3api' "$1" "$object" || delete_result=$?
-    if [[ $delete_result -ne 0 ]]; then
-      echo "error deleting object $object"
+    delete_object 's3api' "$1" "$object" || local delete_object_result=$?
+    if [[ $delete_object_result -ne 0 ]]; then
+      log 2 "error deleting object $object"
       return 1
     fi
   done
 
-  delete_bucket 's3api' "$1" || delete_result=$?
-  if [[ $delete_result -ne 0 ]]; then
-    echo "error deleting bucket"
+  delete_bucket 's3api' "$1" || local delete_bucket_result=$?
+  if [[ $delete_bucket_result -ne 0 ]]; then
+    log 2 "error deleting bucket"
     return 1
   fi
   return 0
@@ -107,17 +107,20 @@ delete_bucket_contents() {
 # return 0 for true, 1 for false, 2 for error
 bucket_exists() {
   if [ $# -ne 2 ]; then
-    echo "bucket exists check missing command type, bucket name"
+    log 2 "bucket exists check missing command type, bucket name"
     return 2
   fi
 
   head_bucket "$1" "$2" || local check_result=$?
   if [[ $check_result -ne 0 ]]; then
     # shellcheck disable=SC2154
+    bucket_info=$(echo "$bucket_info" | grep -v "InsecureRequestWarning")
+    log 5 "$bucket_info"
     if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
+      log 5 "bucket not found"
       return 1
     fi
-    echo "error checking if bucket exists"
+    log 2 "error checking if bucket exists"
     return 2
   fi
   return 0
@@ -147,43 +150,56 @@ delete_bucket_or_contents() {
   return 0
 }
 
+delete_bucket_if_exists() {
+  if [ $# -ne 2 ]; then
+    log 2 "bucket creation function requires command type, bucket name"
+    return 1
+  fi
+  local bucket_exists_result
+  bucket_exists "$1" "$2" || local bucket_exists_result=$?
+  if [[ $bucket_exists_result -eq 2 ]]; then
+    log 2 "Bucket existence check error"
+    return 1
+  fi
+  if [[ $bucket_exists_result -eq 0 ]]; then
+    delete_bucket_or_contents "$1" "$2" || local delete_result=$?
+    if [[ delete_result -ne 0 ]]; then
+      log 2 "error deleting bucket or contents"
+      return 1
+    fi
+    #if [[ $RECREATE_BUCKETS == "false" ]]; then
+    log 5 "bucket and/or bucket data deletion success"
+    return 0
+    #fi
+  fi
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
+    return 1
+  fi
+  return 0
+}
+
 # if RECREATE_BUCKETS is set to true create bucket, deleting it if it exists to clear state.  If not,
 # check to see if it exists and return an error if it does not.
 # param:  bucket name
 # return 0 for success, 1 for failure
 setup_bucket() {
   if [ $# -ne 2 ]; then
-    echo "bucket creation function requires command type, bucket name"
+    log 2 "bucket creation function requires command type, bucket name"
     return 1
   fi
-  local exists_result
-  bucket_exists "$1" "$2" || exists_result=$?
-  if [[ $exists_result -eq 2 ]]; then
-    echo "Bucket existence check error"
-    return 1
-  fi
-  if [[ $exists_result -eq 0 ]]; then
-    delete_bucket_or_contents "$1" "$2" || delete_result=$?
-    if [[ delete_result -ne 0 ]]; then
-      echo "error deleting bucket or contents"
-      return 1
-    fi
-    if [[ $RECREATE_BUCKETS == "false" ]]; then
-      echo "bucket data deletion success"
-      return 0
-    fi
-  fi
-  if [[ $exists_result -eq 1 ]] && [[ $RECREATE_BUCKETS == "false" ]]; then
-    echo "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
+  delete_bucket_if_exists "$1" "$2" || local delete_bucket_result=$?
+  if [[ $delete_bucket_result -ne 0 ]]; then
+    log 2 "error deleting bucket, or checking for bucket existence"
     return 1
   fi
   local create_result
   create_bucket "$1" "$2" || create_result=$?
   if [[ $create_result -ne 0 ]]; then
-    echo "Error creating bucket"
+    log 2 "Error creating bucket"
     return 1
   fi
-  echo "Bucket creation success"
+  log 5 "Bucket creation success"
   return 0
 }
 
