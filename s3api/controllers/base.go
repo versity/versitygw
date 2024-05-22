@@ -1821,45 +1821,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
-	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
-	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
-
-	if (objLockDate != "" && objLockModeHdr == "") || (objLockDate == "" && objLockModeHdr != "") {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders),
-			&MetaOpts{
-				Logger:      c.logger,
-				Action:      "PutObject",
-				BucketOwner: parsedAcl.Owner,
-			})
-	}
-
-	var retainUntilDate *time.Time
-	if objLockDate != "" {
-		rDate, err := time.Parse(time.RFC3339, objLockDate)
-		if err != nil {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
-				&MetaOpts{
-					Logger:      c.logger,
-					Action:      "PutObject",
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-		if rDate.Before(time.Now()) {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate),
-				&MetaOpts{
-					Logger:      c.logger,
-					Action:      "PutObject",
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-		retainUntilDate = &rDate
-	}
-
-	if objLockModeHdr != "" &&
-		objLockModeHdr != string(types.ObjectLockModeCompliance) &&
-		objLockModeHdr != string(types.ObjectLockModeGovernance) {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+	objLock, err := utils.ParsObjectLockHdrs(ctx)
+	if err != nil {
+		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
 				Action:      "PutObject",
@@ -1884,9 +1848,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			Metadata:                  metadata,
 			Body:                      body,
 			Tagging:                   &tagging,
-			ObjectLockRetainUntilDate: retainUntilDate,
-			ObjectLockMode:            types.ObjectLockMode(objLockModeHdr),
-			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus(legalHoldHdr),
+			ObjectLockRetainUntilDate: &objLock.RetainUntilDate,
+			ObjectLockMode:            objLock.ObjectLockMode,
+			ObjectLockLegalHoldStatus: objLock.LegalHoldStatus,
 		})
 	ctx.Response().Header.Set("ETag", etag)
 	return SendResponse(ctx, err,
@@ -2406,6 +2370,8 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+	contentType := ctx.Get("Content-Type")
+	tagging := ctx.Get("X-Amz-Tagging")
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
@@ -2607,10 +2573,28 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	objLockState, err := utils.ParsObjectLockHdrs(ctx)
+	if err != nil {
+		return SendXMLResponse(ctx, nil, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				Action:      "CreateMultipartUpload",
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	metadata := utils.GetUserMetaData(&ctx.Request().Header)
+
 	res, err := c.be.CreateMultipartUpload(ctx.Context(),
 		&s3.CreateMultipartUploadInput{
-			Bucket: &bucket,
-			Key:    &key,
+			Bucket:                    &bucket,
+			Key:                       &key,
+			Tagging:                   &tagging,
+			ContentType:               &contentType,
+			ObjectLockRetainUntilDate: &objLockState.RetainUntilDate,
+			ObjectLockMode:            objLockState.ObjectLockMode,
+			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,
+			Metadata:                  metadata,
 		})
 	return SendXMLResponse(ctx, res, err,
 		&MetaOpts{

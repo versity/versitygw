@@ -300,7 +300,7 @@ func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) err
 	return nil
 }
 
-func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
 	if mpu.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -323,6 +323,23 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 		// directory objects can't be uploaded with mutlipart uploads
 		// because posix directories can't contain data
 		return nil, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+	}
+
+	// parse object tags
+	tagsStr := getString(mpu.Tagging)
+	tags := make(map[string]string)
+	if tagsStr != "" {
+		tagParts := strings.Split(tagsStr, "&")
+		for _, prt := range tagParts {
+			p := strings.Split(prt, "=")
+			if len(p) != 2 {
+				return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+			}
+			if len(p[0]) > 128 || len(p[1]) > 256 {
+				return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+			}
+			tags[p[0]] = p[1]
+		}
 	}
 
 	// generate random uuid for upload id
@@ -352,15 +369,69 @@ func (p *Posix) CreateMultipartUpload(_ context.Context, mpu *s3.CreateMultipart
 		return nil, fmt.Errorf("set name attr for upload: %w", err)
 	}
 
-	// set user attrs
+	// set user metadata
 	for k, v := range mpu.Metadata {
 		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID),
-			k, []byte(v))
+			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
 			return nil, fmt.Errorf("set user attr %q: %w", k, err)
+		}
+	}
+
+	// set object tagging
+	if tagsStr != "" {
+		err := p.PutObjectTagging(ctx, bucket, filepath.Join(objdir, uploadID), tags)
+		if err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return nil, err
+		}
+	}
+
+	// set content-type
+	if *mpu.ContentType != "" {
+		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID),
+			contentTypeHdr, []byte(*mpu.ContentType))
+		if err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return nil, fmt.Errorf("set content-type: %w", err)
+		}
+	}
+
+	// set object legal hold
+	if mpu.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
+		if err := p.PutObjectLegalHold(ctx, bucket, filepath.Join(objdir, uploadID), "", true); err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return nil, err
+		}
+	}
+
+	// Set object retention
+	if mpu.ObjectLockMode != "" {
+		retention := types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(mpu.ObjectLockMode),
+			RetainUntilDate: mpu.ObjectLockRetainUntilDate,
+		}
+		retParsed, err := json.Marshal(retention)
+		if err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return nil, fmt.Errorf("parse object lock retention: %w", err)
+		}
+		if err := p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", retParsed); err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return nil, err
 		}
 	}
 
@@ -489,7 +560,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	p.loadUserMetaData(bucket, objdir, userMetaData)
+	cType, _ := p.loadUserMetaData(bucket, upiddir, userMetaData)
 
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
@@ -506,12 +577,60 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	for k, v := range userMetaData {
-		err = p.meta.StoreAttribute(bucket, object, k, []byte(v))
+		err = p.meta.StoreAttribute(bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
 			// cleanup object if returning error
 			os.Remove(objname)
 			return nil, fmt.Errorf("set user attr %q: %w", k, err)
 		}
+	}
+
+	// load and set tagging
+	tagging, err := p.meta.RetrieveAttribute(bucket, upiddir, tagHdr)
+	if err == nil {
+		if err := p.meta.StoreAttribute(bucket, object, tagHdr, tagging); err != nil {
+			// cleanup object
+			os.Remove(objname)
+			return nil, fmt.Errorf("set object tagging: %w", err)
+		}
+	}
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("get object tagging: %w", err)
+	}
+
+	// set content-type
+	if cType != "" {
+		if err := p.meta.StoreAttribute(bucket, object, contentTypeHdr, []byte(cType)); err != nil {
+			// cleanup object
+			os.Remove(objname)
+			return nil, fmt.Errorf("set object content type: %w", err)
+		}
+	}
+
+	// load and set legal hold
+	lHold, err := p.meta.RetrieveAttribute(bucket, upiddir, objectLegalHoldKey)
+	if err == nil {
+		if err := p.meta.StoreAttribute(bucket, object, objectLegalHoldKey, lHold); err != nil {
+			// cleanup object
+			os.Remove(objname)
+			return nil, fmt.Errorf("set object legal hold: %w", err)
+		}
+	}
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("get object legal hold: %w", err)
+	}
+
+	// load and set retention
+	ret, err := p.meta.RetrieveAttribute(bucket, upiddir, objectRetentionKey)
+	if err == nil {
+		if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, ret); err != nil {
+			// cleanup object
+			os.Remove(objname)
+			return nil, fmt.Errorf("set object retention: %w", err)
+		}
+	}
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("get object retention: %w", err)
 	}
 
 	// Calculate s3 compatible md5sum for complete multipart.
