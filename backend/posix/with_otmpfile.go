@@ -50,7 +50,7 @@ var (
 	defaultFilePerm uint32 = 0644
 )
 
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
@@ -81,7 +81,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 			gid:        gid,
 		}
 		// falloc is best effort, its fine if this fails
-		if size > 0 {
+		if size > 0 && dofalloc {
 			tmp.falloc()
 		}
 
@@ -111,7 +111,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	}
 
 	// falloc is best effort, its fine if this fails
-	if size > 0 {
+	if size > 0 && dofalloc {
 		tmp.falloc()
 	}
 
@@ -220,4 +220,8 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 
 func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
+}
+
+func (tmp *tmpfile) File() *os.File {
+	return tmp.f
 }
