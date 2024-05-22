@@ -200,6 +200,14 @@ func TestDeleteObjectTagging(s *S3Conf) {
 
 func TestCreateMultipartUpload(s *S3Conf) {
 	CreateMultipartUpload_non_existing_bucket(s)
+	CreateMultipartUpload_with_metadata(s)
+	CreateMultipartUpload_with_invalid_tagging(s)
+	CreateMultipartUpload_with_tagging(s)
+	CreateMultipartUpload_with_content_type(s)
+	CreateMultipartUpload_with_object_lock(s)
+	CreateMultipartUpload_with_object_lock_not_enabled(s)
+	CreateMultipartUpload_with_object_lock_invalid_retention(s)
+	CreateMultipartUpload_past_retain_until_date(s)
 	CreateMultipartUpload_success(s)
 }
 
@@ -564,6 +572,14 @@ func GetIntTests() IntTests {
 		"DeleteObjectTagging_success_status":                                 DeleteObjectTagging_success_status,
 		"DeleteObjectTagging_success":                                        DeleteObjectTagging_success,
 		"CreateMultipartUpload_non_existing_bucket":                          CreateMultipartUpload_non_existing_bucket,
+		"CreateMultipartUpload_with_metadata":                                CreateMultipartUpload_with_metadata,
+		"CreateMultipartUpload_with_invalid_tagging":                         CreateMultipartUpload_with_invalid_tagging,
+		"CreateMultipartUpload_with_tagging":                                 CreateMultipartUpload_with_tagging,
+		"CreateMultipartUpload_with_content_type":                            CreateMultipartUpload_with_content_type,
+		"CreateMultipartUpload_with_object_lock":                             CreateMultipartUpload_with_object_lock,
+		"CreateMultipartUpload_with_object_lock_not_enabled":                 CreateMultipartUpload_with_object_lock_not_enabled,
+		"CreateMultipartUpload_with_object_lock_invalid_retention":           CreateMultipartUpload_with_object_lock_invalid_retention,
+		"CreateMultipartUpload_past_retain_until_date":                       CreateMultipartUpload_past_retain_until_date,
 		"CreateMultipartUpload_success":                                      CreateMultipartUpload_success,
 		"UploadPart_non_existing_bucket":                                     UploadPart_non_existing_bucket,
 		"UploadPart_invalid_part_number":                                     UploadPart_invalid_part_number,

@@ -4278,6 +4278,359 @@ func CreateMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func CreateMultipartUpload_with_metadata(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		meta := map[string]string{
+			"prop1": "val1",
+			"prop2": "val2",
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			Metadata: meta,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !areMapsSame(resp.Metadata, meta) {
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_with_content_type(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_content_type"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		cType := "application/octet-stream"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:      &bucket,
+			Key:         &obj,
+			ContentType: &cType,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *resp.ContentType != cType {
+			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", cType, *resp.ContentType)
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_object_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		retainUntilDate := time.Now().Add(24 * time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &retainUntilDate,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if resp.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected uploaded object legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, resp.ObjectLockLegalHoldStatus)
+		}
+		if resp.ObjectLockMode != types.ObjectLockModeGovernance {
+			return fmt.Errorf("expected uploaded object lock mode to be %v, instead got %v", types.ObjectLockModeGovernance, resp.ObjectLockMode)
+		}
+
+		return nil
+	}, withLock())
+}
+
+func CreateMultipartUpload_with_object_lock_not_enabled(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_object_lock_not_enabled"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_with_object_lock_invalid_retention(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_object_lock_invalid_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		retentionDate := time.Now().Add(24 * time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:         &bucket,
+			Key:            &obj,
+			ObjectLockMode: types.ObjectLockModeGovernance,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockRetainUntilDate: &retentionDate,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_past_retain_until_date(s *S3Conf) error {
+	testName := "CreateMultipartUpload_past_retain_until_date"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		rDate := time.Now().Add(-5 * time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &rDate,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_with_invalid_tagging(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_invalid_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: getPtr("invalid_tag"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateMultipartUpload_with_tagging(s *S3Conf) error {
+	testName := "CreateMultipartUpload_with_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		tagging := "key1=val1&key2=val2"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: &tagging,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedOutput := []types.Tag{
+			{
+				Key:   getPtr("key1"),
+				Value: getPtr("val1"),
+			},
+			{
+				Key:   getPtr("key2"),
+				Value: getPtr("val2"),
+			},
+		}
+
+		if !areTagsSame(resp.TagSet, expectedOutput) {
+			return fmt.Errorf("expected object tagging to be %v, instead got %v", expectedOutput, resp.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func CreateMultipartUpload_success(s *S3Conf) error {
 	testName := "CreateMultipartUpload_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -278,3 +278,51 @@ func ParseObjectAttributes(ctx *fiber.Ctx) map[types.ObjectAttributes]struct{} {
 
 	return attrs
 }
+
+type objLockCfg struct {
+	RetainUntilDate time.Time
+	ObjectLockMode  types.ObjectLockMode
+	LegalHoldStatus types.ObjectLockLegalHoldStatus
+}
+
+func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
+	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
+	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
+	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
+
+	if (objLockDate != "" && objLockModeHdr == "") || (objLockDate == "" && objLockModeHdr != "") {
+		return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)
+	}
+
+	var retainUntilDate time.Time
+	if objLockDate != "" {
+		rDate, err := time.Parse(time.RFC3339, objLockDate)
+		if err != nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+		if rDate.Before(time.Now()) {
+			return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
+		}
+		retainUntilDate = rDate
+	}
+
+	objLockMode := types.ObjectLockMode(objLockModeHdr)
+
+	if objLockMode != "" &&
+		objLockMode != types.ObjectLockModeCompliance &&
+		objLockMode != types.ObjectLockModeGovernance {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	legalHold := types.ObjectLockLegalHoldStatus(legalHoldHdr)
+
+	if legalHold != "" && legalHold != types.ObjectLockLegalHoldStatusOff && legalHold != types.ObjectLockLegalHoldStatusOn {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	return &objLockCfg{
+		RetainUntilDate: retainUntilDate,
+		ObjectLockMode:  objLockMode,
+		LegalHoldStatus: legalHold,
+	}, nil
+}
