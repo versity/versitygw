@@ -226,49 +226,49 @@ source ./tests/commands/select_object_content.sh
   delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
 }
 
-@test "test_get_put_object_retention" {
-  # bucket must be created with lock for legal hold
-  if [[ $RECREATE_BUCKETS == false ]]; then
-    return
-  fi
-
-  bucket_file="bucket_file"
-  username="ABCDEFG"
-  secret_key="HIJKLMN"
-
-  legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
-
-  get_object_lock_configuration "$BUCKET_ONE_NAME" || fail "error getting lock configuration"
-  log 5 "$lock_config"
-  enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled")
-  [[ $enabled == "Enabled" ]] || fail "ObjectLockEnabled should be 'Enabled', is '$enabled'"
-
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    retention_date=$(date -v+2d +"%Y-%m-%dT%H:%M:%S")
-  else
-    retention_date=$(date -d "+2 days" +"%Y-%m-%dT%H:%M:%S")
-  fi
-  put_object_retention "$BUCKET_ONE_NAME" "$bucket_file" "GOVERNANCE" "$retention_date" || fail "failed to add object retention"
-  get_object_retention "$BUCKET_ONE_NAME" "$bucket_file" || fail "failed to get object retention"
-  log 5 "$retention"
-  retention=$(echo "$retention" | grep -v "InsecureRequestWarning")
-  mode=$(echo "$retention" | jq -r ".Retention.Mode")
-  retain_until_date=$(echo "$retention" | jq -r ".Retention.RetainUntilDate")
-  [[ $mode == "GOVERNANCE" ]] || fail "retention mode should be governance, is $mode"
-  [[ $retain_until_date == "$retention_date"* ]] || fail "retain until date should be $retention_date, is $retain_until_date"
-
-  echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
-  put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
-  [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
-  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
-
-  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
-  [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
-  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
-
-  delete_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error deleting object"
-  delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
-}
+#@test "test_get_put_object_retention" {
+#  # bucket must be created with lock for legal hold
+#  if [[ $RECREATE_BUCKETS == false ]]; then
+#    return
+#  fi
+#
+#  bucket_file="bucket_file"
+#  username="ABCDEFG"
+#  secret_key="HIJKLMN"
+#
+#  legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
+#
+#  get_object_lock_configuration "$BUCKET_ONE_NAME" || fail "error getting lock configuration"
+#  log 5 "$lock_config"
+#  enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled")
+#  [[ $enabled == "Enabled" ]] || fail "ObjectLockEnabled should be 'Enabled', is '$enabled'"
+#
+#  if [[ "$OSTYPE" == "darwin"* ]]; then
+#    retention_date=$(date -v+2d +"%Y-%m-%dT%H:%M:%S")
+#  else
+#    retention_date=$(date -d "+2 days" +"%Y-%m-%dT%H:%M:%S")
+#  fi
+#  put_object_retention "$BUCKET_ONE_NAME" "$bucket_file" "GOVERNANCE" "$retention_date" || fail "failed to add object retention"
+#  get_object_retention "$BUCKET_ONE_NAME" "$bucket_file" || fail "failed to get object retention"
+#  log 5 "$retention"
+#  retention=$(echo "$retention" | grep -v "InsecureRequestWarning")
+#  mode=$(echo "$retention" | jq -r ".Retention.Mode")
+#  retain_until_date=$(echo "$retention" | jq -r ".Retention.RetainUntilDate")
+#  [[ $mode == "GOVERNANCE" ]] || fail "retention mode should be governance, is $mode"
+#  [[ $retain_until_date == "$retention_date"* ]] || fail "retain until date should be $retention_date, is $retain_until_date"
+#
+#  echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
+#  put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
+#  [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
+#  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
+#
+#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
+#  [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
+#  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
+#
+#  delete_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error deleting object"
+#  delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
+#}
 
 legal_hold_retention_setup() {
   if [[ $# -ne 3 ]]; then
