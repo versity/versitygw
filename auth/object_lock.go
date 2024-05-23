@@ -135,7 +135,7 @@ func ParseObjectLegalHoldOutput(status *bool) *types.ObjectLockLegalHold {
 	}
 }
 
-func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []string, isAdminOrRoot bool, be backend.Backend) error {
+func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []string, be backend.Backend) error {
 	data, err := be.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
@@ -180,18 +180,16 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 				if retention.RetainUntilDate.After(time.Now()) {
 					switch retention.Mode {
 					case types.ObjectLockRetentionModeGovernance:
-						if !isAdminOrRoot {
-							policy, err := be.GetBucketPolicy(ctx, bucket)
-							if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
-								return s3err.GetAPIError(s3err.ErrObjectLocked)
-							}
-							if err != nil {
-								return err
-							}
-							err = verifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
-							if err != nil {
-								return s3err.GetAPIError(s3err.ErrObjectLocked)
-							}
+						policy, err := be.GetBucketPolicy(ctx, bucket)
+						if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+							return s3err.GetAPIError(s3err.ErrObjectLocked)
+						}
+						if err != nil {
+							return err
+						}
+						err = verifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
+						if err != nil {
+							return s3err.GetAPIError(s3err.ErrObjectLocked)
 						}
 					case types.ObjectLockRetentionModeCompliance:
 						return s3err.GetAPIError(s3err.ErrObjectLocked)
@@ -208,7 +206,7 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 			return err
 		}
 
-		if *status && !isAdminOrRoot {
+		if *status {
 			return s3err.GetAPIError(s3err.ErrObjectLocked)
 		}
 	}
@@ -225,15 +223,13 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		if expirationDate.After(time.Now()) {
 			switch bucketLockConfig.DefaultRetention.Mode {
 			case types.ObjectLockRetentionModeGovernance:
-				if !isAdminOrRoot {
-					policy, err := be.GetBucketPolicy(ctx, bucket)
-					if err != nil {
-						return err
-					}
-					err = verifyBucketPolicy(policy, userAccess, bucket, "", BypassGovernanceRetentionAction)
-					if err != nil {
-						return s3err.GetAPIError(s3err.ErrObjectLocked)
-					}
+				policy, err := be.GetBucketPolicy(ctx, bucket)
+				if err != nil {
+					return err
+				}
+				err = verifyBucketPolicy(policy, userAccess, bucket, "", BypassGovernanceRetentionAction)
+				if err != nil {
+					return s3err.GetAPIError(s3err.ErrObjectLocked)
 				}
 			case types.ObjectLockRetentionModeCompliance:
 				return s3err.GetAPIError(s3err.ErrObjectLocked)

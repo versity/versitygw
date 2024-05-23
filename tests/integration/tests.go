@@ -4465,6 +4465,10 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 			return fmt.Errorf("expected uploaded object lock mode to be %v, instead got %v", types.ObjectLockModeGovernance, resp.ObjectLockMode)
 		}
 
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
 		return nil
 	}, withLock())
 }
@@ -7682,47 +7686,6 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 	}, withLock())
 }
 
-func WORMProtection_bucket_object_lock_governance_root_overwrite(s *S3Conf) error {
-	testName := "WORMProtection_bucket_object_lock_governance_root_overwrite"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		var days int32 = 10
-		object := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-			Bucket: &bucket,
-			ObjectLockConfiguration: &types.ObjectLockConfiguration{
-				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
-				Rule: &types.ObjectLockRule{
-					DefaultRetention: &types.DefaultRetention{
-						Mode: types.ObjectLockRetentionModeGovernance,
-						Days: &days,
-					},
-				},
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		// create an object
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
-			return err
-		}
-
-		// overwrite the object
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
-	}, withLock())
-}
-
 func WORMProtection_object_lock_retention_compliance_root_access_denied(s *S3Conf) error {
 	testName := "WORMProtection_object_lock_retention_compliance_root_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -7754,46 +7717,6 @@ func WORMProtection_object_lock_retention_compliance_root_access_denied(s *S3Con
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
-	}, withLock())
-}
-
-func WORMProtection_object_lock_retention_governance_root_overwrite(s *S3Conf) error {
-	testName := "WORMProtection_object_lock_retention_governance_root_overwrite"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
-		object := "my-obj"
-
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
-			return err
-		}
-
-		date := time.Now().Add(time.Hour * 3)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &object,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeGovernance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
-			return err
-		}
-
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
 		}
@@ -7940,7 +7863,8 @@ func WORMProtection_object_lock_legal_hold_root_overwrite(s *S3Conf) error {
 			return err
 		}
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		err = putObjects(s3client, []string{object}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
 

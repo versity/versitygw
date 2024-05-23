@@ -1797,7 +1797,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{keyStart}, isRoot || acct.Role == auth.RoleAdmin, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{keyStart}, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2002,7 +2002,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), isRoot || acct.Role == auth.RoleAdmin, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2137,7 +2137,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, isRoot || acct.Role == auth.RoleAdmin, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
