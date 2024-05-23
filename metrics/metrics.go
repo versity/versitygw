@@ -87,33 +87,32 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	return mgr, nil
 }
 
-func (m *Manager) Send(err error, action string, objSize int64, objCount int64) {
+func (m *Manager) Send(err error, action string, count int64) {
 	// In case of Authentication failures, url parsing ...
 	if action == "" {
-		action = "s3:UnDetected"
+		action = ActionUndetected
 	}
 	if err != nil {
 		m.Increment(action, "failed_count")
+	} else {
+		m.Increment(action, "success_count")
 	}
-	m.Increment(action, "success_count")
 
 	switch action {
-	case "s3:PutObject":
-		m.Add(action, "bytes_written", objSize)
+	case ActionPutObject:
+		m.Add(action, "bytes_written", count)
 		m.Increment(action, "object_created_count")
-	case "s3:CompleteMultipartUpload":
+	case ActionCompleteMultipartUpload:
 		m.Increment(action, "object_created_count")
-	case "s3:UploadPart":
-		m.Add(action, "bytes_written", objSize)
-	case "s3:GetObject":
-		m.Add(action, "bytes_read", objSize)
-	case "s3:DeleteObject":
+	case ActionUploadPart:
+		m.Add(action, "bytes_written", count)
+	case ActionGetObject:
+		m.Add(action, "bytes_read", count)
+	case ActionDeleteObject:
 		m.Increment(action, "object_removed_count")
-	case "s3:DeleteObjects":
-		m.Add(action, "object_removed_count", objCount)
+	case ActionDeleteObjects:
+		m.Add(action, "object_removed_count", count)
 	}
-	//TODO: Handle UploadPartCopy case
-	//TODO: Handle CopyObject case
 }
 
 // Increment increments the key by one
