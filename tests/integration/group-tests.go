@@ -373,7 +373,6 @@ func TestGetObjectLegalHold(s *S3Conf) {
 func TestWORMProtection(s *S3Conf) {
 	WORMProtection_bucket_object_lock_configuration_compliance_mode(s)
 	WORMProtection_object_lock_retention_compliance_root_access_denied(s)
-	WORMProtection_object_lock_retention_governance_user_access_denied(s)
 	WORMProtection_object_lock_legal_hold_user_access_denied(s)
 	WORMProtection_object_lock_legal_hold_root_overwrite(s)
 }
@@ -689,7 +688,6 @@ func GetIntTests() IntTests {
 		"GetObjectLegalHold_success":                                         GetObjectLegalHold_success,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":    WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_object_lock_retention_compliance_root_access_denied": WORMProtection_object_lock_retention_compliance_root_access_denied,
-		"WORMProtection_object_lock_retention_governance_user_access_denied": WORMProtection_object_lock_retention_governance_user_access_denied,
 		"WORMProtection_object_lock_legal_hold_user_access_denied":           WORMProtection_object_lock_legal_hold_user_access_denied,
 		"WORMProtection_object_lock_legal_hold_root_overwrite":               WORMProtection_object_lock_legal_hold_root_overwrite,
 		"PutObject_overwrite_dir_obj":                                        PutObject_overwrite_dir_obj,

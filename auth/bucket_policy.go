@@ -115,7 +115,7 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 	return nil
 }
 
-func verifyBucketPolicy(policy []byte, access, bucket, object string, action Action) error {
+func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Action) error {
 	// If bucket policy is not set
 	if policy == nil {
 		return nil

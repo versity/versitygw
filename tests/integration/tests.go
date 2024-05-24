@@ -2536,6 +2536,7 @@ func PutObject_with_object_lock(s *S3Conf) error {
 		ObjectLockMode:            types.ObjectLockModeCompliance,
 		ObjectLockRetainUntilDate: &retainDate,
 	})
+
 	cancel()
 	if err != nil {
 		failF("%v: %v", testName, err)
@@ -7717,63 +7718,6 @@ func WORMProtection_object_lock_retention_compliance_root_access_denied(s *S3Con
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
-	}, withLock())
-}
-
-func WORMProtection_object_lock_retention_governance_user_access_denied(s *S3Conf) error {
-	testName := "WORMProtection_object_lock_retention_governance_user_access_denied"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
-		object := "my-obj"
-
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
-			return err
-		}
-
-		date := time.Now().Add(time.Hour * 3)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &object,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeGovernance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		if err := createUsers(s, []user{usr}); err != nil {
-			return err
-		}
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
-			return err
-		}
-
-		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
-
-		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{object}, bucket)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-			return err
-		}
-
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
 		}

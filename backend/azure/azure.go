@@ -250,7 +250,7 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 		if err != nil {
 			return "", fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed); err != nil {
+		if err := az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
 			return "", err
 		}
 	}
@@ -1024,7 +1024,7 @@ func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) 
 	return []byte(*config), nil
 }
 
-func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
 	contClient, err := az.getContainerClient(bucket)
 	if err != nil {
 		return err
