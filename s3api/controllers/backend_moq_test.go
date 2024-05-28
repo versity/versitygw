@@ -143,7 +143,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string, config []byte) error {
 //				panic("mock out the PutObjectLockConfiguration method")
 //			},
-//			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error {
+//			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, bypass bool, retention []byte) error {
 //				panic("mock out the PutObjectRetention method")
 //			},
 //			PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
@@ -295,7 +295,7 @@ type BackendMock struct {
 	PutObjectLockConfigurationFunc func(contextMoqParam context.Context, bucket string, config []byte) error
 
 	// PutObjectRetentionFunc mocks the PutObjectRetention method.
-	PutObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error
+	PutObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, bypass bool, retention []byte) error
 
 	// PutObjectTaggingFunc mocks the PutObjectTagging method.
 	PutObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error
@@ -642,6 +642,8 @@ type BackendMock struct {
 			Object string
 			// VersionId is the versionId argument value.
 			VersionId string
+			// Bypass is the bypass argument value.
+			Bypass bool
 			// Retention is the retention argument value.
 			Retention []byte
 		}
@@ -2246,7 +2248,7 @@ func (mock *BackendMock) PutObjectLockConfigurationCalls() []struct {
 }
 
 // PutObjectRetention calls PutObjectRetentionFunc.
-func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error {
+func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, bucket string, object string, versionId string, bypass bool, retention []byte) error {
 	if mock.PutObjectRetentionFunc == nil {
 		panic("BackendMock.PutObjectRetentionFunc: method is nil but Backend.PutObjectRetention was just called")
 	}
@@ -2255,18 +2257,20 @@ func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, buc
 		Bucket          string
 		Object          string
 		VersionId       string
+		Bypass          bool
 		Retention       []byte
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
 		Object:          object,
 		VersionId:       versionId,
+		Bypass:          bypass,
 		Retention:       retention,
 	}
 	mock.lockPutObjectRetention.Lock()
 	mock.calls.PutObjectRetention = append(mock.calls.PutObjectRetention, callInfo)
 	mock.lockPutObjectRetention.Unlock()
-	return mock.PutObjectRetentionFunc(contextMoqParam, bucket, object, versionId, retention)
+	return mock.PutObjectRetentionFunc(contextMoqParam, bucket, object, versionId, bypass, retention)
 }
 
 // PutObjectRetentionCalls gets all the calls that were made to PutObjectRetention.
@@ -2278,6 +2282,7 @@ func (mock *BackendMock) PutObjectRetentionCalls() []struct {
 	Bucket          string
 	Object          string
 	VersionId       string
+	Bypass          bool
 	Retention       []byte
 } {
 	var calls []struct {
@@ -2285,6 +2290,7 @@ func (mock *BackendMock) PutObjectRetentionCalls() []struct {
 		Bucket          string
 		Object          string
 		VersionId       string
+		Bypass          bool
 		Retention       []byte
 	}
 	mock.lockPutObjectRetention.RLock()

@@ -929,7 +929,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string, status bool) error {
 				return nil
 			},
-			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, retention []byte) error {
+			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
 				return nil
 			},
 			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {

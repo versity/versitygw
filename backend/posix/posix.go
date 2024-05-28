@@ -430,7 +430,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			os.Remove(tmppath)
 			return nil, fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", retParsed); err != nil {
+		if err := p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", true, retParsed); err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
@@ -1403,7 +1403,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		if err != nil {
 			return "", fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed); err != nil {
+		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
 			return "", err
 		}
 	}
@@ -2459,7 +2459,7 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 	return &result, nil
 }
 
-func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId string, retention []byte) error {
+func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -2485,11 +2485,38 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
 	}
 
-	err = p.meta.StoreAttribute(bucket, object, objectRetentionKey, retention)
+	objectLockCfg, err := p.meta.RetrieveAttribute(bucket, object, objectRetentionKey)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, retention); err != nil {
+			return fmt.Errorf("set object lock config: %w", err)
+		}
+
+		return nil
+	}
 	if err != nil {
+		return fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var lockCfg types.ObjectLockRetention
+	if err := json.Unmarshal(objectLockCfg, &lockCfg); err != nil {
+		return fmt.Errorf("unmarshal object lock config: %w", err)
+	}
+
+	switch lockCfg.Mode {
+	// Compliance mode can't be overriden
+	case types.ObjectLockRetentionModeCompliance:
+		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+	// To override governance mode user should have "s3:BypassGovernanceRetention" permission
+	case types.ObjectLockRetentionModeGovernance:
+		if !bypass {
+			return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
+	}
+
+	if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, retention); err != nil {
 		return fmt.Errorf("set object lock config: %w", err)
 	}
 

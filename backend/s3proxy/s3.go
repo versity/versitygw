@@ -530,17 +530,18 @@ func (s *S3Proxy) GetObjectLockConfiguration(ctx context.Context, bucket string)
 	return json.Marshal(config)
 }
 
-func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
+func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
 	ret, err := auth.ParseObjectLockRetentionOutput(retention)
 	if err != nil {
 		return err
 	}
 
 	_, err = s.client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-		Bucket:    &bucket,
-		Key:       &object,
-		VersionId: &versionId,
-		Retention: ret,
+		Bucket:                    &bucket,
+		Key:                       &object,
+		VersionId:                 &versionId,
+		Retention:                 ret,
+		BypassGovernanceRetention: &bypass,
 	})
 	return handleError(err)
 }

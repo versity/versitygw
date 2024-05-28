@@ -1383,6 +1383,19 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		bypassHdr := ctx.Get("X-Amz-Bypass-Governance-Retention")
+		bypass := bypassHdr == "true"
+		if bypass {
+			policy, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
+			if err != nil {
+				bypass = false
+			} else {
+				if err := auth.VerifyBucketPolicy(policy, acct.Access, bucket, keyStart, auth.BypassGovernanceRetentionAction); err != nil {
+					bypass = false
+				}
+			}
+		}
+
 		retention, err := auth.ParseObjectLockRetentionInput(ctx.Body())
 		if err != nil {
 			return SendResponse(ctx, err, &MetaOpts{
@@ -1392,7 +1405,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 		}
 
-		err = c.be.PutObjectRetention(ctx.Context(), bucket, keyStart, versionId, retention)
+		err = c.be.PutObjectRetention(ctx.Context(), bucket, keyStart, versionId, bypass, retention)
 		return SendResponse(ctx, err, &MetaOpts{
 			Logger:      c.logger,
 			Action:      "PutObjectRetention",
@@ -1797,7 +1810,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{keyStart}, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{keyStart}, true, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -1968,6 +1981,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+	bypass := ctx.Get("X-Amz-Bypass-Governance-Retention")
 	var dObj s3response.DeleteObjects
 
 	err := xml.Unmarshal(ctx.Body(), &dObj)
@@ -2002,7 +2016,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), bypass == "true", c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2038,6 +2052,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+	bypass := ctx.Get("X-Amz-Bypass-Governance-Retention")
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
@@ -2137,7 +2152,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, bypass == "true", c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{

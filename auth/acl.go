@@ -309,7 +309,7 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
-	if err := verifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action); err != nil {
+	if err := VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action); err != nil {
 		return err
 	}
 	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {

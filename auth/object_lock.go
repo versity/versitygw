@@ -135,7 +135,7 @@ func ParseObjectLegalHoldOutput(status *bool) *types.ObjectLockLegalHold {
 	}
 }
 
-func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []string, be backend.Backend) error {
+func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []string, bypass bool, be backend.Backend) error {
 	data, err := be.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
@@ -154,13 +154,26 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		return nil
 	}
 
-	objExists := true
+	checkDefaultRetention := false
+
+	if bucketLockConfig.DefaultRetention != nil && bucketLockConfig.CreatedAt != nil {
+		expirationDate := *bucketLockConfig.CreatedAt
+		if bucketLockConfig.DefaultRetention.Days != nil {
+			expirationDate = expirationDate.AddDate(0, 0, int(*bucketLockConfig.DefaultRetention.Days))
+		}
+		if bucketLockConfig.DefaultRetention.Years != nil {
+			expirationDate = expirationDate.AddDate(int(*bucketLockConfig.DefaultRetention.Years), 0, 0)
+		}
+
+		if expirationDate.After(time.Now()) {
+			checkDefaultRetention = true
+		}
+	}
 
 	for _, obj := range objects {
-		var checkRetention bool = true
+		checkRetention := true
 		retentionData, err := be.GetObjectRetention(ctx, bucket, obj, "")
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-			objExists = false
 			continue
 		}
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
@@ -180,16 +193,20 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 				if retention.RetainUntilDate.After(time.Now()) {
 					switch retention.Mode {
 					case types.ObjectLockRetentionModeGovernance:
-						policy, err := be.GetBucketPolicy(ctx, bucket)
-						if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+						if !bypass {
 							return s3err.GetAPIError(s3err.ErrObjectLocked)
-						}
-						if err != nil {
-							return err
-						}
-						err = verifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
-						if err != nil {
-							return s3err.GetAPIError(s3err.ErrObjectLocked)
+						} else {
+							policy, err := be.GetBucketPolicy(ctx, bucket)
+							if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+								return s3err.GetAPIError(s3err.ErrObjectLocked)
+							}
+							if err != nil {
+								return err
+							}
+							err = VerifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
+							if err != nil {
+								return s3err.GetAPIError(s3err.ErrObjectLocked)
+							}
 						}
 					case types.ObjectLockRetentionModeCompliance:
 						return s3err.GetAPIError(s3err.ErrObjectLocked)
@@ -198,38 +215,38 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 			}
 		}
 
+		checkLegalHold := true
+
 		status, err := be.GetObjectLegalHold(ctx, bucket, obj, "")
-		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
-			continue
-		}
 		if err != nil {
-			return err
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
+				checkLegalHold = false
+			} else {
+				return err
+			}
 		}
 
-		if *status {
+		if checkLegalHold && *status {
 			return s3err.GetAPIError(s3err.ErrObjectLocked)
 		}
-	}
 
-	if bucketLockConfig.DefaultRetention != nil && bucketLockConfig.CreatedAt != nil && objExists {
-		expirationDate := *bucketLockConfig.CreatedAt
-		if bucketLockConfig.DefaultRetention.Days != nil {
-			expirationDate = expirationDate.AddDate(0, 0, int(*bucketLockConfig.DefaultRetention.Days))
-		}
-		if bucketLockConfig.DefaultRetention.Years != nil {
-			expirationDate = expirationDate.AddDate(int(*bucketLockConfig.DefaultRetention.Years), 0, 0)
-		}
-
-		if expirationDate.After(time.Now()) {
+		if checkDefaultRetention {
 			switch bucketLockConfig.DefaultRetention.Mode {
 			case types.ObjectLockRetentionModeGovernance:
-				policy, err := be.GetBucketPolicy(ctx, bucket)
-				if err != nil {
-					return err
-				}
-				err = verifyBucketPolicy(policy, userAccess, bucket, "", BypassGovernanceRetentionAction)
-				if err != nil {
+				if !bypass {
 					return s3err.GetAPIError(s3err.ErrObjectLocked)
+				} else {
+					policy, err := be.GetBucketPolicy(ctx, bucket)
+					if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+						return s3err.GetAPIError(s3err.ErrObjectLocked)
+					}
+					if err != nil {
+						return err
+					}
+					err = VerifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
+					if err != nil {
+						return s3err.GetAPIError(s3err.ErrObjectLocked)
+					}
 				}
 			case types.ObjectLockRetentionModeCompliance:
 				return s3err.GetAPIError(s3err.ErrObjectLocked)
