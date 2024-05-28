@@ -41,12 +41,12 @@ type Manager struct {
 	wg  sync.WaitGroup
 	ctx context.Context
 
-	publishers    []publisher
-	addDataChan   chan datapoint
-	gaugeDataChan chan datapoint
+	publishers  []publisher
+	addDataChan chan datapoint
 }
 
 type Config struct {
+	ServiceName   string
 	StatsdServers string
 }
 
@@ -55,24 +55,26 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	if len(conf.StatsdServers) == 0 {
 		return nil, nil
 	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get hostname: %w", err)
+
+	if conf.ServiceName == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get hostname: %w", err)
+		}
+		conf.ServiceName = hostname
 	}
 
 	addDataChan := make(chan datapoint, dataItemCount)
-	gaugeDataChan := make(chan datapoint, dataItemCount)
 
 	mgr := &Manager{
-		addDataChan:   addDataChan,
-		gaugeDataChan: gaugeDataChan,
-		ctx:           ctx,
+		addDataChan: addDataChan,
+		ctx:         ctx,
 	}
 
 	statsdServers := strings.Split(conf.StatsdServers, ",")
 
 	for _, server := range statsdServers {
-		statsd, err := NewStatsd(server, hostname)
+		statsd, err := newStatsd(server, conf.ServiceName)
 		if err != nil {
 			return nil, err
 		}
@@ -81,8 +83,6 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 
 	mgr.wg.Add(1)
 	go mgr.addForwarder(addDataChan)
-	mgr.wg.Add(1)
-	go mgr.gaugeForwarder(gaugeDataChan)
 
 	return mgr, nil
 }
@@ -93,35 +93,35 @@ func (m *Manager) Send(err error, action string, count int64) {
 		action = ActionUndetected
 	}
 	if err != nil {
-		m.Increment(action, "failed_count")
+		m.increment(action, "failed_count")
 	} else {
-		m.Increment(action, "success_count")
+		m.increment(action, "success_count")
 	}
 
 	switch action {
 	case ActionPutObject:
-		m.Add(action, "bytes_written", count)
-		m.Increment(action, "object_created_count")
+		m.add(action, "bytes_written", count)
+		m.increment(action, "object_created_count")
 	case ActionCompleteMultipartUpload:
-		m.Increment(action, "object_created_count")
+		m.increment(action, "object_created_count")
 	case ActionUploadPart:
-		m.Add(action, "bytes_written", count)
+		m.add(action, "bytes_written", count)
 	case ActionGetObject:
-		m.Add(action, "bytes_read", count)
+		m.add(action, "bytes_read", count)
 	case ActionDeleteObject:
-		m.Increment(action, "object_removed_count")
+		m.increment(action, "object_removed_count")
 	case ActionDeleteObjects:
-		m.Add(action, "object_removed_count", count)
+		m.add(action, "object_removed_count", count)
 	}
 }
 
-// Increment increments the key by one
-func (m *Manager) Increment(module, key string, tags ...Tag) {
-	m.Add(module, key, 1, tags...)
+// increment increments the key by one
+func (m *Manager) increment(module, key string, tags ...Tag) {
+	m.add(module, key, 1, tags...)
 }
 
-// Add adds value to key
-func (m *Manager) Add(module, key string, value int64, tags ...Tag) {
+// add adds value to key
+func (m *Manager) add(module, key string, value int64, tags ...Tag) {
 	if m.ctx.Err() != nil {
 		return
 	}
@@ -140,31 +140,10 @@ func (m *Manager) Add(module, key string, value int64, tags ...Tag) {
 	}
 }
 
-// Gauge sets key to value
-func (m *Manager) Gauge(module, key string, value int64, tags ...Tag) {
-	if m.ctx.Err() != nil {
-		return
-	}
-
-	d := datapoint{
-		module: module,
-		key:    key,
-		value:  value,
-		tags:   tags,
-	}
-
-	select {
-	case m.gaugeDataChan <- d:
-	default:
-		// channel full, drop the updates
-	}
-}
-
 // Close closes metrics channels, waits for data to complete, closes all plugins
 func (m *Manager) Close() {
 	// drain the datapoint channels
 	close(m.addDataChan)
-	close(m.gaugeDataChan)
 	m.wg.Wait()
 
 	// close all publishers
@@ -176,7 +155,6 @@ func (m *Manager) Close() {
 // publisher is the interface for interacting with the metrics plugins
 type publisher interface {
 	Add(module, key string, value int64, tags ...Tag)
-	Gauge(module, key string, value int64, tags ...Tag)
 	Close()
 }
 
@@ -184,15 +162,6 @@ func (m *Manager) addForwarder(addChan <-chan datapoint) {
 	for data := range addChan {
 		for _, s := range m.publishers {
 			s.Add(data.module, data.key, data.value, data.tags...)
-		}
-	}
-	m.wg.Done()
-}
-
-func (m *Manager) gaugeForwarder(gaugeChan <-chan datapoint) {
-	for data := range gaugeChan {
-		for _, s := range m.publishers {
-			s.Gauge(data.module, data.key, data.value, data.tags...)
 		}
 	}
 	m.wg.Done()

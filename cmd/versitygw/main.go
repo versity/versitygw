@@ -63,6 +63,7 @@ var (
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
+	metricsService                         string
 	statsdServers                          string
 )
 
@@ -401,8 +402,15 @@ func initFlags() []cli.Flag {
 			Destination: &readonly,
 		},
 		&cli.StringFlag{
+			Name:        "metrics-service-name",
+			Usage:       "service name tag for metrics, hostname if blank",
+			EnvVars:     []string{"VGW_METRICS_SERVICE_NAME"},
+			Aliases:     []string{"msn"},
+			Destination: &metricsService,
+		},
+		&cli.StringFlag{
 			Name:        "metrics-statsd-servers",
-			Usage:       "StatsD server urls comma separated. e.g. 'statsd.example1.com:8125, statsd.example2.com:8125'",
+			Usage:       "StatsD server urls comma separated. e.g. 'statsd1.example.com:8125,statsd2.example.com:8125'",
 			EnvVars:     []string{"VGW_METRICS_STATSD_SERVERS"},
 			Aliases:     []string{"mss"},
 			Destination: &statsdServers,
@@ -518,6 +526,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	metricsManager, err := metrics.NewManager(ctx, metrics.Config{
+		ServiceName:   metricsService,
 		StatsdServers: statsdServers,
 	})
 	if err != nil {
