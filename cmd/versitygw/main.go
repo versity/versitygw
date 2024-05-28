@@ -65,6 +65,7 @@ var (
 	iamCachePrune                          int
 	metricsService                         string
 	statsdServers                          string
+	dogstatsServers                        string
 )
 
 var (
@@ -415,6 +416,13 @@ func initFlags() []cli.Flag {
 			Aliases:     []string{"mss"},
 			Destination: &statsdServers,
 		},
+		&cli.StringFlag{
+			Name:        "metrics-dogstatsd-servers",
+			Usage:       "DogStatsD server urls comma separated. e.g. '127.0.0.1:8125,dogstats.example.com:8125'",
+			EnvVars:     []string{"VGW_METRICS_DOGSTATS_SERVERS"},
+			Aliases:     []string{"mds"},
+			Destination: &dogstatsServers,
+		},
 	}
 }
 
@@ -526,8 +534,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	metricsManager, err := metrics.NewManager(ctx, metrics.Config{
-		ServiceName:   metricsService,
-		StatsdServers: statsdServers,
+		ServiceName:      metricsService,
+		StatsdServers:    statsdServers,
+		DogStatsdServers: dogstatsServers,
 	})
 	if err != nil {
 		return fmt.Errorf("init metrics manager: %w", err)

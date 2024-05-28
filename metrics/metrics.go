@@ -41,18 +41,21 @@ type Manager struct {
 	wg  sync.WaitGroup
 	ctx context.Context
 
+	config Config
+
 	publishers  []publisher
 	addDataChan chan datapoint
 }
 
 type Config struct {
-	ServiceName   string
-	StatsdServers string
+	ServiceName      string
+	StatsdServers    string
+	DogStatsdServers string
 }
 
 // NewManager initializes metrics plugins and returns a new metrics manager
 func NewManager(ctx context.Context, conf Config) (*Manager, error) {
-	if len(conf.StatsdServers) == 0 {
+	if len(conf.StatsdServers) == 0 && len(conf.DogStatsdServers) == 0 {
 		return nil, nil
 	}
 
@@ -69,16 +72,33 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	mgr := &Manager{
 		addDataChan: addDataChan,
 		ctx:         ctx,
+		config:      conf,
 	}
 
-	statsdServers := strings.Split(conf.StatsdServers, ",")
+	// setup statsd endpoints
+	if len(conf.StatsdServers) > 0 {
+		statsdServers := strings.Split(conf.StatsdServers, ",")
 
-	for _, server := range statsdServers {
-		statsd, err := newStatsd(server, conf.ServiceName)
-		if err != nil {
-			return nil, err
+		for _, server := range statsdServers {
+			statsd, err := newStatsd(server, conf.ServiceName)
+			if err != nil {
+				return nil, err
+			}
+			mgr.publishers = append(mgr.publishers, statsd)
 		}
-		mgr.publishers = append(mgr.publishers, statsd)
+	}
+
+	// setup dogstatsd endpoints
+	if len(conf.DogStatsdServers) > 0 {
+		dogStatsdServers := strings.Split(conf.DogStatsdServers, ",")
+
+		for _, server := range dogStatsdServers {
+			dogStatsd, err := newDogStatsd(server, conf.ServiceName)
+			if err != nil {
+				return nil, err
+			}
+			mgr.publishers = append(mgr.publishers, dogStatsd)
+		}
 	}
 
 	mgr.wg.Add(1)
