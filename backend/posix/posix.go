@@ -1403,9 +1403,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		if err != nil {
 			return "", fmt.Errorf("parse object lock retention: %w", err)
 		}
-		fmt.Println("putting object retention")
 		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
-			fmt.Println("put object retention error: ", err)
 			return "", err
 		}
 	}

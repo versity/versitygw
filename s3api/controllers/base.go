@@ -1383,7 +1383,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		bypassHdr := ctx.Get("")
+		bypassHdr := ctx.Get("X-Amz-Bypass-Governance-Retention")
 		bypass := bypassHdr == "true"
 		if bypass {
 			policy, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
@@ -2053,7 +2053,6 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	bypass := ctx.Get("X-Amz-Bypass-Governance-Retention")
-	fmt.Println("bypass: ", bypass)
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
