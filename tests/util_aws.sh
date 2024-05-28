@@ -29,6 +29,7 @@ abort_all_multipart_uploads() {
 
     log 5 "$lines"
     while read -r line; do
+      # shellcheck disable=SC2086
       error=$(aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" $line 2>&1) || abort_result=$?
       if [[ $abort_result -ne 0 ]]; then
         echo "error aborting multipart upload: $error"

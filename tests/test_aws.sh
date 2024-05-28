@@ -171,6 +171,59 @@ source ./tests/commands/select_object_content.sh
   test_common_set_get_delete_bucket_tags "aws"
 }
 
+# delete-object - tested with bucket cleanup before or after tests
+
+# delete-object-tagging
+@test "test_delete_object_tagging" {
+  test_common_delete_object_tagging "aws"
+}
+
+# delete-objects
+@test "test_delete_objects" {
+  local object_one="test-file-one"
+  local object_two="test-file-two"
+
+  create_test_files "$object_one" "$object_two" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result_one=$?
+  [[ $result_one -eq 0 ]] || fail "Error creating bucket"
+
+  put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local result_two=$?
+  [[ $result_two -eq 0 ]] || fail "Error adding object one"
+  put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
+  [[ $result_three -eq 0 ]] || fail "Error adding object two"
+
+  error=$(aws --no-verify-ssl s3api delete-objects --bucket "$BUCKET_ONE_NAME" --delete '{
+    "Objects": [
+      {"Key": "test-file-one"},
+      {"Key": "test-file-two"}
+    ]
+  }') || local result=$?
+  [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
+
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_one=$?
+  [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_two" || local exists_two=$?
+  [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one" "$object_two"
+}
+
+# get-bucket-acl
+@test "test_get_bucket_acl" {
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating bucket"
+
+  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || local result=$?
+  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+
+  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID')
+  [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
 #@test "test_get_object_invalid_range" {
 #  bucket_file="bucket_file"
 #
@@ -211,8 +264,8 @@ source ./tests/commands/select_object_content.sh
   [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
   put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME/$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Error copying file: $error"
+  copy_error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME/$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
+  [[ $copy_result -eq 0 ]] || fail "Error copying file: $copy_error"
   copy_file "s3://$BUCKET_TWO_NAME/$bucket_file" "$test_file_folder/${bucket_file}_copy" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
   compare_files "$test_file_folder/$bucket_file" "$test_file_folder/${bucket_file}_copy" || local compare_result=$?
@@ -253,19 +306,6 @@ source ./tests/commands/select_object_content.sh
   test_common_list_objects "aws"
 }
 
-# test ability to retrieve bucket ACLs
-@test "test_get_bucket_acl" {
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating bucket"
-
-  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving acl"
-
-  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID')
-  [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-}
 
 @test "test_get_object_attributes" {
   bucket_file="bucket_file"
@@ -316,11 +356,13 @@ source ./tests/commands/select_object_content.sh
   echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
   put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
   [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
-  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
+  # shellcheck disable=SC2154
+  [[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
 
   delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
   [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
-  [[ $error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $error"
+  # shellcheck disable=SC2154
+  [[ $delete_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $delete_object_error"
   put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF" || fail "error removing legal hold on object"
   delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || fail "error deleting object after removing legal hold"
 
@@ -411,37 +453,6 @@ legal_hold_retention_setup() {
 #  delete_bucket_or_contents "$BUCKET_ONE_NAME"
 #}
 
-# test ability to delete multiple objects from bucket
-@test "test_delete_objects" {
-  local object_one="test-file-one"
-  local object_two="test-file-two"
-
-  create_test_files "$object_one" "$object_two" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result_one=$?
-  [[ $result_one -eq 0 ]] || fail "Error creating bucket"
-
-  put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local result_two=$?
-  [[ $result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
-  [[ $result_three -eq 0 ]] || fail "Error adding object two"
-
-  error=$(aws --no-verify-ssl s3api delete-objects --bucket "$BUCKET_ONE_NAME" --delete '{
-    "Objects": [
-      {"Key": "test-file-one"},
-      {"Key": "test-file-two"}
-    ]
-  }') || local result=$?
-  [[ $result -eq 0 ]] || fail "Error deleting objects: $error"
-
-  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_one=$?
-  [[ $exists_one -eq 1 ]] || fail "Object one not deleted"
-  object_exists "aws" "$BUCKET_ONE_NAME" "$object_two" || local exists_two=$?
-  [[ $exists_two -eq 1 ]] || fail "Object two not deleted"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_one" "$object_two"
-}
 
 #@test "test_select_object_content" {
 #  bucket_file="bucket_file"
@@ -558,6 +569,7 @@ legal_hold_retention_setup() {
       echo "error:  blank etag"
       return 1
     fi
+    # shellcheck disable=SC2004
     parts_map[$part_number]=$etag
   done
   [[ ${#parts_map[@]} -ne 0 ]] || fail "error loading multipart upload parts to check"
@@ -593,8 +605,7 @@ legal_hold_retention_setup() {
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two"
-  [[ $? -eq 0 ]] || fail "failed to list multipart uploads"
+  list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two" || fail "failed to list multipart uploads"
 
   local key_one
   local key_two
@@ -634,6 +645,23 @@ legal_hold_retention_setup() {
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
+
+#@test "test_multipart_upload_from_bucket_range" {
+#  local bucket_file="bucket-file"
+#
+#  create_large_file "$bucket_file" || error creating file "$bucket_file"
+#  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+#
+#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
+#  [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
+#  [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || fail "unexpected error: $upload_part_copy_error"
+#
+#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-16000000" || local upload_two_result=$?
+#  [[ $upload_two_result -eq 0 ]] || fail "range should be valid"
+#
+#  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+#  delete_test_files $bucket_file
+#}
 
 @test "test-presigned-url-utf8-chars" {
   test_common_presigned_url_utf8_chars "aws"
@@ -691,6 +719,11 @@ legal_hold_retention_setup() {
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
 
+@test "test_head_bucket_invalid_name" {
+  head_bucket "aws" "" || local head_result=$?
+  [[ $head_result -ne 0 ]] || fail "able to get bucket info for invalid name"
+}
+
 @test "test_head_bucket_doesnt_exist" {
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
@@ -726,9 +759,6 @@ legal_hold_retention_setup() {
   [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
 }
 
-@test "test_delete_object_tagging" {
-  test_common_delete_object_tagging "aws"
-}
 
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "aws"

@@ -62,32 +62,25 @@ test_common_copy_object() {
     fail "copy object test requires command type"
   fi
   local object_name="test-object"
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  create_test_files "$object_name" || fail "error creating test file"
   echo "test data" > "$test_file_folder/$object_name"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket one"
-  setup_bucket "$1" "$BUCKET_TWO_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket two"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket one"
+  setup_bucket "$1" "$BUCKET_TWO_NAME" || fail "error setting up bucket two"
 
   if [[ $1 == 's3' ]]; then
-    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local put_result=$?
+    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to copy object to bucket one"
   else
-    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local put_result=$?
+    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to put object to bucket one"
   fi
-  [[ $put_result -eq 0 ]] || fail "Failed to add object to bucket"
   if [[ $1 == 's3' ]]; then
-    copy_object "$1" "s3://$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || local copy_result_one=$?
+    copy_object "$1" "s3://$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || fail "object not copied to bucket two"
   else
-    copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || local copy_result_one=$?
+    copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || fail "object not copied to bucket two"
   fi
-  [[ $copy_result_one -eq 0 ]] || fail "Object not added to bucket"
-  get_object "$1" "$BUCKET_TWO_NAME" "$object_name" "$test_file_folder/$object_name-copy" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "failed to retrieve object"
+  get_object "$1" "$BUCKET_TWO_NAME" "$object_name" "$test_file_folder/$object_name-copy" || fail "failed to retrieve object"
 
-  compare_files "$test_file_folder/$object_name" "$test_file_folder/$object_name-copy" || local compare_result=$?
-  [[ $compare_result -eq 0 ]] || fail "files not the same"
+  compare_files "$test_file_folder/$object_name" "$test_file_folder/$object_name-copy" || fail "files not the same"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "$1" "$BUCKET_TWO_NAME"
@@ -274,18 +267,14 @@ test_common_set_get_delete_bucket_tags() {
   local key="test_key"
   local value="test_value"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags first time"
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags first time"
 
-  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || local check_result=$?
-  [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
+  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || fail "error checking if bucket tags are empty"
 
   put_bucket_tag "$1" "$BUCKET_ONE_NAME" $key $value
-  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result_two=$?
-  [[ $get_result_two -eq 0 ]] || fail "Error getting bucket tags second time"
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags second time"
 
   local tag_set_key
   local tag_set_value
@@ -302,11 +291,9 @@ test_common_set_get_delete_bucket_tags() {
   fi
   delete_bucket_tags "$1" "$BUCKET_ONE_NAME"
 
-  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting bucket tags third time"
+  get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags third time"
 
-  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || local check_result=$?
-  [[ $check_result -eq 0 ]] || fail "error checking if bucket tags are empty"
+  check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || fail "error checking if bucket tags are empty"
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }
 

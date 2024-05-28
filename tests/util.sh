@@ -14,6 +14,7 @@ source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_objects.sh
+source ./tests/commands/upload_part_copy.sh
 
 # recursively delete an AWS bucket
 # param:  bucket name
@@ -29,7 +30,7 @@ delete_bucket_recursive() {
   if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
   elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
-    delete_bucket_recursive_s3api "$2" 2>&1 || exit_code="$?"
+    delete_bucket_recursive_s3api "$2" || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
@@ -55,16 +56,26 @@ delete_bucket_recursive_s3api() {
     log 2 "delete bucket recursive command for s3api requires bucket name"
     return 1
   fi
-  list_objects 's3api' "$1" || local list_result=$?
-  if [[ $list_result -ne 0 ]]; then
+  if ! list_objects 's3api' "$1"; then
     log 2 "error listing objects"
     return 1
   fi
   # shellcheck disable=SC2154
   for object in "${object_array[@]}"; do
-    delete_object 's3api' "$1" "$object" || local delete_object_result=$?
-    if [[ $delete_object_result -ne 0 ]]; then
+    if ! delete_object 's3api' "$1" "$object"; then
       log 2 "error deleting object $object"
+      if [[ $delete_object_error == *"WORM"* ]]; then
+        log 5 "WORM protection found"
+        if ! put_object_legal_hold "$1" "$object" "OFF"; then
+          log 2 "error removing object legal hold"
+          return 1
+        fi
+        if ! delete_object 's3api' "$1" "$object"; then
+          log 2 "error deleting object after legal hold removal"
+          return 1
+        fi
+        continue
+      fi
       return 1
     fi
   done
@@ -220,34 +231,6 @@ object_exists() {
     return 2
   fi
   return $head_result
-
-  return 0
-  local exit_code=0
-  local error=""
-  if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 ls "s3://$2/$3" 2>&1) || exit_code="$?"
-  elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
-    error=$(aws --no-verify-ssl s3api head-object --bucket "$2" --prefix "$3" 2>&1) || exit_code="$?"
-  elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2/$3" 2>&1) || exit_code="$?"
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure ls "$MC_ALIAS/$2/$3" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 2
-  fi
-  if [ $exit_code -ne 0 ]; then
-    if [[ "$error" == "" ]] || [[ $error == *"InsecureRequestWarning"* ]]; then
-      return 1
-    else
-      echo "error checking if object exists: $error"
-      return 2
-    fi
-  # s3cmd, mc return empty when object doesn't exist, rather than error
-  elif [[ ( $1 == 's3cmd' ) || ( $1 == 'mc' ) ]] && [[ $error == "" ]]; then
-    return 1
-  fi
-  return 0
 }
 
 put_object_with_metadata() {
@@ -289,9 +272,9 @@ get_object_metadata() {
     echo "error copying object to bucket: $error"
     return 1
   fi
-  log 5 "$metadata_struct"
+  log 5 "raw metadata: $metadata_struct"
   metadata=$(echo "$metadata_struct" | jq '.Metadata')
-  echo $metadata
+  log 5 "metadata: $metadata"
   export metadata
   return 0
 }
@@ -504,8 +487,7 @@ check_object_tags_empty() {
     echo "bucket tags empty check requires command type, bucket, and key"
     return 2
   fi
-  get_object_tagging "$1" "$2" "$3" || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
+  if ! get_object_tagging "$1" "$2" "$3"; then
     echo "failed to get tags"
     return 2
   fi
@@ -518,8 +500,7 @@ check_bucket_tags_empty() {
     echo "bucket tags empty check requires command type, bucket"
     return 2
   fi
-  get_bucket_tagging "$1" "$2" || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
+  if ! get_bucket_tagging "$1" "$2"; then
     echo "failed to get tags"
     return 2
   fi
@@ -738,7 +719,7 @@ multipart_upload_before_completion_custom() {
     return 1
   fi
 
-  # shellcheck disable=SC2048
+  # shellcheck disable=SC2086 disable=SC2048
   create_multipart_upload_custom "$1" "$2" ${*:5} || local create_result=$?
   if [[ $create_result -ne 0 ]]; then
     log 2 "error creating multipart upload"
@@ -769,7 +750,7 @@ multipart_upload_custom() {
     return 1
   fi
 
-  # shellcheck disable=SC2048
+  # shellcheck disable=SC2086 disable=SC2048
   multipart_upload_before_completion_custom "$1" "$2" "$3" "$4" ${*:5} || local result=$?
   if [[ $result -ne 0 ]]; then
     log 2 "error performing pre-completion multipart upload"
@@ -919,9 +900,6 @@ list_multipart_uploads() {
   export uploads
 }
 
-# perform a multi-part upload within bucket
-# params:  bucket, key, file, number of parts
-# return 0 for success, 1 for failure
 multipart_upload_from_bucket() {
   if [ $# -ne 4 ]; then
     echo "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
@@ -964,29 +942,62 @@ multipart_upload_from_bucket() {
   parts+="]"
 
   error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
-    if [[ $completed -ne 0 ]]; then
-      echo "Error completing upload: $error"
-      return 1
-    fi
-    return 0
-
-  parts+="]"
+  if [[ $completed -ne 0 ]]; then
+    echo "Error completing upload: $error"
+    return 1
+  fi
+  return 0
 }
 
-upload_part_copy() {
+multipart_upload_from_bucket_range() {
   if [ $# -ne 5 ]; then
-    echo "upload multipart part copy function must have bucket, key, upload ID, file name, part number"
+    echo "multipart upload from bucket with range command requires bucket, copy source, key, part count, and range"
     return 1
   fi
-  local etag_json
-  echo "$1 $2 $3 $4 $5"
-  etag_json=$(aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))") || local uploaded=$?
-  if [[ $uploaded -ne 0 ]]; then
-    echo "Error uploading part $5: $etag_json"
+
+  split_file "$3" "$4" || local split_result=$?
+  if [[ $split_result -ne 0 ]]; then
+    echo "error splitting file"
     return 1
   fi
-  etag=$(echo "$etag_json" | jq '.CopyPartResult.ETag')
-  export etag
+
+  for ((i=0;i<$4;i++)) {
+    echo "key: $3"
+    log 5 "file info: $(ls -l "$3"-"$i")"
+    put_object "s3api" "$3-$i" "$1" "$2-$i" || local copy_result=$?
+    if [[ $copy_result -ne 0 ]]; then
+      echo "error copying object"
+      return 1
+    fi
+  }
+
+  create_multipart_upload "$1" "$2-copy" || local create_multipart_result=$?
+  if [[ $create_multipart_result -ne 0 ]]; then
+    echo "error running first multpart upload"
+    return 1
+  fi
+
+  parts="["
+  for ((i = 1; i <= $4; i++)); do
+    upload_part_copy_with_range "$1" "$2-copy" "$upload_id" "$2" "$i" "$5" || local upload_part_copy_result=$?
+    if [[ $upload_part_copy_result -ne 0 ]]; then
+      # shellcheck disable=SC2154
+      echo "error uploading part $i: $upload_part_copy_error"
+      return 1
+    fi
+    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
+    if [[ $i -ne $4 ]]; then
+      parts+=","
+    fi
+  done
+  parts+="]"
+
+  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
+  if [[ $completed -ne 0 ]]; then
+    echo "Error completing upload: $error"
+    return 1
+  fi
+  return 0
 }
 
 create_presigned_url() {

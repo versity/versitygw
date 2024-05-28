@@ -5,7 +5,7 @@ if [[ -z "$VERSITYGW_TEST_ENV" ]]; then
   exit 1
 fi
 
-# shellcheck source=./.env.default
+# shellcheck source=./tests/.env.default
 source "$VERSITYGW_TEST_ENV"
 export RECREATE_BUCKETS
 

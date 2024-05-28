@@ -8,8 +8,7 @@ check_for_alias() {
     return 2
   fi
   while IFS= read -r line; do
-    error=$(echo "$line" | grep -w "$MC_ALIAS ")
-    if [[ $? -eq 0 ]]; then
+    if echo "$line" | grep -w "$MC_ALIAS "; then
       return 0
     fi
   done <<< "$aliases"

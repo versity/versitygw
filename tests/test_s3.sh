@@ -19,6 +19,10 @@ source ./tests/test_common.sh
 
 # delete-bucket - test_create_delete_bucket
 
+# delete-object - test_put_object
+
+# delete-objects - tested with recursive bucket delete
+
 @test "test_put_object" {
   test_common_put_object_no_data "s3"
 }

@@ -6,11 +6,11 @@ delete_bucket_policy() {
     return 1
   fi
   if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api delete-bucket-policy --bucket "$2") || delete_result=$?
+    error=$(aws --no-verify-ssl s3api delete-bucket-policy --bucket "$2" 2>&1) || delete_result=$?
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate delpolicy "s3://$2") || delete_result=$?
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate delpolicy "s3://$2" 2>&1) || delete_result=$?
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure anonymous set none "$MC_ALIAS/$2") || delete_result=$?
+    error=$(mc --insecure anonymous set none "$MC_ALIAS/$2" 2>&1) || delete_result=$?
   else
     log 2 "command 'get bucket policy' not implemented for '$1'"
     return 1

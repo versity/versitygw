@@ -68,11 +68,11 @@ start_versity() {
       echo "Warning: no .env file found in tests folder"
     fi
   else
-    # shellcheck source=./.env.default
+    # shellcheck source=./tests/.env.default
     source "$VERSITYGW_TEST_ENV"
   fi
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
-    # shellcheck source=/.secrets
+    # shellcheck source=./tests/.secrets
     source "$SECRETS_FILE"
   else
     echo "Warning: no secrets file found"
@@ -107,6 +107,7 @@ start_versity_process() {
   fi
   base_command+=(">" "$test_file_folder/versity_log_$1.txt" "2>&1")
   ("${base_command[@]}") &
+  # shellcheck disable=SC2181
   if [[ $? -ne 0 ]]; then
     echo "error running versitygw command: $(cat "$test_file_folder/versity_log_$1.txt")"
     return 1
@@ -117,7 +118,7 @@ start_versity_process() {
   sleep 1
 
   local proc_check
-  check_result=$(kill -0 $pid 2>&1) || proc_check=$?
+  check_result=$(kill -0 "$pid" 2>&1) || proc_check=$?
   if [[ $proc_check -ne 0 ]]; then
     echo "versitygw failed to start: $check_result"
     echo "log data: $(cat "$test_file_folder/versity_log_$1.txt")"
