@@ -10,6 +10,7 @@ source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object.sh
+source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_object.sh
@@ -326,7 +327,7 @@ test_common_set_get_object_tags() {
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
-  get_object_tags "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
+  get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
     tag_set=$(echo "$tags" | jq '.TagSet')
@@ -336,7 +337,7 @@ test_common_set_get_object_tags() {
   fi
 
   put_object_tag "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value
-  get_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" || local get_result_two=$?
+  get_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || local get_result_two=$?
   [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
     tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key')

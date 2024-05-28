@@ -18,6 +18,7 @@ source ./tests/commands/get_object_attributes.sh
 source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/get_object_retention.sh
+source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/list_object_versions.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_policy.sh
@@ -85,7 +86,78 @@ source ./tests/commands/select_object_content.sh
   test_common_create_delete_bucket "aws"
 }
 
-# create-multipart-upload - test_complete_multipart_upload
+# create-multipart-upload
+@test "test_create_multipart_upload_properties" {
+  local bucket_file="bucket-file"
+  local bucket_file_data="test file\n"
+
+  local expected_content_type="application/zip"
+  local expected_meta_key="testKey"
+  local expected_meta_val="testValue"
+  local expected_hold_status="ON"
+  local expected_retention_mode="GOVERNANCE"
+  local expected_tag_key="TestTag"
+  local expected_tag_val="TestTagVal"
+  local five_seconds_later
+
+  os_name="$(uname)"
+  if [[ "$os_name" == "Darwin" ]]; then
+    now=$(date -u +"%Y-%m-%dT%H:%M:%S")
+    five_seconds_later=$(date -j -v +5S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+  else
+    now=$(date +"%Y-%m-%dT%H:%M:%S")
+    five_seconds_later=$(date -d "$now 5 seconds" +"%Y-%m-%dT%H:%M:%S")
+  fi
+
+  create_test_files "$bucket_file" || fail "error creating test file"
+  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+
+  delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
+  create_bucket_object_lock_enabled "$BUCKET_ONE_NAME" || fail "error creating bucket"
+
+  log 5 "$five_seconds_later"
+  multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 \
+    "$expected_content_type" \
+    "{\"$expected_meta_key\": \"$expected_meta_val\"}" \
+    "$expected_hold_status" \
+    "$expected_retention_mode" \
+    "$five_seconds_later" \
+    "$expected_tag_key=$expected_tag_val" || fail "error performing multipart upload"
+
+  head_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting metadata"
+  raw_metadata=$(echo "$metadata" | grep -v "InsecureRequestWarning")
+  log 5 "raw metadata: $raw_metadata"
+
+  content_type=$(echo "$raw_metadata" | jq -r ".ContentType")
+  [[ $content_type == "$expected_content_type" ]] || fail "content type mismatch ($content_type, $expected_content_type)"
+  meta_val=$(echo "$raw_metadata" | jq -r ".Metadata.$expected_meta_key")
+  [[ $meta_val == "$expected_meta_val" ]] || fail "metadata val mismatch ($meta_val, $expected_meta_val)"
+  hold_status=$(echo "$raw_metadata" | jq -r ".ObjectLockLegalHoldStatus")
+  [[ $hold_status == "$expected_hold_status" ]] || fail "hold status mismatch ($hold_status, $expected_hold_status)"
+  retention_mode=$(echo "$raw_metadata" | jq -r ".ObjectLockMode")
+  [[ $retention_mode == "$expected_retention_mode" ]] || fail "retention mode mismatch ($retention_mode, $expected_retention_mode)"
+  retain_until_date=$(echo "$raw_metadata" | jq -r ".ObjectLockRetainUntilDate")
+  [[ $retain_until_date == "$five_seconds_later"* ]] || fail "retention date mismatch ($retain_until_date, $five_seconds_later)"
+
+  get_object_tagging "aws" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting tagging"
+  log 5 "tags: $tags"
+  tag_key=$(echo "$tags" | jq -r ".TagSet[0].Key")
+  [[ $tag_key == "$expected_tag_key" ]] || fail "tag mismatch ($tag_key, $expected_tag_key)"
+  tag_val=$(echo "$tags" | jq -r ".TagSet[0].Value")
+  [[ $tag_val == "$expected_tag_val" ]] || fail "tag mismatch ($tag_val, $expected_tag_val)"
+
+  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF" || fail "error disabling legal hold"
+  head_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting metadata"
+
+  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error getting object"
+  compare_files "$test_file_folder/$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "files not equal"
+
+  sleep 2
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
+
 
 # delete-bucket - test_create_delete_bucket_aws
 
@@ -98,6 +170,35 @@ source ./tests/commands/select_object_content.sh
 @test "test-set-get-delete-bucket-tags" {
   test_common_set_get_delete_bucket_tags "aws"
 }
+
+#@test "test_get_object_invalid_range" {
+#  bucket_file="bucket_file"
+#
+#  create_test_files "$bucket_file" || local created=$?
+#  [[ $created -eq 0 ]] || fail "Error creating test files"
+#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
+#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
+#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
+#  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
+#}
+
+#@test "test_get_object_full_range" {
+#  bucket_file="bucket_file"
+#
+#  create_test_files "$bucket_file" || local created=$?
+#  [[ $created -eq 0 ]] || fail "Error creating test files"
+#  echo -n "0123456789" > "$test_file_folder/$bucket_file"
+#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
+#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
+#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=9-15" "$test_file_folder/$bucket_file-range" || fail "error getting range"
+#  cat "$test_file_folder/$bucket_file"
+#  cat "$test_file_folder/$bucket_file-range"
+#  ls -l "$test_file_folder/$bucket_file"
+#  ls -l "$test_file_folder/$bucket_file-range"
+#  compare_files "$test_file_folder/$bucket_file" "$test_file_folder/$bucket_file-range" || fail "files not equal"
+#}
 
 @test "test_put_object" {
   bucket_file="bucket_file"

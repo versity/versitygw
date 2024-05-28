@@ -4,10 +4,13 @@ source ./tests/util_bucket_create.sh
 source ./tests/util_mc.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh
+source ./tests/commands/complete_multipart_upload.sh
+source ./tests/commands/create_multipart_upload.sh
 source ./tests/commands/create_bucket.sh
 source ./tests/commands/delete_bucket.sh
 source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_tagging.sh
+source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_objects.sh
@@ -501,7 +504,7 @@ check_object_tags_empty() {
     echo "bucket tags empty check requires command type, bucket, and key"
     return 2
   fi
-  get_object_tags "$1" "$2" "$3" || get_result=$?
+  get_object_tagging "$1" "$2" "$3" || get_result=$?
   if [[ $get_result -ne 0 ]]; then
     echo "failed to get tags"
     return 2
@@ -571,7 +574,7 @@ get_and_verify_object_tags() {
     echo "get and verify object tags missing command type, bucket, key, tag key, tag value"
     return 1
   fi
-  get_object_tags "$1" "$2" "$3" || get_result=$?
+  get_object_tagging "$1" "$2" "$3" || get_result=$?
   if [[ $get_result -ne 0 ]]; then
     echo "failed to get tags"
     return 1
@@ -593,37 +596,6 @@ get_and_verify_object_tags() {
     [[ $tag_set_value == "$5" ]] || fail "Value mismatch"
   fi
   return 0
-}
-
-# get object tags
-# params:  bucket
-# export 'tags' on success, return 1 for error
-get_object_tags() {
-  if [ $# -ne 3 ]; then
-    echo "get object tag command missing command type, bucket, and/or key"
-    return 1
-  fi
-  local result
-  if [[ $1 == 'aws' ]]; then
-    tags=$(aws --no-verify-ssl s3api get-object-tagging --bucket "$2" --key "$3" 2>&1) || result=$?
-  elif [[ $1 == 'mc' ]]; then
-    tags=$(mc --insecure tag list "$MC_ALIAS"/"$2"/"$3" 2>&1) || result=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [[ $result -ne 0 ]]; then
-    if [[ "$tags" == *"NoSuchTagSet"* ]] || [[ "$tags" == *"No tags found"* ]]; then
-      tags=
-    else
-      echo "error getting object tags: $tags"
-      return 1
-    fi
-  else
-    log 5 "$tags"
-    tags=$(echo "$tags" | grep -v "InsecureRequestWarning")
-  fi
-  export tags
 }
 
 # list objects in bucket, v1
@@ -662,27 +634,6 @@ list_objects_s3api_v2() {
   export objects
 }
 
-# initialize a multipart upload
-# params:  bucket, key
-# return 0 for success, 1 for failure
-create_multipart_upload() {
-  if [ $# -ne 2 ]; then
-    echo "create multipart upload function must have bucket, key"
-    return 1
-  fi
-
-  local multipart_data
-  multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
-  if [[ $created -ne 0 ]]; then
-    echo "Error creating multipart upload: $upload_id"
-    return 1
-  fi
-
-  upload_id=$(echo "$multipart_data" | jq '.UploadId')
-  upload_id="${upload_id//\"/}"
-  export upload_id
-}
-
 # upload a single part of a multipart upload
 # params: bucket, key, upload ID, original (unsplit) file name, part number
 # return: 0 for success, 1 for failure
@@ -706,24 +657,25 @@ upload_part() {
 # return:  0 for success, 1 for failure
 multipart_upload_before_completion() {
   if [ $# -ne 4 ]; then
-    echo "multipart upload pre-completion command missing bucket, key, file, and/or part count"
+    log 2 "multipart upload pre-completion command missing bucket, key, file, and/or part count"
     return 1
   fi
 
   split_file "$3" "$4" || split_result=$?
   if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file"
+    log 2 "error splitting file"
     return 1
   fi
 
   create_multipart_upload "$1" "$2" || create_result=$?
   if [[ $create_result -ne 0 ]]; then
-    echo "error creating multpart upload"
+    log 2 "error creating multpart upload"
     return 1
   fi
 
   parts="["
   for ((i = 1; i <= $4; i++)); do
+    # shellcheck disable=SC2154
     upload_part "$1" "$2" "$upload_id" "$3" "$i" || local upload_result=$?
     if [[ $upload_result -ne 0 ]]; then
       echo "error uploading part $i"
@@ -739,24 +691,140 @@ multipart_upload_before_completion() {
   export parts
 }
 
+multipart_upload_before_completion_with_params() {
+  if [ $# -ne 10 ]; then
+    log 2 "multipart upload command missing bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging"
+    return 1
+  fi
+
+  split_file "$3" "$4" || split_result=$?
+  if [[ $split_result -ne 0 ]]; then
+    log 2 "error splitting file"
+    return 1
+  fi
+
+  create_multipart_upload_params "$1" "$2" "$5" "$6" "$7" "$8" "$9" "${10}" || local create_result=$?
+  if [[ $create_result -ne 0 ]]; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
+
+  parts="["
+  for ((i = 1; i <= $4; i++)); do
+    upload_part "$1" "$2" "$upload_id" "$3" "$i" || local upload_result=$?
+    if [[ $upload_result -ne 0 ]]; then
+      log 2 "error uploading part $i"
+      return 1
+    fi
+    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
+    if [[ $i -ne $4 ]]; then
+      parts+=","
+    fi
+  done
+  parts+="]"
+
+  export parts
+}
+
+multipart_upload_before_completion_custom() {
+  if [ $# -lt 4 ]; then
+    log 2 "multipart upload custom command missing bucket, key, file, part count, and/or optional params"
+    return 1
+  fi
+
+  split_file "$3" "$4" || local split_result=$?
+  if [[ $split_result -ne 0 ]]; then
+    log 2 "error splitting file"
+    return 1
+  fi
+
+  # shellcheck disable=SC2048
+  create_multipart_upload_custom "$1" "$2" ${*:5} || local create_result=$?
+  if [[ $create_result -ne 0 ]]; then
+    log 2 "error creating multipart upload"
+    return 1
+  fi
+  log 5 "upload ID: $upload_id"
+
+  parts="["
+  for ((i = 1; i <= $4; i++)); do
+    upload_part "$1" "$2" "$upload_id" "$3" "$i" || local upload_result=$?
+    if [[ $upload_result -ne 0 ]]; then
+      log 2 "error uploading part $i"
+      return 1
+    fi
+    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
+    if [[ $i -ne $4 ]]; then
+      parts+=","
+    fi
+  done
+  parts+="]"
+
+  export parts
+}
+
+multipart_upload_custom() {
+  if [ $# -lt 4 ]; then
+    log 2 "multipart upload custom command missing bucket, key, file, part count, and/or optional additional params"
+    return 1
+  fi
+
+  # shellcheck disable=SC2048
+  multipart_upload_before_completion_custom "$1" "$2" "$3" "$4" ${*:5} || local result=$?
+  if [[ $result -ne 0 ]]; then
+    log 2 "error performing pre-completion multipart upload"
+    return 1
+  fi
+
+  log 5 "upload ID: $upload_id, parts: $parts"
+  complete_multipart_upload "$1" "$2" "$upload_id" "$parts" || local completed=$?
+  if [[ $completed -ne 0 ]]; then
+    log 2 "Error completing upload"
+    return 1
+  fi
+  return 0
+}
+
+multipart_upload() {
+  if [ $# -ne 4 ]; then
+    log 2 "multipart upload command missing bucket, key, file, and/or part count"
+    return 1
+  fi
+
+  multipart_upload_before_completion "$1" "$2" "$3" "$4" || local result=$?
+  if [[ $result -ne 0 ]]; then
+    log 2 "error performing pre-completion multipart upload"
+    return 1
+  fi
+
+  complete_multipart_upload "$1" "$2" "$upload_id" "$parts" || local completed=$?
+  if [[ $completed -ne 0 ]]; then
+    log 2 "Error completing upload"
+    return 1
+  fi
+  return 0
+}
+
 # perform a multi-part upload
 # params:  bucket, key, source file location, number of parts
 # return 0 for success, 1 for failure
-multipart_upload() {
-  if [ $# -ne 4 ]; then
-    echo "multipart upload command missing bucket, key, file, and/or part count"
+multipart_upload_with_params() {
+  if [ $# -ne 10 ]; then
+    log 2 "multipart upload command requires bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging"
     return 1
   fi
+  log 5 "1: $1, 2: $2, 3: $3, 4: $4, 5: $5, 6: $6, 7: $7, 8: $8, 9: $9, 10: ${10}"
 
-  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
+  multipart_upload_before_completion_with_params "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" "${10}" || result=$?
   if [[ $result -ne 0 ]]; then
-    echo "error performing pre-completion multipart upload"
+    log 2 "error performing pre-completion multipart upload"
     return 1
   fi
+  log 5 "Upload parts:  $parts"
 
-  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
+  complete_multipart_upload "$1" "$2" "$upload_id" "$parts" || local completed=$?
   if [[ $completed -ne 0 ]]; then
-    echo "Error completing upload: $error"
+    log 2 "Error completing upload"
     return 1
   fi
   return 0
