@@ -5903,7 +5903,7 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 }
 
 func PutBucketAcl_invalid_owner(s *S3Conf) error {
-	testName := "PutBucketAcl_invalid_acl_acp_and_grants"
+	testName := "PutBucketAcl_invalid_owner"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
@@ -5921,6 +5921,32 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 					ID: getPtr("invalidOwner"),
 				},
 			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketAcl_invalid_owner_not_in_body(s *S3Conf) error {
+	testName := "PutBucketAcl_invalid_owner_not_in_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := createUsers(s, []user{{"grt1", "grt1secret", "user"}}); err != nil {
+			return err
+		}
+
+		newConf := *s
+		newConf.awsID = "grt1"
+		newConf.awsSecret = "grt1secret"
+		userClient := s3.NewFromConfig(newConf.Config())
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicRead,
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -5987,12 +6013,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
-			AccessControlPolicy: &types.AccessControlPolicy{
-				Owner: &types.Owner{
-					ID: &s.awsID,
-				},
-			},
-			ACL: types.BucketCannedACLPublicReadWrite,
+			ACL:    types.BucketCannedACLPublicReadWrite,
 		})
 		cancel()
 		if err != nil {
@@ -6023,12 +6044,7 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
-			Bucket: &bucket,
-			AccessControlPolicy: &types.AccessControlPolicy{
-				Owner: &types.Owner{
-					ID: &s.awsID,
-				},
-			},
+			Bucket:    &bucket,
 			GrantRead: getPtr("grt1"),
 		})
 		cancel()
