@@ -25,6 +25,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -40,7 +41,7 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, region string, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, mm *metrics.Manager, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -54,16 +55,16 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		ctx.Locals("startTime", time.Now())
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), logger, mm)
 		}
 
 		authData, err := utils.ParseAuthorization(authorization)
 		if err != nil {
-			return sendResponse(ctx, err, logger)
+			return sendResponse(ctx, err, logger, mm)
 		}
 
 		if authData.Algorithm != "AWS4-HMAC-SHA256" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), logger, mm)
 		}
 
 		if authData.Region != region {
@@ -71,40 +72,40 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 				Code:           "SignatureDoesNotMatch",
 				Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", authData.Region),
 				HTTPStatusCode: http.StatusForbidden,
-			}, logger)
+			}, logger, mm)
 		}
 
 		ctx.Locals("isRoot", authData.Access == root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), logger, mm)
 		}
 		if err != nil {
-			return sendResponse(ctx, err, logger)
+			return sendResponse(ctx, err, logger, mm)
 		}
 		ctx.Locals("account", account)
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), logger, mm)
 		}
 
 		// Parse the date and check the date validity
 		tdate, err := time.Parse(iso8601Format, date)
 		if err != nil {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), logger, mm)
 		}
 
 		if date[:8] != authData.Date {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), logger)
+			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), logger, mm)
 		}
 
 		// Validate the dates difference
 		err = utils.ValidateDate(tdate)
 		if err != nil {
-			return sendResponse(ctx, err, logger)
+			return sendResponse(ctx, err, logger, mm)
 		}
 
 		if utils.IsBigDataAction(ctx) {
@@ -125,7 +126,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 
 			// Compare the calculated hash with the hash provided
 			if hashPayload != hexPayload {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), logger)
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), logger, mm)
 			}
 		}
 
@@ -134,13 +135,13 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		if contentLengthStr != "" {
 			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
 			if err != nil {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger)
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
 			}
 		}
 
 		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength, debug)
 		if err != nil {
-			return sendResponse(ctx, err, logger)
+			return sendResponse(ctx, err, logger, mm)
 		}
 
 		return ctx.Next()
@@ -164,6 +165,6 @@ func (a accounts) getAccount(access string) (auth.Account, error) {
 	return a.iam.GetUserAccount(access)
 }
 
-func sendResponse(ctx *fiber.Ctx, err error, logger s3log.AuditLogger) error {
-	return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
+func sendResponse(ctx *fiber.Ctx, err error, logger s3log.AuditLogger, mm *metrics.Manager) error {
+	return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger, MetricsMng: mm})
 }

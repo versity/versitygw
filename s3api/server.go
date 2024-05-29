@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
@@ -39,7 +40,17 @@ type S3ApiServer struct {
 	health   string
 }
 
-func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, evs s3event.S3EventSender, opts ...Option) (*S3ApiServer, error) {
+func New(
+	app *fiber.App,
+	be backend.Backend,
+	root middlewares.RootUserConfig,
+	port, region string,
+	iam auth.IAMService,
+	l s3log.AuditLogger,
+	evs s3event.S3EventSender,
+	mm *metrics.Manager,
+	opts ...Option,
+) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		app:     app,
 		backend: be,
@@ -61,17 +72,17 @@ func New(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, po
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
-	app.Use(middlewares.DecodeURL(l))
+	app.Use(middlewares.DecodeURL(l, mm))
 	app.Use(middlewares.RequestLogger(server.debug))
 
 	// Authentication middlewares
-	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, region, server.debug))
-	app.Use(middlewares.VerifyV4Signature(root, iam, l, region, server.debug))
-	app.Use(middlewares.ProcessChunkedBody(root, iam, l, region))
+	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, mm, region, server.debug))
+	app.Use(middlewares.VerifyV4Signature(root, iam, l, mm, region, server.debug))
+	app.Use(middlewares.ProcessChunkedBody(root, iam, l, mm, region))
 	app.Use(middlewares.VerifyMD5Body(l))
 	app.Use(middlewares.AclParser(be, l, server.readonly))
 
-	server.router.Init(app, be, iam, l, evs, server.debug, server.readonly)
+	server.router.Init(app, be, iam, l, evs, mm, server.debug, server.readonly)
 
 	return server, nil
 }

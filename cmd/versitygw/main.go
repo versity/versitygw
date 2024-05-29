@@ -27,6 +27,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3event"
@@ -62,6 +63,9 @@ var (
 	iamCacheDisable                        bool
 	iamCacheTTL                            int
 	iamCachePrune                          int
+	metricsService                         string
+	statsdServers                          string
+	dogstatsServers                        string
 )
 
 var (
@@ -398,6 +402,27 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_READ_ONLY"},
 			Destination: &readonly,
 		},
+		&cli.StringFlag{
+			Name:        "metrics-service-name",
+			Usage:       "service name tag for metrics, hostname if blank",
+			EnvVars:     []string{"VGW_METRICS_SERVICE_NAME"},
+			Aliases:     []string{"msn"},
+			Destination: &metricsService,
+		},
+		&cli.StringFlag{
+			Name:        "metrics-statsd-servers",
+			Usage:       "StatsD server urls comma separated. e.g. 'statsd1.example.com:8125,statsd2.example.com:8125'",
+			EnvVars:     []string{"VGW_METRICS_STATSD_SERVERS"},
+			Aliases:     []string{"mss"},
+			Destination: &statsdServers,
+		},
+		&cli.StringFlag{
+			Name:        "metrics-dogstatsd-servers",
+			Usage:       "DogStatsD server urls comma separated. e.g. '127.0.0.1:8125,dogstats.example.com:8125'",
+			EnvVars:     []string{"VGW_METRICS_DOGSTATS_SERVERS"},
+			Aliases:     []string{"mds"},
+			Destination: &dogstatsServers,
+		},
 	}
 }
 
@@ -508,6 +533,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("setup logger: %w", err)
 	}
 
+	metricsManager, err := metrics.NewManager(ctx, metrics.Config{
+		ServiceName:      metricsService,
+		StatsdServers:    statsdServers,
+		DogStatsdServers: dogstatsServers,
+	})
+	if err != nil {
+		return fmt.Errorf("init metrics manager: %w", err)
+	}
+
 	evSender, err := s3event.InitEventSender(&s3event.EventConfig{
 		KafkaURL:             kafkaURL,
 		KafkaTopic:           kafkaTopic,
@@ -524,7 +558,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
-	}, port, region, iam, logger, evSender, opts...)
+	}, port, region, iam, logger, evSender, metricsManager, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}
@@ -585,6 +619,10 @@ Loop:
 			}
 			fmt.Fprintf(os.Stderr, "close event sender: %v\n", err)
 		}
+	}
+
+	if metricsManager != nil {
+		metricsManager.Close()
 	}
 
 	return saveErr

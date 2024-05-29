@@ -16,6 +16,7 @@ require (
 	github.com/nats-io/nats.go v1.35.0
 	github.com/pkg/xattr v0.4.9
 	github.com/segmentio/kafka-go v0.4.47
+	github.com/smira/go-statsd v1.3.3
 	github.com/urfave/cli/v2 v2.27.2
 	github.com/valyala/fasthttp v1.54.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
@@ -26,6 +27,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.8.0 // indirect
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
+	github.com/DataDog/datadog-go/v5 v5.5.0 // indirect
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.20.9 // indirect
