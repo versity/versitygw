@@ -593,14 +593,6 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</AccessControlPolicy>
 	`
 
-	succBody := `
-	<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-		<Owner>
-			<ID>valid access</ID>
-		</Owner>
-	</AccessControlPolicy>
-	`
-
 	tagBody := `
 	<Tagging xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
 		<TagSet>
@@ -690,10 +682,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 
 	// PutBucketAcl incorrect bucket owner case
 	incorrectBucketOwner := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(invOwnerBody))
-	incorrectBucketOwner.Header.Set("X-Amz-Acl", "private")
 
 	// PutBucketAcl acl success
-	aclSuccReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(succBody))
+	aclSuccReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", nil)
 	aclSuccReq.Header.Set("X-Amz-Acl", "private")
 
 	// Invalid acl body case

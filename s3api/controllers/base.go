@@ -1142,7 +1142,6 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		var input *s3.PutBucketAclInput
-		var accessControlPolicy auth.AccessControlPolicy
 
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -1165,21 +1164,21 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = xml.Unmarshal(ctx.Body(), &accessControlPolicy)
-		if err != nil {
-			if c.debug {
-				log.Printf("error unmarshalling access control policy: %v", err)
+		if len(ctx.Body()) > 0 {
+			var accessControlPolicy auth.AccessControlPolicy
+			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
+			if err != nil {
+				if c.debug {
+					log.Printf("error unmarshalling access control policy: %v", err)
+				}
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+					&MetaOpts{
+						Logger:      c.logger,
+						Action:      metrics.ActionPutBucketAcl,
+						BucketOwner: parsedAcl.Owner,
+					})
 			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionPutBucketAcl,
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
 
-		if len(accessControlPolicy.AccessControlList.Grants) > 0 {
 			if grants+acl != "" {
 				if c.debug {
 					log.Printf("invalid request: %q (grants) %q (acl)",
@@ -1218,7 +1217,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 						BucketOwner: parsedAcl.Owner,
 					})
 			}
-			if len(accessControlPolicy.AccessControlList.Grants) > 0 || grants != "" {
+			if len(ctx.Body()) > 0 || grants != "" {
 				if c.debug {
 					log.Printf("invalid request: %q (grants) %q (acl)",
 						grants, acl)
@@ -1237,7 +1236,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				Bucket: &bucket,
 				ACL:    types.BucketCannedACL(acl),
 				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner: &accessControlPolicy.Owner,
+					Owner: &types.Owner{
+						ID: &acct.Access,
+					},
 				},
 			}
 		}
@@ -1250,12 +1251,15 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				GrantWrite:       &granWrite,
 				GrantWriteACP:    &grantWriteACP,
 				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner: &accessControlPolicy.Owner,
+					Owner: &types.Owner{
+						ID: &acct.Access,
+					},
 				},
 				ACL: "",
 			}
 		}
 
+		fmt.Println(*input, parsedAcl)
 		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam)
 		if err != nil {
 			return SendResponse(ctx, err,
