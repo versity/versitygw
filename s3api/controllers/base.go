@@ -2753,7 +2753,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
-				Action:      "CreateMultipartUpload",
+				Action:      metrics.ActionCreateMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -2805,9 +2805,9 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 	}
 	if l.MetricsMng != nil {
 		if l.ObjectCount > 0 {
-			l.MetricsMng.Send(err, l.Action, l.ObjectCount)
+			l.MetricsMng.Send(ctx, err, l.Action, l.ObjectCount, l.Status)
 		} else {
-			l.MetricsMng.Send(err, l.Action, l.ContentLength)
+			l.MetricsMng.Send(ctx, err, l.Action, l.ContentLength, l.Status)
 		}
 	}
 	if err != nil {
@@ -2854,9 +2854,9 @@ const (
 func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 	if l.MetricsMng != nil {
 		if l.ObjectCount > 0 {
-			l.MetricsMng.Send(err, l.Action, l.ObjectCount)
+			l.MetricsMng.Send(ctx, err, l.Action, l.ObjectCount, l.Status)
 		} else {
-			l.MetricsMng.Send(err, l.Action, l.ContentLength)
+			l.MetricsMng.Send(ctx, err, l.Action, l.ContentLength, l.Status)
 		}
 	}
 	if err != nil {

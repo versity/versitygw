@@ -16,10 +16,15 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/s3err"
 )
 
 var (
@@ -107,50 +112,76 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	return mgr, nil
 }
 
-func (m *Manager) Send(err error, action string, count int64) {
+func (m *Manager) Send(ctx *fiber.Ctx, err error, action string, count int64, status int) {
 	// In case of Authentication failures, url parsing ...
 	if action == "" {
 		action = ActionUndetected
 	}
+
+	a := ActionMap[action]
+	reqTags := []Tag{
+		{Key: "method", Value: ctx.Method()},
+		{Key: "api", Value: a.Service},
+		{Key: "action", Value: a.Name},
+	}
+
+	reqStatus := status
+
 	if err != nil {
-		m.increment(action, "failed_count")
+		var apierr s3err.APIError
+		if errors.As(err, &apierr) {
+			reqStatus = apierr.HTTPStatusCode
+		} else {
+			reqStatus = http.StatusInternalServerError
+		}
+	}
+	if reqStatus == 0 {
+		reqStatus = http.StatusOK
+	}
+
+	reqTags = append(reqTags, Tag{
+		Key:   "status",
+		Value: fmt.Sprintf("%v", reqStatus),
+	})
+
+	if err != nil {
+		m.increment("failed_count", reqTags...)
 	} else {
-		m.increment(action, "success_count")
+		m.increment("success_count", reqTags...)
 	}
 
 	switch action {
 	case ActionPutObject:
-		m.add(action, "bytes_written", count)
-		m.increment(action, "object_created_count")
+		m.add("bytes_written", count, reqTags...)
+		m.increment("object_created_count", reqTags...)
 	case ActionCompleteMultipartUpload:
-		m.increment(action, "object_created_count")
+		m.increment("object_created_count", reqTags...)
 	case ActionUploadPart:
-		m.add(action, "bytes_written", count)
+		m.add("bytes_written", count, reqTags...)
 	case ActionGetObject:
-		m.add(action, "bytes_read", count)
+		m.add("bytes_read", count, reqTags...)
 	case ActionDeleteObject:
-		m.increment(action, "object_removed_count")
+		m.increment("object_removed_count", reqTags...)
 	case ActionDeleteObjects:
-		m.add(action, "object_removed_count", count)
+		m.add("object_removed_count", count, reqTags...)
 	}
 }
 
 // increment increments the key by one
-func (m *Manager) increment(module, key string, tags ...Tag) {
-	m.add(module, key, 1, tags...)
+func (m *Manager) increment(key string, tags ...Tag) {
+	m.add(key, 1, tags...)
 }
 
 // add adds value to key
-func (m *Manager) add(module, key string, value int64, tags ...Tag) {
+func (m *Manager) add(key string, value int64, tags ...Tag) {
 	if m.ctx.Err() != nil {
 		return
 	}
 
 	d := datapoint{
-		module: module,
-		key:    key,
-		value:  value,
-		tags:   tags,
+		key:   key,
+		value: value,
+		tags:  tags,
 	}
 
 	select {
@@ -174,22 +205,21 @@ func (m *Manager) Close() {
 
 // publisher is the interface for interacting with the metrics plugins
 type publisher interface {
-	Add(module, key string, value int64, tags ...Tag)
+	Add(key string, value int64, tags ...Tag)
 	Close()
 }
 
 func (m *Manager) addForwarder(addChan <-chan datapoint) {
 	for data := range addChan {
 		for _, s := range m.publishers {
-			s.Add(data.module, data.key, data.value, data.tags...)
+			s.Add(data.key, data.value, data.tags...)
 		}
 	}
 	m.wg.Done()
 }
 
 type datapoint struct {
-	module string
-	key    string
-	value  int64
-	tags   []Tag
+	key   string
+	value int64
+	tags  []Tag
 }
