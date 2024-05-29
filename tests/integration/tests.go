@@ -3040,6 +3040,17 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
 			return err
 		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Range:  getPtr("bytes=0-0"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+			return err
+		}
 		return nil
 	})
 }
