@@ -178,7 +178,7 @@ func createUser(ctx *cli.Context) error {
 	access, secret, role := ctx.String("access"), ctx.String("secret"), ctx.String("role")
 	userID, groupID, projectID := ctx.Int("user-id"), ctx.Int("group-id"), ctx.Int("projectID")
 	if access == "" || secret == "" {
-		return fmt.Errorf("invalid input parameters for the new user")
+		return fmt.Errorf("invalid input parameters for the new user access/secret keys")
 	}
 	if role != string(auth.RoleAdmin) && role != string(auth.RoleUser) && role != string(auth.RoleUserPlus) {
 		return fmt.Errorf("invalid input parameter for role: %v", role)
@@ -240,7 +240,7 @@ func createUser(ctx *cli.Context) error {
 func deleteUser(ctx *cli.Context) error {
 	access := ctx.String("access")
 	if access == "" {
-		return fmt.Errorf("invalid input parameter for the new user")
+		return fmt.Errorf("invalid input parameter for the user access key")
 	}
 
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/delete-user?access=%v", adminEndpoint, access), nil)
