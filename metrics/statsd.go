@@ -15,8 +15,6 @@
 package metrics
 
 import (
-	"fmt"
-
 	"github.com/smira/go-statsd"
 )
 
@@ -44,10 +42,10 @@ func (s *vgwStatsd) Close() {
 }
 
 // Add adds value to key
-func (s *vgwStatsd) Add(module, key string, value int64, tags ...Tag) {
+func (s *vgwStatsd) Add(key string, value int64, tags ...Tag) {
 	stags := make([]statsd.Tag, len(tags))
 	for i, t := range tags {
 		stags[i] = statsd.StringTag(t.Key, t.Value)
 	}
-	s.c.Incr(fmt.Sprintf("%v.%v", module, key), value, stags...)
+	s.c.Incr(key, value, stags...)
 }

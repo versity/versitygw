@@ -14,6 +14,15 @@
 
 package metrics
 
+type Action struct {
+	Name    string
+	Service string
+}
+
+var (
+	ActionMap map[string]Action
+)
+
 var (
 	ActionUndetected                 = "ActionUnDetected"
 	ActionAbortMultipartUpload       = "s3_AbortMultipartUpload"
@@ -61,3 +70,189 @@ var (
 	ActionUploadPart                 = "s3_UploadPart"
 	ActionUploadPartCopy             = "s3_UploadPartCopy"
 )
+
+func init() {
+	ActionMap = make(map[string]Action)
+
+	ActionMap[ActionUndetected] = Action{
+		Name:    "ActionUnDetected",
+		Service: "unknown",
+	}
+
+	ActionMap[ActionAbortMultipartUpload] = Action{
+		Name:    "AbortMultipartUpload",
+		Service: "s3",
+	}
+	ActionMap[ActionCompleteMultipartUpload] = Action{
+		Name:    "CompleteMultipartUpload",
+		Service: "s3",
+	}
+	ActionMap[ActionCopyObject] = Action{
+		Name:    "CopyObject",
+		Service: "s3",
+	}
+	ActionMap[ActionCreateBucket] = Action{
+		Name:    "CreateBucket",
+		Service: "s3",
+	}
+	ActionMap[ActionCreateMultipartUpload] = Action{
+		Name:    "CreateMultipartUpload",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucket] = Action{
+		Name:    "DeleteBucket",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketPolicy] = Action{
+		Name:    "DeleteBucketPolicy",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketTagging] = Action{
+		Name:    "DeleteBucketTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteObject] = Action{
+		Name:    "DeleteObject",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteObjectTagging] = Action{
+		Name:    "DeleteObjectTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteObjects] = Action{
+		Name:    "DeleteObjects",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketAcl] = Action{
+		Name:    "GetBucketAcl",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketPolicy] = Action{
+		Name:    "GetBucketPolicy",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketTagging] = Action{
+		Name:    "GetBucketTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketVersioning] = Action{
+		Name:    "GetBucketVersioning",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObject] = Action{
+		Name:    "GetObject",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectAcl] = Action{
+		Name:    "GetObjectAcl",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectAttributes] = Action{
+		Name:    "GetObjectAttributes",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectLegalHold] = Action{
+		Name:    "GetObjectLegalHold",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectLockConfiguration] = Action{
+		Name:    "GetObjectLockConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectRetention] = Action{
+		Name:    "GetObjectRetention",
+		Service: "s3",
+	}
+	ActionMap[ActionGetObjectTagging] = Action{
+		Name:    "GetObjectTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionHeadBucket] = Action{
+		Name:    "HeadBucket",
+		Service: "s3",
+	}
+	ActionMap[ActionHeadObject] = Action{
+		Name:    "HeadObject",
+		Service: "s3",
+	}
+	ActionMap[ActionListAllMyBuckets] = Action{
+		Name:    "ListAllMyBuckets",
+		Service: "s3",
+	}
+	ActionMap[ActionListMultipartUploads] = Action{
+		Name:    "ListMultipartUploads",
+		Service: "s3",
+	}
+	ActionMap[ActionListObjectVersions] = Action{
+		Name:    "ListObjectVersions",
+		Service: "s3",
+	}
+	ActionMap[ActionListObjects] = Action{
+		Name:    "ListObjects",
+		Service: "s3",
+	}
+	ActionMap[ActionListObjectsV2] = Action{
+		Name:    "ListObjectsV2",
+		Service: "s3",
+	}
+	ActionMap[ActionListParts] = Action{
+		Name:    "ListParts",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketAcl] = Action{
+		Name:    "PutBucketAcl",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketPolicy] = Action{
+		Name:    "PutBucketPolicy",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketTagging] = Action{
+		Name:    "PutBucketTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketVersioning] = Action{
+		Name:    "PutBucketVersioning",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObject] = Action{
+		Name:    "PutObject",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectAcl] = Action{
+		Name:    "PutObjectAcl",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectLegalHold] = Action{
+		Name:    "PutObjectLegalHold",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectLockConfiguration] = Action{
+		Name:    "PutObjectLockConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectRetention] = Action{
+		Name:    "PutObjectRetention",
+		Service: "s3",
+	}
+	ActionMap[ActionPutObjectTagging] = Action{
+		Name:    "PutObjectTagging",
+		Service: "s3",
+	}
+	ActionMap[ActionRestoreObject] = Action{
+		Name:    "RestoreObject",
+		Service: "s3",
+	}
+	ActionMap[ActionSelectObjectContent] = Action{
+		Name:    "SelectObjectContent",
+		Service: "s3",
+	}
+	ActionMap[ActionUploadPart] = Action{
+		Name:    "UploadPart",
+		Service: "s3",
+	}
+	ActionMap[ActionUploadPartCopy] = Action{
+		Name:    "UploadPartCopy",
+		Service: "s3",
+	}
+}
