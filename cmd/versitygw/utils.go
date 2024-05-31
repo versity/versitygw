@@ -71,7 +71,7 @@ func generateEventFiltersConfig(ctx *cli.Context) error {
 		s3event.EventObjectRestoreCompleted:     true,
 	}
 
-	configBytes, err := json.Marshal(config)
+	configBytes, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("parse event config: %w", err)
 	}
