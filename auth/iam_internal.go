@@ -70,7 +70,7 @@ func (s *IAMServiceInternal) CreateAccount(account Account) error {
 
 		_, ok := conf.AccessAccounts[account.Access]
 		if ok {
-			return nil, fmt.Errorf("account already exists")
+			return nil, ErrUserExists
 		}
 		conf.AccessAccounts[account.Access] = account
 

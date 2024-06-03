@@ -48,28 +48,42 @@ type IAMService interface {
 	Shutdown() error
 }
 
-var ErrNoSuchUser = errors.New("user not found")
+var (
+	// ErrUserExists is returned when the user already exists
+	ErrUserExists = errors.New("user already exists")
+	// ErrNoSuchUser is returned when the user does not exist
+	ErrNoSuchUser = errors.New("user not found")
+)
 
 type Opts struct {
-	Dir                string
-	LDAPServerURL      string
-	LDAPBindDN         string
-	LDAPPassword       string
-	LDAPQueryBase      string
-	LDAPObjClasses     string
-	LDAPAccessAtr      string
-	LDAPSecretAtr      string
-	LDAPRoleAtr        string
-	S3Access           string
-	S3Secret           string
-	S3Region           string
-	S3Bucket           string
-	S3Endpoint         string
-	S3DisableSSlVerfiy bool
-	S3Debug            bool
-	CacheDisable       bool
-	CacheTTL           int
-	CachePrune         int
+	Dir                    string
+	LDAPServerURL          string
+	LDAPBindDN             string
+	LDAPPassword           string
+	LDAPQueryBase          string
+	LDAPObjClasses         string
+	LDAPAccessAtr          string
+	LDAPSecretAtr          string
+	LDAPRoleAtr            string
+	VaultEndpointURL       string
+	VaultSecretStoragePath string
+	VaultMountPath         string
+	VaultRootToken         string
+	VaultRoleId            string
+	VaultRoleSecret        string
+	VaultServerCert        string
+	VaultClientCert        string
+	VaultClientCertKey     string
+	S3Access               string
+	S3Secret               string
+	S3Region               string
+	S3Bucket               string
+	S3Endpoint             string
+	S3DisableSSlVerfiy     bool
+	S3Debug                bool
+	CacheDisable           bool
+	CacheTTL               int
+	CachePrune             int
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -90,6 +104,11 @@ func New(o *Opts) (IAMService, error) {
 			o.S3Endpoint, o.S3DisableSSlVerfiy, o.S3Debug)
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
+	case o.VaultEndpointURL != "":
+		svc, err = NewVaultIAMService(o.VaultEndpointURL, o.VaultSecretStoragePath,
+			o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
+			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
+		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
 	default:
 		// if no iam options selected, default to the single user mode
 		fmt.Println("No IAM service configured, enabling single account mode")
