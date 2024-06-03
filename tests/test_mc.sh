@@ -36,6 +36,15 @@ export RUN_MC=true
   test_common_set_get_delete_bucket_tags "mc"
 }
 
+# delete-object - put-object tests
+
+# delete-objects - test setup/teardown
+
+# delete-object-tagging
+@test "test_delete_object_tagging" {
+  test_common_delete_object_tagging "mc"
+}
+
 @test "test_put_object-with-data-mc" {
   test_common_put_object_with_data "mc"
 }
@@ -94,9 +103,6 @@ export RUN_MC=true
   delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
 }
 
-@test "test_delete_object_tagging" {
-  test_common_delete_object_tagging "mc"
-}
 
 @test "test_get_bucket_location" {
   test_common_get_bucket_location "mc"

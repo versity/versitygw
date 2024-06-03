@@ -12,6 +12,7 @@ copy_object() {
   elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
     error=$(aws --no-verify-ssl s3api copy-object --copy-source "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
+    log 5 "s3cmd ${S3CMD_OPTS[*]} --no-check-certificate cp s3://$2 s3://$3/$4"
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate cp "s3://$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure cp "$MC_ALIAS/$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
