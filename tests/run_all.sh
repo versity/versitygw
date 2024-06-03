@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [[ -z "$VERSITYGW_TEST_ENV" ]]; then
-  echo "Error:  VERSITYGW_TEST_ENV parameter must be set"
+if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
+  echo "Error:  VERSITYGW_TEST_ENV parameter must be set, or BYPASS_ENV_FILE must be set to true"
   exit 1
 fi
 

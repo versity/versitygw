@@ -656,8 +656,13 @@ legal_hold_retention_setup() {
 #  [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
 #  [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || fail "unexpected error: $upload_part_copy_error"
 #
-#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-16000000" || local upload_two_result=$?
+#  range_max=$((5*1024*1024-1))
+#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-$range_max" || local upload_two_result=$?
 #  [[ $upload_two_result -eq 0 ]] || fail "range should be valid"
+#
+#  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy" || fail "error retrieving object after upload"
+#  object_size=$(stat -f%z "$test_file_folder/$bucket_file-copy")
+#  [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
 #
 #  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 #  delete_test_files $bucket_file

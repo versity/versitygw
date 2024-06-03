@@ -208,6 +208,7 @@ setup_bucket() {
     return 1
   fi
   local create_result
+  log 5 "util.setup_bucket: command type: $1, bucket name: $2"
   create_bucket "$1" "$2" || create_result=$?
   if [[ $create_result -ne 0 ]]; then
     log 2 "Error creating bucket"

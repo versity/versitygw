@@ -19,7 +19,7 @@ handle_param() {
       -s|--static)
           export RECREATE_BUCKETS=false
           ;;
-      s3|s3api|aws|s3cmd|mc|user)
+      s3|s3api|aws|s3cmd|mc)
           set_command_type "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -51,8 +51,8 @@ while [[ "$#" -gt 0 ]]; do
   shift # past argument or value
 done
 
-if [[ -z "$VERSITYGW_TEST_ENV" ]]; then
-  echo "Error:  VERSITYGW_TEST_ENV parameter must be set"
+if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
+  echo "Error:  VERSITYGW_TEST_ENV parameter must be set, or BYPASS_ENV_FILE must be set to true"
   exit 1
 fi
 
