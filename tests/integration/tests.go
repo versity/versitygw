@@ -3031,14 +3031,18 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		resp, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
-			Range:  getPtr("bytes=1000000000-999999999999"),
+			Range:  getPtr("bytes=1500-999999999999"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+		if err != nil {
 			return err
+		}
+
+		if *resp.ContentLength != dataLength-1500 {
+			return fmt.Errorf("expected content-length to be %v, instead got %v", dataLength-1500, *resp.ContentLength)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
