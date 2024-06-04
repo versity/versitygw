@@ -33,6 +33,12 @@ func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 		return nil, err
 	}
 
+	if s.endpoint != "" {
+		return s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = &s.endpoint
+		}), nil
+	}
+
 	return s3.NewFromConfig(cfg), nil
 }
 
@@ -50,11 +56,6 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 		config.WithHTTPClient(client),
 	}
 
-	if s.endpoint != "" {
-		opts = append(opts,
-			config.WithEndpointResolverWithOptions(s))
-	}
-
 	if s.disableChecksum {
 		opts = append(opts,
 			config.WithAPIOptions([]func(*middleware.Stack) error{v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware}))
@@ -66,14 +67,4 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 	}
 
 	return config.LoadDefaultConfig(ctx, opts...)
-}
-
-// ResolveEndpoint is used for on prem or non-aws endpoints
-func (s *S3Proxy) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) {
-	return aws.Endpoint{
-		PartitionID:       "aws",
-		URL:               s.endpoint,
-		SigningRegion:     s.awsRegion,
-		HostnameImmutable: true,
-	}, nil
 }

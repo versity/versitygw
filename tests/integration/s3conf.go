@@ -93,13 +93,8 @@ func (c *S3Conf) getCreds() credentials.StaticCredentialsProvider {
 	return credentials.NewStaticCredentialsProvider(c.awsID, c.awsSecret, "")
 }
 
-func (c *S3Conf) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) {
-	return aws.Endpoint{
-		PartitionID:       "aws",
-		URL:               c.endpoint,
-		SigningRegion:     c.awsRegion,
-		HostnameImmutable: true,
-	}, nil
+func (c *S3Conf) GetClient() *s3.Client {
+	return s3.NewFromConfig(c.Config())
 }
 
 func (c *S3Conf) Config() aws.Config {
@@ -112,11 +107,6 @@ func (c *S3Conf) Config() aws.Config {
 		config.WithRegion(c.awsRegion),
 		config.WithCredentialsProvider(creds),
 		config.WithHTTPClient(client),
-	}
-
-	if c.endpoint != "" && c.endpoint != "aws" {
-		opts = append(opts,
-			config.WithEndpointResolverWithOptions(c))
 	}
 
 	if c.checksumDisable {
@@ -135,11 +125,15 @@ func (c *S3Conf) Config() aws.Config {
 		log.Fatalln("error:", err)
 	}
 
+	if c.endpoint != "" && c.endpoint != "aws" {
+		cfg.BaseEndpoint = &c.endpoint
+	}
+
 	return cfg
 }
 
 func (c *S3Conf) UploadData(r io.Reader, bucket, object string) error {
-	uploader := manager.NewUploader(s3.NewFromConfig(c.Config()))
+	uploader := manager.NewUploader(c.GetClient())
 	uploader.PartSize = c.PartSize
 	uploader.Concurrency = c.Concurrency
 
@@ -154,7 +148,7 @@ func (c *S3Conf) UploadData(r io.Reader, bucket, object string) error {
 }
 
 func (c *S3Conf) DownloadData(w io.WriterAt, bucket, object string) (int64, error) {
-	downloader := manager.NewDownloader(s3.NewFromConfig(c.Config()))
+	downloader := manager.NewDownloader(c.GetClient())
 	downloader.PartSize = c.PartSize
 	downloader.Concurrency = c.Concurrency
 
