@@ -21,14 +21,11 @@ log() {
     6) log_level="TRACE";;
     *) echo "invalid log level $1"; return 1
   esac
-  if [[ "$2" == *"secret_key"* ]]; then
-    log_mask $log_level "$2"
+  if [[ "$2" == *"--secret"* ]]; then
+    log_mask "$log_level" "$2"
     return 0
   fi
-  echo "$log_level $2"
-  if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$log_level $2" >> "$TEST_LOG_FILE"
-  fi
+  log_message "$log_level" "$2"
 }
 
 log_mask() {
@@ -40,16 +37,33 @@ log_mask() {
 
   IFS=' ' read -r -a array <<< "$2"
 
+  mask_next=false
   for arg in "${array[@]}"; do
-    if [[ "$arg" == --secret_key=* ]]; then
+    if [[ $mask_next == true ]]; then
+      masked_args+=("********")
+      mask_next=false
+    elif [[ "$arg" == --secret_key=* ]]; then
       masked_args+=("--secret_key=********")
+    elif [[ "$arg" == --secret=* ]]; then
+      masked_args+=("--secret=********")
     else
+      if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]]; then
+        mask_next=true
+      fi
       masked_args+=("$arg")
     fi
   done
+  log_message "$log_level" "${masked_args[*]}"
+}
 
-  echo "$log_level ${masked_args[*]}"
+log_message() {
+  if [[ $# -ne 2 ]]; then
+    echo "log message requires level, message"
+    return 1
+  fi
+  now="$(date "+%Y-%m-%d %H:%M:%S")"
+  echo "$now $1 $2"
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$log_level ${masked_args[*]}" >> "$TEST_LOG_FILE"
+    echo "$now $1 $2" >> "$TEST_LOG_FILE"
   fi
 }

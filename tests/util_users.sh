@@ -76,6 +76,7 @@ delete_user() {
       echo "delete user command requires user ID"
       return 1
     fi
+    log 5 "$VERSITY_EXE admin --allow-insecure --access $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --endpoint-url $AWS_ENDPOINT_URL delete-user --access $1"
     error=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" delete-user --access "$1") || local delete_result=$?
 
 

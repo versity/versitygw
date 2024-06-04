@@ -67,7 +67,7 @@ start_versity() {
     else
       echo "Warning: no .env file found in tests folder"
     fi
-  else
+  elif [[ $BYPASS_ENV_FILE != "true" ]]; then
     # shellcheck source=./tests/.env.default
     source "$VERSITYGW_TEST_ENV"
   fi
@@ -106,6 +106,7 @@ start_versity_process() {
     return 1
   fi
   base_command+=(">" "$test_file_folder/versity_log_$1.txt" "2>&1")
+  log 5 "versity command: ${base_command[*]}"
   ("${base_command[@]}") &
   # shellcheck disable=SC2181
   if [[ $? -ne 0 ]]; then
@@ -135,6 +136,9 @@ run_versity_app_posix() {
   base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION"  --iam-dir="$USERS_FOLDER")
   if [ -n "$CERT" ] && [ -n "$KEY" ]; then
     base_command+=(--cert "$CERT" --key "$KEY")
+  fi
+  if [ -n "$PORT" ]; then
+    base_command+=(--port ":$PORT")
   fi
   base_command+=(posix "$LOCAL_FOLDER")
   export base_command
