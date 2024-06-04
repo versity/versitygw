@@ -1569,7 +1569,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	}
 
 	if startOffset+length > objSize+1 {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
+		length = objSize - startOffset + 1
 	}
 
 	var contentRange string
