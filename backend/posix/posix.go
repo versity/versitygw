@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -992,7 +993,11 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 
 	var parts []s3response.Part
 	for _, e := range ents {
-		pn, _ := strconv.Atoi(e.Name())
+		pn, err := strconv.Atoi(e.Name())
+		if err != nil {
+			// file is not a valid part file
+			continue
+		}
 		if pn <= partNumberMarker {
 			continue
 		}
@@ -1816,6 +1821,11 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	parts := []types.ObjectPart{}
 
 	for _, p := range resp.Parts {
+		if !(p.PartNumber > 0 && p.PartNumber <= math.MaxInt32) {
+			return s3response.GetObjectAttributesResult{},
+				s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+		}
+
 		partNumber := int32(p.PartNumber)
 		size := p.Size
 
