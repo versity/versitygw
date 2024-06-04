@@ -1379,6 +1379,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		contentLengthStr = "0"
 	}
 	bucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
+	storageClass := ctx.Get("X-Amz-Storage-Class")
 
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
@@ -1882,6 +1883,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				CopySourceIfUnmodifiedSince: umtime,
 				ExpectedBucketOwner:         &acct.Access,
 				Metadata:                    metadata,
+				StorageClass:                types.StorageClass(storageClass),
 			})
 		if err == nil {
 			return SendXMLResponse(ctx, res.CopyObjectResult, err,
