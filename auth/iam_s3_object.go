@@ -85,6 +85,13 @@ func NewS3(access, secret, region, bucket, endpoint string, sslSkipVerify, debug
 		return nil, fmt.Errorf("init s3 IAM: %v", err)
 	}
 
+	if endpoint != "" {
+		i.client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = &endpoint
+		})
+		return i, nil
+	}
+
 	i.client = s3.NewFromConfig(cfg)
 	return i, nil
 }
@@ -159,16 +166,6 @@ func (s *IAMServiceS3) ListUserAccounts() ([]Account, error) {
 	return accs, nil
 }
 
-// ResolveEndpoint is used for on prem or non-aws endpoints
-func (s *IAMServiceS3) ResolveEndpoint(service, region string, options ...interface{}) (aws.Endpoint, error) {
-	return aws.Endpoint{
-		PartitionID:       "aws",
-		URL:               s.endpoint,
-		SigningRegion:     s.region,
-		HostnameImmutable: true,
-	}, nil
-}
-
 func (s *IAMServiceS3) Shutdown() error {
 	return nil
 }
@@ -185,11 +182,6 @@ func (s *IAMServiceS3) getConfig() (aws.Config, error) {
 		config.WithRegion(s.region),
 		config.WithCredentialsProvider(creds),
 		config.WithHTTPClient(client),
-	}
-
-	if s.endpoint != "" {
-		opts = append(opts,
-			config.WithEndpointResolverWithOptions(s))
 	}
 
 	if s.debug {
