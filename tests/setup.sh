@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 
+source ./tests/env.sh
 source ./tests/setup_mc.sh
 source ./tests/versity.sh
 
 # bats setup function
 setup() {
-  start_versity || start_result=$?
-  if [[ $start_result -ne 0 ]]; then
-    echo "error starting versity executable"
+  if ! check_env_vars; then
+    log 2 "error checking env values"
     return 1
   fi
-
-  check_params || check_result=$?
-  if [[ $check_result -ne 0 ]]; then
-    echo "parameter check failed"
-    return 1
+  if [ "$RUN_VERSITYGW" == "true" ]; then
+    if ! run_versity_app; then
+      log 2 "error starting versity apps"
+      return 1
+    fi
   fi
 
   log 4 "Running test $BATS_TEST_NAME"
@@ -32,9 +32,8 @@ setup() {
   fi
 
   if [[ $RUN_MC == true ]]; then
-    check_add_mc_alias || check_result=$?
-    if [[ $check_result -ne 0 ]]; then
-      echo "mc alias check/add failed"
+    if ! check_add_mc_alias; then
+      log 2 "mc alias check/add failed"
       return 1
     fi
   fi
@@ -42,33 +41,6 @@ setup() {
   export AWS_PROFILE \
     BUCKET_ONE_NAME \
     BUCKET_TWO_NAME
-}
-
-# make sure required environment variables for tests are defined properly
-# return 0 for yes, 1 for no
-check_params() {
-  if [ -z "$BUCKET_ONE_NAME" ]; then
-    echo "No bucket one name set"
-    return 1
-  elif [ -z "$BUCKET_TWO_NAME" ]; then
-    echo "No bucket two name set"
-    return 1
-  elif [ -z "$RECREATE_BUCKETS" ]; then
-    echo "No recreate buckets parameter set"
-    return 1
-  elif [[ $RECREATE_BUCKETS != "true" ]] && [[ $RECREATE_BUCKETS != "false" ]]; then
-    echo "RECREATE_BUCKETS must be 'true' or 'false'"
-    return 1
-  fi
-  if [[ -z "$LOG_LEVEL" ]]; then
-    export LOG_LEVEL=2
-  else
-    export LOG_LEVEL
-  fi
-  if [[ -n "$TEST_LOG_FILE" ]]; then
-    export TEST_LOG_FILE
-  fi
-  return 0
 }
 
 # fail a test

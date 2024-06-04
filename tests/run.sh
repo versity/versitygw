@@ -5,9 +5,12 @@ show_help() {
     echo "Usage: $0 [option...]"
     echo "   -h, --help          Display this help message and exit"
     echo "   -s, --static        Don't remove buckets between tests"
-    echo "   aws                 Run tests with aws cli"
+    echo "   aws                 Run tests with aws (s3api) cli"
+    echo "   s3api               Run tests with s3api cli"
+    echo "   s3                  Run tests with s3 cli"
     echo "   s3cmd               Run tests with s3cmd utility"
     echo "   mc                  Run tests with mc utility"
+    echo "   aws-user            Run user tests with aws cli"
 }
 
 handle_param() {
@@ -19,7 +22,7 @@ handle_param() {
       -s|--static)
           export RECREATE_BUCKETS=false
           ;;
-      s3|s3api|aws|s3cmd|mc)
+      s3|s3api|aws|s3cmd|mc|aws-user)
           set_command_type "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -86,6 +89,9 @@ case $command_type in
     echo "Running mc tests ..."
     "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
     ;;
+  aws-user)
+    echo "Running aws user tests ..."
+    "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
 esac
 
 # shellcheck disable=SC2086

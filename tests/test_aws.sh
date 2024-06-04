@@ -28,6 +28,8 @@ source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/select_object_content.sh
 
+export RUN_USERS=true
+
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
   local bucket_file="bucket-file"
@@ -103,10 +105,10 @@ source ./tests/commands/select_object_content.sh
   os_name="$(uname)"
   if [[ "$os_name" == "Darwin" ]]; then
     now=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    five_seconds_later=$(date -j -v +5S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+    five_seconds_later=$(date -j -v +10S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
   else
     now=$(date +"%Y-%m-%dT%H:%M:%S")
-    five_seconds_later=$(date -d "$now 5 seconds" +"%Y-%m-%dT%H:%M:%S")
+    five_seconds_later=$(date -d "$now 10 seconds" +"%Y-%m-%dT%H:%M:%S")
   fi
 
   create_test_files "$bucket_file" || fail "error creating test file"
@@ -152,7 +154,7 @@ source ./tests/commands/select_object_content.sh
   get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error getting object"
   compare_files "$test_file_folder/$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "files not equal"
 
-  sleep 2
+  sleep 10
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -236,22 +238,18 @@ source ./tests/commands/select_object_content.sh
 #  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
 #}
 
-#@test "test_get_object_full_range" {
-#  bucket_file="bucket_file"
-#
-#  create_test_files "$bucket_file" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating test files"
-#  echo -n "0123456789" > "$test_file_folder/$bucket_file"
-#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
-#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=9-15" "$test_file_folder/$bucket_file-range" || fail "error getting range"
-#  cat "$test_file_folder/$bucket_file"
-#  cat "$test_file_folder/$bucket_file-range"
-#  ls -l "$test_file_folder/$bucket_file"
-#  ls -l "$test_file_folder/$bucket_file-range"
-#  compare_files "$test_file_folder/$bucket_file" "$test_file_folder/$bucket_file-range" || fail "files not equal"
-#}
+@test "test_get_object_full_range" {
+  bucket_file="bucket_file"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  echo -n "0123456789" > "$test_file_folder/$bucket_file"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
+  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=9-15" "$test_file_folder/$bucket_file-range" || fail "error getting range"
+  [[ "$(cat "$test_file_folder/$bucket_file-range")" == "9" ]] || fail "byte range not copied properly"
+}
 
 @test "test_put_object" {
   bucket_file="bucket_file"
@@ -490,8 +488,6 @@ legal_hold_retention_setup() {
   put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || local copy_result_two=$?
   [[ $copy_result_two -eq 0 ]] || fail "Failed to add object $object_two"
 
-  sleep 1
-
   list_objects_s3api_v1 "$BUCKET_ONE_NAME"
   key_one=$(echo "$objects" | jq -r '.Contents[0].Key')
   [[ $key_one == "$object_one" ]] || fail "Object one mismatch ($key_one, $object_one)"
@@ -646,27 +642,41 @@ legal_hold_retention_setup() {
   delete_test_files $bucket_file
 }
 
-#@test "test_multipart_upload_from_bucket_range" {
-#  local bucket_file="bucket-file"
-#
-#  create_large_file "$bucket_file" || error creating file "$bucket_file"
-#  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-#
-#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
-#  [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
-#  [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || fail "unexpected error: $upload_part_copy_error"
-#
-#  range_max=$((5*1024*1024-1))
-#  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-$range_max" || local upload_two_result=$?
-#  [[ $upload_two_result -eq 0 ]] || fail "range should be valid"
-#
-#  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy" || fail "error retrieving object after upload"
-#  object_size=$(stat -f%z "$test_file_folder/$bucket_file-copy")
-#  [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
-#
-#  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-#  delete_test_files $bucket_file
-#}
+@test "test_multipart_upload_from_bucket_range_too_large" {
+  local bucket_file="bucket-file"
+
+  create_large_file "$bucket_file" || error creating file "$bucket_file"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
+  [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
+  log 5 "error: $upload_part_copy_error"
+  [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || [[ $upload_part_copy_error == *"InvalidRange"* ]] || fail "unexpected error: $upload_part_copy_error"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
+
+@test "test_multipart_upload_from_bucket_range_valid" {
+  local bucket_file="bucket-file"
+
+  create_large_file "$bucket_file" || error creating file "$bucket_file"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  range_max=$((5*1024*1024-1))
+  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-$range_max" || fail "upload failure"
+
+  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy" || fail "error retrieving object after upload"
+  if [[ $(uname) == 'Darwin' ]]; then
+    object_size=$(stat -f%z "$test_file_folder/$bucket_file-copy")
+  else
+    object_size=$(stat --format=%s "$test_file_folder/$bucket_file-copy")
+  fi
+  [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files $bucket_file
+}
 
 @test "test-presigned-url-utf8-chars" {
   test_common_presigned_url_utf8_chars "aws"

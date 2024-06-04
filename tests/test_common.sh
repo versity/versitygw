@@ -461,6 +461,7 @@ test_common_put_bucket_acl() {
   fi
 
   acl_file="test-acl"
+  create_test_files "$acl_file"
 
 cat <<EOF > "$test_file_folder"/"$acl_file"
   {
@@ -562,6 +563,7 @@ EOF
   get_bucket_policy "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "error getting bucket policy after setting"
 
+  log 5 "$bucket_policy"
   returned_effect=$(echo "$bucket_policy" | jq -r '.Statement[0].Effect')
   [[ $effect == "$returned_effect" ]] || fail "effect mismatch ($effect, $returned_effect)"
   returned_principal=$(echo "$bucket_policy" | jq -r '.Statement[0].Principal')

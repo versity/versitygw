@@ -5,7 +5,7 @@
 # return 0 for success, 1 for failure
 create_bucket() {
   if [ $# -ne 2 ]; then
-    echo "create bucket missing command type, bucket name"
+    log 2 "create bucket missing command type, bucket name"
     return 1
   fi
 
@@ -22,11 +22,11 @@ create_bucket() {
   elif [[ $1 == "mc" ]]; then
     error=$(mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error creating bucket: $error"
+    log 2 "error creating bucket: $error"
     return 1
   fi
   return 0

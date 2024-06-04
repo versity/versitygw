@@ -125,8 +125,7 @@ bucket_exists() {
     return 2
   fi
 
-  head_bucket "$1" "$2" || local check_result=$?
-  if [[ $check_result -ne 0 ]]; then
+  if ! head_bucket "$1" "$2"; then
     # shellcheck disable=SC2154
     bucket_info=$(echo "$bucket_info" | grep -v "InsecureRequestWarning")
     log 5 "$bucket_info"

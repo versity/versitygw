@@ -157,6 +157,7 @@ create_test_file_count() {
       return 1
     fi
   }
+  # shellcheck disable=SC2153
   if [[ $LOG_LEVEL -ge 5 ]]; then
     ls_result=$(ls "$test_file_folder"/file_*)
     log 5 "$ls_result"
