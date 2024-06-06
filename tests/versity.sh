@@ -74,6 +74,30 @@ run_versity_app_posix() {
   return 0
 }
 
+run_versity_app_scoutfs() {
+  if [[ $# -ne 3 ]]; then
+    echo "run versity app w/scoutfs command requires access ID, secret key, process number"
+    return 1
+  fi
+  base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION"  --iam-dir="$USERS_FOLDER")
+  if [ -n "$CERT" ] && [ -n "$KEY" ]; then
+    base_command+=(--cert "$CERT" --key "$KEY")
+  fi
+  if [ -n "$PORT" ]; then
+    base_command+=(--port ":$PORT")
+  fi
+  base_command+=(scoutfs "$LOCAL_FOLDER")
+  export base_command
+
+  local versity_result
+  start_versity_process "$3" || versity_result=$?
+  if [[ $versity_result -ne 0 ]]; then
+    echo "error starting versity process"
+    return 1
+  fi
+  return 0
+}
+
 run_versity_app_s3() {
   if [[ $# -ne 1 ]]; then
     log 2 "run versity app w/s3 command requires process number"
@@ -102,6 +126,12 @@ run_versity_app() {
   if [[ $BACKEND == 'posix' ]]; then
     if ! run_versity_app_posix "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1"; then
       log 2 "error starting versity app"
+      return 1
+    fi
+  elif [[ $BACKEND == 'scoutfs' ]]; then
+    run_versity_app_scoutfs "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "1" || result_one=$?
+    if [[ $result_one -ne 0 ]]; then
+      echo "error starting versity app"
       return 1
     fi
   elif [[ $BACKEND == 's3' ]]; then
