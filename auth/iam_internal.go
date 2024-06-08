@@ -188,6 +188,10 @@ func parseIAM(b []byte) (iAMConfig, error) {
 		return iAMConfig{}, fmt.Errorf("failed to parse the config file: %w", err)
 	}
 
+	if conf.AccessAccounts == nil {
+		conf.AccessAccounts = make(map[string]Account)
+	}
+
 	return conf, nil
 }
 

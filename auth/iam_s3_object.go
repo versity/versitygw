@@ -204,12 +204,12 @@ func (s *IAMServiceS3) getAccounts() (iAMConfig, error) {
 		// init empty accounts stuct and return that
 		var nsk *types.NoSuchKey
 		if errors.As(err, &nsk) {
-			return iAMConfig{}, nil
+			return iAMConfig{AccessAccounts: map[string]Account{}}, nil
 		}
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) {
 			if apiErr.ErrorCode() == "NotFound" {
-				return iAMConfig{}, nil
+				return iAMConfig{AccessAccounts: map[string]Account{}}, nil
 			}
 		}
 
