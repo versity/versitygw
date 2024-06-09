@@ -35,37 +35,42 @@ import (
 )
 
 var (
-	port, admPort                          string
-	rootUserAccess                         string
-	rootUserSecret                         string
-	region                                 string
-	admCertFile, admKeyFile                string
-	certFile, keyFile                      string
-	kafkaURL, kafkaTopic, kafkaKey         string
-	natsURL, natsTopic                     string
-	eventWebhookURL                        string
-	eventConfigFilePath                    string
-	logWebhookURL                          string
-	accessLog                              string
-	healthPath                             string
-	debug                                  bool
-	pprof                                  string
-	quiet                                  bool
-	readonly                               bool
-	iamDir                                 string
-	ldapURL, ldapBindDN, ldapPassword      string
-	ldapQueryBase, ldapObjClasses          string
-	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
-	s3IamAccess, s3IamSecret               string
-	s3IamRegion, s3IamBucket               string
-	s3IamEndpoint                          string
-	s3IamSslNoVerify, s3IamDebug           bool
-	iamCacheDisable                        bool
-	iamCacheTTL                            int
-	iamCachePrune                          int
-	metricsService                         string
-	statsdServers                          string
-	dogstatsServers                        string
+	port, admPort                            string
+	rootUserAccess                           string
+	rootUserSecret                           string
+	region                                   string
+	admCertFile, admKeyFile                  string
+	certFile, keyFile                        string
+	kafkaURL, kafkaTopic, kafkaKey           string
+	natsURL, natsTopic                       string
+	eventWebhookURL                          string
+	eventConfigFilePath                      string
+	logWebhookURL                            string
+	accessLog                                string
+	healthPath                               string
+	debug                                    bool
+	pprof                                    string
+	quiet                                    bool
+	readonly                                 bool
+	iamDir                                   string
+	ldapURL, ldapBindDN, ldapPassword        string
+	ldapQueryBase, ldapObjClasses            string
+	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
+	vaultEndpointURL, vaultSecretStoragePath string
+	vaultMountPath, vaultRootToken           string
+	vaultRoleId, vaultRoleSecret             string
+	vaultServerCert, vaultClientCert         string
+	vaultClientCertKey                       string
+	s3IamAccess, s3IamSecret                 string
+	s3IamRegion, s3IamBucket                 string
+	s3IamEndpoint                            string
+	s3IamSslNoVerify, s3IamDebug             bool
+	iamCacheDisable                          bool
+	iamCacheTTL                              int
+	iamCachePrune                            int
+	metricsService                           string
+	statsdServers                            string
+	dogstatsServers                          string
 )
 
 var (
@@ -327,6 +332,60 @@ func initFlags() []cli.Flag {
 			Destination: &ldapRoleAtr,
 		},
 		&cli.StringFlag{
+			Name:        "iam-vault-endpoint-url",
+			Usage:       "vault server url",
+			EnvVars:     []string{"VGW_IAM_VAULT_ENDPOINT_URL"},
+			Destination: &vaultEndpointURL,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-secret-storage-path",
+			Usage:       "vault server secret storage path",
+			EnvVars:     []string{"VGW_IAM_VAULT_SECRET_STORAGE_PATH"},
+			Destination: &vaultSecretStoragePath,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-mount-path",
+			Usage:       "vault server mount path",
+			EnvVars:     []string{"VGW_IAM_VAULT_MOUNT_PATH"},
+			Destination: &vaultMountPath,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-root-token",
+			Usage:       "vault server root token",
+			EnvVars:     []string{"VGW_IAM_VAULT_ROOT_TOKEN"},
+			Destination: &vaultRootToken,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-role-id",
+			Usage:       "vault server user role id",
+			EnvVars:     []string{"VGW_IAM_VAULT_ROLE_ID"},
+			Destination: &vaultRoleId,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-role-secret",
+			Usage:       "vault server user role secret",
+			EnvVars:     []string{"VGW_IAM_VAULT_ROLE_SECRET"},
+			Destination: &vaultRoleSecret,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-server_cert",
+			Usage:       "vault server TLS certificate",
+			EnvVars:     []string{"VGW_IAM_VAULT_SERVER_CERT"},
+			Destination: &vaultServerCert,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-client_cert",
+			Usage:       "vault client TLS certificate",
+			EnvVars:     []string{"VGW_IAM_VAULT_CLIENT_CERT"},
+			Destination: &vaultClientCert,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-client_cert_key",
+			Usage:       "vault client TLS certificate key",
+			EnvVars:     []string{"VGW_IAM_VAULT_CLIENT_CERT_KEY"},
+			Destination: &vaultClientCertKey,
+		},
+		&cli.StringFlag{
 			Name:        "s3-iam-access",
 			Usage:       "s3 IAM access key",
 			EnvVars:     []string{"VGW_S3_IAM_ACCESS_KEY"},
@@ -501,25 +560,34 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	iam, err := auth.New(&auth.Opts{
-		Dir:                iamDir,
-		LDAPServerURL:      ldapURL,
-		LDAPBindDN:         ldapBindDN,
-		LDAPPassword:       ldapPassword,
-		LDAPQueryBase:      ldapQueryBase,
-		LDAPObjClasses:     ldapObjClasses,
-		LDAPAccessAtr:      ldapAccessAtr,
-		LDAPSecretAtr:      ldapSecAtr,
-		LDAPRoleAtr:        ldapRoleAtr,
-		S3Access:           s3IamAccess,
-		S3Secret:           s3IamSecret,
-		S3Region:           s3IamRegion,
-		S3Bucket:           s3IamBucket,
-		S3Endpoint:         s3IamEndpoint,
-		S3DisableSSlVerfiy: s3IamSslNoVerify,
-		S3Debug:            s3IamDebug,
-		CacheDisable:       iamCacheDisable,
-		CacheTTL:           iamCacheTTL,
-		CachePrune:         iamCachePrune,
+		Dir:                    iamDir,
+		LDAPServerURL:          ldapURL,
+		LDAPBindDN:             ldapBindDN,
+		LDAPPassword:           ldapPassword,
+		LDAPQueryBase:          ldapQueryBase,
+		LDAPObjClasses:         ldapObjClasses,
+		LDAPAccessAtr:          ldapAccessAtr,
+		LDAPSecretAtr:          ldapSecAtr,
+		LDAPRoleAtr:            ldapRoleAtr,
+		VaultEndpointURL:       vaultEndpointURL,
+		VaultSecretStoragePath: vaultSecretStoragePath,
+		VaultMountPath:         vaultMountPath,
+		VaultRootToken:         vaultRootToken,
+		VaultRoleId:            vaultRoleId,
+		VaultRoleSecret:        vaultRoleSecret,
+		VaultServerCert:        vaultServerCert,
+		VaultClientCert:        vaultClientCert,
+		VaultClientCertKey:     vaultClientCertKey,
+		S3Access:               s3IamAccess,
+		S3Secret:               s3IamSecret,
+		S3Region:               s3IamRegion,
+		S3Bucket:               s3IamBucket,
+		S3Endpoint:             s3IamEndpoint,
+		S3DisableSSlVerfiy:     s3IamSslNoVerify,
+		S3Debug:                s3IamDebug,
+		CacheDisable:           iamCacheDisable,
+		CacheTTL:               iamCacheTTL,
+		CachePrune:             iamCachePrune,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)

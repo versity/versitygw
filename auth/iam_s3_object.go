@@ -104,7 +104,7 @@ func (s *IAMServiceS3) CreateAccount(account Account) error {
 
 	_, ok := conf.AccessAccounts[account.Access]
 	if ok {
-		return fmt.Errorf("account already exists")
+		return ErrUserExists
 	}
 	conf.AccessAccounts[account.Access] = account
 
