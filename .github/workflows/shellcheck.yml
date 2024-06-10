@@ -1,0 +1,16 @@
+name: shellcheck
+on: pull_request
+jobs:
+
+  build:
+    name: Run shellcheck
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Run checks
+      run: |
+        shellcheck --version
+        shellcheck -e SC1091 tests/*.sh tests/*/*.sh

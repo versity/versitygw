@@ -88,4 +88,5 @@ case $command_type in
     ;;
 esac
 
+# shellcheck disable=SC2086
 exit $exit_code
