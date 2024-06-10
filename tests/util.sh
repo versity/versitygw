@@ -231,6 +231,7 @@ object_exists() {
     echo "error checking if object exists"
     return 2
   fi
+  # shellcheck disable=SC2086
   return $head_result
 }
 
@@ -493,6 +494,7 @@ check_object_tags_empty() {
     return 2
   fi
   check_tags_empty "$1" || local check_result=$?
+  # shellcheck disable=SC2086
   return $check_result
 }
 
@@ -506,6 +508,7 @@ check_bucket_tags_empty() {
     return 2
   fi
   check_tags_empty "$1" || local check_result=$?
+  # shellcheck disable=SC2086
   return $check_result
 }
 

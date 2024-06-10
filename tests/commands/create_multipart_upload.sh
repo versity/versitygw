@@ -56,7 +56,7 @@ create_multipart_upload_custom() {
   local multipart_data
   log 5 "additional create multipart params"
   for i in "$@"; do
-    log 5 $i
+    log 5 "$i"
   done
   log 5 "${*:3}"
   log 5 "aws --no-verify-ssl s3api create-multipart-upload --bucket $1 --key $2 ${*:3}"
