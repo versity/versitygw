@@ -2549,6 +2549,18 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("restore") {
+		var restoreRequest types.RestoreRequest
+		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
+			if !errors.Is(io.EOF, err) {
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+					&MetaOpts{
+						Logger:      c.logger,
+						MetricsMng:  c.mm,
+						Action:      metrics.ActionRestoreObject,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
+		}
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
 				Readonly:      c.readonly,
@@ -2570,12 +2582,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		restoreRequest := s3.RestoreObjectInput{
-			Bucket: &bucket,
-			Key:    &key,
-		}
-
-		err = c.be.RestoreObject(ctx.Context(), &restoreRequest)
+		err = c.be.RestoreObject(ctx.Context(), &s3.RestoreObjectInput{
+			Bucket:         &bucket,
+			Key:            &key,
+			RestoreRequest: &restoreRequest,
+		})
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
