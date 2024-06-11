@@ -1199,7 +1199,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyObjectResult{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	startOffset, length, err := backend.ParseRange(fi, *upi.CopySourceRange)
+	startOffset, length, err := backend.ParseRange(fi.Size(), *upi.CopySourceRange)
 	if err != nil {
 		return s3response.CopyObjectResult{}, err
 	}
@@ -1565,7 +1565,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	}
 
 	acceptRange := *input.Range
-	startOffset, length, err := backend.ParseRange(fi, acceptRange)
+	startOffset, length, err := backend.ParseRange(fi.Size(), acceptRange)
 	if err != nil {
 		return nil, err
 	}

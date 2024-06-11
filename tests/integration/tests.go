@@ -5274,6 +5274,70 @@ func ListParts_incorrect_object_key(s *S3Conf) error {
 	})
 }
 
+func ListParts_truncated(s *S3Conf) error {
+	testName := "ListParts_truncated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		maxParts := int32(3)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MaxParts: &maxParts,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !*res.IsTruncated {
+			return fmt.Errorf("expected the result to be truncated")
+		}
+		if *res.MaxParts != maxParts {
+			return fmt.Errorf("expected max-parts to be %v, instead got %v", maxParts, *res.MaxParts)
+		}
+		if *res.NextPartNumberMarker != fmt.Sprint(*parts[2].PartNumber) {
+			return fmt.Errorf("expected next part number marker to be %v, instead got %v", fmt.Sprint(*parts[2].PartNumber), *res.NextPartNumberMarker)
+		}
+		if ok := compareParts(res.Parts, parts[:3]); !ok {
+			return fmt.Errorf("expected the parts data to be %v, instead got %v", parts[:3], res.Parts)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res2, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:           &bucket,
+			Key:              &obj,
+			UploadId:         out.UploadId,
+			PartNumberMarker: res.NextPartNumberMarker,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *res2.PartNumberMarker != *res.NextPartNumberMarker {
+			return fmt.Errorf("expected part number marker to be %v, instead got %v", *res.NextPartNumberMarker, *res2.PartNumberMarker)
+		}
+		if ok := compareParts(parts[3:], res2.Parts); !ok {
+			return fmt.Errorf("expected the parts data to be %v, instead got %v", parts[3:], res2.Parts)
+		}
+
+		return nil
+	})
+}
+
 func ListParts_success(s *S3Conf) error {
 	testName := "ListParts_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5471,7 +5535,7 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 }
 
 func ListMultipartUploads_success(s *S3Conf) error {
-	testName := "ListMultipartUploads_max_uploads"
+	testName := "ListMultipartUploads_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj1, obj2 := "my-obj-1", "my-obj-2"
 		out1, err := createMp(s3client, bucket, obj1)

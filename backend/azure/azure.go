@@ -25,6 +25,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -215,7 +216,17 @@ func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3
 }
 
 func (az *Azure) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
-	_, err := az.client.DeleteContainer(ctx, *input.Bucket, nil)
+	pager := az.client.NewListBlobsFlatPager(*input.Bucket, nil)
+
+	pg, err := pager.NextPage(ctx)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if len(pg.Segment.BlobItems) > 0 {
+		return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
+	}
+	_, err = az.client.DeleteContainer(ctx, *input.Bucket, nil)
 	return azureErrToS3Err(err)
 }
 
@@ -319,7 +330,7 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
-		offset, count, err := parseRange(*input.Range)
+		offset, count, err := backend.ParseRange(0, *input.Range)
 		if err != nil {
 			return nil, err
 		}
@@ -360,6 +371,37 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer
 }
 
 func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if input.PartNumber != nil {
+		client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := client.GetBlockList(ctx, blockblob.BlockListTypeUncommitted, nil)
+		if err != nil {
+			return nil, azureErrToS3Err(err)
+		}
+
+		partsCount := int32(len(res.UncommittedBlocks))
+
+		for _, block := range res.UncommittedBlocks {
+			partNumber, err := decodeBlockId(*block.Name)
+			if err != nil {
+				return nil, err
+			}
+
+			if partNumber == int(*input.PartNumber) {
+				return &s3.HeadObjectOutput{
+					ContentLength: block.Size,
+					ETag:          block.Name,
+					PartsCount:    &partsCount,
+				}, nil
+			}
+		}
+
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -370,7 +412,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		return nil, azureErrToS3Err(err)
 	}
 
-	return &s3.HeadObjectOutput{
+	result := &s3.HeadObjectOutput{
 		AcceptRanges:       resp.AcceptRanges,
 		ContentLength:      resp.ContentLength,
 		ContentType:        resp.ContentType,
@@ -381,7 +423,27 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		LastModified:       resp.LastModified,
 		Metadata:           parseAzMetadata(resp.Metadata),
 		Expires:            resp.ExpiresOn,
-	}, nil
+	}
+
+	status, ok := resp.Metadata[string(keyObjLegalHold)]
+	if ok {
+		if *status == "1" {
+			result.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
+		} else {
+			result.ObjectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOff
+		}
+	}
+
+	retention, ok := resp.Metadata[string(keyObjRetention)]
+	if ok {
+		var config types.ObjectLockRetention
+		if err := json.Unmarshal([]byte(*retention), &config); err == nil {
+			result.ObjectLockMode = types.ObjectLockMode(config.Mode)
+			result.ObjectLockRetainUntilDate = config.RetainUntilDate
+		}
+	}
+
+	return result, nil
 }
 
 func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
@@ -433,7 +495,7 @@ func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAtt
 			IsTruncated:          resp.IsTruncated,
 			MaxParts:             resp.MaxParts,
 			PartNumberMarker:     resp.PartNumberMarker,
-			NextPartNumberMarker: resp.PartNumberMarker,
+			NextPartNumberMarker: resp.NextPartNumberMarker,
 			Parts:                parts,
 		},
 	}, nil
@@ -494,8 +556,14 @@ Pager:
 }
 
 func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	marker := ""
+	if *input.ContinuationToken > *input.StartAfter {
+		marker = *input.ContinuationToken
+	} else {
+		marker = *input.StartAfter
+	}
 	pager := az.client.NewListBlobsFlatPager(*input.Bucket, &azblob.ListBlobsFlatOptions{
-		Marker:     input.ContinuationToken,
+		Marker:     &marker,
 		MaxResults: input.MaxKeys,
 		Prefix:     input.Prefix,
 	})
@@ -544,6 +612,7 @@ Pager:
 		NextContinuationToken: nextMarker,
 		Prefix:                input.Prefix,
 		IsTruncated:           &isTruncated,
+		Delimiter:             input.Delimiter,
 	}, nil
 }
 
@@ -760,13 +829,8 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 		if err != nil {
 			return s3response.ListPartsResult{}, err
 		}
-		if partNumberMarker != 0 && partNumberMarker < partNumber {
+		if partNumberMarker != 0 && partNumberMarker >= partNumber {
 			continue
-		}
-		if len(parts) >= int(maxParts) {
-			nextPartNumberMarker = partNumber
-			isTruncated = true
-			break
 		}
 		parts = append(parts, s3response.Part{
 			Size:         *el.Size,
@@ -774,6 +838,11 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 			PartNumber:   partNumber,
 			LastModified: time.Now().Format(backend.RFC3339TimeFormat),
 		})
+		if len(parts) >= int(maxParts) {
+			nextPartNumberMarker = partNumber
+			isTruncated = true
+			break
+		}
 	}
 	return s3response.ListPartsResult{
 		Bucket:               *input.Bucket,
@@ -861,9 +930,37 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		return nil, err
 	}
 	blockIds := []string{}
-	for _, el := range input.MultipartUpload.Parts {
-		blockIds = append(blockIds, *el.ETag)
+
+	blockList, err := client.GetBlockList(ctx, blockblob.BlockListTypeUncommitted, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
 	}
+
+	if len(blockList.UncommittedBlocks) != len(input.MultipartUpload.Parts) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+	}
+
+	slices.SortFunc(blockList.UncommittedBlocks, func(a *blockblob.Block, b *blockblob.Block) int {
+		ptNumber, _ := decodeBlockId(*a.Name)
+		nextPtNumber, _ := decodeBlockId(*b.Name)
+		return ptNumber - nextPtNumber
+	})
+
+	for i, block := range blockList.UncommittedBlocks {
+		ptNumber, err := decodeBlockId(*block.Name)
+		if err != nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+
+		if *input.MultipartUpload.Parts[i].ETag != *block.Name {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		if *input.MultipartUpload.Parts[i].PartNumber != int32(ptNumber) {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		blockIds = append(blockIds, *block.Name)
+	}
+
 	resp, err := client.CommitBlockList(ctx, blockIds, nil)
 	if err != nil {
 		return nil, parseMpError(err)
@@ -954,7 +1051,7 @@ func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 
 	policyPtr, ok := props.Metadata[string(keyPolicy)]
 	if !ok {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 	}
 
 	policy, err := base64.StdEncoding.DecodeString(*policyPtr)
@@ -1064,7 +1161,28 @@ func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, version
 			string(keyObjRetention): backend.GetStringPtr(string(retention)),
 		}
 	} else {
-		meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+		objLockCfg, ok := meta[string(keyObjRetention)]
+		if !ok {
+			meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+		} else {
+			var lockCfg types.ObjectLockRetention
+			if err := json.Unmarshal([]byte(*objLockCfg), &lockCfg); err != nil {
+				return fmt.Errorf("unmarshal object lock config: %w", err)
+			}
+
+			switch lockCfg.Mode {
+			// Compliance mode can't be overridden
+			case types.ObjectLockRetentionModeCompliance:
+				return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			// To override governance mode user should have "s3:BypassGovernanceRetention" permission
+			case types.ObjectLockRetentionModeGovernance:
+				if !bypass {
+					return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+				}
+			}
+
+			meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+		}
 	}
 
 	_, err = blobClient.SetMetadata(ctx, meta, nil)
@@ -1354,39 +1472,6 @@ func decodeBlockId(blockID string) (int, error) {
 	}
 
 	return int(binary.LittleEndian.Uint32(slice)), nil
-}
-
-func parseRange(rg string) (offset, count int64, err error) {
-	rangeKv := strings.Split(rg, "=")
-
-	if len(rangeKv) < 2 {
-		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
-
-	bRange := strings.Split(rangeKv[1], "-")
-	if len(bRange) < 1 || len(bRange) > 2 {
-		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
-
-	offset, err = strconv.ParseInt(bRange[0], 10, 64)
-	if err != nil {
-		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
-
-	if len(bRange) == 1 || bRange[1] == "" {
-		return offset, count, nil
-	}
-
-	count, err = strconv.ParseInt(bRange[1], 10, 64)
-	if err != nil {
-		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
-
-	if count < offset {
-		return 0, 0, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
-
-	return offset, count - offset + 1, nil
 }
 
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {

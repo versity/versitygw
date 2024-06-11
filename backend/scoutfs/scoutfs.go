@@ -611,7 +611,7 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
-	startOffset, length, err := backend.ParseRange(fi, acceptRange)
+	startOffset, length, err := backend.ParseRange(fi.Size(), acceptRange)
 	if err != nil {
 		return nil, err
 	}
