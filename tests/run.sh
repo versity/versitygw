@@ -19,9 +19,6 @@ handle_param() {
           show_help
           exit 0
           ;;
-      -s|--static)
-          export RECREATE_BUCKETS=false
-          ;;
       s3|s3api|aws|s3cmd|mc|aws-user)
           set_command_type "$1"
           ;;
@@ -41,14 +38,6 @@ set_command_type() {
   export command_type
 }
 
-if [[ -z $RECREATE_BUCKETS ]]; then
-  export RECREATE_BUCKETS=true
-elif [[ $RECREATE_BUCKETS != true ]] && [[ $RECREATE_BUCKETS != false ]]; then
-  echo "Invalid RECREATE_BUCKETS value: $RECREATE_BUCKETS"
-  exit 1
-else
-  export RECREATE_BUCKETS=$RECREATE_BUCKETS
-fi
 while [[ "$#" -gt 0 ]]; do
   handle_param "$1"
   shift # past argument or value
@@ -57,13 +46,6 @@ done
 if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
   echo "Error:  VERSITYGW_TEST_ENV parameter must be set, or BYPASS_ENV_FILE must be set to true"
   exit 1
-fi
-
-if [[ $RECREATE_BUCKETS == false ]]; then
-  ./tests/setup_static.sh || exit_code=$?
-  if [[ exit_code -ne 0 ]]; then
-    exit 1
-  fi
 fi
 
 case $command_type in

@@ -5,10 +5,6 @@ if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
   exit 1
 fi
 
-# shellcheck source=./tests/.env.default
-source "$VERSITYGW_TEST_ENV"
-export RECREATE_BUCKETS
-
 if ! ./tests/run.sh aws; then
   exit 1
 fi

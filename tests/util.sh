@@ -153,6 +153,7 @@ delete_bucket_or_contents() {
       echo "error deleting bucket contents"
       return 1
     fi
+    log 5 "bucket contents deletion success"
     return 0
   fi
   delete_bucket_recursive "$1" "$2" || local delete_result=$?
@@ -160,6 +161,7 @@ delete_bucket_or_contents() {
     echo "Bucket deletion error"
     return 1
   fi
+  log 5 "bucket deletion success"
   return 0
 }
 
@@ -180,10 +182,8 @@ delete_bucket_if_exists() {
       log 2 "error deleting bucket or contents"
       return 1
     fi
-    #if [[ $RECREATE_BUCKETS == "false" ]]; then
     log 5 "bucket and/or bucket data deletion success"
     return 0
-    #fi
   fi
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
@@ -208,12 +208,15 @@ setup_bucket() {
   fi
   local create_result
   log 5 "util.setup_bucket: command type: $1, bucket name: $2"
-  create_bucket "$1" "$2" || create_result=$?
-  if [[ $create_result -ne 0 ]]; then
-    log 2 "Error creating bucket"
-    return 1
+  if [[ $RECREATE_BUCKETS == "true" ]]; then
+    if ! create_bucket "$1" "$2"; then
+      log 2 "Error creating bucket"
+      return 1
+    fi
+    log 5 "bucket creation success"
+  else
+    log 5 "skipping bucket re-creation"
   fi
-  log 5 "Bucket creation success"
   return 0
 }
 

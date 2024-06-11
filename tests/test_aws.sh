@@ -35,17 +35,16 @@ export RUN_USERS=true
   local bucket_file="bucket-file"
   bucket_file_data="test file\n"
 
-  create_test_files "$bucket_file" || local created=$?
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  create_test_files "$bucket_file" || fail "error creating test files"
+  printf "%s" "$bucket_file_data" > "$test_file_folder/$bucket_file"
 
-  run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || abort_result=$?
-  [[ $abort_result -eq 0 ]] || fail "Abort failed"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  object_exists "aws" "$BUCKET_ONE_NAME" "$bucket_file" || exists=$?
-  [[ $exists -eq 1 ]] || fail "Upload file exists after abort"
+  run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "abort failed"
+
+  if object_exists "aws" "$BUCKET_ONE_NAME" "$bucket_file"; then
+    fail "Upload file exists after abort"
+  fi
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -56,18 +55,15 @@ export RUN_USERS=true
   local bucket_file="bucket-file"
   bucket_file_data="test file\n"
 
-  create_test_files "$bucket_file" || local created=$?
+  create_test_files "$bucket_file" || fail "error creating test files"
   printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
-  multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || upload_result=$?
-  [[ $upload_result -eq 0 ]] || fail "Error performing multipart upload"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
 
-  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy"
-  compare_files "$test_file_folder/$bucket_file-copy" "$test_file_folder"/$bucket_file || compare_result=$?
-  [[ $compare_result -eq 0 ]] || fail "Files do not match"
+  multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "error performing multipart upload"
+
+  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error copying file"
+  compare_files "$test_file_folder/$bucket_file-copy" "$test_file_folder"/$bucket_file || fail "files do not match"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -105,25 +101,30 @@ export RUN_USERS=true
   os_name="$(uname)"
   if [[ "$os_name" == "Darwin" ]]; then
     now=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    five_seconds_later=$(date -j -v +10S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -j -v +15S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
   else
     now=$(date +"%Y-%m-%dT%H:%M:%S")
-    five_seconds_later=$(date -d "$now 10 seconds" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -d "$now 15 seconds" +"%Y-%m-%dT%H:%M:%S")
   fi
 
   create_test_files "$bucket_file" || fail "error creating test file"
   printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
 
   delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
-  create_bucket_object_lock_enabled "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  # in static bucket config, bucket will still exist
+  bucket_exists "s3api" "$BUCKET_ONE_NAME" || local exists_result=$?
+  [[ $exists_result -ne 2 ]] || fail "error checking for bucket existence"
+  if [[ $exists_result -eq 1 ]]; then
+    create_bucket_object_lock_enabled "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  fi
 
-  log 5 "$five_seconds_later"
+  log 5 "LATER: $later"
   multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 \
     "$expected_content_type" \
     "{\"$expected_meta_key\": \"$expected_meta_val\"}" \
     "$expected_hold_status" \
     "$expected_retention_mode" \
-    "$five_seconds_later" \
+    "$later" \
     "$expected_tag_key=$expected_tag_val" || fail "error performing multipart upload"
 
   head_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting metadata"
@@ -139,7 +140,7 @@ export RUN_USERS=true
   retention_mode=$(echo "$raw_metadata" | jq -r ".ObjectLockMode")
   [[ $retention_mode == "$expected_retention_mode" ]] || fail "retention mode mismatch ($retention_mode, $expected_retention_mode)"
   retain_until_date=$(echo "$raw_metadata" | jq -r ".ObjectLockRetainUntilDate")
-  [[ $retain_until_date == "$five_seconds_later"* ]] || fail "retention date mismatch ($retain_until_date, $five_seconds_later)"
+  [[ $retain_until_date == "$later"* ]] || fail "retention date mismatch ($retain_until_date, $five_seconds_later)"
 
   get_object_tagging "aws" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting tagging"
   log 5 "tags: $tags"
@@ -154,7 +155,7 @@ export RUN_USERS=true
   get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error getting object"
   compare_files "$test_file_folder/$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "files not equal"
 
-  sleep 10
+  sleep 15
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file

@@ -28,8 +28,10 @@ start_versity_process() {
     return 1
   fi
   eval versitygw_pid_"$1"=$!
-  process_info="Versity process $1, PID $!"
-  echo "$process_info" >> "$VERSITY_LOG_FILE"
+  if [ -n "$VERSITY_LOG_FILE" ]; then
+    process_info="Versity process $1, PID $!"
+    echo "$process_info" >> "$VERSITY_LOG_FILE"
+  fi
   log 4 "$process_info"
   local pid
   eval pid=\$versitygw_pid_"$1"
