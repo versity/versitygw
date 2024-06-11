@@ -509,6 +509,10 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	partsize := int64(0)
 	var totalsize int64
 	for i, part := range parts {
+		if part.PartNumber == nil || *part.PartNumber < 1 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+
 		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		fi, err := os.Lstat(fullPartPath)
@@ -530,7 +534,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		if err != nil {
 			etag = ""
 		}
-		if etag != *parts[i].ETag {
+		if parts[i].ETag == nil || etag != *parts[i].ETag {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 	}
@@ -546,6 +550,10 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	defer f.cleanup()
 
 	for _, part := range parts {
+		if part.PartNumber == nil || *part.PartNumber < 1 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+
 		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		pf, err := os.Open(fullPartPath)

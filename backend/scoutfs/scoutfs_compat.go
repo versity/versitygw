@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -35,7 +34,9 @@ import (
 )
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
-	p, err := posix.New(rootdir, meta.XattrMeta{}, posix.PosixOpts{
+	metastore := meta.XattrMeta{}
+
+	p, err := posix.New(rootdir, metastore, posix.PosixOpts{
 		ChownUID: opts.ChownUID,
 		ChownGID: opts.ChownGID,
 	})
@@ -52,6 +53,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		Posix:    p,
 		rootfd:   f,
 		rootdir:  rootdir,
+		meta:     metastore,
 		chownuid: opts.ChownUID,
 		chowngid: opts.ChownGID,
 	}, nil
@@ -100,11 +102,6 @@ func (s *ScoutFS) openTmpFile(dir, bucket, obj string, size int64, acct auth.Acc
 		gid:        gid,
 	}
 
-	// falloc is best effort, its fine if this fails
-	if size > 0 {
-		tmp.falloc()
-	}
-
 	if doChown {
 		err := f.Chown(uid, gid)
 		if err != nil {
@@ -113,14 +110,6 @@ func (s *ScoutFS) openTmpFile(dir, bucket, obj string, size int64, acct auth.Acc
 	}
 
 	return tmp, nil
-}
-
-func (tmp *tmpfile) falloc() error {
-	err := syscall.Fallocate(int(tmp.f.Fd()), 0, 0, tmp.size)
-	if err != nil {
-		return fmt.Errorf("fallocate: %v", err)
-	}
-	return nil
 }
 
 func (tmp *tmpfile) link() error {
