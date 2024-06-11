@@ -22,7 +22,7 @@ Download [latest release](https://github.com/versity/versitygw/releases)
 * Simplified interface for adding new storage system support
 
 ### News
-Check out latest wiki articles [[https://github.com/versity/versitygw/wiki/Articles](https://github.com/versity/versitygw/wiki/Articles)]
+Check out latest wiki articles: [https://github.com/versity/versitygw/wiki/Articles](https://github.com/versity/versitygw/wiki/Articles)
 
 ### Mailing List
 Keep up to date with latest gateway announcements by signing up to the [versitygw mailing list](https://www.versity.com/products/versitygw#signup).
