@@ -2524,7 +2524,7 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 	}
 
 	switch lockCfg.Mode {
-	// Compliance mode can't be overriden
+	// Compliance mode can't be overridden
 	case types.ObjectLockRetentionModeCompliance:
 		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 	// To override governance mode user should have "s3:BypassGovernanceRetention" permission

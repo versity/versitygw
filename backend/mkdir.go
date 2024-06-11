@@ -30,7 +30,7 @@ var (
 // Any newly created directory is set to provided uid/gid ownership.
 // If path is already a directory, MkdirAll does nothing
 // and returns nil.
-// Any directoy created will be set to provided uid/gid ownership
+// Any directory created will be set to provided uid/gid ownership
 // if doChown is true.
 func MkdirAll(path string, uid, gid int, doChown bool) error {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
