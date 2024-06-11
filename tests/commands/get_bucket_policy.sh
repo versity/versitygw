@@ -30,9 +30,8 @@ get_bucket_policy_aws() {
     return 1
   fi
   policy_json=$(aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || get_result=$?
-  if [[ $policy_json == *"InsecureRequestWarning"* ]]; then
-    policy_json=$(awk 'NR>2' <<< "$policy_json")
-  fi
+  policy_json=$(echo "$policy_json" | grep -v "InsecureRequestWarning")
+  log 5 "$policy_json"
   if [[ $get_result -ne 0 ]]; then
     if [[ "$policy_json" == *"(NoSuchBucketPolicy)"* ]]; then
       bucket_policy=
@@ -41,7 +40,7 @@ get_bucket_policy_aws() {
       return 1
     fi
   else
-    bucket_policy=$(echo "{$policy_json}" | jq -r '.Policy')
+    bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
   fi
   export bucket_policy
   return 0

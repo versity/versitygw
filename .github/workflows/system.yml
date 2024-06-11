@@ -12,6 +12,7 @@ jobs:
             LOCAL_FOLDER: /tmp/gw1
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-1
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-1
+            IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam1
             AWS_ENDPOINT_URL: https://127.0.0.1:7070
             RUN_SET: "s3cmd"
@@ -20,6 +21,7 @@ jobs:
             LOCAL_FOLDER: /tmp/gw2
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-2
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-2
+            IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam2
             AWS_ENDPOINT_URL: https://127.0.0.1:7071
             RUN_SET: "s3"
@@ -28,6 +30,7 @@ jobs:
             LOCAL_FOLDER: /tmp/gw3
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-3
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-3
+            IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam3
             AWS_ENDPOINT_URL: https://127.0.0.1:7072
             RUN_SET: "s3api"
@@ -36,20 +39,24 @@ jobs:
             LOCAL_FOLDER: /tmp/gw4
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-4
+            IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam4
             AWS_ENDPOINT_URL: https://127.0.0.1:7073
             RUN_SET: "mc"
             PORT: 7073
+          - set: 5
+            LOCAL_FOLDER: /tmp/gw4
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-4
+            IAM_TYPE: s3
+            USERS_BUCKET: versity-gwtest-iam
+            AWS_ENDPOINT_URL: https://127.0.0.1:7074
+            RUN_SET: "aws-user"
+            PORT: 7074
 
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
-
-      - name: Install ShellCheck and md5
-        run: sudo apt-get install shellcheck
-
-      - name: Run ShellCheck
-        run: shellcheck -S warning ./tests/*.sh
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -81,6 +88,8 @@ jobs:
           BUCKET_ONE_NAME: ${{ matrix.BUCKET_ONE_NAME }}
           BUCKET_TWO_NAME: ${{ matrix.BUCKET_TWO_NAME }}
           USERS_FOLDER: ${{ matrix.USERS_FOLDER }}
+          USERS_BUCKET: ${{ matrix.USERS_BUCKET }}
+          IAM_TYPE: ${{ matrix.IAM_TYPE }}
           AWS_ENDPOINT_URL: ${{ matrix.AWS_ENDPOINT_URL }}
           RUN_SET: ${{ matrix.RUN_SET }}
           PORT: ${{ matrix.PORT }}

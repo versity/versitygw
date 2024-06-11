@@ -3,6 +3,8 @@
 source ./tests/test_user_common.sh
 source ./tests/util_users.sh
 
+export RUN_USERS=true
+
 @test "test_admin_user_aws" {
   test_admin_user "aws"
 }

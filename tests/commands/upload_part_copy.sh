@@ -22,7 +22,7 @@ upload_part_copy_with_range() {
     return 1
   fi
   local etag_json
-  log 5 "bucket: $1, key: $2, upload ID: $3, file name: $4, range: $5"
+  log 5 "bucket: $1, key: $2, upload ID: $3, file name: $4, range: $5, copy source range: $6"
   etag_json=$(aws --no-verify-ssl s3api upload-part-copy --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --copy-source "$1/$4-$(($5-1))" --copy-source-range "$6" 2>&1) || local uploaded=$?
   if [[ $uploaded -ne 0 ]]; then
     log 2 "Error uploading part $5: $etag_json"

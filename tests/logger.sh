@@ -2,13 +2,15 @@
 
 # levels:  1 - crit, 2 - err, 3 - warn, 4 - info, 5 - debug, 6 - trace
 
+export LOG_LEVEL_INT=4
+
 log() {
   if [[ $# -ne 2 ]]; then
     echo "log function requires level, message"
     return 1
   fi
   # shellcheck disable=SC2153
-  if [[ $1 -gt $LOG_LEVEL ]]; then
+  if [[ $1 -gt $LOG_LEVEL_INT ]]; then
     return 0
   fi
   log_level=""
@@ -21,7 +23,7 @@ log() {
     6) log_level="TRACE";;
     *) echo "invalid log level $1"; return 1
   esac
-  if [[ "$2" == *"--secret"* ]]; then
+  if [[ "$2" == *"secret"* ]]; then
     log_mask "$log_level" "$2"
     return 0
   fi
@@ -47,7 +49,7 @@ log_mask() {
     elif [[ "$arg" == --secret=* ]]; then
       masked_args+=("--secret=********")
     else
-      if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]]; then
+      if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]] || [[ "$arg" == "--s3-iam-secret" ]]; then
         mask_next=true
       fi
       masked_args+=("$arg")

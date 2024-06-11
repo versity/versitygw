@@ -2,6 +2,9 @@
 
 source ./tests/test_user_common.sh
 
+export RUN_S3CMD=true
+export RUN_USERS=true
+
 @test "test_admin_user_s3cmd" {
   test_admin_user "s3cmd"
 }
