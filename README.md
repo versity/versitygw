@@ -6,7 +6,7 @@
   <a href="https://www.versity.com"><img alt="Versity Software logo image." src="https://github.com/versity/versitygw/blob/assets/assets/logo.svg"></a>
 </picture>
 
- [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE)  
+ [![Apache V2 License](https://img.shields.io/badge/license-Apache%20V2-blue.svg)](https://github.com/versity/versitygw/blob/main/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/versity/versitygw)](https://goreportcard.com/report/github.com/versity/versitygw) [![Go Reference](https://pkg.go.dev/badge/github.com/versity/versitygw.svg)](https://pkg.go.dev/github.com/versity/versitygw)
 
 ### Binary release builds
 Download [latest release](https://github.com/versity/versitygw/releases)
@@ -22,8 +22,7 @@ Download [latest release](https://github.com/versity/versitygw/releases)
 * Simplified interface for adding new storage system support
 
 ### News
-* New performance (scale up) analysis article [https://github.com/versity/versitygw/wiki/Performance](https://github.com/versity/versitygw/wiki/Performance)
-* New performance (scale out) Part 2 analysis article [https://github.com/versity/versitygw/wiki/Performance-Part-2](https://github.com/versity/versitygw/wiki/Performance-Part-2)
+Check out latest wiki articles [[https://github.com/versity/versitygw/wiki/Articles](https://github.com/versity/versitygw/wiki/Articles)]
 
 ### Mailing List
 Keep up to date with latest gateway announcements by signing up to the [versitygw mailing list](https://www.versity.com/products/versitygw#signup).
