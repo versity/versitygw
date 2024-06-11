@@ -1647,19 +1647,10 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			name: "Restore-object-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?restore", strings.NewReader(`<root><key>body</key></root>`)),
-			},
-			wantErr:    false,
-			statusCode: 200,
-		},
-		{
-			name: "Restore-object-error",
-			app:  app,
-			args: args{
 				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?restore", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 200,
 		},
 		{
 			name: "Select-object-content-invalid-body",

@@ -2548,23 +2548,20 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		key = key + "/"
 	}
 
-	var restoreRequest s3.RestoreObjectInput
 	if ctx.Request().URI().QueryArgs().Has("restore") {
-		err := xml.Unmarshal(ctx.Body(), &restoreRequest)
-		if err != nil {
-			if c.debug {
-				log.Printf("error unmarshalling restore object: %v", err)
+		var restoreRequest types.RestoreRequest
+		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
+			if !errors.Is(io.EOF, err) {
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+					&MetaOpts{
+						Logger:      c.logger,
+						MetricsMng:  c.mm,
+						Action:      metrics.ActionRestoreObject,
+						BucketOwner: parsedAcl.Owner,
+					})
 			}
-			return SendResponse(ctx, err,
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionRestoreObject,
-					BucketOwner: parsedAcl.Owner,
-				})
 		}
-
-		err = auth.VerifyAccess(ctx.Context(), c.be,
+		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
 				Readonly:      c.readonly,
 				Acl:           parsedAcl,
@@ -2585,10 +2582,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		restoreRequest.Bucket = &bucket
-		restoreRequest.Key = &key
-
-		err = c.be.RestoreObject(ctx.Context(), &restoreRequest)
+		err = c.be.RestoreObject(ctx.Context(), &s3.RestoreObjectInput{
+			Bucket:         &bucket,
+			Key:            &key,
+			RestoreRequest: &restoreRequest,
+		})
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
