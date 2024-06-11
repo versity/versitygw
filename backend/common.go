@@ -18,7 +18,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"strconv"
 	"strings"
 	"time"
@@ -61,9 +60,9 @@ var (
 
 // ParseRange parses input range header and returns startoffset, length, and
 // error. If no endoffset specified, then length is set to -1.
-func ParseRange(fi fs.FileInfo, acceptRange string) (int64, int64, error) {
+func ParseRange(size int64, acceptRange string) (int64, int64, error) {
 	if acceptRange == "" {
-		return 0, fi.Size(), nil
+		return 0, size, nil
 	}
 
 	rangeKv := strings.Split(acceptRange, "=")

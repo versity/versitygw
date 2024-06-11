@@ -236,6 +236,7 @@ func TestUploadPartCopy(s *S3Conf) {
 func TestListParts(s *S3Conf) {
 	ListParts_incorrect_uploadId(s)
 	ListParts_incorrect_object_key(s)
+	ListParts_truncated(s)
 	ListParts_success(s)
 }
 
@@ -605,6 +606,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_by_range_success":                                     UploadPartCopy_by_range_success,
 		"ListParts_incorrect_uploadId":                                        ListParts_incorrect_uploadId,
 		"ListParts_incorrect_object_key":                                      ListParts_incorrect_object_key,
+		"ListParts_truncated":                                                 ListParts_truncated,
 		"ListParts_success":                                                   ListParts_success,
 		"ListMultipartUploads_non_existing_bucket":                            ListMultipartUploads_non_existing_bucket,
 		"ListMultipartUploads_empty_result":                                   ListMultipartUploads_empty_result,
