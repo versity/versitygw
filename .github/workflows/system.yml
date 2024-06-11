@@ -16,6 +16,7 @@ jobs:
             USERS_FOLDER: /tmp/iam1
             AWS_ENDPOINT_URL: https://127.0.0.1:7070
             RUN_SET: "s3cmd"
+            RECREATE_BUCKETS: "true"
             PORT: 7070
           - set: 2
             LOCAL_FOLDER: /tmp/gw2
@@ -25,6 +26,7 @@ jobs:
             USERS_FOLDER: /tmp/iam2
             AWS_ENDPOINT_URL: https://127.0.0.1:7071
             RUN_SET: "s3"
+            RECREATE_BUCKETS: "true"
             PORT: 7071
           - set: 3
             LOCAL_FOLDER: /tmp/gw3
@@ -34,6 +36,7 @@ jobs:
             USERS_FOLDER: /tmp/iam3
             AWS_ENDPOINT_URL: https://127.0.0.1:7072
             RUN_SET: "s3api"
+            RECREATE_BUCKETS: "true"
             PORT: 7072
           - set: 4
             LOCAL_FOLDER: /tmp/gw4
@@ -43,17 +46,28 @@ jobs:
             USERS_FOLDER: /tmp/iam4
             AWS_ENDPOINT_URL: https://127.0.0.1:7073
             RUN_SET: "mc"
+            RECREATE_BUCKETS: "true"
             PORT: 7073
           - set: 5
-            LOCAL_FOLDER: /tmp/gw4
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-4
+            LOCAL_FOLDER: /tmp/gw5
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-5
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-5
             IAM_TYPE: s3
             USERS_BUCKET: versity-gwtest-iam
             AWS_ENDPOINT_URL: https://127.0.0.1:7074
             RUN_SET: "aws-user"
+            RECREATE_BUCKETS: "true"
             PORT: 7074
-
+          - set: 6
+            LOCAL_FOLDER: /tmp/gw6
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-6
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-6
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam6
+            AWS_ENDPOINT_URL: https://127.0.0.1:7075
+            RUN_SET: "aws"
+            RECREATE_BUCKETS: "false"
+            PORT: 7075
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -97,7 +111,7 @@ jobs:
           VERSITY_EXE: ${{ github.workspace }}/versitygw
           RUN_VERSITYGW: true
           BACKEND: posix
-          RECREATE_BUCKETS: true
+          RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
           CERT: ${{ github.workspace }}/cert.pem
           KEY: ${{ github.workspace }}/versitygw.pem
           S3CMD_CONFIG: tests/s3cfg.local.default
@@ -117,6 +131,9 @@ jobs:
           openssl genpkey -algorithm RSA -out $KEY -pkeyopt rsa_keygen_bits:2048
           openssl req -new -x509 -key $KEY -out $CERT -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
           mkdir $GOCOVERDIR $USERS_FOLDER
+          if [[ $RECREATE_BUCKETS == "false" ]]; then
+            BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/setup_static.sh
+          fi
           BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/run.sh $RUN_SET
 
       #- name: Build and run, s3 backend

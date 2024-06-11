@@ -29,15 +29,17 @@ check_env_vars() {
 }
 
 check_universal_vars() {
-  if [ -z "$VERSITYGW_TEST_ENV" ]; then
-    if [ -r tests/.env ]; then
-      source tests/.env
+  if [[ $BYPASS_ENV_FILE != "true" ]]; then
+    if [ -z "$VERSITYGW_TEST_ENV" ]; then
+      if [ -r tests/.env ]; then
+        source tests/.env
+      else
+        log 3 "Warning: no .env file found in tests folder"
+      fi
     else
-      log 3 "Warning: no .env file found in tests folder"
+      # shellcheck source=./tests/.env.default
+      source "$VERSITYGW_TEST_ENV"
     fi
-  elif [[ $BYPASS_ENV_FILE != "true" ]]; then
-    # shellcheck source=./tests/.env.default
-    source "$VERSITYGW_TEST_ENV"
   fi
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
     # shellcheck source=./tests/.secrets
