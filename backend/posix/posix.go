@@ -656,7 +656,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	// cleanup tmp dirs
-	os.RemoveAll(upiddir)
+	os.RemoveAll(filepath.Join(bucket, objdir, uploadID))
 	// use Remove for objdir in case there are still other uploads
 	// for same object name outstanding, this will fail if there are
 	os.Remove(filepath.Join(bucket, objdir))
