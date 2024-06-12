@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -32,6 +33,13 @@ const (
 
 // IAMServiceInternal manages the internal IAM service
 type IAMServiceInternal struct {
+	// This mutex will help with racing updates to the IAM data
+	// from multiple requests to this gateway instance, but
+	// will not help with racing updates to multiple load balanced
+	// gateway instances. This is a limitation of the internal
+	// IAM service. All account updates should be sent to a single
+	// gateway instance if possible.
+	sync.RWMutex
 	dir string
 }
 
@@ -62,6 +70,9 @@ func NewInternal(dir string) (*IAMServiceInternal, error) {
 // CreateAccount creates a new IAM account. Returns an error if the account
 // already exists.
 func (s *IAMServiceInternal) CreateAccount(account Account) error {
+	s.Lock()
+	defer s.Unlock()
+
 	return s.storeIAM(func(data []byte) ([]byte, error) {
 		conf, err := parseIAM(data)
 		if err != nil {
@@ -86,6 +97,9 @@ func (s *IAMServiceInternal) CreateAccount(account Account) error {
 // GetUserAccount retrieves account info for the requested user. Returns
 // ErrNoSuchUser if the account does not exist.
 func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	conf, err := s.getIAM()
 	if err != nil {
 		return Account{}, fmt.Errorf("get iam data: %w", err)
@@ -102,6 +116,9 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 // DeleteUserAccount deletes the specified user account. Does not check if
 // account exists.
 func (s *IAMServiceInternal) DeleteUserAccount(access string) error {
+	s.Lock()
+	defer s.Unlock()
+
 	return s.storeIAM(func(data []byte) ([]byte, error) {
 		conf, err := parseIAM(data)
 		if err != nil {
@@ -121,6 +138,9 @@ func (s *IAMServiceInternal) DeleteUserAccount(access string) error {
 
 // ListUserAccounts lists all the user accounts stored.
 func (s *IAMServiceInternal) ListUserAccounts() ([]Account, error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	conf, err := s.getIAM()
 	if err != nil {
 		return []Account{}, fmt.Errorf("get iam data: %w", err)

@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -41,6 +42,14 @@ import (
 // coming from iAMConfig and iamFile in iam_internal.
 
 type IAMServiceS3 struct {
+	// This mutex will help with racing updates to the IAM data
+	// from multiple requests to this gateway instance, but
+	// will not help with racing updates to multiple load balanced
+	// gateway instances. This is a limitation of the internal
+	// IAM service. All account updates should be sent to a single
+	// gateway instance if possible.
+	sync.RWMutex
+
 	access        string
 	secret        string
 	region        string
@@ -97,6 +106,9 @@ func NewS3(access, secret, region, bucket, endpoint string, sslSkipVerify, debug
 }
 
 func (s *IAMServiceS3) CreateAccount(account Account) error {
+	s.Lock()
+	defer s.Unlock()
+
 	conf, err := s.getAccounts()
 	if err != nil {
 		return err
@@ -112,6 +124,9 @@ func (s *IAMServiceS3) CreateAccount(account Account) error {
 }
 
 func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	conf, err := s.getAccounts()
 	if err != nil {
 		return Account{}, err
@@ -126,6 +141,9 @@ func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
 }
 
 func (s *IAMServiceS3) DeleteUserAccount(access string) error {
+	s.Lock()
+	defer s.Unlock()
+
 	conf, err := s.getAccounts()
 	if err != nil {
 		return err
@@ -141,6 +159,9 @@ func (s *IAMServiceS3) DeleteUserAccount(access string) error {
 }
 
 func (s *IAMServiceS3) ListUserAccounts() ([]Account, error) {
+	s.RLock()
+	defer s.RUnlock()
+
 	conf, err := s.getAccounts()
 	if err != nil {
 		return nil, err
