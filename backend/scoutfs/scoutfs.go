@@ -969,14 +969,8 @@ func fSetNewGlobalFlags(objname string, flags uint64) error {
 }
 
 func isNoAttr(err error) bool {
-	if err == nil {
-		return false
-	}
 	xerr, ok := err.(*xattr.Error)
 	if ok && xerr.Err == xattr.ENOATTR {
-		return true
-	}
-	if err == errNoData {
 		return true
 	}
 	return false
