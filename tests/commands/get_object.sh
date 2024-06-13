@@ -39,3 +39,24 @@ get_object_with_range() {
   fi
   return 0
 }
+
+get_object_with_user() {
+  if [ $# -ne 6 ]; then
+    log 2 "'get object with user' command requires command type, bucket, key, save location, aws ID, aws secret key"
+    return 1
+  fi
+  local exit_code=0
+  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+    get_object_error=$(AWS_ACCESS_KEY_ID="$5" AWS_SECRET_ACCESS_KEY="$6" aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
+  else
+    log 2 "'get object with user' command not implemented for '$1'"
+    return 1
+  fi
+  log 5 "put object exit code: $exit_code"
+  if [ $exit_code -ne 0 ]; then
+    log 2 "error getting object: $get_object_error"
+    export get_object_error
+    return 1
+  fi
+  return 0
+}

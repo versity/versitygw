@@ -22,3 +22,15 @@ put_bucket_acl() {
   fi
   return 0
 }
+
+put_bucket_canned_acl() {
+  if [[ $# -ne 2 ]]; then
+    log 2 "'put bucket canned acl' command requires bucket name, canned ACL"
+    return 1
+  fi
+  if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2"); then
+    log 2 "error resetting bucket acls: $error"
+    return 1
+  fi
+  return 0
+}

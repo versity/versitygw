@@ -38,11 +38,28 @@ export RUN_MC=true
 
 # delete-object - put-object tests
 
-# delete-objects - test setup/teardown
-
 # delete-object-tagging
 @test "test_delete_object_tagging" {
   test_common_delete_object_tagging "mc"
+}
+
+# delete-objects - test setup/teardown
+
+# get-bucket-location
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "mc"
+}
+
+# get-bucket-policy - test_get_put_delete_bucket_policy
+
+# get-bucket-tagging
+@test "test_set_get_object_tags_mc" {
+  test_common_set_get_object_tags "mc"
+}
+
+# get-object
+@test "test_put_get_object" {
+  test_common_put_get_object "mc"
 }
 
 @test "test_put_object-with-data-mc" {
@@ -61,9 +78,6 @@ export RUN_MC=true
   test_common_list_objects "mc"
 }
 
-@test "test_set_get_object_tags_mc" {
-  test_common_set_get_object_tags "mc"
-}
 
 @test "test_presigned_url_utf8_chars_mc" {
   test_common_presigned_url_utf8_chars "mc"
@@ -104,6 +118,3 @@ export RUN_MC=true
 }
 
 
-@test "test_get_bucket_location" {
-  test_common_get_bucket_location "mc"
-}

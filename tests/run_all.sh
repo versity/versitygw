@@ -17,7 +17,4 @@ fi
 if ! ./tests/run.sh mc; then
   exit 1
 fi
-if ! ./tests/run.sh user; then
-  exit 1
-fi
 exit 0

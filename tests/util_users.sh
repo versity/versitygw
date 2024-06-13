@@ -2,12 +2,11 @@
 
 create_user() {
   if [[ $# -ne 3 ]]; then
-    echo "create user command requires user ID, key, and role"
+    log 2 "create user command requires user ID, key, and role"
     return 1
   fi
-  create_user_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3" || create_result=$?
-  if [[ $create_result -ne 0 ]]; then
-    echo "error creating user: $error"
+  if ! create_user_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
+    log 2 "error creating user"
     return 1
   fi
   return 0
@@ -28,12 +27,11 @@ create_user_if_nonexistent() {
 
 create_user_with_user() {
   if [[ $# -ne 5 ]]; then
-    echo "create user with user command requires creator ID, key, and new user ID, key, and role"
+    log 2 "create user with user command requires creator ID, key, and new user ID, key, and role"
     return 1
   fi
-  error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" create-user --access "$3" --secret "$4" --role "$5") || local create_result=$?
-  if [[ $create_result -ne 0 ]]; then
-    echo "error creating user: $error"
+  if ! error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" create-user --access "$3" --secret "$4" --role "$5" 2>&1); then
+    log 2 "error creating user: $error"
     return 1
   fi
   return 0
