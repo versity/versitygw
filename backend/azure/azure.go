@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/auth"
@@ -176,7 +177,12 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 }
 
 func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
-	pager := az.client.NewListContainersPager(nil)
+	pager := az.client.NewListContainersPager(
+		&service.ListContainersOptions{
+			Include: service.ListContainersInclude{
+				Metadata: true,
+			},
+		})
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	var result s3response.ListAllMyBucketsResult
@@ -187,11 +193,26 @@ func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s
 			return result, azureErrToS3Err(err)
 		}
 		for _, v := range resp.ContainerItems {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name: *v.Name,
-				// TODO: using modification date here instead of creation, is that ok?
-				CreationDate: *v.Properties.LastModified,
-			})
+			if isAdmin {
+				buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+					Name: *v.Name,
+					// TODO: using modification date here instead of creation, is that ok?
+					CreationDate: *v.Properties.LastModified,
+				})
+			} else {
+				acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
+				if err != nil {
+					return result, err
+				}
+
+				if acl.Owner == owner {
+					buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+						Name: *v.Name,
+						// TODO: using modification date here instead of creation, is that ok?
+						CreationDate: *v.Properties.LastModified,
+					})
+				}
+			}
 		}
 	}
 
