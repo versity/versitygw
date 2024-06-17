@@ -85,7 +85,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/create-user", bytes.NewBuffer(succUsr)),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 201,
 		},
 		{
 			name: "Admin-create-user-invalid-user-role",
@@ -94,7 +94,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/create-user", bytes.NewBuffer(user)),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 400,
 		},
 		{
 			name: "Admin-create-user-invalid-requester-role",
@@ -103,7 +103,7 @@ func TestAdminController_CreateUser(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/create-user", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 403,
 		},
 	}
 	for _, tt := range tests {
@@ -173,7 +173,7 @@ func TestAdminController_DeleteUser(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/delete-user?access=test", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 403,
 		},
 	}
 	for _, tt := range tests {
@@ -251,7 +251,7 @@ func TestAdminController_ListUsers(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 403,
 		},
 		{
 			name: "Admin-list-users-iam-error",
@@ -368,7 +368,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 403,
 		},
 		{
 			name: "Change-bucket-owner-check-account-server-error",
@@ -386,7 +386,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 404,
 		},
 		{
 			name: "Change-bucket-owner-success",
@@ -395,7 +395,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner?bucket=bucket&owner=owner", nil),
 			},
 			wantErr:    false,
-			statusCode: 201,
+			statusCode: 200,
 		},
 	}
 	for _, tt := range tests {
@@ -455,7 +455,7 @@ func TestAdminController_ListBuckets(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPatch, "/list-buckets", nil),
 			},
 			wantErr:    false,
-			statusCode: 500,
+			statusCode: 403,
 		},
 		{
 			name: "List-buckets-success",
