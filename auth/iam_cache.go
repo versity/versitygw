@@ -66,6 +66,21 @@ func (i *icache) get(k string) (Account, bool) {
 	return v.value, true
 }
 
+func (i *icache) update(k string, props MutableProps) {
+	i.Lock()
+	defer i.Unlock()
+
+	item, found := i.items[k]
+	if found {
+		updateAcc(&item.value, props)
+
+		// refresh the expiration date
+		item.exp = time.Now().Add(i.expire)
+
+		i.items[k] = item
+	}
+}
+
 func (i *icache) Delete(k string) {
 	i.Lock()
 	delete(i.items, k)
@@ -163,6 +178,16 @@ func (c *IAMCache) DeleteUserAccount(access string) error {
 	}
 
 	c.iamcache.Delete(access)
+	return nil
+}
+
+func (c *IAMCache) UpdateUserAccount(access string, props MutableProps) error {
+	err := c.service.UpdateUserAccount(access, props)
+	if err != nil {
+		return err
+	}
+
+	c.iamcache.update(access, props)
 	return nil
 }
 

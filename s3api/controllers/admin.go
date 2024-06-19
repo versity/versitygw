@@ -63,6 +63,37 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	return ctx.Status(fiber.StatusCreated).SendString("The user has been created successfully")
 }
 
+func (c AdminController) UpdateUser(ctx *fiber.Ctx) error {
+	acct := ctx.Locals("account").(auth.Account)
+	if acct.Role != "admin" {
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
+	}
+
+	access := ctx.Query("access")
+	if access == "" {
+		return ctx.Status(fiber.StatusBadRequest).SendString("missing user access parameter")
+	}
+
+	var props auth.MutableProps
+	if err := json.Unmarshal(ctx.Body(), &props); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).SendString(fmt.Errorf("invalid request body %w", err).Error())
+	}
+
+	err := c.iam.UpdateUserAccount(access, props)
+	if err != nil {
+		status := fiber.StatusInternalServerError
+		msg := fmt.Errorf("failed to update user account: %w", err).Error()
+
+		if strings.Contains(msg, "user not found") {
+			status = fiber.StatusNotFound
+		}
+
+		return ctx.Status(status).SendString(msg)
+	}
+
+	return ctx.SendString("the user has been updated successfully")
+}
+
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 	access := ctx.Query("access")
 	acct := ctx.Locals("account").(auth.Account)

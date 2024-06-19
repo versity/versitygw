@@ -140,6 +140,26 @@ func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
 	return acct, nil
 }
 
+func (s *IAMServiceS3) UpdateUserAccount(access string, props MutableProps) error {
+	s.Lock()
+	defer s.Unlock()
+
+	conf, err := s.getAccounts()
+	if err != nil {
+		return err
+	}
+
+	acc, ok := conf.AccessAccounts[access]
+	if !ok {
+		return ErrNoSuchUser
+	}
+
+	updateAcc(&acc, props)
+	conf.AccessAccounts[access] = acc
+
+	return s.storeAccts(conf)
+}
+
 func (s *IAMServiceS3) DeleteUserAccount(access string) error {
 	s.Lock()
 	defer s.Unlock()

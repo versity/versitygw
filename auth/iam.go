@@ -37,12 +37,32 @@ type Account struct {
 	GroupID int    `json:"groupID"`
 }
 
+// Mutable props, which could be changed when updating an IAM account
+type MutableProps struct {
+	Secret  *string `json:"secret"`
+	UserID  *int    `json:"userID"`
+	GroupID *int    `json:"groupID"`
+}
+
+func updateAcc(acc *Account, props MutableProps) {
+	if props.Secret != nil {
+		acc.Secret = *props.Secret
+	}
+	if props.GroupID != nil {
+		acc.GroupID = *props.GroupID
+	}
+	if props.UserID != nil {
+		acc.UserID = *props.UserID
+	}
+}
+
 // IAMService is the interface for all IAM service implementations
 //
 //go:generate moq -out ../s3api/controllers/iam_moq_test.go -pkg controllers . IAMService
 type IAMService interface {
 	CreateAccount(account Account) error
 	GetUserAccount(access string) (Account, error)
+	UpdateUserAccount(access string, props MutableProps) error
 	DeleteUserAccount(access string) error
 	ListUserAccounts() ([]Account, error)
 	Shutdown() error
@@ -65,6 +85,8 @@ type Opts struct {
 	LDAPAccessAtr          string
 	LDAPSecretAtr          string
 	LDAPRoleAtr            string
+	LDAPUserIdAtr          string
+	LDAPGroupIdAtr         string
 	VaultEndpointURL       string
 	VaultSecretStoragePath string
 	VaultMountPath         string
@@ -96,8 +118,8 @@ func New(o *Opts) (IAMService, error) {
 		fmt.Printf("initializing internal IAM with %q\n", o.Dir)
 	case o.LDAPServerURL != "":
 		svc, err = NewLDAPService(o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
-			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr,
-			o.LDAPObjClasses)
+			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPUserIdAtr,
+			o.LDAPGroupIdAtr, o.LDAPObjClasses)
 		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
 	case o.S3Endpoint != "":
 		svc, err = NewS3(o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,

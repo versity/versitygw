@@ -40,6 +40,9 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		// DeleteUsers admin api
 		app.Patch("/delete-user", adminController.DeleteUser)
 
+		// UpdateUser admin api
+		app.Patch("update-user", adminController.UpdateUser)
+
 		// ListUsers admin api
 		app.Patch("/list-users", adminController.ListUsers)
 

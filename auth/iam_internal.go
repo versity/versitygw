@@ -113,6 +113,35 @@ func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
 	return acct, nil
 }
 
+// UpdateUserAccount updates the specified user account fields. Returns
+// ErrNoSuchUser if the account does not exist.
+func (s *IAMServiceInternal) UpdateUserAccount(access string, props MutableProps) error {
+	s.Lock()
+	defer s.Unlock()
+
+	return s.storeIAM(func(data []byte) ([]byte, error) {
+		conf, err := parseIAM(data)
+		if err != nil {
+			return nil, fmt.Errorf("get iam data: %w", err)
+		}
+
+		acc, found := conf.AccessAccounts[access]
+		if !found {
+			return nil, ErrNoSuchUser
+		}
+
+		updateAcc(&acc, props)
+		conf.AccessAccounts[access] = acc
+
+		b, err := json.Marshal(conf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize iam: %w", err)
+		}
+
+		return b, nil
+	})
+}
+
 // DeleteUserAccount deletes the specified user account. Does not check if
 // account exists.
 func (s *IAMServiceInternal) DeleteUserAccount(access string) error {

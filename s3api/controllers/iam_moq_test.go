@@ -33,6 +33,9 @@ var _ auth.IAMService = &IAMServiceMock{}
 //			ShutdownFunc: func() error {
 //				panic("mock out the Shutdown method")
 //			},
+//			UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
+//				panic("mock out the UpdateUserAccount method")
+//			},
 //		}
 //
 //		// use mockedIAMService in code that requires auth.IAMService
@@ -54,6 +57,9 @@ type IAMServiceMock struct {
 
 	// ShutdownFunc mocks the Shutdown method.
 	ShutdownFunc func() error
+
+	// UpdateUserAccountFunc mocks the UpdateUserAccount method.
+	UpdateUserAccountFunc func(access string, props auth.MutableProps) error
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -78,12 +84,20 @@ type IAMServiceMock struct {
 		// Shutdown holds details about calls to the Shutdown method.
 		Shutdown []struct {
 		}
+		// UpdateUserAccount holds details about calls to the UpdateUserAccount method.
+		UpdateUserAccount []struct {
+			// Access is the access argument value.
+			Access string
+			// Props is the props argument value.
+			Props auth.MutableProps
+		}
 	}
 	lockCreateAccount     sync.RWMutex
 	lockDeleteUserAccount sync.RWMutex
 	lockGetUserAccount    sync.RWMutex
 	lockListUserAccounts  sync.RWMutex
 	lockShutdown          sync.RWMutex
+	lockUpdateUserAccount sync.RWMutex
 }
 
 // CreateAccount calls CreateAccountFunc.
@@ -233,5 +247,41 @@ func (mock *IAMServiceMock) ShutdownCalls() []struct {
 	mock.lockShutdown.RLock()
 	calls = mock.calls.Shutdown
 	mock.lockShutdown.RUnlock()
+	return calls
+}
+
+// UpdateUserAccount calls UpdateUserAccountFunc.
+func (mock *IAMServiceMock) UpdateUserAccount(access string, props auth.MutableProps) error {
+	if mock.UpdateUserAccountFunc == nil {
+		panic("IAMServiceMock.UpdateUserAccountFunc: method is nil but IAMService.UpdateUserAccount was just called")
+	}
+	callInfo := struct {
+		Access string
+		Props  auth.MutableProps
+	}{
+		Access: access,
+		Props:  props,
+	}
+	mock.lockUpdateUserAccount.Lock()
+	mock.calls.UpdateUserAccount = append(mock.calls.UpdateUserAccount, callInfo)
+	mock.lockUpdateUserAccount.Unlock()
+	return mock.UpdateUserAccountFunc(access, props)
+}
+
+// UpdateUserAccountCalls gets all the calls that were made to UpdateUserAccount.
+// Check the length with:
+//
+//	len(mockedIAMService.UpdateUserAccountCalls())
+func (mock *IAMServiceMock) UpdateUserAccountCalls() []struct {
+	Access string
+	Props  auth.MutableProps
+} {
+	var calls []struct {
+		Access string
+		Props  auth.MutableProps
+	}
+	mock.lockUpdateUserAccount.RLock()
+	calls = mock.calls.UpdateUserAccount
+	mock.lockUpdateUserAccount.RUnlock()
 	return calls
 }

@@ -140,6 +140,28 @@ func (vt *VaultIAMService) GetUserAccount(access string) (Account, error) {
 	return acc, nil
 }
 
+func (vt *VaultIAMService) UpdateUserAccount(access string, props MutableProps) error {
+	//TODO: We need something like a transaction here ?
+	acc, err := vt.GetUserAccount(access)
+	if err != nil {
+		return err
+	}
+
+	updateAcc(&acc, props)
+
+	err = vt.DeleteUserAccount(access)
+	if err != nil {
+		return err
+	}
+
+	err = vt.CreateAccount(acc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (vt *VaultIAMService) DeleteUserAccount(access string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	_, err := vt.client.Secrets.KvV2DeleteMetadataAndAllVersions(ctx, vt.secretStoragePath+"/"+access, vt.reqOpts...)
