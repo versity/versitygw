@@ -17,6 +17,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
@@ -35,31 +36,38 @@ func NewAdminController(iam auth.IAMService, be backend.Backend) AdminController
 func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	if acct.Role != "admin" {
-		return fmt.Errorf("access denied: only admin users have access to this resource")
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
 	}
 	var usr auth.Account
 	err := json.Unmarshal(ctx.Body(), &usr)
 	if err != nil {
-		return fmt.Errorf("failed to parse request body: %w", err)
+		return ctx.Status(fiber.StatusBadRequest).SendString(fmt.Errorf("failed to parse request body: %w", err).Error())
 	}
 
 	if usr.Role != auth.RoleAdmin && usr.Role != auth.RoleUser && usr.Role != auth.RoleUserPlus {
-		return fmt.Errorf("invalid parameters: user role have to be one of the following: 'user', 'admin', 'userplus'")
+		return ctx.Status(fiber.StatusBadRequest).SendString("invalid parameters: user role have to be one of the following: 'user', 'admin', 'userplus'")
 	}
 
 	err = c.iam.CreateAccount(usr)
 	if err != nil {
-		return fmt.Errorf("failed to create user: %w", err)
+		status := fiber.StatusInternalServerError
+		msg := fmt.Errorf("failed to create user: %w", err).Error()
+
+		if strings.Contains(msg, "user already exists") {
+			status = fiber.StatusConflict
+		}
+
+		return ctx.Status(status).SendString(msg)
 	}
 
-	return ctx.SendString("The user has been created successfully")
+	return ctx.Status(fiber.StatusCreated).SendString("The user has been created successfully")
 }
 
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 	access := ctx.Query("access")
 	acct := ctx.Locals("account").(auth.Account)
 	if acct.Role != "admin" {
-		return fmt.Errorf("access denied: only admin users have access to this resource")
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
 	}
 
 	err := c.iam.DeleteUserAccount(access)
@@ -73,7 +81,7 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
 func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	if acct.Role != "admin" {
-		return fmt.Errorf("access denied: only admin users have access to this resource")
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
 	}
 	accs, err := c.iam.ListUserAccounts()
 	if err != nil {
@@ -86,7 +94,7 @@ func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
 func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	if acct.Role != "admin" {
-		return fmt.Errorf("access denied: only admin users have access to this resource")
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
 	}
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
@@ -96,7 +104,7 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 		return err
 	}
 	if len(accs) > 0 {
-		return fmt.Errorf("user specified as the new bucket owner does not exist")
+		return ctx.Status(fiber.StatusNotFound).SendString("user specified as the new bucket owner does not exist")
 	}
 
 	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
@@ -104,13 +112,13 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	return ctx.Status(201).SendString("Bucket owner has been updated successfully")
+	return ctx.SendString("Bucket owner has been updated successfully")
 }
 
 func (c AdminController) ListBuckets(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	if acct.Role != "admin" {
-		return fmt.Errorf("access denied: only admin users have access to this resource")
+		return ctx.Status(fiber.StatusForbidden).SendString("access denied: only admin users have access to this resource")
 	}
 
 	buckets, err := c.be.ListBucketsAndOwners(ctx.Context())
