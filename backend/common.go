@@ -18,6 +18,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -96,6 +97,14 @@ func ParseRange(size int64, acceptRange string) (int64, int64, error) {
 	}
 
 	return startOffset, endOffset - startOffset + 1, nil
+}
+
+func CreateExceedingRangeErr(objSize int64) s3err.APIError {
+	return s3err.APIError{
+		Code:           "InvalidArgument",
+		Description:    fmt.Sprintf("Range specified is not valid for source object of size: %d", objSize),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
 }
 
 func GetMultipartMD5(parts []types.CompletedPart) string {
