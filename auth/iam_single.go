@@ -35,6 +35,11 @@ func (IAMServiceSingle) GetUserAccount(access string) (Account, error) {
 	return Account{}, ErrNoSuchUser
 }
 
+// UpdateUserAccount no accounts in single tenant mode
+func (IAMServiceSingle) UpdateUserAccount(access string, props MutableProps) error {
+	return ErrNotSupported
+}
+
 // DeleteUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) DeleteUserAccount(access string) error {
 	return ErrNotSupported

@@ -83,6 +83,34 @@ func adminCommand() *cli.Command {
 				},
 			},
 			{
+				Name:   "update-user",
+				Usage:  "Updates a user account",
+				Action: updateUser,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "access",
+						Usage:    "user access key id to be updated",
+						Required: true,
+						Aliases:  []string{"a"},
+					},
+					&cli.StringFlag{
+						Name:    "secret",
+						Usage:   "secret access key for the new user",
+						Aliases: []string{"s"},
+					},
+					&cli.IntFlag{
+						Name:    "user-id",
+						Usage:   "userID for the new user",
+						Aliases: []string{"ui"},
+					},
+					&cli.IntFlag{
+						Name:    "group-id",
+						Usage:   "groupID for the new user",
+						Aliases: []string{"gi"},
+					},
+				},
+			},
+			{
 				Name:   "delete-user",
 				Usage:  "Delete a user",
 				Action: deleteUser,
@@ -245,6 +273,63 @@ func deleteUser(ctx *cli.Context) error {
 	signer := v4.NewSigner()
 
 	hashedPayload := sha256.Sum256([]byte{})
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
+
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	if signErr != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := initHTTPClient()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", body)
+	}
+
+	fmt.Printf("%s\n", body)
+
+	return nil
+}
+
+func updateUser(ctx *cli.Context) error {
+	access, secret, userId, groupId := ctx.String("access"), ctx.String("secret"), ctx.Int("user-id"), ctx.Int("group-id")
+	props := auth.MutableProps{}
+	if ctx.IsSet("secret") {
+		props.Secret = &secret
+	}
+	if ctx.IsSet("user-id") {
+		props.UserID = &userId
+	}
+	if ctx.IsSet("group-id") {
+		props.GroupID = &groupId
+	}
+
+	propsJSON, err := json.Marshal(props)
+	if err != nil {
+		return fmt.Errorf("failed to parse user attributes: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/update-user?access=%v", adminEndpoint, access), bytes.NewBuffer(propsJSON))
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	signer := v4.NewSigner()
+
+	hashedPayload := sha256.Sum256(propsJSON)
 	hexPayload := hex.EncodeToString(hashedPayload[:])
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)

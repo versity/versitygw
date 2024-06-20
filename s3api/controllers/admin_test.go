@@ -119,6 +119,122 @@ func TestAdminController_CreateUser(t *testing.T) {
 	}
 }
 
+func TestAdminController_UpdateUser(t *testing.T) {
+	type args struct {
+		req *http.Request
+	}
+
+	adminController := AdminController{
+		iam: &IAMServiceMock{
+			UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
+				return nil
+			},
+		},
+	}
+
+	app := fiber.New()
+
+	app.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
+		return ctx.Next()
+	})
+
+	app.Patch("/update-user", adminController.UpdateUser)
+
+	appErr := fiber.New()
+
+	appErr.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("account", auth.Account{Access: "user1", Secret: "secret", Role: "user"})
+		return ctx.Next()
+	})
+
+	appErr.Patch("/update-user", adminController.UpdateUser)
+
+	successBody, _ := json.Marshal(auth.MutableProps{Secret: getPtr("hello")})
+
+	adminControllerErr := AdminController{
+		iam: &IAMServiceMock{
+			UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
+				return auth.ErrNoSuchUser
+			},
+		},
+	}
+
+	appNotFound := fiber.New()
+
+	appNotFound.Use(func(ctx *fiber.Ctx) error {
+		ctx.Locals("account", auth.Account{Access: "admin1", Secret: "secret", Role: "admin"})
+		return ctx.Next()
+	})
+
+	appNotFound.Patch("/update-user", adminControllerErr.UpdateUser)
+
+	tests := []struct {
+		name       string
+		app        *fiber.App
+		args       args
+		wantErr    bool
+		statusCode int
+	}{
+		{
+			name: "Admin-update-user-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", bytes.NewBuffer(successBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Admin-update-user-missing-access",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/update-user", bytes.NewBuffer(successBody)),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Admin-update-user-invalid-request-body",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", nil),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Admin-update-user-invalid-requester-role",
+			app:  appErr,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", nil),
+			},
+			wantErr:    false,
+			statusCode: 403,
+		},
+		{
+			name: "Admin-update-user-not-found",
+			app:  appNotFound,
+			args: args{
+				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", bytes.NewBuffer(successBody)),
+			},
+			wantErr:    false,
+			statusCode: 404,
+		},
+	}
+	for _, tt := range tests {
+		resp, err := tt.app.Test(tt.args.req)
+
+		if (err != nil) != tt.wantErr {
+			t.Errorf("AdminController.UpdateUser() error = %v, wantErr %v", err, tt.wantErr)
+		}
+
+		if resp.StatusCode != tt.statusCode {
+			t.Errorf("AdminController.UpdateUser() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
+		}
+	}
+}
+
 func TestAdminController_DeleteUser(t *testing.T) {
 	type args struct {
 		req *http.Request

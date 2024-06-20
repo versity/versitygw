@@ -56,6 +56,7 @@ var (
 	ldapURL, ldapBindDN, ldapPassword        string
 	ldapQueryBase, ldapObjClasses            string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
+	ldapUserIdAtr, ldapGroupIdAtr            string
 	vaultEndpointURL, vaultSecretStoragePath string
 	vaultMountPath, vaultRootToken           string
 	vaultRoleId, vaultRoleSecret             string
@@ -332,6 +333,18 @@ func initFlags() []cli.Flag {
 			Destination: &ldapRoleAtr,
 		},
 		&cli.StringFlag{
+			Name:        "iam-ldap-user-id-atr",
+			Usage:       "ldap server user id attribute name",
+			EnvVars:     []string{"VGW_IAM_LDAP_USER_ID_ATR"},
+			Destination: &ldapUserIdAtr,
+		},
+		&cli.StringFlag{
+			Name:        "iam-ldap-group-id-atr",
+			Usage:       "ldap server user group id attribute name",
+			EnvVars:     []string{"VGW_IAM_LDAP_GROUP_ID_ATR"},
+			Destination: &ldapGroupIdAtr,
+		},
+		&cli.StringFlag{
 			Name:        "iam-vault-endpoint-url",
 			Usage:       "vault server url",
 			EnvVars:     []string{"VGW_IAM_VAULT_ENDPOINT_URL"},
@@ -569,6 +582,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		LDAPAccessAtr:          ldapAccessAtr,
 		LDAPSecretAtr:          ldapSecAtr,
 		LDAPRoleAtr:            ldapRoleAtr,
+		LDAPUserIdAtr:          ldapUserIdAtr,
+		LDAPGroupIdAtr:         ldapGroupIdAtr,
 		VaultEndpointURL:       vaultEndpointURL,
 		VaultSecretStoragePath: vaultSecretStoragePath,
 		VaultMountPath:         vaultMountPath,
