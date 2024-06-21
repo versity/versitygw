@@ -137,28 +137,24 @@ test_common_put_get_object() {
   fi
 
   local object_name="test-object"
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+
+  create_test_files "$object_name" || fail "error creating test file"
   echo "test data" > "$test_file_folder"/"$object_name"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
-  put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || local exists_result_one=$?
-  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+  if [[ $1 == 's3' ]]; then
+    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
+  else
+    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
+  fi
+  object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || fail "object not added to bucket"
 
-  get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$test_file_folder/${object_name}_copy" || local delete_result=$?
-  [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
-  object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || local exists_result_two=$?
-  [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
-
-  compare_files "$test_file_folder"/"$object_name" "$test_file_folder/${object_name}_copy" || compare_result=$?
-  [[ $compare_result -ne 0 ]] || fail "objects are different"
+  get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$test_file_folder/${object_name}_copy" || fail "failed to get object"
+  compare_files "$test_file_folder"/"$object_name" "$test_file_folder/${object_name}_copy" || fail "objects are different"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
-  delete_test_files "$test_file_folder/$object_name" "$test_file_folder/${object_name}_copy"
+  delete_test_files "$object_name" "${object_name}_copy"
 }
 
 test_common_get_set_versioning() {
@@ -440,12 +436,10 @@ test_common_get_bucket_location() {
 
 test_common_put_bucket_acl() {
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
 
   if ! user_exists "ABCDEFG"; then
-    create_user "ABCDEFG" "HIJKLMN" user || create_result=$?
-    [[ $create_result -eq 0 ]] || fail "Error creating user"
+    create_user "ABCDEFG" "HIJKLMN" user || fail "error creating user"
   fi
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
@@ -480,8 +474,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || local put_result=$?
-  [[ $put_result -eq 0 ]] || fail "Error putting acl"
+  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting acl"
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Error retrieving acl"

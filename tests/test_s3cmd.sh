@@ -10,6 +10,7 @@ source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh
 
 export RUN_S3CMD=true
+export RUN_USERS=true
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
@@ -52,6 +53,26 @@ export RUN_S3CMD=true
 
 # get-bucket-acl - test_put_bucket_acl
 
+# get-bucket-location
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "s3cmd"
+}
+
+# get-bucket-policy - test_get_put_delete_bucket_policy
+
+# get-object
+@test "test_put_get_object" {
+  test_common_put_get_object "s3cmd"
+}
+
+@test "test_put_object_with_data" {
+  test_common_put_object_with_data "s3cmd"
+}
+
+@test "test_put_object_no_data" {
+  test_common_put_object_no_data "s3cmd"
+}
+
 #@test "test_put_bucket_acl" {
 #  test_common_put_bucket_acl "s3cmd"
 #}
@@ -73,22 +94,12 @@ export RUN_S3CMD=true
   test_common_list_objects_file_count "s3cmd"
 }
 
-
 @test "test_get_bucket_info_s3cmd" {
   setup_bucket "s3cmd" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
   head_bucket "s3cmd" "$BUCKET_ONE_NAME"
   [[ $bucket_info == *"s3://$BUCKET_ONE_NAME"* ]] || fail "failure to retrieve correct bucket info: $bucket_info"
   delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
-}
-
-# put-object
-@test "test_put_object_with_data" {
-  test_common_put_object_with_data "s3cmd"
-}
-
-@test "test_put_object_no_data" {
-  test_common_put_object_no_data "s3cmd"
 }
 
 @test "test_get_bucket_info_doesnt_exist_s3cmd" {
@@ -100,6 +111,3 @@ export RUN_S3CMD=true
   delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
 }
 
-@test "test_get_bucket_location" {
-  test_common_get_bucket_location "s3cmd"
-}

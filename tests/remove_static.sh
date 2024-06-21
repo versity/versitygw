@@ -2,7 +2,6 @@
 
 source ./tests/setup.sh
 source ./tests/util.sh
-source ./tests/commands/delete_bucket.sh
 
 delete_bucket_if_exists() {
   if [[ $# -ne 2 ]]; then
@@ -18,7 +17,7 @@ delete_bucket_if_exists() {
     log 5 "bucket '$2' doesn't exist, skipping"
     return 0
   fi
-  if ! delete_bucket "$1" "$2"; then
+  if ! delete_bucket_recursive "$1" "$2"; then
     log 2 "error deleting bucket"
     return 1
   fi

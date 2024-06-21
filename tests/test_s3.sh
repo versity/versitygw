@@ -23,6 +23,11 @@ source ./tests/test_common.sh
 
 # delete-objects - tested with recursive bucket delete
 
+# get-object
+@test "test_copy_get_object" {
+  test_common_put_get_object "s3"
+}
+
 @test "test_put_object" {
   test_common_put_object_no_data "s3"
 }
@@ -33,8 +38,4 @@ source ./tests/test_common.sh
 
 @test "test_list_objects_file_count" {
   test_common_list_objects_file_count "s3"
-}
-
-@test "test_put_get_object" {
-  test_common_put_get_object "s3"
 }

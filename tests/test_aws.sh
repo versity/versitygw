@@ -110,7 +110,7 @@ export RUN_USERS=true
   create_test_files "$bucket_file" || fail "error creating test file"
   printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
 
-  delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
+  delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
   # in static bucket config, bucket will still exist
   bucket_exists "s3api" "$BUCKET_ONE_NAME" || local exists_result=$?
   [[ $exists_result -ne 2 ]] || fail "error checking for bucket existence"
@@ -227,18 +227,16 @@ export RUN_USERS=true
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
 
-#@test "test_get_object_invalid_range" {
-#  bucket_file="bucket_file"
-#
-#  create_test_files "$bucket_file" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating test files"
-#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
-#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
-#  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
-#}
+# get-bucket-location
+@test "test_get_bucket_location" {
+  test_common_get_bucket_location "aws"
+}
 
+# get-bucket-policy - test_get_put_delete_bucket_policy
+
+# get-bucket-tagging - test_set_get_delete_bucket_tags
+
+# get-object
 @test "test_get_object_full_range" {
   bucket_file="bucket_file"
 
@@ -251,6 +249,18 @@ export RUN_USERS=true
   get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=9-15" "$test_file_folder/$bucket_file-range" || fail "error getting range"
   [[ "$(cat "$test_file_folder/$bucket_file-range")" == "9" ]] || fail "byte range not copied properly"
 }
+
+#@test "test_get_object_invalid_range" {
+#  bucket_file="bucket_file"
+#
+#  create_test_files "$bucket_file" || local created=$?
+#  [[ $created -eq 0 ]] || fail "Error creating test files"
+#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
+#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
+#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
+#  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
+#}
 
 @test "test_put_object" {
   bucket_file="bucket_file"
@@ -418,7 +428,7 @@ legal_hold_retention_setup() {
     return 1
   fi
 
-  delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
+  delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
   create_user_if_nonexistent "$1" "$2" "user" || fail "error creating user if nonexistent"
   create_test_files "$3" || fail "error creating test files"
 
@@ -709,6 +719,278 @@ legal_hold_retention_setup() {
   delete_test_files $folder_name
 }
 
+#@test "test_put_policy_no_version" {
+#  policy_file="policy_file"
+#
+#  create_test_files "$policy_file" || fail "error creating policy file"
+#
+#  effect="Allow"
+#  principal="*"
+#  action="s3:GetObject"
+#  resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
+#
+#  cat <<EOF > "$test_file_folder"/$policy_file
+#    {
+#      "Statement": [
+#        {
+#           "Effect": "$effect",
+#           "Principal": "$principal",
+#           "Action": "$action",
+#           "Resource": "$resource"
+#        }
+#      ]
+#    }
+#EOF
+#
+#    setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+#
+#    check_for_empty_policy "s3api" "$BUCKET_ONE_NAME" || fail "policy not empty"
+#
+#    put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+#
+#    get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "unable to retrieve policy"
+#}
+
+@test "test_put_policy_invalid_action" {
+  policy_file="policy_file"
+
+  create_test_files "$policy_file" || fail "error creating policy file"
+
+  effect="Allow"
+  principal="*"
+  action="s3:GetObjectt"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+    {
+      "Statement": [
+        {
+           "Effect": "$effect",
+           "Principal": "$principal",
+           "Action": "$action",
+           "Resource": "$resource"
+        }
+      ]
+    }
+EOF
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+
+  check_for_empty_policy "s3api" "$BUCKET_ONE_NAME" || fail "policy not empty"
+
+  if put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"; then
+    fail "put succeeded despite malformed policy"
+  fi
+  # shellcheck disable=SC2154
+  [[ "$put_bucket_policy_error" == *"MalformedPolicy"*"unsupported action"* ]] || fail "invalid policy error: $put_bucket_policy_error"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file"
+}
+
+@test "test_policy_get_object_with_user" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+  test_file="test_file"
+
+  create_test_files "$test_file" "$policy_file" || fail "error creating policy file"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "error copying object"
+
+  if ! check_for_empty_policy "s3api" "$BUCKET_ONE_NAME"; then
+    delete_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error deleting policy"
+    check_for_empty_policy "s3api" "$BUCKET_ONE_NAME" || fail "policy not empty after deletion"
+  fi
+
+  if put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"; then
+    fail "put succeeded despite invalid username"
+  fi
+  [[ "$put_bucket_policy_error" == *"MalformedPolicy"* ]] || fail "invalid policy error: $put_bucket_policy_error"
+
+#  cat <<EOF > "$test_file_folder"/acl_file
+#{
+#  "Grants": [
+#    {
+#      "Grantee": {
+#        "ID": "ABCDEFG",
+#        "Type": "CanonicalUser"
+#      },
+#      "Permission": "READ"
+#    }
+#  ],
+#  "Owner": {
+#    "ID": "$AWS_ACCESS_KEY_ID"
+#  }
+#}
+#EOF
+#
+  #put_bucket_acl "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/acl_file" || fail "error putting acl"
+  #put_bucket_canned_acl "$BUCKET_ONE_NAME" "public-read-write" || fail "error putting acl"
+
+  create_user "$username" "$password" "user" || fail "error creating user"
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
+    fail "get object with user succeeded despite lack of permissions"
+  fi
+  # shellcheck disable=SC2154
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  #get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket policy"
+  #log 5 "$bucket_policy"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object after permissions"
+  compare_files "$test_file_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files not equal"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_policy_get_object_specific_file" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file"
+  test_file="test_file"
+  test_file_two="test_file_two"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" "$test_file" "$test_file_two" || fail "error creating policy file"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file"
+  echo "$BATS_TEST_NAME-2" >> "$test_file_folder/$test_file_two"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/test_file"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+
+  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "error copying object"
+  put_object "s3api" "$test_file_folder/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two" || fail "error copying object"
+
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object after permissions"
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file_two" "$test_file_folder/$test_file_two-copy" "$username" "$password"; then
+    fail "get object with user succeeded despite lack of permissions"
+  fi
+  # shellcheck disable=SC2154
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_policy_get_object_file_wildcard" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file_one"
+  policy_file_two="policy_file_two"
+  policy_file_three="policy_fil"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" "$policy_file_two" "$policy_file_three" || fail "error creating policy file"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$policy_file"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/policy_file*"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user account"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+
+  put_object "s3api" "$test_file_folder/$policy_file" "$BUCKET_ONE_NAME" "$policy_file" || fail "error copying object one"
+  put_object "s3api" "$test_file_folder/$policy_file_two" "$BUCKET_ONE_NAME" "$policy_file_two" || fail "error copying object two"
+  put_object "s3api" "$test_file_folder/$policy_file_three" "$BUCKET_ONE_NAME" "$policy_file_three" || fail "error copying object three"
+
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$policy_file" "$test_file_folder/$policy_file" "$username" "$password" || fail "error getting object one after permissions"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$policy_file_two" "$test_file_folder/$policy_file_two" "$username" "$password" || fail "error getting object two after permissions"
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$policy_file_three" "$test_file_folder/$policy_file_three" "$username" "$password"; then
+    fail "get object three with user succeeded despite lack of permissions"
+  fi
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
+@test "test_policy_get_object_folder_wildcard" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file"
+  test_folder="test_folder"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_folder "$test_folder" || fail "error creating test folder"
+  create_test_files "$test_folder/$test_file" "$policy_file" || fail "error creating policy file, test file"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_folder/$test_file"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+
+  put_object "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" || fail "error copying object to bucket"
+
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_file_folder/$test_file" "$username" "$password" || fail "error getting object one after permissions"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_folder/$test_file" "$policy_file"
+}
+
+# ensure that lists of files greater than a size of 1000 (pagination) are returned properly
+#@test "test_list_objects_file_count" {
+#  test_common_list_objects_file_count "aws"
+#}
+
+#@test "test_filename_length" {
+#  file_name=$(printf "%0.sa" $(seq 1 1025))
+#  echo "$file_name"
+
+
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly
 #@test "test_list_objects_file_count" {
 #  test_common_list_objects_file_count "aws"
@@ -750,7 +1032,6 @@ legal_hold_retention_setup() {
 }
 
 @test "test_add_object_metadata" {
-
   object_one="object-one"
   test_key="x-test-data"
   test_value="test-value"
@@ -775,7 +1056,3 @@ legal_hold_retention_setup() {
   [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
 }
 
-
-@test "test_get_bucket_location" {
-  test_common_get_bucket_location "aws"
-}

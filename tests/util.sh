@@ -8,12 +8,14 @@ source ./tests/commands/complete_multipart_upload.sh
 source ./tests/commands/create_multipart_upload.sh
 source ./tests/commands/create_bucket.sh
 source ./tests/commands/delete_bucket.sh
+source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_objects.sh
+source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/upload_part_copy.sh
 
 # recursively delete an AWS bucket
@@ -144,28 +146,34 @@ bucket_exists() {
 # return:  0 for success, 1 for failure
 delete_bucket_or_contents() {
   if [ $# -ne 2 ]; then
-    echo "delete bucket or contents function requires command type, bucket name"
+    log 2 "delete bucket or contents function requires command type, bucket name"
     return 1
   fi
   if [[ $RECREATE_BUCKETS == "false" ]]; then
-    delete_bucket_contents "$1" "$2" || local delete_result=$?
-    if [[ $delete_result -ne 0 ]]; then
-      echo "error deleting bucket contents"
+    if ! delete_bucket_contents "$1" "$2"; then
+      log 2 "error deleting bucket contents"
       return 1
     fi
-    log 5 "bucket contents deletion success"
+    if ! delete_bucket_policy "s3api" "$2"; then
+      log 2 "error deleting bucket policies"
+      return 1
+    fi
+    if ! put_bucket_canned_acl "$2" "private"; then
+      log 2 "error resetting bucket ACLs"
+      return 1
+    fi
+    log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
-  delete_bucket_recursive "$1" "$2" || local delete_result=$?
-  if [[ $delete_result -ne 0 ]]; then
-    echo "Bucket deletion error"
+  if ! delete_bucket_recursive "$1" "$2"; then
+    log 2 "Bucket deletion error"
     return 1
   fi
   log 5 "bucket deletion success"
   return 0
 }
 
-delete_bucket_if_exists() {
+delete_bucket_or_contents_if_exists() {
   if [ $# -ne 2 ]; then
     log 2 "bucket creation function requires command type, bucket name"
     return 1
@@ -201,7 +209,7 @@ setup_bucket() {
     log 2 "bucket creation function requires command type, bucket name"
     return 1
   fi
-  delete_bucket_if_exists "$1" "$2" || local delete_bucket_result=$?
+  delete_bucket_or_contents_if_exists "$1" "$2" || local delete_bucket_result=$?
   if [[ $delete_bucket_result -ne 0 ]]; then
     log 2 "error deleting bucket, or checking for bucket existence"
     return 1
