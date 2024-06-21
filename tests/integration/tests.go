@@ -31,6 +31,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -5149,7 +5150,7 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) error {
 			PartNumber:      &partNumber,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+		if err := checkApiErr(err, backend.CreateExceedingRangeErr(int64(srcObjSize))); err != nil {
 			return err
 		}
 

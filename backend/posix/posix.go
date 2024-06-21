@@ -1209,7 +1209,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	if startOffset+length > fi.Size()+1 {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidRange)
+		return s3response.CopyObjectResult{}, backend.CreateExceedingRangeErr(fi.Size())
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
