@@ -474,10 +474,15 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting acl"
+  log 6 "before 1st put acl"
+  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
+  else
+    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "ABCDEFG" || fail "error putting first acl"
+  fi
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+  [[ $result -eq 0 ]] || fail "Error retrieving second acl"
 
   log 5 "Acls after 1st put: $acl"
   public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants[0]')
@@ -502,10 +507,10 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || local put_result=$?
-  [[ $put_result -eq 0 ]] || fail "Error putting acl"
+  [[ $put_result -eq 0 ]] || fail "Error putting second acl"
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+  [[ $result -eq 0 ]] || fail "Error retrieving second acl"
 
   log 5 "Acls after 2nd put: $acl"
   public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants')

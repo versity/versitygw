@@ -31,6 +31,10 @@
 8. Set `BUCKET_ONE_NAME` and `BUCKET_TWO_NAME` to the desired names of your buckets.  If you don't want them to be created each time, set `RECREATE_BUCKETS` to `false`.
 9. In the root repo folder, run single test group with `VERSITYGW_TEST_ENV=<env file> tests/run.sh <options>`.  To print options, run `tests/run.sh -h`.  To run all tests, run `VERSITYGW_TEST_ENV=<env file> tests/run_all.sh`.
 
+### Static Bucket Mode
+
+To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.
+
 ### S3 Backend
 
 Instructions are mostly the same; however, testing with the S3 backend requires two S3 accounts.  Ideally, these are two real accounts, but one can also be a dummy account that versity uses internally.

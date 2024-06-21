@@ -62,8 +62,7 @@ export RUN_USERS=true
 
   multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "error performing multipart upload"
 
-  copy_file "s3://$BUCKET_ONE_NAME/$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error copying file"
-  compare_files "$test_file_folder/$bucket_file-copy" "$test_file_folder"/$bucket_file || fail "files do not match"
+  download_and_compare_file "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file-copy" || fail "error downloading and comparing file"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -976,9 +975,149 @@ EOF
 
   put_object "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" || fail "error copying object to bucket"
 
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_file_folder/$test_file" "$username" "$password" || fail "error getting object one after permissions"
+  download_and_compare_file_with_user "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error downloading and comparing file"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$test_folder/$test_file" "$policy_file"
+}
+
+@test "test_policy_allow_deny" {
+  policy_file="policy_file"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" "$test_file" || fail "error creating policy file"
+
+  principal="$username"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+    {
+      "Statement": [
+        {
+           "Effect": "Deny",
+           "Principal": "$principal",
+           "Action": "$action",
+           "Resource": "$resource"
+        },
+        {
+           "Effect": "Allow",
+           "Principal": "$principal",
+           "Action": "$action",
+           "Resource": "$resource"
+        }
+      ]
+    }
+EOF
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "error copying object to bucket"
+
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
+    fail "able to get object despite deny statement"
+  fi
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_file" "$test_file-copy" "$policy_file"
+}
+
+@test "test_policy_deny" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file"
+  test_file_one="test_file_one"
+  test_file_two="test_file_two"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$test_file_one" "$test_file_two" "$policy_file" || fail "error creating policy file, test file"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Statement": [
+    {
+       "Effect": "Deny",
+       "Principal": "$username",
+       "Action": "s3:GetObject",
+       "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two"
+    },
+    {
+       "Effect": "Allow",
+       "Principal": "$username",
+       "Action": "s3:GetObject",
+       "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    }
+  ]
+}
+EOF
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  log 5 "Policy: $(cat "$test_file_folder/$policy_file")"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  put_object "s3api" "$test_file_folder/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one" || fail "error copying object one"
+  put_object "s3api" "$test_file_folder/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_two" || fail "error copying object two"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_folder/$test_file_one-copy" "$username" "$password" || fail "error getting object"
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file_two" "$test_file_folder/$test_file_two-copy" "$username" "$password"; then
+    fail "able to get object despite deny statement"
+  fi
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_file_one" "$test_file_two" "$test_file_one-copy" "$test_file_two-copy" "$policy_file"
+}
+
+@test "test_policy_put_wildcard" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+
+  policy_file="policy_file"
+  test_folder="test_folder"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_folder "$test_folder" || fail "error creating test folder"
+  create_test_files "$test_folder/$test_file" "$policy_file" || fail "error creating policy file, test file"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_folder/$test_file"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:PutObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  log 5 "Policy: $(cat "$test_file_folder/$policy_file")"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  if put_object_with_user "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"; then
+    fail "able to put object despite not being allowed"
+  fi
+  [[ "$put_object_error" == *"Access Denied"* ]] || fail "invalid put object error: $put_object_error"
+  put_object_with_user "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$username" "$password" || fail "error putting file despite policy permissions"
+  download_and_compare_file "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files don't match"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_folder/$test_file" "$test_file-copy" "$policy_file"
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly

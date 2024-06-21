@@ -18,6 +18,7 @@ jobs:
             RUN_SET: "s3cmd"
             RECREATE_BUCKETS: "true"
             PORT: 7070
+            BACKEND: "posix"
           - set: 2
             LOCAL_FOLDER: /tmp/gw2
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-2
@@ -28,6 +29,7 @@ jobs:
             RUN_SET: "s3"
             RECREATE_BUCKETS: "true"
             PORT: 7071
+            BACKEND: "posix"
           - set: 3
             LOCAL_FOLDER: /tmp/gw3
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-3
@@ -38,6 +40,7 @@ jobs:
             RUN_SET: "s3api"
             RECREATE_BUCKETS: "true"
             PORT: 7072
+            BACKEND: "posix"
           - set: 4
             LOCAL_FOLDER: /tmp/gw4
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
@@ -48,6 +51,7 @@ jobs:
             RUN_SET: "mc"
             RECREATE_BUCKETS: "true"
             PORT: 7073
+            BACKEND: "posix"
           - set: 5
             LOCAL_FOLDER: /tmp/gw5
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-5
@@ -58,6 +62,7 @@ jobs:
             RUN_SET: "aws-user"
             RECREATE_BUCKETS: "true"
             PORT: 7074
+            BACKEND: "posix"
           - set: 6
             LOCAL_FOLDER: /tmp/gw6
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-6
@@ -68,6 +73,18 @@ jobs:
             RUN_SET: "aws"
             RECREATE_BUCKETS: "false"
             PORT: 7075
+            BACKEND: "posix"
+          - set: 7
+            LOCAL_FOLDER: /tmp/gw7
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam7
+            AWS_ENDPOINT_URL: https://127.0.0.1:7076
+            RUN_SET: "aws"
+            RECREATE_BUCKETS: "true"
+            PORT: 7076
+            BACKEND: "s3"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -110,7 +127,7 @@ jobs:
           AWS_PROFILE: versity
           VERSITY_EXE: ${{ github.workspace }}/versitygw
           RUN_VERSITYGW: true
-          BACKEND: posix
+          BACKEND: ${{ matrix.BACKEND }}
           RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
           CERT: ${{ github.workspace }}/cert.pem
           KEY: ${{ github.workspace }}/versitygw.pem
@@ -123,6 +140,8 @@ jobs:
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
           export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
           export AWS_REGION=us-east-1
+          export AWS_ACCESS_KEY_ID_TWO=user
+          export AWS_SECRET_ACCESS_KEY_TWO=pass
           aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity
           aws configure set aws_region $AWS_REGION --profile versity
@@ -135,20 +154,6 @@ jobs:
             BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/setup_static.sh
           fi
           BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/run.sh $RUN_SET
-
-      #- name: Build and run, s3 backend
-      #  run: |
-      #    make testbin
-      #    export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
-      #    export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
-      #    export AWS_REGION=us-east-1
-      #    aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile versity_s3
-      #    aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile versity_s3
-      #    aws configure set aws_region $AWS_REGION --profile versity_s3
-      #    export AWS_ACCESS_KEY_ID_TWO=ABCDEFGHIJKLMNOPQRST
-      #    export AWS_SECRET_ACCESS_KEY_TWO=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
-      #    export WORKSPACE=$GITHUB_WORKSPACE
-      #    VERSITYGW_TEST_ENV=./tests/.env.s3 GOCOVERDIR=/tmp/cover ./tests/run_all.sh
 
       - name: Coverage report
         run: |
