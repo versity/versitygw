@@ -16,7 +16,6 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -119,7 +118,7 @@ var supportedObjectActionList = map[Action]struct{}{
 // Validates Action: it should either wildcard match with supported actions list or be in it
 func (a Action) IsValid() error {
 	if !strings.HasPrefix(string(a), "s3:") {
-		return fmt.Errorf("invalid action: %v", a)
+		return errInvalidAction
 	}
 
 	if a == AllActions {
@@ -134,31 +133,39 @@ func (a Action) IsValid() error {
 			}
 		}
 
-		return fmt.Errorf("invalid wildcard usage: %v prefix is not in the supported actions list", pattern)
+		return errInvalidAction
 	}
 
 	_, found := supportedActionList[a]
 	if !found {
-		return fmt.Errorf("unsupported action: %v", a)
+		return errInvalidAction
 	}
 	return nil
 }
 
+func getBoolPtr(bl bool) *bool {
+	return &bl
+}
+
 // Checks if the action is object action
-func (a Action) IsObjectAction() bool {
+// nil points to 's3:*'
+func (a Action) IsObjectAction() *bool {
+	if a == AllActions {
+		return nil
+	}
 	if a[len(a)-1] == '*' {
 		pattern := strings.TrimSuffix(string(a), "*")
 		for act := range supportedObjectActionList {
 			if strings.HasPrefix(string(act), pattern) {
-				return true
+				return getBoolPtr(true)
 			}
 		}
 
-		return false
+		return getBoolPtr(false)
 	}
 
 	_, found := supportedObjectActionList[a]
-	return found
+	return &found
 }
 
 func (a Action) WildCardMatch(act Action) bool {
@@ -177,7 +184,7 @@ func (a *Actions) UnmarshalJSON(data []byte) error {
 	var err error
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
-			return fmt.Errorf("actions can't be empty")
+			return errInvalidAction
 		}
 		*a = make(Actions)
 		for _, s := range ss {
@@ -190,7 +197,7 @@ func (a *Actions) UnmarshalJSON(data []byte) error {
 		var s string
 		if err = json.Unmarshal(data, &s); err == nil {
 			if s == "" {
-				return fmt.Errorf("actions can't be empty")
+				return errInvalidAction
 			}
 			*a = make(Actions)
 			err = a.Add(s)

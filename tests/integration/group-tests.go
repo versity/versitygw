@@ -286,6 +286,7 @@ func TestGetBucketAcl(s *S3Conf) {
 
 func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_non_existing_bucket(s)
+	PutBucketPolicy_empty_statement(s)
 	PutBucketPolicy_invalid_effect(s)
 	PutBucketPolicy_empty_actions_string(s)
 	PutBucketPolicy_empty_actions_array(s)
@@ -638,6 +639,7 @@ func GetIntTests() IntTests {
 		"GetBucketAcl_access_denied":                                          GetBucketAcl_access_denied,
 		"GetBucketAcl_success":                                                GetBucketAcl_success,
 		"PutBucketPolicy_non_existing_bucket":                                 PutBucketPolicy_non_existing_bucket,
+		"PutBucketPolicy_empty_statement":                                     PutBucketPolicy_empty_statement,
 		"PutBucketPolicy_invalid_effect":                                      PutBucketPolicy_invalid_effect,
 		"PutBucketPolicy_empty_actions_string":                                PutBucketPolicy_empty_actions_string,
 		"PutBucketPolicy_empty_actions_array":                                 PutBucketPolicy_empty_actions_array,

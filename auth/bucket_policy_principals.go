@@ -16,7 +16,6 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 type Principals map[string]struct{}
@@ -37,7 +36,7 @@ func (p *Principals) UnmarshalJSON(data []byte) error {
 
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
-			return fmt.Errorf("principals can't be empty")
+			return errInvalidPrincipal
 		}
 		*p = make(Principals)
 		for _, s := range ss {
@@ -46,7 +45,7 @@ func (p *Principals) UnmarshalJSON(data []byte) error {
 		return nil
 	} else if err = json.Unmarshal(data, &s); err == nil {
 		if s == "" {
-			return fmt.Errorf("principals can't be empty")
+			return errInvalidPrincipal
 		}
 		*p = make(Principals)
 		p.Add(s)
@@ -54,7 +53,7 @@ func (p *Principals) UnmarshalJSON(data []byte) error {
 		return nil
 	} else if err = json.Unmarshal(data, &k); err == nil {
 		if k.AWS == "" {
-			return fmt.Errorf("principals can't be empty")
+			return errInvalidPrincipal
 		}
 		*p = make(Principals)
 		p.Add(k.AWS)
@@ -66,7 +65,7 @@ func (p *Principals) UnmarshalJSON(data []byte) error {
 		}
 		if err = json.Unmarshal(data, &sk); err == nil {
 			if len(sk.AWS) == 0 {
-				return fmt.Errorf("principals can't be empty")
+				return errInvalidPrincipal
 			}
 			*p = make(Principals)
 			for _, s := range sk.AWS {
@@ -98,7 +97,7 @@ func (p Principals) Validate(iam IAMService) error {
 		if len(p) == 1 {
 			return nil
 		}
-		return fmt.Errorf("principals should either contain * or user access keys")
+		return errInvalidPrincipal
 	}
 
 	accs, err := CheckIfAccountsExist(p.ToSlice(), iam)
@@ -106,7 +105,7 @@ func (p Principals) Validate(iam IAMService) error {
 		return err
 	}
 	if len(accs) > 0 {
-		return fmt.Errorf("user accounts don't exist: %v", accs)
+		return errInvalidPrincipal
 	}
 
 	return nil

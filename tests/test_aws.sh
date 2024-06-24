@@ -782,7 +782,7 @@ EOF
     fail "put succeeded despite malformed policy"
   fi
   # shellcheck disable=SC2154
-  [[ "$put_bucket_policy_error" == *"MalformedPolicy"*"unsupported action"* ]] || fail "invalid policy error: $put_bucket_policy_error"
+  [[ "$put_bucket_policy_error" == *"MalformedPolicy"*"invalid action"* ]] || fail "invalid policy error: $put_bucket_policy_error"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$policy_file"
 }
