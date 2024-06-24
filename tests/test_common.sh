@@ -345,10 +345,9 @@ test_common_presigned_url_utf8_chars() {
 
   local bucket_file="my-$%^&*;"
   local bucket_file_copy="bucket-file-copy"
-  bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || local created=$?
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/"$bucket_file"
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
   setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
