@@ -16,7 +16,6 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -30,7 +29,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 	var err error
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
-			return fmt.Errorf("resources can't be empty")
+			return errInvalidResource
 		}
 		*r = make(Resources)
 		for _, s := range ss {
@@ -43,7 +42,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 		var s string
 		if err = json.Unmarshal(data, &s); err == nil {
 			if s == "" {
-				return fmt.Errorf("resources can't be empty")
+				return errInvalidResource
 			}
 			*r = make(Resources)
 			err = r.Add(s)
@@ -60,12 +59,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 func (r Resources) Add(rc string) error {
 	ok, pattern := isValidResource(rc)
 	if !ok {
-		return fmt.Errorf("invalid resource: %v", rc)
-	}
-
-	_, found := r[pattern]
-	if found {
-		return fmt.Errorf("duplicate resource: %v", rc)
+		return errInvalidResource
 	}
 
 	r[pattern] = struct{}{}
@@ -99,7 +93,7 @@ func (r Resources) ContainsBucketPattern() bool {
 func (r Resources) Validate(bucket string) error {
 	for resource := range r {
 		if !strings.HasPrefix(resource, bucket) {
-			return fmt.Errorf("incorrect bucket name in %v", resource)
+			return errInvalidResource
 		}
 	}
 

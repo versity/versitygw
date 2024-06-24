@@ -6320,6 +6320,28 @@ func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_empty_statement(s *S3Conf) error {
+	testName := "PutBucketPolicy_empty_statement"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := `
+		{
+			"Statement": []
+		}
+		`
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err := checkApiErr(err, getMalformedPolicyError("Could not parse the policy: Statement is empty!")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutBucketPolicy_invalid_effect(s *S3Conf) error {
 	testName := "PutBucketPolicy_invalid_effect"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6332,7 +6354,7 @@ func PutBucketPolicy_invalid_effect(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("invalid effect: invalid_effect")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid effect: invalid_effect")); err != nil {
 			return err
 		}
 		return nil
@@ -6351,7 +6373,7 @@ func PutBucketPolicy_empty_actions_string(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("actions can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
 			return err
 		}
 		return nil
@@ -6370,7 +6392,7 @@ func PutBucketPolicy_empty_actions_array(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("actions can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
 			return err
 		}
 		return nil
@@ -6389,7 +6411,7 @@ func PutBucketPolicy_invalid_action(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("invalid action: ListObjects")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
 			return err
 		}
 		return nil
@@ -6408,7 +6430,7 @@ func PutBucketPolicy_unsupported_action(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("unsupported action: s3:PutLifecycleConfiguration")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
 			return err
 		}
 		return nil
@@ -6427,7 +6449,7 @@ func PutBucketPolicy_incorrect_action_wildcard_usage(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("invalid wildcard usage: s3:hello prefix is not in the supported actions list")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
 			return err
 		}
 		return nil
@@ -6446,7 +6468,7 @@ func PutBucketPolicy_empty_principals_string(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
 			return err
 		}
 		return nil
@@ -6465,7 +6487,7 @@ func PutBucketPolicy_empty_principals_array(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
 			return err
 		}
 		return nil
@@ -6484,7 +6506,7 @@ func PutBucketPolicy_principals_aws_struct_empty_string(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
 			return err
 		}
 		return nil
@@ -6503,7 +6525,7 @@ func PutBucketPolicy_principals_aws_struct_empty_string_slice(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("principals can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
 			return err
 		}
 		return nil
@@ -6522,7 +6544,7 @@ func PutBucketPolicy_principals_incorrect_wildcard_usage(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("principals should either contain * or user access keys")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
 			return err
 		}
 		return nil
@@ -6541,14 +6563,8 @@ func PutBucketPolicy_non_existing_principals(s *S3Conf) error {
 		})
 		cancel()
 
-		apiErr1 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_1", "a_rarely_existing_user_account_2"}))
-		apiErr2 := getMalformedPolicyError(fmt.Sprintf("user accounts don't exist: %v", []string{"a_rarely_existing_user_account_2", "a_rarely_existing_user_account_1"}))
-
-		err1 := checkApiErr(err, apiErr1)
-		err2 := checkApiErr(err, apiErr2)
-
-		if err1 != nil && err2 != nil {
-			return err1
+		if err := checkApiErr(err, getMalformedPolicyError("Invalid principal in policy")); err != nil {
+			return err
 		}
 
 		return nil
@@ -6567,7 +6583,7 @@ func PutBucketPolicy_empty_resources_string(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("resources can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid resource")); err != nil {
 			return err
 		}
 		return nil
@@ -6586,7 +6602,7 @@ func PutBucketPolicy_empty_resources_array(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("resources can't be empty")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid resource")); err != nil {
 			return err
 		}
 		return nil
@@ -6606,7 +6622,7 @@ func PutBucketPolicy_invalid_resource_prefix(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("invalid resource: %v", resource[1:len(resource)-1]))); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid resource")); err != nil {
 			return err
 		}
 		return nil
@@ -6626,7 +6642,7 @@ func PutBucketPolicy_invalid_resource_with_starting_slash(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("invalid resource: %v", resource[1:len(resource)-1]))); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid resource")); err != nil {
 			return err
 		}
 		return nil
@@ -6645,10 +6661,10 @@ func PutBucketPolicy_duplicate_resource(s *S3Conf) error {
 			Policy: &doc,
 		})
 		cancel()
-
-		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("duplicate resource: %v", resource[1:len(resource)-1]))); err != nil {
+		if err != nil {
 			return err
 		}
+
 		return nil
 	})
 }
@@ -6666,7 +6682,7 @@ func PutBucketPolicy_incorrect_bucket_name(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError(fmt.Sprintf("incorrect bucket name in prefix-%v", bucket))); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid resource")); err != nil {
 			return err
 		}
 		return nil
@@ -6686,7 +6702,7 @@ func PutBucketPolicy_object_action_on_bucket_resource(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("unsupported object action 's3:PutObjectTagging' on the specified resources")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Action does not apply to any resource(s) in statement")); err != nil {
 			return err
 		}
 		return nil
@@ -6706,7 +6722,7 @@ func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, getMalformedPolicyError("unsupported bucket action 's3:DeleteBucket' on the specified resources")); err != nil {
+		if err := checkApiErr(err, getMalformedPolicyError("Action does not apply to any resource(s) in statement")); err != nil {
 			return err
 		}
 		return nil

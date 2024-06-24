@@ -30,5 +30,6 @@ func (bpat BucketPolicyAccessType) Validate() error {
 		return nil
 	}
 
-	return fmt.Errorf("invalid effect: %v", bpat)
+	//lint:ignore ST1005 Reason: This error message is intended for end-user clarity and follows their expectations
+	return fmt.Errorf("Invalid effect: %v", bpat)
 }
