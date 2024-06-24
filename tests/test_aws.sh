@@ -33,10 +33,9 @@ export RUN_USERS=true
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
   local bucket_file="bucket-file"
-  bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || fail "error creating test files"
-  printf "%s" "$bucket_file_data" > "$test_file_folder/$bucket_file"
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
 
   setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
@@ -53,10 +52,9 @@ export RUN_USERS=true
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
   local bucket_file="bucket-file"
-  bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || fail "error creating test files"
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
 
   setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
 
@@ -87,7 +85,6 @@ export RUN_USERS=true
 # create-multipart-upload
 @test "test_create_multipart_upload_properties" {
   local bucket_file="bucket-file"
-  local bucket_file_data="test file\n"
 
   local expected_content_type="application/zip"
   local expected_meta_key="testKey"
@@ -108,7 +105,7 @@ export RUN_USERS=true
   fi
 
   create_test_files "$bucket_file" || fail "error creating test file"
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
 
   delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
   # in static bucket config, bucket will still exist
@@ -551,11 +548,10 @@ legal_hold_retention_setup() {
 # test multi-part upload list parts command
 @test "test-multipart-upload-list-parts" {
   local bucket_file="bucket-file"
-  local bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
@@ -634,11 +630,10 @@ legal_hold_retention_setup() {
 
 @test "test-multipart-upload-from-bucket" {
   local bucket_file="bucket-file"
-  bucket_file_data="test file\n"
 
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
-  printf "%s" "$bucket_file_data" > "$test_file_folder"/$bucket_file
+  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
