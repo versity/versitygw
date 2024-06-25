@@ -164,3 +164,29 @@ create_test_file_count() {
   fi
   return 0
 }
+
+download_and_compare_file() {
+  if [[ $# -ne 5 ]]; then
+    log 2 "'download and compare file' requires command type, original file, bucket, key, local file"
+    return 1
+  fi
+  download_and_compare_file_with_user "$1" "$2" "$3" "$4" "$5" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+  return "$?"
+}
+
+download_and_compare_file_with_user() {
+  if [[ $# -ne 7 ]]; then
+    log 2 "'download and compare file with user' command requires command type, original file, bucket, key, local file, user, password"
+    return 1
+  fi
+  if ! get_object_with_user "$1" "$3" "$4" "$5" "$6" "$7"; then
+    log 2 "error retrieving file"
+    return 1
+  fi
+  log 5 "files: $2, $5"
+  if ! compare_files "$2" "$5"; then
+    log 2 "files don't match"
+    return 1
+  fi
+  return 0
+}
