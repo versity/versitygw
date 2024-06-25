@@ -19,6 +19,7 @@ source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/get_object_retention.sh
 source ./tests/commands/get_object_tagging.sh
+source ./tests/commands/list_multipart_uploads.sh
 source ./tests/commands/list_object_versions.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_policy.sh
@@ -548,29 +549,25 @@ legal_hold_retention_setup() {
 @test "test-multipart-upload-list-parts" {
   local bucket_file="bucket-file"
 
-  create_test_files "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
+  create_test_files "$bucket_file" || fail "error creating test file"
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
 
-  list_parts "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || list_result=$?
-  [[ list_result -eq 0 ]] || fail "Listing multipart upload parts failed"
+  list_parts "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "listing multipart upload parts failed"
 
   declare -a parts_map
+  # shellcheck disable=SC2154
+  log 5 "parts: $parts"
   for i in {0..3}; do
     local part_number
     local etag
-    part_number=$(echo "$parts" | jq ".[$i].PartNumber")
-    if [[ $part_number -eq "" ]]; then
-      echo "error:  blank part number"
-      return 1
-    fi
-    etag=$(echo "$parts" | jq ".[$i].ETag")
-    if [[ $etag == "" ]]; then
-      echo "error:  blank etag"
-      return 1
-    fi
+    # shellcheck disable=SC2154
+    part=$(echo "$parts" | grep -v "InsecureRequestWarning" | jq -r ".[$i]" 2>&1) || fail "error getting part: $part"
+    part_number=$(echo "$part" | jq ".PartNumber" 2>&1) || fail "error parsing part number: $part_number"
+    [[ $part_number != "" ]] || fail "error:  blank part number"
+
+    etag=$(echo "$part" | jq ".ETag" 2>&1) || fail "error parsing etag: $etag"
+    [[ $etag != "" ]] || fail "error:  blank etag"
     # shellcheck disable=SC2004
     parts_map[$part_number]=$etag
   done
@@ -579,12 +576,11 @@ legal_hold_retention_setup() {
   for i in {0..3}; do
     local part_number
     local etag
-    part_number=$(echo "$listed_parts" | jq ".Parts[$i].PartNumber")
-    etag=$(echo "$listed_parts" | jq ".Parts[$i].ETag")
-    if [[ ${parts_map[$part_number]} != "$etag" ]]; then
-      echo "error:  etags don't match (part number: $part_number, etags ${parts_map[$part_number]},$etag)"
-      return 1
-    fi
+    # shellcheck disable=SC2154
+    listed_part=$(echo "$listed_parts" | grep -v "InsecureRequestWarning" | jq -r ".Parts[$i]" 2>&1) || fail "error parsing listed part: $listed_part"
+    part_number=$(echo "$listed_part" | jq ".PartNumber" 2>&1) || fail "error parsing listed part number: $part_number"
+    etag=$(echo "$listed_part" | jq ".ETag" 2>&1) || fail "error getting listed etag: $etag"
+    [[ ${parts_map[$part_number]} == "$etag" ]] || fail "error:  etags don't match (part number: $part_number, etags ${parts_map[$part_number]},$etag)"
   done
 
   run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder/$bucket_file" 4
@@ -598,30 +594,25 @@ legal_hold_retention_setup() {
   local bucket_file_two="bucket-file-two"
 
   if [[ $RECREATE_BUCKETS == false ]]; then
-    abort_all_multipart_uploads "$BUCKET_ONE_NAME" || local abort_result=$?
-    [[ $abort_result -eq 0 ]] || fail "error aborting all uploads"
+    abort_all_multipart_uploads "$BUCKET_ONE_NAME" || fail "error aborting all uploads"
   fi
 
-  create_test_files "$bucket_file_one" "$bucket_file_two" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  create_test_files "$bucket_file_one" "$bucket_file_two" || fail "error creating test files"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
 
-  list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two" || fail "failed to list multipart uploads"
+  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two" || fail "failed to list multipart uploads"
 
   local key_one
   local key_two
-  log 5 "$uploads"
-  key_one=$(echo "$uploads" | jq '.Uploads[0].Key')
-  key_two=$(echo "$uploads" | jq '.Uploads[1].Key')
+  # shellcheck disable=SC2154
+  log 5 "Uploads:  $uploads"
+  raw_uploads=$(echo "$uploads" | grep -v "InsecureRequestWarning")
+  key_one=$(echo "$raw_uploads" | jq -r '.Uploads[0].Key' 2>&1) || fail "error getting key one: $key_one"
+  key_two=$(echo "$raw_uploads" | jq -r '.Uploads[1].Key' 2>&1) || fail "error getting key two: $key_two"
   key_one=${key_one//\"/}
   key_two=${key_two//\"/}
-  if [[ "$test_file_folder/$bucket_file_one" != *"$key_one" ]]; then
-    fail "Key mismatch ($test_file_folder/$bucket_file_one, $key_one)"
-  fi
-  if [[ "$test_file_folder/$bucket_file_two" != *"$key_two" ]]; then
-    fail "Key mismatch ($test_file_folder/$bucket_file_two, $key_two)"
-  fi
+  [[ "$test_file_folder/$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($test_file_folder/$bucket_file_one, $key_one)"
+  [[ "$test_file_folder/$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($test_file_folder/$bucket_file_two, $key_two)"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file_one" "$bucket_file_two"
@@ -1110,9 +1101,205 @@ EOF
   fi
   [[ "$put_object_error" == *"Access Denied"* ]] || fail "invalid put object error: $put_object_error"
   put_object_with_user "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$username" "$password" || fail "error putting file despite policy permissions"
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_folder/$test_file-copy" "$username" "$password"; then
+    fail "able to get object without permissions"
+  fi
+  [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
   download_and_compare_file "s3api" "$test_file_folder/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files don't match"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$test_folder/$test_file" "$test_file-copy" "$policy_file"
+}
+
+@test "test_policy_delete" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  test_file_one="test_file_one"
+  test_file_two="test_file_two"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$test_file_one" "$test_file_two" "$policy_file" || fail "error creating policy file, test files"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file_one"
+  echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file_two"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:DeleteObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  log 5 "Policy: $(cat "$test_file_folder/$policy_file")"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+
+  put_object "s3api" "$test_file_folder/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one" || fail "error copying object one"
+  put_object "s3api" "$test_file_folder/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two" || fail "error copying object two"
+  if delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file_one" "$username" "$password"; then
+    fail "able to delete object despite lack of permissions"
+  fi
+  [[ "$delete_object_error" == *"Access Denied"* ]] || fail "invalid delete object error: $delete_object_error"
+  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file_two" "$username" "$password" || fail "error deleting object despite permissions"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$test_file_one" "$test_file_two" "$policy_file"
+}
+
+@test "test_policy_get_bucket_policy" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  if get_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
+    fail "able to retrieve bucket policy despite lack of permissions"
+  fi
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  get_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error getting bucket policy despite permissions"
+  # shellcheck disable=SC2154
+  echo "$bucket_policy" > "$test_file_folder/$policy_file-copy"
+  log 5 "ORIG: $(cat "$test_file_folder/$policy_file")"
+  log 5 "COPY: $(cat "$test_file_folder/$policy_file-copy")"
+  compare_files "$test_file_folder/$policy_file" "$test_file_folder/$policy_file-copy" || fail "policies not equal"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$policy_file-copy"
+}
+
+@test "test_policy_list_multipart_uploads" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+  create_large_file "$test_file" || error creating file "$test_file"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:ListBucketMultipartUploads"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  create_multipart_upload "$BUCKET_ONE_NAME" "$test_file" || fail "error creating multipart upload"
+  if list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
+    log 2 "able to list multipart uploads despite lack of permissions"
+  fi
+  # shellcheck disable=SC2154
+  [[ "$list_multipart_uploads_error" == *"Access Denied"* ]] || fail "invalid list multipart uploads error: $list_multipart_uploads_error"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error listing multipart uploads"
+  log 5 "$uploads"
+  upload_key=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -r ".Uploads[0].Key" 2>&1) || fail "error parsing upload key from uploads message: $upload_key"
+  [[ $upload_key == "$test_file" ]] || fail "upload key doesn't match file marked as being uploaded"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$test_file"
+}
+
+@test "test_policy_put_bucket_policy" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  policy_file_two="policy_file_two"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:PutBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  if put_bucket_policy_with_user "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" "$username" "$password"; then
+    fail "able to retrieve bucket policy despite lack of permissions"
+  fi
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  setup_policy_with_single_statement "$test_file_folder/$policy_file_two" "dummy" "$effect" "$principal" "s3:GetBucketPolicy" "$resource" || fail "failed to set up policy"
+  put_bucket_policy_with_user "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file_two" "$username" "$password" || fail "error putting bucket policy despite permissions"
+  get_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error getting bucket policy despite permissions"
+  # shellcheck disable=SC2154
+  echo "$bucket_policy" > "$test_file_folder/$policy_file-copy"
+  log 5 "ORIG: $(cat "$test_file_folder/$policy_file_two")"
+  log 5 "COPY: $(cat "$test_file_folder/$policy_file-copy")"
+  compare_files "$test_file_folder/$policy_file_two" "$test_file_folder/$policy_file-copy" || fail "policies not equal"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$policy_file_two" "$policy_file-copy"
+}
+
+@test "test_policy_delete_bucket_policy" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:DeleteBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  if delete_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
+    fail "able to delete bucket policy with user $username without right permissions"
+  fi
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  delete_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "unable to delete bucket policy"
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file"
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly

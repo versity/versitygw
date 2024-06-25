@@ -46,6 +46,26 @@ get_bucket_policy_aws() {
   return 0
 }
 
+get_bucket_policy_with_user() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'get bucket policy with user' command requires bucket, username, password"
+    return 1
+  fi
+  if policy_json=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1); then
+    policy_json=$(echo "$policy_json" | grep -v "InsecureRequestWarning")
+    bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
+  else
+    if [[ "$policy_json" == *"(NoSuchBucketPolicy)"* ]]; then
+      bucket_policy=
+    else
+      log 2 "error getting policy for user $2: $policy_json"
+      return 1
+    fi
+  fi
+  export bucket_policy
+  return 0
+}
+
 get_bucket_policy_s3cmd() {
   if [[ $# -ne 1 ]]; then
     echo "s3cmd 'get bucket policy' command requires bucket"
