@@ -867,19 +867,17 @@ copy_file() {
 # export parts on success, return 1 for error
 list_parts() {
   if [ $# -ne 4 ]; then
-    echo "list multipart upload parts command missing bucket, key, file, and/or part count"
+    log 2 "list multipart upload parts command requires bucket, key, file, and part count"
     return 1
   fi
 
-  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
-  if [[ $result -ne 0 ]]; then
-    echo "error performing pre-completion multipart upload"
+  if ! multipart_upload_before_completion "$1" "$2" "$3" "$4"; then
+    log 2 "error performing pre-completion multipart upload"
     return 1
   fi
 
-  listed_parts=$(aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id") || local listed=$?
-  if [[ $listed -ne 0 ]]; then
-    echo "Error aborting upload: $parts"
+  if ! listed_parts=$(aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id" 2>&1); then
+    log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi
   export listed_parts
@@ -888,30 +886,27 @@ list_parts() {
 # list unfinished multipart uploads
 # params:  bucket, key one, key two
 # export current two uploads on success, return 1 for error
-list_multipart_uploads() {
+create_and_list_multipart_uploads() {
   if [ $# -ne 3 ]; then
-    echo "list multipart uploads command requires bucket and two keys"
+    log 2 "list multipart uploads command requires bucket and two keys"
     return 1
   fi
 
-  create_multipart_upload "$1" "$2" || local create_result=$?
-  if [[ $create_result -ne 0 ]]; then
-    echo "error creating multpart upload"
+  if ! create_multipart_upload "$1" "$2"; then
+    log 2 "error creating multpart upload"
     return 1
   fi
 
-  create_multipart_upload "$1" "$3" || local create_result_two=$?
-  if [[ $create_result_two -ne 0 ]]; then
-    echo "error creating multpart upload two"
+  if ! create_multipart_upload "$1" "$3"; then
+    log 2 "error creating multpart upload two"
     return 1
   fi
 
-  uploads=$(aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1") || local list_result=$?
-  if [[ $list_result -ne 0 ]]; then
-    echo "error listing uploads: $uploads"
+  if ! list_multipart_uploads "$1"; then
+    echo "error listing uploads"
     return 1
   fi
-  export uploads
+  return 0
 }
 
 multipart_upload_from_bucket() {

@@ -21,3 +21,16 @@ delete_bucket_policy() {
   fi
   return 0
 }
+
+delete_bucket_policy_with_user() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'delete bucket policy with user' command requires bucket, username, password"
+    return 1
+  fi
+  if ! delete_bucket_policy_error=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3api delete-bucket-policy --bucket "$1" 2>&1); then
+    log 2 "error deleting bucket policy: $delete_bucket_policy_error"
+    export delete_bucket_policy_error
+    return 1
+  fi
+  return 0
+}
