@@ -1302,6 +1302,39 @@ EOF
   delete_test_files "$policy_file"
 }
 
+@test "test_policy_get_bucket_acl" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetBucketAcl"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  if user_exists "$username"; then
+    delete_user "$username" || fail "failed to delete user '$username'"
+  fi
+  create_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  #put_bucket_canned_acl "$BUCKET_ONE_NAME" "private" || fail "error putting bucket canned ACL"
+  if get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
+    fail "user able to get bucket ACLs despite permissions"
+  fi
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error getting bucket ACL despite permissions"
+  log 5 "ACL: $bucket_acl"
+  fail "test fail"
+}
+
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly
 #@test "test_list_objects_file_count" {
 #  test_common_list_objects_file_count "aws"
@@ -1376,4 +1409,3 @@ EOF
   [[ $key == "\"$test_key\"" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
   [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
 }
-
