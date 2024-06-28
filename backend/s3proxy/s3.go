@@ -55,6 +55,8 @@ type S3Proxy struct {
 	debug           bool
 }
 
+var _ backend.Backend = &S3Proxy{}
+
 func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) (*S3Proxy, error) {
 	s := &S3Proxy{
 		access:          access,
@@ -125,6 +127,37 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 
 func (s *S3Proxy) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
 	_, err := s.client.DeleteBucket(ctx, input)
+	return handleError(err)
+}
+
+func (s *S3Proxy) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
+	_, err := s.client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+		Bucket: &bucket,
+		OwnershipControls: &types.OwnershipControls{
+			Rules: []types.OwnershipControlsRule{
+				{
+					ObjectOwnership: ownership,
+				},
+			},
+		},
+	})
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetBucketOwnershipControls(ctx context.Context, bucket string) (types.ObjectOwnership, error) {
+	var ownship types.ObjectOwnership
+	resp, err := s.client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+		Bucket: &bucket,
+	})
+	if err != nil {
+		return ownship, handleError(err)
+	}
+	return resp.OwnershipControls.Rules[0].ObjectOwnership, nil
+}
+func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
+	_, err := s.client.DeleteBucketOwnershipControls(ctx, &s3.DeleteBucketOwnershipControlsInput{
+		Bucket: &bucket,
+	})
 	return handleError(err)
 }
 

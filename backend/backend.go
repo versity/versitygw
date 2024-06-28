@@ -21,6 +21,7 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 	"github.com/versity/versitygw/s3select"
@@ -43,6 +44,9 @@ type Backend interface {
 	PutBucketPolicy(_ context.Context, bucket string, policy []byte) error
 	GetBucketPolicy(_ context.Context, bucket string) ([]byte, error)
 	DeleteBucketPolicy(_ context.Context, bucket string) error
+	PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error
+	GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error)
+	DeleteBucketOwnershipControls(_ context.Context, bucket string) error
 
 	// multipart operations
 	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
@@ -136,6 +140,15 @@ func (BackendUnsupported) GetBucketPolicy(_ context.Context, bucket string) ([]b
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteBucketPolicy(_ context.Context, bucket string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error) {
+	return types.ObjectOwnershipBucketOwnerEnforced, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteBucketOwnershipControls(_ context.Context, bucket string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 

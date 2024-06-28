@@ -566,6 +566,43 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("ownershipControls") {
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketOwnershipControlsAction,
+		})
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionGetBucketOwnershipControls,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		data, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
+		return SendXMLResponse(ctx,
+			s3response.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: data,
+					},
+				},
+			}, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionGetBucketOwnershipControls,
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("versioning") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Readonly:      c.readonly,
@@ -933,6 +970,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
 	granWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
+	objectOwnership := types.ObjectOwnership(
+		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
+	)
 	mfa := ctx.Get("X-Amz-Mfa")
 	contentMD5 := ctx.Get("Content-MD5")
 	acct := ctx.Locals("account").(auth.Account)
@@ -996,6 +1036,57 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
 				Action:      metrics.ActionPutBucketTagging,
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("ownershipControls") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+		var ownershipControls s3response.OwnershipControls
+		if err := xml.Unmarshal(ctx.Body(), &ownershipControls); err != nil {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketOwnershipControls,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		if len(ownershipControls.Rules) != 1 || !utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership) {
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketOwnershipControls,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
+			Acl:           parsedAcl,
+			AclPermission: types.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketOwnershipControlsAction,
+		}); err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketOwnershipControls,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err := c.be.PutBucketOwnershipControls(ctx.Context(), bucket, ownershipControls.Rules[0].ObjectOwnership)
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionPutBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -1141,10 +1232,33 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		var input *s3.PutBucketAclInput
 
-		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-		err := auth.VerifyAccess(ctx.Context(), c.be,
+		ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
+		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketAcl,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+		if ownership == types.ObjectOwnershipBucketOwnerEnforced {
+			if c.debug {
+				log.Println("bucket acls are disabled")
+			}
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAclNotSupported),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketAcl,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
 				Readonly:      c.readonly,
 				Acl:           parsedAcl,
@@ -1259,7 +1373,6 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			}
 		}
 
-		fmt.Println(*input, parsedAcl)
 		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam)
 		if err != nil {
 			return SendResponse(ctx, err,
@@ -1289,16 +1402,45 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				Action:     metrics.ActionCreateBucket,
 			})
 	}
+	if ok := utils.IsValidOwnership(objectOwnership); !ok {
+		if c.debug {
+			log.Printf("invalid bucket object ownership: %v", objectOwnership)
+		}
+		return SendResponse(ctx, s3err.APIError{
+			Code:           "InvalidArgument",
+			Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),
+			HTTPStatusCode: http.StatusBadRequest,
+		},
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionCreateBucket,
+				BucketOwner: acct.Access,
+			})
+	}
+
+	if acl+grants != "" && objectOwnership == types.ObjectOwnershipBucketOwnerEnforced {
+		if c.debug {
+			log.Printf("bucket acls are disabled for %v object ownership", objectOwnership)
+		}
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership),
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionCreateBucket,
+				BucketOwner: acct.Access,
+			})
+	}
 
 	if acl != "" && grants != "" {
 		if c.debug {
 			log.Printf("invalid request: %q (grants) %q (acl)", grants, acl)
 		}
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants),
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
-				Action:      metrics.ActionPutBucketAcl,
+				Action:      metrics.ActionCreateBucket,
 				BucketOwner: acct.Access,
 			})
 	}
@@ -1334,7 +1476,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	err = c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
 		Bucket:                     &bucket,
-		ObjectOwnership:            types.ObjectOwnership(acct.Access),
+		ObjectOwnership:            objectOwnership,
 		ObjectLockEnabledForBucket: &lockEnabled,
 	}, updAcl)
 	return SendResponse(ctx, err,
@@ -2037,6 +2179,38 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
 				Action:      metrics.ActionDeleteBucketTagging,
+				BucketOwner: parsedAcl.Owner,
+				Status:      http.StatusNoContent,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("ownershipControls") {
+		err := auth.VerifyAccess(ctx.Context(), c.be,
+			auth.AccessOptions{
+				Readonly:      c.readonly,
+				Acl:           parsedAcl,
+				AclPermission: types.PermissionWrite,
+				IsRoot:        isRoot,
+				Acc:           acct,
+				Bucket:        bucket,
+				Action:        auth.PutBucketOwnershipControlsAction,
+			})
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionDeleteBucketOwnershipControls,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.DeleteBucketOwnershipControls(ctx.Context(), bucket)
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionDeleteBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 				Status:      http.StatusNoContent,
 			})

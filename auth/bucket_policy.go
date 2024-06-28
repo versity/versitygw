@@ -134,11 +134,6 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 }
 
 func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Action) error {
-	// If bucket policy is not set
-	if policy == nil {
-		return nil
-	}
-
 	var bucketPolicy BucketPolicy
 	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
 		return err

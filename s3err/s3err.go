@@ -123,6 +123,10 @@ const (
 	ErrBucketTaggingNotFound
 	ErrObjectLockInvalidHeaders
 	ErrRequestTimeTooSkewed
+	ErrInvalidBucketAclWithObjectOwnership
+	ErrBothCannedAndHeaderGrants
+	ErrOwnershipControlsNotFound
+	ErrAclNotSupported
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -471,6 +475,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "RequestTimeTooSkewed",
 		Description:    "The difference between the request time and the server's time is too large.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrInvalidBucketAclWithObjectOwnership: {
+		Code:           "ErrInvalidBucketAclWithObjectOwnership",
+		Description:    "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrBothCannedAndHeaderGrants: {
+		Code:           "InvalidRequest",
+		Description:    "Specifying both Canned ACLs and Header Grants is not allowed",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrOwnershipControlsNotFound: {
+		Code:           "OwnershipControlsNotFoundError",
+		Description:    "The bucket ownership controls were not found",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrAclNotSupported: {
+		Code:           "AccessControlListNotSupported",
+		Description:    "The bucket does not allow ACLs",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// non aws errors

@@ -217,3 +217,7 @@ type Grantee struct {
 	ID          string
 	DisplayName string
 }
+
+type OwnershipControls struct {
+	Rules []types.OwnershipControlsRule `xml:"Rule"`
+}

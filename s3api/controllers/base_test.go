@@ -395,6 +395,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 				return objectLockResult, nil
 			},
+			GetBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
+				return types.ObjectOwnershipBucketOwnerEnforced, nil
+			},
 		},
 	}
 
@@ -447,6 +450,15 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 404,
+		},
+		{
+			name: "Get-bucket-ownership-control-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodGet, "/my-bucket?ownershipControls", nil),
+			},
+			wantErr:    false,
+			statusCode: 200,
 		},
 		{
 			name: "Get-bucket-tagging-success",
@@ -562,7 +574,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	app := fiber.New()
 
 	// Mock valid acl
-	acl := auth.ACL{Owner: "valid access", ACL: "public-read-write"}
+	acl := auth.ACL{Owner: "valid access"}
 	acldata, err := json.Marshal(acl)
 	if err != nil {
 		t.Errorf("Failed to parse the params: %v", err.Error())
@@ -636,6 +648,22 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</ObjectLockConfiguration>
 	`
 
+	ownershipBody := `
+	<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Rule>
+			<ObjectOwnership>BucketOwnerEnforced</ObjectOwnership>
+		</Rule>
+	</OwnershipControls>
+	`
+
+	invalidOwnershipBody := `
+	<OwnershipControls xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+		<Rule>
+			<ObjectOwnership>invalid_value</ObjectOwnership>
+		</Rule>
+	</OwnershipControls>
+	`
+
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
@@ -658,6 +686,12 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			},
 			PutObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string, config []byte) error {
 				return nil
+			},
+			PutBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error {
+				return nil
+			},
+			GetBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
+				return types.ObjectOwnershipBucketOwnerPreferred, nil
 			},
 		},
 	}
@@ -691,6 +725,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	errAclBodyReq := httptest.NewRequest(http.MethodPut, "/my-bucket?acl", strings.NewReader(body))
 	errAclBodyReq.Header.Set("X-Amz-Grant-Read", "hello")
 
+	invAclOwnershipReq := httptest.NewRequest(http.MethodPut, "/my-bucket", nil)
+	invAclOwnershipReq.Header.Set("X-Amz-Grant-Read", "hello")
+
 	tests := []struct {
 		name       string
 		app        *fiber.App
@@ -712,6 +749,24 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", strings.NewReader(tagBody)),
+			},
+			wantErr:    false,
+			statusCode: 200,
+		},
+		{
+			name: "Put-bucket-ownership-controls-invalid-ownership",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?ownershipControls", strings.NewReader(invalidOwnershipBody)),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Put-bucket-ownership-controls-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPut, "/my-bucket?ownershipControls", strings.NewReader(ownershipBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
@@ -816,7 +871,16 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			statusCode: 200,
 		},
 		{
-			name: "Put-bucket-invalid-bucket-name",
+			name: "Create-bucket-invalid-acl-ownership-combination",
+			app:  app,
+			args: args{
+				req: invAclOwnershipReq,
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
+			name: "Create-bucket-invalid-bucket-name",
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/aa", nil),
@@ -825,7 +889,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			statusCode: 400,
 		},
 		{
-			name: "Put-bucket-success",
+			name: "Create-bucket-success",
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket", nil),
@@ -1160,6 +1224,12 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
 				return nil
 			},
+			DeleteBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) error {
+				return nil
+			},
+			DeleteBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) error {
+				return nil
+			},
 		},
 	}
 
@@ -1194,6 +1264,23 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 			app:  app,
 			args: args{
 				req: httptest.NewRequest(http.MethodDelete, "/my-bucket?tagging", nil),
+			},
+			wantErr:    false,
+			statusCode: 204,
+		},
+		{
+			name: "Delete-bucket-ownership-controls-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket?ownershipControls", nil),
+			},
+			wantErr:    false,
+			statusCode: 204,
+		}, {
+			name: "Delete-bucket-policy-success",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodDelete, "/my-bucket?policy", nil),
 			},
 			wantErr:    false,
 			statusCode: 204,

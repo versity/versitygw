@@ -1720,45 +1720,74 @@ func CreateBucket_owned_by_you(s *S3Conf) error {
 	})
 }
 
-func CreateBucket_default_acl(s *S3Conf) error {
-	testName := "CreateBucket_default_acl"
+func CreateBucket_invalid_ownership(s *S3Conf) error {
+	testName := "CreateBucket_invalid_ownership"
 	runF(testName)
 
-	bucket := getBucketName()
-	client := s3.NewFromConfig(s.Config())
-
-	err := setup(s, bucket)
-	if err != nil {
+	invalidOwnership := types.ObjectOwnership("invalid_ownership")
+	err := setup(s, getBucketName(), withOwnership(invalidOwnership))
+	if err := checkApiErr(err, s3err.APIError{
+		Code:           "InvalidArgument",
+		Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", invalidOwnership),
+		HTTPStatusCode: http.StatusBadRequest,
+	}); err != nil {
 		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	out, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &bucket})
-	cancel()
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	if *out.Owner.ID != s.awsID {
-		failF("%v: expected bucket owner to be %v, instead got %v", testName, s.awsID, *out.Owner.ID)
-		return fmt.Errorf("%v: expected bucket owner to be %v, instead got %v", testName, s.awsID, *out.Owner.ID)
-	}
-
-	if len(out.Grants) != 0 {
-		failF("%v: expected grants to be empty instead got %v", testName, len(out.Grants))
-		return fmt.Errorf("%v: expected grants to be empty instead got %v", testName, len(out.Grants))
-	}
-
-	err = teardown(s, bucket)
-	if err != nil {
-		failF("%v: %v", err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	passF(testName)
 	return nil
+}
+
+func CreateBucket_ownership_with_acl(s *S3Conf) error {
+	testName := "CreateBucket_ownership_with_acl"
+
+	runF(testName)
+	client := s3.NewFromConfig(s.Config())
+
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:          getPtr(getBucketName()),
+		ObjectOwnership: types.ObjectOwnershipBucketOwnerEnforced,
+		ACL:             types.BucketCannedACLPublicRead,
+	})
+	cancel()
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership)); err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
+func CreateBucket_default_acl(s *S3Conf) error {
+	testName := "CreateBucket_default_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+		if len(out.Grants) != 1 {
+			return fmt.Errorf("expected grants length to be 1, instead got %v", len(out.Grants))
+		}
+		grt := out.Grants[0]
+		if grt.Permission != types.PermissionFullControl {
+			return fmt.Errorf("expected the grantee to have full-control permission, instead got %v", grt.Permission)
+		}
+		if *grt.Grantee.ID != s.awsID {
+			return fmt.Errorf("expected the grantee id to be %v, instead got %v", s.awsID, *grt.Grantee.ID)
+		}
+
+		return nil
+	})
 }
 
 func CreateBucket_non_default_acl(s *S3Conf) error {
@@ -1776,6 +1805,12 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	}
 
 	grants := []types.Grant{
+		{
+			Grantee: &types.Grantee{
+				ID: &s.awsID,
+			},
+			Permission: types.PermissionFullControl,
+		},
 		{
 			Grantee: &types.Grantee{
 				ID: getPtr("grt1"),
@@ -1800,7 +1835,13 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	client := s3.NewFromConfig(s.Config())
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucket, GrantFullControl: getPtr("grt1"), GrantReadACP: getPtr("grt2"), GrantWrite: getPtr("grt3")})
+	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:           &bucket,
+		GrantFullControl: getPtr("grt1"),
+		GrantReadACP:     getPtr("grt2"),
+		GrantWrite:       getPtr("grt3"),
+		ObjectOwnership:  types.ObjectOwnershipBucketOwnerPreferred,
+	})
 	cancel()
 	if err != nil {
 		failF("%v: %v", err)
@@ -2193,6 +2234,220 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 
 	passF(testName)
 	return nil
+}
+
+func PutBucketOwnershipControls_non_existing_bucket(s *S3Conf) error {
+	testName := "PutBucketOwnershipControls_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+			Bucket: getPtr(getBucketName()),
+			OwnershipControls: &types.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: types.ObjectOwnershipBucketOwnerPreferred,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketOwnershipControls_multiple_rules(s *S3Conf) error {
+	testName := "PutBucketOwnershipControls_multiple_rules"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+			Bucket: &bucket,
+			OwnershipControls: &types.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: types.ObjectOwnershipBucketOwnerPreferred,
+					},
+					{
+						ObjectOwnership: types.ObjectOwnershipObjectWriter,
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketOwnershipControls_invalid_ownership(s *S3Conf) error {
+	testName := "PutBucketOwnershipControls_invalid_ownership"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+			Bucket: &bucket,
+			OwnershipControls: &types.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: types.ObjectOwnership("invalid_ownership"),
+					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketOwnershipControls_success(s *S3Conf) error {
+	testName := "PutBucketOwnershipControls_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+			Bucket: &bucket,
+			OwnershipControls: &types.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: types.ObjectOwnershipObjectWriter,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketOwnershipControls_non_existing_bucket(s *S3Conf) error {
+	testName := "GetBucketOwnershipControls_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetBucketOwnershipControls_default_ownership(s *S3Conf) error {
+	testName := "GetBucketOwnershipControls_default_ownership"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(resp.OwnershipControls.Rules) != 1 {
+			return fmt.Errorf("expected ownership control rules length to be 1, instead got %v", len(resp.OwnershipControls.Rules))
+		}
+		if resp.OwnershipControls.Rules[0].ObjectOwnership != types.ObjectOwnershipBucketOwnerEnforced {
+			return fmt.Errorf("expected the bucket ownership to be %v, instead got %v", types.ObjectOwnershipBucketOwnerEnforced, resp.OwnershipControls.Rules[0].ObjectOwnership)
+		}
+
+		return nil
+	})
+}
+
+func GetBucketOwnershipControls_success(s *S3Conf) error {
+	testName := "GetBucketOwnershipControls_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
+			Bucket: &bucket,
+			OwnershipControls: &types.OwnershipControls{
+				Rules: []types.OwnershipControlsRule{
+					{
+						ObjectOwnership: types.ObjectOwnershipObjectWriter,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(resp.OwnershipControls.Rules) != 1 {
+			return fmt.Errorf("expected ownership control rules length to be 1, instead got %v", len(resp.OwnershipControls.Rules))
+		}
+		if resp.OwnershipControls.Rules[0].ObjectOwnership != types.ObjectOwnershipObjectWriter {
+			return fmt.Errorf("expected the bucket ownership to be %v, instead got %v", types.ObjectOwnershipObjectWriter, resp.OwnershipControls.Rules[0].ObjectOwnership)
+		}
+
+		return nil
+	})
+}
+
+func DeleteBucketOwnershipControls_non_existing_bucket(s *S3Conf) error {
+	testName := "DeleteBucketOwnershipControls_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketOwnershipControls(ctx, &s3.DeleteBucketOwnershipControlsInput{
+			Bucket: getPtr(getBucketName()),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func DeleteBucketOwnershipControls_success(s *S3Conf) error {
+	testName := "DeleteBucketOwnershipControls_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketOwnershipControls(ctx, &s3.DeleteBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func PutBucketTagging_non_existing_bucket(s *S3Conf) error {
@@ -5893,6 +6148,23 @@ func PutBucketAcl_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func PutBucketAcl_disabled(s *S3Conf) error {
+	testName := "PutBucketAcl_disabled"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket:    &bucket,
+			ACL:       types.BucketCannedACLPublicRead,
+			GrantRead: &s.awsID,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAclNotSupported)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_canned_and_acp"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5908,7 +6180,7 @@ func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) error {
@@ -5938,7 +6210,7 @@ func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
@@ -5968,7 +6240,7 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_invalid_owner(s *S3Conf) error {
@@ -5997,7 +6269,7 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_invalid_owner_not_in_body(s *S3Conf) error {
@@ -6023,7 +6295,7 @@ func PutBucketAcl_invalid_owner_not_in_body(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_success_access_denied(s *S3Conf) error {
@@ -6068,7 +6340,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_success_canned_acl(s *S3Conf) error {
@@ -6100,7 +6372,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_success_acp(s *S3Conf) error {
@@ -6141,7 +6413,7 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketAcl_success_grants(s *S3Conf) error {
@@ -6186,7 +6458,7 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func GetBucketAcl_non_existing_bucket(s *S3Conf) error {
@@ -6203,6 +6475,156 @@ func GetBucketAcl_non_existing_bucket(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func GetBucketAcl_translation_canned_public_read(s *S3Conf) error {
+	testName := "GetBucketAcl_translation_canned_public_read"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		grants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   &s.awsID,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionFullControl,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("all-users"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionRead,
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicRead,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if ok := compareGrants(out.Grants, grants); !ok {
+			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+		}
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func GetBucketAcl_translation_canned_public_read_write(s *S3Conf) error {
+	testName := "GetBucketAcl_translation_canned_public_read_write"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		grants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   &s.awsID,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionFullControl,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("all-users"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionRead,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("all-users"),
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionWrite,
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicReadWrite,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if ok := compareGrants(out.Grants, grants); !ok {
+			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+		}
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func GetBucketAcl_translation_canned_private(s *S3Conf) error {
+	testName := "GetBucketAcl_translation_canned_private"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		grants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   &s.awsID,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionFullControl,
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPrivate,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if ok := compareGrants(out.Grants, grants); !ok {
+			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+		}
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func GetBucketAcl_access_denied(s *S3Conf) error {
@@ -6291,6 +6713,15 @@ func GetBucketAcl_success(s *S3Conf) error {
 			return err
 		}
 
+		grants = append([]types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID: &s.awsID,
+				},
+				Permission: types.PermissionFullControl,
+			},
+		}, grants...)
+
 		if ok := compareGrants(out.Grants, grants); !ok {
 			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
 		}
@@ -6299,7 +6730,7 @@ func GetBucketAcl_success(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
