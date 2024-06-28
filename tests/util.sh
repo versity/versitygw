@@ -10,6 +10,7 @@ source ./tests/commands/create_bucket.sh
 source ./tests/commands/delete_bucket.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object.sh
+source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
@@ -158,7 +159,12 @@ delete_bucket_or_contents() {
       log 2 "error deleting bucket policies"
       return 1
     fi
-    if ! put_bucket_canned_acl "$2" "private"; then
+    if ! get_object_ownership_rule "$2"; then
+      log 2 "error getting object ownership rule"
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$2" "private"; then
       log 2 "error resetting bucket ACLs"
       return 1
     fi
@@ -656,14 +662,12 @@ multipart_upload_before_completion() {
     return 1
   fi
 
-  split_file "$3" "$4" || split_result=$?
-  if [[ $split_result -ne 0 ]]; then
+  if ! split_file "$3" "$4"; then
     log 2 "error splitting file"
     return 1
   fi
 
-  create_multipart_upload "$1" "$2" || create_result=$?
-  if [[ $create_result -ne 0 ]]; then
+  if ! create_multipart_upload "$1" "$2"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -671,8 +675,7 @@ multipart_upload_before_completion() {
   parts="["
   for ((i = 1; i <= $4; i++)); do
     # shellcheck disable=SC2154
-    upload_part "$1" "$2" "$upload_id" "$3" "$i" || local upload_result=$?
-    if [[ $upload_result -ne 0 ]]; then
+    if ! upload_part "$1" "$2" "$upload_id" "$3" "$i"; then
       echo "error uploading part $i"
       return 1
     fi
@@ -830,18 +833,20 @@ multipart_upload_with_params() {
 # return 0 for success, 1 for failure
 run_then_abort_multipart_upload() {
   if [ $# -ne 4 ]; then
-    echo "run then abort multipart upload command missing bucket, key, file, and/or part count"
+    log 2 "run then abort multipart upload command missing bucket, key, file, and/or part count"
     return 1
   fi
 
-  multipart_upload_before_completion "$1" "$2" "$3" "$4" || result=$?
-  if [[ $result -ne 0 ]]; then
-    echo "error performing pre-completion multipart upload"
+  if ! multipart_upload_before_completion "$1" "$2" "$3" "$4"; then
+    log 2 "error performing pre-completion multipart upload"
     return 1
   fi
 
-  abort_multipart_upload "$1" "$2" "$upload_id"
-  return $?
+  if ! abort_multipart_upload "$1" "$2" "$upload_id"; then
+    log 2 "error aborting multipart upload"
+    return 1
+  fi
+  return 0
 }
 
 # copy a file to/from S3

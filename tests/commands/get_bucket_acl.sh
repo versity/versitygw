@@ -20,3 +20,16 @@ get_bucket_acl() {
   fi
   export acl
 }
+
+get_bucket_acl_with_user() {
+  if [ $# -ne 3 ]; then
+    log 2 "'get bucket ACL with user' command requires bucket name, username, password"
+    return 1
+  fi
+  if ! bucket_acl=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3api get-bucket-acl --bucket "$1" 2>&1); then
+    log 2 "error getting bucket ACLs: $bucket_acl"
+    return 1
+  fi
+  export bucket_acl
+  return 0
+}
