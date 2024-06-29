@@ -75,6 +75,7 @@ const (
 	contentEncHdr       = "content-encoding"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 	aclkey              = "acl"
+	ownershipkey        = "ownership"
 	etagkey             = "etag"
 	policykey           = "policy"
 	bucketLockKey       = "bucket-lock"
@@ -245,6 +246,9 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	if err := p.meta.StoreAttribute(bucket, "", aclkey, acl); err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
+	if err := p.meta.StoreAttribute(bucket, "", ownershipkey, []byte(input.ObjectOwnership)); err != nil {
+		return fmt.Errorf("set ownership: %w", err)
+	}
 
 	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
 		now := time.Now()
@@ -299,6 +303,61 @@ func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) err
 	err = p.meta.DeleteAttributes(*input.Bucket, "")
 	if err != nil {
 		return fmt.Errorf("remove bucket attributes: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if err := p.meta.StoreAttribute(bucket, "", ownershipkey, []byte(ownership)); err != nil {
+		return fmt.Errorf("set ownership: %w", err)
+	}
+
+	return nil
+}
+func (p *Posix) GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error) {
+	var ownship types.ObjectOwnership
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ownship, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return ownship, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	ownership, err := p.meta.RetrieveAttribute(bucket, "", ownershipkey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return ownship, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)
+	}
+	if err != nil {
+		return ownship, fmt.Errorf("get bucket ownership status: %w", err)
+	}
+
+	return types.ObjectOwnership(ownership), nil
+}
+func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if err := p.meta.DeleteAttribute(bucket, "", ownershipkey); err != nil {
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			return nil
+		}
+
+		return fmt.Errorf("delete ownership: %w", err)
 	}
 
 	return nil

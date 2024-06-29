@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
 	"io"
@@ -44,6 +45,9 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
 //				panic("mock out the DeleteBucket method")
 //			},
+//			DeleteBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) error {
+//				panic("mock out the DeleteBucketOwnershipControls method")
+//			},
 //			DeleteBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucketPolicy method")
 //			},
@@ -61,6 +65,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
+//			},
+//			GetBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
+//				panic("mock out the GetBucketOwnershipControls method")
 //			},
 //			GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 //				panic("mock out the GetBucketPolicy method")
@@ -121,6 +128,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
+//			},
+//			PutBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error {
+//				panic("mock out the PutBucketOwnershipControls method")
 //			},
 //			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
 //				panic("mock out the PutBucketPolicy method")
@@ -195,6 +205,9 @@ type BackendMock struct {
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
 
+	// DeleteBucketOwnershipControlsFunc mocks the DeleteBucketOwnershipControls method.
+	DeleteBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string) error
+
 	// DeleteBucketPolicyFunc mocks the DeleteBucketPolicy method.
 	DeleteBucketPolicyFunc func(contextMoqParam context.Context, bucket string) error
 
@@ -212,6 +225,9 @@ type BackendMock struct {
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
+
+	// GetBucketOwnershipControlsFunc mocks the GetBucketOwnershipControls method.
+	GetBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error)
 
 	// GetBucketPolicyFunc mocks the GetBucketPolicy method.
 	GetBucketPolicyFunc func(contextMoqParam context.Context, bucket string) ([]byte, error)
@@ -272,6 +288,9 @@ type BackendMock struct {
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
+
+	// PutBucketOwnershipControlsFunc mocks the PutBucketOwnershipControls method.
+	PutBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error
 
 	// PutBucketPolicyFunc mocks the PutBucketPolicy method.
 	PutBucketPolicyFunc func(contextMoqParam context.Context, bucket string, policy []byte) error
@@ -373,6 +392,13 @@ type BackendMock struct {
 			// DeleteBucketInput is the deleteBucketInput argument value.
 			DeleteBucketInput *s3.DeleteBucketInput
 		}
+		// DeleteBucketOwnershipControls holds details about calls to the DeleteBucketOwnershipControls method.
+		DeleteBucketOwnershipControls []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// DeleteBucketPolicy holds details about calls to the DeleteBucketPolicy method.
 		DeleteBucketPolicy []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -416,6 +442,13 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// GetBucketAclInput is the getBucketAclInput argument value.
 			GetBucketAclInput *s3.GetBucketAclInput
+		}
+		// GetBucketOwnershipControls holds details about calls to the GetBucketOwnershipControls method.
+		GetBucketOwnershipControls []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
 		}
 		// GetBucketPolicy holds details about calls to the GetBucketPolicy method.
 		GetBucketPolicy []struct {
@@ -571,6 +604,15 @@ type BackendMock struct {
 			// Data is the data argument value.
 			Data []byte
 		}
+		// PutBucketOwnershipControls holds details about calls to the PutBucketOwnershipControls method.
+		PutBucketOwnershipControls []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Ownership is the ownership argument value.
+			Ownership types.ObjectOwnership
+		}
 		// PutBucketPolicy holds details about calls to the PutBucketPolicy method.
 		PutBucketPolicy []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -693,54 +735,57 @@ type BackendMock struct {
 			UploadPartCopyInput *s3.UploadPartCopyInput
 		}
 	}
-	lockAbortMultipartUpload       sync.RWMutex
-	lockChangeBucketOwner          sync.RWMutex
-	lockCompleteMultipartUpload    sync.RWMutex
-	lockCopyObject                 sync.RWMutex
-	lockCreateBucket               sync.RWMutex
-	lockCreateMultipartUpload      sync.RWMutex
-	lockDeleteBucket               sync.RWMutex
-	lockDeleteBucketPolicy         sync.RWMutex
-	lockDeleteBucketTagging        sync.RWMutex
-	lockDeleteObject               sync.RWMutex
-	lockDeleteObjectTagging        sync.RWMutex
-	lockDeleteObjects              sync.RWMutex
-	lockGetBucketAcl               sync.RWMutex
-	lockGetBucketPolicy            sync.RWMutex
-	lockGetBucketTagging           sync.RWMutex
-	lockGetBucketVersioning        sync.RWMutex
-	lockGetObject                  sync.RWMutex
-	lockGetObjectAcl               sync.RWMutex
-	lockGetObjectAttributes        sync.RWMutex
-	lockGetObjectLegalHold         sync.RWMutex
-	lockGetObjectLockConfiguration sync.RWMutex
-	lockGetObjectRetention         sync.RWMutex
-	lockGetObjectTagging           sync.RWMutex
-	lockHeadBucket                 sync.RWMutex
-	lockHeadObject                 sync.RWMutex
-	lockListBuckets                sync.RWMutex
-	lockListBucketsAndOwners       sync.RWMutex
-	lockListMultipartUploads       sync.RWMutex
-	lockListObjectVersions         sync.RWMutex
-	lockListObjects                sync.RWMutex
-	lockListObjectsV2              sync.RWMutex
-	lockListParts                  sync.RWMutex
-	lockPutBucketAcl               sync.RWMutex
-	lockPutBucketPolicy            sync.RWMutex
-	lockPutBucketTagging           sync.RWMutex
-	lockPutBucketVersioning        sync.RWMutex
-	lockPutObject                  sync.RWMutex
-	lockPutObjectAcl               sync.RWMutex
-	lockPutObjectLegalHold         sync.RWMutex
-	lockPutObjectLockConfiguration sync.RWMutex
-	lockPutObjectRetention         sync.RWMutex
-	lockPutObjectTagging           sync.RWMutex
-	lockRestoreObject              sync.RWMutex
-	lockSelectObjectContent        sync.RWMutex
-	lockShutdown                   sync.RWMutex
-	lockString                     sync.RWMutex
-	lockUploadPart                 sync.RWMutex
-	lockUploadPartCopy             sync.RWMutex
+	lockAbortMultipartUpload          sync.RWMutex
+	lockChangeBucketOwner             sync.RWMutex
+	lockCompleteMultipartUpload       sync.RWMutex
+	lockCopyObject                    sync.RWMutex
+	lockCreateBucket                  sync.RWMutex
+	lockCreateMultipartUpload         sync.RWMutex
+	lockDeleteBucket                  sync.RWMutex
+	lockDeleteBucketOwnershipControls sync.RWMutex
+	lockDeleteBucketPolicy            sync.RWMutex
+	lockDeleteBucketTagging           sync.RWMutex
+	lockDeleteObject                  sync.RWMutex
+	lockDeleteObjectTagging           sync.RWMutex
+	lockDeleteObjects                 sync.RWMutex
+	lockGetBucketAcl                  sync.RWMutex
+	lockGetBucketOwnershipControls    sync.RWMutex
+	lockGetBucketPolicy               sync.RWMutex
+	lockGetBucketTagging              sync.RWMutex
+	lockGetBucketVersioning           sync.RWMutex
+	lockGetObject                     sync.RWMutex
+	lockGetObjectAcl                  sync.RWMutex
+	lockGetObjectAttributes           sync.RWMutex
+	lockGetObjectLegalHold            sync.RWMutex
+	lockGetObjectLockConfiguration    sync.RWMutex
+	lockGetObjectRetention            sync.RWMutex
+	lockGetObjectTagging              sync.RWMutex
+	lockHeadBucket                    sync.RWMutex
+	lockHeadObject                    sync.RWMutex
+	lockListBuckets                   sync.RWMutex
+	lockListBucketsAndOwners          sync.RWMutex
+	lockListMultipartUploads          sync.RWMutex
+	lockListObjectVersions            sync.RWMutex
+	lockListObjects                   sync.RWMutex
+	lockListObjectsV2                 sync.RWMutex
+	lockListParts                     sync.RWMutex
+	lockPutBucketAcl                  sync.RWMutex
+	lockPutBucketOwnershipControls    sync.RWMutex
+	lockPutBucketPolicy               sync.RWMutex
+	lockPutBucketTagging              sync.RWMutex
+	lockPutBucketVersioning           sync.RWMutex
+	lockPutObject                     sync.RWMutex
+	lockPutObjectAcl                  sync.RWMutex
+	lockPutObjectLegalHold            sync.RWMutex
+	lockPutObjectLockConfiguration    sync.RWMutex
+	lockPutObjectRetention            sync.RWMutex
+	lockPutObjectTagging              sync.RWMutex
+	lockRestoreObject                 sync.RWMutex
+	lockSelectObjectContent           sync.RWMutex
+	lockShutdown                      sync.RWMutex
+	lockString                        sync.RWMutex
+	lockUploadPart                    sync.RWMutex
+	lockUploadPartCopy                sync.RWMutex
 }
 
 // AbortMultipartUpload calls AbortMultipartUploadFunc.
@@ -1003,6 +1048,42 @@ func (mock *BackendMock) DeleteBucketCalls() []struct {
 	return calls
 }
 
+// DeleteBucketOwnershipControls calls DeleteBucketOwnershipControlsFunc.
+func (mock *BackendMock) DeleteBucketOwnershipControls(contextMoqParam context.Context, bucket string) error {
+	if mock.DeleteBucketOwnershipControlsFunc == nil {
+		panic("BackendMock.DeleteBucketOwnershipControlsFunc: method is nil but Backend.DeleteBucketOwnershipControls was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockDeleteBucketOwnershipControls.Lock()
+	mock.calls.DeleteBucketOwnershipControls = append(mock.calls.DeleteBucketOwnershipControls, callInfo)
+	mock.lockDeleteBucketOwnershipControls.Unlock()
+	return mock.DeleteBucketOwnershipControlsFunc(contextMoqParam, bucket)
+}
+
+// DeleteBucketOwnershipControlsCalls gets all the calls that were made to DeleteBucketOwnershipControls.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteBucketOwnershipControlsCalls())
+func (mock *BackendMock) DeleteBucketOwnershipControlsCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockDeleteBucketOwnershipControls.RLock()
+	calls = mock.calls.DeleteBucketOwnershipControls
+	mock.lockDeleteBucketOwnershipControls.RUnlock()
+	return calls
+}
+
 // DeleteBucketPolicy calls DeleteBucketPolicyFunc.
 func (mock *BackendMock) DeleteBucketPolicy(contextMoqParam context.Context, bucket string) error {
 	if mock.DeleteBucketPolicyFunc == nil {
@@ -1220,6 +1301,42 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 	mock.lockGetBucketAcl.RLock()
 	calls = mock.calls.GetBucketAcl
 	mock.lockGetBucketAcl.RUnlock()
+	return calls
+}
+
+// GetBucketOwnershipControls calls GetBucketOwnershipControlsFunc.
+func (mock *BackendMock) GetBucketOwnershipControls(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
+	if mock.GetBucketOwnershipControlsFunc == nil {
+		panic("BackendMock.GetBucketOwnershipControlsFunc: method is nil but Backend.GetBucketOwnershipControls was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketOwnershipControls.Lock()
+	mock.calls.GetBucketOwnershipControls = append(mock.calls.GetBucketOwnershipControls, callInfo)
+	mock.lockGetBucketOwnershipControls.Unlock()
+	return mock.GetBucketOwnershipControlsFunc(contextMoqParam, bucket)
+}
+
+// GetBucketOwnershipControlsCalls gets all the calls that were made to GetBucketOwnershipControls.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketOwnershipControlsCalls())
+func (mock *BackendMock) GetBucketOwnershipControlsCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketOwnershipControls.RLock()
+	calls = mock.calls.GetBucketOwnershipControls
+	mock.lockGetBucketOwnershipControls.RUnlock()
 	return calls
 }
 
@@ -1968,6 +2085,46 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
 	mock.lockPutBucketAcl.RUnlock()
+	return calls
+}
+
+// PutBucketOwnershipControls calls PutBucketOwnershipControlsFunc.
+func (mock *BackendMock) PutBucketOwnershipControls(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error {
+	if mock.PutBucketOwnershipControlsFunc == nil {
+		panic("BackendMock.PutBucketOwnershipControlsFunc: method is nil but Backend.PutBucketOwnershipControls was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Ownership       types.ObjectOwnership
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+		Ownership:       ownership,
+	}
+	mock.lockPutBucketOwnershipControls.Lock()
+	mock.calls.PutBucketOwnershipControls = append(mock.calls.PutBucketOwnershipControls, callInfo)
+	mock.lockPutBucketOwnershipControls.Unlock()
+	return mock.PutBucketOwnershipControlsFunc(contextMoqParam, bucket, ownership)
+}
+
+// PutBucketOwnershipControlsCalls gets all the calls that were made to PutBucketOwnershipControls.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketOwnershipControlsCalls())
+func (mock *BackendMock) PutBucketOwnershipControlsCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+	Ownership       types.ObjectOwnership
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+		Ownership       types.ObjectOwnership
+	}
+	mock.lockPutBucketOwnershipControls.RLock()
+	calls = mock.calls.PutBucketOwnershipControls
+	mock.lockPutBucketOwnershipControls.RUnlock()
 	return calls
 }
 

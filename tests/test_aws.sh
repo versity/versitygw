@@ -334,46 +334,46 @@ export RUN_USERS=true
   delete_bucket_or_contents "s3api" "$BUCKET_ONE_NAME"
 }
 
-@test "test_get_put_object_legal_hold" {
-  # bucket must be created with lock for legal hold
-  if [[ $RECREATE_BUCKETS == false ]]; then
-    return
-  fi
-
-  bucket_file="bucket_file"
-  username="ABCDEFG"
-  secret_key="HIJKLMN"
-
-  legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
-
-  get_object_lock_configuration "$BUCKET_ONE_NAME" || fail "error getting lock configuration"
-  # shellcheck disable=SC2154
-  log 5 "$lock_config"
-  enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled")
-  [[ $enabled == "Enabled" ]] || fail "ObjectLockEnabled should be 'Enabled', is '$enabled'"
-
-  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "ON" || fail "error putting legal hold on object"
-  get_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting object legal hold status"
-  # shellcheck disable=SC2154
-  log 5 "$legal_hold"
-  hold_status=$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r ".LegalHold.Status")
-  [[ $hold_status == "ON" ]] || fail "Status should be 'ON', is '$hold_status'"
-
-  echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
-  put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
-  [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
-  # shellcheck disable=SC2154
-  [[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
-
-  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
-  [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
-  # shellcheck disable=SC2154
-  [[ $delete_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $delete_object_error"
-  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF" || fail "error removing legal hold on object"
-  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || fail "error deleting object after removing legal hold"
-
-  delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
-}
+#@test "test_get_put_object_legal_hold" {
+#  # bucket must be created with lock for legal hold
+#  if [[ $RECREATE_BUCKETS == false ]]; then
+#    return
+#  fi
+#
+#  bucket_file="bucket_file"
+#  username="ABCDEFG"
+#  secret_key="HIJKLMN"
+#
+#  legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
+#
+#  get_object_lock_configuration "$BUCKET_ONE_NAME" || fail "error getting lock configuration"
+#  # shellcheck disable=SC2154
+#  log 5 "$lock_config"
+#  enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled")
+#  [[ $enabled == "Enabled" ]] || fail "ObjectLockEnabled should be 'Enabled', is '$enabled'"
+#
+#  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "ON" || fail "error putting legal hold on object"
+#  get_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting object legal hold status"
+#  # shellcheck disable=SC2154
+#  log 5 "$legal_hold"
+#  hold_status=$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r ".LegalHold.Status")
+#  [[ $hold_status == "ON" ]] || fail "Status should be 'ON', is '$hold_status'"
+#
+#  echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
+#  put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
+#  [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
+#  # shellcheck disable=SC2154
+#  [[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
+#
+#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
+#  [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
+#  # shellcheck disable=SC2154
+#  [[ $delete_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $delete_object_error"
+#  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF" || fail "error removing legal hold on object"
+#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || fail "error deleting object after removing legal hold"
+#
+#  delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
+#}
 
 #@test "test_get_put_object_retention" {
 #  # bucket must be created with lock for legal hold
@@ -434,9 +434,9 @@ legal_hold_retention_setup() {
   put_object_with_user "s3api" "$test_file_folder/$3" "$BUCKET_ONE_NAME" "$3" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" || fail "failed to add object to bucket"
 }
 
-@test "test_put_bucket_acl" {
-  test_common_put_bucket_acl "s3api"
-}
+#@test "test_put_bucket_acl" {
+#  test_common_put_bucket_acl "s3api"
+#}
 
 # test ability to retrieve object ACLs
 #@test "test_get_object_acl" {

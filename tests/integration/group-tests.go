@@ -65,6 +65,8 @@ func TestCreateBucket(s *S3Conf) {
 	CreateBucket_invalid_bucket_name(s)
 	CreateBucket_existing_bucket(s)
 	CreateBucket_owned_by_you(s)
+	CreateBucket_invalid_ownership(s)
+	CreateBucket_ownership_with_acl(s)
 	CreateBucket_as_user(s)
 	CreateBucket_default_acl(s)
 	CreateBucket_non_default_acl(s)
@@ -87,6 +89,24 @@ func TestDeleteBucket(s *S3Conf) {
 	DeleteBucket_non_existing_bucket(s)
 	DeleteBucket_non_empty_bucket(s)
 	DeleteBucket_success_status_code(s)
+}
+
+func TestPutBucketOwnershipControls(s *S3Conf) {
+	PutBucketOwnershipControls_non_existing_bucket(s)
+	PutBucketOwnershipControls_multiple_rules(s)
+	PutBucketOwnershipControls_invalid_ownership(s)
+	PutBucketOwnershipControls_success(s)
+}
+
+func TestGetBucketOwnershipControls(s *S3Conf) {
+	GetBucketOwnershipControls_non_existing_bucket(s)
+	GetBucketOwnershipControls_default_ownership(s)
+	GetBucketOwnershipControls_success(s)
+}
+
+func TestDeleteBucketOwnershipControls(s *S3Conf) {
+	DeleteBucketOwnershipControls_non_existing_bucket(s)
+	DeleteBucketOwnershipControls_success(s)
 }
 
 func TestPutBucketTagging(s *S3Conf) {
@@ -267,6 +287,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 
 func TestPutBucketAcl(s *S3Conf) {
 	PutBucketAcl_non_existing_bucket(s)
+	PutBucketAcl_disabled(s)
 	PutBucketAcl_invalid_acl_canned_and_acp(s)
 	PutBucketAcl_invalid_acl_canned_and_grants(s)
 	PutBucketAcl_invalid_acl_acp_and_grants(s)
@@ -280,6 +301,9 @@ func TestPutBucketAcl(s *S3Conf) {
 
 func TestGetBucketAcl(s *S3Conf) {
 	GetBucketAcl_non_existing_bucket(s)
+	GetBucketAcl_translation_canned_public_read(s)
+	GetBucketAcl_translation_canned_public_read_write(s)
+	GetBucketAcl_translation_canned_private(s)
 	GetBucketAcl_access_denied(s)
 	GetBucketAcl_success(s)
 }
@@ -395,6 +419,9 @@ func TestFullFlow(s *S3Conf) {
 	TestHeadBucket(s)
 	TestListBuckets(s)
 	TestDeleteBucket(s)
+	TestPutBucketOwnershipControls(s)
+	TestGetBucketOwnershipControls(s)
+	TestDeleteBucketOwnershipControls(s)
 	TestPutBucketTagging(s)
 	TestGetBucketTagging(s)
 	TestDeleteBucketTagging(s)
@@ -505,6 +532,8 @@ func GetIntTests() IntTests {
 		"CreateBucket_invalid_bucket_name":                                    CreateBucket_invalid_bucket_name,
 		"CreateBucket_existing_bucket":                                        CreateBucket_existing_bucket,
 		"CreateBucket_owned_by_you":                                           CreateBucket_owned_by_you,
+		"CreateBucket_invalid_ownership":                                      CreateBucket_invalid_ownership,
+		"CreateBucket_ownership_with_acl":                                     CreateBucket_ownership_with_acl,
 		"CreateBucket_as_user":                                                CreateBucket_as_user,
 		"CreateDeleteBucket_success":                                          CreateDeleteBucket_success,
 		"CreateBucket_default_acl":                                            CreateBucket_default_acl,
@@ -518,6 +547,15 @@ func GetIntTests() IntTests {
 		"DeleteBucket_non_existing_bucket":                                    DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                       DeleteBucket_non_empty_bucket,
 		"DeleteBucket_success_status_code":                                    DeleteBucket_success_status_code,
+		"PutBucketOwnershipControls_non_existing_bucket":                      PutBucketOwnershipControls_non_existing_bucket,
+		"PutBucketOwnershipControls_multiple_rules":                           PutBucketOwnershipControls_multiple_rules,
+		"PutBucketOwnershipControls_invalid_ownership":                        PutBucketOwnershipControls_invalid_ownership,
+		"PutBucketOwnershipControls_success":                                  PutBucketOwnershipControls_success,
+		"GetBucketOwnershipControls_non_existing_bucket":                      GetBucketOwnershipControls_non_existing_bucket,
+		"GetBucketOwnershipControls_default_ownership":                        GetBucketOwnershipControls_default_ownership,
+		"GetBucketOwnershipControls_success":                                  GetBucketOwnershipControls_success,
+		"DeleteBucketOwnershipControls_non_existing_bucket":                   DeleteBucketOwnershipControls_non_existing_bucket,
+		"DeleteBucketOwnershipControls_success":                               DeleteBucketOwnershipControls_success,
 		"PutBucketTagging_non_existing_bucket":                                PutBucketTagging_non_existing_bucket,
 		"PutBucketTagging_long_tags":                                          PutBucketTagging_long_tags,
 		"PutBucketTagging_success":                                            PutBucketTagging_success,
@@ -636,6 +674,9 @@ func GetIntTests() IntTests {
 		"PutBucketAcl_success_canned_acl":                                     PutBucketAcl_success_canned_acl,
 		"PutBucketAcl_success_acp":                                            PutBucketAcl_success_acp,
 		"GetBucketAcl_non_existing_bucket":                                    GetBucketAcl_non_existing_bucket,
+		"GetBucketAcl_translation_canned_public_read":                         GetBucketAcl_translation_canned_public_read,
+		"GetBucketAcl_translation_canned_public_read_write":                   GetBucketAcl_translation_canned_public_read_write,
+		"GetBucketAcl_translation_canned_private":                             GetBucketAcl_translation_canned_private,
 		"GetBucketAcl_access_denied":                                          GetBucketAcl_access_denied,
 		"GetBucketAcl_success":                                                GetBucketAcl_success,
 		"PutBucketPolicy_non_existing_bucket":                                 PutBucketPolicy_non_existing_bucket,

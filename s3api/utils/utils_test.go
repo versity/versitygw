@@ -335,3 +335,50 @@ func TestFilterObjectAttributes(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidOwnership(t *testing.T) {
+	type args struct {
+		val types.ObjectOwnership
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "valid-BucketOwnerEnforced",
+			args: args{
+				val: types.ObjectOwnershipBucketOwnerEnforced,
+			},
+			want: true,
+		},
+		{
+			name: "valid-BucketOwnerPreferred",
+			args: args{
+				val: types.ObjectOwnershipBucketOwnerPreferred,
+			},
+			want: true,
+		},
+		{
+			name: "valid-ObjectWriter",
+			args: args{
+				val: types.ObjectOwnershipObjectWriter,
+			},
+			want: true,
+		},
+		{
+			name: "invalid_value",
+			args: args{
+				val: types.ObjectOwnership("invalid_value"),
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidOwnership(tt.args.val); got != tt.want {
+				t.Errorf("IsValidOwnership() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

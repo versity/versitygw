@@ -53,6 +53,7 @@ type key string
 const (
 	keyAclCapital   key = "Acl"
 	keyAclLower     key = "acl"
+	keyOwnership    key = "Ownership"
 	keyTags         key = "Tags"
 	keyPolicy       key = "Policy"
 	keyBucketLock   key = "Bucket-Lock"
@@ -127,6 +128,7 @@ func (az *Azure) String() string {
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
 		string(keyAclCapital): backend.GetStringPtr(string(acl)),
+		string(keyOwnership):  backend.GetStringPtr(string(input.ObjectOwnership)),
 	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
@@ -249,6 +251,67 @@ func (az *Azure) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) 
 	}
 	_, err = az.client.DeleteContainer(ctx, *input.Bucket, nil)
 	return azureErrToS3Err(err)
+}
+
+func (az *Azure) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+	resp.Metadata[string(keyOwnership)] = backend.GetStringPtr(string(ownership))
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
+}
+
+func (az *Azure) GetBucketOwnershipControls(ctx context.Context, bucket string) (types.ObjectOwnership, error) {
+	var ownship types.ObjectOwnership
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return ownship, err
+	}
+
+	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return ownship, azureErrToS3Err(err)
+	}
+
+	ownership, ok := resp.Metadata[string(keyOwnership)]
+	if !ok {
+		return ownship, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)
+	}
+
+	return types.ObjectOwnership(*ownership), nil
+}
+
+func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	delete(resp.Metadata, string(keyOwnership))
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	return nil
 }
 
 func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {

@@ -326,3 +326,16 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 		LegalHoldStatus: legalHold,
 	}, nil
 }
+
+func IsValidOwnership(val types.ObjectOwnership) bool {
+	switch val {
+	case types.ObjectOwnershipBucketOwnerEnforced:
+		return true
+	case types.ObjectOwnershipBucketOwnerPreferred:
+		return true
+	case types.ObjectOwnershipObjectWriter:
+		return true
+	default:
+		return false
+	}
+}

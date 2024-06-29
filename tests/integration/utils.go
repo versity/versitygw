@@ -66,6 +66,7 @@ func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
 	_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket:                     &bucket,
 		ObjectLockEnabledForBucket: &cfg.LockEnabled,
+		ObjectOwnership:            cfg.Ownership,
 	})
 	cancel()
 	return err
@@ -121,12 +122,16 @@ func teardown(s *S3Conf, bucket string) error {
 
 type setupCfg struct {
 	LockEnabled bool
+	Ownership   types.ObjectOwnership
 }
 
 type setupOpt func(*setupCfg)
 
 func withLock() setupOpt {
 	return func(s *setupCfg) { s.LockEnabled = true }
+}
+func withOwnership(o types.ObjectOwnership) setupOpt {
+	return func(s *setupCfg) { s.Ownership = o }
 }
 
 func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, opts ...setupOpt) error {
