@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
 
+setup_user() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'setup user' command requires user ID, key, and role"
+    return 1
+  fi
+  if user_exists "$1"; then
+    if ! delete_user "$1"; then
+      log 2 "error deleting user '$1'"
+      return 1
+    fi
+  fi
+  if ! create_user "$1" "$2" "$3"; then
+    log 2 "error creating user '$1'"
+    return 1
+  fi
+  return 0
+}
+
 create_user() {
   if [[ $# -ne 3 ]]; then
     log 2 "create user command requires user ID, key, and role"
@@ -37,7 +55,31 @@ create_user_with_user() {
   return 0
 }
 
+list_users_direct() {
+  if ! users=$(aws --allow-insecure iam list-users 2>&1); then
+    log 2 "error listing users via direct s3 call: $users"
+    return 1
+  fi
+  log 5 "users: $users"
+  return 1
+}
+
 list_users() {
+  if [[ $DIRECT == "true" ]]; then
+    if ! list_users_direct; then
+      log 2 "error listing users via direct s3 call"
+      return 1
+    fi
+    return 0
+  fi
+  if ! list_users_versitygw; then
+    log 2 "error listing versitygw users"
+    return 1
+  fi
+  return 0
+}
+
+list_users_versitygw() {
   users=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     echo "error listing users: $users"
@@ -56,8 +98,7 @@ user_exists() {
     echo "user exists command requires username"
     return 2
   fi
-  list_users || local list_result=$?
-  if [[ $list_result -ne 0 ]]; then
+  if ! list_users; then
     echo "error listing user"
     return 2
   fi
@@ -71,19 +112,16 @@ user_exists() {
 
 delete_user() {
   if [[ $# -ne 1 ]]; then
-      echo "delete user command requires user ID"
-      return 1
-    fi
-    log 5 "$VERSITY_EXE admin --allow-insecure --access $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --endpoint-url $AWS_ENDPOINT_URL delete-user --access $1"
-    error=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" delete-user --access "$1") || local delete_result=$?
-
-
-    if [[ $delete_result -ne 0 ]]; then
-      echo "error deleting user: $error"
-      export error
-      return 1
-    fi
-    return 0
+    echo "delete user command requires user ID"
+    return 1
+  fi
+  log 5 "$VERSITY_EXE admin --allow-insecure --access $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --endpoint-url $AWS_ENDPOINT_URL delete-user --access $1"
+  if ! error=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" delete-user --access "$1" 2>&1); then
+    log 2 "error deleting user: $error"
+    export error
+    return 1
+  fi
+  return 0
 }
 
 change_bucket_owner() {

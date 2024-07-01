@@ -1365,15 +1365,19 @@ EOF
 #}
 
 @test "test_head_bucket" {
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
   head_bucket "aws" "$BUCKET_ONE_NAME"
+  log 5 "INFO:  $bucket_info"
+  region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
+  [[ $region != "" ]] || fail "empty bucket region"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
 
 @test "test_head_bucket_invalid_name" {
-  head_bucket "aws" "" || local head_result=$?
-  [[ $head_result -ne 0 ]] || fail "able to get bucket info for invalid name"
+  if head_bucket "aws" ""; then
+    fail "able to get bucket info for invalid name"
+  fi
 }
 
 @test "test_head_bucket_doesnt_exist" {
@@ -1390,22 +1394,68 @@ EOF
   test_key="x-test-data"
   test_value="test-value"
 
-  create_test_files "$object_one" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
+  create_test_files "$object_one" || fail "error creating test files"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
   object="$test_file_folder"/"$object_one"
-  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_result_one=$?
-  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
 
-  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || get_result=$?
-  [[ $get_result -eq 0 ]] || fail "error getting object metadata"
-  key=$(echo "$metadata" | jq 'keys[]')
-  value=$(echo "$metadata" | jq '.[]')
+  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "error getting object metadata"
+  key=$(echo "$metadata" | jq -r 'keys[]' 2>&1) || fail "error getting key from metadata: $key"
+  value=$(echo "$metadata" | jq -r '.[]' 2>&1) || fail "error getting value from metadata: $value"
   [[ $key == "\"$test_key\"" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
   [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one"
+}
+
+@test "test_policy_abort_multipart_upload" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]] && [[ $DIRECT != "true" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file"
+  create_large_file "$test_file" || fail "error creating large file"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_user "$username" "$password" "user" || fail "error setting up user $username"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Statement": [
+    {
+       "Effect": "Allow",
+       "Principal": "$username",
+       "Action": "s3:PutObject",
+       "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    },
+    {
+       "Effect": "Allow",
+       "Principal": "$username",
+       "Action": "s3:AbortMultipartUpload",
+       "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    }
+  ]
+}
+EOF
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error creating multipart upload"
+  # shellcheck disable=SC2154
+  log 5 "UPLOAD ID: $upload_id"
+  if abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"; then
+    fail "abort multipart upload succeeded despite lack of permissions"
+  fi
+
+  abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password" || fail "error aborting multipart upload despite permissions"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$test_file"
 }

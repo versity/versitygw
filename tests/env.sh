@@ -86,6 +86,9 @@ check_universal_vars() {
   if [[ -n "$VERSITY_LOG_FILE" ]]; then
     export VERSITY_LOG_FILE
   fi
+  if [[ -n "$DIRECT" ]]; then
+    export DIRECT
+  fi
 }
 
 check_versity_vars() {
