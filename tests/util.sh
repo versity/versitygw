@@ -10,6 +10,7 @@ source ./tests/commands/create_bucket.sh
 source ./tests/commands/delete_bucket.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object.sh
+source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
@@ -158,7 +159,12 @@ delete_bucket_or_contents() {
       log 2 "error deleting bucket policies"
       return 1
     fi
-    if ! put_bucket_canned_acl "$2" "private"; then
+    if ! get_object_ownership_rule "$2"; then
+      log 2 "error getting object ownership rule"
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$2" "private"; then
       log 2 "error resetting bucket ACLs"
       return 1
     fi

@@ -1421,14 +1421,16 @@ EOF
   test_file="test_file"
   username="ABCDEFG"
   password="HIJKLMN"
+  export versitygw_user_key=$password
 
   create_test_files "$policy_file" || fail "error creating policy file"
   create_large_file "$test_file" || fail "error creating large file"
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
-  setup_user "$username" "$password" "user" || fail "error setting up user $username"
+  setup_user "$username" "user" || fail "error setting up user $username"
 
   cat <<EOF > "$test_file_folder"/$policy_file
 {
+  "Version": "2012-10-17",
   "Statement": [
     {
        "Effect": "Allow",

@@ -56,6 +56,9 @@ check_universal_vars() {
   elif [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
     log 2 "No AWS secret access key set"
     return 1
+  elif [ -z "$AWS_REGION" ]; then
+    log 2 "No AWS region set"
+    return 1
   elif [ -z "$AWS_PROFILE" ]; then
     log 2 "No AWS profile set"
     return 1
@@ -78,7 +81,7 @@ check_universal_vars() {
     log 2 "RECREATE_BUCKETS must be 'true' or 'false'"
     return 1
   fi
-  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_PROFILE AWS_ENDPOINT_URL RUN_VERSITYGW \
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL RUN_VERSITYGW \
     BUCKET_ONE_NAME BUCKET_TWO_NAME RECREATE_BUCKETS
   if [[ -n "$TEST_LOG_FILE" ]]; then
     export TEST_LOG_FILE
