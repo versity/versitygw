@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+source ./tests/report.sh
+
 head_bucket() {
+  record_command "head-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     echo "head bucket command missing command type, bucket name"
     return 1

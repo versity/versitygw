@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 put_bucket_policy() {
+  record_command "put-bucket-policy" "client:$1"
   if [[ $# -ne 3 ]]; then
     log 2 "'put bucket policy' command requires command type, bucket, policy file"
     return 1
@@ -26,6 +27,7 @@ put_bucket_policy() {
 }
 
 put_bucket_policy_with_user() {
+  record_command "put-bucket-policy" "client:s3api"
   if [[ $# -ne 4 ]]; then
     log 2 "'put bucket policy with user' command requires bucket, policy file, username, password"
     return 1

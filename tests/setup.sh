@@ -57,4 +57,7 @@ teardown() {
     end_time=$(date +%s)
     log 4 "Total test time: $((end_time - start_time))"
   fi
+  if [[ -n "$COVERAGE_DB" ]]; then
+    record_result
+  fi
 }

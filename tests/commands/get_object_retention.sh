@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_object_retention() {
+  record_command "get-object-retention" "client:s3api"
   if [[ $# -ne 2 ]]; then
     log 2 "'get object retention' command requires bucket, key"
     return 1

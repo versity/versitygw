@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 delete_object() {
+  record_command "delete-object" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "delete object command requires command type, bucket, key"
     return 1
@@ -28,6 +29,7 @@ delete_object() {
 }
 
 delete_object_with_user() {
+  record_command "delete-object" "client:$1"
   if [ $# -ne 5 ]; then
     log 2 "delete object with user command requires command type, bucket, key, access ID, secret key"
     return 1

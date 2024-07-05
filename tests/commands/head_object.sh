@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 head_object() {
+  record_command "head-object" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "head-object missing command, bucket name, object name"
     return 2

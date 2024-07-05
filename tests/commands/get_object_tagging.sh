@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_object_tagging() {
+  record_command "get-object-tagging" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "get object tag command missing command type, bucket, and/or key"
     return 1

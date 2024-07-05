@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 delete_bucket_policy() {
+  record_command "delete-bucket-policy" "client:$1"
   if [[ $# -ne 2 ]]; then
     log 2 "delete bucket policy command requires command type, bucket"
     return 1
@@ -23,6 +24,7 @@ delete_bucket_policy() {
 }
 
 delete_bucket_policy_with_user() {
+  record_command "delete-bucket-policy" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "'delete bucket policy with user' command requires bucket, username, password"
     return 1

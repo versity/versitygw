@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 delete_object_tagging() {
+  record_command "delete-object-tagging" "client:$1"
   if [[ $# -ne 3 ]]; then
     echo "delete object tagging command missing command type, bucket, key"
     return 1

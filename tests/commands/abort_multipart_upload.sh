@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 abort_multipart_upload() {
+  record_command "abort-multipart-upload" "client:s3api"
   if [ $# -ne 3 ]; then
     log 2 "'abort multipart upload' command requires bucket, key, upload ID"
     return 1
@@ -13,6 +14,7 @@ abort_multipart_upload() {
 }
 
 abort_multipart_upload_with_user() {
+  record_command "abort-multipart-upload" "client:s3api"
   if [ $# -ne 5 ]; then
     log 2 "'abort multipart upload' command requires bucket, key, upload ID, username, password"
     return 1

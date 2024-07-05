@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
+source ./tests/report.sh
+
 # create an AWS bucket
 # param:  bucket name
 # return 0 for success, 1 for failure
 create_bucket() {
+  record_command "create-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "create bucket missing command type, bucket name"
     return 1
@@ -33,6 +36,7 @@ create_bucket() {
 }
 
 create_bucket_object_lock_enabled() {
+  record_command "create-bucket" "client:s3api"
   if [ $# -ne 1 ]; then
     log 2 "create bucket missing bucket name"
     return 1

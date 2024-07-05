@@ -10,6 +10,7 @@ source ./tests/commands/create_bucket.sh
 source ./tests/commands/delete_bucket.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object.sh
+source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object_tagging.sh
@@ -156,7 +157,7 @@ delete_bucket_or_contents() {
       log 2 "error deleting bucket contents"
       return 1
     fi
-    if ! delete_bucket_policy "s3api" "$2"; then
+    if ! delete_bucket_policy "$1" "$2"; then
       log 2 "error deleting bucket policies"
       return 1
     fi
@@ -165,6 +166,11 @@ delete_bucket_or_contents() {
       return 1
     fi
     # shellcheck disable=SC2154
+    #if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]]; then
+    #  get_bucket_acl "$1" "$2" || fail "error getting bucket acl"
+    #  log 5 "ACL: $acl"
+    #fi
+    log 5 "object ownership rule: $object_ownership_rule"
     if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$2" "private"; then
       log 2 "error resetting bucket ACLs"
       return 1
@@ -192,8 +198,7 @@ delete_bucket_or_contents_if_exists() {
     return 1
   fi
   if [[ $bucket_exists_result -eq 0 ]]; then
-    delete_bucket_or_contents "$1" "$2" || local delete_result=$?
-    if [[ delete_result -ne 0 ]]; then
+    if ! delete_bucket_or_contents "$1" "$2"; then
       log 2 "error deleting bucket or contents"
       return 1
     fi
@@ -247,16 +252,16 @@ setup_bucket() {
 # return 0 for true, 1 for false, 2 for error
 object_exists() {
   if [ $# -ne 3 ]; then
-    echo "object exists check missing command, bucket name, object name"
+    log 2 "object exists check missing command, bucket name, object name"
     return 2
   fi
-  head_object "$1" "$2" "$3" || head_result=$?
-  if [[ $head_result -eq 2 ]]; then
-    echo "error checking if object exists"
+  head_object "$1" "$2" "$3" || local head_object_result=$?
+  if [[ $head_object_result -eq 2 ]]; then
+    log 2 "error checking if object exists"
     return 2
   fi
   # shellcheck disable=SC2086
-  return $head_result
+  return $head_object_result
 }
 
 put_object_with_metadata() {
@@ -534,23 +539,6 @@ check_bucket_tags_empty() {
   check_tags_empty "$1" || local check_result=$?
   # shellcheck disable=SC2086
   return $check_result
-}
-
-delete_bucket_tags() {
-  if [ $# -ne 2 ]; then
-    echo "delete bucket tag command missing command type, bucket name"
-    return 1
-  fi
-  local result
-  if [[ $1 == 'aws' ]]; then
-    tags=$(aws --no-verify-ssl s3api delete-bucket-tagging --bucket "$2" 2>&1) || result=$?
-  elif [[ $1 == 'mc' ]]; then
-    tags=$(mc --insecure tag remove "$MC_ALIAS"/"$2" 2>&1) || result=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  return 0
 }
 
 # add tags to object

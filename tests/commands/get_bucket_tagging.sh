@@ -4,6 +4,7 @@
 # params:  bucket
 # export 'tags' on success, return 1 for error
 get_bucket_tagging() {
+  record_command "get-bucket-tagging" "client:$1"
   if [ $# -ne 2 ]; then
     echo "get bucket tag command missing command type, bucket name"
     return 1

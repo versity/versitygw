@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 list_objects() {
+  record_command "list-objects" "client:$1"
   if [ $# -ne 2 ]; then
     echo "list objects command requires command type, and bucket or folder"
     return 1

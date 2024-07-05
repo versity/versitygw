@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_bucket_acl() {
+  record_command "get-bucket-acl" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "bucket ACL command missing command type, bucket name"
     return 1
@@ -22,6 +23,7 @@ get_bucket_acl() {
 }
 
 get_bucket_acl_with_user() {
+  record_command "get-bucket-acl" "client:s3api"
   if [ $# -ne 3 ]; then
     log 2 "'get bucket ACL with user' command requires bucket name, username, password"
     return 1

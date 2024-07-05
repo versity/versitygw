@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_bucket_ownership_controls() {
+  record_command "get-bucket-ownership-controls" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "'get bucket ownership controls' command requires bucket name"
     return 1

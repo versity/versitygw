@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 upload_part_copy() {
+  record_command "upload-part-copy" "client:s3api"
   if [ $# -ne 5 ]; then
     echo "upload multipart part copy function must have bucket, key, upload ID, file name, part number"
     return 1
@@ -17,6 +18,7 @@ upload_part_copy() {
 }
 
 upload_part_copy_with_range() {
+  record_command "upload-part-copy" "client:s3api"
   if [ $# -ne 6 ]; then
     log 2 "upload multipart part copy function must have bucket, key, upload ID, file name, part number, range"
     return 1

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_object_attributes() {
+  record_command "get-object-attributes" "client:s3api"
   if [[ $# -ne 2 ]]; then
     log 2 "'get object attributes' command requires bucket, key"
     return 1
