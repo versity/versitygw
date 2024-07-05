@@ -17,6 +17,7 @@ source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_objects.sh
 source ./tests/commands/put_bucket_acl.sh
+source ./tests/commands/put_bucket_ownership_controls.sh
 source ./tests/commands/upload_part_copy.sh
 
 # recursively delete an AWS bucket
@@ -215,8 +216,11 @@ setup_bucket() {
     log 2 "bucket creation function requires command type, bucket name"
     return 1
   fi
-  delete_bucket_or_contents_if_exists "$1" "$2" || local delete_bucket_result=$?
-  if [[ $delete_bucket_result -ne 0 ]]; then
+  if [[ $1 == "s3cmd" ]]; then
+    log 5 "putting bucket ownership controls"
+    put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+  fi
+  if ! delete_bucket_or_contents_if_exists "$1" "$2"; then
     log 2 "error deleting bucket, or checking for bucket existence"
     return 1
   fi
@@ -228,6 +232,10 @@ setup_bucket() {
       return 1
     fi
     log 5 "bucket creation success"
+    if [[ $1 == "s3cmd" ]]; then
+      log 5 "putting bucket ownership controls"
+      put_bucket_ownership_controls "$2" "BucketOwnerPreferred" || fail "putting bucket ownership controls failed"
+    fi
   else
     log 5 "skipping bucket re-creation"
   fi

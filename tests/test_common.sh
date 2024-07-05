@@ -47,14 +47,11 @@ test_common_create_delete_bucket() {
     fail "create/delete bucket test requires command type"
   fi
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Failed to create bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "failed to create bucket"
 
-  bucket_exists "$1" "$BUCKET_ONE_NAME" || local exists_three=$?
-  [[ $exists_three -eq 0 ]] || fail "Failed bucket existence check"
+  bucket_exists "$1" "$BUCKET_ONE_NAME" || fail "failed bucket existence check"
 
-  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME" || local delete_result_two=$?
-  [[ $delete_result_two -eq 0 ]] || fail "Failed to delete bucket"
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME" || fail "failed to delete bucket"
 }
 
 test_common_copy_object() {
@@ -435,21 +432,18 @@ test_common_get_bucket_location() {
 
 test_common_put_bucket_acl() {
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
-  if ! user_exists "ABCDEFG"; then
-    create_user "ABCDEFG" "HIJKLMN" user || fail "error creating user"
-  fi
+  setup_user "ABCDEFG" "HIJKLMN" "user" || fail "error creating user"
 
-  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving acl"
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
 
   log 5 "Initial ACLs: $acl"
-  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID')
+  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID' 2>&1) || fail "error getting ID: $id"
   if [[ $id != '"'"$AWS_ACCESS_KEY_ID"'"' ]]; then
-    # in some cases, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
-    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID') || local list_result=$?
-    [[ $list_result -eq 0 ]] || fail "error getting canonical ID: $canonical_id"
+    # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
+    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting caononical ID: $canonical_id"
     [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
   fi
 
@@ -480,12 +474,11 @@ EOF
     put_bucket_acl "$1" "$BUCKET_ONE_NAME" "ABCDEFG" || fail "error putting first acl"
   fi
 
-  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving second acl"
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
-  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants[0]')
-  permission=$(echo "$public_grants" | jq -r '.Permission')
+  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants[1]' 2>&1) || fail "error getting public grants: $public_grants"
+  permission=$(echo "$public_grants" | jq -r '.Permission' 2>&1) || fail "error getting permission: $permission"
   [[ $permission == "READ" ]] || fail "incorrect permission ($permission)"
 
 cat <<EOF > "$test_file_folder"/"$acl_file"
@@ -505,17 +498,15 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || local put_result=$?
-  [[ $put_result -eq 0 ]] || fail "Error putting second acl"
+  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
 
-  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Error retrieving second acl"
+  get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"
-  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants')
-  public_grant_length=$(echo "$public_grants" | jq 'length')
-  [[ $public_grant_length -eq 1 ]] || fail "incorrect grant length for private ACL ($public_grant_length)"
-  permission=$(echo "$public_grants" | jq -r '.[0].Permission')
+  public_grants=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Grants' 2>&1) || fail "error retrieving public grants: $public_grants"
+  public_grant_length=$(echo "$public_grants" | jq -r 'length' 2>&1) || fail "Error retrieving public grant length: $public_grant_length"
+  [[ $public_grant_length -eq 2 ]] || fail "incorrect grant length for private ACL ($public_grant_length)"
+  permission=$(echo "$public_grants" | jq -r '.[0].Permission' 2>&1) || fail "Error retrieving permission: $permission"
   [[ $permission == "FULL_CONTROL" ]] || fail "incorrect permission ($permission)"
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
@@ -526,48 +517,55 @@ test_common_get_put_delete_bucket_policy() {
 
   policy_file="policy_file"
 
-  create_test_files "$policy_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating policy file"
+  create_test_files "$policy_file" || fail "error creating policy file"
 
   effect="Allow"
-  principal="*"
+  #principal="*"
+  if [[ $DIRECT == "true" ]]; then
+    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/s3user\"}"
+  else
+    principal="\"*\""
+  fi
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
 
   cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
     {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-           "Effect": "$effect",
-           "Principal": "$principal",
-           "Action": "$action",
-           "Resource": "$resource"
-        }
-      ]
+       "Effect": "$effect",
+       "Principal": $principal,
+       "Action": "$action",
+       "Resource": "$resource"
     }
+  ]
+}
 EOF
+  log 5 "POLICY: $(cat "$test_file_folder/$policy_file")"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
-  check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || check_result=$?
-  [[ $get_result -eq 0 ]] || fail "policy not empty"
+  check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || fail "policy not empty"
 
-  put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$policy_file" || put_result=$?
-  [[ $put_result -eq 0 ]] || fail "error putting bucket"
+  put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$policy_file" || fail "error putting bucket policy"
 
-  get_bucket_policy "$1" "$BUCKET_ONE_NAME" || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "error getting bucket policy after setting"
+  get_bucket_policy "$1" "$BUCKET_ONE_NAME" || fail "error getting bucket policy after setting"
 
-  log 5 "$bucket_policy"
-  returned_effect=$(echo "$bucket_policy" | jq -r '.Statement[0].Effect')
+  # shellcheck disable=SC2154
+  log 5 "POLICY:  $bucket_policy"
+  statement=$(echo "$bucket_policy" | jq -r '.Statement[0]' 2>&1) || fail "error getting statement value: $statement"
+  returned_effect=$(echo "$statement" | jq -r '.Effect' 2>&1) || fail "error getting effect: $returned_effect"
   [[ $effect == "$returned_effect" ]] || fail "effect mismatch ($effect, $returned_effect)"
-  returned_principal=$(echo "$bucket_policy" | jq -r '.Statement[0].Principal')
-  [[ $principal == "$returned_principal" ]] || fail "principal mismatch ($principal, $returned_principal)"
-  returned_action=$(echo "$bucket_policy" | jq -r '.Statement[0].Action')
+  returned_principal=$(echo "$statement" | jq -r '.Principal')
+  if [[ -n $DIRECT ]] && arn=$(echo "$returned_principal" | jq -r '.AWS' 2>&1); then
+    [[ $arn == "arn:aws:iam::$DIRECT_AWS_USER_ID:user/s3user" ]] || fail "arn mismatch"
+  else
+    [[ $principal == "\"$returned_principal\"" ]] || fail "principal mismatch ($principal, $returned_principal)"
+  fi
+  returned_action=$(echo "$statement" | jq -r '.Action')
   [[ $action == "$returned_action" ]] || fail "action mismatch ($action, $returned_action)"
-  returned_resource=$(echo "$bucket_policy" | jq -r '.Statement[0].Resource')
+  returned_resource=$(echo "$statement" | jq -r '.Resource')
   [[ $resource == "$returned_resource" ]] || fail "resource mismatch ($resource, $returned_resource)"
 
   delete_bucket_policy "$1" "$BUCKET_ONE_NAME" || delete_result=$?

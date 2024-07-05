@@ -68,27 +68,34 @@ get_bucket_policy_with_user() {
 
 get_bucket_policy_s3cmd() {
   if [[ $# -ne 1 ]]; then
-    echo "s3cmd 'get bucket policy' command requires bucket"
+    log 2 "s3cmd 'get bucket policy' command requires bucket"
     return 1
   fi
 
-  info=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1") || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
-    echo "error getting bucket policy: $info"
+  if ! info=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1" 2>&1); then
+    log 2 "error getting bucket policy: $info"
     return 1
   fi
 
+  log 5 "policy info: $info"
   bucket_policy=""
   policy_brackets=false
+  # NOTE:  versitygw sends policies back in multiple lines here, direct in single line
   while IFS= read -r line; do
     if [[ $policy_brackets == false ]]; then
       policy_line=$(echo "$line" | grep 'Policy: ')
       if [[ $policy_line != "" ]]; then
-        if [[ $policy_line != *'{' ]]; then
+        if [[ $policy_line != *'{'* ]]; then
           break
         fi
-        policy_brackets=true
-        bucket_policy+="{"
+        if [[ $policy_line == *'}'* ]]; then
+          log 5 "policy on single line"
+          bucket_policy=${policy_line//Policy:/}
+          break
+        else
+          policy_brackets=true
+          bucket_policy+="{"
+        fi
       fi
     else
       bucket_policy+=$line
@@ -97,6 +104,7 @@ get_bucket_policy_s3cmd() {
       fi
     fi
   done <<< "$info"
+  log 5 "bucket policy: $bucket_policy"
   export bucket_policy
   return 0
 }

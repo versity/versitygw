@@ -274,13 +274,38 @@ delete_user() {
 
 change_bucket_owner() {
   if [[ $# -ne 4 ]]; then
-      echo "change bucket owner command requires ID, key, bucket name, and new owner"
-      return 1
+    echo "change bucket owner command requires ID, key, bucket name, and new owner"
+    return 1
+  fi
+  error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?
+  if [[ $change_result -ne 0 ]]; then
+    echo "error changing bucket owner: $error"
+    return 1
+  fi
+  return 0
+}
+
+get_bucket_owner() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "'get bucket owner' command requires bucket name"
+    return 1
+  fi
+  if ! buckets=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-buckets 2>&1); then
+    log 2 "error listing buckets: $buckets"
+    return 1
+  fi
+  log 5 "BUCKET DATA:  $buckets"
+  bucket_vals=$(echo "$buckets" | awk 'NR > 2')
+  while IFS= read -r line; do
+    log 5 "bucket line: $line"
+    bucket=$(echo "$line" | awk '{print $1}')
+    if [[ $bucket == "$1" ]]; then
+      bucket_owner=$(echo "$line" | awk '{print $2}')
+      export bucket_owner
+      return 0
     fi
-    error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?
-    if [[ $change_result -ne 0 ]]; then
-      echo "error changing bucket owner: $error"
-      return 1
-    fi
-    return 0
+  done <<< "$bucket_vals"
+  log 3 "bucket owner for bucket '$1' not found"
+  bucket_owner=
+  return 0
 }

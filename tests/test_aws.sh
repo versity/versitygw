@@ -247,17 +247,17 @@ export RUN_USERS=true
   [[ "$(cat "$test_file_folder/$bucket_file-range")" == "9" ]] || fail "byte range not copied properly"
 }
 
-#@test "test_get_object_invalid_range" {
-#  bucket_file="bucket_file"
-#
-#  create_test_files "$bucket_file" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating test files"
-#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-#  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
-#  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
-#  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
-#}
+@test "test_get_object_invalid_range" {
+  bucket_file="bucket_file"
+
+  create_test_files "$bucket_file" || local created=$?
+  [[ $created -eq 0 ]] || fail "Error creating test files"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
+  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
+  get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
+  [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
+}
 
 @test "test_put_object" {
   bucket_file="bucket_file"
@@ -342,9 +342,9 @@ export RUN_USERS=true
 #
 #  bucket_file="bucket_file"
 #  username="ABCDEFG"
-#  secret_key="HIJKLMN"
+#  password="HIJKLMN"
 #
-#  legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
+#  legal_hold_retention_setup "$username" "$password" "$bucket_file"
 #
 #  get_object_lock_configuration "$BUCKET_ONE_NAME" || fail "error getting lock configuration"
 #  # shellcheck disable=SC2154
@@ -356,21 +356,23 @@ export RUN_USERS=true
 #  get_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting object legal hold status"
 #  # shellcheck disable=SC2154
 #  log 5 "$legal_hold"
-#  hold_status=$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r ".LegalHold.Status")
+#  hold_status=$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r ".LegalHold.Status" 2>&1) || fail "error obtaining hold status: $hold_status"
 #  [[ $hold_status == "ON" ]] || fail "Status should be 'ON', is '$hold_status'"
 #
 #  echo "fdkljafajkfs" > "$test_file_folder/$bucket_file"
-#  put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local put_result=$?
-#  [[ $put_result -ne 0 ]] || fail "able to overwrite object with hold"
+#  if put_object_with_user "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"; then
+#    fail "able to overwrite object with hold"
+#  fi
 #  # shellcheck disable=SC2154
-#  [[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
+#  #[[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
 #
-#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || local delete_result=$?
-#  [[ $delete_result -ne 0 ]] || fail "able to delete object with hold"
+#  if delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"; then
+#    fail "able to delete object with hold"
+#  fi
 #  # shellcheck disable=SC2154
 #  [[ $delete_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $delete_object_error"
 #  put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF" || fail "error removing legal hold on object"
-#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key" || fail "error deleting object after removing legal hold"
+#  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password" || fail "error deleting object after removing legal hold"
 #
 #  delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"
 #}
@@ -420,65 +422,26 @@ export RUN_USERS=true
 #}
 
 legal_hold_retention_setup() {
-  if [[ $# -ne 3 ]]; then
-    log 2 "legal hold or retention setup requires username, secret key, bucket file"
-    return 1
-  fi
+  [[ $# -eq 3 ]] || fail "legal hold or retention setup requires username, secret key, bucket file"
 
   delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME" || fail "error deleting bucket, or checking for existence"
-  create_user_if_nonexistent "$1" "$2" "user" || fail "error creating user if nonexistent"
+  setup_user "$1" "$2" "user" || fail "error creating user if nonexistent"
   create_test_files "$3" || fail "error creating test files"
 
+  #create_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   create_bucket_object_lock_enabled "$BUCKET_ONE_NAME" || fail "error creating bucket"
   change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$1" || fail "error changing bucket ownership"
-  put_object_with_user "s3api" "$test_file_folder/$3" "$BUCKET_ONE_NAME" "$3" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" || fail "failed to add object to bucket"
+  get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket policy"
+  log 5 "POLICY: $bucket_policy"
+  get_bucket_owner "$BUCKET_ONE_NAME"
+  log 5 "owner: $bucket_owner"
+  #put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
+  put_object_with_user "s3api" "$test_file_folder/$3" "$BUCKET_ONE_NAME" "$3" "$1" "$2" || fail "failed to add object to bucket"
 }
 
-#@test "test_put_bucket_acl" {
-#  test_common_put_bucket_acl "s3api"
-#}
-
-# test ability to retrieve object ACLs
-#@test "test_get_object_acl" {
-
-#  object_one="test-file-one"
-
-#  setup_bucket "$BUCKET_ONE_NAME" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating bucket"
-#  create_test_files "$object_one" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating test file"
-#  put_object "$test_file_folder"/$object_one "$BUCKET_ONE_NAME"/"$object_one"  || local result=$?
-#  [[ result -eq 0 ]] || fail "Error adding object one"
-
-#  get_object_acl "$BUCKET_ONE_NAME" "$object_one" || local result=$?
-#  [[ $result -eq 0 ]] || fail "Error retrieving acl"
-
-#  id=$(echo "$acl" | jq '.Owner.ID')
-#  [[ $id == '"'"$AWS_ACCESS_KEY_ID"'"' ]] || fail "Acl mismatch"
-
-#  delete_bucket_or_contents "$BUCKET_ONE_NAME"
-#}
-
-
-#@test "test_select_object_content" {
-#  bucket_file="bucket_file"
-#
-#  create_test_files "$bucket_file" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating test files"
-#
-#  printf "Field,Value\nSomething,Also Something" > "$test_file_folder/$bucket_file"
-#  cat "$test_file_folder/$bucket_file"
-#
-#  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local created=$?
-#  [[ $created -eq 0 ]] || fail "Error creating bucket"
-#  put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
-#  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-#  select_object_content "$BUCKET_ONE_NAME" "$bucket_file" "select * from s3object limit 1" "SQL" "{\"CSV\": {}}" "{\"CSV\": {}}" "output.csv"
-#}
-
-#@test "test_get_set_versioning" {
-#  test_common_get_set_versioning "s3api"
-#}
+@test "test_put_bucket_acl" {
+  test_common_put_bucket_acl "s3api"
+}
 
 # test v1 s3api list objects command
 @test "test-s3api-list-objects-v1" {
