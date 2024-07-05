@@ -9,16 +9,38 @@ create_multipart_upload() {
     return 1
   fi
 
-  local multipart_data
-  multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2") || local created=$?
-  if [[ $created -ne 0 ]]; then
-    log 2 "Error creating multipart upload: $upload_id"
+  if ! multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+    log 2 "Error creating multipart upload: $multipart_data"
     return 1
   fi
 
-  upload_id=$(echo "$multipart_data" | jq '.UploadId')
+  if ! upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq -r '.UploadId' 2>&1); then
+    log 2 "error parsing upload ID: $upload_id"
+    return 1
+  fi
   upload_id="${upload_id//\"/}"
   export upload_id
+  return 0
+}
+
+create_multipart_upload_with_user() {
+  if [ $# -ne 4 ]; then
+    log 2 "create multipart upload function must have bucket, key, username, password"
+    return 1
+  fi
+
+  if ! multipart_data=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+    log 2 "Error creating multipart upload: $multipart_data"
+    return 1
+  fi
+
+  if ! upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq -r '.UploadId' 2>&1); then
+    log 2 "error parsing upload ID: $upload_id"
+    return 1
+  fi
+  upload_id="${upload_id//\"/}"
+  export upload_id
+  return 0
 }
 
 create_multipart_upload_params() {

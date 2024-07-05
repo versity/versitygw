@@ -681,24 +681,20 @@ legal_hold_retention_setup() {
 @test "test-list-objects-delimiter" {
   folder_name="two"
   object_name="three"
-  create_test_folder "$folder_name" || local created=$?
-  [[ $created -eq 0 ]] || fail "error creating folder"
-  create_test_files "$folder_name"/"$object_name" || created=$?
-  [[ $created -eq 0 ]] || fail "error creating file"
+  create_test_folder "$folder_name" || fail "error creating folder"
+  create_test_files "$folder_name"/"$object_name" || fail "error creating file"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
-  put_object "aws" "$test_file_folder/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
+  put_object "aws" "$test_file_folder/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || fail "failed to add object to bucket"
 
   list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"
-  prefix=$(echo "${objects[@]}" | jq ".CommonPrefixes[0].Prefix")
-  [[ $prefix == "\""$folder_name/"\"" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
+  prefix=$(echo "${objects[@]}" | jq -r ".CommonPrefixes[0].Prefix" 2>&1) || fail "error getting object prefix from object list: $prefix"
+  [[ $prefix == "$folder_name/" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
 
   list_objects_s3api_v1 "$BUCKET_ONE_NAME" "#"
-  key=$(echo "${objects[@]}" | jq ".Contents[0].Key")
-  [[ $key == "\""$folder_name/$object_name"\"" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
+  key=$(echo "${objects[@]}" | jq -r ".Contents[0].Key" 2>&1) || fail "error getting key from object list: $key"
+  [[ $key == "$folder_name/$object_name" ]] || fail "key doesn't match (expected $key, actual $folder_name/$object_name)"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $folder_name
@@ -791,10 +787,6 @@ EOF
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
@@ -805,32 +797,7 @@ EOF
     check_for_empty_policy "s3api" "$BUCKET_ONE_NAME" || fail "policy not empty after deletion"
   fi
 
-  if put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"; then
-    fail "put succeeded despite invalid username"
-  fi
-  [[ "$put_bucket_policy_error" == *"MalformedPolicy"* ]] || fail "invalid policy error: $put_bucket_policy_error"
-
-#  cat <<EOF > "$test_file_folder"/acl_file
-#{
-#  "Grants": [
-#    {
-#      "Grantee": {
-#        "ID": "ABCDEFG",
-#        "Type": "CanonicalUser"
-#      },
-#      "Permission": "READ"
-#    }
-#  ],
-#  "Owner": {
-#    "ID": "$AWS_ACCESS_KEY_ID"
-#  }
-#}
-#EOF
-#
-  #put_bucket_acl "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/acl_file" || fail "error putting acl"
-  #put_bucket_canned_acl "$BUCKET_ONE_NAME" "public-read-write" || fail "error putting acl"
-
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
   if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
     fail "get object with user succeeded despite lack of permissions"
   fi
@@ -838,8 +805,6 @@ EOF
   [[ "$get_object_error" == *"Access Denied"* ]] || fail "invalid get object error: $get_object_error"
 
   put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
-  #get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket policy"
-  #log 5 "$bucket_policy"
   get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object after permissions"
   compare_files "$test_file_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files not equal"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
@@ -866,10 +831,7 @@ EOF
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/test_file"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -907,10 +869,7 @@ EOF
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/policy_file*"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user account"
+  setup_user "$username" "$password" "user" || fail "error creating user account"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -950,10 +909,7 @@ EOF
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -997,10 +953,7 @@ EOF
     }
 EOF
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
   put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "error copying object to bucket"
@@ -1047,10 +1000,7 @@ EOF
 }
 EOF
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   log 5 "Policy: $(cat "$test_file_folder/$policy_file")"
@@ -1087,10 +1037,7 @@ EOF
   action="s3:PutObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   log 5 "Policy: $(cat "$test_file_folder/$policy_file")"
@@ -1130,10 +1077,7 @@ EOF
   action="s3:DeleteObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -1167,10 +1111,7 @@ EOF
   action="s3:GetBucketPolicy"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -1207,10 +1148,7 @@ EOF
   action="s3:ListBucketMultipartUploads"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -1246,10 +1184,7 @@ EOF
   action="s3:PutBucketPolicy"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
@@ -1286,10 +1221,7 @@ EOF
   action="s3:DeleteBucketPolicy"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
-  if user_exists "$username"; then
-    delete_user "$username" || fail "failed to delete user '$username'"
-  fi
-  create_user "$username" "$password" "user" || fail "error creating user"
+  setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
   if delete_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
@@ -1300,6 +1232,34 @@ EOF
   delete_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "unable to delete bucket policy"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$policy_file"
+}
+
+@test "test_policy_get_bucket_acl" {
+  # TODO (https://github.com/versity/versitygw/issues/637)
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    return 0
+  fi
+  policy_file="policy_file"
+  username="ABCDEFG"
+  password="HIJKLMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file, test files"
+
+  effect="Allow"
+  principal="$username"
+  action="s3:GetBucketAcl"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  setup_user "$username" "$password" "user" || fail "error creating user"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  #put_bucket_canned_acl "$BUCKET_ONE_NAME" "private" || fail "error putting bucket canned ACL"
+  if get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
+    fail "user able to get bucket ACLs despite permissions"
+  fi
+  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error getting bucket ACL despite permissions"
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly
@@ -1332,15 +1292,18 @@ EOF
 #}
 
 @test "test_head_bucket" {
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-  head_bucket "aws" "$BUCKET_ONE_NAME"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  head_bucket "aws" "$BUCKET_ONE_NAME" || fail "error getting bucket info"
+  log 5 "INFO:  $bucket_info"
+  region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
+  [[ $region != "" ]] || fail "empty bucket region"
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
 }
 
 @test "test_head_bucket_invalid_name" {
-  head_bucket "aws" "" || local head_result=$?
-  [[ $head_result -ne 0 ]] || fail "able to get bucket info for invalid name"
+  if head_bucket "aws" ""; then
+    fail "able to get bucket info for invalid name"
+  fi
 }
 
 @test "test_head_bucket_doesnt_exist" {
@@ -1357,23 +1320,90 @@ EOF
   test_key="x-test-data"
   test_value="test-value"
 
-  create_test_files "$object_one" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
+  create_test_files "$object_one" || fail "error creating test files"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
   object="$test_file_folder"/"$object_one"
-  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || local exists_result_one=$?
-  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
 
-  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || get_result=$?
-  [[ $get_result -eq 0 ]] || fail "error getting object metadata"
-  key=$(echo "$metadata" | jq 'keys[]')
-  value=$(echo "$metadata" | jq '.[]')
-  [[ $key == "\"$test_key\"" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
-  [[ $value == "\"$test_value\"" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "error getting object metadata"
+  key=$(echo "$metadata" | jq -r 'keys[]' 2>&1) || fail "error getting key from metadata: $key"
+  value=$(echo "$metadata" | jq -r '.[]' 2>&1) || fail "error getting value from metadata: $value"
+  [[ $key == "$test_key" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
+  [[ $value == "$test_value" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one"
 }
 
+@test "test_policy_abort_multipart_upload" {
+  policy_file="policy_file"
+  test_file="test_file"
+  username="ABCDEFG"
+
+  create_test_files "$policy_file" || fail "error creating policy file"
+  create_large_file "$test_file" || fail "error creating large file"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  if [[ $DIRECT == "true" ]]; then
+    setup_user_direct "$username" "user" "$BUCKET_ONE_NAME" || fail "error setting up direct user $username"
+    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$username\"}"
+    # shellcheck disable=SC2154
+    username=$key_id
+    # shellcheck disable=SC2154
+    password=$secret_key
+  else
+    password="HIJLKMN"
+    setup_user "$username" "$password" "user" || fail "error setting up user $username"
+    principal="\"$username\""
+  fi
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": $principal,
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    },
+    {
+      "Effect": "Deny",
+      "Principal": $principal,
+      "Action": "s3:AbortMultipartUpload",
+      "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    }
+  ]
+}
+EOF
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting first policy"
+
+  create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error creating multipart upload"
+  if abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"; then
+    fail "abort multipart upload succeeded despite lack of permissions"
+  fi
+  # shellcheck disable=SC2154
+  [[ "$abort_multipart_upload_error" == *"AccessDenied"* ]] || fail "unexpected abort error:  $abort_multipart_upload_error"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+       "Effect": "Allow",
+       "Principal": $principal,
+       "Action": "s3:AbortMultipartUpload",
+       "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    }
+  ]
+}
+EOF
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password" || fail "error aborting multipart upload despite permissions"
+
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$test_file"
+}

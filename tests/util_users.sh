@@ -1,6 +1,42 @@
 #!/usr/bin/env bash
 
-create_user() {
+setup_user() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'setup user' command requires username, password, and role"
+    return 1
+  fi
+  if user_exists "$1"; then
+    if ! delete_user "$1"; then
+      log 2 "error deleting user '$1'"
+      return 1
+    fi
+  fi
+  if ! create_user_versitygw "$1" "$2" "$3"; then
+    log 2 "error creating user '$1'"
+    return 1
+  fi
+  return 0
+}
+
+setup_user_direct() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'setup user direct' command requires username, role, and bucket"
+    return 1
+  fi
+  if user_exists "$1"; then
+    if ! delete_user "$1"; then
+      log 2 "error deleting user '$1'"
+      return 1
+    fi
+  fi
+  if ! create_user_direct "$1" "$2" "$3"; then
+    log 2 "error creating user"
+    return 1
+  fi
+  return 0
+}
+
+create_user_versitygw() {
   if [[ $# -ne 3 ]]; then
     log 2 "create user command requires user ID, key, and role"
     return 1
@@ -25,6 +61,70 @@ create_user_if_nonexistent() {
   return $?
 }
 
+put_user_policy() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "attaching user policy requires user ID, role, bucket name"
+    return 1
+  fi
+  if [[ -z "$test_file_folder" ]]; then
+    log 2 "no test folder defined"
+    return 1
+  fi
+
+  # TODO add other roles
+  if [[ $2 != "user" ]]; then
+    log 2 "role for '$2' not currently supported"
+    return 1
+  fi
+
+cat <<EOF > "$test_file_folder"/user_policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "arn:aws:s3:::$3/*"
+    }
+  ]
+}
+EOF
+
+  if ! error=$(aws iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$test_file_folder/user_policy_file" 2>&1); then
+    log 2 "error putting user policy: $error"
+    return 1
+  fi
+  return 0
+}
+
+create_user_direct() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "create user direct command requires desired username, role, bucket name"
+    return 1
+  fi
+  if ! error=$(aws iam create-user --user-name "$1" 2>&1); then
+    log 2 "error creating new user: $error"
+    return 1
+  fi
+  if ! put_user_policy "$1" "$2" "$3"; then
+    log 2 "error attaching user policy"
+    return 1
+  fi
+  if ! keys=$(aws iam create-access-key --user-name "$1" 2>&1); then
+    log 2 "error creating keys for new user: $keys"
+    return 1
+  fi
+  key_id=$(echo "$keys" | jq -r ".AccessKey.AccessKeyId")
+  export key_id
+  secret_key=$(echo "$keys" | jq -r ".AccessKey.SecretAccessKey")
+  export secret_key
+
+  # propagation delay occurs when user is added to IAM, so wait a few seconds
+  sleep 5
+
+  return 0
+}
+
 create_user_with_user() {
   if [[ $# -ne 5 ]]; then
     log 2 "create user with user command requires creator ID, key, and new user ID, key, and role"
@@ -37,7 +137,41 @@ create_user_with_user() {
   return 0
 }
 
+list_users_direct() {
+  # AWS_ENDPOINT_URL of s3.amazonaws.com doesn't work here
+  if ! users=$(aws --profile="$AWS_PROFILE" iam list-users 2>&1); then
+    log 2 "error listing users via direct s3 call: $users"
+    return 1
+  fi
+  parsed_users=()
+  if ! users_list=$(echo "$users" | jq -r ".Users[].UserName" 2>&1); then
+    log 2 "error parsing users array: $users_list"
+    return 1
+  fi
+  while IFS= read -r line; do
+    parsed_users+=("$line")
+  done <<< "$users_list"
+  log 5 "parsed users: ${parsed_users[*]}"
+  export parsed_users
+  return 0
+}
+
 list_users() {
+  if [[ $DIRECT == "true" ]]; then
+    if ! list_users_direct; then
+      log 2 "error listing users via direct s3 call"
+      return 1
+    fi
+    return 0
+  fi
+  if ! list_users_versitygw; then
+    log 2 "error listing versitygw users"
+    return 1
+  fi
+  return 0
+}
+
+list_users_versitygw() {
   users=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     echo "error listing users: $users"
@@ -53,15 +187,15 @@ list_users() {
 
 user_exists() {
   if [[ $# -ne 1 ]]; then
-    echo "user exists command requires username"
+    log 2 "user exists command requires username"
     return 2
   fi
-  list_users || local list_result=$?
-  if [[ $list_result -ne 0 ]]; then
-    echo "error listing user"
+  if ! list_users; then
+    log 2 "error listing user"
     return 2
   fi
   for element in "${parsed_users[@]}"; do
+    log 5 "user: $element"
     if [[ $element == "$1" ]]; then
       return 0
     fi
@@ -69,21 +203,73 @@ user_exists() {
   return 1
 }
 
+delete_user_direct() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "delete user direct command requires username"
+    return 1
+  fi
+  if ! policies=$(aws iam list-user-policies --user-name "$1" --query 'PolicyNames' --output text 2>&1); then
+    log 2 "error getting user policies: $error"
+    return 1
+  fi
+  for policy_name in $policies; do
+    if ! user_policy_delete_error=$(aws iam delete-user-policy --user-name "$1" --policy-name "$policy_name" 2>&1); then
+      log 2 "error deleting user policy: $user_policy_delete_error"
+      return 1
+    fi
+  done
+  if ! keys=$(aws iam list-access-keys --user-name "$1" 2>&1); then
+    log 2 "error getting keys: $keys"
+    return 1
+  fi
+  if ! key=$(echo "$keys" | jq -r ".AccessKeyMetadata[0].AccessKeyId" 2>&1); then
+    log 2 "error getting key ID: $key"
+    return 1
+  fi
+  if [[ $key != "null" ]]; then
+    if ! error=$(aws iam delete-access-key --user-name "$1" --access-key-id "$key" 2>&1); then
+      log 2 "error deleting access key: $error"
+      return 1
+    fi
+  fi
+  if ! error=$(aws --profile="$AWS_PROFILE" iam delete-user --user-name "$1" 2>&1); then
+    log 2 "error deleting user: $error"
+    return 1
+  fi
+  return 0
+}
+
+delete_user_versitygw() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "delete user via versitygw command requires user ID or username"
+    return 1
+  fi
+  log 5 "$VERSITY_EXE admin --allow-insecure --access $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --endpoint-url $AWS_ENDPOINT_URL delete-user --access $1"
+  if ! error=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" delete-user --access "$1" 2>&1); then
+    log 2 "error deleting user: $error"
+    export error
+    return 1
+  fi
+  return 0
+}
+
 delete_user() {
   if [[ $# -ne 1 ]]; then
-      echo "delete user command requires user ID"
+    log 2 "delete user command requires user ID"
+    return 1
+  fi
+  if [[ $DIRECT == "true" ]]; then
+    if ! delete_user_direct "$1"; then
+      log 2 "error deleting user direct via s3"
       return 1
     fi
-    log 5 "$VERSITY_EXE admin --allow-insecure --access $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --endpoint-url $AWS_ENDPOINT_URL delete-user --access $1"
-    error=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" delete-user --access "$1") || local delete_result=$?
-
-
-    if [[ $delete_result -ne 0 ]]; then
-      echo "error deleting user: $error"
-      export error
-      return 1
-    fi
+    log 5 "user '$1' deleted successfully"
     return 0
+  fi
+  if ! delete_user_versitygw "$1"; then
+    log 2 "error deleting user via versitygw"
+    return 1
+  fi
 }
 
 change_bucket_owner() {
