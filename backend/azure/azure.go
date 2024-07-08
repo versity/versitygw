@@ -411,7 +411,7 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 	return az.PutBucketTagging(ctx, bucket, nil)
 }
 
-func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
 		offset, count, err := backend.ParseRange(0, *input.Range)
@@ -429,12 +429,6 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
-	defer blobDownloadResponse.Body.Close()
-
-	_, err = io.Copy(writer, blobDownloadResponse.Body)
-	if err != nil {
-		return nil, fmt.Errorf("copy data: %w", err)
-	}
 
 	var tagcount int32
 	if blobDownloadResponse.TagCount != nil {
@@ -451,6 +445,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput, writer
 		Metadata:        parseAzMetadata(blobDownloadResponse.Metadata),
 		TagCount:        &tagcount,
 		ContentRange:    blobDownloadResponse.ContentRange,
+		Body:            blobDownloadResponse.Body,
 	}, nil
 }
 

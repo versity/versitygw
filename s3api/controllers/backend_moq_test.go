@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
-	"io"
 	"sync"
 )
 
@@ -78,7 +77,7 @@ var _ backend.Backend = &BackendMock{}
 //			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
 //				panic("mock out the GetBucketVersioning method")
 //			},
-//			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+//			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 //				panic("mock out the GetObject method")
 //			},
 //			GetObjectAclFunc: func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
@@ -239,7 +238,7 @@ type BackendMock struct {
 	GetBucketVersioningFunc func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
 
 	// GetObjectFunc mocks the GetObject method.
-	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error)
+	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 
 	// GetObjectAclFunc mocks the GetObjectAcl method.
 	GetObjectAclFunc func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
@@ -477,8 +476,6 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// GetObjectInput is the getObjectInput argument value.
 			GetObjectInput *s3.GetObjectInput
-			// Writer is the writer argument value.
-			Writer io.Writer
 		}
 		// GetObjectAcl holds details about calls to the GetObjectAcl method.
 		GetObjectAcl []struct {
@@ -1449,23 +1446,21 @@ func (mock *BackendMock) GetBucketVersioningCalls() []struct {
 }
 
 // GetObject calls GetObjectFunc.
-func (mock *BackendMock) GetObject(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (mock *BackendMock) GetObject(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	if mock.GetObjectFunc == nil {
 		panic("BackendMock.GetObjectFunc: method is nil but Backend.GetObject was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
 		GetObjectInput  *s3.GetObjectInput
-		Writer          io.Writer
 	}{
 		ContextMoqParam: contextMoqParam,
 		GetObjectInput:  getObjectInput,
-		Writer:          writer,
 	}
 	mock.lockGetObject.Lock()
 	mock.calls.GetObject = append(mock.calls.GetObject, callInfo)
 	mock.lockGetObject.Unlock()
-	return mock.GetObjectFunc(contextMoqParam, getObjectInput, writer)
+	return mock.GetObjectFunc(contextMoqParam, getObjectInput)
 }
 
 // GetObjectCalls gets all the calls that were made to GetObject.
@@ -1475,12 +1470,10 @@ func (mock *BackendMock) GetObject(contextMoqParam context.Context, getObjectInp
 func (mock *BackendMock) GetObjectCalls() []struct {
 	ContextMoqParam context.Context
 	GetObjectInput  *s3.GetObjectInput
-	Writer          io.Writer
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		GetObjectInput  *s3.GetObjectInput
-		Writer          io.Writer
 	}
 	mock.lockGetObject.RLock()
 	calls = mock.calls.GetObject

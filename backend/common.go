@@ -18,7 +18,9 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -127,4 +129,17 @@ func getEtagBytes(etag string) []byte {
 func md5String(data []byte) string {
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:])
+}
+
+type FileSectionReadCloser struct {
+	R io.Reader
+	F *os.File
+}
+
+func (f *FileSectionReadCloser) Read(p []byte) (int, error) {
+	return f.R.Read(p)
+}
+
+func (f *FileSectionReadCloser) Close() error {
+	return f.F.Close()
 }

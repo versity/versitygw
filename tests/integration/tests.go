@@ -3287,6 +3287,17 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Range:  getPtr("bytes=0-0"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		resp, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
@@ -3299,17 +3310,6 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 
 		if *resp.ContentLength != dataLength-1500 {
 			return fmt.Errorf("expected content-length to be %v, instead got %v", dataLength-1500, *resp.ContentLength)
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Range:  getPtr("bytes=0-0"),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
-			return err
 		}
 		return nil
 	})
@@ -3419,7 +3419,7 @@ func GetObject_by_range_success(s *S3Conf) error {
 			return fmt.Errorf("expected accept range: %v, instead got: %v", rangeString, getString(out.AcceptRanges))
 		}
 		b, err := io.ReadAll(out.Body)
-		if err != nil {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 
@@ -3443,7 +3443,7 @@ func GetObject_by_range_success(s *S3Conf) error {
 		defer out.Body.Close()
 
 		b, err = io.ReadAll(out.Body)
-		if err != nil {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 

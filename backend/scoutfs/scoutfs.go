@@ -589,7 +589,7 @@ func (s *ScoutFS) retrieveUploadId(bucket, object string) (string, [32]byte, err
 	return entries[0].Name(), sum, nil
 }
 
-func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
 	acceptRange := *input.Range
@@ -658,13 +658,8 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 	if err != nil {
 		return nil, fmt.Errorf("open object: %w", err)
 	}
-	defer f.Close()
 
 	rdr := io.NewSectionReader(f, startOffset, length)
-	_, err = io.Copy(writer, rdr)
-	if err != nil {
-		return nil, fmt.Errorf("copy data: %w", err)
-	}
 
 	userMetaData := make(map[string]string)
 
@@ -694,6 +689,7 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput, writer 
 		TagCount:        &tagCount,
 		StorageClass:    types.StorageClassStandard,
 		ContentRange:    &contentRange,
+		Body:            &backend.FileSectionReadCloser{R: rdr, F: f},
 	}, nil
 }
 
