@@ -1593,7 +1593,7 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 	}, nil
 }
 
-func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io.Writer) (*s3.GetObjectOutput, error) {
+func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1637,11 +1637,11 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 	}
 
 	if length == -1 {
-		length = objSize - startOffset + 1
+		length = objSize - startOffset
 	}
 
-	if startOffset+length > objSize+1 {
-		length = objSize - startOffset + 1
+	if startOffset+length > objSize {
+		length = objSize - startOffset
 	}
 
 	var contentRange string
@@ -1684,21 +1684,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		}, nil
 	}
 
-	f, err := os.Open(objPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("open object: %w", err)
-	}
-	defer f.Close()
-
-	rdr := io.NewSectionReader(f, startOffset, length)
-	_, err = io.Copy(writer, rdr)
-	if err != nil {
-		return nil, fmt.Errorf("copy data: %w", err)
-	}
-
 	userMetaData := make(map[string]string)
 
 	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
@@ -1719,6 +1704,16 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		tagCount = &tgCount
 	}
 
+	f, err := os.Open(objPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open object: %w", err)
+	}
+
+	rdr := io.NewSectionReader(f, startOffset, length)
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
 		ContentLength:   &length,
@@ -1729,6 +1724,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput, writer io
 		Metadata:        userMetaData,
 		TagCount:        tagCount,
 		ContentRange:    &contentRange,
+		Body:            &backend.FileSectionReadCloser{R: rdr, F: f},
 	}, nil
 }
 

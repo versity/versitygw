@@ -314,16 +314,10 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	return out, handleError(err)
 }
 
-func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput, w io.Writer) (*s3.GetObjectOutput, error) {
+func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	output, err := s.client.GetObject(ctx, input)
 	if err != nil {
 		return nil, handleError(err)
-	}
-	defer output.Body.Close()
-
-	_, err = io.Copy(w, output.Body)
-	if err != nil {
-		return nil, err
 	}
 
 	return output, nil

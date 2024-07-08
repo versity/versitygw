@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -191,7 +190,7 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			GetObjectAttributesFunc: func(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
 				return s3response.GetObjectAttributesResult{}, nil
 			},
-			GetObjectFunc: func(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
+			GetObjectFunc: func(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 				return &s3.GetObjectOutput{
 					Metadata:        map[string]string{"hello": "world"},
 					ContentType:     getPtr("application/xml"),

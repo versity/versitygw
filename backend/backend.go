@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -60,7 +59,7 @@ type Backend interface {
 	// standard object operations
 	PutObject(context.Context, *s3.PutObjectInput) (string, error)
 	HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
-	GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error)
+	GetObject(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 	GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error)
 	CopyObject(context.Context, *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
@@ -180,7 +179,7 @@ func (BackendUnsupported) PutObject(context.Context, *s3.PutObjectInput) (string
 func (BackendUnsupported) HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) GetObject(context.Context, *s3.GetObjectInput, io.Writer) (*s3.GetObjectOutput, error) {
+func (BackendUnsupported) GetObject(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {

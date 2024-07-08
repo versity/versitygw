@@ -402,18 +402,9 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		Key:       &key,
 		Range:     &acceptRange,
 		VersionId: &versionId,
-	}, ctx.Response().BodyWriter())
+	})
 	if err != nil {
 		return SendResponse(ctx, err,
-			&MetaOpts{
-				Logger:      c.logger,
-				MetricsMng:  c.mm,
-				Action:      metrics.ActionGetObject,
-				BucketOwner: parsedAcl.Owner,
-			})
-	}
-	if res == nil {
-		return SendResponse(ctx, fmt.Errorf("get object nil response"),
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
@@ -429,10 +420,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
-		{
-			Key:   "Content-Length",
-			Value: fmt.Sprint(getint64(res.ContentLength)),
-		},
 		{
 			Key:   "Content-Type",
 			Value: getstring(res.ContentType),
@@ -475,6 +462,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	status := http.StatusOK
 	if acceptRange != "" {
 		status = http.StatusPartialContent
+	}
+
+	if res.Body != nil {
+		ctx.Response().SetBodyStream(res.Body, int(getint64(res.ContentLength)))
 	}
 
 	return SendResponse(ctx, nil,
