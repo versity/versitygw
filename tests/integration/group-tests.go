@@ -480,6 +480,7 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_bucket_resource_all_action(s)
 	AccessControl_single_object_resource_actions(s)
 	AccessControl_multi_statement_policy(s)
+	AccessControl_bucket_ownership_to_user(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -762,5 +763,13 @@ func GetIntTests() IntTests {
 		"IAM_userplus_access_denied":                                          IAM_userplus_access_denied,
 		"IAM_userplus_CreateBucket":                                           IAM_userplus_CreateBucket,
 		"IAM_admin_ChangeBucketOwner":                                         IAM_admin_ChangeBucketOwner,
+		"AccessControl_default_ACL_user_access_denied":                        AccessControl_default_ACL_user_access_denied,
+		"AccessControl_default_ACL_userplus_access_denied":                    AccessControl_default_ACL_userplus_access_denied,
+		"AccessControl_default_ACL_admin_successful_access":                   AccessControl_default_ACL_admin_successful_access,
+		"AccessControl_bucket_resource_single_action":                         AccessControl_bucket_resource_single_action,
+		"AccessControl_bucket_resource_all_action":                            AccessControl_bucket_resource_all_action,
+		"AccessControl_single_object_resource_actions":                        AccessControl_single_object_resource_actions,
+		"AccessControl_multi_statement_policy":                                AccessControl_multi_statement_policy,
+		"AccessControl_bucket_ownership_to_user":                              AccessControl_bucket_ownership_to_user,
 	}
 }

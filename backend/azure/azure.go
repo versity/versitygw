@@ -1368,34 +1368,8 @@ func (az *Azure) GetObjectLegalHold(ctx context.Context, bucket, object, version
 	return &status, nil
 }
 
-func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	acl, err := getAclFromMetadata(props.Metadata, keyAclCapital)
-	if err != nil {
-		return err
-	}
-
-	acl.Owner = newOwner
-
-	newAcl, err := json.Marshal(acl)
-	if err != nil {
-		return fmt.Errorf("marshal acl: %w", err)
-	}
-
-	err = az.PutBucketAcl(ctx, bucket, newAcl)
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
+	return az.PutBucketAcl(ctx, bucket, acl)
 }
 
 // The action actually returns the containers owned by the user, who initialized the gateway

@@ -619,8 +619,12 @@ func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versio
 	return &status, nil
 }
 
-func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, newOwner), nil)
+func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
+	var acll auth.ACL
+	if err := json.Unmarshal(acl, &acll); err != nil {
+		return fmt.Errorf("unmarshal acl: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, acll.Owner), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
