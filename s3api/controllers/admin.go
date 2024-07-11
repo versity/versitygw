@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -138,7 +139,22 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 		return ctx.Status(fiber.StatusNotFound).SendString("user specified as the new bucket owner does not exist")
 	}
 
-	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
+	acl := auth.ACL{
+		Owner: owner,
+		Grantees: []auth.Grantee{
+			{
+				Permission: types.PermissionFullControl,
+				Access:     owner,
+			},
+		},
+	}
+
+	aclParsed, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("failed to marshal the bucket acl: %w", err)
+	}
+
+	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, aclParsed)
 	if err != nil {
 		return err
 	}

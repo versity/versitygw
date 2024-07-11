@@ -93,7 +93,7 @@ type Backend interface {
 	GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*bool, error)
 
 	// non AWS actions
-	ChangeBucketOwner(_ context.Context, bucket, newOwner string) error
+	ChangeBucketOwner(_ context.Context, bucket string, acl []byte) error
 	ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error)
 }
 
@@ -268,7 +268,7 @@ func (BackendUnsupported) GetObjectLegalHold(_ context.Context, bucket, object, 
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket, newOwner string) error {
+func (BackendUnsupported) ChangeBucketOwner(_ context.Context, bucket string, acl []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error) {

@@ -2619,39 +2619,8 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 	return data, nil
 }
 
-func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, newOwner string) error {
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
-	if err != nil {
-		return fmt.Errorf("stat bucket: %w", err)
-	}
-
-	aclTag, err := p.meta.RetrieveAttribute(bucket, "", aclkey)
-	if err != nil {
-		return fmt.Errorf("get acl: %w", err)
-	}
-
-	var acl auth.ACL
-	err = json.Unmarshal(aclTag, &acl)
-	if err != nil {
-		return fmt.Errorf("unmarshal acl: %w", err)
-	}
-
-	acl.Owner = newOwner
-
-	newAcl, err := json.Marshal(acl)
-	if err != nil {
-		return fmt.Errorf("marshal acl: %w", err)
-	}
-
-	err = p.meta.StoreAttribute(bucket, "", aclkey, newAcl)
-	if err != nil {
-		return fmt.Errorf("set acl: %w", err)
-	}
-
-	return nil
+func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
+	return p.PutBucketAcl(ctx, bucket, acl)
 }
 
 func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {

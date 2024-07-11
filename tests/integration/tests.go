@@ -9151,6 +9151,38 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 	})
 }
 
+func AccessControl_bucket_ownership_to_user(s *S3Conf) error {
+	testName := "AccessControl_bucket_ownership_to_user"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.HeadBucket(ctx, &s3.HeadBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // IAM related tests
 // multi-user iam tests
 func IAM_user_access_denied(s *S3Conf) error {
