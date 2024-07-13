@@ -63,6 +63,12 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
 			},
+			&cli.BoolFlag{
+				Name:        "bucketlinks",
+				Usage:       "allow symlinked directories at bucket level to be treated as buckets",
+				EnvVars:     []string{"VGW_BUCKET_LINKS"},
+				Destination: &bucketlinks,
+			},
 		},
 	}
 }
@@ -76,6 +82,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.GlacierMode = glacier
 	opts.ChownUID = chownuid
 	opts.ChownGID = chowngid
+	opts.BucketLinks = bucketlinks
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
