@@ -15,6 +15,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -38,7 +39,7 @@ var ErrSkipObj = errors.New("skip this object")
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
+func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
 	var objects []types.Object
 
@@ -54,6 +55,9 @@ func Walk(fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj 
 	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		// Ignore the root directory
 		if path == "." {

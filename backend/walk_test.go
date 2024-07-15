@@ -15,12 +15,15 @@
 package backend_test
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
@@ -108,7 +111,7 @@ func TestWalk(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		res, err := backend.Walk(tt.fsys, "", "/", "", 1000, tt.getobj, []string{})
+		res, err := backend.Walk(context.Background(), tt.fsys, "", "/", "", 1000, tt.getobj, []string{})
 		if err != nil {
 			t.Fatalf("walk: %v", err)
 		}
@@ -203,4 +206,51 @@ func printObjects(list []types.Object) string {
 		}
 	}
 	return res + "]"
+}
+
+type slowFS struct {
+	fstest.MapFS
+}
+
+const (
+	readDirPause = 100 * time.Millisecond
+
+	// walkTimeOut should be less than the tree traversal time
+	// which is the readdirPause time * the number of directories
+	walkTimeOut = 500 * time.Millisecond
+)
+
+func (s *slowFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	time.Sleep(readDirPause)
+	return s.MapFS.ReadDir(name)
+}
+
+func TestWalkStop(t *testing.T) {
+	s := &slowFS{MapFS: fstest.MapFS{
+		"/a/b/c/d/e/f/g/h/i/g/k/l/m/n": &fstest.MapFile{},
+	}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), walkTimeOut)
+	defer cancel()
+
+	var err error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
+			func(path string, d fs.DirEntry) (types.Object, error) {
+				return types.Object{}, nil
+			}, []string{})
+	}()
+
+	select {
+	case <-time.After(1 * time.Second):
+		t.Fatalf("walk is not terminated in time")
+	case <-ctx.Done():
+	}
+	wg.Wait()
+	if err != ctx.Err() {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
