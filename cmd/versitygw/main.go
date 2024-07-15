@@ -45,8 +45,8 @@ var (
 	natsURL, natsTopic                       string
 	eventWebhookURL                          string
 	eventConfigFilePath                      string
-	logWebhookURL                            string
-	accessLog                                string
+	logWebhookURL, accessLog                 string
+	adminLogFile                             string
 	healthPath                               string
 	debug                                    bool
 	pprof                                    string
@@ -222,6 +222,12 @@ func initFlags() []cli.Flag {
 			Usage:       "enable server access logging to specified file",
 			EnvVars:     []string{"LOGFILE", "VGW_ACCESS_LOG"},
 			Destination: &accessLog,
+		},
+		&cli.StringFlag{
+			Name:        "admin-access-log",
+			Usage:       "enable admin server access logging to specified file",
+			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
+			Destination: &adminLogFile,
 		},
 		&cli.StringFlag{
 			Name:        "log-webhook-url",
@@ -608,9 +614,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("setup iam: %w", err)
 	}
 
-	logger, err := s3log.InitLogger(&s3log.LogConfig{
-		LogFile:    accessLog,
-		WebhookURL: logWebhookURL,
+	loggers, err := s3log.InitLogger(&s3log.LogConfig{
+		LogFile:      accessLog,
+		WebhookURL:   logWebhookURL,
+		AdminLogFile: adminLogFile,
 	})
 	if err != nil {
 		return fmt.Errorf("setup logger: %w", err)
@@ -641,12 +648,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
-	}, port, region, iam, logger, evSender, metricsManager, opts...)
+	}, port, region, iam, loggers.S3Logger, loggers.AdminLogger, evSender, metricsManager, opts...)
 	if err != nil {
 		return fmt.Errorf("init gateway: %v", err)
 	}
 
-	admSrv := s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, admOpts...)
+	admSrv := s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, admOpts...)
 
 	c := make(chan error, 2)
 	go func() { c <- srv.Serve() }()
@@ -663,10 +670,17 @@ Loop:
 		case err = <-c:
 			break Loop
 		case <-sigHup:
-			if logger != nil {
-				err = logger.HangUp()
+			if loggers.S3Logger != nil {
+				err = loggers.S3Logger.HangUp()
 				if err != nil {
-					err = fmt.Errorf("HUP logger: %w", err)
+					err = fmt.Errorf("HUP s3 logger: %w", err)
+					break Loop
+				}
+			}
+			if loggers.AdminLogger != nil {
+				err = loggers.AdminLogger.HangUp()
+				if err != nil {
+					err = fmt.Errorf("HUP admin logger: %w", err)
 					break Loop
 				}
 			}
@@ -684,13 +698,22 @@ Loop:
 		fmt.Fprintf(os.Stderr, "shutdown iam: %v\n", err)
 	}
 
-	if logger != nil {
-		err := logger.Shutdown()
+	if loggers.S3Logger != nil {
+		err := loggers.S3Logger.Shutdown()
 		if err != nil {
 			if saveErr == nil {
 				saveErr = err
 			}
-			fmt.Fprintf(os.Stderr, "shutdown logger: %v\n", err)
+			fmt.Fprintf(os.Stderr, "shutdown s3 logger: %v\n", err)
+		}
+	}
+	if loggers.AdminLogger != nil {
+		err := loggers.AdminLogger.Shutdown()
+		if err != nil {
+			if saveErr == nil {
+				saveErr = err
+			}
+			fmt.Fprintf(os.Stderr, "shutdown admin logger: %v\n", err)
 		}
 	}
 
