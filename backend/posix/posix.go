@@ -61,6 +61,10 @@ type Posix struct {
 	// used to determine if chowning is needed
 	euid int
 	egid int
+
+	// bucketlinks is a flag to enable symlinks to directories at the top
+	// level gateway directory to be treated as buckets the same as directories
+	bucketlinks bool
 }
 
 var _ backend.Backend = &Posix{}
@@ -87,8 +91,9 @@ const (
 )
 
 type PosixOpts struct {
-	ChownUID bool
-	ChownGID bool
+	ChownUID    bool
+	ChownGID    bool
+	BucketLinks bool
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -103,13 +108,14 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 	}
 
 	return &Posix{
-		meta:     meta,
-		rootfd:   f,
-		rootdir:  rootdir,
-		euid:     os.Geteuid(),
-		egid:     os.Getegid(),
-		chownuid: opts.ChownUID,
-		chowngid: opts.ChownGID,
+		meta:        meta,
+		rootfd:      f,
+		rootdir:     rootdir,
+		euid:        os.Geteuid(),
+		egid:        os.Getegid(),
+		chownuid:    opts.ChownUID,
+		chowngid:    opts.ChownGID,
+		bucketlinks: opts.BucketLinks,
 	}, nil
 }
 
@@ -130,14 +136,22 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			// buckets must be a directory
-			continue
-		}
-
 		fi, err := entry.Info()
 		if err != nil {
 			// skip entries returning errors
+			continue
+		}
+
+		if p.bucketlinks && entry.Type() == fs.ModeSymlink {
+			fi, err = os.Stat(entry.Name())
+			if err != nil {
+				// skip entries returning errors
+				continue
+			}
+		}
+
+		if !fi.IsDir() {
+			// buckets must be a directory
 			continue
 		}
 

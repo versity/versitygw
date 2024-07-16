@@ -24,6 +24,7 @@ import (
 
 var (
 	chownuid, chowngid bool
+	bucketlinks        bool
 )
 
 func posixCommand() *cli.Command {
@@ -54,6 +55,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
 			},
+			&cli.BoolFlag{
+				Name:        "bucketlinks",
+				Usage:       "allow symlinked directories at bucket level to be treated as buckets",
+				EnvVars:     []string{"VGW_BUCKET_LINKS"},
+				Destination: &bucketlinks,
+			},
 		},
 	}
 }
@@ -70,8 +77,9 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
-		ChownUID: chownuid,
-		ChownGID: chowngid,
+		ChownUID:    chownuid,
+		ChownGID:    chowngid,
+		BucketLinks: bucketlinks,
 	})
 	if err != nil {
 		return fmt.Errorf("init posix: %v", err)

@@ -42,6 +42,7 @@ type ScoutfsOpts struct {
 	ChownUID    bool
 	ChownGID    bool
 	GlacierMode bool
+	BucketLinks bool
 }
 
 type ScoutFS struct {

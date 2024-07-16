@@ -37,8 +37,9 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	metastore := meta.XattrMeta{}
 
 	p, err := posix.New(rootdir, metastore, posix.PosixOpts{
-		ChownUID: opts.ChownUID,
-		ChownGID: opts.ChownGID,
+		ChownUID:    opts.ChownUID,
+		ChownGID:    opts.ChownGID,
+		BucketLinks: opts.BucketLinks,
 	})
 	if err != nil {
 		return nil, err
