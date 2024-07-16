@@ -64,7 +64,9 @@ func New(
 
 	// Logging middlewares
 	if !server.quiet {
-		app.Use(logger.New())
+		app.Use(logger.New(logger.Config{
+			Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+		}))
 	}
 	// Set up health endpoint if specified
 	if server.health != "" {

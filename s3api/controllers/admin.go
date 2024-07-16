@@ -145,6 +145,7 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 			{
 				Permission: types.PermissionFullControl,
 				Access:     owner,
+				Type:       types.TypeCanonicalUser,
 			},
 		},
 	}
