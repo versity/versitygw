@@ -1807,25 +1807,29 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	grants := []types.Grant{
 		{
 			Grantee: &types.Grantee{
-				ID: &s.awsID,
+				ID:   &s.awsID,
+				Type: types.TypeCanonicalUser,
 			},
 			Permission: types.PermissionFullControl,
 		},
 		{
 			Grantee: &types.Grantee{
-				ID: getPtr("grt1"),
+				ID:   getPtr("grt1"),
+				Type: types.TypeCanonicalUser,
 			},
 			Permission: types.PermissionFullControl,
 		},
 		{
 			Grantee: &types.Grantee{
-				ID: getPtr("grt2"),
+				ID:   getPtr("grt2"),
+				Type: types.TypeCanonicalUser,
 			},
 			Permission: types.PermissionReadAcp,
 		},
 		{
 			Grantee: &types.Grantee{
-				ID: getPtr("grt3"),
+				ID:   getPtr("grt3"),
+				Type: types.TypeCanonicalUser,
 			},
 			Permission: types.PermissionWrite,
 		},
@@ -6491,7 +6495,7 @@ func GetBucketAcl_translation_canned_public_read(s *S3Conf) error {
 			{
 				Grantee: &types.Grantee{
 					ID:   getPtr("all-users"),
-					Type: types.TypeCanonicalUser,
+					Type: types.TypeGroup,
 				},
 				Permission: types.PermissionRead,
 			},
@@ -6541,14 +6545,14 @@ func GetBucketAcl_translation_canned_public_read_write(s *S3Conf) error {
 			{
 				Grantee: &types.Grantee{
 					ID:   getPtr("all-users"),
-					Type: types.TypeCanonicalUser,
+					Type: types.TypeGroup,
 				},
 				Permission: types.PermissionRead,
 			},
 			{
 				Grantee: &types.Grantee{
 					ID:   getPtr("all-users"),
-					Type: types.TypeCanonicalUser,
+					Type: types.TypeGroup,
 				},
 				Permission: types.PermissionWrite,
 			},
@@ -6716,7 +6720,8 @@ func GetBucketAcl_success(s *S3Conf) error {
 		grants = append([]types.Grant{
 			{
 				Grantee: &types.Grantee{
-					ID: &s.awsID,
+					ID:   &s.awsID,
+					Type: types.TypeCanonicalUser,
 				},
 				Permission: types.PermissionFullControl,
 			},

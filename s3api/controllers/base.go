@@ -1224,7 +1224,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if ctx.Request().URI().QueryArgs().Has("acl") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-		var input *s3.PutBucketAclInput
+		var input *auth.PutBucketAclInput
 
 		ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
 		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
@@ -1299,13 +1299,10 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 					})
 			}
 
-			input = &s3.PutBucketAclInput{
-				Bucket: &bucket,
-				ACL:    "",
-				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner:  &accessControlPolicy.Owner,
-					Grants: accessControlPolicy.AccessControlList.Grants,
-				},
+			input = &auth.PutBucketAclInput{
+				Bucket:              &bucket,
+				ACL:                 "",
+				AccessControlPolicy: &accessControlPolicy,
 			}
 		}
 		if acl != "" {
@@ -1337,26 +1334,26 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 					})
 			}
 
-			input = &s3.PutBucketAclInput{
+			input = &auth.PutBucketAclInput{
 				Bucket: &bucket,
 				ACL:    types.BucketCannedACL(acl),
-				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner: &types.Owner{
+				AccessControlPolicy: &auth.AccessControlPolicy{
+					Owner: types.Owner{
 						ID: &acct.Access,
 					},
 				},
 			}
 		}
 		if grants != "" {
-			input = &s3.PutBucketAclInput{
+			input = &auth.PutBucketAclInput{
 				Bucket:           &bucket,
 				GrantFullControl: &grantFullControl,
 				GrantRead:        &grantRead,
 				GrantReadACP:     &grantReadACP,
 				GrantWrite:       &granWrite,
 				GrantWriteACP:    &grantWriteACP,
-				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner: &types.Owner{
+				AccessControlPolicy: &auth.AccessControlPolicy{
+					Owner: types.Owner{
 						ID: &acct.Access,
 					},
 				},
@@ -1440,15 +1437,16 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		Owner: acct.Access,
 	}
 
-	updAcl, err := auth.UpdateACL(&s3.PutBucketAclInput{
+	updAcl, err := auth.UpdateACL(&auth.PutBucketAclInput{
 		GrantFullControl: &grantFullControl,
 		GrantRead:        &grantRead,
 		GrantReadACP:     &grantReadACP,
 		GrantWrite:       &granWrite,
 		GrantWriteACP:    &grantWriteACP,
-		AccessControlPolicy: &types.AccessControlPolicy{Owner: &types.Owner{
-			ID: &acct.Access,
-		}},
+		AccessControlPolicy: &auth.AccessControlPolicy{
+			Owner: types.Owner{
+				ID: &acct.Access,
+			}},
 		ACL: types.BucketCannedACL(acl),
 	}, defACL, c.iam)
 	if err != nil {
@@ -1867,13 +1865,26 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 					})
 			}
 
+			//TODO: This part will be changed when object acls are implemented
+
+			grants := []types.Grant{}
+			for _, grt := range accessControlPolicy.AccessControlList.Grants {
+				grants = append(grants, types.Grant{
+					Grantee: &types.Grantee{
+						ID:   &grt.Grantee.ID,
+						Type: grt.Grantee.Type,
+					},
+					Permission: grt.Permission,
+				})
+			}
+
 			input = &s3.PutObjectAclInput{
 				Bucket: &bucket,
 				Key:    &keyStart,
 				ACL:    "",
 				AccessControlPolicy: &types.AccessControlPolicy{
 					Owner:  &accessControlPolicy.Owner,
-					Grants: accessControlPolicy.AccessControlList.Grants,
+					Grants: grants,
 				},
 			}
 		}

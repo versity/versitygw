@@ -398,6 +398,9 @@ func compareGrants(grts1, grts2 []types.Grant) bool {
 		if *grt.Grantee.ID != *grts2[i].Grantee.ID {
 			return false
 		}
+		if grt.Grantee.Type != grts2[i].Grantee.Type {
+			return false
+		}
 	}
 	return true
 }
