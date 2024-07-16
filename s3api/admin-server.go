@@ -22,6 +22,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3log"
 )
 
 type S3AdminServer struct {
@@ -32,7 +33,7 @@ type S3AdminServer struct {
 	cert    *tls.Certificate
 }
 
-func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, opts ...AdminOpt) *S3AdminServer {
+func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
 	server := &S3AdminServer{
 		app:     app,
 		backend: be,
@@ -46,13 +47,13 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 
 	// Logging middlewares
 	app.Use(logger.New())
-	app.Use(middlewares.DecodeURL(nil, nil))
+	app.Use(middlewares.DecodeURL(l, nil))
 
 	// Authentication middlewares
-	app.Use(middlewares.VerifyV4Signature(root, iam, nil, nil, region, false))
-	app.Use(middlewares.VerifyMD5Body(nil))
+	app.Use(middlewares.VerifyV4Signature(root, iam, l, nil, region, false))
+	app.Use(middlewares.VerifyMD5Body(l))
 
-	server.router.Init(app, be, iam)
+	server.router.Init(app, be, iam, l)
 
 	return server
 }

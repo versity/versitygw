@@ -35,11 +35,13 @@ type LogMeta struct {
 	BucketOwner string
 	ObjectSize  int64
 	Action      string
+	HttpStatus  int
 }
 
 type LogConfig struct {
-	LogFile    string
-	WebhookURL string
+	LogFile      string
+	WebhookURL   string
+	AdminLogFile string
 }
 
 type LogFields struct {
@@ -71,18 +73,66 @@ type LogFields struct {
 	AclRequired        string
 }
 
-func InitLogger(cfg *LogConfig) (AuditLogger, error) {
+type AdminLogFields struct {
+	Time               time.Time
+	RemoteIP           string
+	Requester          string
+	RequestID          string
+	Operation          string
+	RequestURI         string
+	HttpStatus         int
+	ErrorCode          string
+	BytesSent          int
+	TotalTime          int64
+	TurnAroundTime     int64
+	Referer            string
+	UserAgent          string
+	SignatureVersion   string
+	CipherSuite        string
+	AuthenticationType string
+	TLSVersion         string
+}
+
+type Loggers struct {
+	S3Logger    AuditLogger
+	AdminLogger AuditLogger
+}
+
+func InitLogger(cfg *LogConfig) (*Loggers, error) {
 	if cfg.WebhookURL != "" && cfg.LogFile != "" {
 		return nil, fmt.Errorf("there should be specified one of the following: file, webhook")
 	}
-	if cfg.WebhookURL != "" {
-		return InitWebhookLogger(cfg.WebhookURL)
-	}
-	if cfg.LogFile != "" {
-		return InitFileLogger(cfg.LogFile)
+	loggers := new(Loggers)
+
+	switch {
+	case cfg.WebhookURL != "":
+		fmt.Printf("initializing S3 access logs with '%v' webhook url\n", cfg.WebhookURL)
+		l, err := InitWebhookLogger(cfg.WebhookURL)
+		if err != nil {
+			return nil, err
+		}
+		loggers.S3Logger = l
+	case cfg.LogFile != "":
+		fmt.Printf("initializing S3 access logs with '%v' file\n", cfg.LogFile)
+		l, err := InitFileLogger(cfg.LogFile)
+		if err != nil {
+			return nil, err
+		}
+
+		loggers.S3Logger = l
 	}
 
-	return nil, nil
+	if cfg.AdminLogFile != "" {
+		fmt.Printf("initializing admin access logs with '%v' file\n", cfg.AdminLogFile)
+		l, err := InitAdminFileLogger(cfg.AdminLogFile)
+		if err != nil {
+			return nil, err
+		}
+
+		loggers.AdminLogger = l
+	}
+
+	return loggers, nil
 }
 
 func genID() string {

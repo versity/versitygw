@@ -47,6 +47,7 @@ func New(
 	port, region string,
 	iam auth.IAMService,
 	l s3log.AuditLogger,
+	adminLogger s3log.AuditLogger,
 	evs s3event.S3EventSender,
 	mm *metrics.Manager,
 	opts ...Option,
@@ -82,7 +83,7 @@ func New(
 	app.Use(middlewares.VerifyMD5Body(l))
 	app.Use(middlewares.AclParser(be, l, server.readonly))
 
-	server.router.Init(app, be, iam, l, evs, mm, server.debug, server.readonly)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly)
 
 	return server, nil
 }

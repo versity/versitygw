@@ -28,11 +28,11 @@ type S3ApiRouter struct {
 	WithAdmSrv bool
 }
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) {
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) {
 	s3ApiController := controllers.New(be, iam, logger, evs, mm, debug, readonly)
 
 	if sa.WithAdmSrv {
-		adminController := controllers.NewAdminController(iam, be)
+		adminController := controllers.NewAdminController(iam, be, aLogger)
 
 		// CreateUser admin api
 		app.Patch("/create-user", adminController.CreateUser)
