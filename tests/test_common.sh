@@ -5,6 +5,7 @@ source ./tests/util.sh
 source ./tests/util_file.sh
 source ./tests/util_policy.sh
 source ./tests/commands/copy_object.sh
+source ./tests/commands/delete_bucket_tagging.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_location.sh
@@ -282,7 +283,7 @@ test_common_set_get_delete_bucket_tags() {
     [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
     [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
   fi
-  delete_bucket_tags "$1" "$BUCKET_ONE_NAME"
+  delete_bucket_tagging "$1" "$BUCKET_ONE_NAME"
 
   get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags third time"
 

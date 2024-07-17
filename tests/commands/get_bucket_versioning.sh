@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_bucket_versioning() {
+  record_command "get-bucket-versioning" "client:s3api"
   if [[ $# -ne 2 ]]; then
     log 2 "put bucket versioning command requires command type, bucket name"
     return 1

@@ -15,12 +15,28 @@ create_test_files() {
     create_test_file_folder
   fi
   for name in "$@"; do
-    touch "$test_file_folder"/"$name" || local touch_result=$?
-    if [[ $touch_result -ne 0 ]]; then
-      echo "error creating file $name"
+    if [[ -e "$test_file_folder/$name" ]]; then
+      error=$(rm "$test_file_folder/$name" 2>&1) || fail "error removing existing test file: $error"
     fi
+    error=$(touch "$test_file_folder"/"$name" 2>&1) || fail "error creating new file: $error"
   done
   export test_file_folder
+}
+
+create_test_file_with_size() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create test file with size' function requires name, size"
+    return 1
+  fi
+  if ! create_test_file_folder "$1"; then
+    log 2 "error creating test file"
+    return 1
+  fi
+  if ! error=$(dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1 count="$2" 2>&1); then
+    log 2 "error writing file data: $error"
+    return 1
+  fi
+  return 0
 }
 
 create_test_folder() {
@@ -110,9 +126,11 @@ create_test_file_folder() {
   else
     test_file_folder=$PWD/versity-gwtest
   fi
-  mkdir -p "$test_file_folder" || local mkdir_result=$?
-  if [[ $mkdir_result -ne 0 ]]; then
-    echo "error creating test file folder"
+  if ! error=$(mkdir -p "$test_file_folder" 2>&1); then
+    if [[ $error != *"File exists"* ]]; then
+      log 2 "error creating test file folder: $error"
+      return 1
+    fi
   fi
   export test_file_folder
 }

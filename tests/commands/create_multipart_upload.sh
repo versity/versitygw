@@ -4,6 +4,7 @@
 # params:  bucket, key
 # return 0 for success, 1 for failure
 create_multipart_upload() {
+  record_command "create-multipart-upload" "client:s3api"
   if [ $# -ne 2 ]; then
     log 2 "create multipart upload function must have bucket, key"
     return 1
@@ -24,6 +25,7 @@ create_multipart_upload() {
 }
 
 create_multipart_upload_with_user() {
+  record_command "create-multipart-upload" "client:s3api"
   if [ $# -ne 4 ]; then
     log 2 "create multipart upload function must have bucket, key, username, password"
     return 1
@@ -44,6 +46,7 @@ create_multipart_upload_with_user() {
 }
 
 create_multipart_upload_params() {
+  record_command "create-multipart-upload" "client:s3api"
   if [ $# -ne 8 ]; then
     log 2 "create multipart upload function with params must have bucket, key, content type, metadata, object lock legal hold status, " \
       "object lock mode, object lock retain until date, and tagging"
@@ -71,6 +74,7 @@ create_multipart_upload_params() {
 }
 
 create_multipart_upload_custom() {
+  record_command "create-multipart-upload" "client:s3api"
   if [ $# -lt 2 ]; then
     log 2 "create multipart upload custom function must have at least bucket and key"
     return 1

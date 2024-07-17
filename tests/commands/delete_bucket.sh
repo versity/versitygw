@@ -4,8 +4,14 @@
 # param:  bucket name
 # return 0 for success, 1 for failure
 delete_bucket() {
+  record_command "delete-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "delete bucket missing command type, bucket name"
+    return 1
+  fi
+
+  if [[ ( $RECREATE_BUCKETS == "false" ) && (( "$2" == "$BUCKET_ONE_NAME" ) || ( "$2" == "$BUCKET_TWO_NAME" )) ]]; then
+    log 2 "attempt to delete main buckets in static mode"
     return 1
   fi
 

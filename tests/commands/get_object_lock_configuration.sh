@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_object_lock_configuration() {
+  record_command "get-object-lock-configuration" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "'get object lock configuration' command missing bucket name"
     return 1

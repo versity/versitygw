@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_object_legal_hold() {
+  record_command "get-object-legal-hold" "client:s3api"
   if [[ $# -ne 2 ]]; then
     log 2 "'get object legal hold' command requires bucket, key"
     return 1

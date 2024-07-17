@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 complete_multipart_upload() {
+  record_command "complete-multipart-upload" "client:s3api"
   if [[ $# -ne 4 ]]; then
     log 2 "'complete multipart upload' command requires bucket, key, upload ID, parts list"
     return 1

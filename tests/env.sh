@@ -92,6 +92,9 @@ check_universal_vars() {
   if [[ -n "$DIRECT" ]]; then
     export DIRECT
   fi
+  if [[ -n "$COVERAGE_DB" ]]; then
+    export COVERAGE_DB
+  fi
 }
 
 check_versity_vars() {

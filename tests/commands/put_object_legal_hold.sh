@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 put_object_legal_hold() {
+  record_command "put-object-legal-hold" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "'put object legal hold' command requires bucket, key, hold status ('ON' or 'OFF')"
     return 1

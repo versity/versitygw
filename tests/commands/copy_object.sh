@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 copy_object() {
+  record-command "copy-object" "client:$1"
   if [ $# -ne 4 ]; then
     echo "copy object command requires command type, source, bucket, key"
     return 1
@@ -29,6 +30,7 @@ copy_object() {
 }
 
 copy_object_empty() {
+  record-command "copy-object" "client:s3api"
   error=$(aws --no-verify-ssl s3api copy-object 2>&1) || local result=$?
   if [[ $result -eq 0 ]]; then
     log 2 "copy object with empty parameters returned no error"

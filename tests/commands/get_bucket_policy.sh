@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 get_bucket_policy() {
+  record_command "get-bucket-policy" "client:$1"
   if [[ $# -ne 2 ]]; then
     log 2 "get bucket policy command requires command type, bucket"
     return 1
@@ -25,6 +26,7 @@ get_bucket_policy() {
 }
 
 get_bucket_policy_aws() {
+  record_command "get-bucket-policy" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "aws 'get bucket policy' command requires bucket"
     return 1
@@ -47,6 +49,7 @@ get_bucket_policy_aws() {
 }
 
 get_bucket_policy_with_user() {
+  record_command "get-bucket-policy" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "'get bucket policy with user' command requires bucket, username, password"
     return 1
@@ -67,6 +70,7 @@ get_bucket_policy_with_user() {
 }
 
 get_bucket_policy_s3cmd() {
+  record_command "get-bucket-policy" "client:s3cmd"
   if [[ $# -ne 1 ]]; then
     log 2 "s3cmd 'get bucket policy' command requires bucket"
     return 1
@@ -110,6 +114,7 @@ get_bucket_policy_s3cmd() {
 }
 
 get_bucket_policy_mc() {
+  record_command "get-bucket-policy" "client:mc"
   if [[ $# -ne 1 ]]; then
     echo "aws 'get bucket policy' command requires bucket"
     return 1
