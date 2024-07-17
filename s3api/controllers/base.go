@@ -1361,7 +1361,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			}
 		}
 
-		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam)
+		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam, acct.Role == auth.RoleAdmin)
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1448,7 +1448,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				ID: &acct.Access,
 			}},
 		ACL: types.BucketCannedACL(acl),
-	}, defACL, c.iam)
+	}, defACL, c.iam, acct.Role == auth.RoleAdmin)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{

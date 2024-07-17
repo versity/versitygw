@@ -118,11 +118,11 @@ func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
 	}, nil
 }
 
-func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error) {
+func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) ([]byte, error) {
 	if input == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
-	if acl.Owner != *input.AccessControlPolicy.Owner.ID {
+	if !isAdmin && acl.Owner != *input.AccessControlPolicy.Owner.ID {
 		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 

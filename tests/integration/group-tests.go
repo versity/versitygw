@@ -481,6 +481,7 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_single_object_resource_actions(s)
 	AccessControl_multi_statement_policy(s)
 	AccessControl_bucket_ownership_to_user(s)
+	AccessControl_root_PutBucketAcl(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -771,5 +772,6 @@ func GetIntTests() IntTests {
 		"AccessControl_single_object_resource_actions":                        AccessControl_single_object_resource_actions,
 		"AccessControl_multi_statement_policy":                                AccessControl_multi_statement_policy,
 		"AccessControl_bucket_ownership_to_user":                              AccessControl_bucket_ownership_to_user,
+		"AccessControl_root_PutBucketAcl":                                     AccessControl_root_PutBucketAcl,
 	}
 }

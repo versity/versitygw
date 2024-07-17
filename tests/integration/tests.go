@@ -6250,14 +6250,30 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 func PutBucketAcl_invalid_owner(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_owner"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
 			AccessControlPolicy: &types.AccessControlPolicy{
 				Grants: []types.Grant{
 					{
 						Grantee: &types.Grantee{
-							ID:   getPtr("awsID"),
+							ID:   getPtr(usr.access),
 							Type: types.TypeCanonicalUser,
 						},
 					},
@@ -9186,6 +9202,39 @@ func AccessControl_bucket_ownership_to_user(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func AccessControl_root_PutBucketAcl(s *S3Conf) error {
+	testName := "AccessControl_root_PutBucketAcl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPrivate,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
 // IAM related tests
