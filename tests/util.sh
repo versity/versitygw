@@ -17,9 +17,12 @@ source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_objects.sh
+source ./tests/commands/list_parts.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_ownership_controls.sh
+source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
+source ./tests/commands/upload_part.sh
 
 # recursively delete an AWS bucket
 # param:  bucket name
@@ -56,11 +59,32 @@ delete_bucket_recursive() {
   return 0
 }
 
-delete_bucket_recursive_s3api() {
+add_governance_bypass_policy() {
   if [[ $# -ne 1 ]]; then
-    log 2 "delete bucket recursive command for s3api requires bucket name"
+    log 2 "'add governance bypass policy' command requires command ID"
     return 1
   fi
+  test_file_folder=$PWD
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    create_test_file_folder
+  fi
+  cat <<EOF > "$test_file_folder/policy-bypass-governance.txt"
+{
+  "Version": "dummy",
+  "Statement": [
+    {
+       "Effect": "Allow",
+       "Principal": "*",
+       "Action": "s3:BypassGovernanceRetention",
+       "Resource": "arn:aws:s3:::$1/*"
+    }
+  ]
+}
+EOF
+  put_bucket_policy "s3api" "$1" "$test_file_folder/policy-bypass-governance.txt" || fail "error putting bucket policy"
+}
+
+clear_bucket_s3api() {
   if ! list_objects 's3api' "$1"; then
     log 2 "error listing objects"
     return 1
@@ -75,7 +99,25 @@ delete_bucket_recursive_s3api() {
           log 2 "error removing object legal hold"
           return 1
         fi
-        if ! delete_object 's3api' "$1" "$object"; then
+        sleep 1
+        if [[ $LOG_LEVEL_INT -ge 5 ]]; then
+          if ! get_object_legal_hold "$1" "$object"; then
+            log 2 "error getting object legal hold status"
+            return 1
+          fi
+          log 5 "LEGAL HOLD: $legal_hold"
+          if ! get_object_retention "$1" "$object"; then
+            log 2 "error getting object retention"
+            if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
+              return 1
+            fi
+          fi
+          log 5 "RETENTION: $retention"
+          get_bucket_policy "s3api" "$1" || fail "error getting bucket policy"
+          log 5 "BUCKET POLICY: $bucket_policy"
+        fi
+        add_governance_bypass_policy "$1" || fail "error adding governance bypass policy"
+        if ! delete_object_bypass_retention "$1" "$object" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
           log 2 "error deleting object after legal hold removal"
           return 1
         fi
@@ -84,6 +126,19 @@ delete_bucket_recursive_s3api() {
       return 1
     fi
   done
+  delete_bucket_policy "s3api" "$1" || fail "error deleting bucket policy"
+  put_bucket_canned_acl "$1" "private" || fail "error deleting bucket ACLs"
+  put_object_lock_configuration_disabled "$1" || fail "error removing object lock config"
+  #change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID" || fail "error changing bucket owner"
+}
+
+delete_bucket_recursive_s3api() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "delete bucket recursive command for s3api requires bucket name"
+    return 1
+  fi
+
+  clear_bucket_s3api "$1" || fail "error clearing bucket"
 
   delete_bucket 's3api' "$1" || local delete_bucket_result=$?
   if [[ $delete_bucket_result -ne 0 ]]; then
@@ -105,7 +160,7 @@ delete_bucket_contents() {
   local exit_code=0
   local error
   if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
-    error=$(aws --no-verify-ssl s3 rm s3://"$2" --recursive 2>&1) || exit_code="$?"
+    clear_bucket_s3api "$2" || exit_code="$?"
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
@@ -165,11 +220,6 @@ delete_bucket_or_contents() {
       log 2 "error getting object ownership rule"
       return 1
     fi
-    # shellcheck disable=SC2154
-    #if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]]; then
-    #  get_bucket_acl "$1" "$2" || fail "error getting bucket acl"
-    #  log 5 "ACL: $acl"
-    #fi
     log 5 "object ownership rule: $object_ownership_rule"
     if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$2" "private"; then
       log 2 "error resetting bucket ACLs"
@@ -464,33 +514,6 @@ get_object_acl() {
   export acl
 }
 
-# add tags to bucket
-# params:  bucket, key, value
-# return:  0 for success, 1 for error
-put_bucket_tag() {
-  if [ $# -ne 4 ]; then
-    echo "bucket tag command missing command type, bucket name, key, value"
-    return 1
-  fi
-  local error
-  local result
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api put-bucket-tagging --bucket "$2" --tagging "TagSet=[{Key=$3,Value=$4}]") || result=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure tag set "$MC_ALIAS"/"$2" "$3=$4" 2>&1) || result=$?
-  else
-    log 2 "invalid command type $1"
-    return 1
-  fi
-  if [[ $result -ne 0 ]]; then
-    echo "Error adding bucket tag: $error"
-    return 1
-  fi
-  return 0
-}
-
-
-
 check_tags_empty() {
   if [[ $# -ne 1 ]]; then
     echo "check tags empty requires command type"
@@ -541,31 +564,6 @@ check_bucket_tags_empty() {
   return $check_result
 }
 
-# add tags to object
-# params:  object, key, value
-# return:  0 for success, 1 for error
-put_object_tag() {
-  if [ $# -ne 5 ]; then
-    echo "object tag command missing command type, object name, file, key, and/or value"
-    return 1
-  fi
-  local error
-  local result
-  if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api put-object-tagging --bucket "$2" --key "$3" --tagging "TagSet=[{Key=$4,Value=$5}]" 2>&1) || result=$?
-  elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure tag set "$MC_ALIAS"/"$2"/"$3" "$4=$5" 2>&1) || result=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [[ $result -ne 0 ]]; then
-    echo "Error adding object tag: $error"
-    return 1
-  fi
-  return 0
-}
-
 get_and_verify_object_tags() {
   if [[ $# -ne 5 ]]; then
     echo "get and verify object tags missing command type, bucket, key, tag key, tag value"
@@ -613,40 +611,6 @@ list_objects_s3api_v1() {
     return 1
   fi
   export objects
-}
-
-# list objects in bucket, v2
-# param:  bucket
-# export objects on success, return 1 for failure
-list_objects_s3api_v2() {
-  if [ $# -ne 1 ]; then
-    echo "list objects command missing bucket and/or path"
-    return 1
-  fi
-  objects=$(aws --no-verify-ssl s3api list-objects-v2 --bucket "$1") || local result=$?
-  if [[ $result -ne 0 ]]; then
-    echo "error listing objects: $objects"
-    return 1
-  fi
-  export objects
-}
-
-# upload a single part of a multipart upload
-# params: bucket, key, upload ID, original (unsplit) file name, part number
-# return: 0 for success, 1 for failure
-upload_part() {
-  if [ $# -ne 5 ]; then
-    echo "upload multipart part function must have bucket, key, upload ID, file name, part number"
-    return 1
-  fi
-  local etag_json
-  etag_json=$(aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))") || local uploaded=$?
-  if [[ $uploaded -ne 0 ]]; then
-    echo "Error uploading part $5: $etag_json"
-    return 1
-  fi
-  etag=$(echo "$etag_json" | jq '.ETag')
-  export etag
 }
 
 # perform all parts of a multipart upload before completion command
@@ -866,7 +830,7 @@ copy_file() {
 # list parts of an unfinished multipart upload
 # params:  bucket, key, local file location, and parts to split into before upload
 # export parts on success, return 1 for error
-list_parts() {
+start_multipart_upload_and_list_parts() {
   if [ $# -ne 4 ]; then
     log 2 "list multipart upload parts command requires bucket, key, file, and part count"
     return 1
@@ -877,7 +841,7 @@ list_parts() {
     return 1
   fi
 
-  if ! listed_parts=$(aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$upload_id" 2>&1); then
+  if ! list_parts "$1" "$2" "$upload_id"; then
     log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi

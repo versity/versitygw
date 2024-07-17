@@ -18,9 +18,9 @@ export RUN_USERS=true
 }
 
 # copy-object
-#@test "test_copy_object" {
-#  test_common_copy_object "s3cmd"
-#}
+@test "test_copy_object" {
+  test_common_copy_object "s3cmd"
+}
 
 # create-bucket
 @test "test_create_delete_bucket" {

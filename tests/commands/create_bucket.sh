@@ -6,12 +6,12 @@ source ./tests/report.sh
 # param:  bucket name
 # return 0 for success, 1 for failure
 create_bucket() {
-  record_command "create-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "create bucket missing command type, bucket name"
     return 1
   fi
 
+  record_command "create-bucket" "client:$1"
   local exit_code=0
   local error
   log 6 "create bucket"
