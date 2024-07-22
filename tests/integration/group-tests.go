@@ -197,6 +197,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_not_owned_source_bucket(s)
 	CopyObject_copy_to_itself(s)
 	CopyObject_to_itself_with_new_metadata(s)
+	CopyObject_CopySource_starting_with_slash(s)
 	CopyObject_success(s)
 }
 
@@ -609,6 +610,7 @@ func GetIntTests() IntTests {
 		"CopyObject_not_owned_source_bucket":                                  CopyObject_not_owned_source_bucket,
 		"CopyObject_copy_to_itself":                                           CopyObject_copy_to_itself,
 		"CopyObject_to_itself_with_new_metadata":                              CopyObject_to_itself_with_new_metadata,
+		"CopyObject_CopySource_starting_with_slash":                           CopyObject_CopySource_starting_with_slash,
 		"CopyObject_success":                                                  CopyObject_success,
 		"PutObjectTagging_non_existing_object":                                PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                          PutObjectTagging_long_tags,
