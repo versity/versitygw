@@ -1610,7 +1610,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		bypassHdr := ctx.Get("X-Amz-Bypass-Governance-Retention")
-		bypass := bypassHdr == "true"
+		bypass := strings.EqualFold(bypassHdr, "true")
 		if bypass {
 			policy, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
 			if err != nil {
@@ -2289,7 +2289,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-	bypass := ctx.Get("X-Amz-Bypass-Governance-Retention")
+	bypassHdr := ctx.Get("X-Amz-Bypass-Governance-Retention")
 	var dObj s3response.DeleteObjects
 
 	err := xml.Unmarshal(ctx.Body(), &dObj)
@@ -2326,7 +2326,10 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), bypass == "true", c.be)
+	// The AWS CLI sends 'True', while Go SDK sends 'true'
+	bypass := strings.EqualFold(bypassHdr, "true")
+
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), bypass, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2365,7 +2368,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
-	bypass := ctx.Get("X-Amz-Bypass-Governance-Retention")
+	bypassHdr := ctx.Get("X-Amz-Bypass-Governance-Retention")
 
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
@@ -2470,7 +2473,10 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, bypass == "true", c.be)
+	// The AWS CLI sends 'True', while Go SDK sends 'true'
+	bypass := strings.EqualFold(bypassHdr, "true")
+
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, bypass, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
