@@ -4215,6 +4215,66 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	})
 }
 
+func CopyObject_CopySource_starting_with_slash(s *S3Conf) error {
+	testName := "CopyObject_CopySource_starting_with_slash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(1234567), "src-obj"
+		dstBucket := getBucketName()
+		if err := setup(s, dstBucket); err != nil {
+			return err
+		}
+
+		csum, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &dstBucket,
+			Key:        &obj,
+			CopySource: getPtr(fmt.Sprintf("/%v/%v", bucket, obj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &dstBucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err != nil {
+			return err
+		}
+		if *out.ContentLength != dataLength {
+			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+		}
+
+		defer out.Body.Close()
+
+		bdy, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		outCsum := sha256.Sum256(bdy)
+		if outCsum != csum {
+			return fmt.Errorf("invalid object data")
+		}
+
+		if err := teardown(s, dstBucket); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_success(s *S3Conf) error {
 	testName := "CopyObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
