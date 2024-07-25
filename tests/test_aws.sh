@@ -27,6 +27,7 @@ source ./tests/commands/put_bucket_policy.sh
 source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_legal_hold.sh
+source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/select_object_content.sh
 
@@ -140,13 +141,13 @@ export RUN_USERS=true
   test_common_list_objects "aws"
 }
 
-#@test "test_get_put_object_legal_hold" {
-#  test_get_put_object_legal_hold_aws_root
-#}
+@test "test_get_put_object_legal_hold" {
+  test_get_put_object_legal_hold_aws_root
+}
 
-#@test "test_get_put_object_retention" {
-#  test_get_put_object_retention_aws_root
-#}
+@test "test_get_put_object_retention" {
+  test_get_put_object_retention_aws_root
+}
 
 @test "test_put_bucket_acl" {
   test_common_put_bucket_acl "s3api"
@@ -881,6 +882,10 @@ EOF
   fi
 }
 
+@test "test_retention_bypass" {
+  test_retention_bypass_aws_root
+}
+
 @test "test_head_bucket_doesnt_exist" {
   setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
@@ -981,4 +986,27 @@ EOF
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$policy_file" "$test_file"
+}
+
+@test "test_put_object_lock_configuration" {
+  bucket_name=$BUCKET_ONE_NAME
+  if [[ $RECREATE_BUCKETS == "true" ]]; then
+    delete_bucket "s3api" "$bucket_name" || fail "error deleting bucket"
+    create_bucket_object_lock_enabled "$bucket_name" || fail "error setting up bucket"
+  fi
+  local enabled="Enabled"
+  local governance="GOVERNANCE"
+  local days="1"
+  put_object_lock_configuration "$bucket_name" "$enabled" "$governance" "$days" || fail "error putting object lock configuration"
+  get_object_lock_configuration "$bucket_name" || fail "error getting object lock configuration"
+  log 5 "LOCK CONFIG: $lock_config"
+  object_lock_configuration=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration" 2>&1) || fail "error getting ObjectLockConfiguration: $object_lock_configuration"
+  object_lock_enabled=$(echo "$object_lock_configuration" | jq -r ".ObjectLockEnabled" 2>&1) || fail "error getting ObjectLockEnabled: $object_lock_enabled"
+  [[ $object_lock_enabled == "$enabled" ]] || fail "incorrect ObjectLockEnabled value: $object_lock_enabled"
+  default_retention=$(echo "$object_lock_configuration" | jq -r ".Rule.DefaultRetention" 2>&1) || fail "error getting DefaultRetention: $default_retention"
+  mode=$(echo "$default_retention" | jq -r ".Mode" 2>&1) || fail "error getting Mode: $mode"
+  [[ $mode == "$governance" ]] || fail "incorrect Mode value: $mode"
+  returned_days=$(echo "$default_retention" | jq -r ".Days" 2>&1) || fail "error getting Days: $returned_days"
+  [[ $returned_days == "1" ]] || fail "incorrect Days value: $returned_days"
+  delete_bucket_or_contents "aws" "$bucket_name"
 }

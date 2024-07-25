@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 copy_object() {
-  record-command "copy-object" "client:$1"
   if [ $# -ne 4 ]; then
     echo "copy object command requires command type, source, bucket, key"
     return 1
   fi
   local exit_code=0
   local error
+  record_command "copy-object" "client:$1"
   if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 cp "$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
