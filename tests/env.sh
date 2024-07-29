@@ -92,6 +92,9 @@ check_universal_vars() {
   if [[ -n "$DIRECT" ]]; then
     export DIRECT
   fi
+  if [[ -n "$DIRECT_DISPLAY_NAME" ]]; then
+    export DIRECT_DISPLAY_NAME
+  fi
   if [[ -n "$COVERAGE_DB" ]]; then
     export COVERAGE_DB
   fi

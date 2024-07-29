@@ -988,6 +988,10 @@ EOF
   delete_test_files "$policy_file" "$test_file"
 }
 
+@test "test_policy_put_acl" {
+
+}
+
 @test "test_put_object_lock_configuration" {
   bucket_name=$BUCKET_ONE_NAME
   if [[ $RECREATE_BUCKETS == "true" ]]; then

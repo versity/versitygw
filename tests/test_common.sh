@@ -422,6 +422,60 @@ test_common_get_bucket_location() {
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
 }
 
+test_put_bucket_acl_s3cmd() {
+  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
+  create_bucket "s3api" "lrm25-test-dummy-bucket" || fail "error creating bucket"
+
+  username="abcdefgh"
+  if [[ $DIRECT == "true" ]]; then
+    setup_user_direct "$username" "userplus" "lrm25-test-dummy-bucket" || fail "error setting up direct user $username"
+    username="$key_id"
+  else
+    setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
+  fi
+  sleep 5
+
+
+  log 5 "username: $username"
+  delete_bucket "s3api" "lrm25-test-dummy-bucket" || fail "deletion error"
+  create_bucket_with_user "s3api" "abcdefgh-lrm25-test-dummy-bucket" "$username" "$secret_key" || fail "error creating bucket with user"
+  #USER_ARN="arn:aws:iam::$DIRECT_AWS_USER_ID:user/abcdefgh"
+  #log 5 "USER ARN: $USER_ARN"
+  #aws s3api put-bucket-acl --bucket "abcdefgh-lrm25-test-dummy-bucket" --grant-full-control id="$USER_ARN"
+
+  get_bucket_acl "s3api" "abcdefgh-lrm25-test-dummy-bucket" || fail "error retrieving acl"
+  log 5 "TEST ACL: $acl"
+  get_bucket_policy "s3api" "abcdefgh-lrm25-test-dummy-bucket" || fail "error getting policy"
+  log 5 "policy: $bucket_policy"
+  if ! result=$(aws --no-verify-ssl iam get-user-policy --user-name "abcdefgh" --policy-name "UserPolicy"); then
+    fail "error getting result: $result"
+  fi
+  log 5 "USER POLICY: $result"
+  list_buckets_with_user "s3api" "$username" "$secret_key" || fail "error listing buckets"
+  log 5 "bucket array: $bucket_array"
+
+  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+
+
+  log 5 "Initial ACLs: $acl"
+  acl_line=$(echo "$acl" | grep "ACL")
+  user_id=$(echo "$acl_line" | awk '{print $2}')
+  if [[ $DIRECT == "true" ]]; then
+    [[ $user_id == "$DIRECT_DISPLAY_NAME:" ]] || fail "ID mismatch ($user_id, $DIRECT_DISPLAY_NAME)"
+  else
+    [[ $user_id == "$AWS_ACCESS_KEY_ID:" ]] || fail "ID mismatch ($user_id, $AWS_ACCESS_KEY_ID)"
+  fi
+  permission=$(echo "$acl_line" | awk '{print $3}')
+  [[ $permission == "FULL_CONTROL" ]] || fail "Permission mismatch ($permission)"
+
+  log 5 "USERNAME:  $username"
+  put_bucket_canned_acl_s3cmd "$BUCKET_ONE_NAME" "read" "$username" || fail "error putting canned s3cmd ACL"
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+  log 5 "ACL after read put: $acl"
+  fail "test fail"
+}
+
 test_common_put_bucket_acl() {
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
   setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
@@ -462,9 +516,9 @@ EOF
 
   log 6 "before 1st put acl"
   if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
+    put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
   else
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$username" || fail "error putting first acl"
+    put_bucket_acl_s3cmd "$1" "$BUCKET_ONE_NAME" "read" "$username" || fail "error putting first acl"
   fi
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
@@ -491,7 +545,11 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
+  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+    put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
+  else
+    put_bucket_acl_s3cmd "$1" "$BUCKET_ONE_NAME" "full_control" "$username" || fail "error putting first acl"
+  fi
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
