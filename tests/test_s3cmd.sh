@@ -73,9 +73,9 @@ export RUN_USERS=true
   test_common_put_object_no_data "s3cmd"
 }
 
-#@test "test_put_bucket_acl" {
-#  test_common_put_bucket_acl "s3cmd"
-#}
+@test "test_put_bucket_acl" {
+  test_put_bucket_acl_s3cmd
+}
 
 # test listing buckets on versitygw
 @test "test_list_buckets_s3cmd" {

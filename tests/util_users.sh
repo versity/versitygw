@@ -61,39 +61,70 @@ create_user_if_nonexistent() {
   return $?
 }
 
-put_user_policy() {
-  if [[ $# -ne 3 ]]; then
-    log 2 "attaching user policy requires user ID, role, bucket name"
+put_user_policy_userplus() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "'put user policy userplus' function requires username"
     return 1
   fi
-  if [[ -z "$test_file_folder" ]]; then
-    log 2 "no test folder defined"
+  if [[ -z "$test_file_folder" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
+    log 2 "unable to create test file folder"
     return 1
   fi
-
-  # TODO add other roles
-  if [[ $2 != "user" ]]; then
-    log 2 "role for '$2' not currently supported"
-    return 1
-  fi
+          #"Resource": "arn:aws:s3:::${aws:username}-*"
 
 cat <<EOF > "$test_file_folder"/user_policy_file
 {
   "Version": "2012-10-17",
   "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "*",
-      "Resource": "arn:aws:s3:::$3/*"
-    }
+      {
+          "Effect": "Allow",
+          "Action": [
+              "s3:CreateBucket",
+              "s3:ListBucket",
+              "s3:ListAllMyBuckets",
+              "s3:ListBucketMultipartUploads",
+              "s3:GetBucketLocation"
+          ],
+          "Resource": "arn:aws:s3:::$1-*"
+      },
+      {
+          "Effect": "Allow",
+          "Action": "s3:*",
+          "Resource": [
+              "arn:aws:s3:::$1-*",
+              "arn:aws:s3:::$1-*/*"
+          ]
+      }
   ]
 }
 EOF
-
   if ! error=$(aws iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$test_file_folder/user_policy_file" 2>&1); then
     log 2 "error putting user policy: $error"
     return 1
   fi
+  return 0
+}
+
+put_user_policy() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "attaching user policy requires user ID, role, bucket name"
+    return 1
+  fi
+  if [[ -z "$test_file_folder" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
+    log 2 "unable to create test file folder"
+    return 1
+  fi
+
+  case $2 in
+  "user")
+    ;;
+  "userplus")
+    if ! put_user_policy_userplus "$1"; then
+      log 2 "error adding userplus policy"
+      return 1
+    fi
+    ;;
+  esac
   return 0
 }
 
@@ -272,10 +303,24 @@ delete_user() {
   fi
 }
 
+change_bucket_owner_direct() {
+  if [[ $# -ne 4 ]]; then
+    echo "change bucket owner command requires ID, key, bucket name, and new owner"
+    return 1
+  fi
+
+}
+
 change_bucket_owner() {
   if [[ $# -ne 4 ]]; then
     echo "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
+  fi
+  if [[ $DIRECT == "true" ]]; then
+    if ! change_bucket_owner_direct "$1" "$2" "$3" "$4"; then
+      log 2 "error changing bucket owner direct to s3"
+      return 1
+    fi
   fi
   error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?
   if [[ $change_result -ne 0 ]]; then
