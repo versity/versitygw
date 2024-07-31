@@ -821,11 +821,14 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		if d.IsDir() {
 			// directory object only happens if directory empty
 			// check to see if this is a directory object by checking etag
-			b, err := s.meta.RetrieveAttribute(bucket, path, etagkey)
+			etagBytes, err := s.meta.RetrieveAttribute(bucket, path, etagkey)
+			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+				return types.Object{}, backend.ErrSkipObj
+			}
 			if err != nil {
 				return types.Object{}, fmt.Errorf("get etag: %w", err)
 			}
-			etag := string(b)
+			etag := string(etagBytes)
 
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
@@ -841,6 +844,7 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 				ETag:         &etag,
 				Key:          &key,
 				LastModified: backend.GetTimePtr(fi.ModTime()),
+				StorageClass: types.ObjectStorageClassStandard,
 			}, nil
 		}
 
@@ -849,9 +853,12 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		if errors.Is(err, fs.ErrNotExist) {
 			return types.Object{}, backend.ErrSkipObj
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return types.Object{}, fmt.Errorf("get etag: %w", err)
 		}
+		// note: meta.ErrNoSuchKey will return etagBytes = []byte{}
+		// so this will just set etag to "" if its not already set
+
 		etag := string(b)
 
 		fi, err := d.Info()
