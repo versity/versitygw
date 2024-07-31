@@ -36,6 +36,7 @@ const (
 	ListBucketMultipartUploadsAction       Action = "s3:ListBucketMultipartUploads"
 	PutObjectAction                        Action = "s3:PutObject"
 	GetObjectAction                        Action = "s3:GetObject"
+	GetObjectVersionAction                 Action = "s3:GetObjectVersion"
 	DeleteObjectAction                     Action = "s3:DeleteObject"
 	GetObjectAclAction                     Action = "s3:GetObjectAcl"
 	GetObjectAttributesAction              Action = "s3:GetObjectAttributes"
@@ -75,6 +76,7 @@ var supportedActionList = map[Action]struct{}{
 	ListBucketMultipartUploadsAction:       {},
 	PutObjectAction:                        {},
 	GetObjectAction:                        {},
+	GetObjectVersionAction:                 {},
 	DeleteObjectAction:                     {},
 	GetObjectAclAction:                     {},
 	GetObjectAttributesAction:              {},
@@ -103,6 +105,7 @@ var supportedObjectActionList = map[Action]struct{}{
 	ListMultipartUploadPartsAction:  {},
 	PutObjectAction:                 {},
 	GetObjectAction:                 {},
+	GetObjectVersionAction:          {},
 	DeleteObjectAction:              {},
 	GetObjectAclAction:              {},
 	GetObjectAttributesAction:       {},

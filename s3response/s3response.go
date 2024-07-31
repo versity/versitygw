@@ -21,6 +21,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+type PutObjectOutput struct {
+	ETag      string
+	VersionID string
+}
+
 // Part describes part metadata.
 type Part struct {
 	PartNumber   int
@@ -220,4 +225,21 @@ type Grantee struct {
 
 type OwnershipControls struct {
 	Rules []types.OwnershipControlsRule `xml:"Rule"`
+}
+
+type ListVersionsResult struct {
+	CommonPrefixes      []types.CommonPrefix
+	DeleteMarkers       []types.DeleteMarkerEntry `xml:"DeleteMarker"`
+	Delimiter           *string
+	EncodingType        types.EncodingType
+	IsTruncated         *bool
+	KeyMarker           *string
+	MaxKeys             *int32
+	Name                *string
+	NextKeyMarker       *string
+	NextVersionIdMarker *string
+	Prefix              *string
+	RequestCharged      types.RequestCharged
+	VersionIdMarker     *string
+	Versions            []types.ObjectVersion `xml:"Version"`
 }
