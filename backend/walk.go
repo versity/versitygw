@@ -239,3 +239,189 @@ func contains(a string, strs []string) bool {
 	}
 	return false
 }
+
+type WalkVersioningResults struct {
+	CommonPrefixes      []types.CommonPrefix
+	ObjectVersions      []types.ObjectVersion
+	DelMarkers          []types.DeleteMarkerEntry
+	Truncated           bool
+	NextMarker          string
+	NextVersionIdMarker string
+}
+
+type ObjVersionFuncResult struct {
+	ObjectVersions      []types.ObjectVersion
+	DelMarkers          []types.DeleteMarkerEntry
+	NextVersionIdMarker string
+	Truncated           bool
+}
+
+type GetVersionsFunc func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
+
+// WalkVersions walks the supplied fs.FS and returns results compatible with
+// ListObjectVersions action response
+func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
+	cpmap := make(map[string]struct{})
+	var objects []types.ObjectVersion
+	var delMarkers []types.DeleteMarkerEntry
+
+	var pastMarker bool
+	if keyMarker == "" {
+		pastMarker = true
+	}
+	var nextMarker string
+	var nextVersionIdMarker string
+	var truncated bool
+
+	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Ignore the root directory
+		if path == "." {
+			return nil
+		}
+		if contains(d.Name(), skipdirs) {
+			return fs.SkipDir
+		}
+
+		if d.IsDir() {
+			// If prefix is defined and the directory does not match prefix,
+			// do not descend into the directory because nothing will
+			// match this prefix. Make sure to append the / at the end of
+			// directories since this is implied as a directory path name.
+			// If path is a prefix of prefix, then path could still be
+			// building to match. So only skip if path isn't a prefix of prefix
+			// and prefix isn't a prefix of path.
+			if prefix != "" &&
+				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
+				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
+				return fs.SkipDir
+			}
+
+			// skip directory objects, as they can't have versions
+			return nil
+		}
+
+		if !pastMarker {
+			if path == keyMarker {
+				pastMarker = true
+				return nil
+			}
+			if path < keyMarker {
+				return nil
+			}
+		}
+
+		// If object doesn't have prefix, don't include in results.
+		if prefix != "" && !strings.HasPrefix(path, prefix) {
+			return nil
+		}
+
+		if delimiter == "" {
+			// If no delimiter specified, then all files with matching
+			// prefix are included in results
+			res, err := getObj(path, versionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			if err == ErrSkipObj {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("file to object %q: %w", path, err)
+			}
+			objects = append(objects, res.ObjectVersions...)
+			delMarkers = append(delMarkers, res.DelMarkers...)
+			if res.Truncated {
+				truncated = true
+				nextMarker = path
+				nextVersionIdMarker = res.NextVersionIdMarker
+				return fs.SkipAll
+			}
+
+			return nil
+		}
+
+		// Since delimiter is specified, we only want results that
+		// do not contain the delimiter beyond the prefix.  If the
+		// delimiter exists past the prefix, then the substring
+		// between the prefix and delimiter is part of common prefixes.
+		//
+		// For example:
+		// prefix = A/
+		// delimiter = /
+		// and objects:
+		// A/file
+		// A/B/file
+		// B/C
+		// would return:
+		// objects: A/file
+		// common prefix: A/B/
+		//
+		// Note: No objects are included past the common prefix since
+		// these are all rolled up into the common prefix.
+		// Note: The delimiter can be anything, so we have to operate on
+		// the full path without any assumptions on posix directory hierarchy
+		// here.  Usually the delimiter will be "/", but thats not required.
+		suffix := strings.TrimPrefix(path, prefix)
+		before, _, found := strings.Cut(suffix, delimiter)
+		if !found {
+			res, err := getObj(path, versionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			if err == ErrSkipObj {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("file to object %q: %w", path, err)
+			}
+			objects = append(objects, res.ObjectVersions...)
+			delMarkers = append(delMarkers, res.DelMarkers...)
+
+			if res.Truncated {
+				truncated = true
+				nextMarker = path
+				nextVersionIdMarker = res.NextVersionIdMarker
+				return fs.SkipAll
+			}
+			return nil
+		}
+
+		// Common prefixes are a set, so should not have duplicates.
+		// These are abstractly a "directory", so need to include the
+		// delimiter at the end.
+		cpmap[prefix+before+delimiter] = struct{}{}
+		if (len(objects) + len(cpmap)) == int(max) {
+			nextMarker = path
+			truncated = true
+
+			return fs.SkipAll
+		}
+
+		return nil
+	})
+	if err != nil {
+		return WalkVersioningResults{}, err
+	}
+
+	var commonPrefixStrings []string
+	for k := range cpmap {
+		commonPrefixStrings = append(commonPrefixStrings, k)
+	}
+	sort.Strings(commonPrefixStrings)
+	commonPrefixes := make([]types.CommonPrefix, 0, len(commonPrefixStrings))
+	for _, cp := range commonPrefixStrings {
+		pfx := cp
+		commonPrefixes = append(commonPrefixes, types.CommonPrefix{
+			Prefix: &pfx,
+		})
+	}
+
+	return WalkVersioningResults{
+		CommonPrefixes:      commonPrefixes,
+		ObjectVersions:      objects,
+		DelMarkers:          delMarkers,
+		Truncated:           truncated,
+		NextMarker:          nextMarker,
+		NextVersionIdMarker: nextVersionIdMarker,
+	}, nil
+}

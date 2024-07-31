@@ -132,6 +132,7 @@ const (
 	ErrMissingSecurityHeader
 	ErrInvalidMetadataDirective
 	ErrKeyTooLong
+	ErrInvalidVersionId
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -517,8 +518,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrInvalidMetadataDirective: {
+		Code:        "InvalidArgument",
+		Description: "Unknown metadata directive.",
+	},
+	ErrInvalidVersionId: {
 		Code:           "InvalidArgument",
-		Description:    "Unknown metadata directive.",
+		Description:    "Invalid version id specified",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrKeyTooLong: {

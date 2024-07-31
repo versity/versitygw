@@ -45,6 +45,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/oklog/ulid/v2 v2.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect

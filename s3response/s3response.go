@@ -23,6 +23,11 @@ import (
 
 const RFC3339TimeFormat = "2006-01-02T15:04:05.999Z"
 
+type PutObjectOutput struct {
+	ETag      string
+	VersionID string
+}
+
 // Part describes part metadata.
 type Part struct {
 	PartNumber   int
@@ -359,4 +364,22 @@ type InitiateMultipartUploadResult struct {
 	Bucket   string
 	Key      string
 	UploadId string
+}
+
+type ListVersionsResult struct {
+	XMLName             xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListVersionsResult" json:"-"`
+	CommonPrefixes      []types.CommonPrefix
+	DeleteMarkers       []types.DeleteMarkerEntry `xml:"DeleteMarker"`
+	Delimiter           *string
+	EncodingType        types.EncodingType
+	IsTruncated         *bool
+	KeyMarker           *string
+	MaxKeys             *int32
+	Name                *string
+	NextKeyMarker       *string
+	NextVersionIdMarker *string
+	Prefix              *string
+	RequestCharged      types.RequestCharged
+	VersionIdMarker     *string
+	Versions            []types.ObjectVersion `xml:"Version"`
 }
