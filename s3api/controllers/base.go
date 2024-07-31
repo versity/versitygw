@@ -382,6 +382,11 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	action := auth.GetObjectAction
+	if versionId != "" {
+		action = auth.GetObjectVersionAction
+	}
+
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:      c.readonly,
 		Acl:           parsedAcl,
@@ -390,7 +395,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		Acc:           acct,
 		Bucket:        bucket,
 		Object:        key,
-		Action:        auth.GetObjectAction,
+		Action:        action,
 	})
 	if err != nil {
 		return SendResponse(ctx, err,
@@ -410,11 +415,23 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		VersionId: &versionId,
 	})
 	if err != nil {
+		if res != nil {
+			utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+				{
+					Key:   "x-amz-delete-marker",
+					Value: "true",
+				},
+				{
+					Key:   "Last-Modified",
+					Value: res.LastModified.Format(timefmt),
+				},
+			})
+		}
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
-				Action:      metrics.ActionGetObject,
+				Action:      metrics.ActionHeadObject,
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
@@ -981,8 +998,8 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	objectOwnership := types.ObjectOwnership(
 		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
 	)
-	mfa := ctx.Get("X-Amz-Mfa")
-	contentMD5 := ctx.Get("Content-MD5")
+	// mfa := ctx.Get("X-Amz-Mfa")
+	// contentMD5 := ctx.Get("Content-MD5")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
 
@@ -1136,13 +1153,21 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = c.be.PutBucketVersioning(ctx.Context(),
-			&s3.PutBucketVersioningInput{
-				Bucket:                  &bucket,
-				MFA:                     &mfa,
-				VersioningConfiguration: &versioningConf,
-				ContentMD5:              &contentMD5,
-			})
+		if versioningConf.Status != types.BucketVersioningStatusEnabled &&
+			versioningConf.Status != types.BucketVersioningStatusSuspended {
+			if c.debug {
+				log.Printf("invalid versioning configuration status: %v\n", versioningConf.Status)
+			}
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketVersioning,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.PutBucketVersioning(ctx.Context(), bucket, versioningConf.Status)
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -2141,6 +2166,21 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				StorageClass:                types.StorageClass(storageClass),
 			})
 		if err == nil {
+			hdrs := []utils.CustomHeader{}
+			if getstring(res.VersionId) != "" {
+				hdrs = append(hdrs, utils.CustomHeader{
+					Key:   "x-amz-version-id",
+					Value: getstring(res.VersionId),
+				})
+			}
+			if getstring(res.CopySourceVersionId) != "" {
+				hdrs = append(hdrs, utils.CustomHeader{
+					Key:   "x-amz-copy-source-version-id",
+					Value: getstring(res.CopySourceVersionId),
+				})
+			}
+			utils.SetResponseHeaders(ctx, hdrs)
+
 			return SendXMLResponse(ctx, res.CopyObjectResult, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -2232,7 +2272,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	ctx.Locals("logReqBody", false)
-	etag, err := c.be.PutObject(ctx.Context(),
+	res, err := c.be.PutObject(ctx.Context(),
 		&s3.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &keyStart,
@@ -2246,8 +2286,36 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			ObjectLockMode:            objLock.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLock.LegalHoldStatus,
 		})
-	ctx.Response().Header.Set("ETag", etag)
-	return SendResponse(ctx, err,
+	if err != nil {
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:        c.logger,
+				MetricsMng:    c.mm,
+				ContentLength: contentLength,
+				EvSender:      c.evSender,
+				Action:        metrics.ActionPutObject,
+				BucketOwner:   parsedAcl.Owner,
+				ObjectSize:    contentLength,
+				EventName:     s3event.EventObjectCreatedPut,
+			})
+	}
+	hdrs := []utils.CustomHeader{
+		{
+			Key:   "ETag",
+			Value: res.ETag,
+		},
+	}
+
+	if res.VersionID != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-version-id",
+			Value: res.VersionID,
+		})
+	}
+
+	utils.SetResponseHeaders(ctx, hdrs)
+
+	return SendResponse(ctx, nil,
 		&MetaOpts{
 			Logger:        c.logger,
 			MetricsMng:    c.mm,
@@ -2255,7 +2323,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			EvSender:      c.evSender,
 			Action:        metrics.ActionPutObject,
 			BucketOwner:   parsedAcl.Owner,
-			ObjectETag:    &etag,
+			ObjectETag:    &res.ETag,
 			ObjectSize:    contentLength,
 			EventName:     s3event.EventObjectCreatedPut,
 		})
@@ -2569,6 +2637,8 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	//TODO: check s3:DeleteObjectVersion policy in case a use tries to delete a version of an object
+
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
@@ -2604,13 +2674,42 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = c.be.DeleteObject(ctx.Context(),
+	res, err := c.be.DeleteObject(ctx.Context(),
 		&s3.DeleteObjectInput{
 			Bucket:    &bucket,
 			Key:       &key,
 			VersionId: &versionId,
 		})
-	return SendResponse(ctx, err,
+	if err != nil {
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				EvSender:    c.evSender,
+				Action:      metrics.ActionDeleteObject,
+				BucketOwner: parsedAcl.Owner,
+				EventName:   s3event.EventObjectRemovedDelete,
+				Status:      http.StatusNoContent,
+			})
+	}
+
+	hdrs := []utils.CustomHeader{}
+	if res.VersionId != nil && *res.VersionId != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-version-id",
+			Value: *res.VersionId,
+		})
+	}
+	if res.DeleteMarker != nil && *res.DeleteMarker {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-delete-marker",
+			Value: "true",
+		})
+	}
+
+	utils.SetResponseHeaders(ctx, hdrs)
+
+	return SendResponse(ctx, nil,
 		&MetaOpts{
 			Logger:      c.logger,
 			MetricsMng:  c.mm,
@@ -2683,6 +2782,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
+	versionId := ctx.Query("versionId")
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
@@ -2737,8 +2837,21 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Bucket:     &bucket,
 			Key:        &key,
 			PartNumber: partNumber,
+			VersionId:  &versionId,
 		})
 	if err != nil {
+		if res != nil {
+			utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+				{
+					Key:   "x-amz-delete-marker",
+					Value: "true",
+				},
+				{
+					Key:   "Last-Modified",
+					Value: res.LastModified.Format(timefmt),
+				},
+			})
+		}
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -2826,6 +2939,12 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		Value: contentType,
 	})
 
+	if getstring(res.VersionId) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-version-id",
+			Value: getstring(res.VersionId),
+		})
+	}
 	utils.SetResponseHeaders(ctx, headers)
 
 	return SendResponse(ctx, nil,

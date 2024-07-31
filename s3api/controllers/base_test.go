@@ -385,8 +385,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
 				return &s3.GetBucketVersioningOutput{}, nil
 			},
-			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
-				return &s3.ListObjectVersionsOutput{}, nil
+			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
+				return s3response.ListVersionsResult{}, nil
 			},
 			GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 				return []byte{}, nil
@@ -677,7 +677,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 			PutBucketTaggingFunc: func(contextMoqParam context.Context, bucket string, tags map[string]string) error {
 				return nil
 			},
-			PutBucketVersioningFunc: func(contextMoqParam context.Context, putBucketVersioningInput *s3.PutBucketVersioningInput) error {
+			PutBucketVersioningFunc: func(contextMoqParam context.Context, bucket string, status types.BucketVersioningStatus) error {
 				return nil
 			},
 			PutBucketPolicyFunc: func(contextMoqParam context.Context, bucket string, policy []byte) error {
@@ -968,8 +968,8 @@ func TestS3ApiController_PutActions(t *testing.T) {
 					CopyObjectResult: &types.CopyObjectResult{},
 				}, nil
 			},
-			PutObjectFunc: func(context.Context, *s3.PutObjectInput) (string, error) {
-				return "ETag", nil
+			PutObjectFunc: func(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+				return s3response.PutObjectOutput{}, nil
 			},
 			UploadPartFunc: func(context.Context, *s3.UploadPartInput) (string, error) {
 				return "hello", nil
@@ -1383,8 +1383,8 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			DeleteObjectFunc: func(context.Context, *s3.DeleteObjectInput) error {
-				return nil
+			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+				return &s3.DeleteObjectOutput{}, nil
 			},
 			AbortMultipartUploadFunc: func(context.Context, *s3.AbortMultipartUploadInput) error {
 				return nil
@@ -1414,8 +1414,8 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 		GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 			return acldata, nil
 		},
-		DeleteObjectFunc: func(context.Context, *s3.DeleteObjectInput) error {
-			return s3err.GetAPIError(7)
+		DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		},
 		GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 			return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)

@@ -284,10 +284,10 @@ func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket strin
 	return az.deleteContainerMetaData(ctx, bucket, string(keyOwnership))
 }
 
-func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
+func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
 	tags, err := parseTags(po.Tagging)
 	if err != nil {
-		return "", err
+		return s3response.PutObjectOutput{}, err
 	}
 
 	opts := &blockblob.UploadStreamOptions{
@@ -312,14 +312,14 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 
 	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, opts)
 	if err != nil {
-		return "", azureErrToS3Err(err)
+		return s3response.PutObjectOutput{}, azureErrToS3Err(err)
 	}
 
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := az.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
 		if err != nil {
-			return "", err
+			return s3response.PutObjectOutput{}, err
 		}
 	}
 
@@ -331,15 +331,17 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 		}
 		retParsed, err := json.Marshal(retention)
 		if err != nil {
-			return "", fmt.Errorf("parse object lock retention: %w", err)
+			return s3response.PutObjectOutput{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
 		err = az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed)
 		if err != nil {
-			return "", err
+			return s3response.PutObjectOutput{}, err
 		}
 	}
 
-	return string(*uploadResp.ETag), nil
+	return s3response.PutObjectOutput{
+		ETag: string(*uploadResp.ETag),
+	}, nil
 }
 
 func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error {
@@ -675,22 +677,22 @@ Pager:
 	}, nil
 }
 
-func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
+func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
 		azerr, ok := err.(*azcore.ResponseError)
 		if ok && azerr.StatusCode == 404 {
 			// if the object does not exist, S3 returns success
-			return nil
+			return &s3.DeleteObjectOutput{}, nil
 		}
 	}
-	return azureErrToS3Err(err)
+	return &s3.DeleteObjectOutput{}, azureErrToS3Err(err)
 }
 
 func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
 	delResult, errs := []types.DeletedObject{}, []types.Error{}
 	for _, obj := range input.Delete.Objects {
-		err := az.DeleteObject(ctx, &s3.DeleteObjectInput{
+		_, err := az.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: input.Bucket,
 			Key:    obj.Key,
 		})
