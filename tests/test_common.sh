@@ -17,6 +17,7 @@ source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
+source ./tests/commands/put_public_access_block.sh
 
 test_common_multipart_upload() {
   if [[ $# -ne 1 ]]; then
@@ -425,39 +426,14 @@ test_common_get_bucket_location() {
 test_put_bucket_acl_s3cmd() {
   setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
-  create_bucket "s3api" "lrm25-test-dummy-bucket" || fail "error creating bucket"
 
   username="abcdefgh"
-  if [[ $DIRECT == "true" ]]; then
-    setup_user_direct "$username" "userplus" "lrm25-test-dummy-bucket" || fail "error setting up direct user $username"
-    username="$key_id"
-  else
+  if [[ $DIRECT != "true" ]]; then
     setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
   fi
   sleep 5
 
-
-  log 5 "username: $username"
-  delete_bucket "s3api" "lrm25-test-dummy-bucket" || fail "deletion error"
-  create_bucket_with_user "s3api" "abcdefgh-lrm25-test-dummy-bucket" "$username" "$secret_key" || fail "error creating bucket with user"
-  #USER_ARN="arn:aws:iam::$DIRECT_AWS_USER_ID:user/abcdefgh"
-  #log 5 "USER ARN: $USER_ARN"
-  #aws s3api put-bucket-acl --bucket "abcdefgh-lrm25-test-dummy-bucket" --grant-full-control id="$USER_ARN"
-
-  get_bucket_acl "s3api" "abcdefgh-lrm25-test-dummy-bucket" || fail "error retrieving acl"
-  log 5 "TEST ACL: $acl"
-  get_bucket_policy "s3api" "abcdefgh-lrm25-test-dummy-bucket" || fail "error getting policy"
-  log 5 "policy: $bucket_policy"
-  if ! result=$(aws --no-verify-ssl iam get-user-policy --user-name "abcdefgh" --policy-name "UserPolicy"); then
-    fail "error getting result: $result"
-  fi
-  log 5 "USER POLICY: $result"
-  list_buckets_with_user "s3api" "$username" "$secret_key" || fail "error listing buckets"
-  log 5 "bucket array: $bucket_array"
-
-  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
-
-
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
   log 5 "Initial ACLs: $acl"
   acl_line=$(echo "$acl" | grep "ACL")
   user_id=$(echo "$acl_line" | awk '{print $2}')
@@ -469,11 +445,26 @@ test_put_bucket_acl_s3cmd() {
   permission=$(echo "$acl_line" | awk '{print $3}')
   [[ $permission == "FULL_CONTROL" ]] || fail "Permission mismatch ($permission)"
 
-  log 5 "USERNAME:  $username"
-  put_bucket_canned_acl_s3cmd "$BUCKET_ONE_NAME" "read" "$username" || fail "error putting canned s3cmd ACL"
+  if [[ $DIRECT == "true" ]]; then
+    put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME" || fail "error enabling public ACLs"
+  fi
+  put_bucket_canned_acl_s3cmd "$BUCKET_ONE_NAME" "--acl-public" || fail "error putting canned s3cmd ACL"
+
   get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
   log 5 "ACL after read put: $acl"
-  fail "test fail"
+  acl_lines=$(echo "$acl" | grep "ACL")
+  log 5 "ACL lines:  $acl_lines"
+  while IFS= read -r line; do
+    lines+=("$line")
+  done <<< "$acl_lines"
+  log 5 "lines: ${lines[*]}"
+  [[ ${#lines[@]} -eq 2 ]] || fail "unexpected number of ACL lines: ${#lines[@]}"
+  anon_name=$(echo "${lines[1]}" | awk '{print $2}')
+  anon_permission=$(echo "${lines[1]}" | awk '{print $3}')
+  [[ $anon_name == "*anon*:" ]] || fail "unexpected anon name: $anon_name"
+  [[ $anon_permission == "READ" ]] || fail "unexpected anon permission: $anon_permission"
+
+  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
 }
 
 test_common_put_bucket_acl() {
@@ -490,21 +481,24 @@ test_common_put_bucket_acl() {
   id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1) || fail "error getting ID: $id"
   if [[ $id != "$username" ]]; then
     # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
-    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting caononical ID: $canonical_id"
-    [[ $id == "$AWS_ACCESS_KEY_ID" ]] || fail "acl ID doesn't match AWS key or canonical ID"
+    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting canonical ID: $canonical_id"
+    [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
   fi
 
   acl_file="test-acl"
   create_test_files "$acl_file"
 
+  if [[ $DIRECT == "true" ]]; then
+    grantee="{\"Type\": \"Group\", \"URI\": \"http://acs.amazonaws.com/groups/global/AllUsers\"}"
+  else
+    grantee="{\"ID\": \"$username\", \"Type\": \"CanonicalUser\"}"
+  fi
+
 cat <<EOF > "$test_file_folder"/"$acl_file"
   {
     "Grants": [
       {
-        "Grantee": {
-          "ID": "$username",
-          "Type": "CanonicalUser"
-        },
+        "Grantee": $grantee,
         "Permission": "READ"
       }
     ],

@@ -16,11 +16,11 @@ put_bucket_acl_s3api() {
 
 put_bucket_canned_acl_s3cmd() {
   record_command "put-bucket-acl" "client:s3cmd"
-  if [[ $# -ne 3 ]]; then
-    log 2 "put bucket acl command requires bucket name, permission, username"
+  if [[ $# -ne 2 ]]; then
+    log 2 "put bucket acl command requires bucket name, permission"
     return 1
   fi
-  if ! error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setacl "s3://$1" --acl-grant="$2":"$3" 2>&1); then
+  if ! error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setacl "s3://$1" "$2" 2>&1); then
     log 2 "error putting s3cmd canned ACL:  $error"
     return 1
   fi
@@ -28,11 +28,11 @@ put_bucket_canned_acl_s3cmd() {
 }
 
 put_bucket_canned_acl() {
-  record_command "put-bucket-acl" "client:s3api"
   if [[ $# -ne 2 ]]; then
     log 2 "'put bucket canned acl' command requires bucket name, canned ACL"
     return 1
   fi
+  record_command "put-bucket-acl" "client:s3api"
   if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
     log 2 "error re-setting bucket acls: $error"
     return 1
@@ -41,11 +41,11 @@ put_bucket_canned_acl() {
 }
 
 put_bucket_canned_acl_with_user() {
-  record_command "put-bucket-acl" "client:s3api"
-  if [[ $# -ne 2 ]]; then
+  if [[ $# -ne 4 ]]; then
     log 2 "'put bucket canned acl with user' command requires bucket name, canned ACL, username, password"
     return 1
   fi
+  record_command "put-bucket-acl" "client:s3api"
   if ! error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
     log 2 "error re-setting bucket acls: $error"
     return 1
