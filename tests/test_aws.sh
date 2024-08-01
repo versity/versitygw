@@ -990,6 +990,11 @@ EOF
 }
 
 @test "test_policy_put_acl" {
+  if [[ $DIRECT != "true" ]]; then
+    # https://github.com/versity/versitygw/issues/702
+    skip
+  fi
+
   policy_file="policy_file"
   test_file="test_file"
   username="ABCDEFG"
@@ -1033,7 +1038,9 @@ EOF
 
   put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
   put_bucket_canned_acl_with_user "$BUCKET_ONE_NAME" "public-read" "$username" "$password" || fail "error putting canned acl"
+
   get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket acl"
+  # shellcheck disable=SC2154
   log 5 "ACL: $acl"
   second_grant=$(echo "$acl" | jq -r ".Grants[1]" 2>&1) || fail "error getting second grant: $second_grant"
   second_grantee=$(echo "$second_grant" | jq -r ".Grantee" 2>&1) || fail "error getting second grantee: $second_grantee"
@@ -1060,6 +1067,7 @@ EOF
   local governance="GOVERNANCE"
   local days="1"
   put_object_lock_configuration "$bucket_name" "$enabled" "$governance" "$days" || fail "error putting object lock configuration"
+
   get_object_lock_configuration "$bucket_name" || fail "error getting object lock configuration"
   log 5 "LOCK CONFIG: $lock_config"
   object_lock_configuration=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration" 2>&1) || fail "error getting ObjectLockConfiguration: $object_lock_configuration"

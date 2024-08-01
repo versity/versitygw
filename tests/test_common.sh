@@ -424,6 +424,10 @@ test_common_get_bucket_location() {
 }
 
 test_put_bucket_acl_s3cmd() {
+  if [[ $DIRECT != "true" ]]; then
+    # https://github.com/versity/versitygw/issues/695
+    skip
+  fi
   setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
@@ -479,7 +483,7 @@ test_common_put_bucket_acl() {
 
   log 5 "Initial ACLs: $acl"
   id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1) || fail "error getting ID: $id"
-  if [[ $id != "$username" ]]; then
+  if [[ $id != $AWS_ACCESS_KEY_ID ]]; then
     # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
     canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting canonical ID: $canonical_id"
     [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
@@ -509,12 +513,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   log 6 "before 1st put acl"
-  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
-  else
-    put_bucket_acl_s3cmd "$1" "$BUCKET_ONE_NAME" "read" "$username" || fail "error putting first acl"
-  fi
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
@@ -539,12 +538,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
-  else
-    put_bucket_acl_s3cmd "$1" "$BUCKET_ONE_NAME" "full_control" "$username" || fail "error putting first acl"
-  fi
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"
