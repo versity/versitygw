@@ -483,7 +483,7 @@ test_common_put_bucket_acl() {
 
   log 5 "Initial ACLs: $acl"
   id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1) || fail "error getting ID: $id"
-  if [[ $id != $AWS_ACCESS_KEY_ID ]]; then
+  if [[ $id != "$AWS_ACCESS_KEY_ID" ]]; then
     # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
     canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting canonical ID: $canonical_id"
     [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
