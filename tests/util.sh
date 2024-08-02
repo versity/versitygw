@@ -412,35 +412,6 @@ check_and_put_object() {
   return 0
 }
 
-list_buckets_with_user() {
-  if [[ $# -ne 3 ]]; then
-    echo "List buckets command missing format, user id, key"
-    return 1
-  fi
-
-  local exit_code=0
-  local output
-  if [[ $1 == "aws" ]]; then
-    output=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3 ls s3:// 2>&1) || exit_code=$?
-  else
-    echo "invalid format:  $1"
-    return 1
-  fi
-
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing buckets: $output"
-    return 1
-  fi
-
-  bucket_array=()
-  while IFS= read -r line; do
-    bucket_name=$(echo "$line" | awk '{print $NF}')
-    bucket_array+=("${bucket_name%/}")
-  done <<< "$output"
-
-  export bucket_array
-}
-
 remove_insecure_request_warning() {
   if [[ $# -ne 1 ]]; then
     echo "remove insecure request warning requires input lines"

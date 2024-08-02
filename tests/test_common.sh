@@ -17,6 +17,7 @@ source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
+source ./tests/commands/put_public_access_block.sh
 
 test_common_multipart_upload() {
   if [[ $# -ne 1 ]]; then
@@ -422,6 +423,54 @@ test_common_get_bucket_location() {
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
 }
 
+test_put_bucket_acl_s3cmd() {
+  if [[ $DIRECT != "true" ]]; then
+    # https://github.com/versity/versitygw/issues/695
+    skip
+  fi
+  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
+
+  username="abcdefgh"
+  if [[ $DIRECT != "true" ]]; then
+    setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
+  fi
+  sleep 5
+
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+  log 5 "Initial ACLs: $acl"
+  acl_line=$(echo "$acl" | grep "ACL")
+  user_id=$(echo "$acl_line" | awk '{print $2}')
+  if [[ $DIRECT == "true" ]]; then
+    [[ $user_id == "$DIRECT_DISPLAY_NAME:" ]] || fail "ID mismatch ($user_id, $DIRECT_DISPLAY_NAME)"
+  else
+    [[ $user_id == "$AWS_ACCESS_KEY_ID:" ]] || fail "ID mismatch ($user_id, $AWS_ACCESS_KEY_ID)"
+  fi
+  permission=$(echo "$acl_line" | awk '{print $3}')
+  [[ $permission == "FULL_CONTROL" ]] || fail "Permission mismatch ($permission)"
+
+  if [[ $DIRECT == "true" ]]; then
+    put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME" || fail "error enabling public ACLs"
+  fi
+  put_bucket_canned_acl_s3cmd "$BUCKET_ONE_NAME" "--acl-public" || fail "error putting canned s3cmd ACL"
+
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+  log 5 "ACL after read put: $acl"
+  acl_lines=$(echo "$acl" | grep "ACL")
+  log 5 "ACL lines:  $acl_lines"
+  while IFS= read -r line; do
+    lines+=("$line")
+  done <<< "$acl_lines"
+  log 5 "lines: ${lines[*]}"
+  [[ ${#lines[@]} -eq 2 ]] || fail "unexpected number of ACL lines: ${#lines[@]}"
+  anon_name=$(echo "${lines[1]}" | awk '{print $2}')
+  anon_permission=$(echo "${lines[1]}" | awk '{print $3}')
+  [[ $anon_name == "*anon*:" ]] || fail "unexpected anon name: $anon_name"
+  [[ $anon_permission == "READ" ]] || fail "unexpected anon permission: $anon_permission"
+
+  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
+}
+
 test_common_put_bucket_acl() {
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
   setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
@@ -434,23 +483,26 @@ test_common_put_bucket_acl() {
 
   log 5 "Initial ACLs: $acl"
   id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1) || fail "error getting ID: $id"
-  if [[ $id != "$username" ]]; then
+  if [[ $id != "$AWS_ACCESS_KEY_ID" ]]; then
     # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
-    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting caononical ID: $canonical_id"
-    [[ $id == "$AWS_ACCESS_KEY_ID" ]] || fail "acl ID doesn't match AWS key or canonical ID"
+    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting canonical ID: $canonical_id"
+    [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
   fi
 
   acl_file="test-acl"
   create_test_files "$acl_file"
 
+  if [[ $DIRECT == "true" ]]; then
+    grantee="{\"Type\": \"Group\", \"URI\": \"http://acs.amazonaws.com/groups/global/AllUsers\"}"
+  else
+    grantee="{\"ID\": \"$username\", \"Type\": \"CanonicalUser\"}"
+  fi
+
 cat <<EOF > "$test_file_folder"/"$acl_file"
   {
     "Grants": [
       {
-        "Grantee": {
-          "ID": "$username",
-          "Type": "CanonicalUser"
-        },
+        "Grantee": $grantee,
         "Permission": "READ"
       }
     ],
@@ -461,12 +513,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   log 6 "before 1st put acl"
-  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
-  else
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$username" || fail "error putting first acl"
-  fi
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
@@ -491,8 +538,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"

@@ -29,6 +29,7 @@ source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/put_object_retention.sh
+source ./tests/commands/put_public_access_block.sh
 source ./tests/commands/select_object_content.sh
 
 export RUN_USERS=true
@@ -988,6 +989,74 @@ EOF
   delete_test_files "$policy_file" "$test_file"
 }
 
+@test "test_policy_put_acl" {
+  if [[ $DIRECT != "true" ]]; then
+    # https://github.com/versity/versitygw/issues/702
+    skip
+  fi
+
+  policy_file="policy_file"
+  test_file="test_file"
+  username="ABCDEFG"
+  password="HIJLKMN"
+
+  create_test_files "$policy_file" || fail "error creating policy file"
+  create_large_file "$test_file" || fail "error creating large file"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+
+  put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
+
+  if [[ $DIRECT == "true" ]]; then
+    setup_user_direct "$username" "user" "$BUCKET_ONE_NAME" || fail "error setting up direct user $username"
+    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$username\"}"
+    # shellcheck disable=SC2154
+    username=$key_id
+    # shellcheck disable=SC2154
+    password=$secret_key
+  else
+    password="HIJLKMN"
+    setup_user "$username" "$password" "user" || fail "error setting up user $username"
+    principal="\"$username\""
+  fi
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": $principal,
+      "Action": "s3:PutBucketAcl",
+      "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME"
+    }
+  ]
+}
+EOF
+  if [[ $DIRECT == "true" ]]; then
+    put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME" || fail "error enabling public ACLs"
+  fi
+
+  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file" || fail "error putting policy"
+  put_bucket_canned_acl_with_user "$BUCKET_ONE_NAME" "public-read" "$username" "$password" || fail "error putting canned acl"
+
+  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket acl"
+  # shellcheck disable=SC2154
+  log 5 "ACL: $acl"
+  second_grant=$(echo "$acl" | jq -r ".Grants[1]" 2>&1) || fail "error getting second grant: $second_grant"
+  second_grantee=$(echo "$second_grant" | jq -r ".Grantee" 2>&1) || fail "error getting second grantee: $second_grantee"
+  permission=$(echo "$second_grant" | jq -r ".Permission" 2>&1) || fail "error getting permission: $permission"
+  log 5 "second grantee: $second_grantee"
+  [[ $permission == "READ" ]] || fail "incorrect permission: $permission"
+  if [[ $DIRECT == "true" ]]; then
+    uri=$(echo "$second_grantee" | jq -r ".URI" 2>&1) || fail "error getting uri: $uri"
+    [[ $uri == "http://acs.amazonaws.com/groups/global/AllUsers" ]] || fail "unexpected URI: $uri"
+  else
+    id=$(echo "$second_grantee" | jq -r ".ID" 2>&1) || fail "error getting ID: $id"
+    [[ $id == "$username" ]] || fail "unexpected ID: $id"
+  fi
+  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+}
+
 @test "test_put_object_lock_configuration" {
   bucket_name=$BUCKET_ONE_NAME
   if [[ $RECREATE_BUCKETS == "true" ]]; then
@@ -998,6 +1067,7 @@ EOF
   local governance="GOVERNANCE"
   local days="1"
   put_object_lock_configuration "$bucket_name" "$enabled" "$governance" "$days" || fail "error putting object lock configuration"
+
   get_object_lock_configuration "$bucket_name" || fail "error getting object lock configuration"
   log 5 "LOCK CONFIG: $lock_config"
   object_lock_configuration=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration" 2>&1) || fail "error getting ObjectLockConfiguration: $object_lock_configuration"
