@@ -111,6 +111,11 @@ list_and_delete_objects() {
     log 2 "error getting object list"
     return 1
   fi
+  if [[ $LOG_LEVEL_INT -ge 5 ]]; then
+    get_bucket_policy "s3api" "$1" || fail "error getting bucket policy"
+    # shellcheck disable=SC2154
+    log 5 "BUCKET POLICY: $bucket_policy"
+  fi
   # shellcheck disable=SC2154
   log 5 "objects: ${object_array[*]}"
   for object in "${object_array[@]}"; do
@@ -368,6 +373,25 @@ abort_all_multipart_uploads() {
 get_object_ownership_rule_and_update_acl() {
   if [ $# -ne 1 ]; then
     log 2 "'get_object_ownership_rule_and_update_acl' requires bucket name"
+    return 1
+  fi
+  if ! get_object_ownership_rule "$1"; then
+    log 2 "error getting object ownership rule"
+    return 1
+  fi
+  log 5 "object ownership rule: $object_ownership_rule"
+  if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$1" "private"; then
+    log 2 "error resetting bucket ACLs"
+    return 1
+  fi
+}
+
+# params:  client, bucket name
+# fail if error
+delete_bucket_or_contents() {
+  log 6 "delete_bucket_or_contents"
+  if [ $# -ne 2 ]; then
+    log 2 "'delete_bucket_or_contents' command requires client, bucket"
     return 1
   fi
   if ! get_object_ownership_rule "$1"; then
