@@ -431,7 +431,7 @@ test_put_bucket_acl_s3cmd() {
   setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
-  username="abcdefgh"
+  username=$USERNAME_ONE
   if [[ $DIRECT != "true" ]]; then
     setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
   fi
@@ -472,11 +472,15 @@ test_put_bucket_acl_s3cmd() {
 }
 
 test_common_put_bucket_acl() {
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    # https://github.com/versity/versitygw/issues/716
+    skip
+  fi
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
   setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
-  username="ABCDEFG"
+  username=$USERNAME_ONE
   setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving acl"

@@ -103,6 +103,8 @@ jobs:
         run: |
           git clone https://github.com/bats-core/bats-core.git
           cd bats-core && ./install.sh $HOME
+          git clone https://github.com/bats-core/bats-support.git ${{ github.workspace }}/tests/bats-support
+          git clone https://github.com/ztombol/bats-assert.git ${{ github.workspace }}/tests/bats-assert
 
       - name: Install s3cmd
         run: |
@@ -135,6 +137,10 @@ jobs:
           MC_ALIAS: versity
           LOG_LEVEL: 4
           GOCOVERDIR: ${{ github.workspace }}/cover
+          USERNAME_ONE: ABCDEFG
+          PASSWORD_ONE: 1234567
+          USERNAME_TWO: HIJKLMN
+          PASSWORD_TWO: 8901234
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST

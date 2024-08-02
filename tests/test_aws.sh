@@ -1,5 +1,8 @@
 #!/usr/bin/env bats
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/setup.sh
 source ./tests/util.sh
 source ./tests/util_aws.sh
@@ -351,14 +354,9 @@ EOF
 }
 
 @test "test_policy_get_object_with_user" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
   test_file="test_file"
 
   create_test_files "$test_file" "$policy_file" || fail "error creating policy file"
@@ -393,16 +391,11 @@ EOF
 }
 
 @test "test_policy_get_object_specific_file" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file"
   test_file="test_file"
   test_file_two="test_file_two"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" "$test_file" "$test_file_two" || fail "error creating policy file"
   echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file"
@@ -432,16 +425,11 @@ EOF
 }
 
 @test "test_policy_get_object_file_wildcard" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file_one"
   policy_file_two="policy_file_two"
   policy_file_three="policy_fil"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" "$policy_file_two" "$policy_file_three" || fail "error creating policy file"
   echo "$BATS_TEST_NAME" >> "$test_file_folder/$policy_file"
@@ -471,16 +459,11 @@ EOF
 }
 
 @test "test_policy_get_object_folder_wildcard" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file"
   test_folder="test_folder"
   test_file="test_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_folder "$test_folder" || fail "error creating test folder"
   create_test_files "$test_folder/$test_file" "$policy_file" || fail "error creating policy file, test file"
@@ -507,8 +490,8 @@ EOF
 @test "test_policy_allow_deny" {
   policy_file="policy_file"
   test_file="test_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" "$test_file" || fail "error creating policy file"
 
@@ -550,16 +533,11 @@ EOF
 }
 
 @test "test_policy_deny" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file"
   test_file_one="test_file_one"
   test_file_two="test_file_two"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$test_file_one" "$test_file_two" "$policy_file" || fail "error creating policy file, test file"
 
@@ -599,16 +577,11 @@ EOF
 }
 
 @test "test_policy_put_wildcard" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
-
   policy_file="policy_file"
   test_folder="test_folder"
   test_file="test_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_folder "$test_folder" || fail "error creating test folder"
   create_test_files "$test_folder/$test_file" "$policy_file" || fail "error creating policy file, test file"
@@ -640,15 +613,11 @@ EOF
 }
 
 @test "test_policy_delete" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
   test_file_one="test_file_one"
   test_file_two="test_file_two"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$test_file_one" "$test_file_two" "$policy_file" || fail "error creating policy file, test files"
   echo "$BATS_TEST_NAME" >> "$test_file_folder/$test_file_one"
@@ -678,13 +647,9 @@ EOF
 }
 
 @test "test_policy_get_bucket_policy" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file, test files"
 
@@ -713,14 +678,10 @@ EOF
 }
 
 @test "test_policy_list_multipart_uploads" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
   test_file="test_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file, test files"
   create_large_file "$test_file" || error creating file "$test_file"
@@ -729,14 +690,19 @@ EOF
   principal="$username"
   action="s3:ListBucketMultipartUploads"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-
   setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
-  setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
-  create_multipart_upload "$BUCKET_ONE_NAME" "$test_file" || fail "error creating multipart upload"
+  get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket policy"
+  log 5 "BUCKET POLICY: $bucket_policy"
+  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket ACL"
+  log 5 "ACL: $acl"
+  run setup_policy_with_single_statement "$test_file_folder/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  assert_success "failed to set up policy"
+  run create_multipart_upload "$BUCKET_ONE_NAME" "$test_file"
+  assert_success "failed to create multipart upload"
   if list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
-    log 2 "able to list multipart uploads despite lack of permissions"
+    fail "able to list multipart uploads despite lack of permissions"
   fi
   # shellcheck disable=SC2154
   [[ "$list_multipart_uploads_error" == *"Access Denied"* ]] || fail "invalid list multipart uploads error: $list_multipart_uploads_error"
@@ -750,14 +716,10 @@ EOF
 }
 
 @test "test_policy_put_bucket_policy" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
   policy_file_two="policy_file_two"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file, test files"
 
@@ -788,13 +750,9 @@ EOF
 }
 
 @test "test_policy_delete_bucket_policy" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file, test files"
 
@@ -817,13 +775,9 @@ EOF
 }
 
 @test "test_policy_get_bucket_acl" {
-  # TODO (https://github.com/versity/versitygw/issues/637)
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    return 0
-  fi
   policy_file="policy_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file, test files"
 
@@ -835,7 +789,6 @@ EOF
   setup_user "$username" "$password" "user" || fail "error creating user"
 
   setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
-  #put_bucket_canned_acl "$BUCKET_ONE_NAME" "private" || fail "error putting bucket canned ACL"
   if get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
     fail "user able to get bucket ACLs despite permissions"
   fi
@@ -922,7 +875,7 @@ EOF
 @test "test_policy_abort_multipart_upload" {
   policy_file="policy_file"
   test_file="test_file"
-  username="ABCDEFG"
+  username=$USERNAME_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file"
   create_large_file "$test_file" || fail "error creating large file"
@@ -935,7 +888,7 @@ EOF
     # shellcheck disable=SC2154
     password=$secret_key
   else
-    password="HIJLKMN"
+    password=$PASSWORD_ONE
     setup_user "$username" "$password" "user" || fail "error setting up user $username"
     principal="\"$username\""
   fi
@@ -989,16 +942,60 @@ EOF
   delete_test_files "$policy_file" "$test_file"
 }
 
+@test "test_aws_policy_two_principals" {
+  policy_file="policy_file"
+  test_file="test_file"
+
+  create_test_files "$test_file" "$policy_file"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success "error setting up bucket $BUCKET_ONE_NAME"
+  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  assert_success "error setting up user $USERNAME_ONE"
+  run setup_user "$USERNAME_TWO" "$PASSWORD_TWO" "user"
+  assert_success "error setting up user $USERNAME_TWO"
+
+  run put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success "error adding object to bucket"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/copy_one" "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_failure "able to get object with user $USERNAME_ONE despite lack of permission"
+
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/copy_two" "$USERNAME_TWO" "$PASSWORD_TWO"
+  assert_failure "able to get object with user $USERNAME_TWO despite lack of permission"
+
+  cat <<EOF > "$test_file_folder"/$policy_file
+{
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": ["$USERNAME_ONE","$USERNAME_TWO"],
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    }
+  ]
+}
+EOF
+
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"
+  assert_success "error putting policy"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/copy_one" "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success "error getting object with user $USERNAME_ONE"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/copy_two" "$USERNAME_TWO" "$PASSWORD_TWO"
+  assert_success "error getting object with user $USERNAME_TWO"
+
+  delete_test_files "$test_file" "$policy_file" "$test_file_folder/copy_one" "$test_file_folder/copy_two"
+  delete_bucket_or_contents "s3api" "$BUCKET_ONE_NAME"
+}
+
 @test "test_policy_put_acl" {
-  if [[ $DIRECT != "true" ]]; then
+  if [[ $DIRECT != "true" ]] || [[ $RECREATE_BUCKETS == "false" ]]; then
     # https://github.com/versity/versitygw/issues/702
+    # https://github.com/versity/versitygw/issues/716
     skip
   fi
 
   policy_file="policy_file"
   test_file="test_file"
-  username="ABCDEFG"
-  password="HIJLKMN"
+  username=$USERNAME_ONE
 
   create_test_files "$policy_file" || fail "error creating policy file"
   create_large_file "$test_file" || fail "error creating large file"
@@ -1014,7 +1011,7 @@ EOF
     # shellcheck disable=SC2154
     password=$secret_key
   else
-    password="HIJLKMN"
+    password=$PASSWORD_ONE
     setup_user "$username" "$password" "user" || fail "error setting up user $username"
     principal="\"$username\""
   fi

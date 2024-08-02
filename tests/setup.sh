@@ -1,15 +1,13 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 
 source ./tests/env.sh
+source ./tests/report.sh
 source ./tests/setup_mc.sh
 source ./tests/versity.sh
 
 # bats setup function
 setup() {
-  if ! check_env_vars; then
-    log 2 "error checking env values"
-    return 1
-  fi
+  check_env_vars
   if [ "$RUN_VERSITYGW" == "true" ]; then
     if ! run_versity_app; then
       log 2 "error starting versity apps"
@@ -38,17 +36,15 @@ setup() {
     fi
   fi
 
-  export AWS_PROFILE \
-    BUCKET_ONE_NAME \
-    BUCKET_TWO_NAME
+  export AWS_PROFILE
 }
 
 # fail a test
 # param:  error message
-fail() {
-  log 1 "$1"
-  return 1
-}
+#fail() {
+#  log 1 "$1"
+#  exit 1
+#}
 
 # bats teardown function
 teardown() {
