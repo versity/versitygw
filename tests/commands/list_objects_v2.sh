@@ -14,5 +14,4 @@ list_objects_v2() {
     echo "error listing objects: $objects"
     return 1
   fi
-  export objects
 }

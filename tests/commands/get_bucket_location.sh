@@ -20,7 +20,6 @@ get_bucket_location() {
     return 1
   fi
   location=$(echo "$location_json" | jq -r '.LocationConstraint')
-  export location
 }
 
 get_bucket_location_aws() {
@@ -35,7 +34,6 @@ get_bucket_location_aws() {
     return 1
   fi
   bucket_location=$(echo "$location_json" | jq -r '.LocationConstraint')
-  export bucket_location
   return 0
 }
 
@@ -51,7 +49,6 @@ get_bucket_location_s3cmd() {
     return 1
   fi
   bucket_location=$(echo "$info" | grep -o 'Location:.*' | awk '{print $2}')
-  export bucket_location
   return 0
 }
 
@@ -66,7 +63,7 @@ get_bucket_location_mc() {
     echo "error getting s3cmd info: $info"
     return 1
   fi
+  # shellcheck disable=SC2034
   bucket_location=$(echo "$info" | grep -o 'Location:.*' | awk '{print $2}')
-  export bucket_location
   return 0
 }

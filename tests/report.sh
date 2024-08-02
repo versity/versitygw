@@ -42,9 +42,9 @@ record_command() {
       "client")
         client=$(echo "$arg" | awk -F: '{print $2}')
         ;;
-      #"role")
-      #  role=$(echo "$arg" | awk -F: '{print $2}')
-      #  ;;
+      *)
+        log 3 "unrecognized header: $client"
+        ;;
     esac
   done
   if ! error=$(sqlite3 "$COVERAGE_DB" "INSERT INTO entries (command, client, count) VALUES(\"$1\", \"$client\", 1) ON CONFLICT(command, client) DO UPDATE SET count = count + 1" 2>&1); then

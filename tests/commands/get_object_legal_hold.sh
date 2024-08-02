@@ -11,6 +11,5 @@ get_object_legal_hold() {
     log 2 "error getting object legal hold: $legal_hold"
     return 1
   fi
-  export legal_hold
   return 0
 }

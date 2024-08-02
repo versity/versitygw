@@ -14,7 +14,6 @@ get_bucket_ownership_controls() {
 
   log 5 "Raw bucket Ownership Controls:  $raw_bucket_ownership_controls"
   bucket_ownership_controls=$(echo "$raw_bucket_ownership_controls" | grep -v "InsecureRequestWarning")
-  export bucket_ownership_controls
   return 0
 }
 
@@ -32,6 +31,5 @@ get_object_ownership_rule() {
     return 1
   fi
   log 5 "object ownership rule: $object_ownership_rule"
-  export object_ownership_rule
   return 0
 }

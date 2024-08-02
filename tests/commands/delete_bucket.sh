@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-# delete an AWS bucket
 # param:  bucket name
-# return 0 for success, 1 for failure
+# fail if params are bad, or bucket exists and user is unable to delete bucket
 delete_bucket() {
+  log 6 "delete_bucket"
   record_command "delete-bucket" "client:$1"
   if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command type, bucket name"
+    log 2 "'delete_bucket' command requires client, bucket"
     return 1
   fi
 
@@ -15,10 +15,9 @@ delete_bucket() {
     return 1
   fi
 
-  local exit_code=0
-  local error
+  exit_code=0
   if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 rb s3://"$2" 2>&1) || exit_code=$?
+    error=$(aws --no-verify-ssl s3 rb s3://"$2") || exit_code=$?
   elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
     error=$(aws --no-verify-ssl s3api delete-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
@@ -32,10 +31,9 @@ delete_bucket() {
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
-    else
-      log 2 "error deleting bucket: $error"
-      return 1
     fi
+    log 2 "error deleting bucket: $error"
+    return 1
   fi
   return 0
 }

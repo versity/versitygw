@@ -13,39 +13,42 @@ source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_tagging.sh
+source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
+source ./tests/commands/list_multipart_uploads.sh
 source ./tests/commands/list_objects.sh
 source ./tests/commands/list_parts.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_ownership_controls.sh
+source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
+source ./tests/util_users.sh
 
 # recursively delete an AWS bucket
 # param:  bucket name
-# return 0 for success, 1 for failure
+# fail if error
 delete_bucket_recursive() {
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command type, bucket name"
-    return 1
-  fi
+  log 6 "delete_bucket_recursive"
+  assert [ $# -eq 2 ]
 
   local exit_code=0
   local error
   if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
   elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
-    delete_bucket_recursive_s3api "$2" || exit_code="$?"
+    delete_bucket_recursive_s3api "$2"
+    return 0
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
     error=$(delete_bucket_recursive_mc "$2") || exit_code="$?"
   else
     log 2 "invalid command type '$1'"
-    return 1
+    assert [ 1 ]
   fi
 
   if [ $exit_code -ne 0 ]; then
@@ -53,7 +56,7 @@ delete_bucket_recursive() {
       return 0
     else
       log 2 "error deleting bucket recursively: $error"
-      return 1
+      assert [ 1 ]
     fi
   fi
   return 0
@@ -81,100 +84,221 @@ add_governance_bypass_policy() {
   ]
 }
 EOF
-  put_bucket_policy "s3api" "$1" "$test_file_folder/policy-bypass-governance.txt" || fail "error putting bucket policy"
+  if ! put_bucket_policy "s3api" "$1" "$test_file_folder/policy-bypass-governance.txt"; then
+    log 2 "error putting governance bypass policy"
+    return 1
+  fi
 }
 
-clear_bucket_s3api() {
+log_bucket_policy() {
+  assert [ $# -eq 1 ]
+  if ! get_bucket_policy "s3api" "$1"; then
+    log 2 "error getting bucket policy"
+    return
+  fi
+  # shellcheck disable=SC2154
+  log 5 "BUCKET POLICY: $bucket_policy"
+}
+
+# param: bucket name
+# return 0 for success, 1 for failure
+list_and_delete_objects() {
+  if [ $# -ne 1 ]; then
+    log 2 "'list_and_delete_objects' missing bucket name"
+    return 1
+  fi
   if ! list_objects 's3api' "$1"; then
-    log 2 "error listing objects"
+    log 2 "error getting object list"
     return 1
   fi
   # shellcheck disable=SC2154
+  log 5 "objects: ${object_array[*]}"
   for object in "${object_array[@]}"; do
-    if ! delete_object 's3api' "$1" "$object"; then
+    if ! clear_object_in_bucket "$1" "$object"; then
       log 2 "error deleting object $object"
-      if [[ $delete_object_error == *"WORM"* ]]; then
-        log 5 "WORM protection found"
-        if ! put_object_legal_hold "$1" "$object" "OFF"; then
-          log 2 "error removing object legal hold"
-          return 1
-        fi
-        sleep 1
-        if [[ $LOG_LEVEL_INT -ge 5 ]]; then
-          if ! get_object_legal_hold "$1" "$object"; then
-            log 2 "error getting object legal hold status"
-            return 1
-          fi
-          log 5 "LEGAL HOLD: $legal_hold"
-          if ! get_object_retention "$1" "$object"; then
-            log 2 "error getting object retention"
-            if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
-              return 1
-            fi
-          fi
-          log 5 "RETENTION: $retention"
-          get_bucket_policy "s3api" "$1" || fail "error getting bucket policy"
-          log 5 "BUCKET POLICY: $bucket_policy"
-        fi
-        add_governance_bypass_policy "$1" || fail "error adding governance bypass policy"
-        if ! delete_object_bypass_retention "$1" "$object" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
-          log 2 "error deleting object after legal hold removal"
-          return 1
-        fi
-        continue
-      fi
       return 1
     fi
   done
-  delete_bucket_policy "s3api" "$1" || fail "error deleting bucket policy"
-  # TODO uncomment after #716 is fixed
-  #reset_bucket_acl "$1" || fail "error resetting bucket ACLs"
-  put_object_lock_configuration_disabled "$1" || fail "error removing object lock config"
-  #change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID" || fail "error changing bucket owner"
 }
 
-delete_bucket_recursive_s3api() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "delete bucket recursive command for s3api requires bucket name"
+# param: bucket name
+# return 0 for success, 1 for failure
+check_ownership_rule_and_reset_acl() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_ownership_rule_and_reset_acl' requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_ownership_controls "$1"; then
+    log 2 "error getting bucket ownership controls"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! object_ownership_rule=$(echo "$bucket_ownership_controls" | jq -r ".OwnershipControls.Rules[0].ObjectOwnership" 2>&1); then
+    log 2 "error getting object ownership rule: $object_ownership_rule"
+    return 1
+  fi
+  if [[ $object_ownership_rule != "BucketOwnerEnforced" ]] && ! reset_bucket_acl "$1"; then
+    log 2 "error resetting bucket ACL"
+    return 1
+  fi
+}
+
+# param: bucket name
+# return 0 for success, 1 for error
+check_and_disable_object_lock_config() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_and_disable_object_lock_config' requires bucket name"
     return 1
   fi
 
-  clear_bucket_s3api "$1" || fail "error clearing bucket"
-
-  delete_bucket 's3api' "$1" || local delete_bucket_result=$?
-  if [[ $delete_bucket_result -ne 0 ]]; then
-    log 2 "error deleting bucket"
+  local lock_config_exists=true
+  if ! get_object_lock_configuration "$1"; then
+    # shellcheck disable=SC2154
+    if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
+      lock_config_exists=false
+    else
+      log 2 "error getting object lock config"
+      return 1
+    fi
+  fi
+  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
+    log 2 "error disabling object lock config"
     return 1
+  fi
+}
+
+# restore bucket to pre-test state (or prep for deletion)
+# param: bucket name
+# fail on error
+clear_bucket_s3api() {
+  log 6 "clear_bucket_s3api"
+
+  assert [ $# -eq 1 ]
+
+  if [[ $LOG_LEVEL_INT -ge 5 ]]; then
+    run log_bucket_policy "$1"
+    assert_success "error logging bucket policy"
+  fi
+
+  run list_and_delete_objects "$1"
+  assert_success "error listing and delete objects"
+
+  run delete_bucket_policy "s3api" "$1"
+  assert_success "error deleting bucket policy"
+
+  #run check_ownership_rule_and_reset_acl "$1"
+  #assert_success "error checking ownership rule and resetting acl"
+
+  run check_and_disable_object_lock_config "$1"
+  assert_success "error checking and disabling object lock config"
+
+  #if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+  #  log 2 "error changing bucket owner back to root"
+  #  return 1
+  #fi
+}
+
+# params: bucket, object name
+# return 0 for success, 1 for error
+clear_object_in_bucket() {
+  log 6 "clear_object_in_bucket"
+  if [ $# -ne 2 ]; then
+    log 2 "'clear_object_in_bucket' requires bucket, object name"
+    return 1
+  fi
+  if ! delete_object 's3api' "$1" "$2"; then
+    # shellcheck disable=SC2154
+    log 2 "error deleting object $2: $delete_object_error"
+    if ! check_for_and_remove_worm_protection "$1" "$2" "$delete_object_error"; then
+      log 2 "error checking for and removing worm protection if needed"
+      return 1
+    fi
   fi
   return 0
 }
 
-# delete contents of a bucket
-# param:  command type, bucket name
-# return 0 for success, 1 for failure
-delete_bucket_contents() {
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command id, bucket name"
+# params: bucket, object, possible WORM error after deletion attempt
+# return 0 for success, 1 for error
+check_for_and_remove_worm_protection() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_for_and_remove_worm_protection' command requires bucket, object, error"
     return 1
   fi
+
+  if [[ $3 == *"WORM"* ]]; then
+    log 5 "WORM protection found"
+    if ! put_object_legal_hold "$1" "$2" "OFF"; then
+      log 2 "error removing object legal hold"
+      return 1
+    fi
+    sleep 1
+    if [[ $LOG_LEVEL_INT -ge 5 ]]; then
+      log_worm_protection "$1" "$2"
+    fi
+    if ! add_governance_bypass_policy "$1"; then
+      log 2 "error adding new governance bypass policy"
+      return 1
+    fi
+    if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+      log 2 "error deleting object after legal hold removal"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# params: bucket name, object
+log_worm_protection() {
+  if ! get_object_legal_hold "$1" "$2"; then
+    log 2 "error getting object legal hold status"
+    return
+  fi
+  # shellcheck disable=SC2154
+  log 5 "LEGAL HOLD: $legal_hold"
+  if ! get_object_retention "$1" "$2"; then
+    log 2 "error getting object retention"
+    # shellcheck disable=SC2154
+    if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
+      return
+    fi
+  fi
+  # shellcheck disable=SC2154
+  log 5 "RETENTION: $retention"
+}
+
+# params:  bucket name
+# fail if unable to delete bucket
+delete_bucket_recursive_s3api() {
+  log 6 "delete_bucket_recursive_s3api"
+  assert [ $# -eq 1 ]
+
+  clear_bucket_s3api "$1"
+
+  run delete_bucket 's3api' "$1"
+  assert_success "error deleting bucket"
+
+  return 0
+}
+
+# params: client, bucket name
+# fail if error
+delete_bucket_contents() {
+  log 6 "delete_bucket_contents"
+  assert [ $# -eq 2 ]
 
   local exit_code=0
   local error
   if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
-    clear_bucket_s3api "$2" || exit_code="$?"
+    clear_bucket_s3api "$2"
+    return 0
   elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
+    delete_bucket_recursive "s3cmd" "$1"
+    return 0
   elif [[ $1 == "mc" ]]; then
-    error=$(mc --insecure rm --force --recursive "$MC_ALIAS"/"$2" 2>&1) || exit_code="$?"
-  else
-    log 2 "invalid command type $1"
-    return 1
+    delete_bucket_recursive "mc" "$1"
+    return 0
   fi
-  if [ $exit_code -ne 0 ]; then
-    log 2 "error deleting bucket contents: $error"
-    return 1
-  fi
-  return 0
+  assert [ 1 ]
 }
 
 # check if bucket exists
@@ -182,142 +306,153 @@ delete_bucket_contents() {
 # return 0 for true, 1 for false, 2 for error
 bucket_exists() {
   if [ $# -ne 2 ]; then
-    log 2 "bucket exists check missing command type, bucket name"
+    log 2 "bucket_exists command requires client, bucket name"
     return 2
   fi
-
-  if ! head_bucket "$1" "$2"; then
-    # shellcheck disable=SC2154
-    bucket_info=$(echo "$bucket_info" | grep -v "InsecureRequestWarning")
-    log 5 "$bucket_info"
-    if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
-      log 5 "bucket not found"
-      return 1
-    fi
-    log 2 "error checking if bucket exists"
+  local exists=0
+  head_bucket "$1" "$2" || exists=$?
+  # shellcheck disable=SC2181
+  if [ $exists -ne 0 ] && [ $exists -ne 1 ]; then
+    log 2 "unexpected error checking if bucket exists"
     return 2
   fi
-  return 0
+  if [ $exists -eq 0 ]; then
+    return 0
+  fi
+  return 1
 }
 
+# param: bucket name
+# return 0 for success, 1 for error
 abort_all_multipart_uploads() {
-  assert [ $# -eq 1 ]
-  run aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1"
+  if [ $# -ne 1 ]; then
+    log 2 "'abort_all_multipart_uploads' requires bucket name"
+    return 1
+  fi
+  if ! list_multipart_uploads "$1"; then
+    log 2 "error listing multipart uploads"
+    return 1
+  fi
   # shellcheck disable=SC2154
-  assert_success "error listing uploads: $output"
-  log 5 "UPLOADS: $output"
-  if ! upload_set=$(echo "$output" | grep -v "InsecureRequestWarning" | jq -c '.Uploads[]' 2>&1); then
+  log 5 "UPLOADS: $uploads"
+  if ! upload_set=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -c '.Uploads[]' 2>&1); then
     if [[ $upload_set == *"Cannot iterate over null"* ]]; then
       return 0
+    else
+      log 2 "error getting upload set: $upload_set"
+      return 1
     fi
-    fail "error getting upload set: $upload_set"
   fi
   log 5 "UPLOAD SET: $upload_set"
   for upload in $upload_set; do
     log 5 "UPLOAD: $upload"
-    upload_id=$(echo "$upload" | jq -r ".UploadId" 2>&1)
-    assert [ $? -eq 0 ]
+    if ! upload_id=$(echo "$upload" | jq -r ".UploadId" 2>&1); then
+      log 2 "error getting upload ID: $upload_id"
+      return 1
+    fi
     log 5 "upload ID: $upload_id"
-    key=$(echo "$upload" | jq -r ".Key" 2>&1)
-    assert [ $? -eq 0 ]
-    log 5 "Key: $key"
-
+    if ! key=$(echo "$upload" | jq -r ".Key" 2>&1); then
+      log 2 "error getting key: $key"
+      return 1
+    fi
     log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
-    run aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" --key "$key" --upload-id "$upload_id"
-    assert_success "error aborting upload: $output"
+    if ! abort_multipart_upload "$1" "$key" "$upload_id"; then
+      log 2 "error aborting multipart upload"
+      return 1
+    fi
   done
 }
 
-# delete buckets or just the contents depending on RECREATE_BUCKETS parameter
-# params:  command type, bucket name
-# return:  0 for success, 1 for failure
-delete_bucket_or_contents() {
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket or contents function requires command type, bucket name"
+# param: bucket name
+# return 1 for failure, 0 for success
+get_object_ownership_rule_and_update_acl() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_object_ownership_rule_and_update_acl' requires bucket name"
     return 1
   fi
+  if ! get_object_ownership_rule "$1"; then
+    log 2 "error getting object ownership rule"
+    return 1
+  fi
+  log 5 "object ownership rule: $object_ownership_rule"
+  if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$1" "private"; then
+    log 2 "error resetting bucket ACLs"
+    return 1
+  fi
+}
+
+# params:  client, bucket name
+# fail if error
+delete_bucket_or_contents() {
+  log 6 "delete_bucket_or_contents"
+  assert [ $# -eq 2 ]
   if [[ $RECREATE_BUCKETS == "false" ]]; then
-    if ! delete_bucket_contents "$1" "$2"; then
-      log 2 "error deleting bucket contents"
-      return 1
-    fi
-    if ! delete_bucket_policy "$1" "$2"; then
-      log 2 "error deleting bucket policies"
-      return 1
-    fi
-    if ! get_object_ownership_rule "$2"; then
-      log 2 "error getting object ownership rule"
-      return 1
-    fi
-    log 5 "object ownership rule: $object_ownership_rule"
-    if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$2" "private"; then
-      log 2 "error resetting bucket ACLs"
-      return 1
-    fi
+    delete_bucket_contents "$1" "$2"
+
+    run delete_bucket_policy "$1" "$2"
+    assert_success "error deleting bucket policies"
+
+    run get_object_ownership_rule_and_update_acl "$2"
+    assert_success "error getting object ownership rule and updating acl"
+
     run abort_all_multipart_uploads "$2"
     assert_success "error aborting multipart uploads"
+
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
-  if ! delete_bucket_recursive "$1" "$2"; then
-    log 2 "Bucket deletion error"
-    return 1
-  fi
+  run delete_bucket_recursive "$1" "$2"
+  assert_success "error with recursive bucket delete"
   log 5 "bucket deletion success"
   return 0
 }
 
+# params: client, bucket name
+# fail if unable to delete bucket (RECREATE_BUCKETS=true) or contents (RECREATE_BUCKETS=false)
 delete_bucket_or_contents_if_exists() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket creation function requires command type, bucket name"
-    return 1
-  fi
-  local bucket_exists_result
-  bucket_exists "$1" "$2" || local bucket_exists_result=$?
-  if [[ $bucket_exists_result -eq 2 ]]; then
-    log 2 "Bucket existence check error"
-    return 1
-  fi
-  if [[ $bucket_exists_result -eq 0 ]]; then
-    if ! delete_bucket_or_contents "$1" "$2"; then
-      log 2 "error deleting bucket or contents"
-      return 1
-    fi
+  log 6 "delete_bucket_or_contents_if_exists"
+
+  assert [ $# -eq 2 ]
+
+  if bucket_exists "$1" "$2"; then
+    delete_bucket_or_contents "$1" "$2"
     log 5 "bucket and/or bucket data deletion success"
     return 0
   fi
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
-    return 1
+    assert [ 1 ]
   fi
   return 0
 }
 
-# if RECREATE_BUCKETS is set to true create bucket, deleting it if it exists to clear state.  If not,
-# check to see if it exists and return an error if it does not.
-# param:  bucket name
-# return 0 for success, 1 for failure
+# params:  client, bucket name
+# fail if bucket is not properly set up
 setup_bucket() {
+  log 6 "setup_bucket"
+
   assert [ $# -eq 2 ]
+
   if [[ $1 == "s3cmd" ]]; then
     log 5 "putting bucket ownership controls"
-    put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+    if bucket_exists "s3cmd" "$2"; then
+      run put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+      assert_success "error putting bucket ownership controls"
+    fi
   fi
-  if ! delete_bucket_or_contents_if_exists "$1" "$2"; then
-    log 2 "error deleting bucket, or checking for bucket existence"
-    return 1
-  fi
-  local create_result
+
+  delete_bucket_or_contents_if_exists "$1" "$2"
+
   log 5 "util.setup_bucket: command type: $1, bucket name: $2"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if ! create_bucket "$1" "$2"; then
-      log 2 "Error creating bucket"
-      return 1
-    fi
+    run create_bucket "$1" "$2"
+    assert_success "error creating bucket"
     log 5 "bucket creation success"
+
     if [[ $1 == "s3cmd" ]]; then
       log 5 "putting bucket ownership controls"
-      put_bucket_ownership_controls "$2" "BucketOwnerPreferred" || fail "putting bucket ownership controls failed"
+      run put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+      assert_success "error putting bucket ownership controls"
     fi
   else
     log 5 "skipping bucket re-creation"

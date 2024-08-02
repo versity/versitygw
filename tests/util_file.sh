@@ -3,24 +3,47 @@
 source ./tests/logger.sh
 
 # create a test file and export folder.  do so in temp folder
-# params:  filename
-# export test file folder on success, return 1 for error
+# params:  filenames
+# return 0 for success, 1 for failure
 create_test_files() {
-  assert [ $# -gt 0 ]
-  test_file_folder=$PWD
+  log 6 "create_test_files"
+  if [ $# -lt 1 ]; then
+    log 2 "'create_test_files' requires minimum of one file name"
+    return 1
+  fi
+  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
-    create_test_file_folder
+    if ! create_test_file_folder; then
+      log 2 "error creating test file folder"
+      return 1
+    fi
   fi
   for name in "$@"; do
-    if [[ -e "$test_file_folder/$name" ]]; then
-      run rm "$test_file_folder/$name"
-      # shellcheck disable=SC2154
-      assert_success "error removing existing test file: $output"
+    if ! create_test_file "$name"; then
+      log 2 "error creating test file"
+      return 1
     fi
-    run touch "$test_file_folder"/"$name"
-    assert_success "error creating new file: $output"
   done
-  export test_file_folder
+  #export test_file_folder
+  return 0
+}
+
+create_test_file() {
+  if [ $# -ne 1 ]; then
+    log 2 "'create_test_file' requires name"
+    return 1
+  fi
+  if [[ -e "$TEST_FILE_FOLDER/$name" ]]; then
+    if ! error=$(rm "$TEST_FILE_FOLDER/$name" 2>&1); then
+      log 2 "error removing old test file: $error"
+      return 1
+    fi
+  fi
+  if ! error=$(touch "$TEST_FILE_FOLDER/$name"); then
+    log 2 "error creating new test file: $error"
+    return 1
+  fi
+  return 0
 }
 
 create_test_file_with_size() {
@@ -32,7 +55,7 @@ create_test_file_with_size() {
     log 2 "error creating test file"
     return 1
   fi
-  if ! error=$(dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1 count="$2" 2>&1); then
+  if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1 count="$2" 2>&1); then
     log 2 "error writing file data: $error"
     return 1
   fi
@@ -41,19 +64,23 @@ create_test_file_with_size() {
 
 create_test_folder() {
   if [ $# -lt 1 ]; then
-    echo "create test folder command missing folder name"
+    log 2 "'create_test_folder' command requires at least one folder"
     return 1
   fi
-  test_file_folder=$PWD
+  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
-    create_test_file_folder
+    if ! create_test_file_folder; then
+      log 2 "error creating test file folder"
+      return 1
+    fi
   fi
   for name in "$@"; do
-    mkdir -p "$test_file_folder"/"$name" || local mkdir_result=$?
-    if [[ $mkdir_result -ne 0 ]]; then
-      echo "error creating file $name"
+    if ! error=$(run mkdir -p "$TEST_FILE_FOLDER"/"$name" 2>&1); then
+      log 2 "error creating test folder $name: $error"
+      return 1
     fi
   done
+  return 0
 }
 
 # delete a test file
@@ -64,12 +91,12 @@ delete_test_files() {
     echo "delete test files command missing filenames"
     return 1
   fi
-  if [ -z "$test_file_folder" ]; then
+  if [ -z "$TEST_FILE_FOLDER" ]; then
     echo "no test file folder defined, not deleting"
     return 1
   fi
   for name in "$@"; do
-    rm -rf "${test_file_folder:?}"/"${name:?}" || rm_result=$?
+    rm -rf "${TEST_FILE_FOLDER:?}"/"${name:?}" || rm_result=$?
     if [[ $rm_result -ne 0 ]]; then
       echo "error deleting file $name"
     fi
@@ -120,38 +147,41 @@ compare_files() {
   return 1
 }
 
+# return 0 on success, 1 on failure
 create_test_file_folder() {
-  if [[ -n $TMPDIR ]]; then
-    test_file_folder=${TMPDIR}versity-gwtest
-  else
-    test_file_folder=$PWD/versity-gwtest
-  fi
-  if ! error=$(mkdir -p "$test_file_folder" 2>&1); then
+  log 6 "create_test_file_folder"
+  if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
     # shellcheck disable=SC2035
-    run [[ "$error" == *"File exists"* ]]
-    assert_success "error creating test file folder: $error"
+    if [[ "$error" != *"File exists"* ]]; then
+      log 2 "error creating test file folder: $error"
+      return 1
+    fi
   fi
-  export test_file_folder
+  export test_file_folder=$TEST_FILE_FOLDER
+  return 0
 }
 
-# generate 16MB file
+# generate 160MB file
 # input: filename
-# return 0 for success, 1 for error
+# return 0 on success, 1 on failure
 create_large_file() {
-  if [[ $# -ne 1 ]]; then
-    echo "generate large file function requires filename"
+  log 6 "create_large_file"
+  if [ $# -ne 1 ]; then
+    log 2 "'create_large_file' requires filename"
     return 1
   fi
 
-  test_file_folder=$PWD
+  #test_file_folder=$PWD/versity-gwtest-files
   if [[ -z "$GITHUB_ACTIONS" ]]; then
-    create_test_file_folder
+    if ! create_test_file_folder; then
+      log 2 "error creating test file"
+      return 1
+    fi
   fi
 
   filesize=$((160*1024*1024))
-  error=$(dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1024 count=$((filesize/1024))) || dd_result=$?
-  if [[ $dd_result -ne 0 ]]; then
-    echo "error creating file: $error"
+  if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1024 count=$((filesize/1024)) 2>&1); then
+    log 2 "error creating large file: $error"
     return 1
   fi
   return 0
@@ -162,13 +192,13 @@ create_test_file_count() {
     echo "create test file count function missing bucket name, count"
     return 1
   fi
-  test_file_folder=$PWD
+  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     create_test_file_folder
   fi
   local touch_result
   for ((i=1;i<=$1;i++)) {
-    error=$(touch "$test_file_folder/file_$i") || touch_result=$?
+    error=$(touch "$TEST_FILE_FOLDER/file_$i") || touch_result=$?
     if [[ $touch_result -ne 0 ]]; then
       echo "error creating file_$i:  $error"
       return 1
@@ -176,7 +206,7 @@ create_test_file_count() {
   }
   # shellcheck disable=SC2153
   if [[ $LOG_LEVEL -ge 5 ]]; then
-    ls_result=$(ls "$test_file_folder"/file_*)
+    ls_result=$(ls "$TEST_FILE_FOLDER/file_*")
     log 5 "$ls_result"
   fi
   return 0

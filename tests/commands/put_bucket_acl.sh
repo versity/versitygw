@@ -3,13 +3,29 @@
 source ./tests/util_file.sh
 
 put_bucket_acl_s3api() {
-  record_command "put-bucket-acl" "client:$1"
-  if [[ $# -ne 3 ]]; then
-    log 2 "put bucket acl command requires command type, bucket name, acls or username"
+  log 6 "put_bucket_acl_s3api"
+  record_command "put-bucket-acl" "client:s3api"
+  if [[ $# -ne 2 ]]; then
+    log 2 "put bucket acl command requires bucket name, acl file"
     return 1
   fi
-  log 5 "bucket name: $2, acls: $3"
-  if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$2" --access-control-policy "file://$3" 2>&1); then
+  log 5 "bucket name: $1, acls: $2"
+  if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
+    log 2 "error putting bucket acl: $error"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_acl_s3api_with_user() {
+  log 6 "put_bucket_acl_s3api_with_user"
+  record_command "put-bucket-acl" "client:s3api"
+  if [[ $# -ne 4 ]]; then
+    log 2 "put bucket acl command requires bucket name, acl file, username, password"
+    return 1
+  fi
+  log 5 "bucket name: $1, acls: $2"
+  if ! error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
     log 2 "error putting bucket acl: $error"
     return 1
   fi
@@ -17,14 +33,15 @@ put_bucket_acl_s3api() {
 }
 
 reset_bucket_acl() {
-  #if [[ $# -ne 1 ]]; then
-  #  log 2 "'reset_bucket_acl' requires bucket name"
-  #  return 1
-  #fi
-  assert [ $# -eq 1 ]
+  if [ $# -ne 1 ]; then
+    log 2 "'reset_bucket_acl' requires bucket name"
+    return 1
+  fi
   acl_file="acl_file"
-  run create_test_files "$acl_file"
-  assert_success "error creating file"
+  if ! create_test_files "$acl_file"; then
+    log 2 "error creating test files"
+    return 1
+  fi
   # shellcheck disable=SC2154
   cat <<EOF > "$test_file_folder/$acl_file"
 {
@@ -42,9 +59,12 @@ reset_bucket_acl() {
   }
 }
 EOF
-  run put_bucket_acl_s3api "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$acl_file"
-  assert_success "error putting bucket ACL"
+  if ! put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder/$acl_file"; then
+    log 2 "error putting bucket acl (s3api)"
+    return 1
+  fi
   delete_test_files "$acl_file"
+  return 0
 }
 
 put_bucket_canned_acl_s3cmd() {

@@ -28,22 +28,73 @@ check_for_empty_policy() {
   return 0
 }
 
-setup_policy_with_single_statement() {
-  if [[ $# -ne 6 ]]; then
-    "'setup single policy' command requires file, version, effect, principal, action, resource"
+get_modified_principal() {
+  log 6 "get_modified_principal"
+  assert [ $# -eq 1 ]
+  local first_char="${1:0:1}"
+  if [ "$first_char" != '{' ] && [ "$first_char" != '[' ] && [ "$first_char" != '"' ]; then
+    # shellcheck disable=SC2089
+    modified_principal="\"$1\""
+  else
+    modified_principal=$1
   fi
-  cat <<EOF > "$1"
+  export modified_principal
+}
+
+# params:  file, version, effect, principal, action, resource
+# fail on error
+setup_policy_with_single_statement() {
+  log 6 "setup_policy_with_single_statement"
+  assert [ $# -eq 6 ]
+  log 5 "policy file: $1"
+  get_modified_principal "$4"
+  bash -c "cat <<EOF > $1
 {
-  "Version": "$2",
-  "Statement": [
+  \"Version\": \"$2\",
+  \"Statement\": [
     {
-       "Effect": "$3",
-       "Principal": "$4",
-       "Action": "$5",
-       "Resource": "$6"
+       \"Effect\": \"$3\",
+       \"Principal\": $modified_principal,
+       \"Action\": \"$5\",
+       \"Resource\": \"$6\"
     }
   ]
 }
-EOF
-log 5 "$(cat "$1")"
+EOF"
+  # shellcheck disable=SC2154
+  #assert_success "failed to set up policy: $output"
+  log 5 "policy data: $(cat "$1")"
+}
+
+# params:  file, version, two sets:  effect, principal, action, resource
+# fail on error
+setup_policy_with_double_statement() {
+  log 6 "setup_policy_with_double_statement"
+  assert [ $# -eq 10 ]
+  get_modified_principal "$4"
+  principal_one=$modified_principal
+  get_modified_principal "$8"
+  principal_two=$modified_principal
+  run bash -c "cat <<EOF > $1
+{
+  \"Version\": \"$2\",
+  \"Statement\": [
+    {
+       \"Effect\": \"$3\",
+       \"Principal\": $principal_one,
+       \"Action\": \"$5\",
+       \"Resource\": \"$6\"
+    },
+    {
+       \"Effect\": \"$7\",
+       \"Principal\": $principal_two,
+       \"Action\": \"$9\",
+       \"Resource\": \"${10}\"
+    }
+  ]
+}
+EOF"
+  # shellcheck disable=SC2154
+  assert_success "failed to set up policy: $output"
+  log 5 "policy data: $(cat "$1")"
 }

@@ -29,7 +29,7 @@ test_common_multipart_upload() {
   create_large_file "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test file for multipart upload"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
   put_object "$1" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local put_result=$?
@@ -47,11 +47,9 @@ test_common_create_delete_bucket() {
     return
   fi
 
-  if [[ $# -ne 1 ]]; then
-    fail "create/delete bucket test requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "failed to create bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   bucket_exists "$1" "$BUCKET_ONE_NAME" || fail "failed bucket existence check"
 
@@ -66,8 +64,8 @@ test_common_copy_object() {
   create_test_files "$object_name" || fail "error creating test file"
   echo "test data" > "$test_file_folder/$object_name"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket one"
-  setup_bucket "$1" "$BUCKET_TWO_NAME" || fail "error setting up bucket two"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  setup_bucket "$1" "$BUCKET_TWO_NAME"
 
   if [[ $1 == 's3' ]]; then
     copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to copy object to bucket one"
@@ -116,8 +114,7 @@ test_common_put_object() {
     fail "put object test requires command type, file"
   fi
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   put_object "$1" "$test_file_folder/$2" "$BUCKET_ONE_NAME" "$2" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
@@ -143,7 +140,7 @@ test_common_put_get_object() {
   create_test_files "$object_name" || fail "error creating test file"
   echo "test data" > "$test_file_folder"/"$object_name"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   if [[ $1 == 's3' ]]; then
     copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
@@ -164,8 +161,7 @@ test_common_get_set_versioning() {
   create_test_files "$object_name" || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "Error creating test file"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   get_bucket_versioning "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "error getting bucket versioning"
@@ -187,10 +183,8 @@ test_common_list_buckets() {
     fail "List buckets test requires one argument"
   fi
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result_one=$?
-  [[ $setup_result_one -eq 0 ]] || fail "Bucket one setup error"
-  setup_bucket "$1" "$BUCKET_TWO_NAME" || local setup_result_two=$?
-  [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  setup_bucket "$1" "$BUCKET_TWO_NAME"
 
   list_buckets "$1"
   local bucket_one_found=false
@@ -230,8 +224,7 @@ test_common_list_objects() {
   create_test_files $object_one $object_two
   echo "test data" > "$test_file_folder"/"$object_one"
   echo "test data 2" > "$test_file_folder"/"$object_two"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result_one=$?
-  [[ result_one -eq 0 ]] || fail "Error creating bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   put_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME" "$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
   put_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
@@ -265,7 +258,7 @@ test_common_set_get_delete_bucket_tags() {
   local key="test_key"
   local value="test_value"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags first time"
 
@@ -306,7 +299,7 @@ test_common_set_get_object_tags() {
   local value="test_value"
 
   create_test_files "$bucket_file" || fail "error creating test files"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || fail "Error getting object tags"
@@ -345,7 +338,7 @@ test_common_presigned_url_utf8_chars() {
 
   create_test_files "$bucket_file" || local created=$?
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || put_result=$?
@@ -376,7 +369,7 @@ test_common_list_objects_file_count() {
   fi
   create_test_file_count 1001 || local create_result=$?
   [[ $create_result -eq 0 ]] || fail "error creating test files"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
   put_object_multiple "$1" "$test_file_folder/file_*" "$BUCKET_ONE_NAME" || local put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to copy files to bucket"
@@ -398,7 +391,7 @@ test_common_delete_object_tagging() {
 
   create_test_files "$bucket_file" || fail "Error creating test files"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket"
 
@@ -416,8 +409,7 @@ test_common_delete_object_tagging() {
 
 test_common_get_bucket_location() {
   [[ $# -eq 1 ]] || fail "test common get bucket location missing command type"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
   get_bucket_location "$1" "$BUCKET_ONE_NAME"
   # shellcheck disable=SC2154
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
@@ -428,7 +420,7 @@ test_put_bucket_acl_s3cmd() {
     # https://github.com/versity/versitygw/issues/695
     skip
   fi
-  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
   username=$USERNAME_ONE
@@ -477,7 +469,7 @@ test_common_put_bucket_acl() {
     skip
   fi
   [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
-  setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  setup_bucket  "$1" "$BUCKET_ONE_NAME"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
   username=$USERNAME_ONE
@@ -517,7 +509,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   log 6 "before 1st put acl"
-  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
+  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
@@ -542,7 +534,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
+  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"
@@ -587,7 +579,7 @@ test_common_get_put_delete_bucket_policy() {
 EOF
   log 5 "POLICY: $(cat "$test_file_folder/$policy_file")"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME"
 
   check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || fail "policy not empty"
 

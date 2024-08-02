@@ -23,8 +23,8 @@ test_admin_user() {
   fi
   create_user_with_user "$admin_username" "$admin_password" "$user_username" "$user_password" "user" || fail "failed to create user '$user_username'"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
-  delete_bucket "aws" "versity-gwtest-admin-bucket" || fail "error deleting bucket if it exists"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-admin-bucket"
   create_bucket_with_user "aws" "versity-gwtest-admin-bucket" "$admin_username" "$admin_password" || fail "error creating bucket with admin user"
 
   bucket_one_found=false
@@ -46,7 +46,9 @@ test_admin_user() {
   fi
   change_bucket_owner "$admin_username" "$admin_password" "versity-gwtest-admin-bucket" "$user_username" || fail "error changing bucket owner"
 
-  delete_bucket "aws" "versity-gwtest-admin-bucket"
+  run delete_bucket "aws" "versity-gwtest-admin-bucket"
+  assert_success "failed to delete bucket"
+
   delete_user "$user_username"
   delete_user "$admin_username"
 }
@@ -64,7 +66,6 @@ test_create_user_already_exists() {
     fail "'user already exists' error not returned"
   fi
 
-  delete_bucket "aws" "versity-gwtest-admin-bucket"
   delete_user "$username"
 }
 
@@ -77,8 +78,8 @@ test_user_user() {
   password="$PASSWORD_ONE"
 
   setup_user "$username" "$password" "user" || fail "error setting up user"
-  delete_bucket "aws" "versity-gwtest-user-bucket"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket '$BUCKET_ONE_NAME'"
+  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-user-bucket"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   if create_bucket_with_user "aws" "versity-gwtest-user-bucket" "$username" "$password"; then
     fail "creating bucket with 'user' account failed to return error"
@@ -106,7 +107,8 @@ test_user_user() {
     fail "user-owned bucket not found in user list"
   fi
 
-  delete_bucket "aws" "versity-gwtest-user-bucket"
+  run delete_bucket "aws" "versity-gwtest-user-bucket"
+  assert_success "failed to delete bucket"
   delete_user "$username"
 }
 
@@ -118,9 +120,9 @@ test_userplus_operation() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  delete_bucket "aws" "versity-gwtest-userplus-bucket"
+  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-userplus-bucket"
   setup_user "$username" "$password" "userplus" || fail "error creating user '$username'"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error setting up bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   create_bucket_with_user "aws" "versity-gwtest-userplus-bucket" "$username" "$password" || fail "error creating bucket with user '$username'"
 
@@ -141,6 +143,7 @@ test_userplus_operation() {
     fail "userplus shouldn't be able to change bucket owner"
   fi
 
-  delete_bucket "aws" "versity-gwtest-admin-bucket"
+  run delete_bucket "aws" "versity-gwtest-admin-bucket"
+  assert_success "failed to delete bucket"
   delete_user "$username"
 }

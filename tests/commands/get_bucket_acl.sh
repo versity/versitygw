@@ -20,7 +20,6 @@ get_bucket_acl() {
     return 1
   fi
   acl=$(echo "$acl" | grep -v "InsecureRequestWarning")
-  export acl
 }
 
 get_bucket_acl_with_user() {
@@ -33,6 +32,5 @@ get_bucket_acl_with_user() {
     log 2 "error getting bucket ACLs: $bucket_acl"
     return 1
   fi
-  export bucket_acl
   return 0
 }

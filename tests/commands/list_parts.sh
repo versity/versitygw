@@ -10,5 +10,4 @@ list_parts() {
     log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi
-  export listed_parts
 }

@@ -7,11 +7,12 @@ source ./tests/commands/list_parts.sh
 test_abort_multipart_upload_aws_root() {
   local bucket_file="bucket-file"
 
-  create_test_files "$bucket_file" || fail "error creating test files"
+  create_test_files "$bucket_file"
   # shellcheck disable=SC2154
-  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
+  run dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1
+  assert_success "error creating file"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "abort failed"
 
@@ -29,7 +30,7 @@ test_complete_multipart_upload_aws_root() {
   create_test_files "$bucket_file" || fail "error creating test files"
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "error performing multipart upload"
 
@@ -124,7 +125,7 @@ test_delete_objects_aws_root() {
   local object_two="test-file-two"
 
   create_test_files "$object_one" "$object_two" || fail "error creating test files"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
 
   put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || fail "error adding object one"
   put_object "s3api" "$test_file_folder"/"$object_two" "$BUCKET_ONE_NAME" "$object_two" || fail "error adding object two"
@@ -145,7 +146,7 @@ test_get_bucket_acl_aws_root() {
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip
   fi
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error retreving ACL"
 
@@ -163,8 +164,8 @@ test_get_object_full_range_aws_root() {
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
   echo -n "0123456789" > "$test_file_folder/$bucket_file"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
+
   put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
   get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=9-15" "$test_file_folder/$bucket_file-range" || fail "error getting range"
   [[ "$(cat "$test_file_folder/$bucket_file-range")" == "9" ]] || fail "byte range not copied properly"
@@ -175,8 +176,8 @@ test_get_object_invalid_range_aws_root() {
 
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error putting object"
   get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$test_file_folder/$bucket_file-range" || local get_result=$?
   [[ $get_result -ne 0 ]] || fail "Get object with zero range returned no error"
@@ -187,10 +188,9 @@ test_put_object_aws_root() {
 
   create_test_files "$bucket_file" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-  setup_bucket "s3api" "$BUCKET_TWO_NAME" || local setup_result_two=$?
-  [[ $setup_result_two -eq 0 ]] || fail "Bucket two setup error"
+
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  setup_bucket "s3api" "$BUCKET_TWO_NAME"
   put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
   [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
   copy_error=$(aws --no-verify-ssl s3api copy-object --copy-source "$BUCKET_ONE_NAME/$bucket_file" --key "$bucket_file" --bucket "$BUCKET_TWO_NAME" 2>&1) || local copy_result=$?
@@ -221,7 +221,7 @@ test_get_object_attributes_aws_root() {
   bucket_file="bucket_file"
 
   create_test_files "$bucket_file" || fail "error creating test files"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   put_object "s3api" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "failed to add object to bucket"
   get_object_attributes "$BUCKET_ONE_NAME" "$bucket_file" || failed "failed to get object attributes"
   # shellcheck disable=SC2154
@@ -404,7 +404,7 @@ test_s3api_list_objects_v1_aws_root() {
   create_test_files "$object_one" "$object_two" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
   put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local copy_result_one=$?
   [[ $copy_result_one -eq 0 ]] || fail "Failed to add object $object_one"
@@ -434,7 +434,7 @@ test_s3api_list_objects_v2_aws_root() {
   create_test_files "$object_one" "$object_two" || local created=$?
   [[ $created -eq 0 ]] || fail "Error creating test files"
   printf "%s" "$object_two_data" > "$test_file_folder"/"$object_two"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local result=$?
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
   [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
   put_object "s3api" "$test_file_folder"/"$object_one" "$BUCKET_ONE_NAME" "$object_one" || local copy_object_one=$?
   [[ $copy_object_one -eq 0 ]] || fail "Failed to add object $object_one"
@@ -460,7 +460,7 @@ test_multipart_upload_list_parts_aws_root() {
 
   create_test_files "$bucket_file" || fail "error creating test file"
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "failed to create bucket '$BUCKET_ONE_NAME'"
+  setup_bucket "aws" "$BUCKET_ONE_NAME"
 
   start_multipart_upload_and_list_parts "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "listing multipart upload parts failed"
 

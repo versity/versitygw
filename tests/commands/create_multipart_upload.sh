@@ -20,7 +20,6 @@ create_multipart_upload() {
     return 1
   fi
   upload_id="${upload_id//\"/}"
-  export upload_id
   return 0
 }
 
@@ -41,7 +40,6 @@ create_multipart_upload_with_user() {
     return 1
   fi
   upload_id="${upload_id//\"/}"
-  export upload_id
   return 0
 }
 
@@ -66,10 +64,8 @@ create_multipart_upload_params() {
     log 2 "error creating multipart upload with params: $multipart_data"
     return 1
   fi
-  export multipart_data
   upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq '.UploadId')
   upload_id="${upload_id//\"/}"
-  export upload_id
   return 0
 }
 
@@ -91,11 +87,9 @@ create_multipart_upload_custom() {
     log 2 "error creating custom multipart data command: $multipart_data"
     return 1
   fi
-  export multipart_data
   log 5 "multipart data: $multipart_data"
   upload_id=$(echo "$multipart_data" | grep -v "InsecureRequestWarning" | jq '.UploadId')
   upload_id="${upload_id//\"/}"
   log 5 "upload id: $upload_id"
-  export upload_id
   return 0
 }

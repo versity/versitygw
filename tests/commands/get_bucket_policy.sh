@@ -21,7 +21,6 @@ get_bucket_policy() {
     log 2 "error getting policy: $bucket_policy"
     return 1
   fi
-  export bucket_policy
   return 0
 }
 
@@ -44,7 +43,6 @@ get_bucket_policy_aws() {
   else
     bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
   fi
-  export bucket_policy
   return 0
 }
 
@@ -65,7 +63,6 @@ get_bucket_policy_with_user() {
       return 1
     fi
   fi
-  export bucket_policy
   return 0
 }
 
@@ -109,7 +106,6 @@ get_bucket_policy_s3cmd() {
     fi
   done <<< "$info"
   log 5 "bucket policy: $bucket_policy"
-  export bucket_policy
   return 0
 }
 
@@ -124,6 +120,5 @@ get_bucket_policy_mc() {
     echo "error getting policy: $bucket_policy"
     return 1
   fi
-  export bucket_policy
   return 0
 }

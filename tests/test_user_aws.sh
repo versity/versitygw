@@ -37,7 +37,7 @@ export RUN_USERS=true
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
   create_test_files "$test_file" || fail "error creating test files"
 
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
@@ -54,7 +54,7 @@ export RUN_USERS=true
   setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
   create_test_files "$test_file" || fail "error creating test files"
 
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
@@ -71,7 +71,7 @@ export RUN_USERS=true
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
   create_test_files "$test_file" || fail "error creating test files"
 
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
@@ -88,7 +88,7 @@ export RUN_USERS=true
   setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
   create_test_file_with_size "$test_file" 10 || fail "error creating test file"
 
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   put_object_with_user "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "failed to add object to bucket"
   get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object"
   compare_files "$test_file_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files don't match"
@@ -109,7 +109,7 @@ export RUN_USERS=true
 
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
   create_large_file "$test_file" || fail "error creating test file"
-  setup_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "s3api" "$BUCKET_ONE_NAME"
   change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
   create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password" || fail "unable to create multipart upload"
 }

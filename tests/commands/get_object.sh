@@ -59,7 +59,6 @@ get_object_with_user() {
   log 5 "put object exit code: $exit_code"
   if [ $exit_code -ne 0 ]; then
     log 2 "error getting object: $get_object_error"
-    export get_object_error
     return 1
   fi
   return 0
