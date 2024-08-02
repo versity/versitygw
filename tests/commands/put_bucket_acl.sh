@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/util_file.sh
+
 put_bucket_acl_s3api() {
   record_command "put-bucket-acl" "client:$1"
   if [[ $# -ne 3 ]]; then
@@ -12,6 +14,37 @@ put_bucket_acl_s3api() {
     return 1
   fi
   return 0
+}
+
+reset_bucket_acl() {
+  #if [[ $# -ne 1 ]]; then
+  #  log 2 "'reset_bucket_acl' requires bucket name"
+  #  return 1
+  #fi
+  assert [ $# -eq 1 ]
+  acl_file="acl_file"
+  run create_test_files "$acl_file"
+  assert_success "error creating file"
+  # shellcheck disable=SC2154
+  cat <<EOF > "$test_file_folder/$acl_file"
+{
+  "Grants": [
+    {
+      "Grantee": {
+        "ID": "$AWS_ACCESS_KEY_ID",
+        "Type": "CanonicalUser"
+      },
+      "Permission": "FULL_CONTROL"
+    }
+  ],
+  "Owner": {
+    "ID": "$AWS_ACCESS_KEY_ID"
+  }
+}
+EOF
+  run put_bucket_acl_s3api "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$acl_file"
+  assert_success "error putting bucket ACL"
+  delete_test_files "$acl_file"
 }
 
 put_bucket_canned_acl_s3cmd() {
