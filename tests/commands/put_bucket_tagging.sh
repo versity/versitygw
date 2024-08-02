@@ -22,3 +22,14 @@ put_bucket_tagging() {
   fi
   return 0
 }
+
+put_bucket_tagging_with_user() {
+  log 5 "checking for bucket name, key, value, username, password"
+  assert [ $# -eq 5 ]
+  record_command "put-bucket-tagging" "client:$1"
+  if ! error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" aws --no-verify-ssl s3api put-bucket-tagging --bucket "$1" --tagging "TagSet=[{Key=$2,Value=$3}]"); then
+    log 2 "error putting bucket tagging: $error"
+    return 1
+  fi
+  return 0
+}

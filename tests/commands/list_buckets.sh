@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 list_buckets() {
+  log 6 "list_buckets"
   record_command "list-buckets" "client:$1"
   if [ $# -ne 1 ]; then
     echo "list buckets command missing command type"

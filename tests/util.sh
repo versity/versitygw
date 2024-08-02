@@ -28,9 +28,9 @@ source ./tests/commands/upload_part.sh
 # param:  bucket name
 # return 0 for success, 1 for failure
 delete_bucket_recursive() {
+  log 6 "delete_bucket_recursive"
   if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command type, bucket name"
-    return 1
+    fail "delete bucket missing command type, bucket name"
   fi
 
   local exit_code=0
@@ -84,12 +84,13 @@ EOF
   put_bucket_policy "s3api" "$1" "$test_file_folder/policy-bypass-governance.txt" || fail "error putting bucket policy"
 }
 
+# fail if error
 clear_bucket_s3api() {
-  if ! list_objects 's3api' "$1"; then
-    log 2 "error listing objects"
-    return 1
-  fi
+  log 6 "clear_bucket_s3api"
+  assert [ $# -eq 1 ]
+  list_objects 's3api' "$1"
   # shellcheck disable=SC2154
+  log 5 "objects: ${object_array[*]}"
   for object in "${object_array[@]}"; do
     if ! delete_object 's3api' "$1" "$object"; then
       log 2 "error deleting object $object"
@@ -105,15 +106,19 @@ clear_bucket_s3api() {
             log 2 "error getting object legal hold status"
             return 1
           fi
+          # shellcheck disable=SC2154
           log 5 "LEGAL HOLD: $legal_hold"
           if ! get_object_retention "$1" "$object"; then
             log 2 "error getting object retention"
+            # shellcheck disable=SC2154
             if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
               return 1
             fi
           fi
+          # shellcheck disable=SC2154
           log 5 "RETENTION: $retention"
           get_bucket_policy "s3api" "$1" || fail "error getting bucket policy"
+          # shellcheck disable=SC2154
           log 5 "BUCKET POLICY: $bucket_policy"
         fi
         add_governance_bypass_policy "$1" || fail "error adding governance bypass policy"
@@ -133,13 +138,13 @@ clear_bucket_s3api() {
   #change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID" || fail "error changing bucket owner"
 }
 
+# params:  bucket name
+# fail if unable to delete bucket
 delete_bucket_recursive_s3api() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "delete bucket recursive command for s3api requires bucket name"
-    return 1
-  fi
+  log 6 "delete_bucket_recursive_s3api"
+  assert [ $# -eq 1 ]
 
-  clear_bucket_s3api "$1" || fail "error clearing bucket"
+  clear_bucket_s3api "$1"
 
   delete_bucket 's3api' "$1" || local delete_bucket_result=$?
   if [[ $delete_bucket_result -ne 0 ]]; then
@@ -149,19 +154,16 @@ delete_bucket_recursive_s3api() {
   return 0
 }
 
-# delete contents of a bucket
-# param:  command type, bucket name
-# return 0 for success, 1 for failure
+# fail if error
 delete_bucket_contents() {
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command id, bucket name"
-    return 1
-  fi
+  log 6 "delete_bucket_contents"
+  assert [ $# -eq 2 ]
 
   local exit_code=0
   local error
   if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
-    clear_bucket_s3api "$2" || exit_code="$?"
+    clear_bucket_s3api "$2"
+    return 0
   elif [[ $1 == "s3cmd" ]]; then
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate del s3://"$2" --recursive --force 2>&1) || exit_code="$?"
   elif [[ $1 == "mc" ]]; then
@@ -179,25 +181,21 @@ delete_bucket_contents() {
 
 # check if bucket exists
 # param:  bucket name
-# return 0 for true, 1 for false, 2 for error
+# return 0 for true, 1 for false, fail for error
 bucket_exists() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket exists check missing command type, bucket name"
-    return 2
+  if [ $# -eq 2 ]; then
+    fail "bucket_exists command requires client, bucket name"
   fi
-
-  if ! head_bucket "$1" "$2"; then
-    # shellcheck disable=SC2154
-    bucket_info=$(echo "$bucket_info" | grep -v "InsecureRequestWarning")
-    log 5 "$bucket_info"
-    if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
-      log 5 "bucket not found"
-      return 1
-    fi
-    log 2 "error checking if bucket exists"
-    return 2
+  local exists=0
+  head_bucket "$1" "$2" || exists=$?
+  # shellcheck disable=SC2181
+  if [ $exists -ne 0 ] && [ $exists -ne 1 ]; then
+    fail "unexpected error checking if bucket exists"
   fi
-  return 0
+  if [ $exists -eq 0 ]; then
+    return 0
+  fi
+  return 1
 }
 
 abort_all_multipart_uploads() {
@@ -228,14 +226,11 @@ abort_all_multipart_uploads() {
   done
 }
 
-# delete buckets or just the contents depending on RECREATE_BUCKETS parameter
-# params:  command type, bucket name
-# return:  0 for success, 1 for failure
+# params:  client, bucket name
+# fail if error
 delete_bucket_or_contents() {
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket or contents function requires command type, bucket name"
-    return 1
-  fi
+  log 6 "delete_bucket_or_contents"
+  assert [ $# -eq 2 ]
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     if ! delete_bucket_contents "$1" "$2"; then
       log 2 "error deleting bucket contents"
@@ -267,18 +262,14 @@ delete_bucket_or_contents() {
   return 0
 }
 
+# params: client, bucket name
+# fail if unable to delete bucket (RECREATE_BUCKETS=true) or contents (RECREATE_BUCKETS=false)
 delete_bucket_or_contents_if_exists() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket creation function requires command type, bucket name"
-    return 1
-  fi
-  local bucket_exists_result
-  bucket_exists "$1" "$2" || local bucket_exists_result=$?
-  if [[ $bucket_exists_result -eq 2 ]]; then
-    log 2 "Bucket existence check error"
-    return 1
-  fi
-  if [[ $bucket_exists_result -eq 0 ]]; then
+  log 6 "delete_bucket_or_contents_if_exists"
+  assert [ $# -eq 2 ]
+  run bucket_exists "$1" "$2"
+  # shellcheck disable=SC2181
+  if [[ $? -eq 0 ]]; then
     if ! delete_bucket_or_contents "$1" "$2"; then
       log 2 "error deleting bucket or contents"
       return 1
@@ -293,20 +284,20 @@ delete_bucket_or_contents_if_exists() {
   return 0
 }
 
-# if RECREATE_BUCKETS is set to true create bucket, deleting it if it exists to clear state.  If not,
-# check to see if it exists and return an error if it does not.
-# param:  bucket name
-# return 0 for success, 1 for failure
+# params:  client, bucket name
+# fail if bucket is not properly set up
 setup_bucket() {
+  log 6 "setup_bucket"
   assert [ $# -eq 2 ]
   if [[ $1 == "s3cmd" ]]; then
     log 5 "putting bucket ownership controls"
-    put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+    bucket_exists "s3cmd" "$2"
+    # shellcheck disable=SC2181
+    if [ $? -eq 0 ]; then
+      put_bucket_ownership_controls "$2" "BucketOwnerPreferred"
+    fi
   fi
-  if ! delete_bucket_or_contents_if_exists "$1" "$2"; then
-    log 2 "error deleting bucket, or checking for bucket existence"
-    return 1
-  fi
+  delete_bucket_or_contents_if_exists "$1" "$2"
   local create_result
   log 5 "util.setup_bucket: command type: $1, bucket name: $2"
   if [[ $RECREATE_BUCKETS == "true" ]]; then

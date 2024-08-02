@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
+# params:  client, bucket, key
 delete_object() {
+  log 6 "delete_object"
   record_command "delete-object" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "delete object command requires command type, bucket, key"

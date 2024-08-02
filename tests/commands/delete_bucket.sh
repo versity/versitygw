@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
 
-# delete an AWS bucket
 # param:  bucket name
-# return 0 for success, 1 for failure
+# fail if params are bad, or bucket exists and user is unable to delete bucket
 delete_bucket() {
+  log 6 "delete_bucket"
   record_command "delete-bucket" "client:$1"
-  if [ $# -ne 2 ]; then
-    log 2 "delete bucket missing command type, bucket name"
-    return 1
-  fi
+  assert [ $# -eq 2 ]
 
   if [[ ( $RECREATE_BUCKETS == "false" ) && (( "$2" == "$BUCKET_ONE_NAME" ) || ( "$2" == "$BUCKET_TWO_NAME" )) ]]; then
-    log 2 "attempt to delete main buckets in static mode"
-    return 1
+    fail "attempt to delete main buckets in static mode"
   fi
 
-  local exit_code=0
-  local error
+  exit_code=0
   if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 rb s3://"$2" 2>&1) || exit_code=$?
+    error=$(aws --no-verify-ssl s3 rb s3://"$2") || exit_code=$?
   elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
     error=$(aws --no-verify-ssl s3api delete-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
@@ -26,16 +21,13 @@ delete_bucket() {
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure rb "$MC_ALIAS/$2" 2>&1) || exit_code=$?
   else
-    log 2 "Invalid command type $1"
-    return 1
+    fail "Invalid command type $1"
   fi
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
       return 0
-    else
-      log 2 "error deleting bucket: $error"
-      return 1
     fi
+    fail "error deleting bucket: $error"
   fi
   return 0
 }

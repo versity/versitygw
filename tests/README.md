@@ -34,7 +34,7 @@
 
 ### Static Bucket Mode
 
-To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.
+To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.  Note that this creates a bucket with object lock enabled, and some tests may fail if the bucket being tested doesn't have object lock enabled.
 
 ### S3 Backend
 

@@ -6,6 +6,7 @@ source ./tests/logger.sh
 # params:  filename
 # export test file folder on success, return 1 for error
 create_test_files() {
+  log 6 "create_test_files"
   assert [ $# -gt 0 ]
   test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
@@ -40,19 +41,14 @@ create_test_file_with_size() {
 }
 
 create_test_folder() {
-  if [ $# -lt 1 ]; then
-    echo "create test folder command missing folder name"
-    return 1
-  fi
+  assert [ $# -ge 1 ]
   test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     create_test_file_folder
   fi
   for name in "$@"; do
-    mkdir -p "$test_file_folder"/"$name" || local mkdir_result=$?
-    if [[ $mkdir_result -ne 0 ]]; then
-      echo "error creating file $name"
-    fi
+    run mkdir -p "$test_file_folder"/"$name"
+    assert_success "error creating file $name: $output"
   done
 }
 
@@ -120,7 +116,9 @@ compare_files() {
   return 1
 }
 
+# fail if error creating folder
 create_test_file_folder() {
+  log 6 "create_test_file_folder"
   if [[ -n $TMPDIR ]]; then
     test_file_folder=${TMPDIR}versity-gwtest
   else
@@ -134,14 +132,12 @@ create_test_file_folder() {
   export test_file_folder
 }
 
-# generate 16MB file
+# generate 160MB file
 # input: filename
-# return 0 for success, 1 for error
+# fail if error creating file
 create_large_file() {
-  if [[ $# -ne 1 ]]; then
-    echo "generate large file function requires filename"
-    return 1
-  fi
+  log 6 "create_large_file"
+  assert [ $# -eq 1 ]
 
   test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
@@ -149,12 +145,8 @@ create_large_file() {
   fi
 
   filesize=$((160*1024*1024))
-  error=$(dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1024 count=$((filesize/1024))) || dd_result=$?
-  if [[ $dd_result -ne 0 ]]; then
-    echo "error creating file: $error"
-    return 1
-  fi
-  return 0
+  run dd if=/dev/urandom of="$test_file_folder"/"$1" bs=1024 count=$((filesize/1024))
+  assert_success "error creating file: $output"
 }
 
 create_test_file_count() {

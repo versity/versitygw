@@ -47,9 +47,7 @@ test_common_create_delete_bucket() {
     return
   fi
 
-  if [[ $# -ne 1 ]]; then
-    fail "create/delete bucket test requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "failed to create bucket"
 

@@ -7,9 +7,10 @@ source ./tests/commands/list_parts.sh
 test_abort_multipart_upload_aws_root() {
   local bucket_file="bucket-file"
 
-  create_test_files "$bucket_file" || fail "error creating test files"
+  create_test_files "$bucket_file"
   # shellcheck disable=SC2154
-  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
+  run dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1
+  assert_success "error creating file"
 
   setup_bucket "aws" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
 

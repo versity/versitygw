@@ -1,33 +1,26 @@
 #!/usr/bin/env bash
 
+# args: client, bucket name
+# fail if unable to list
 list_objects() {
+  log 6 "list_objects"
   record_command "list-objects" "client:$1"
-  if [ $# -ne 2 ]; then
-    echo "list objects command requires command type, and bucket or folder"
-    return 1
-  fi
-  local exit_code=0
-  local output
-  if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
-    output=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3api' ]]; then
-    list_objects_s3api "$2" || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    output=$(mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
-  else
-    echo "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    echo "error listing objects: $output"
-    return 1
-  fi
+  assert [ $# -eq 2 ]
 
-  if [[ $1 == 's3api' ]]; then
+  if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
+    run aws --no-verify-ssl s3 ls s3://"$2"
+  elif [[ $1 == 's3api' ]]; then
+    list_objects_s3api "$2"
     return 0
+  elif [[ $1 == 's3cmd' ]]; then
+    run s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2"
+  elif [[ $1 == 'mc' ]]; then
+    run mc --insecure ls "$MC_ALIAS"/"$2"
+  else
+    fail "invalid command type $1"
   fi
+  # shellcheck disable=SC2154
+  assert_success "error listing objects: $output"
 
   object_array=()
   while IFS= read -r line; do
@@ -40,17 +33,15 @@ list_objects() {
   export object_array
 }
 
+# args: bucket name
+# fail if unable to list
 list_objects_s3api() {
-  if [[ $# -ne 1 ]]; then
-    echo "list objects s3api command requires bucket name"
-    return 1
-  fi
-  output=$(aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1) || local exit_code=$?
-  if [[ $exit_code -ne 0 ]]; then
-    echo "error listing objects: $output"
-    return 1
-  fi
+  log 6 "list_objects_s3api"
+  assert [ $# -eq 1 ]
+  run aws --no-verify-ssl s3api list-objects --bucket "$1"
+  assert_success "error listing objects: $output"
 
+  log 5 "list_objects_s3api: raw data returned: $output"
   modified_output=""
   while IFS= read -r line; do
     if [[ $line != *InsecureRequestWarning* ]]; then
