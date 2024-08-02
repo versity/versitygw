@@ -2954,6 +2954,8 @@ func HeadObject_mp_success(s *S3Conf) error {
 	})
 }
 
+const defaultContentType = "binary/octet-stream"
+
 func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2991,6 +2993,9 @@ func HeadObject_success(s *S3Conf) error {
 		}
 		if contentLength != dataLen {
 			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
+		}
+		if *out.ContentType != defaultContentType {
+			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
 		}
 
 		return nil
@@ -3375,6 +3380,9 @@ func GetObject_success(s *S3Conf) error {
 		}
 		if *out.ContentLength != dataLength {
 			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+		}
+		if *out.ContentType != defaultContentType {
+			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
 		}
 
 		bdy, err := io.ReadAll(out.Body)

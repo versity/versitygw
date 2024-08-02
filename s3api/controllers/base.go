@@ -50,7 +50,8 @@ type S3ApiController struct {
 }
 
 const (
-	iso8601Format = "20060102T150405Z"
+	iso8601Format      = "20060102T150405Z"
+	defaultContentType = "binary/octet-stream"
 )
 
 func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) S3ApiController {
@@ -419,10 +420,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		lastmod = res.LastModified.Format(timefmt)
 	}
 
+	contentType := getstring(res.ContentType)
+	if contentType == "" {
+		contentType = defaultContentType
+	}
+
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Type",
-			Value: getstring(res.ContentType),
+			Value: contentType,
 		},
 		{
 			Key:   "Content-Encoding",
@@ -2693,12 +2699,16 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: getstring(res.ContentEncoding),
 		})
 	}
-	if res.ContentType != nil {
-		headers = append(headers, utils.CustomHeader{
-			Key:   "Content-Type",
-			Value: getstring(res.ContentType),
-		})
+
+	contentType := getstring(res.ContentType)
+	if contentType == "" {
+		contentType = defaultContentType
 	}
+	headers = append(headers, utils.CustomHeader{
+		Key:   "Content-Type",
+		Value: contentType,
+	})
+
 	utils.SetResponseHeaders(ctx, headers)
 
 	return SendResponse(ctx, nil,
