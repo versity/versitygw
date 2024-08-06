@@ -1523,7 +1523,20 @@ func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) err
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	err = os.Remove(filepath.Join(bucket, object))
+	objpath := filepath.Join(bucket, object)
+
+	fi, err := os.Stat(objpath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	err = os.Remove(objpath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -1629,12 +1642,17 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	object := *input.Key
 	objPath := filepath.Join(bucket, object)
+
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	acceptRange := *input.Range
@@ -1801,12 +1819,16 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	objPath := filepath.Join(bucket, object)
+
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	userMetaData := make(map[string]string)
@@ -1977,9 +1999,12 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	defer f.Close()
 
-	fInfo, err := f.Stat()
+	fi, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(srcObject, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	meta := make(map[string]string)
@@ -2006,7 +2031,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		}
 	}
 
-	contentLength := fInfo.Size()
+	contentLength := fi.Size()
 
 	etag, err := p.PutObject(ctx,
 		&s3.PutObjectInput{
@@ -2020,7 +2045,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, err
 	}
 
-	fi, err := os.Stat(dstObjdPath)
+	fi, err = os.Stat(dstObjdPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat dst object: %w", err)
 	}

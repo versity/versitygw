@@ -142,6 +142,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_invalid_part_number(s)
 	HeadObject_non_existing_mp(s)
 	HeadObject_mp_success(s)
+	HeadObject_non_existing_dir_object(s)
 	HeadObject_success(s)
 }
 
@@ -160,6 +161,7 @@ func TestGetObject(s *S3Conf) {
 	GetObject_success(s)
 	GetObject_by_range_success(s)
 	GetObject_by_range_resp_status(s)
+	GetObject_non_existing_dir_object(s)
 }
 
 func TestListObjects(s *S3Conf) {
@@ -182,6 +184,7 @@ func TestListObjectsV2(s *S3Conf) {
 
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
+	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
 }
@@ -198,6 +201,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_copy_to_itself(s)
 	CopyObject_to_itself_with_new_metadata(s)
 	CopyObject_CopySource_starting_with_slash(s)
+	CopyObject_non_existing_dir_object(s)
 	CopyObject_success(s)
 }
 
@@ -576,6 +580,7 @@ func GetIntTests() IntTests {
 		"HeadObject_invalid_part_number":                                      HeadObject_invalid_part_number,
 		"HeadObject_non_existing_mp":                                          HeadObject_non_existing_mp,
 		"HeadObject_mp_success":                                               HeadObject_mp_success,
+		"HeadObject_non_existing_dir_object":                                  HeadObject_non_existing_dir_object,
 		"HeadObject_success":                                                  HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
@@ -588,6 +593,7 @@ func GetIntTests() IntTests {
 		"GetObject_success":                                                   GetObject_success,
 		"GetObject_by_range_success":                                          GetObject_by_range_success,
 		"GetObject_by_range_resp_status":                                      GetObject_by_range_resp_status,
+		"GetObject_non_existing_dir_object":                                   GetObject_non_existing_dir_object,
 		"ListObjects_non_existing_bucket":                                     ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                             ListObjects_with_prefix,
 		"ListObject_truncated":                                                ListObject_truncated,
@@ -601,6 +607,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_start_after_not_in_list":                               ListObjectsV2_start_after_not_in_list,
 		"ListObjectsV2_start_after_empty_result":                              ListObjectsV2_start_after_empty_result,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
+		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
 		"DeleteObject_success":                                                DeleteObject_success,
 		"DeleteObject_success_status_code":                                    DeleteObject_success_status_code,
 		"DeleteObjects_empty_input":                                           DeleteObjects_empty_input,
@@ -611,6 +618,7 @@ func GetIntTests() IntTests {
 		"CopyObject_copy_to_itself":                                           CopyObject_copy_to_itself,
 		"CopyObject_to_itself_with_new_metadata":                              CopyObject_to_itself_with_new_metadata,
 		"CopyObject_CopySource_starting_with_slash":                           CopyObject_CopySource_starting_with_slash,
+		"CopyObject_non_existing_dir_object":                                  CopyObject_non_existing_dir_object,
 		"CopyObject_success":                                                  CopyObject_success,
 		"PutObjectTagging_non_existing_object":                                PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                          PutObjectTagging_long_tags,

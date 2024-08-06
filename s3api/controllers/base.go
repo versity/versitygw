@@ -92,6 +92,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
+	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
@@ -2379,6 +2383,10 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
+	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -2576,6 +2584,10 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
+	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
 	}
 
 	var partNumber *int32

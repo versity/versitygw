@@ -2954,6 +2954,39 @@ func HeadObject_mp_success(s *S3Conf) error {
 	})
 }
 
+func HeadObject_non_existing_dir_object(s *S3Conf) error {
+	testName := "HeadObject_non_existing_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dataLen := "my-obj", int64(1234567)
+		meta := map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+		}
+
+		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			Metadata: meta,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 const defaultContentType = "binary/octet-stream"
 
 func HeadObject_success(s *S3Conf) error {
@@ -3514,6 +3547,33 @@ func GetObject_by_range_resp_status(s *S3Conf) error {
 	})
 }
 
+func GetObject_non_existing_dir_object(s *S3Conf) error {
+	testName := "GetObject_non_existing_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(1234567), "my-obj"
+
+		_, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func ListObjects_non_existing_bucket(s *S3Conf) error {
 	testName := "ListObjects_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3901,6 +3961,30 @@ func DeleteObject_non_existing_object(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_non_existing_dir_object(s *S3Conf) error {
+	testName := "DeleteObject_non_existing_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_success(s *S3Conf) error {
 	testName := "DeleteObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4277,6 +4361,46 @@ func CopyObject_CopySource_starting_with_slash(s *S3Conf) error {
 
 		if err := teardown(s, dstBucket); err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_non_existing_dir_object(s *S3Conf) error {
+	testName := "CopyObject_non_existing_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(1234567), "my-obj"
+		dstBucket := getBucketName()
+		err := setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj/"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &dstBucket,
+			Key:        &obj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
+			return err
+		}
+
+		err = teardown(s, dstBucket)
+		if err != nil {
+			return nil
 		}
 
 		return nil
