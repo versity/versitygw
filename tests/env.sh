@@ -99,6 +99,7 @@ check_universal_vars() {
   if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" != "false" ]; then
     fail "RUN_VERSITYGW must be 'true' or 'false'"
   fi
+<<<<<<< HEAD
 
   if [ -z "$BUCKET_ONE_NAME" ]; then
     log 1 "BUCKET_ONE_NAME missing"
@@ -113,12 +114,29 @@ check_universal_vars() {
     exit 1
   fi
   if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
+<<<<<<< HEAD
     log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
     exit 1
   fi
   if [ -z "$TEST_FILE_FOLDER" ]; then
     log 1 "TEST_FILE_FOLDER missing"
     exit 1
+=======
+    fail "RECREATE_BUCKETS must be 'true' or 'false'"
+=======
+  if [[ -n "$VERSITY_LOG_FILE" ]]; then
+    export VERSITY_LOG_FILE
+  fi
+  if [[ -n "$DIRECT" ]]; then
+    export DIRECT
+  fi
+  if [[ -n "$DIRECT_DISPLAY_NAME" ]]; then
+    export DIRECT_DISPLAY_NAME
+  fi
+  if [[ -n "$COVERAGE_DB" ]]; then
+    export COVERAGE_DB
+>>>>>>> 95e62d2 (fix: Merge conflicts resolved)
+>>>>>>> 8595c19 (feat: Added integration tests for bucket object versioning. Made a couple of bug fixes in the versioning implementation)
   fi
   # exporting these since they're needed for subshells
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL

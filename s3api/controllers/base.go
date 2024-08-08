@@ -495,6 +495,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	utils.SetMetaHeaders(ctx, res.Metadata)
 	// Set other response headers
 	utils.SetResponseHeaders(ctx, hdrs)
+	// Set version id header
+	if getstring(res.VersionId) != "" {
+		utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+			{
+				Key:   "x-amz-version-id",
+				Value: getstring(res.VersionId),
+			},
+		})
+	}
 
 	status := http.StatusOK
 	if acceptRange != "" {
@@ -2945,6 +2954,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: getstring(res.VersionId),
 		})
 	}
+
 	utils.SetResponseHeaders(ctx, headers)
 
 	return SendResponse(ctx, nil,

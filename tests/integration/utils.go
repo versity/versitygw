@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	rnd "math/rand"
 	"net/http"
 	"net/url"
@@ -70,7 +71,25 @@ func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
 		ObjectOwnership:            cfg.Ownership,
 	})
 	cancel()
-	return err
+	if err != nil {
+		return err
+	}
+
+	if cfg.VersioningEnabled {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: &bucket,
+			VersioningConfiguration: &types.VersioningConfiguration{
+				Status: types.BucketVersioningStatusEnabled,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func teardown(s *S3Conf, bucket string) error {
@@ -90,24 +109,31 @@ func teardown(s *S3Conf, bucket string) error {
 		return nil
 	}
 
-	in := &s3.ListObjectsV2Input{Bucket: &bucket}
+	in := &s3.ListObjectVersionsInput{Bucket: &bucket}
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.ListObjectsV2(ctx, in)
+		out, err := s3client.ListObjectVersions(ctx, in)
 		cancel()
 		if err != nil {
 			return fmt.Errorf("failed to list objects: %w", err)
 		}
 
-		for _, item := range out.Contents {
-			err = deleteObject(&bucket, item.Key, nil)
+		for _, item := range out.Versions {
+			err = deleteObject(&bucket, item.Key, item.VersionId)
+			if err != nil {
+				return err
+			}
+		}
+		for _, item := range out.DeleteMarkers {
+			err = deleteObject(&bucket, item.Key, item.VersionId)
 			if err != nil {
 				return err
 			}
 		}
 
 		if out.IsTruncated != nil && *out.IsTruncated {
-			in.ContinuationToken = out.ContinuationToken
+			in.KeyMarker = out.KeyMarker
+			in.VersionIdMarker = out.NextVersionIdMarker
 		} else {
 			break
 		}
@@ -122,8 +148,9 @@ func teardown(s *S3Conf, bucket string) error {
 }
 
 type setupCfg struct {
-	LockEnabled bool
-	Ownership   types.ObjectOwnership
+	LockEnabled       bool
+	VersioningEnabled bool
+	Ownership         types.ObjectOwnership
 }
 
 type setupOpt func(*setupCfg)
@@ -133,6 +160,9 @@ func withLock() setupOpt {
 }
 func withOwnership(o types.ObjectOwnership) setupOpt {
 	return func(s *setupCfg) { s.Ownership = o }
+}
+func withVersioning() setupOpt {
+	return func(s *setupCfg) { s.VersioningEnabled = true }
 }
 
 func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, opts ...setupOpt) error {
@@ -313,18 +343,31 @@ func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object
 	return contents, nil
 }
 
-func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
-	data = make([]byte, lgth)
+type putObjectOutput struct {
+	csum [32]byte
+	data []byte
+	res  *s3.PutObjectOutput
+}
+
+func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (*putObjectOutput, error) {
+	data := make([]byte, lgth)
 	rand.Read(data)
-	csum = sha256.Sum256(data)
+	csum := sha256.Sum256(data)
 	r := bytes.NewReader(data)
 	input.Body = r
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err = client.PutObject(ctx, input)
+	res, err := client.PutObject(ctx, input)
 	cancel()
+	if err != nil {
+		return nil, err
+	}
 
-	return
+	return &putObjectOutput{
+		csum: csum,
+		data: data,
+		res:  res,
+	}, nil
 }
 
 func createMp(s3client *s3.Client, bucket, key string) (*s3.CreateMultipartUploadOutput, error) {
@@ -522,20 +565,39 @@ func comparePrefixes(list1 []string, list2 []types.CommonPrefix) bool {
 	return true
 }
 
-func compareDelObjects(list1 []string, list2 []types.DeletedObject) bool {
+func compareDelObjects(list1, list2 []types.DeletedObject) bool {
 	if len(list1) != len(list2) {
 		return false
 	}
 
-	elementMap := make(map[string]bool)
-
-	for _, elem := range list1 {
-		elementMap[elem] = true
-	}
-
-	for _, elem := range list2 {
-		if _, found := elementMap[*elem.Key]; !found {
+	for i, obj := range list1 {
+		if *obj.Key != *list2[i].Key {
 			return false
+		}
+
+		if obj.VersionId != nil {
+			if list2[i].VersionId == nil {
+				return false
+			}
+			if *obj.VersionId != *list2[i].VersionId {
+				return false
+			}
+		}
+		if obj.DeleteMarkerVersionId != nil {
+			if list2[i].DeleteMarkerVersionId == nil {
+				return false
+			}
+			if *obj.DeleteMarkerVersionId != *list2[i].DeleteMarkerVersionId {
+				return false
+			}
+		}
+		if obj.DeleteMarker != nil {
+			if list2[i].DeleteMarker == nil {
+				return false
+			}
+			if *obj.DeleteMarker != *list2[i].DeleteMarker {
+				return false
+			}
 		}
 	}
 
@@ -773,4 +835,125 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	}
 
 	return nil
+}
+
+func createObjVersions(client *s3.Client, bucket, object string, count int) ([]types.ObjectVersion, error) {
+	versions := []types.ObjectVersion{}
+	for i := 0; i < count; i++ {
+		rNumber, err := rand.Int(rand.Reader, big.NewInt(100000))
+		dataLength := rNumber.Int64()
+		if err != nil {
+			return nil, err
+		}
+
+		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		}, client)
+		if err != nil {
+			return nil, err
+		}
+
+		isLatest := i == count-1
+
+		versions = append(versions, types.ObjectVersion{
+			ETag:      r.res.ETag,
+			IsLatest:  &isLatest,
+			Key:       &object,
+			Size:      &dataLength,
+			VersionId: r.res.VersionId,
+		})
+	}
+
+	versions = reverseSlice(versions)
+
+	return versions, nil
+}
+
+// ReverseSlice reverses a slice of any type
+func reverseSlice[T any](s []T) []T {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
+}
+
+func compareVersions(v1, v2 []types.ObjectVersion) bool {
+	if len(v1) != len(v2) {
+		return false
+	}
+
+	for i, version := range v1 {
+		if version.Key == nil || v2[i].Key == nil {
+			return false
+		}
+		if *version.Key != *v2[i].Key {
+			return false
+		}
+
+		if version.VersionId == nil || v2[i].VersionId == nil {
+			return false
+		}
+		if *version.VersionId != *v2[i].VersionId {
+			return false
+		}
+
+		if version.IsLatest == nil || v2[i].IsLatest == nil {
+			return false
+		}
+		if *version.IsLatest != *v2[i].IsLatest {
+			return false
+		}
+
+		if version.Size == nil || v2[i].Size == nil {
+			return false
+		}
+		if *version.Size != *v2[i].Size {
+			return false
+		}
+
+		if version.ETag == nil || v2[i].ETag == nil {
+			return false
+		}
+		if *version.ETag != *v2[i].ETag {
+			return false
+		}
+	}
+
+	return true
+}
+
+func compareDelMarkers(d1, d2 []types.DeleteMarkerEntry) bool {
+	if len(d1) != len(d2) {
+		return false
+	}
+
+	for i, dEntry := range d1 {
+		if dEntry.Key == nil || d2[i].Key == nil {
+			return false
+		}
+		if *dEntry.Key != *d2[i].Key {
+			return false
+		}
+
+		if dEntry.IsLatest == nil || d2[i].IsLatest == nil {
+			return false
+		}
+		if *dEntry.IsLatest != *d2[i].IsLatest {
+			return false
+		}
+
+		if dEntry.VersionId == nil || d2[i].VersionId == nil {
+			return false
+		}
+		if *dEntry.VersionId != *d2[i].VersionId {
+			return false
+		}
+	}
+
+	return true
+}
+
+func getBoolPtr(b bool) *bool {
+	return &b
 }
