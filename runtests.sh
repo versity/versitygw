@@ -9,7 +9,7 @@ rm -rf /tmp/versioningdir
 mkdir /tmp/versioningdir
 
 # run server in background
-GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix /tmp/gw --versioning-dir /tmp/versioningdir &
+GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_PID=$!
 
 # wait a second for server to start up

@@ -2206,6 +2206,17 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		}
 	}
 
+	fi, err := os.Stat(objPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if isDir && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
 	err = os.Remove(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -2362,6 +2373,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	if *input.VersionId != "" {
@@ -2570,6 +2585,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	objPath := filepath.Join(bucket, object)
+
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		if *input.VersionId != "" {
@@ -2579,6 +2595,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	if *input.VersionId != "" {
@@ -2804,9 +2823,12 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 	defer f.Close()
 
-	fInfo, err := f.Stat()
+	fi, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(srcObject, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	meta := make(map[string]string)
@@ -2833,7 +2855,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		}
 	}
 
-	contentLength := fInfo.Size()
+	contentLength := fi.Size()
 
 	res, err := p.PutObject(ctx,
 		&s3.PutObjectInput{
@@ -2847,7 +2869,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, err
 	}
 
-	fi, err := os.Stat(dstObjdPath)
+	fi, err = os.Stat(dstObjdPath)
 	if err != nil {
 		return nil, fmt.Errorf("stat dst object: %w", err)
 	}

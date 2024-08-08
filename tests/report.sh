@@ -30,6 +30,7 @@ record_command() {
   check_and_create_database
   log 5 "command to record: $1"
   client=""
+  #role="root"
   for arg in "${@:2}"; do
     log 5 "Argument: $arg"
     if [[ $arg != *":"* ]]; then
@@ -40,6 +41,10 @@ record_command() {
     case $header in
       "client")
         client=$(echo "$arg" | awk -F: '{print $2}')
+        ;;
+      #"role")
+      #  role=$(echo "$arg" | awk -F: '{print $2}')
+      #  ;;
     esac
   done
   if ! error=$(sqlite3 "$COVERAGE_DB" "INSERT INTO entries (command, client, count) VALUES(\"$1\", \"$client\", 1) ON CONFLICT(command, client) DO UPDATE SET count = count + 1" 2>&1); then

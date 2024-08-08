@@ -4,6 +4,7 @@ source ./tests/setup.sh
 source ./tests/util_users.sh
 source ./tests/util.sh
 source ./tests/util_bucket_create.sh
+source ./tests/commands/list_buckets.sh
 
 test_admin_user() {
   if [[ $# -ne 1 ]]; then

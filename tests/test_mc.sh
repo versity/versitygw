@@ -24,7 +24,14 @@ export RUN_MC=true
   test_common_create_delete_bucket "mc"
 }
 
-# delete-bucket - test_create_delete_bucket
+# delete-bucket
+@test "test_delete_bucket" {
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    skip "will not test bucket deletion in static bucket test config"
+  fi
+  setup_bucket "mc" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  delete_bucket "mc" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
+}
 
 # delete-bucket-policy
 @test "test_get_put_delete_bucket_policy" {

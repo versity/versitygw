@@ -6,12 +6,12 @@ source ./tests/report.sh
 # param:  bucket name
 # return 0 for success, 1 for failure
 create_bucket() {
-  record_command "create-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "create bucket missing command type, bucket name"
     return 1
   fi
 
+  record_command "create-bucket" "client:$1"
   local exit_code=0
   local error
   log 6 "create bucket"
@@ -30,6 +30,30 @@ create_bucket() {
   fi
   if [ $exit_code -ne 0 ]; then
     log 2 "error creating bucket: $error"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_with_user() {
+  if [ $# -ne 4 ]; then
+    log 2 "create bucket missing command type, bucket name, access, secret"
+    return 1
+  fi
+  local exit_code=0
+  if [[ $1 == "aws" ]] || [[ $1 == "s3api" ]]; then
+    error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == "s3cmd" ]]; then
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb --access_key="$3" --secret_key="$4" s3://"$2" 2>&1) || exit_code=$?
+  elif [[ $1 == "mc" ]]; then
+    error=$(mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
+  else
+    log 2 "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -ne 0 ]; then
+    log 2 "error creating bucket: $error"
+    export error
     return 1
   fi
   return 0

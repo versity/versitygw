@@ -50,7 +50,8 @@ type S3ApiController struct {
 }
 
 const (
-	iso8601Format = "20060102T150405Z"
+	iso8601Format      = "20060102T150405Z"
+	defaultContentType = "binary/octet-stream"
 )
 
 func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) S3ApiController {
@@ -90,6 +91,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	versionId := ctx.Query("versionId")
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
+	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
@@ -436,10 +441,15 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		lastmod = res.LastModified.Format(timefmt)
 	}
 
+	contentType := getstring(res.ContentType)
+	if contentType == "" {
+		contentType = defaultContentType
+	}
+
 	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 		{
 			Key:   "Content-Type",
-			Value: getstring(res.ContentType),
+			Value: contentType,
 		},
 		{
 			Key:   "Content-Encoding",
@@ -2449,6 +2459,10 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
+	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -2679,6 +2693,10 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	if keyEnd != "" {
 		key = strings.Join([]string{key, keyEnd}, "/")
 	}
+	path := ctx.Path()
+	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
+		key = key + "/"
+	}
 
 	var partNumber *int32
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
@@ -2814,18 +2832,22 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: getstring(res.ContentEncoding),
 		})
 	}
-	if res.ContentType != nil {
-		headers = append(headers, utils.CustomHeader{
-			Key:   "Content-Type",
-			Value: getstring(res.ContentType),
-		})
+
+	contentType := getstring(res.ContentType)
+	if contentType == "" {
+		contentType = defaultContentType
 	}
+	headers = append(headers, utils.CustomHeader{
+		Key:   "Content-Type",
+		Value: contentType,
+	})
 	if getstring(res.VersionId) != "" {
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-version-id",
 			Value: getstring(res.VersionId),
 		})
 	}
+
 	utils.SetResponseHeaders(ctx, headers)
 
 	return SendResponse(ctx, nil,

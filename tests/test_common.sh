@@ -14,7 +14,10 @@ source ./tests/commands/get_object.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/commands/put_bucket_acl.sh
+source ./tests/commands/put_bucket_tagging.sh
+source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
+source ./tests/commands/put_public_access_block.sh
 
 test_common_multipart_upload() {
   if [[ $# -ne 1 ]]; then
@@ -82,6 +85,7 @@ test_common_copy_object() {
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "$1" "$BUCKET_TWO_NAME"
+  delete_test_files "$object_name" "$object_name-copy"
 }
 
 test_common_put_object_with_data() {
@@ -267,7 +271,7 @@ test_common_set_get_delete_bucket_tags() {
 
   check_bucket_tags_empty "$1" "$BUCKET_ONE_NAME" || fail "error checking if bucket tags are empty"
 
-  put_bucket_tag "$1" "$BUCKET_ONE_NAME" $key $value
+  put_bucket_tagging "$1" "$BUCKET_ONE_NAME" $key $value || fail "error putting bucket tags"
   get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags second time"
 
   local tag_set_key
@@ -301,15 +305,11 @@ test_common_set_get_object_tags() {
   local key="test_key"
   local value="test_value"
 
-  create_test_files "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local result=$?
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+  create_test_files "$bucket_file" || fail "error creating test files"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
-  get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || local get_result=$?
-  [[ $get_result -eq 0 ]] || fail "Error getting object tags"
+  get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
     tag_set=$(echo "$tags" | jq '.TagSet')
     [[ $tag_set == "[]" ]] || [[ $tag_set == "" ]] || fail "Error:  tags not empty"
@@ -317,9 +317,8 @@ test_common_set_get_object_tags() {
     fail "no tags found (tags: $tags)"
   fi
 
-  put_object_tag "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value
-  get_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || local get_result_two=$?
-  [[ $get_result_two -eq 0 ]] || fail "Error getting object tags"
+  put_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value || fail "error putting object tagging"
+  get_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error getting object tags"
   if [[ $1 == 'aws' ]]; then
     tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key')
     tag_set_value=$(echo "$tags" | jq -r '.TagSet[0].Value')
@@ -397,26 +396,19 @@ test_common_delete_object_tagging() {
   tag_key="key"
   tag_value="value"
 
-  create_test_files "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test files"
+  create_test_files "$bucket_file" || fail "Error creating test files"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
+  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket"
 
-  put_object_tag "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || put_result=$?
-  [[ $put_result -eq 0 ]] || fail "failed to add tags to object"
+  put_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || fail "failed to add tags to object"
 
-  get_and_verify_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || get_result=$?
-  [[ $get_result -eq 0 ]] || fail "failed to get tags"
+  get_and_verify_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || fail "failed to get tags"
 
-  delete_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || delete_result=$?
-  [[ $delete_result -eq 0 ]] || fail "error deleting object tagging"
+  delete_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" || fail "error deleting object tagging"
 
-  check_object_tags_empty "$1" "$BUCKET_ONE_NAME" "$bucket_file" || get_result=$?
-  [[ $get_result -eq 0 ]] || fail "failed to get tags"
+  check_object_tags_empty "$1" "$BUCKET_ONE_NAME" "$bucket_file" || fail "failed to get tags"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file"
@@ -424,11 +416,59 @@ test_common_delete_object_tagging() {
 
 test_common_get_bucket_location() {
   [[ $# -eq 1 ]] || fail "test common get bucket location missing command type"
-  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
+  setup_bucket "$1" "$BUCKET_ONE_NAME" || local setup_result=$?
   [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
-  get_bucket_location "aws" "$BUCKET_ONE_NAME"
+  get_bucket_location "$1" "$BUCKET_ONE_NAME"
   # shellcheck disable=SC2154
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
+}
+
+test_put_bucket_acl_s3cmd() {
+  if [[ $DIRECT != "true" ]]; then
+    # https://github.com/versity/versitygw/issues/695
+    skip
+  fi
+  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME" || fail "error creating bucket"
+  put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
+
+  username="abcdefgh"
+  if [[ $DIRECT != "true" ]]; then
+    setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
+  fi
+  sleep 5
+
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+  log 5 "Initial ACLs: $acl"
+  acl_line=$(echo "$acl" | grep "ACL")
+  user_id=$(echo "$acl_line" | awk '{print $2}')
+  if [[ $DIRECT == "true" ]]; then
+    [[ $user_id == "$DIRECT_DISPLAY_NAME:" ]] || fail "ID mismatch ($user_id, $DIRECT_DISPLAY_NAME)"
+  else
+    [[ $user_id == "$AWS_ACCESS_KEY_ID:" ]] || fail "ID mismatch ($user_id, $AWS_ACCESS_KEY_ID)"
+  fi
+  permission=$(echo "$acl_line" | awk '{print $3}')
+  [[ $permission == "FULL_CONTROL" ]] || fail "Permission mismatch ($permission)"
+
+  if [[ $DIRECT == "true" ]]; then
+    put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME" || fail "error enabling public ACLs"
+  fi
+  put_bucket_canned_acl_s3cmd "$BUCKET_ONE_NAME" "--acl-public" || fail "error putting canned s3cmd ACL"
+
+  get_bucket_acl "s3cmd" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
+  log 5 "ACL after read put: $acl"
+  acl_lines=$(echo "$acl" | grep "ACL")
+  log 5 "ACL lines:  $acl_lines"
+  while IFS= read -r line; do
+    lines+=("$line")
+  done <<< "$acl_lines"
+  log 5 "lines: ${lines[*]}"
+  [[ ${#lines[@]} -eq 2 ]] || fail "unexpected number of ACL lines: ${#lines[@]}"
+  anon_name=$(echo "${lines[1]}" | awk '{print $2}')
+  anon_permission=$(echo "${lines[1]}" | awk '{print $3}')
+  [[ $anon_name == "*anon*:" ]] || fail "unexpected anon name: $anon_name"
+  [[ $anon_permission == "READ" ]] || fail "unexpected anon permission: $anon_permission"
+
+  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
 }
 
 test_common_put_bucket_acl() {
@@ -436,29 +476,33 @@ test_common_put_bucket_acl() {
   setup_bucket  "$1" "$BUCKET_ONE_NAME" || fail "error creating bucket"
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
-  setup_user "ABCDEFG" "HIJKLMN" "user" || fail "error creating user"
+  username="ABCDEFG"
+  setup_user "$username" "HIJKLMN" "user" || fail "error creating user"
 
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving acl"
 
   log 5 "Initial ACLs: $acl"
-  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq '.Owner.ID' 2>&1) || fail "error getting ID: $id"
-  if [[ $id != '"'"$AWS_ACCESS_KEY_ID"'"' ]]; then
+  id=$(echo "$acl" | grep -v "InsecureRequestWarning" | jq -r '.Owner.ID' 2>&1) || fail "error getting ID: $id"
+  if [[ $id != "$AWS_ACCESS_KEY_ID" ]]; then
     # for direct, ID is canonical user ID rather than AWS_ACCESS_KEY_ID
-    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting caononical ID: $canonical_id"
+    canonical_id=$(aws --no-verify-ssl s3api list-buckets --query 'Owner.ID' 2>&1) || fail "error getting canonical ID: $canonical_id"
     [[ $id == "$canonical_id" ]] || fail "acl ID doesn't match AWS key or canonical ID"
   fi
 
   acl_file="test-acl"
   create_test_files "$acl_file"
 
+  if [[ $DIRECT == "true" ]]; then
+    grantee="{\"Type\": \"Group\", \"URI\": \"http://acs.amazonaws.com/groups/global/AllUsers\"}"
+  else
+    grantee="{\"ID\": \"$username\", \"Type\": \"CanonicalUser\"}"
+  fi
+
 cat <<EOF > "$test_file_folder"/"$acl_file"
   {
     "Grants": [
       {
-        "Grantee": {
-          "ID": "ABCDEFG",
-          "Type": "CanonicalUser"
-        },
+        "Grantee": $grantee,
         "Permission": "READ"
       }
     ],
@@ -469,12 +513,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   log 6 "before 1st put acl"
-  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
-  else
-    put_bucket_acl "$1" "$BUCKET_ONE_NAME" "ABCDEFG" || fail "error putting first acl"
-  fi
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
@@ -487,7 +526,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
     "Grants": [
       {
         "Grantee": {
-          "ID": "ABCDEFG",
+          "ID": "$username",
           "Type": "CanonicalUser"
         },
         "Permission": "FULL_CONTROL"
@@ -499,8 +538,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
-
+  put_bucket_acl_s3api "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"

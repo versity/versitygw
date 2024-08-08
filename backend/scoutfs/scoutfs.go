@@ -487,12 +487,16 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	}
 
 	objPath := filepath.Join(bucket, object)
+
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	userMetaData := make(map[string]string)
@@ -604,12 +608,17 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	objPath := filepath.Join(bucket, object)
+
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	startOffset, length, err := backend.ParseRange(fi.Size(), acceptRange)
@@ -821,11 +830,14 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		if d.IsDir() {
 			// directory object only happens if directory empty
 			// check to see if this is a directory object by checking etag
-			b, err := s.meta.RetrieveAttribute(bucket, path, etagkey)
+			etagBytes, err := s.meta.RetrieveAttribute(bucket, path, etagkey)
+			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
+				return types.Object{}, backend.ErrSkipObj
+			}
 			if err != nil {
 				return types.Object{}, fmt.Errorf("get etag: %w", err)
 			}
-			etag := string(b)
+			etag := string(etagBytes)
 
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
@@ -841,6 +853,7 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 				ETag:         &etag,
 				Key:          &key,
 				LastModified: backend.GetTimePtr(fi.ModTime()),
+				StorageClass: types.ObjectStorageClassStandard,
 			}, nil
 		}
 
@@ -849,9 +862,12 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		if errors.Is(err, fs.ErrNotExist) {
 			return types.Object{}, backend.ErrSkipObj
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return types.Object{}, fmt.Errorf("get etag: %w", err)
 		}
+		// note: meta.ErrNoSuchKey will return etagBytes = []byte{}
+		// so this will just set etag to "" if its not already set
+
 		etag := string(b)
 
 		fi, err := d.Info()
