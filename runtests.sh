@@ -5,9 +5,11 @@ rm -rf /tmp/gw
 mkdir /tmp/gw
 rm -rf /tmp/covdata
 mkdir /tmp/covdata
+rm -rf /tmp/versioningdir
+mkdir /tmp/versioningdir
 
 # run server in background
-GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix /tmp/gw &
+GOCOVERDIR=/tmp/covdata ./versitygw -a user -s pass --iam-dir /tmp/gw posix --versioning-dir /tmp/versioningdir /tmp/gw &
 GW_PID=$!
 
 # wait a second for server to start up
@@ -21,7 +23,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow -vs; then
 	echo "full flow tests failed"
 	kill $GW_PID
 	exit 1

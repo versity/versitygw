@@ -127,6 +127,8 @@ const (
 	ErrBothCannedAndHeaderGrants
 	ErrOwnershipControlsNotFound
 	ErrAclNotSupported
+	ErrInvalidVersionId
+	ErrNoSuchVersion
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -495,6 +497,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessControlListNotSupported",
 		Description:    "The bucket does not allow ACLs",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidVersionId: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid version id specified",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrNoSuchVersion: {
+		Code:           "NoSuchVersion",
+		Description:    "The specified version does not exist.",
+		HTTPStatusCode: http.StatusNotFound,
 	},
 
 	// non aws errors
