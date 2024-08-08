@@ -241,7 +241,7 @@ type ObjVersionFuncResult struct {
 	Truncated           bool
 }
 
-type GetVersionsFunc func(path, versionIdMarker string, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
+type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*ObjVersionFuncResult, error)
 
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
@@ -258,6 +258,8 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 	var nextVersionIdMarker string
 	var truncated bool
 
+	pastVersionIdMarker := versionIdMarker == ""
+
 	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -271,6 +273,15 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		}
 		if contains(d.Name(), skipdirs) {
 			return fs.SkipDir
+		}
+
+		if !pastMarker {
+			if path == keyMarker {
+				pastMarker = true
+			}
+			if path < keyMarker {
+				return nil
+			}
 		}
 
 		if d.IsDir() {
@@ -287,18 +298,23 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				return fs.SkipDir
 			}
 
-			// skip directory objects, as they can't have versions
-			return nil
-		}
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			if err == ErrSkipObj {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("directory to object %q: %w", path, err)
+			}
+			objects = append(objects, res.ObjectVersions...)
+			delMarkers = append(delMarkers, res.DelMarkers...)
+			if res.Truncated {
+				truncated = true
+				nextMarker = path
+				nextVersionIdMarker = res.NextVersionIdMarker
+				return fs.SkipAll
+			}
 
-		if !pastMarker {
-			if path == keyMarker {
-				pastMarker = true
-				return nil
-			}
-			if path < keyMarker {
-				return nil
-			}
+			return nil
 		}
 
 		// If object doesn't have prefix, don't include in results.
@@ -309,7 +325,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if delimiter == "" {
 			// If no delimiter specified, then all files with matching
 			// prefix are included in results
-			res, err := getObj(path, versionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
 			if err == ErrSkipObj {
 				return nil
 			}
@@ -352,7 +368,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
-			res, err := getObj(path, versionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
 			if err == ErrSkipObj {
 				return nil
 			}

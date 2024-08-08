@@ -475,6 +475,14 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			},
 		})
 	}
+	if getstring(res.VersionId) != "" {
+		utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+			{
+				Key:   "x-amz-version-id",
+				Value: getstring(res.VersionId),
+			},
+		})
+	}
 
 	status := http.StatusOK
 	if acceptRange != "" {
