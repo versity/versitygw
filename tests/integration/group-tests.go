@@ -469,6 +469,9 @@ func TestFullFlow(s *S3Conf) {
 	TestGetObjectLegalHold(s)
 	TestWORMProtection(s)
 	TestAccessControl(s)
+	if s.versioningEnabled {
+		TestVersioning(s)
+	}
 }
 
 func TestPosix(s *S3Conf) {
@@ -501,6 +504,34 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_root_PutBucketAcl(s)
 	AccessControl_user_PutBucketAcl_with_policy_access(s)
 	AccessControl_copy_object_with_starting_slash_for_user(s)
+}
+
+func TestVersioning(s *S3Conf) {
+	PutBucketVersioning_non_existing_bucket(s)
+	PutBucketVersioning_invalid_status(s)
+	PutBucketVersioning_success(s)
+	GetBucketVersioning_non_existing_bucket(s)
+	GetBucketVersioning_success(s)
+	Versioning_PutObject_success(s)
+	Versioning_CopyObject_success(s)
+	Versioning_CopyObject_non_existing_version_id(s)
+	Versioning_CopyObject_from_an_object_version(s)
+	Versioning_HeadObject_invalid_versionId(s)
+	Versioning_HeadObject_success(s)
+	Versioning_HeadObject_delete_marker(s)
+	Versioning_GetObject_invalid_versionId(s)
+	Versioning_GetObject_success(s)
+	Versioning_GetObject_delete_marker(s)
+	Versioning_DeleteObject_delete_object_version(s)
+	Versioning_DeleteObject_delete_a_delete_marker(s)
+	Versioning_DeleteObjects_success(s)
+	Versioning_DeleteObjects_delete_deleteMarkers(s)
+	// ListObjectVersions
+	ListObjectVersions_non_existing_bucket(s)
+	ListObjectVersions_list_single_object_versions(s)
+	ListObjectVersions_list_multiple_object_versions(s)
+	ListObjectVersions_multiple_object_versions_truncated(s)
+	ListObjectVersions_with_delete_markers(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -812,5 +843,29 @@ func GetIntTests() IntTests {
 		"AccessControl_root_PutBucketAcl":                                     AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                  AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":              AccessControl_copy_object_with_starting_slash_for_user,
+		"PutBucketVersioning_non_existing_bucket":                             PutBucketVersioning_non_existing_bucket,
+		"PutBucketVersioning_invalid_status":                                  PutBucketVersioning_invalid_status,
+		"PutBucketVersioning_success":                                         PutBucketVersioning_success,
+		"GetBucketVersioning_non_existing_bucket":                             GetBucketVersioning_non_existing_bucket,
+		"GetBucketVersioning_success":                                         GetBucketVersioning_success,
+		"Versioning_PutObject_success":                                        Versioning_PutObject_success,
+		"Versioning_CopyObject_success":                                       Versioning_CopyObject_success,
+		"Versioning_CopyObject_non_existing_version_id":                       Versioning_CopyObject_non_existing_version_id,
+		"Versioning_CopyObject_from_an_object_version":                        Versioning_CopyObject_from_an_object_version,
+		"Versioning_HeadObject_invalid_versionId":                             Versioning_HeadObject_invalid_versionId,
+		"Versioning_HeadObject_success":                                       Versioning_HeadObject_success,
+		"Versioning_HeadObject_delete_marker":                                 Versioning_HeadObject_delete_marker,
+		"Versioning_GetObject_invalid_versionId":                              Versioning_GetObject_invalid_versionId,
+		"Versioning_GetObject_success":                                        Versioning_GetObject_success,
+		"Versioning_GetObject_delete_marker":                                  Versioning_GetObject_delete_marker,
+		"Versioning_DeleteObject_delete_object_version":                       Versioning_DeleteObject_delete_object_version,
+		"Versioning_DeleteObject_delete_a_delete_marker":                      Versioning_DeleteObject_delete_a_delete_marker,
+		"Versioning_DeleteObjects_success":                                    Versioning_DeleteObjects_success,
+		"Versioning_DeleteObjects_delete_deleteMarkers":                       Versioning_DeleteObjects_delete_deleteMarkers,
+		"ListObjectVersions_non_existing_bucket":                              ListObjectVersions_non_existing_bucket,
+		"ListObjectVersions_list_single_object_versions":                      ListObjectVersions_list_single_object_versions,
+		"ListObjectVersions_list_multiple_object_versions":                    ListObjectVersions_list_multiple_object_versions,
+		"ListObjectVersions_multiple_object_versions_truncated":               ListObjectVersions_multiple_object_versions_truncated,
+		"ListObjectVersions_with_delete_markers":                              ListObjectVersions_with_delete_markers,
 	}
 }

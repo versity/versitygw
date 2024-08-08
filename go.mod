@@ -16,6 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault-client-go v0.4.3
 	github.com/nats-io/nats.go v1.37.0
+	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pkg/xattr v0.4.10
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/smira/go-statsd v1.3.3
@@ -45,7 +46,6 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
-	github.com/oklog/ulid/v2 v2.1.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
