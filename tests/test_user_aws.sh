@@ -30,8 +30,8 @@ export RUN_USERS=true
 }
 
 @test "test_user_get_object" {
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username="$USERNAME_ONE"
+  password="$USERNAME_ONE"
   test_file="test_file"
 
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
@@ -47,8 +47,8 @@ export RUN_USERS=true
 }
 
 @test "test_userplus_get_object" {
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
   test_file="test_file"
 
   setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
@@ -64,8 +64,8 @@ export RUN_USERS=true
 }
 
 @test "test_user_delete_object" {
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
   test_file="test_file"
 
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
@@ -81,8 +81,8 @@ export RUN_USERS=true
 }
 
 @test "test_admin_put_get_object" {
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
   test_file="test_file"
 
   setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
@@ -103,8 +103,8 @@ export RUN_USERS=true
 }
 
 @test "test_user_create_multipart_upload" {
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
   test_file="test_file"
 
   setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"

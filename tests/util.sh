@@ -127,7 +127,8 @@ clear_bucket_s3api() {
     fi
   done
   delete_bucket_policy "s3api" "$1" || fail "error deleting bucket policy"
-  put_bucket_canned_acl "$1" "private" || fail "error deleting bucket ACLs"
+  # TODO uncomment after #716 is fixed
+  #reset_bucket_acl "$1" || fail "error resetting bucket ACLs"
   put_object_lock_configuration_disabled "$1" || fail "error removing object lock config"
   #change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID" || fail "error changing bucket owner"
 }
@@ -199,6 +200,34 @@ bucket_exists() {
   return 0
 }
 
+abort_all_multipart_uploads() {
+  assert [ $# -eq 1 ]
+  run aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1"
+  # shellcheck disable=SC2154
+  assert_success "error listing uploads: $output"
+  log 5 "UPLOADS: $output"
+  if ! upload_set=$(echo "$output" | grep -v "InsecureRequestWarning" | jq -c '.Uploads[]' 2>&1); then
+    if [[ $upload_set == *"Cannot iterate over null"* ]]; then
+      return 0
+    fi
+    fail "error getting upload set: $upload_set"
+  fi
+  log 5 "UPLOAD SET: $upload_set"
+  for upload in $upload_set; do
+    log 5 "UPLOAD: $upload"
+    upload_id=$(echo "$upload" | jq -r ".UploadId" 2>&1)
+    assert [ $? -eq 0 ]
+    log 5 "upload ID: $upload_id"
+    key=$(echo "$upload" | jq -r ".Key" 2>&1)
+    assert [ $? -eq 0 ]
+    log 5 "Key: $key"
+
+    log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
+    run aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" --key "$key" --upload-id "$upload_id"
+    assert_success "error aborting upload: $output"
+  done
+}
+
 # delete buckets or just the contents depending on RECREATE_BUCKETS parameter
 # params:  command type, bucket name
 # return:  0 for success, 1 for failure
@@ -225,6 +254,8 @@ delete_bucket_or_contents() {
       log 2 "error resetting bucket ACLs"
       return 1
     fi
+    run abort_all_multipart_uploads "$2"
+    assert_success "error aborting multipart uploads"
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
@@ -267,10 +298,7 @@ delete_bucket_or_contents_if_exists() {
 # param:  bucket name
 # return 0 for success, 1 for failure
 setup_bucket() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket creation function requires command type, bucket name"
-    return 1
-  fi
+  assert [ $# -eq 2 ]
   if [[ $1 == "s3cmd" ]]; then
     log 5 "putting bucket ownership controls"
     put_bucket_ownership_controls "$2" "BucketOwnerPreferred"

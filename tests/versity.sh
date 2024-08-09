@@ -176,11 +176,14 @@ stop_versity() {
   if [ "$RUN_VERSITYGW" == "false" ]; then
     return
   fi
+  if [[ -z "$versitygw_pid_1" ]]; then
+    return
+  fi
   # shellcheck disable=SC2154
   if ! stop_single_process "$versitygw_pid_1"; then
     log 2 "error stopping versity process"
   fi
-  if [[ $BACKEND == 's3' ]]; then
+  if [[ $BACKEND == 's3' ]] && [[ -n "$versitygw_pid_2" ]]; then
     # shellcheck disable=SC2154
     if ! stop_single_process "$versitygw_pid_2"; then
       log 2 "error stopping versity process two"

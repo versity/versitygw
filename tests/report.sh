@@ -72,6 +72,11 @@ $SQL_CREATE_TABLE
 .exit
 EOF
 
+  RESULT=$(sqlite3 "$COVERAGE_DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='entries';")
+  if [ -z "$RESULT" ]; then
+    return
+  fi
+
   # Iterate over each command in the entries table
   while IFS="|" read -r command client count; do
     if [[ $BATS_TEST_STATUS -eq 0 ]]; then
