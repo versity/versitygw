@@ -3954,10 +3954,7 @@ func DeleteObject_non_existing_object(s *S3Conf) error {
 			Key:    getPtr("my-obj"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
-			return err
-		}
-		return nil
+		return err
 	})
 }
 
@@ -3977,11 +3974,7 @@ func DeleteObject_non_existing_dir_object(s *S3Conf) error {
 			Key:    &obj,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	})
 }
 
@@ -4110,17 +4103,11 @@ func DeleteObjects_non_existing_objects(s *S3Conf) error {
 			return err
 		}
 
-		if len(out.Deleted) != 0 {
-			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
+		if len(out.Deleted) != 2 {
+			return fmt.Errorf("expected deleted object count 2, instead got %v", len(out.Deleted))
 		}
-		if len(out.Errors) != 2 {
-			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
-		}
-
-		for _, delErr := range out.Errors {
-			if *delErr.Code != "NoSuchKey" {
-				return fmt.Errorf("expected NoSuchKey error, instead got %v", *delErr.Code)
-			}
+		if len(out.Errors) != 0 {
+			return fmt.Errorf("expected 0 errors, instead got %v, %v", len(out.Errors), out.Errors)
 		}
 
 		return nil

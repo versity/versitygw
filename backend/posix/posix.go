@@ -1527,13 +1527,18 @@ func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) err
 
 	fi, err := os.Stat(objpath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		// AWS returns success if the object does not exist
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("stat object: %w", err)
 	}
 	if strings.HasSuffix(object, "/") && !fi.IsDir() {
-		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		// requested object is expecting a directory with a trailing
+		// slash, but the object is not a directory. treat this as
+		// a non-existent object.
+		// AWS returns success if the object does not exist
+		return nil
 	}
 
 	err = os.Remove(objpath)
