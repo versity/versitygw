@@ -40,7 +40,8 @@ type IAMServiceInternal struct {
 	// IAM service. All account updates should be sent to a single
 	// gateway instance if possible.
 	sync.RWMutex
-	dir string
+	dir     string
+	rootAcc Account
 }
 
 // UpdateAcctFunc accepts the current data and returns the new data to be stored
@@ -54,9 +55,10 @@ type iAMConfig struct {
 var _ IAMService = &IAMServiceInternal{}
 
 // NewInternal creates a new instance for the Internal IAM service
-func NewInternal(dir string) (*IAMServiceInternal, error) {
+func NewInternal(rootAcc Account, dir string) (*IAMServiceInternal, error) {
 	i := &IAMServiceInternal{
-		dir: dir,
+		dir:     dir,
+		rootAcc: rootAcc,
 	}
 
 	err := i.initIAM()
@@ -70,6 +72,10 @@ func NewInternal(dir string) (*IAMServiceInternal, error) {
 // CreateAccount creates a new IAM account. Returns an error if the account
 // already exists.
 func (s *IAMServiceInternal) CreateAccount(account Account) error {
+	if account.Access == s.rootAcc.Access {
+		return ErrUserExists
+	}
+
 	s.Lock()
 	defer s.Unlock()
 
@@ -97,6 +103,10 @@ func (s *IAMServiceInternal) CreateAccount(account Account) error {
 // GetUserAccount retrieves account info for the requested user. Returns
 // ErrNoSuchUser if the account does not exist.
 func (s *IAMServiceInternal) GetUserAccount(access string) (Account, error) {
+	if access == s.rootAcc.Access {
+		return s.rootAcc, nil
+	}
+
 	s.RLock()
 	defer s.RUnlock()
 

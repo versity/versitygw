@@ -579,6 +579,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	iam, err := auth.New(&auth.Opts{
+		RootAccount: auth.Account{
+			Access: rootUserAccess,
+			Secret: rootUserSecret,
+			Role:   auth.RoleAdmin,
+		},
 		Dir:                    iamDir,
 		LDAPServerURL:          ldapURL,
 		LDAPBindDN:             ldapBindDN,
