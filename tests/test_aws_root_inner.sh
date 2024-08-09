@@ -236,14 +236,14 @@ test_get_object_attributes_aws_root() {
 }
 
 test_get_put_object_legal_hold_aws_root() {
-  # bucket must be created with lock for legal hold
-  if [[ $RECREATE_BUCKETS == false ]]; then
-    return
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    # https://github.com/versity/versitygw/issues/716
+    skip
   fi
 
   bucket_file="bucket_file"
-  username="ABCDEFG"
-  password="HIJKLMN"
+  username=$USERNAME_ONE
+  password=$PASSWORD_ONE
 
   legal_hold_retention_setup "$username" "$password" "$bucket_file"
 
@@ -280,11 +280,11 @@ test_get_put_object_legal_hold_aws_root() {
 
 test_get_put_object_retention_aws_root() {
   bucket_file="bucket_file"
-  username="ABCDEFG"
-  secret_key="HIJKLMN"
+  username=$USERNAME_ONE
+  secret_key=$PASSWORD_ONE
 
-  # TODO remove after able to change bucket owner back to root user
   if [[ $RECREATE_BUCKETS == "false" ]]; then
+    # https://github.com/versity/versitygw/issues/716
     skip
   fi
 
@@ -328,9 +328,13 @@ test_get_put_object_retention_aws_root() {
 }
 
 test_retention_bypass_aws_root() {
+  if [[ $RECREATE_BUCKETS == "false" ]]; then
+    # https://github.com/versity/versitygw/issues/716
+    skip
+  fi
   bucket_file="bucket_file"
-  username="ABCDEFG"
-  secret_key="HIJKLMN"
+  username=$USERNAME_ONE
+  secret_key=$PASSWORD_ONE
   policy_file="policy_file"
 
   legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"

@@ -11,10 +11,10 @@ test_admin_user() {
     fail "test admin user command requires command type"
   fi
 
-  admin_username="ABCDEF"
-  user_username="GHIJKL"
-  admin_password="123456"
-  user_password="789012"
+  admin_username="$USERNAME_ONE"
+  admin_password="$PASSWORD_ONE"
+  user_username="$USERNAME_TWO"
+  user_password="$PASSWORD_TWO"
 
   setup_user "$admin_username" "$admin_password" "admin" || fail "error setting up admin user"
 
@@ -56,8 +56,8 @@ test_create_user_already_exists() {
     fail "test admin user command requires command type"
   fi
 
-  username="ABCDEG"
-  password="123456"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
 
   setup_user "$username" "123456" "admin" || fail "error setting up user"
   if create_user "$username" "123456" "admin"; then
@@ -73,8 +73,8 @@ test_user_user() {
     fail "test admin user command requires command type"
   fi
 
-  username="ABCDEG"
-  password="123456"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
 
   setup_user "$username" "$password" "user" || fail "error setting up user"
   delete_bucket "aws" "versity-gwtest-user-bucket"
@@ -115,8 +115,8 @@ test_userplus_operation() {
     fail "test admin user command requires command type"
   fi
 
-  username="ABCDEG"
-  password="123456"
+  username="$USERNAME_ONE"
+  password="$PASSWORD_ONE"
 
   delete_bucket "aws" "versity-gwtest-userplus-bucket"
   setup_user "$username" "$password" "userplus" || fail "error creating user '$username'"

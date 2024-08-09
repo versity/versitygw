@@ -6,19 +6,19 @@ source ./tests/logger.sh
 # params:  filename
 # export test file folder on success, return 1 for error
 create_test_files() {
-  if [ $# -lt 1 ]; then
-    echo "create test files command missing filename"
-    return 1
-  fi
+  assert [ $# -gt 0 ]
   test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     create_test_file_folder
   fi
   for name in "$@"; do
     if [[ -e "$test_file_folder/$name" ]]; then
-      error=$(rm "$test_file_folder/$name" 2>&1) || fail "error removing existing test file: $error"
+      run rm "$test_file_folder/$name"
+      # shellcheck disable=SC2154
+      assert_success "error removing existing test file: $output"
     fi
-    error=$(touch "$test_file_folder"/"$name" 2>&1) || fail "error creating new file: $error"
+    run touch "$test_file_folder"/"$name"
+    assert_success "error creating new file: $output"
   done
   export test_file_folder
 }
@@ -127,10 +127,9 @@ create_test_file_folder() {
     test_file_folder=$PWD/versity-gwtest
   fi
   if ! error=$(mkdir -p "$test_file_folder" 2>&1); then
-    if [[ $error != *"File exists"* ]]; then
-      log 2 "error creating test file folder: $error"
-      return 1
-    fi
+    # shellcheck disable=SC2035
+    run [[ "$error" == *"File exists"* ]]
+    assert_success "error creating test file folder: $error"
   fi
   export test_file_folder
 }
