@@ -30,11 +30,12 @@ type VaultIAMService struct {
 	client            *vault.Client
 	reqOpts           []vault.RequestOption
 	secretStoragePath string
+	rootAcc           Account
 }
 
 var _ IAMService = &VaultIAMService{}
 
-func NewVaultIAMService(endpoint, secretStoragePath, mountPath, rootToken, roleID, roleSecret, serverCert, clientCert, clientCertKey string) (IAMService, error) {
+func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath, rootToken, roleID, roleSecret, serverCert, clientCert, clientCertKey string) (IAMService, error) {
 	opts := []vault.ClientOption{
 		vault.WithAddress(endpoint),
 		// set request timeout to 10 secs
@@ -100,10 +101,14 @@ func NewVaultIAMService(endpoint, secretStoragePath, mountPath, rootToken, roleI
 		client:            client,
 		reqOpts:           reqOpts,
 		secretStoragePath: secretStoragePath,
+		rootAcc:           rootAcc,
 	}, nil
 }
 
 func (vt *VaultIAMService) CreateAccount(account Account) error {
+	if vt.rootAcc.Access == account.Access {
+		return ErrUserExists
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	_, err := vt.client.Secrets.KvV2Write(ctx, vt.secretStoragePath+"/"+account.Access, schema.KvV2WriteRequest{
 		Data: map[string]any{
@@ -125,6 +130,9 @@ func (vt *VaultIAMService) CreateAccount(account Account) error {
 }
 
 func (vt *VaultIAMService) GetUserAccount(access string) (Account, error) {
+	if vt.rootAcc.Access == access {
+		return vt.rootAcc, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	resp, err := vt.client.Secrets.KvV2Read(ctx, vt.secretStoragePath+"/"+access, vt.reqOpts...)
 	cancel()

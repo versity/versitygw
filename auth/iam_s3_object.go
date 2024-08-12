@@ -57,12 +57,13 @@ type IAMServiceS3 struct {
 	endpoint      string
 	sslSkipVerify bool
 	debug         bool
+	rootAcc       Account
 	client        *s3.Client
 }
 
 var _ IAMService = &IAMServiceS3{}
 
-func NewS3(access, secret, region, bucket, endpoint string, sslSkipVerify, debug bool) (*IAMServiceS3, error) {
+func NewS3(rootAcc Account, access, secret, region, bucket, endpoint string, sslSkipVerify, debug bool) (*IAMServiceS3, error) {
 	if access == "" {
 		return nil, fmt.Errorf("must provide s3 IAM service access key")
 	}
@@ -87,6 +88,7 @@ func NewS3(access, secret, region, bucket, endpoint string, sslSkipVerify, debug
 		endpoint:      endpoint,
 		sslSkipVerify: sslSkipVerify,
 		debug:         debug,
+		rootAcc:       rootAcc,
 	}
 
 	cfg, err := i.getConfig()
@@ -106,6 +108,10 @@ func NewS3(access, secret, region, bucket, endpoint string, sslSkipVerify, debug
 }
 
 func (s *IAMServiceS3) CreateAccount(account Account) error {
+	if s.rootAcc.Access == account.Access {
+		return ErrUserExists
+	}
+
 	s.Lock()
 	defer s.Unlock()
 
@@ -124,6 +130,10 @@ func (s *IAMServiceS3) CreateAccount(account Account) error {
 }
 
 func (s *IAMServiceS3) GetUserAccount(access string) (Account, error) {
+	if access == s.rootAcc.Access {
+		return s.rootAcc, nil
+	}
+
 	s.RLock()
 	defer s.RUnlock()
 
@@ -242,7 +252,7 @@ func (s *IAMServiceS3) getAccounts() (iAMConfig, error) {
 	})
 	if err != nil {
 		// if the error is object not exists,
-		// init empty accounts stuct and return that
+		// init empty accounts struct and return that
 		var nsk *types.NoSuchKey
 		if errors.As(err, &nsk) {
 			return iAMConfig{AccessAccounts: map[string]Account{}}, nil

@@ -9037,6 +9037,65 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 	}, withLock())
 }
 
+func WORMProtection_root_bypass_governance_retention_delete_object(s *S3Conf) error {
+	testName := "WORMProtection_root_bypass_governance_retention_delete_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+			return err
+		}
+
+		retDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &retDate,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := checkWORMProtection(s3client, bucket, obj); err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		bypass := true
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			BypassGovernanceRetention: &bypass,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
 // Access control tests (with bucket ACLs and Policies)
 func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
 	testName := "AccessControl_default_ACL_user_access_denied"
@@ -9552,6 +9611,33 @@ func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
 
 		if *resp.Owner.ID != usr.access {
 			return fmt.Errorf("expected the bucket owner to be %v, instead got %v", usr.access, *resp.Owner.ID)
+		}
+
+		return nil
+	})
+}
+
+func IAM_ChangeBucketOwner_back_to_root(s *S3Conf) error {
+	testName := "IAM_ChangeBucketOwner_back_to_root"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		// Change the bucket ownership to a random user
+		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+			return err
+		}
+
+		// Change the bucket ownership back to the root user
+		if err := changeBucketsOwner(s, []string{bucket}, s.awsID); err != nil {
+			return err
 		}
 
 		return nil

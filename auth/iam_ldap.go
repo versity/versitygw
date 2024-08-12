@@ -31,11 +31,12 @@ type LdapIAMService struct {
 	roleAtr    string
 	groupIdAtr string
 	userIdAtr  string
+	rootAcc    Account
 }
 
 var _ IAMService = &LdapIAMService{}
 
-func NewLDAPService(url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string) (IAMService, error) {
+func NewLDAPService(rootAcc Account, url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string) (IAMService, error) {
 	if url == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" ||
 		secAtr == "" || roleAtr == "" || userIdAtr == "" || groupIdAtr == "" || objClasses == "" {
 		return nil, fmt.Errorf("required parameters list not fully provided")
@@ -58,10 +59,14 @@ func NewLDAPService(url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userI
 		roleAtr:    roleAtr,
 		userIdAtr:  userIdAtr,
 		groupIdAtr: groupIdAtr,
+		rootAcc:    rootAcc,
 	}, nil
 }
 
 func (ld *LdapIAMService) CreateAccount(account Account) error {
+	if ld.rootAcc.Access == account.Access {
+		return ErrUserExists
+	}
 	userEntry := ldap.NewAddRequest(fmt.Sprintf("%v=%v,%v", ld.accessAtr, account.Access, ld.queryBase), nil)
 	userEntry.Attribute("objectClass", ld.objClasses)
 	userEntry.Attribute(ld.accessAtr, []string{account.Access})
@@ -79,6 +84,9 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 }
 
 func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
+	if access == ld.rootAcc.Access {
+		return ld.rootAcc, nil
+	}
 	searchRequest := ldap.NewSearchRequest(
 		ld.queryBase,
 		ldap.ScopeWholeSubtree,

@@ -415,6 +415,7 @@ func TestWORMProtection(s *S3Conf) {
 	WORMProtection_object_lock_retention_governance_bypass_delete(s)
 	WORMProtection_object_lock_retention_governance_bypass_delete_mul(s)
 	WORMProtection_object_lock_legal_hold_locked(s)
+	WORMProtection_root_bypass_governance_retention_delete_object(s)
 }
 
 func TestFullFlow(s *S3Conf) {
@@ -475,6 +476,7 @@ func TestIAM(s *S3Conf) {
 	IAM_userplus_access_denied(s)
 	IAM_userplus_CreateBucket(s)
 	IAM_admin_ChangeBucketOwner(s)
+	IAM_ChangeBucketOwner_back_to_root(s)
 }
 
 func TestAccessControl(s *S3Conf) {
@@ -766,6 +768,7 @@ func GetIntTests() IntTests {
 		"WORMProtection_object_lock_retention_governance_bypass_delete":       WORMProtection_object_lock_retention_governance_bypass_delete,
 		"WORMProtection_object_lock_retention_governance_bypass_delete_mul":   WORMProtection_object_lock_retention_governance_bypass_delete_mul,
 		"WORMProtection_object_lock_legal_hold_locked":                        WORMProtection_object_lock_legal_hold_locked,
+		"WORMProtection_root_bypass_governance_retention_delete_object":       WORMProtection_root_bypass_governance_retention_delete_object,
 		"PutObject_overwrite_dir_obj":                                         PutObject_overwrite_dir_obj,
 		"PutObject_overwrite_file_obj":                                        PutObject_overwrite_file_obj,
 		"PutObject_dir_obj_with_data":                                         PutObject_dir_obj_with_data,
@@ -774,6 +777,7 @@ func GetIntTests() IntTests {
 		"IAM_userplus_access_denied":                                          IAM_userplus_access_denied,
 		"IAM_userplus_CreateBucket":                                           IAM_userplus_CreateBucket,
 		"IAM_admin_ChangeBucketOwner":                                         IAM_admin_ChangeBucketOwner,
+		"IAM_ChangeBucketOwner_back_to_root":                                  IAM_ChangeBucketOwner_back_to_root,
 		"AccessControl_default_ACL_user_access_denied":                        AccessControl_default_ACL_user_access_denied,
 		"AccessControl_default_ACL_userplus_access_denied":                    AccessControl_default_ACL_userplus_access_denied,
 		"AccessControl_default_ACL_admin_successful_access":                   AccessControl_default_ACL_admin_successful_access,
