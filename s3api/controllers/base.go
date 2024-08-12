@@ -1286,7 +1286,37 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				if c.debug {
 					log.Printf("error unmarshalling access control policy: %v", err)
 				}
-				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedACL),
+					&MetaOpts{
+						Logger:      c.logger,
+						Action:      metrics.ActionPutBucketAcl,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
+
+			if accessControlPolicy.Owner == nil ||
+				accessControlPolicy.Owner.ID == nil ||
+				*accessControlPolicy.Owner.ID == "" {
+				if c.debug {
+					log.Println("empty access control policy owner")
+				}
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedACL),
+					&MetaOpts{
+						Logger:      c.logger,
+						Action:      metrics.ActionPutBucketAcl,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
+
+			if *accessControlPolicy.Owner.ID != parsedAcl.Owner {
+				if c.debug {
+					log.Printf("invalid access control policy owner id: %v, expected %v", *accessControlPolicy.Owner.ID, parsedAcl.Owner)
+				}
+				return SendResponse(ctx, s3err.APIError{
+					Code:           "InvalidArgument",
+					Description:    "Invalid id",
+					HTTPStatusCode: http.StatusBadRequest,
+				},
 					&MetaOpts{
 						Logger:      c.logger,
 						Action:      metrics.ActionPutBucketAcl,
@@ -1300,7 +1330,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 						grants, acl)
 				}
 				return SendResponse(ctx,
-					s3err.GetAPIError(s3err.ErrInvalidRequest),
+					s3err.GetAPIError(s3err.ErrUnexpectedContent),
 					&MetaOpts{
 						Logger:      c.logger,
 						MetricsMng:  c.mm,
@@ -1311,11 +1341,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 			input = &auth.PutBucketAclInput{
 				Bucket:              &bucket,
-				ACL:                 "",
 				AccessControlPolicy: &accessControlPolicy,
 			}
-		}
-		if acl != "" {
+		} else if acl != "" {
 			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
 				if c.debug {
 					log.Printf("invalid acl: %q", acl)
@@ -1329,13 +1357,13 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 						BucketOwner: parsedAcl.Owner,
 					})
 			}
-			if len(ctx.Body()) > 0 || grants != "" {
+			if grants != "" {
 				if c.debug {
 					log.Printf("invalid request: %q (grants) %q (acl)",
 						grants, acl)
 				}
 				return SendResponse(ctx,
-					s3err.GetAPIError(s3err.ErrInvalidRequest),
+					s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants),
 					&MetaOpts{
 						Logger:      c.logger,
 						MetricsMng:  c.mm,
@@ -1347,14 +1375,8 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			input = &auth.PutBucketAclInput{
 				Bucket: &bucket,
 				ACL:    types.BucketCannedACL(acl),
-				AccessControlPolicy: &auth.AccessControlPolicy{
-					Owner: types.Owner{
-						ID: &acct.Access,
-					},
-				},
 			}
-		}
-		if grants != "" {
+		} else if grants != "" {
 			input = &auth.PutBucketAclInput{
 				Bucket:           &bucket,
 				GrantFullControl: &grantFullControl,
@@ -1362,13 +1384,19 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				GrantReadACP:     &grantReadACP,
 				GrantWrite:       &granWrite,
 				GrantWriteACP:    &grantWriteACP,
-				AccessControlPolicy: &auth.AccessControlPolicy{
-					Owner: types.Owner{
-						ID: &acct.Access,
-					},
-				},
-				ACL: "",
 			}
+		} else {
+			if c.debug {
+				log.Println("none of the bucket acl options has been specified: canned, req headers, req body")
+			}
+			return SendResponse(ctx,
+				s3err.GetAPIError(s3err.ErrMissingSecurityHeader),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketAcl,
+					BucketOwner: parsedAcl.Owner,
+				})
 		}
 
 		updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam, acct.Role == auth.RoleAdmin)
@@ -1454,7 +1482,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		GrantWrite:       &granWrite,
 		GrantWriteACP:    &grantWriteACP,
 		AccessControlPolicy: &auth.AccessControlPolicy{
-			Owner: types.Owner{
+			Owner: &types.Owner{
 				ID: &acct.Access,
 			}},
 		ACL: types.BucketCannedACL(acl),
@@ -1893,7 +1921,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				Key:    &keyStart,
 				ACL:    "",
 				AccessControlPolicy: &types.AccessControlPolicy{
-					Owner:  &accessControlPolicy.Owner,
+					Owner:  accessControlPolicy.Owner,
 					Grants: grants,
 				},
 			}

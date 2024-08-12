@@ -6348,6 +6348,21 @@ func PutBucketAcl_disabled(s *S3Conf) error {
 	})
 }
 
+func PutBucketAcl_none_of_the_options_specified(s *S3Conf) error {
+	testName := "PutBucketAcl_none_of_the_options_specified"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingSecurityHeader)); err != nil {
+			return err
+		}
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
 func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_canned_and_acp"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6358,7 +6373,7 @@ func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 			GrantRead: getPtr("user1"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)); err != nil {
 			return err
 		}
 
@@ -6388,7 +6403,7 @@ func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrUnexpectedContent)); err != nil {
 			return err
 		}
 
@@ -6418,7 +6433,7 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrUnexpectedContent)); err != nil {
 			return err
 		}
 
@@ -6463,7 +6478,11 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.APIError{
+			Code:           "InvalidArgument",
+			Description:    "Invalid id",
+			HTTPStatusCode: http.StatusBadRequest,
+		}); err != nil {
 			return err
 		}
 
@@ -6474,22 +6493,23 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 func PutBucketAcl_invalid_owner_not_in_body(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_owner_not_in_body"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := createUsers(s, []user{{"grt1", "grt1secret", "user"}}); err != nil {
-			return err
-		}
-
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
-
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
-			ACL:    types.BucketCannedACLPublicRead,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							Type: types.TypeCanonicalUser,
+							ID:   getPtr("grt1"),
+						},
+						Permission: types.PermissionRead,
+					},
+				},
+			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedACL)); err != nil {
 			return err
 		}
 
@@ -9469,6 +9489,76 @@ func AccessControl_root_PutBucketAcl(s *S3Conf) error {
 		cancel()
 		if err != nil {
 			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func AccessControl_user_PutBucketAcl_with_policy_access(s *S3Conf) error {
+	testName := "AccessControl_user_PutBucketAcl_with_policy_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, usr.access), `"s3:PutBucketAcl"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPublicRead,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedGrants := []types.Grant{
+			{
+				Grantee: &types.Grantee{
+					ID:   &s.awsID,
+					Type: types.TypeCanonicalUser,
+				},
+				Permission: types.PermissionFullControl,
+			},
+			{
+				Grantee: &types.Grantee{
+					ID:   getPtr("all-users"),
+					Type: types.TypeGroup,
+				},
+				Permission: types.PermissionRead,
+			},
+		}
+
+		if !compareGrants(res.Grants, expectedGrants) {
+			return fmt.Errorf("expected the resulting grants to be %v, instead got %v", expectedGrants, res.Grants)
 		}
 
 		return nil
