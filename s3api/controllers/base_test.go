@@ -858,7 +858,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 				req: incorrectBucketOwner,
 			},
 			wantErr:    false,
-			statusCode: 403,
+			statusCode: 400,
 		},
 		{
 			name: "Put-bucket-acl-success",

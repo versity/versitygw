@@ -293,6 +293,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 func TestPutBucketAcl(s *S3Conf) {
 	PutBucketAcl_non_existing_bucket(s)
 	PutBucketAcl_disabled(s)
+	PutBucketAcl_none_of_the_options_specified(s)
 	PutBucketAcl_invalid_acl_canned_and_acp(s)
 	PutBucketAcl_invalid_acl_canned_and_grants(s)
 	PutBucketAcl_invalid_acl_acp_and_grants(s)
@@ -489,6 +490,7 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_multi_statement_policy(s)
 	AccessControl_bucket_ownership_to_user(s)
 	AccessControl_root_PutBucketAcl(s)
+	AccessControl_user_PutBucketAcl_with_policy_access(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -678,6 +680,8 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_invalid_ETag":                                CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_success":                                     CompleteMultipartUpload_success,
 		"PutBucketAcl_non_existing_bucket":                                    PutBucketAcl_non_existing_bucket,
+		"PutBucketAcl_disabled":                                               PutBucketAcl_disabled,
+		"PutBucketAcl_none_of_the_options_specified":                          PutBucketAcl_none_of_the_options_specified,
 		"PutBucketAcl_invalid_acl_canned_and_acp":                             PutBucketAcl_invalid_acl_canned_and_acp,
 		"PutBucketAcl_invalid_acl_canned_and_grants":                          PutBucketAcl_invalid_acl_canned_and_grants,
 		"PutBucketAcl_invalid_acl_acp_and_grants":                             PutBucketAcl_invalid_acl_acp_and_grants,
@@ -787,5 +791,6 @@ func GetIntTests() IntTests {
 		"AccessControl_multi_statement_policy":                                AccessControl_multi_statement_policy,
 		"AccessControl_bucket_ownership_to_user":                              AccessControl_bucket_ownership_to_user,
 		"AccessControl_root_PutBucketAcl":                                     AccessControl_root_PutBucketAcl,
+		"AccessControl_user_PutBucketAcl_with_policy_access":                  AccessControl_user_PutBucketAcl_with_policy_access,
 	}
 }

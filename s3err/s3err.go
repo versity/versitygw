@@ -127,6 +127,9 @@ const (
 	ErrBothCannedAndHeaderGrants
 	ErrOwnershipControlsNotFound
 	ErrAclNotSupported
+	ErrMalformedACL
+	ErrUnexpectedContent
+	ErrMissingSecurityHeader
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -495,6 +498,21 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessControlListNotSupported",
 		Description:    "The bucket does not allow ACLs",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMalformedACL: {
+		Code:           "MalformedACLError",
+		Description:    "The XML you provided was not well-formed or did not validate against our published schema",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrUnexpectedContent: {
+		Code:           "UnexpectedContent",
+		Description:    "This request does not support content",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMissingSecurityHeader: {
+		Code:           "MissingSecurityHeader",
+		Description:    "Your request was missing a required header",
+		HTTPStatusCode: http.StatusNotFound,
 	},
 
 	// non aws errors

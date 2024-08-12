@@ -56,7 +56,7 @@ type PutBucketAclInput struct {
 
 type AccessControlPolicy struct {
 	AccessControlList AccessControlList `xml:"AccessControlList"`
-	Owner             types.Owner
+	Owner             *types.Owner
 }
 
 type AccessControlList struct {
@@ -121,9 +121,6 @@ func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
 func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) ([]byte, error) {
 	if input == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
-	}
-	if !isAdmin && acl.Owner != *input.AccessControlPolicy.Owner.ID {
-		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 
 	defaultGrantees := []Grantee{
