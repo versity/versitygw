@@ -2801,7 +2801,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("restore") {
 		var restoreRequest types.RestoreRequest
 		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
-			if !errors.Is(io.EOF, err) {
+			if !errors.Is(err, io.EOF) {
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 					&MetaOpts{
 						Logger:      c.logger,
