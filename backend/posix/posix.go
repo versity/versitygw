@@ -805,20 +805,6 @@ func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (st
 	return contentType, contentEncoding
 }
 
-func compareUserMetadata(meta1, meta2 map[string]string) bool {
-	if len(meta1) != len(meta2) {
-		return false
-	}
-
-	for key, val := range meta1 {
-		if meta2[key] != val {
-			return false
-		}
-	}
-
-	return true
-}
-
 func isValidMeta(val string) bool {
 	if strings.HasPrefix(val, metaHdr) {
 		return true
@@ -2012,42 +1998,47 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	meta := make(map[string]string)
-	p.loadUserMetaData(srcBucket, srcObject, meta)
+	mdmap := make(map[string]string)
+	p.loadUserMetaData(srcBucket, srcObject, mdmap)
+
+	var etag string
 
 	dstObjdPath := filepath.Join(dstBucket, dstObject)
 	if dstObjdPath == objPath {
-		if compareUserMetadata(meta, input.Metadata) {
+		if input.MetadataDirective == types.MetadataDirectiveCopy {
 			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
-		} else {
-			for key := range meta {
-				err := p.meta.DeleteAttribute(dstBucket, dstObject, key)
-				if err != nil {
-					return nil, fmt.Errorf("delete user metadata: %w", err)
-				}
-			}
-			for k, v := range input.Metadata {
-				err := p.meta.StoreAttribute(dstBucket, dstObject,
-					fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-				if err != nil {
-					return nil, fmt.Errorf("set user attr %q: %w", k, err)
-				}
+		}
+
+		for key := range mdmap {
+			err := p.meta.DeleteAttribute(dstBucket, dstObject, key)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return nil, fmt.Errorf("delete user metadata: %w", err)
 			}
 		}
-	}
+		for k, v := range input.Metadata {
+			err := p.meta.StoreAttribute(dstBucket, dstObject,
+				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
+			if err != nil {
+				return nil, fmt.Errorf("set user attr %q: %w", k, err)
+			}
+		}
 
-	contentLength := fi.Size()
+		b, _ := p.meta.RetrieveAttribute(dstBucket, dstObject, etagkey)
+		etag = string(b)
+	} else {
+		contentLength := fi.Size()
 
-	etag, err := p.PutObject(ctx,
-		&s3.PutObjectInput{
-			Bucket:        &dstBucket,
-			Key:           &dstObject,
-			Body:          f,
-			ContentLength: &contentLength,
-			Metadata:      meta,
-		})
-	if err != nil {
-		return nil, err
+		etag, err = p.PutObject(ctx,
+			&s3.PutObjectInput{
+				Bucket:        &dstBucket,
+				Key:           &dstObject,
+				Body:          f,
+				ContentLength: &contentLength,
+				Metadata:      input.Metadata,
+			})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	fi, err = os.Stat(dstObjdPath)

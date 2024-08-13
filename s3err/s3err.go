@@ -130,6 +130,7 @@ const (
 	ErrMalformedACL
 	ErrUnexpectedContent
 	ErrMissingSecurityHeader
+	ErrInvalidMetadataDirective
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -513,6 +514,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "MissingSecurityHeader",
 		Description:    "Your request was missing a required header",
 		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrInvalidMetadataDirective: {
+		Code:           "InvalidArgument",
+		Description:    "Unknown metadata directive.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// non aws errors

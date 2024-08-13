@@ -4268,6 +4268,29 @@ func CopyObject_copy_to_itself(s *S3Conf) error {
 	})
 }
 
+func CopyObject_copy_to_itself_invalid_directive(s *S3Conf) error {
+	testName := "CopyObject_copy_to_itself_invalid_directive"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			CopySource:        getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			MetadataDirective: types.MetadataDirective("invalid"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMetadataDirective)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	testName := "CopyObject_to_itself_with_new_metadata"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4284,6 +4307,7 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 			Metadata: map[string]string{
 				"Hello": "World",
 			},
+			MetadataDirective: types.MetadataDirectiveReplace,
 		})
 		cancel()
 		if err != nil {

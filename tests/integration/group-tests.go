@@ -199,6 +199,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_non_existing_dst_bucket(s)
 	CopyObject_not_owned_source_bucket(s)
 	CopyObject_copy_to_itself(s)
+	CopyObject_copy_to_itself_invalid_directive(s)
 	CopyObject_to_itself_with_new_metadata(s)
 	CopyObject_CopySource_starting_with_slash(s)
 	CopyObject_non_existing_dir_object(s)
@@ -620,6 +621,7 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dst_bucket":                                  CopyObject_non_existing_dst_bucket,
 		"CopyObject_not_owned_source_bucket":                                  CopyObject_not_owned_source_bucket,
 		"CopyObject_copy_to_itself":                                           CopyObject_copy_to_itself,
+		"CopyObject_copy_to_itself_invalid_directive":                         CopyObject_copy_to_itself_invalid_directive,
 		"CopyObject_to_itself_with_new_metadata":                              CopyObject_to_itself_with_new_metadata,
 		"CopyObject_CopySource_starting_with_slash":                           CopyObject_CopySource_starting_with_slash,
 		"CopyObject_non_existing_dir_object":                                  CopyObject_non_existing_dir_object,
