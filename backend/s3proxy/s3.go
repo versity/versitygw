@@ -654,7 +654,7 @@ func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []by
 			return err
 		}
 		defer resp.Body.Close()
-		return fmt.Errorf(string(body))
+		return fmt.Errorf("%v", string(body))
 	}
 
 	return nil

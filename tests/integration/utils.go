@@ -613,7 +613,7 @@ func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 			return err
 		}
 		if !strings.Contains(string(out), "Bucket owner has been updated successfully") {
-			return fmt.Errorf(string(out))
+			return fmt.Errorf("%v", string(out))
 		}
 	}
 

@@ -1533,6 +1533,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	copySrcModifSince := ctx.Get("X-Amz-Copy-Source-If-Modified-Since")
 	copySrcUnmodifSince := ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since")
 	copySrcRange := ctx.Get("X-Amz-Copy-Source-Range")
+	directive := ctx.Get("X-Amz-Metadata-Directive")
 
 	// Permission headers
 	acl := ctx.Get("X-Amz-Acl")
@@ -2054,6 +2055,22 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 		metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
+		if directive != "" && directive != "COPY" && directive != "REPLACE" {
+			return SendXMLResponse(ctx, nil,
+				s3err.GetAPIError(s3err.ErrInvalidMetadataDirective),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionCopyObject,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		metaDirective := types.MetadataDirectiveCopy
+		if directive == "REPLACE" {
+			metaDirective = types.MetadataDirectiveReplace
+		}
+
 		res, err := c.be.CopyObject(ctx.Context(),
 			&s3.CopyObjectInput{
 				Bucket:                      &bucket,
@@ -2065,6 +2082,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				CopySourceIfUnmodifiedSince: umtime,
 				ExpectedBucketOwner:         &acct.Access,
 				Metadata:                    metadata,
+				MetadataDirective:           metaDirective,
 				StorageClass:                types.StorageClass(storageClass),
 			})
 		if err == nil {
@@ -2783,7 +2801,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("restore") {
 		var restoreRequest types.RestoreRequest
 		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
-			if !errors.Is(io.EOF, err) {
+			if !errors.Is(err, io.EOF) {
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 					&MetaOpts{
 						Logger:      c.logger,
