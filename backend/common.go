@@ -102,6 +102,32 @@ func ParseRange(size int64, acceptRange string) (int64, int64, error) {
 	return startOffset, endOffset - startOffset + 1, nil
 }
 
+// ParseCopySource parses x-amz-copy-source header and returns source bucket,
+// source object, versionId, error respectively
+func ParseCopySource(copySourceHeader string) (string, string, string, error) {
+	if copySourceHeader[0] == '/' {
+		copySourceHeader = copySourceHeader[1:]
+	}
+
+	cSplitted := strings.Split(copySourceHeader, "?")
+	copySource := cSplitted[0]
+	var versionId string
+	if len(cSplitted) > 1 {
+		versionIdParts := strings.Split(cSplitted[1], "=")
+		if len(versionIdParts) != 2 || versionIdParts[0] != "versionId" {
+			return "", "", "", s3err.GetAPIError(s3err.ErrInvalidRequest)
+		}
+		versionId = versionIdParts[1]
+	}
+
+	srcBucket, srcObject, ok := strings.Cut(copySource, "/")
+	if !ok {
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySource)
+	}
+
+	return srcBucket, srcObject, versionId, nil
+}
+
 func CreateExceedingRangeErr(objSize int64) s3err.APIError {
 	return s3err.APIError{
 		Code:           "InvalidArgument",

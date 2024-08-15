@@ -1850,6 +1850,14 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				ExpectedBucketOwner: &bucketOwner,
 				CopySourceRange:     &copySrcRange,
 			})
+		if err == nil && resp.CopySourceVersionId != "" {
+			utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+				{
+					Key:   "x-amz-copy-source-version-id",
+					Value: resp.CopySourceVersionId,
+				},
+			})
+		}
 		return SendXMLResponse(ctx, resp, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -3144,6 +3152,14 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				},
 			})
 		if err == nil {
+			if getstring(res.VersionId) != "" {
+				utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+					{
+						Key:   "x-amz-version-id",
+						Value: getstring(res.VersionId),
+					},
+				})
+			}
 			return SendXMLResponse(ctx, res, err,
 				&MetaOpts{
 					Logger:      c.logger,

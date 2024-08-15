@@ -11175,3 +11175,278 @@ func ListObjectVersions_with_delete_markers(s *S3Conf) error {
 		return nil
 	}, withVersioning())
 }
+
+func Versioning_Multipart_Upload_success(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		objSize := 5 * 1024 * 1024
+		parts, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *res.Key != obj {
+			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+		}
+		if *res.Bucket != bucket {
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *res.Bucket)
+		}
+		if res.ETag == nil || *res.ETag == "" {
+			return fmt.Errorf("expected non-empty ETag")
+		}
+		if res.VersionId == nil || *res.VersionId == "" {
+			return fmt.Errorf("expected non-empty versionId")
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *resp.ETag != *res.ETag {
+			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v", *res.ETag, *resp.ETag)
+		}
+		if *resp.ContentLength != int64(objSize) {
+			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", objSize, resp.ContentLength)
+		}
+		if *resp.VersionId != *res.VersionId {
+			return fmt.Errorf("expected the versionId to be %v, instead got %v", *res.VersionId, *resp.VersionId)
+		}
+
+		return nil
+	}, withVersioning())
+}
+
+func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
+	testName := "Versioning_Multipart_Upload_overwrite_an_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		objVersions, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		objSize := 5 * 1024 * 1024
+		parts, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *res.Key != obj {
+			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+		}
+		if *res.Bucket != bucket {
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *res.Bucket)
+		}
+		if res.ETag == nil || *res.ETag == "" {
+			return fmt.Errorf("expected non-empty ETag")
+		}
+		if res.VersionId == nil || *res.VersionId == "" {
+			return fmt.Errorf("expected non-empty versionId")
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		size := int64(objSize)
+
+		objVersions[0].IsLatest = getBoolPtr(false)
+		versions := append([]types.ObjectVersion{
+			{
+				Key:       &obj,
+				VersionId: res.VersionId,
+				ETag:      res.ETag,
+				IsLatest:  getBoolPtr(true),
+				Size:      &size,
+			},
+		}, objVersions...)
+
+		if !compareVersions(resp.Versions, versions) {
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, resp.Versions)
+		}
+
+		return nil
+	}, withVersioning())
+}
+
+func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_non_existing_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstBucket, dstObj, srcObj := getBucketName(), "dst-obj", "src-obj"
+
+		lgth := int64(100)
+		_, err := putObjectWithData(lgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		if err := setup(s, dstBucket); err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, dstBucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		pNumber := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &dstBucket,
+			Key:        &dstObj,
+			UploadId:   mp.UploadId,
+			PartNumber: &pNumber,
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId", bucket, srcObj)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)); err != nil {
+			return err
+		}
+
+		if err := teardown(s, dstBucket); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning())
+}
+
+func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_from_an_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstBucket, obj := "my-obj", getBucketName(), "dst-obj"
+		err := setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		srcObjVersions, err := createObjVersions(s3client, bucket, srcObj, 1)
+		if err != nil {
+			return err
+		}
+		srcObjVersion := srcObjVersions[0]
+
+		out, err := createMp(s3client, dstBucket, obj)
+		if err != nil {
+			return err
+		}
+
+		partNumber := int32(1)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		copyOut, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &dstBucket,
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v", bucket, srcObj, *srcObjVersion.VersionId)),
+			UploadId:   out.UploadId,
+			Key:        &obj,
+			PartNumber: &partNumber,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *copyOut.CopySourceVersionId != *srcObjVersion.VersionId {
+			return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v", *srcObjVersion.VersionId, *copyOut.CopySourceVersionId)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &dstBucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Parts) != 1 {
+			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
+		}
+		if *res.Parts[0].PartNumber != partNumber {
+			return fmt.Errorf("expected part-number to be %v, instead got %v", partNumber, res.Parts[0].PartNumber)
+		}
+		if *res.Parts[0].Size != *srcObjVersion.Size {
+			return fmt.Errorf("expected part size to be %v, instead got %v", *srcObjVersion.Size, res.Parts[0].Size)
+		}
+		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
+			return fmt.Errorf("expected part etag to be %v, instead got %v", *copyOut.CopyPartResult.ETag, *res.Parts[0].ETag)
+		}
+
+		if err := teardown(s, dstBucket); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning())
+}
