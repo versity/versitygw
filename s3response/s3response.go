@@ -307,9 +307,10 @@ type CanonicalUser struct {
 }
 
 type CopyObjectResult struct {
-	XMLName      xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
-	LastModified time.Time
-	ETag         string
+	XMLName             xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
+	LastModified        time.Time
+	ETag                string
+	CopySourceVersionId string `xml:"-"`
 }
 
 func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {

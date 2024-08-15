@@ -506,21 +506,27 @@ func TestAccessControl(s *S3Conf) {
 }
 
 func TestVersioning(s *S3Conf) {
+	// PutBucketVersioning action
 	PutBucketVersioning_non_existing_bucket(s)
 	PutBucketVersioning_invalid_status(s)
 	PutBucketVersioning_success(s)
+	// GetBucketVersioning action
 	GetBucketVersioning_non_existing_bucket(s)
 	GetBucketVersioning_success(s)
 	Versioning_PutObject_success(s)
+	// CopyObject action
 	Versioning_CopyObject_success(s)
 	Versioning_CopyObject_non_existing_version_id(s)
 	Versioning_CopyObject_from_an_object_version(s)
+	// HeadObject action
 	Versioning_HeadObject_invalid_versionId(s)
 	Versioning_HeadObject_success(s)
 	Versioning_HeadObject_delete_marker(s)
+	// GetObject action
 	Versioning_GetObject_invalid_versionId(s)
 	Versioning_GetObject_success(s)
 	Versioning_GetObject_delete_marker(s)
+	// DeleteObject(s) actions
 	Versioning_DeleteObject_delete_object_version(s)
 	Versioning_DeleteObject_delete_a_delete_marker(s)
 	Versioning_DeleteObjects_success(s)
@@ -531,6 +537,11 @@ func TestVersioning(s *S3Conf) {
 	ListObjectVersions_list_multiple_object_versions(s)
 	ListObjectVersions_multiple_object_versions_truncated(s)
 	ListObjectVersions_with_delete_markers(s)
+	// Multipart upload
+	Versioning_Multipart_Upload_success(s)
+	Versioning_Multipart_Upload_overwrite_an_object(s)
+	Versioning_UploadPartCopy_non_existing_versionId(s)
+	Versioning_UploadPartCopy_from_an_object_version(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -865,5 +876,9 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_list_multiple_object_versions":                    ListObjectVersions_list_multiple_object_versions,
 		"ListObjectVersions_multiple_object_versions_truncated":               ListObjectVersions_multiple_object_versions_truncated,
 		"ListObjectVersions_with_delete_markers":                              ListObjectVersions_with_delete_markers,
+		"Versioning_Multipart_Upload_success":                                 Versioning_Multipart_Upload_success,
+		"Versioning_Multipart_Upload_overwrite_an_object":                     Versioning_Multipart_Upload_overwrite_an_object,
+		"Versioning_UploadPartCopy_non_existing_versionId":                    Versioning_UploadPartCopy_non_existing_versionId,
+		"Versioning_UploadPartCopy_from_an_object_version":                    Versioning_UploadPartCopy_from_an_object_version,
 	}
 }

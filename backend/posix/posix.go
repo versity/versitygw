@@ -1173,9 +1173,35 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 			return nil, err
 		}
 	}
+
+	vEnabled, err := p.isBucketVersioningEnabled(ctx, bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	d, err := os.Stat(objname)
+
+	// if the versioninng is enabled first create the file object version
+	if p.versioningEnabled() && vEnabled && err == nil && !d.IsDir() {
+		_, err := p.createObjVersion(bucket, object, d.Size(), acct)
+		if err != nil {
+			return nil, fmt.Errorf("create object version: %w", err)
+		}
+	}
+
 	err = f.link()
 	if err != nil {
 		return nil, fmt.Errorf("link object in namespace: %w", err)
+	}
+
+	// if the versioning is enabled, generate a new versionID for the object
+	var versionID string
+	if p.versioningEnabled() && vEnabled {
+		versionID = ulid.Make().String()
+
+		if err := p.meta.StoreAttribute(bucket, object, versionIdKey, []byte(versionID)); err != nil {
+			return nil, fmt.Errorf("set versionId attr: %w", err)
+		}
 	}
 
 	for k, v := range userMetaData {
@@ -1261,9 +1287,10 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	os.Remove(filepath.Join(bucket, objdir))
 
 	return &s3.CompleteMultipartUploadOutput{
-		Bucket: &bucket,
-		ETag:   &s3MD5,
-		Key:    &object,
+		Bucket:    &bucket,
+		ETag:      &s3MD5,
+		Key:       &object,
+		VersionId: &versionID,
 	}, nil
 }
 
@@ -1758,13 +1785,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	partPath := filepath.Join(objdir, *upi.UploadId, fmt.Sprintf("%v", *upi.PartNumber))
 
-	substrs := strings.SplitN(*upi.CopySource, "/", 2)
-	if len(substrs) != 2 {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(*upi.CopySource)
+	if err != nil {
+		return s3response.CopyObjectResult{}, err
 	}
-
-	srcBucket := substrs[0]
-	srcObject := substrs[1]
 
 	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1774,9 +1798,35 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyObjectResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	vEnabled, err := p.isBucketVersioningEnabled(ctx, srcBucket)
+	if err != nil {
+		return s3response.CopyObjectResult{}, err
+	}
+
+	if srcVersionId != "" {
+		if !p.versioningEnabled() || !vEnabled {
+			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(srcBucket, srcObject, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return s3response.CopyObjectResult{}, fmt.Errorf("get src object version id: %w", err)
+		}
+
+		if string(vId) != srcVersionId {
+			srcBucket = filepath.Join(p.versioningDir, srcBucket)
+			srcObject = filepath.Join(genObjVersionKey(srcObject), srcVersionId)
+		}
+	}
+
 	objPath := filepath.Join(srcBucket, srcObject)
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
+		if p.versioningEnabled() && vEnabled {
+			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchVersion)
+		}
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, syscall.ENAMETOOLONG) {
@@ -1848,8 +1898,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	return s3response.CopyObjectResult{
-		ETag:         etag,
-		LastModified: fi.ModTime(),
+		ETag:                etag,
+		LastModified:        fi.ModTime(),
+		CopySourceVersionId: srcVersionId,
 	}, nil
 }
 
@@ -2760,30 +2811,14 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
-	copySourceHdr := *input.CopySource
-	if copySourceHdr[0] == '/' {
-		copySourceHdr = copySourceHdr[1:]
-	}
-
-	cSplitted := strings.Split(copySourceHdr, "?")
-	copySource := cSplitted[0]
-	var srcVersionId string
-	if len(cSplitted) > 1 {
-		versionIdParts := strings.Split(cSplitted[1], "=")
-		if len(versionIdParts) != 2 || versionIdParts[0] != "versionId" {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-		srcVersionId = versionIdParts[1]
-	}
-
-	srcBucket, srcObject, ok := strings.Cut(copySource, "/")
-	if !ok {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(*input.CopySource)
+	if err != nil {
+		return nil, err
 	}
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
 
-	_, err := os.Stat(srcBucket)
+	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
@@ -2812,7 +2847,6 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			srcBucket = filepath.Join(p.versioningDir, srcBucket)
 			srcObject = filepath.Join(genObjVersionKey(srcObject), srcVersionId)
 		}
-
 	}
 
 	_, err = os.Stat(dstBucket)
