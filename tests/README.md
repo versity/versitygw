@@ -58,8 +58,9 @@ To communicate directly with s3, in order to compare the gateway results to dire
 
 ## Instructions - Running With Docker
 
-1.  Create a `.secrets` file in the `tests` folder, and add the `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and the `AWS_PROFILE` fields, as well as the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
-2.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively.  Example:  `docker build -t <tag> -f Dockerfile_test_bats --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" .`.
+1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
+2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
+3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> -f Dockerfile_test_bats --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" .`.
 
 ## Instructions - Running with docker-compose
 
@@ -77,3 +78,7 @@ To run in insecure mode, comment out the `CERT` and `KEY` parameters in the `.en
 To use static buckets set the `RECREATE_BUCKETS` value to `false`.
 
 For the s3 backend, see the **S3 Backend** instructions above.
+
+If using AMD rather than ARM architecture, add the corresponding **args** values matching those in the Dockerfile for **amd** libraries.
+
+A single instance can be run with `docker-compose -f docker-compose-bats.yml up <service name>`

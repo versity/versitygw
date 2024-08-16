@@ -426,6 +426,20 @@ delete_bucket_or_contents_if_exists() {
   return 0
 }
 
+setup_buckets() {
+  if [ $# -lt 1 ]; then
+    log 2 "'setup_buckets' command requires bucket names"
+    return 1
+  fi
+  for name in "$@"; do
+    if ! setup_bucket "$name"; then
+      log 2 "error setting up bucket $name"
+      return 1
+    fi
+  done
+  return 0
+}
+
 # params:  client, bucket name
 # fail if bucket is not properly set up
 setup_bucket() {
@@ -725,26 +739,6 @@ get_and_verify_object_tags() {
     [[ $tag_set_value == "$5" ]] || fail "Value mismatch"
   fi
   return 0
-}
-
-# list objects in bucket, v1
-# param:  bucket
-# export objects on success, return 1 for failure
-list_objects_s3api_v1() {
-  if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "list objects command requires bucket, (optional) delimiter"
-    return 1
-  fi
-  if [ "$2" == "" ]; then
-    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
-  else
-    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
-  fi
-  if [[ $result -ne 0 ]]; then
-    echo "error listing objects: $objects"
-    return 1
-  fi
-  export objects
 }
 
 # perform all parts of a multipart upload before completion command
@@ -1131,4 +1125,35 @@ create_presigned_url() {
     return 1
   fi
   export presigned_url
+}
+
+list_and_check_directory_obj() {
+  #assert [ $# -eq 2 ]
+  if [ $# -ne 2 ]; then
+    log 2 "'list_and_check_directory_obj' requires client, file name"
+    return 1
+  fi
+  if ! list_objects_with_prefix "$1" "$BUCKET_ONE_NAME" "$2/"; then
+    log 2 "error listing objects with prefix"
+    return 1
+  fi
+  if [ "$1" == "s3api" ]; then
+    # shellcheck disable=SC2154
+    if ! key=$(echo "$objects" | grep -v "InsecureRequestWarning" | jq -r ".Contents[0].Key" 2>&1); then
+      log 2 "error getting key: $key"
+      return 1
+    fi
+    if [ "$key" != "$2/" ]; then
+      log 2 "key mismatch ($key, $2)"
+      return 1
+    fi
+  elif [ "$1" == "s3" ]; then
+    log 5 "$objects"
+    filename=$(echo "$objects" | grep -v "InsecureRequestWarning" | awk '{print $4}')
+    if [ "$filename" != "$2" ]; then
+      log 2 "filename mismatch ($filename, $2)"
+      return 1
+    fi
+  fi
+  return 0
 }

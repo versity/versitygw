@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 source ./tests/test_common.sh
+source ./tests/util_file.sh
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
@@ -46,4 +47,8 @@ source ./tests/test_common.sh
   fi
   setup_bucket "s3" "$BUCKET_ONE_NAME"
   delete_bucket "s3" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
+}
+
+@test "test_ls_directory_object" {
+  test_common_ls_directory_object "s3"
 }

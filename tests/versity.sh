@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 source ./tests/util_file.sh
-source ./tests/iam.sh
 
 start_versity_process() {
   if [[ $# -ne 1 ]]; then
