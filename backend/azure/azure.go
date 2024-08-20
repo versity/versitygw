@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -56,9 +57,11 @@ const (
 	keyOwnership    key = "Ownership"
 	keyTags         key = "Tags"
 	keyPolicy       key = "Policy"
-	keyBucketLock   key = "Bucket-Lock"
-	keyObjRetention key = "Object_retention"
-	keyObjLegalHold key = "Object_legal_hold"
+	keyBucketLock   key = "Bucketlock"
+	keyObjRetention key = "Objectretention"
+	keyObjLegalHold key = "Objectlegalhold"
+
+	defaultContentType = "binary/octet-stream"
 )
 
 type Azure struct {
@@ -127,8 +130,8 @@ func (az *Azure) String() string {
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		string(keyAclCapital): backend.GetStringPtr(string(acl)),
-		string(keyOwnership):  backend.GetStringPtr(string(input.ObjectOwnership)),
+		string(keyAclCapital): backend.GetStringPtr(encodeBytes(acl)),
+		string(keyOwnership):  backend.GetStringPtr(encodeBytes([]byte(input.ObjectOwnership))),
 	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
@@ -148,28 +151,21 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 			return fmt.Errorf("parse default bucket lock state: %w", err)
 		}
 
-		meta[string(keyBucketLock)] = backend.GetStringPtr(string(defaultLockParsed))
+		meta[string(keyBucketLock)] = backend.GetStringPtr(encodeBytes(defaultLockParsed))
 	}
+
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	if errors.Is(s3err.GetAPIError(s3err.ErrBucketAlreadyExists), azureErrToS3Err(err)) {
-		client, err := az.getContainerClient(*input.Bucket)
+		aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
 		if err != nil {
 			return err
 		}
 
-		props, err := client.GetProperties(ctx, nil)
-		if err != nil {
-			return azureErrToS3Err(err)
-		}
-
-		aclPtr, ok := props.Metadata[string(keyAclCapital)]
-		if !ok {
-			return fmt.Errorf("missing acl in the bucket")
-		}
-
 		var acl auth.ACL
-		if err := json.Unmarshal([]byte(*aclPtr), &acl); err != nil {
-			return fmt.Errorf("unmarshal bucket acl: %w", err)
+		if len(aclBytes) > 0 {
+			if err := json.Unmarshal(aclBytes, &acl); err != nil {
+				return fmt.Errorf("unmarshal bucket acl: %w", err)
+			}
 		}
 		if acl.Owner == acct.Access {
 			return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
@@ -225,12 +221,7 @@ func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s
 }
 
 func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
-	client, err := az.getContainerClient(*input.Bucket)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = client.GetProperties(ctx, nil)
+	_, err := az.getContainerMetaData(ctx, *input.Bucket, "any")
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
@@ -254,64 +245,21 @@ func (az *Azure) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) 
 }
 
 func (az *Azure) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-	resp.Metadata[string(keyOwnership)] = backend.GetStringPtr(string(ownership))
-
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	return nil
+	return az.setContainerMetaData(ctx, bucket, string(keyOwnership), []byte(ownership))
 }
 
 func (az *Azure) GetBucketOwnershipControls(ctx context.Context, bucket string) (types.ObjectOwnership, error) {
 	var ownship types.ObjectOwnership
-	client, err := az.getContainerClient(bucket)
+	ownership, err := az.getContainerMetaData(ctx, bucket, string(keyOwnership))
 	if err != nil {
 		return ownship, err
 	}
 
-	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return ownship, azureErrToS3Err(err)
-	}
-
-	ownership, ok := resp.Metadata[string(keyOwnership)]
-	if !ok {
-		return ownship, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)
-	}
-
-	return types.ObjectOwnership(*ownership), nil
+	return types.ObjectOwnership(ownership), nil
 }
 
 func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	delete(resp.Metadata, string(keyOwnership))
-
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	return nil
+	return az.deleteContainerMetaData(ctx, bucket, string(keyOwnership))
 }
 
 func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, error) {
@@ -320,17 +268,30 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 		return "", err
 	}
 
-	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, &blockblob.UploadStreamOptions{
+	opts := &blockblob.UploadStreamOptions{
 		Metadata: parseMetadata(po.Metadata),
 		Tags:     tags,
-	})
+	}
+
+	opts.HTTPHeaders = &blob.HTTPHeaders{}
+	opts.HTTPHeaders.BlobContentEncoding = po.ContentEncoding
+	opts.HTTPHeaders.BlobContentLanguage = po.ContentLanguage
+	opts.HTTPHeaders.BlobContentDisposition = po.ContentDisposition
+	opts.HTTPHeaders.BlobContentType = po.ContentType
+
+	if opts.HTTPHeaders.BlobContentType == nil {
+		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(string(defaultContentType))
+	}
+
+	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, opts)
 	if err != nil {
 		return "", azureErrToS3Err(err)
 	}
 
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		if err := az.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true); err != nil {
+		err := az.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -345,7 +306,8 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 		if err != nil {
 			return "", fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
+		err = az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -354,53 +316,31 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 }
 
 func (az *Azure) PutBucketTagging(ctx context.Context, bucket string, tags map[string]string) error {
-	client, err := az.getContainerClient(bucket)
+	if tags == nil {
+		return az.deleteContainerMetaData(ctx, bucket, string(keyTags))
+	}
+
+	tagsJson, err := json.Marshal(tags)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	if tags == nil {
-		delete(resp.Metadata, string(keyTags))
-	} else {
-		tagsJson, err := json.Marshal(tags)
-		if err != nil {
-			return err
-		}
-
-		resp.Metadata[string(keyTags)] = backend.GetStringPtr(string(tagsJson))
-	}
-
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: resp.Metadata})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	return nil
+	return az.setContainerMetaData(ctx, bucket, string(keyTags), tagsJson)
 }
 
 func (az *Azure) GetBucketTagging(ctx context.Context, bucket string) (map[string]string, error) {
-	client, err := az.getContainerClient(bucket)
+	tagsJson, err := az.getContainerMetaData(ctx, bucket, string(keyTags))
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return nil, azureErrToS3Err(err)
-	}
-
-	tagsJson, ok := resp.Metadata[string(keyTags)]
-	if !ok {
-		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)
-	}
-
 	var tags map[string]string
-	if json.Unmarshal([]byte(*tagsJson), &tags); err != nil {
+	if len(tagsJson) == 0 {
+		return tags, nil
+	}
+
+	err = json.Unmarshal(tagsJson, &tags)
+	if err != nil {
 		return nil, err
 	}
 
@@ -435,11 +375,16 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		tagcount = int32(*blobDownloadResponse.TagCount)
 	}
 
+	contentType := blobDownloadResponse.ContentType
+	if contentType == nil {
+		contentType = backend.GetStringPtr(defaultContentType)
+	}
+
 	return &s3.GetObjectOutput{
 		AcceptRanges:    input.Range,
 		ContentLength:   blobDownloadResponse.ContentLength,
 		ContentEncoding: blobDownloadResponse.ContentEncoding,
-		ContentType:     blobDownloadResponse.ContentType,
+		ContentType:     contentType,
 		ETag:            (*string)(blobDownloadResponse.ETag),
 		LastModified:    blobDownloadResponse.LastModified,
 		Metadata:        parseAzMetadata(blobDownloadResponse.Metadata),
@@ -631,6 +576,7 @@ Pager:
 		NextMarker:  nextMarker,
 		Prefix:      input.Prefix,
 		IsTruncated: &isTruncated,
+		Delimiter:   input.Delimiter,
 	}, nil
 }
 
@@ -697,6 +643,13 @@ Pager:
 
 func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
+	if err != nil {
+		azerr, ok := err.(*azcore.ResponseError)
+		if ok && azerr.StatusCode == 404 {
+			// if the object does not exist, S3 returns success
+			return nil
+		}
+	}
 	return azureErrToS3Err(err)
 }
 
@@ -734,14 +687,9 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 }
 
 func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	containerClient, err := az.getContainerClient(*input.Bucket)
+	mdmap, err := az.getContainerMetaDataMap(ctx, *input.Bucket)
 	if err != nil {
 		return nil, err
-	}
-
-	res, err := containerClient.GetProperties(ctx, &container.GetPropertiesOptions{})
-	if err != nil {
-		return nil, azureErrToS3Err(err)
 	}
 
 	cpSrc := *input.CopySource
@@ -749,7 +697,7 @@ func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3
 		cpSrc = cpSrc[1:]
 	}
 
-	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == cpSrc && isMetaSame(res.Metadata, input.Metadata) {
+	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == cpSrc && isMetaSame(mdmap, input.Metadata) {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 
@@ -758,12 +706,12 @@ func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3
 		return nil, err
 	}
 
-	client, err := az.getBlobClient(*input.Bucket, *input.Key)
+	bclient, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := client.CopyFromURL(ctx, az.serviceURL+"/"+cpSrc, &blob.CopyFromURLOptions{
+	resp, err := bclient.CopyFromURL(ctx, az.serviceURL+"/"+cpSrc, &blob.CopyFromURLOptions{
 		BlobTags: tags,
 		Metadata: parseMetadata(input.Metadata),
 	})
@@ -1058,92 +1006,30 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 }
 
 func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	props.Metadata[string(keyAclCapital)] = backend.GetStringPtr(string(data))
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
-		Metadata: props.Metadata,
-	})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-	return nil
+	return az.setContainerMetaData(ctx, bucket, string(keyAclCapital), data)
 }
 
 func (az *Azure) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	client, err := az.getContainerClient(*input.Bucket)
-	if err != nil {
-		return nil, err
-	}
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return nil, azureErrToS3Err(err)
-	}
-
-	aclPtr, ok := props.Metadata[string(keyAclCapital)]
-	if !ok {
-		return nil, s3err.GetAPIError(s3err.ErrInternalError)
-	}
-
-	return []byte(*aclPtr), nil
+	return az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
 }
 
 func (az *Azure) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
-	client, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
 	if policy == nil {
-		delete(props.Metadata, string(keyPolicy))
-	} else {
-		// Store policy as base64 encoded, because storing raw json causes an SDK error
-		policyEncoded := base64.StdEncoding.EncodeToString(policy)
-		props.Metadata[string(keyPolicy)] = &policyEncoded
+		return az.deleteContainerMetaData(ctx, bucket, string(keyPolicy))
 	}
 
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
-		Metadata: props.Metadata,
-	})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-	return nil
+	return az.setContainerMetaData(ctx, bucket, string(keyPolicy), policy)
 }
 
 func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
-	client, err := az.getContainerClient(bucket)
+	p, err := az.getContainerMetaData(ctx, bucket, string(keyPolicy))
 	if err != nil {
 		return nil, err
 	}
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return nil, azureErrToS3Err(err)
-	}
-
-	policyPtr, ok := props.Metadata[string(keyPolicy)]
-	if !ok {
+	if len(p) == 0 {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
 	}
-
-	policy, err := base64.StdEncoding.DecodeString(*policyPtr)
-	if err != nil {
-		return nil, err
-	}
-
-	return policy, nil
+	return p, nil
 }
 
 func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
@@ -1151,23 +1037,17 @@ func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
-	client, err := az.getContainerClient(bucket)
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
 	if err != nil {
 		return err
 	}
 
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	cfg, exists := props.Metadata[string(keyBucketLock)]
-	if !exists {
+	if len(cfg) == 0 {
 		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
 	}
 
 	var bucketLockCfg auth.BucketLockConfig
-	if err := json.Unmarshal([]byte(*cfg), &bucketLockCfg); err != nil {
+	if err := json.Unmarshal(cfg, &bucketLockCfg); err != nil {
 		return fmt.Errorf("unmarshal object lock config: %w", err)
 	}
 
@@ -1175,53 +1055,34 @@ func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, 
 		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
 	}
 
-	props.Metadata[string(keyBucketLock)] = backend.GetStringPtr(string(config))
-
-	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{
-		Metadata: props.Metadata,
-	})
-	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	return nil
+	return az.setContainerMetaData(ctx, bucket, string(keyBucketLock), config)
 }
 
 func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
-	client, err := az.getContainerClient(bucket)
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
 	if err != nil {
 		return nil, err
 	}
-	props, err := client.GetProperties(ctx, nil)
-	if err != nil {
-		return nil, azureErrToS3Err(err)
-	}
 
-	config, ok := props.Metadata[string(keyBucketLock)]
-	if !ok {
+	if len(cfg) == 0 {
 		return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 	}
 
-	return []byte(*config), nil
+	return cfg, nil
 }
 
 func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
-	contClient, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-	contProps, err := contClient.GetProperties(ctx, nil)
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
 	if err != nil {
 		return azureErrToS3Err(err)
 	}
 
-	contCfg, ok := contProps.Metadata[string(keyBucketLock)]
-	if !ok {
+	if len(cfg) == 0 {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
 	}
 
 	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal([]byte(*contCfg), &bucketLockConfig); err != nil {
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
 		return fmt.Errorf("parse bucket lock config: %w", err)
 	}
 
@@ -1296,22 +1157,17 @@ func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, version
 }
 
 func (az *Azure) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
-	contClient, err := az.getContainerClient(bucket)
-	if err != nil {
-		return err
-	}
-	contProps, err := contClient.GetProperties(ctx, nil)
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
 	if err != nil {
 		return azureErrToS3Err(err)
 	}
 
-	contCfg, ok := contProps.Metadata[string(keyBucketLock)]
-	if !ok {
+	if len(cfg) == 0 {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
 	}
 
 	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal([]byte(*contCfg), &bucketLockConfig); err != nil {
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
 		return fmt.Errorf("parse bucket lock config: %w", err)
 	}
 
@@ -1403,7 +1259,7 @@ func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response
 }
 
 func (az *Azure) getContainerURL(cntr string) string {
-	return fmt.Sprintf("%v/%v", az.serviceURL, cntr)
+	return fmt.Sprintf("%v/%v", strings.TrimRight(az.serviceURL, "/"), cntr)
 }
 
 func (az *Azure) getBlobURL(cntr, blb string) string {
@@ -1532,14 +1388,132 @@ func decodeBlockId(blockID string) (int, error) {
 	return int(binary.LittleEndian.Uint32(slice)), nil
 }
 
+func encodeBytes(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func decodeString(str string) ([]byte, error) {
+	if str == "" {
+		return []byte{}, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
+}
+
+func (az *Azure) getContainerMetaData(ctx context.Context, bucket, key string) ([]byte, error) {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	if props.Metadata == nil {
+		return []byte{}, nil
+	}
+
+	data, ok := props.Metadata[key]
+	if !ok {
+		return []byte{}, nil
+	}
+
+	value, err := decodeString(*data)
+	if err != nil {
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func (az *Azure) getContainerMetaDataMap(ctx context.Context, bucket string) (map[string]*string, error) {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
+	return props.Metadata, nil
+}
+
+func (az *Azure) setContainerMetaData(ctx context.Context, bucket, key string, value []byte) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	mdmap := props.Metadata
+	if mdmap == nil {
+		mdmap = make(map[string]*string)
+	}
+
+	str := encodeBytes(value)
+	mdmap[key] = backend.GetStringPtr(str)
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (az *Azure) deleteContainerMetaData(ctx context.Context, bucket, key string) error {
+	client, err := az.getContainerClient(bucket)
+	if err != nil {
+		return err
+	}
+
+	props, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	mdmap := props.Metadata
+	if mdmap == nil {
+		mdmap = make(map[string]*string)
+	}
+
+	delete(mdmap, key)
+
+	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
-	aclPtr, ok := meta[string(key)]
+	data, ok := meta[string(key)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInternalError)
 	}
 
+	value, err := decodeString(*data)
+	if err != nil {
+		return nil, err
+	}
+
 	var acl auth.ACL
-	err := json.Unmarshal([]byte(*aclPtr), &acl)
+	if len(value) == 0 {
+		return &acl, nil
+	}
+
+	err = json.Unmarshal(value, &acl)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal acl: %w", err)
 	}
