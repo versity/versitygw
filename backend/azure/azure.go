@@ -769,7 +769,7 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 	return nil
 }
 
-func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	// Multipart upload starts with UploadPart action so there is no
 	// correlating function for creating mutlipart uploads.
 	// TODO: since azure only allows for a single multipart upload
@@ -779,10 +779,10 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 	// Alternatively, is there something we can do with upload ids to
 	// keep concurrent uploads unique still? I haven't found an efficient
 	// way to rename final objects.
-	return &s3.CreateMultipartUploadOutput{
-		Bucket:   input.Bucket,
-		Key:      input.Key,
-		UploadId: input.Key,
+	return s3response.InitiateMultipartUploadResult{
+		Bucket:   *input.Bucket,
+		Key:      *input.Key,
+		UploadId: *input.Key,
 	}, nil
 }
 

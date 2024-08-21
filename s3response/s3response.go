@@ -221,3 +221,9 @@ type Grantee struct {
 type OwnershipControls struct {
 	Rules []types.OwnershipControlsRule `xml:"Rule"`
 }
+
+type InitiateMultipartUploadResult struct {
+	Bucket   string
+	Key      string
+	UploadId string
+}
