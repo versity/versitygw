@@ -48,7 +48,7 @@ type Backend interface {
 	DeleteBucketOwnershipControls(_ context.Context, bucket string) error
 
 	// multipart operations
-	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
+	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
 	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
 	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
@@ -151,8 +151,8 @@ func (BackendUnsupported) DeleteBucketOwnershipControls(_ context.Context, bucke
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)

@@ -161,9 +161,17 @@ func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket stri
 	return handleError(err)
 }
 
-func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	out, err := s.client.CreateMultipartUpload(ctx, input)
-	return out, handleError(err)
+	if err != nil {
+		return s3response.InitiateMultipartUploadResult{}, handleError(err)
+	}
+
+	return s3response.InitiateMultipartUploadResult{
+		Bucket:   *out.Bucket,
+		Key:      *out.Key,
+		UploadId: *out.UploadId,
+	}, nil
 }
 
 func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {

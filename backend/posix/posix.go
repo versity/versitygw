@@ -377,12 +377,12 @@ func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) 
 	return nil
 }
 
-func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if mpu.Bucket == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	if mpu.Key == nil {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	bucket := *mpu.Bucket
@@ -390,16 +390,16 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	if strings.HasSuffix(*mpu.Key, "/") {
 		// directory objects can't be uploaded with mutlipart uploads
 		// because posix directories can't contain data
-		return nil, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 	}
 
 	// parse object tags
@@ -410,10 +410,10 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 		for _, prt := range tagParts {
 			p := strings.Split(prt, "=")
 			if len(p) != 2 {
-				return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTag)
 			}
 			if len(p[0]) > 128 || len(p[1]) > 256 {
-				return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTag)
 			}
 			tags[p[0]] = p[1]
 		}
@@ -431,7 +431,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 	// associated with this specific multipart upload
 	err = os.MkdirAll(filepath.Join(tmppath, uploadID), 0755)
 	if err != nil {
-		return nil, fmt.Errorf("create upload temp dir: %w", err)
+		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("create upload temp dir: %w", err)
 	}
 
 	// set an attribute with the original object name so that we can
@@ -443,7 +443,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 		// other uploads for the same object name outstanding
 		os.RemoveAll(filepath.Join(tmppath, uploadID))
 		os.Remove(tmppath)
-		return nil, fmt.Errorf("set name attr for upload: %w", err)
+		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set name attr for upload: %w", err)
 	}
 
 	// set user metadata
@@ -454,7 +454,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, fmt.Errorf("set user attr %q: %w", k, err)
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
@@ -465,7 +465,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, err
+			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
 
@@ -477,7 +477,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, fmt.Errorf("set content-type: %w", err)
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set content-type: %w", err)
 		}
 	}
 
@@ -487,7 +487,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, err
+			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
 
@@ -502,20 +502,20 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, fmt.Errorf("parse object lock retention: %w", err)
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
 		if err := p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", true, retParsed); err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
-			return nil, err
+			return s3response.InitiateMultipartUploadResult{}, err
 		}
 	}
 
-	return &s3.CreateMultipartUploadOutput{
-		Bucket:   &bucket,
-		Key:      &object,
-		UploadId: &uploadID,
+	return s3response.InitiateMultipartUploadResult{
+		Bucket:   bucket,
+		Key:      object,
+		UploadId: uploadID,
 	}, nil
 }
 

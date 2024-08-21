@@ -38,7 +38,7 @@ var _ backend.Backend = &BackendMock{}
 //			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
 //				panic("mock out the CreateBucket method")
 //			},
-//			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+//			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 //				panic("mock out the CreateMultipartUpload method")
 //			},
 //			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
@@ -199,7 +199,7 @@ type BackendMock struct {
 	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error
 
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
-	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error)
+	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
 
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
@@ -974,7 +974,7 @@ func (mock *BackendMock) CreateBucketCalls() []struct {
 }
 
 // CreateMultipartUpload calls CreateMultipartUploadFunc.
-func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (*s3.CreateMultipartUploadOutput, error) {
+func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if mock.CreateMultipartUploadFunc == nil {
 		panic("BackendMock.CreateMultipartUploadFunc: method is nil but Backend.CreateMultipartUpload was just called")
 	}
