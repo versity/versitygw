@@ -165,6 +165,10 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 		}
 
 		aclTag, err := p.meta.RetrieveAttribute(entry.Name(), "", aclkey)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			// skip buckets without acl tag
+			continue
+		}
 		if err != nil {
 			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
 		}
@@ -2681,14 +2685,16 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 		}
 
 		aclTag, err := p.meta.RetrieveAttribute(entry.Name(), "", aclkey)
-		if err != nil {
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return buckets, fmt.Errorf("get acl tag: %w", err)
 		}
 
 		var acl auth.ACL
-		err = json.Unmarshal(aclTag, &acl)
-		if err != nil {
-			return buckets, fmt.Errorf("parse acl tag: %w", err)
+		if len(aclTag) > 0 {
+			err = json.Unmarshal(aclTag, &acl)
+			if err != nil {
+				return buckets, fmt.Errorf("parse acl tag: %w", err)
+			}
 		}
 
 		buckets = append(buckets, s3response.Bucket{
