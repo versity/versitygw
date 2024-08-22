@@ -22,6 +22,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -1733,6 +1734,24 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("uploadId") &&
 		ctx.Request().URI().QueryArgs().Has("partNumber") &&
 		copySource != "" {
+
+		cs := copySource
+		copySource, err := url.QueryUnescape(copySource)
+		if err != nil {
+			if c.debug {
+				log.Printf("error unescaping copy source %q: %v",
+					cs, err)
+			}
+			return SendXMLResponse(ctx, nil,
+				s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionUploadPartCopy,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
 		partNumber := int32(ctx.QueryInt("partNumber", -1))
 		if partNumber < 1 || partNumber > 10000 {
 			if c.debug {
@@ -1748,7 +1767,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err := auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
+		err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
 			auth.AccessOptions{
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
@@ -1994,7 +2013,24 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if copySource != "" {
-		err := auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
+		cs := copySource
+		copySource, err := url.QueryUnescape(copySource)
+		if err != nil {
+			if c.debug {
+				log.Printf("error unescaping copy source %q: %v",
+					cs, err)
+			}
+			return SendXMLResponse(ctx, nil,
+				s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionCopyObject,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
 			auth.AccessOptions{
 				Acl:           parsedAcl,
 				AclPermission: types.PermissionWrite,
