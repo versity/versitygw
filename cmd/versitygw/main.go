@@ -19,9 +19,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/urfave/cli/v2"
@@ -518,11 +520,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:           "versitygw",
-		ServerHeader:      "VERSITYGW",
-		StreamRequestBody: true,
-		DisableKeepalive:  true,
-		Network:           fiber.NetworkTCP,
+		AppName:               "versitygw",
+		ServerHeader:          "VERSITYGW",
+		StreamRequestBody:     true,
+		DisableKeepalive:      true,
+		Network:               fiber.NetworkTCP,
+		DisableStartupMessage: true,
 	})
 
 	var opts []s3api.Option
@@ -558,9 +561,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	admApp := fiber.New(fiber.Config{
-		AppName:      "versitygw",
-		ServerHeader: "VERSITYGW",
-		Network:      fiber.NetworkTCP,
+		AppName:               "versitygw",
+		ServerHeader:          "VERSITYGW",
+		Network:               fiber.NetworkTCP,
+		DisableStartupMessage: true,
 	})
 
 	var admOpts []s3api.AdminOpt
@@ -662,6 +666,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	admSrv := s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, admOpts...)
 
+	if !quiet {
+		printBanner(port, admPort, certFile != "", admCertFile != "")
+	}
+
 	c := make(chan error, 2)
 	go func() { c <- srv.Serve() }()
 	if admPort != "" {
@@ -739,4 +747,178 @@ Loop:
 	}
 
 	return saveErr
+}
+
+func printBanner(port, admPort string, ssl, admSsl bool) {
+	interfaces, err := getMatchingIPs(port)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to match local IP addresses: %v\n", err)
+		return
+	}
+
+	var admInterfaces []string
+	if admPort != "" {
+		admInterfaces, err = getMatchingIPs(admPort)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to match admin port local IP addresses: %v\n", err)
+			return
+		}
+	}
+
+	title := "VersityGW"
+	version := fmt.Sprintf("Version %v, Build %v", Version, Build)
+	urls := []string{}
+
+	hst, prt, err := net.SplitHostPort(port)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to parse port: %v\n", err)
+		return
+	}
+
+	for _, ip := range interfaces {
+		url := fmt.Sprintf("http://%s:%s", ip, prt)
+		if ssl {
+			url = fmt.Sprintf("https://%s:%s", ip, prt)
+		}
+		urls = append(urls, url)
+	}
+
+	if hst == "" {
+		hst = "0.0.0.0"
+	}
+
+	boundHost := fmt.Sprintf("(bound on host %s and port %s)", hst, prt)
+
+	lines := []string{
+		centerText(title),
+		centerText(version),
+		centerText(boundHost),
+		centerText(""),
+	}
+
+	if len(admInterfaces) > 0 {
+		lines = append(lines,
+			leftText("S3 service listening on:"),
+		)
+	} else {
+		lines = append(lines,
+			leftText("Admin/S3 service listening on:"),
+		)
+	}
+
+	for _, url := range urls {
+		lines = append(lines, leftText("  "+url))
+	}
+
+	if len(admInterfaces) > 0 {
+		lines = append(lines,
+			centerText(""),
+			leftText("Admin service listening on:"),
+		)
+
+		_, prt, err := net.SplitHostPort(admPort)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to parse port: %v\n", err)
+			return
+		}
+
+		for _, ip := range admInterfaces {
+			url := fmt.Sprintf("http://%s:%s", ip, prt)
+			if admSsl {
+				url = fmt.Sprintf("https://%s:%s", ip, prt)
+			}
+			lines = append(lines, leftText("  "+url))
+		}
+	}
+
+	// Print the top border
+	fmt.Println("┌" + strings.Repeat("─", columnWidth-2) + "┐")
+
+	// Print each line
+	for _, line := range lines {
+		fmt.Printf("│%-*s│\n", columnWidth-2, line)
+	}
+
+	// Print the bottom border
+	fmt.Println("└" + strings.Repeat("─", columnWidth-2) + "┘")
+}
+
+// getMatchingIPs returns all IP addresses for local system interfaces that
+// match the input address specification.
+func getMatchingIPs(spec string) ([]string, error) {
+	// Split the input spec into IP and port
+	host, _, err := net.SplitHostPort(spec)
+	if err != nil {
+		return nil, fmt.Errorf("parse address/port: %v", err)
+	}
+
+	// Handle cases where IP is omitted (e.g., ":1234")
+	if host == "" {
+		host = "0.0.0.0"
+	}
+
+	ipaddr, err := net.ResolveIPAddr("ip", host)
+	if err != nil {
+		return nil, err
+	}
+
+	parsedInputIP := ipaddr.IP
+
+	var result []string
+
+	// Get all network interfaces
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, iface := range interfaces {
+		// Get all addresses associated with the interface
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			// Parse the address to get the IP part
+			ipAddr, _, err := net.ParseCIDR(addr.String())
+			if err != nil {
+				return nil, err
+			}
+
+			if ipAddr.IsLinkLocalUnicast() {
+				continue
+			}
+			if ipAddr.IsInterfaceLocalMulticast() {
+				continue
+			}
+			if ipAddr.IsLinkLocalMulticast() {
+				continue
+			}
+
+			// Check if the IP matches the input specification
+			if parsedInputIP.Equal(net.IPv4(0, 0, 0, 0)) || parsedInputIP.Equal(ipAddr) {
+				result = append(result, ipAddr.String())
+			}
+		}
+	}
+
+	return result, nil
+}
+
+const columnWidth = 70
+
+func centerText(text string) string {
+	padding := (columnWidth - 2 - len(text)) / 2
+	if padding < 0 {
+		padding = 0
+	}
+	return strings.Repeat(" ", padding) + text
+}
+
+func leftText(text string) string {
+	if len(text) > columnWidth-2 {
+		return text
+	}
+	return text + strings.Repeat(" ", columnWidth-2-len(text))
 }
