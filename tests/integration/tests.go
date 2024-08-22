@@ -4421,7 +4421,7 @@ func CopyObject_non_existing_dir_object(s *S3Conf) error {
 func CopyObject_success(s *S3Conf) error {
 	testName := "CopyObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		dataLength, obj := int64(1234567), "my-obj"
+		dataLength, obj := int64(1234567), "my obj with spaces"
 		dstBucket := getBucketName()
 		err := setup(s, dstBucket)
 		if err != nil {
