@@ -2130,12 +2130,13 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 				return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
 			}
 
-			key := path + "/"
+			size := int64(0)
 
 			return types.Object{
 				ETag:         &etag,
-				Key:          &key,
+				Key:          &path,
 				LastModified: backend.GetTimePtr(fi.ModTime()),
+				Size:         &size,
 			}, nil
 		}
 

@@ -180,6 +180,8 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_both_start_after_and_continuation_token(s)
 	ListObjectsV2_start_after_not_in_list(s)
 	ListObjectsV2_start_after_empty_result(s)
+	ListObjectsV2_both_delimiter_and_prefix(s)
+	ListObjectsV2_single_dir_object_with_delim_and_prefix(s)
 }
 
 func TestDeleteObject(s *S3Conf) {
@@ -611,6 +613,8 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_both_start_after_and_continuation_token":               ListObjectsV2_both_start_after_and_continuation_token,
 		"ListObjectsV2_start_after_not_in_list":                               ListObjectsV2_start_after_not_in_list,
 		"ListObjectsV2_start_after_empty_result":                              ListObjectsV2_start_after_empty_result,
+		"ListObjectsV2_both_delimiter_and_prefix":                             ListObjectsV2_both_delimiter_and_prefix,
+		"ListObjectsV2_single_dir_object_with_delim_and_prefix":               ListObjectsV2_single_dir_object_with_delim_and_prefix,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
 		"DeleteObject_success":                                                DeleteObject_success,

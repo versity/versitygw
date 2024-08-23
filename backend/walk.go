@@ -95,7 +95,10 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			if err != nil {
 				return fmt.Errorf("readdir %q: %w", path, err)
 			}
-			if len(ents) == 0 {
+
+			path += string(os.PathSeparator)
+
+			if len(ents) == 0 && delimiter == "" {
 				dirobj, err := getObj(path, d)
 				if err == ErrSkipObj {
 					return nil
@@ -104,9 +107,13 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 					return fmt.Errorf("directory to object %q: %w", path, err)
 				}
 				objects = append(objects, dirobj)
+
+				return nil
 			}
 
-			return nil
+			if len(ents) != 0 {
+				return nil
+			}
 		}
 
 		if !pastMarker {
