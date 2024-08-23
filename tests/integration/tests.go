@@ -3945,6 +3945,99 @@ func ListObjectsV2_start_after_empty_result(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_both_delimiter_and_prefix(s *S3Conf) error {
+	testName := "ListObjectsV2_both_delimiter_and_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putObjects(s3client, []string{
+			"sample.jpg",
+			"photos/2006/January/sample.jpg",
+			"photos/2006/February/sample2.jpg",
+			"photos/2006/February/sample3.jpg",
+			"photos/2006/February/sample4.jpg",
+		}, bucket); err != nil {
+			return err
+		}
+		delim, prefix := "/", "photos/2006/"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			Prefix:    &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Delimiter == nil || *res.Delimiter != delim {
+			return fmt.Errorf("expected the delimiter to be %v", delim)
+		}
+		if res.Prefix == nil || *res.Prefix != prefix {
+			return fmt.Errorf("expected the prefix to be %v", prefix)
+		}
+		if !comparePrefixes([]string{"photos/2006/February/", "photos/2006/January/"}, res.CommonPrefixes) {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"photos/2006/February/", "photos/2006/January/"}, res.CommonPrefixes)
+		}
+		if len(res.Contents) != 0 {
+			return fmt.Errorf("expected empty objects list, instead got %v", res.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
+	testName := "ListObjectsV2_single_dir_object_with_delim_and_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putObjects(s3client, []string{"a/"}, bucket); err != nil {
+			return err
+		}
+
+		delim, prefix := "/", "a"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			Prefix:    &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !comparePrefixes([]string{"a/"}, res.CommonPrefixes) {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"a/"}, res.CommonPrefixes)
+		}
+		if len(res.Contents) != 0 {
+			return fmt.Errorf("expected empty objects list, instead got %v", res.Contents)
+		}
+
+		prefix = "a/"
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			Prefix:    &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects([]string{"a/"}, res.Contents) {
+			return fmt.Errorf("expected the object list to be %v, instead got %v", []string{"a/"}, res.Contents)
+		}
+		if len(res.CommonPrefixes) != 0 {
+			return fmt.Errorf("expected empty common prefixes, instead got %v", res.CommonPrefixes)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
