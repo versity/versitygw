@@ -1544,11 +1544,19 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	granWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 
-	// Other headers
+	// Content Length
 	contentLengthStr := ctx.Get("Content-Length")
 	if contentLengthStr == "" {
 		contentLengthStr = "0"
 	}
+	// Use decoded content length if available because the
+	// middleware will decode the chunked transfer encoding
+	decodedLength := ctx.Get("X-Amz-Decoded-Content-Length")
+	if decodedLength != "" {
+		contentLengthStr = decodedLength
+	}
+
+	// Other headers
 	bucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
 	storageClass := ctx.Get("X-Amz-Storage-Class")
 
