@@ -458,6 +458,9 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
+		if errors.Is(err, syscall.ENAMETOOLONG) {
+			return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("stat part: %w", err)
 		}
@@ -491,6 +494,9 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
@@ -612,6 +618,9 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.Ge
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)

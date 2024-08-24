@@ -2769,6 +2769,25 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 	})
 }
 
+func PutObject_name_too_long(s *S3Conf) error {
+	testName := "PutObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func PutObject_with_object_lock(s *S3Conf) error {
 	testName := "PutObject_with_object_lock"
 	runF(testName)
@@ -2870,6 +2889,22 @@ func HeadObject_non_existing_object(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func HeadObject_name_too_long(s *S3Conf) error {
+	testName := "HeadObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
 			return err
 		}
 		return nil
@@ -4045,6 +4080,19 @@ func DeleteObject_non_existing_object(s *S3Conf) error {
 		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &bucket,
 			Key:    getPtr("my-obj"),
+		})
+		cancel()
+		return err
+	})
+}
+
+func DeleteObject_name_too_long(s *S3Conf) error {
+	testName := "DeleteObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		})
 		cancel()
 		return err

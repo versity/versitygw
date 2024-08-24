@@ -132,6 +132,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_special_chars(s)
 	PutObject_invalid_long_tags(s)
 	PutObject_missing_object_lock_retention_config(s)
+	PutObject_name_too_long(s)
 	PutObject_with_object_lock(s)
 	PutObject_success(s)
 	PutObject_invalid_credentials(s)
@@ -143,6 +144,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_mp(s)
 	HeadObject_mp_success(s)
 	HeadObject_non_existing_dir_object(s)
+	HeadObject_name_too_long(s)
 	HeadObject_success(s)
 }
 
@@ -186,6 +188,7 @@ func TestListObjectsV2(s *S3Conf) {
 
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
+	DeleteObject_name_too_long(s)
 	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
@@ -539,6 +542,7 @@ func GetIntTests() IntTests {
 		"PresignedAuth_incorrect_secret_key":                                  PresignedAuth_incorrect_secret_key,
 		"PresignedAuth_PutObject_success":                                     PresignedAuth_PutObject_success,
 		"PutObject_missing_object_lock_retention_config":                      PutObject_missing_object_lock_retention_config,
+		"PutObject_name_too_long":                                             PutObject_name_too_long,
 		"PutObject_with_object_lock":                                          PutObject_with_object_lock,
 		"PresignedAuth_Put_GetObject_with_data":                               PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                         PresignedAuth_Put_GetObject_with_UTF8_chars,
@@ -588,6 +592,7 @@ func GetIntTests() IntTests {
 		"HeadObject_non_existing_mp":                                          HeadObject_non_existing_mp,
 		"HeadObject_mp_success":                                               HeadObject_mp_success,
 		"HeadObject_non_existing_dir_object":                                  HeadObject_non_existing_dir_object,
+		"HeadObject_name_too_long":                                            HeadObject_name_too_long,
 		"HeadObject_success":                                                  HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
@@ -616,6 +621,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_both_delimiter_and_prefix":                             ListObjectsV2_both_delimiter_and_prefix,
 		"ListObjectsV2_single_dir_object_with_delim_and_prefix":               ListObjectsV2_single_dir_object_with_delim_and_prefix,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
+		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
 		"DeleteObject_success":                                                DeleteObject_success,
 		"DeleteObject_success_status_code":                                    DeleteObject_success_status_code,
