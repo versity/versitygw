@@ -522,6 +522,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		ServerHeader:      "VERSITYGW",
 		StreamRequestBody: true,
 		DisableKeepalive:  true,
+		Network:           fiber.NetworkTCP,
 	})
 
 	var opts []s3api.Option
@@ -559,6 +560,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	admApp := fiber.New(fiber.Config{
 		AppName:      "versitygw",
 		ServerHeader: "VERSITYGW",
+		Network:      fiber.NetworkTCP,
 	})
 
 	var admOpts []s3api.AdminOpt
