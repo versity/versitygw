@@ -26,6 +26,5 @@ head_object() {
       return 2
     fi
   fi
-  export metadata
   return 0
 }

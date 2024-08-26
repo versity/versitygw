@@ -29,7 +29,7 @@ export RUN_MC=true
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"
   fi
-  setup_bucket "mc" "$BUCKET_ONE_NAME" || fail "error setting up bucket"
+  setup_bucket "mc" "$BUCKET_ONE_NAME"
   delete_bucket "mc" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
 }
 
@@ -108,16 +108,14 @@ export RUN_MC=true
 }
 
 @test "test_get_bucket_info_mc" {
-  setup_bucket "mc" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "mc" "$BUCKET_ONE_NAME"
   head_bucket "mc" "$BUCKET_ONE_NAME"
   [[ $bucket_info == *"$BUCKET_ONE_NAME"* ]] || fail "failure to retrieve correct bucket info: $bucket_info"
   delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
 }
 
 @test "test_get_bucket_info_doesnt_exist_mc" {
-  setup_bucket "mc" "$BUCKET_ONE_NAME" || local setup_result=$?
-  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
+  setup_bucket "mc" "$BUCKET_ONE_NAME"
   head_bucket "mc" "$BUCKET_ONE_NAME"a || local info_result=$?
   [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
   [[ $bucket_info == *"does not exist"* ]] || fail "404 not returned for non-existent bucket info"

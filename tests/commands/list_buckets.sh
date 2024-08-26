@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 list_buckets() {
+  log 6 "list_buckets"
   record_command "list-buckets" "client:$1"
   if [ $# -ne 1 ]; then
     echo "list buckets command missing command type"
@@ -34,7 +35,6 @@ list_buckets() {
     bucket_name=$(echo "$line" | awk '{print $NF}')
     bucket_array+=("${bucket_name%/}")
   done <<< "$buckets"
-  export bucket_array
   return 0
 }
 
@@ -72,7 +72,6 @@ list_buckets_with_user() {
     bucket_name=$(echo "$line" | awk '{print $NF}')
     bucket_array+=("${bucket_name%/}")
   done <<< "$buckets"
-  export bucket_array
   return 0
 }
 
@@ -98,6 +97,5 @@ list_buckets_s3api() {
   names=$(jq -r '.Buckets[].Name' <<<"$modified_output")
   IFS=$'\n' read -rd '' -a bucket_array <<<"$names"
 
-  export bucket_array
   return 0
 }

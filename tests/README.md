@@ -10,9 +10,9 @@
    * **s3cmd**:  Instructions are [here](https://github.com/s3tools/s3cmd/blob/master/INSTALL.md).
    * **mc**:  Instructions are [here](https://min.io/docs/minio/linux/reference/minio-mc.html).
 3. Install **BATS**.  Instructions are [here](https://bats-core.readthedocs.io/en/stable/installation.html).
-4. Install **bats-support** and **bats-assert**.  This can be done by saving the root folder of each repo (both located in https://github.com/bats-core/) in the `tests` folder.
+4. Install **bats-support** and **bats-assert**.  This can be done by saving the root folder of each repo (https://github.com/bats-core/bats-support and https://github.com/ztombol/bats-assert) in the `tests` folder.
 5. If running on Mac OS, install **jq** with the command `brew install jq`.
-6. Create a `.secrets` file in the `tests` folder, and add the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values to the file.
+6. Create a `.secrets` file in the `tests` folder, and add the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `AWS_PROFILE` values to the file.
 7. Create a local AWS profile for connection to S3, and add the `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` values for your account to the profile.  Example:
 ```
     export AWS_PROFILE=versity-test
@@ -34,7 +34,7 @@
 
 ### Static Bucket Mode
 
-To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.
+To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.  Note that this creates a bucket with object lock enabled, and some tests may fail if the bucket being tested doesn't have object lock enabled.
 
 ### S3 Backend
 

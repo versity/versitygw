@@ -51,7 +51,7 @@ fi
 case $command_type in
   s3api|aws)
     echo "Running aws tests ..."
-    "$HOME"/bin/bats ./tests/test_aws.sh || exit_code=$?
+    "$HOME"/bin/bats ./tests/test_s3api.sh || exit_code=$?
     if [[ $exit_code -eq 0 ]]; then
       "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
     fi

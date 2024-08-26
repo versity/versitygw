@@ -12,6 +12,5 @@ get_object_retention() {
     export get_object_retention_error
     return 1
   fi
-  export retention
   return 0
 }

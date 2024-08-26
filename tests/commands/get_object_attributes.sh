@@ -13,6 +13,5 @@ get_object_attributes() {
   fi
   attributes=$(echo "$attributes" | grep -v "InsecureRequestWarning")
   log 5 "$attributes"
-  export attributes
   return 0
 }

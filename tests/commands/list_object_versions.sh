@@ -11,6 +11,5 @@ list_object_versions() {
     log 2 "error listing object versions: $versions"
     return 1
   fi
-  export versions
   return 0
 }

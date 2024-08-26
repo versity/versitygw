@@ -10,7 +10,6 @@ list_multipart_uploads() {
     log 2 "error listing uploads: $uploads"
     return 1
   fi
-  export uploads
 }
 
 list_multipart_uploads_with_user() {
@@ -21,9 +20,8 @@ list_multipart_uploads_with_user() {
   fi
   if ! uploads=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1" 2>&1); then
     log 2 "error listing uploads: $uploads"
+    # shellcheck disable=SC2034
     list_multipart_uploads_error=$uploads
-    export list_multipart_uploads_error
     return 1
   fi
-  export uploads
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 setup_user() {
+  log 6 "setup_user"
   if [[ $# -ne 3 ]]; then
     log 2 "'setup user' command requires username, password, and role"
     return 1
@@ -19,6 +20,8 @@ setup_user() {
 }
 
 setup_user_direct() {
+  log 6 "setup_user_direct"
+  log 5 "username: $1, role: $2, bucket: $3"
   if [[ $# -ne 3 ]]; then
     log 2 "'setup user direct' command requires username, role, and bucket"
     return 1
@@ -37,6 +40,7 @@ setup_user_direct() {
 }
 
 create_user_versitygw() {
+  log 6 "create_user_versitygw"
   if [[ $# -ne 3 ]]; then
     log 2 "create user command requires user ID, key, and role"
     return 1
@@ -49,6 +53,7 @@ create_user_versitygw() {
 }
 
 create_user_if_nonexistent() {
+  log 6 "create_user_if_nonexistent"
   if [[ $# -ne 3 ]]; then
     echo "create user command requires user ID, key, and role"
     return 1
@@ -62,6 +67,7 @@ create_user_if_nonexistent() {
 }
 
 put_user_policy_userplus() {
+  log 6 "put_user_policy_userplus"
   if [[ $# -ne 1 ]]; then
     log 2 "'put user policy userplus' function requires username"
     return 1
@@ -106,6 +112,7 @@ EOF
 }
 
 put_user_policy() {
+  log 6 "put_user_policy"
   if [[ $# -ne 3 ]]; then
     log 2 "attaching user policy requires user ID, role, bucket name"
     return 1
@@ -129,6 +136,7 @@ put_user_policy() {
 }
 
 create_user_direct() {
+  log 6 "create_user_direct"
   if [[ $# -ne 3 ]]; then
     log 2 "create user direct command requires desired username, role, bucket name"
     return 1
@@ -157,6 +165,7 @@ create_user_direct() {
 }
 
 create_user_with_user() {
+  log 6 "create_user_with_user"
   if [[ $# -ne 5 ]]; then
     log 2 "create user with user command requires creator ID, key, and new user ID, key, and role"
     return 1
@@ -169,6 +178,7 @@ create_user_with_user() {
 }
 
 list_users_direct() {
+  log 6 "list_users_direct"
   # AWS_ENDPOINT_URL of s3.amazonaws.com doesn't work here
   if ! users=$(aws --profile="$AWS_PROFILE" iam list-users 2>&1); then
     log 2 "error listing users via direct s3 call: $users"
@@ -188,6 +198,7 @@ list_users_direct() {
 }
 
 list_users() {
+  log 6 "list_users"
   if [[ $DIRECT == "true" ]]; then
     if ! list_users_direct; then
       log 2 "error listing users via direct s3 call"
@@ -203,6 +214,7 @@ list_users() {
 }
 
 list_users_versitygw() {
+  log 6 "list_users_versitygw"
   users=$($VERSITY_EXE admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     echo "error listing users: $users"
@@ -217,6 +229,7 @@ list_users_versitygw() {
 }
 
 user_exists() {
+  log 6 "user_exists"
   if [[ $# -ne 1 ]]; then
     log 2 "user exists command requires username"
     return 2
@@ -235,6 +248,7 @@ user_exists() {
 }
 
 delete_user_direct() {
+  log 6 "delete_user_direct"
   if [[ $# -ne 1 ]]; then
     log 2 "delete user direct command requires username"
     return 1
@@ -271,6 +285,7 @@ delete_user_direct() {
 }
 
 delete_user_versitygw() {
+  log 6 "delete_user_versitygw"
   if [[ $# -ne 1 ]]; then
     log 2 "delete user via versitygw command requires user ID or username"
     return 1
@@ -285,6 +300,7 @@ delete_user_versitygw() {
 }
 
 delete_user() {
+  log 6 "delete_user"
   if [[ $# -ne 1 ]]; then
     log 2 "delete user command requires user ID"
     return 1
@@ -304,6 +320,7 @@ delete_user() {
 }
 
 change_bucket_owner_direct() {
+  log 6 "change_bucket_owner_direct"
   if [[ $# -ne 4 ]]; then
     echo "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
@@ -312,6 +329,7 @@ change_bucket_owner_direct() {
 }
 
 change_bucket_owner() {
+  log 6 "change_bucket_owner"
   if [[ $# -ne 4 ]]; then
     echo "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
@@ -321,7 +339,9 @@ change_bucket_owner() {
       log 2 "error changing bucket owner direct to s3"
       return 1
     fi
+    return 0
   fi
+  log 5 "changing owner for bucket $3, new owner: $4"
   error=$($VERSITY_EXE admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?
   if [[ $change_result -ne 0 ]]; then
     echo "error changing bucket owner: $error"
@@ -331,6 +351,7 @@ change_bucket_owner() {
 }
 
 get_bucket_owner() {
+  log 6 "get_bucket_owner"
   if [[ $# -ne 1 ]]; then
     log 2 "'get bucket owner' command requires bucket name"
     return 1

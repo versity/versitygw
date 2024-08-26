@@ -141,6 +141,7 @@ jobs:
           PASSWORD_ONE: 1234567
           USERNAME_TWO: HIJKLMN
           PASSWORD_TWO: 8901234
+          TEST_FILE_FOLDER: ${{ github.workspace }}/versity-gwtest-files
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST

@@ -59,7 +59,7 @@ check_universal_vars() {
   if [ "$DIRECT" != "true" ]; then
     assert [ -n "$AWS_ENDPOINT_URL" ]
   fi
-  if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" == "false" ]; then
+  if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" != "false" ]; then
     fail "RUN_VERSITYGW must be 'true' or 'false'"
   fi
 
@@ -69,6 +69,7 @@ check_universal_vars() {
   if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
     fail "RECREATE_BUCKETS must be 'true' or 'false'"
   fi
+  assert [ -n "$TEST_FILE_FOLDER" ]
   # exporting these since they're needed for subshells
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
 }

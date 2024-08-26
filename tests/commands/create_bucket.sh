@@ -53,7 +53,6 @@ create_bucket_with_user() {
   fi
   if [ $exit_code -ne 0 ]; then
     log 2 "error creating bucket: $error"
-    export error
     return 1
   fi
   return 0
