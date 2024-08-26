@@ -373,14 +373,47 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s
 	return out, handleError(err)
 }
 
-func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 	out, err := s.client.ListObjects(ctx, input)
-	return out, handleError(err)
+	if err != nil {
+		return s3response.ListObjectsResult{}, handleError(err)
+	}
+
+	contents := convertObjects(out.Contents)
+
+	return s3response.ListObjectsResult{
+		CommonPrefixes: out.CommonPrefixes,
+		Contents:       contents,
+		Delimiter:      out.Delimiter,
+		IsTruncated:    out.IsTruncated,
+		Marker:         out.Marker,
+		MaxKeys:        out.MaxKeys,
+		Name:           out.Name,
+		NextMarker:     out.NextMarker,
+		Prefix:         out.Prefix,
+	}, nil
 }
 
-func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
 	out, err := s.client.ListObjectsV2(ctx, input)
-	return out, handleError(err)
+	if err != nil {
+		return s3response.ListObjectsV2Result{}, handleError(err)
+	}
+
+	contents := convertObjects(out.Contents)
+
+	return s3response.ListObjectsV2Result{
+		CommonPrefixes:        out.CommonPrefixes,
+		Contents:              contents,
+		Delimiter:             out.Delimiter,
+		IsTruncated:           out.IsTruncated,
+		ContinuationToken:     out.ContinuationToken,
+		MaxKeys:               out.MaxKeys,
+		Name:                  out.Name,
+		NextContinuationToken: out.NextContinuationToken,
+		Prefix:                out.Prefix,
+		KeyCount:              out.KeyCount,
+	}, nil
 }
 
 func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
@@ -737,4 +770,23 @@ func base64Decode(encoded string) ([]byte, error) {
 		return nil, err
 	}
 	return decoded, nil
+}
+
+func convertObjects(objs []types.Object) []s3response.Object {
+	result := make([]s3response.Object, len(objs))
+
+	for _, obj := range objs {
+		lastModified := obj.LastModified.UTC().Format(backend.RFC3339TimeFormat)
+		result = append(result, s3response.Object{
+			ETag:          obj.ETag,
+			Key:           obj.Key,
+			LastModified:  &lastModified,
+			Owner:         obj.Owner,
+			Size:          obj.Size,
+			RestoreStatus: obj.RestoreStatus,
+			StorageClass:  obj.StorageClass,
+		})
+	}
+
+	return result
 }

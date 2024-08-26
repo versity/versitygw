@@ -2082,9 +2082,9 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}, nil
 }
 
-func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 	if input.Bucket == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	bucket := *input.Bucket
 	prefix := ""
@@ -2106,20 +2106,20 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.ListObjectsResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
 		p.fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
-		return nil, fmt.Errorf("walk %v: %w", bucket, err)
+		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
 
-	return &s3.ListObjectsOutput{
+	return s3response.ListObjectsResult{
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
 		Delimiter:      &delim,
@@ -2133,33 +2133,34 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s
 }
 
 func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
-	return func(path string, d fs.DirEntry) (types.Object, error) {
+	return func(path string, d fs.DirEntry) (s3response.Object, error) {
 		if d.IsDir() {
 			// directory object only happens if directory empty
 			// check to see if this is a directory object by checking etag
 			etagBytes, err := p.meta.RetrieveAttribute(bucket, path, etagkey)
 			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
-				return types.Object{}, backend.ErrSkipObj
+				return s3response.Object{}, backend.ErrSkipObj
 			}
 			if err != nil {
-				return types.Object{}, fmt.Errorf("get etag: %w", err)
+				return s3response.Object{}, fmt.Errorf("get etag: %w", err)
 			}
 			etag := string(etagBytes)
 
 			fi, err := d.Info()
 			if errors.Is(err, fs.ErrNotExist) {
-				return types.Object{}, backend.ErrSkipObj
+				return s3response.Object{}, backend.ErrSkipObj
 			}
 			if err != nil {
-				return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+				return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
 			}
 
 			size := int64(0)
+			mDate := fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)
 
-			return types.Object{
+			return s3response.Object{
 				ETag:         &etag,
 				Key:          &path,
-				LastModified: backend.GetTimePtr(fi.ModTime()),
+				LastModified: &mDate,
 				Size:         &size,
 			}, nil
 		}
@@ -2167,10 +2168,10 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 		// file object, get object info and fill out object data
 		etagBytes, err := p.meta.RetrieveAttribute(bucket, path, etagkey)
 		if errors.Is(err, fs.ErrNotExist) {
-			return types.Object{}, backend.ErrSkipObj
+			return s3response.Object{}, backend.ErrSkipObj
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return types.Object{}, fmt.Errorf("get etag: %w", err)
+			return s3response.Object{}, fmt.Errorf("get etag: %w", err)
 		}
 		// note: meta.ErrNoSuchKey will return etagBytes = []byte{}
 		// so this will just set etag to "" if its not already set
@@ -2179,26 +2180,27 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 
 		fi, err := d.Info()
 		if errors.Is(err, fs.ErrNotExist) {
-			return types.Object{}, backend.ErrSkipObj
+			return s3response.Object{}, backend.ErrSkipObj
 		}
 		if err != nil {
-			return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+			return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
 		}
 
 		size := fi.Size()
+		mDate := fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)
 
-		return types.Object{
+		return s3response.Object{
 			ETag:         &etag,
 			Key:          &path,
-			LastModified: backend.GetTimePtr(fi.ModTime()),
+			LastModified: &mDate,
 			Size:         &size,
 		}, nil
 	}
 }
 
-func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
 	if input.Bucket == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	bucket := *input.Bucket
 	prefix := ""
@@ -2228,22 +2230,22 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.ListObjectsV2Result{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
 		p.fileToObj(bucket), []string{metaTmpDir})
 	if err != nil {
-		return nil, fmt.Errorf("walk %v: %w", bucket, err)
+		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
 
 	count := int32(len(results.Objects))
 
-	return &s3.ListObjectsV2Output{
+	return s3response.ListObjectsV2Result{
 		CommonPrefixes:        results.CommonPrefixes,
 		Contents:              results.Objects,
 		Delimiter:             &delim,

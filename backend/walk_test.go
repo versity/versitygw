@@ -27,6 +27,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3response"
 )
 
 type walkTest struct {
@@ -35,19 +36,19 @@ type walkTest struct {
 	getobj   backend.GetObjFunc
 }
 
-func getObj(path string, d fs.DirEntry) (types.Object, error) {
+func getObj(path string, d fs.DirEntry) (s3response.Object, error) {
 	if d.IsDir() {
 		etag := getMD5(path)
 
 		fi, err := d.Info()
 		if err != nil {
-			return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+			return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
 		}
 
-		return types.Object{
+		return s3response.Object{
 			ETag:         &etag,
 			Key:          &path,
-			LastModified: backend.GetTimePtr(fi.ModTime()),
+			LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
 		}, nil
 	}
 
@@ -55,15 +56,15 @@ func getObj(path string, d fs.DirEntry) (types.Object, error) {
 
 	fi, err := d.Info()
 	if err != nil {
-		return types.Object{}, fmt.Errorf("get fileinfo: %w", err)
+		return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
 	}
 
 	size := fi.Size()
 
-	return types.Object{
+	return s3response.Object{
 		ETag:         &etag,
 		Key:          &path,
-		LastModified: backend.GetTimePtr(fi.ModTime()),
+		LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
 		Size:         &size,
 	}, nil
 }
@@ -89,7 +90,7 @@ func TestWalk(t *testing.T) {
 				CommonPrefixes: []types.CommonPrefix{{
 					Prefix: backend.GetStringPtr("photos/"),
 				}},
-				Objects: []types.Object{{
+				Objects: []s3response.Object{{
 					Key: backend.GetStringPtr("sample.jpg"),
 				}},
 			},
@@ -104,7 +105,7 @@ func TestWalk(t *testing.T) {
 				CommonPrefixes: []types.CommonPrefix{{
 					Prefix: backend.GetStringPtr("test/"),
 				}},
-				Objects: []types.Object{},
+				Objects: []s3response.Object{},
 			},
 			getobj: getObj,
 		},
@@ -171,7 +172,7 @@ func printCommonPrefixes(list []types.CommonPrefix) string {
 	return res + "]"
 }
 
-func compareObjects(a, b []types.Object) bool {
+func compareObjects(a, b []s3response.Object) bool {
 	if len(a) == 0 && len(b) == 0 {
 		return true
 	}
@@ -187,7 +188,7 @@ func compareObjects(a, b []types.Object) bool {
 	return false
 }
 
-func containsObject(c types.Object, list []types.Object) bool {
+func containsObject(c s3response.Object, list []s3response.Object) bool {
 	for _, cp := range list {
 		if *c.Key == *cp.Key {
 			return true
@@ -196,7 +197,7 @@ func containsObject(c types.Object, list []types.Object) bool {
 	return false
 }
 
-func printObjects(list []types.Object) string {
+func printObjects(list []s3response.Object) string {
 	res := "["
 	for _, cp := range list {
 		if res == "[" {
@@ -239,8 +240,8 @@ func TestWalkStop(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
-			func(path string, d fs.DirEntry) (types.Object, error) {
-				return types.Object{}, nil
+			func(path string, d fs.DirEntry) (s3response.Object, error) {
+				return s3response.Object{}, nil
 			}, []string{})
 	}()
 

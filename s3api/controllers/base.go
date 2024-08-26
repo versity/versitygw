@@ -952,10 +952,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			Delimiter: &delimiter,
 			MaxKeys:   &maxkeys,
 		})
-	return SendXMLResponse(ctx, struct {
-		*s3.ListObjectsOutput
-		XMLName struct{} `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult"`
-	}{ListObjectsOutput: res}, err,
+	return SendXMLResponse(ctx, res, err,
 		&MetaOpts{
 			Logger:      c.logger,
 			MetricsMng:  c.mm,

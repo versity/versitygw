@@ -373,11 +373,11 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			ListMultipartUploadsFunc: func(_ context.Context, output *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
 				return s3response.ListMultipartUploadsResult{}, nil
 			},
-			ListObjectsV2Func: func(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
-				return &s3.ListObjectsV2Output{}, nil
+			ListObjectsV2Func: func(context.Context, *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+				return s3response.ListObjectsV2Result{}, nil
 			},
-			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
-				return &s3.ListObjectsOutput{}, nil
+			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+				return s3response.ListObjectsResult{}, nil
 			},
 			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 				return map[string]string{}, nil
@@ -416,8 +416,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketAclFunc: func(context.Context, *s3.GetBucketAclInput) ([]byte, error) {
 				return acldata, nil
 			},
-			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
-				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+			ListObjectsFunc: func(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+				return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 			},
 			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 				return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)

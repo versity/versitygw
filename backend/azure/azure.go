@@ -525,14 +525,14 @@ func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAtt
 	}, nil
 }
 
-func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 	pager := az.client.NewListBlobsFlatPager(*input.Bucket, &azblob.ListBlobsFlatOptions{
 		Marker:     input.Marker,
 		MaxResults: input.MaxKeys,
 		Prefix:     input.Prefix,
 	})
 
-	var objects []types.Object
+	var objects []s3response.Object
 	var nextMarker *string
 	var isTruncated bool
 	var maxKeys int32 = math.MaxInt32
@@ -545,7 +545,7 @@ Pager:
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.ListObjectsResult{}, azureErrToS3Err(err)
 		}
 
 		for _, v := range resp.Segment.BlobItems {
@@ -556,10 +556,10 @@ Pager:
 			if len(objects) >= int(maxKeys) {
 				break Pager
 			}
-			objects = append(objects, types.Object{
+			objects = append(objects, s3response.Object{
 				ETag:         (*string)(v.Properties.ETag),
 				Key:          v.Name,
-				LastModified: v.Properties.LastModified,
+				LastModified: backend.GetStringPtr(v.Properties.LastModified.UTC().Format(backend.RFC3339TimeFormat)),
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
@@ -568,7 +568,7 @@ Pager:
 
 	// TODO: generate common prefixes when appropriate
 
-	return &s3.ListObjectsOutput{
+	return s3response.ListObjectsResult{
 		Contents:    objects,
 		Marker:      input.Marker,
 		MaxKeys:     input.MaxKeys,
@@ -580,7 +580,7 @@ Pager:
 	}, nil
 }
 
-func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
 	marker := ""
 	if *input.ContinuationToken > *input.StartAfter {
 		marker = *input.ContinuationToken
@@ -593,7 +593,7 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 		Prefix:     input.Prefix,
 	})
 
-	var objects []types.Object
+	var objects []s3response.Object
 	var nextMarker *string
 	var isTruncated bool
 	var maxKeys int32 = math.MaxInt32
@@ -606,7 +606,7 @@ Pager:
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.ListObjectsV2Result{}, azureErrToS3Err(err)
 		}
 		for _, v := range resp.Segment.BlobItems {
 			if nextMarker == nil && *resp.NextMarker != "" {
@@ -617,10 +617,10 @@ Pager:
 				break Pager
 			}
 			nextMarker = resp.NextMarker
-			objects = append(objects, types.Object{
+			objects = append(objects, s3response.Object{
 				ETag:         (*string)(v.Properties.ETag),
 				Key:          v.Name,
-				LastModified: v.Properties.LastModified,
+				LastModified: backend.GetStringPtr(v.Properties.LastModified.UTC().Format(backend.RFC3339TimeFormat)),
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
@@ -629,7 +629,7 @@ Pager:
 
 	// TODO: generate common prefixes when appropriate
 
-	return &s3.ListObjectsV2Output{
+	return s3response.ListObjectsV2Result{
 		Contents:              objects,
 		ContinuationToken:     input.ContinuationToken,
 		MaxKeys:               input.MaxKeys,
