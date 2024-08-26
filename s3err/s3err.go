@@ -131,6 +131,7 @@ const (
 	ErrUnexpectedContent
 	ErrMissingSecurityHeader
 	ErrInvalidMetadataDirective
+	ErrKeyTooLong
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -152,7 +153,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrBucketNotEmpty: {
 		Code:           "BucketNotEmpty",
-		Description:    "The bucket you tried to delete is not empty",
+		Description:    "The bucket you tried to delete is not empty.",
 		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrBucketAlreadyExists: {
@@ -177,17 +178,17 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidMaxUploads: {
 		Code:           "InvalidArgument",
-		Description:    "Argument max-uploads must be an integer between 0 and 2147483647",
+		Description:    "Argument max-uploads must be an integer between 0 and 2147483647.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidMaxKeys: {
 		Code:           "InvalidArgument",
-		Description:    "Argument maxKeys must be an integer between 0 and 2147483647",
+		Description:    "Argument maxKeys must be an integer between 0 and 2147483647.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidMaxParts: {
 		Code:           "InvalidArgument",
-		Description:    "Argument max-parts must be an integer between 0 and 2147483647",
+		Description:    "Argument max-parts must be an integer between 0 and 2147483647.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPartNumberMarker: {
@@ -197,7 +198,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNoSuchBucket: {
 		Code:           "NoSuchBucket",
-		Description:    "The specified bucket does not exist",
+		Description:    "The specified bucket does not exist.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrNoSuchKey: {
@@ -222,7 +223,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidPartNumber: {
 		Code:           "InvalidArgument",
-		Description:    "Part number must be an integer between 1 and 10000, inclusive",
+		Description:    "Part number must be an integer between 1 and 10000, inclusive.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidCopyDest: {
@@ -267,7 +268,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrPostPolicyConditionInvalidFormat: {
 		Code:           "PostPolicyInvalidKeyName",
-		Description:    "Invalid according to Policy: Policy Condition failed",
+		Description:    "Invalid according to Policy: Policy Condition failed.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrEntityTooSmall: {
@@ -302,7 +303,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrMalformedPresignedDate: {
 		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Date must be in the ISO8601 Long Format \"yyyyMMdd'T'HHmmss'Z'\"",
+		Description:    "X-Amz-Date must be in the ISO8601 Long Format \"yyyyMMdd'T'HHmmss'Z'\".",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingSignHeadersTag: {
@@ -317,7 +318,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrUnsignedHeaders: {
 		Code:           "AccessDenied",
-		Description:    "There were headers present in the request which were not signed",
+		Description:    "There were headers present in the request which were not signed.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidQueryParams: {
@@ -332,22 +333,22 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrExpiredPresignRequest: {
 		Code:           "AccessDenied",
-		Description:    "Request has expired",
+		Description:    "Request has expired.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrMalformedExpires: {
 		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires should be a number",
+		Description:    "X-Amz-Expires should be a number.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNegativeExpires: {
 		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires must be non-negative",
+		Description:    "X-Amz-Expires must be non-negative.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMaximumExpires: {
 		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds",
+		Description:    "X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidAccessKeyID: {
@@ -357,7 +358,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrRequestNotReadyYet: {
 		Code:           "AccessDenied",
-		Description:    "Request is not valid yet",
+		Description:    "Request is not valid yet.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrSignatureDoesNotMatch: {
@@ -367,17 +368,17 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrSignatureDateDoesNotMatch: {
 		Code:           "SignatureDoesNotMatch",
-		Description:    "Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP",
+		Description:    "Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrSignatureTerminationStr: {
 		Code:           "SignatureDoesNotMatch",
-		Description:    "Credential should be scoped with a valid terminator: 'aws4_request'",
+		Description:    "Credential should be scoped with a valid terminator: 'aws4_request'.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrSignatureIncorrService: {
 		Code:           "SignatureDoesNotMatch",
-		Description:    "Credential should be scoped to correct service: s3",
+		Description:    "Credential should be scoped to correct service: s3.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrContentSHA256Mismatch: {
@@ -387,32 +388,32 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrMissingDateHeader: {
 		Code:           "AccessDenied",
-		Description:    "AWS authentication requires a valid Date or x-amz-date header",
+		Description:    "AWS authentication requires a valid Date or x-amz-date header.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidRequest: {
 		Code:           "InvalidRequest",
-		Description:    "Invalid Request",
+		Description:    "Invalid Request.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrAuthNotSetup: {
 		Code:           "InvalidRequest",
-		Description:    "Signed request requires setting up SeaweedFS S3 authentication",
+		Description:    "Signed request requires setting up SeaweedFS S3 authentication.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNotImplemented: {
 		Code:           "NotImplemented",
-		Description:    "A header you provided implies functionality that is not implemented",
+		Description:    "A header you provided implies functionality that is not implemented.",
 		HTTPStatusCode: http.StatusNotImplemented,
 	},
 	ErrPreconditionFailed: {
 		Code:           "PreconditionFailed",
-		Description:    "At least one of the pre-conditions you specified did not hold",
+		Description:    "At least one of the pre-conditions you specified did not hold.",
 		HTTPStatusCode: http.StatusPreconditionFailed,
 	},
 	ErrInvalidObjectState: {
 		Code:           "InvalidObjectState",
-		Description:    "The operation is not valid for the current state of the object",
+		Description:    "The operation is not valid for the current state of the object.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrInvalidRange: {
@@ -427,52 +428,52 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrObjectLockConfigurationNotFound: {
 		Code:           "ObjectLockConfigurationNotFoundError",
-		Description:    "Object Lock configuration does not exist for this bucket",
+		Description:    "Object Lock configuration does not exist for this bucket.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrNoSuchObjectLockConfiguration: {
 		Code:           "NoSuchObjectLockConfiguration",
-		Description:    "The specified object does not have an ObjectLock configuration",
+		Description:    "The specified object does not have an ObjectLock configuration.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidBucketObjectLockConfiguration: {
 		Code:           "InvalidRequest",
-		Description:    "Bucket is missing ObjectLockConfiguration",
+		Description:    "Bucket is missing ObjectLockConfiguration.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLockConfigurationNotAllowed: {
 		Code:           "InvalidBucketState",
-		Description:    "Object Lock configuration cannot be enabled on existing buckets",
+		Description:    "Object Lock configuration cannot be enabled on existing buckets.",
 		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrObjectLocked: {
 		Code:           "InvalidRequest",
-		Description:    "Object is WORM protected and cannot be overwritten",
+		Description:    "Object is WORM protected and cannot be overwritten.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrPastObjectLockRetainDate: {
 		Code:           "InvalidRequest",
-		Description:    "the retain until date must be in the future",
+		Description:    "the retain until date must be in the future.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLockInvalidRetentionPeriod: {
 		Code:           "InvalidRetentionPeriod",
-		Description:    "the retention days/years must be positive integer",
+		Description:    "the retention days/years must be positive integer.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchBucketPolicy: {
 		Code:           "NoSuchBucketPolicy",
-		Description:    "The bucket policy does not exist",
+		Description:    "The bucket policy does not exist.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrBucketTaggingNotFound: {
 		Code:           "NoSuchTagSet",
-		Description:    "The TagSet does not exist",
+		Description:    "The TagSet does not exist.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrObjectLockInvalidHeaders: {
 		Code:           "InvalidRequest",
-		Description:    "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied",
+		Description:    "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrRequestTimeTooSkewed: {
@@ -482,42 +483,47 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidBucketAclWithObjectOwnership: {
 		Code:           "ErrInvalidBucketAclWithObjectOwnership",
-		Description:    "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting",
+		Description:    "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrBothCannedAndHeaderGrants: {
 		Code:           "InvalidRequest",
-		Description:    "Specifying both Canned ACLs and Header Grants is not allowed",
+		Description:    "Specifying both Canned ACLs and Header Grants is not allowed.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrOwnershipControlsNotFound: {
 		Code:           "OwnershipControlsNotFoundError",
-		Description:    "The bucket ownership controls were not found",
+		Description:    "The bucket ownership controls were not found.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrAclNotSupported: {
 		Code:           "AccessControlListNotSupported",
-		Description:    "The bucket does not allow ACLs",
+		Description:    "The bucket does not allow ACLs.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMalformedACL: {
 		Code:           "MalformedACLError",
-		Description:    "The XML you provided was not well-formed or did not validate against our published schema",
+		Description:    "The XML you provided was not well-formed or did not validate against our published schema.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrUnexpectedContent: {
 		Code:           "UnexpectedContent",
-		Description:    "This request does not support content",
+		Description:    "This request does not support content.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingSecurityHeader: {
 		Code:           "MissingSecurityHeader",
-		Description:    "Your request was missing a required header",
+		Description:    "Your request was missing a required header.",
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrInvalidMetadataDirective: {
 		Code:           "InvalidArgument",
 		Description:    "Unknown metadata directive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrKeyTooLong: {
+		Code:           "KeyTooLongError",
+		Description:    "Your key is too long.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 

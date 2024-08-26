@@ -1231,6 +1231,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
+	}
 	if err != nil {
 		return s3response.CopyObjectResult{}, fmt.Errorf("stat uploadid: %w", err)
 	}
@@ -1257,6 +1260,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
 		return s3response.CopyObjectResult{}, fmt.Errorf("stat object: %w", err)
@@ -1413,6 +1419,12 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	if err == nil && d.IsDir() {
 		return "", s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return "", s3err.GetAPIError(s3err.ErrKeyTooLong)
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("stat object: %w", err)
+	}
 
 	f, err := p.openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
 		*po.Bucket, *po.Key, contentLength, acct, doFalloc)
@@ -1516,12 +1528,12 @@ func (p *Posix) DeleteObject(_ context.Context, input *s3.DeleteObjectInput) err
 	objpath := filepath.Join(bucket, object)
 
 	fi, err := os.Stat(objpath)
-	if errors.Is(err, fs.ErrNotExist) {
-		// AWS returns success if the object does not exist
-		return nil
-	}
 	if err != nil {
-		return fmt.Errorf("stat object: %w", err)
+		// AWS returns success if the object does not exist or
+		// is invalid somehow.
+		// TODO: log if !errors.Is(err, fs.ErrNotExist) somewhere?
+
+		return nil
 	}
 	if strings.HasSuffix(object, "/") && !fi.IsDir() {
 		// requested object is expecting a directory with a trailing
@@ -1641,6 +1653,9 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
@@ -1785,6 +1800,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
+		if errors.Is(err, syscall.ENAMETOOLONG) {
+			return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("stat part: %w", err)
 		}
@@ -1818,6 +1836,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stat object: %w", err)
@@ -1989,8 +2010,11 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("stat object: %w", err)
+		return nil, fmt.Errorf("open object: %w", err)
 	}
 	defer f.Close()
 
