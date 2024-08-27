@@ -39,6 +39,7 @@ import (
 var (
 	shortTimeout  = 10 * time.Second
 	iso8601Format = "20060102T150405Z"
+	emptyObjETag  = "d41d8cd98f00b204e9800998ecf8427e"
 )
 
 func Authentication_empty_auth_header(s *S3Conf) error {
@@ -2984,6 +2985,9 @@ func HeadObject_mp_success(s *S3Conf) error {
 		if *out.PartsCount != int32(partCount) {
 			return fmt.Errorf("expected part count to be %v, instead got %v", partCount, *out.PartsCount)
 		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
 
 		return nil
 	})
@@ -3065,6 +3069,9 @@ func HeadObject_success(s *S3Conf) error {
 		if *out.ContentType != defaultContentType {
 			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
 		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
 
 		return nil
 	})
@@ -3135,6 +3142,7 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 			ObjectAttributes: []types.ObjectAttributes{
 				types.ObjectAttributesEtag,
 				types.ObjectAttributesObjectSize,
+				types.ObjectAttributesStorageClass,
 			},
 		})
 		cancel()
@@ -3156,6 +3164,9 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 		}
 		if out.Checksum != nil {
 			return fmt.Errorf("expected checksum do be nil, instead got %v", *out.Checksum)
+		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
 		}
 
 		return nil
@@ -3182,6 +3193,7 @@ func GetObjectAttributes_multipart_upload(s *S3Conf) error {
 			Key:    &obj,
 			ObjectAttributes: []types.ObjectAttributes{
 				types.ObjectAttributesObjectParts,
+				types.ObjectAttributesStorageClass,
 			},
 		})
 		cancel()
@@ -3191,6 +3203,9 @@ func GetObjectAttributes_multipart_upload(s *S3Conf) error {
 
 		if resp.ObjectParts == nil {
 			return fmt.Errorf("expected non nil object parts")
+		}
+		if resp.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, resp.StorageClass)
 		}
 
 		for i, p := range resp.ObjectParts.Parts {
@@ -3452,6 +3467,9 @@ func GetObject_success(s *S3Conf) error {
 		if *out.ContentType != defaultContentType {
 			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
 		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
 
 		bdy, err := io.ReadAll(out.Body)
 		if err != nil {
@@ -3629,7 +3647,7 @@ func ListObjects_with_prefix(s *S3Conf) error {
 	testName := "ListObjects_with_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "obj"
-		objWithPrefix := []string{prefix + "/foo", prefix + "/bar", prefix + "/baz/bla"}
+		objWithPrefix := []string{prefix + "/bar", prefix + "/baz/bla", prefix + "/foo"}
 		err := putObjects(s3client, append(objWithPrefix, []string{"xzy/csf", "hell"}...), bucket)
 		if err != nil {
 			return err
@@ -3645,11 +3663,13 @@ func ListObjects_with_prefix(s *S3Conf) error {
 			return err
 		}
 
+		contents := createEmptyObjectsList(objWithPrefix)
+
 		if *out.Prefix != prefix {
 			return fmt.Errorf("expected prefix %v, instead got %v", prefix, *out.Prefix)
 		}
-		if !compareObjects(objWithPrefix, out.Contents) {
-			return fmt.Errorf("unexpected output for list objects with prefix")
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
@@ -3687,8 +3707,9 @@ func ListObject_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out1.NextMarker)
 		}
 
-		if !compareObjects([]string{"bar", "baz"}, out1.Contents) {
-			return fmt.Errorf("unexpected output for list objects with max-keys")
+		contents := createEmptyObjectsList([]string{"bar", "baz"})
+		if !compareObjects(contents, out1.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out1.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -3709,8 +3730,10 @@ func ListObject_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected marker to be %v, instead got %v", *out1.NextMarker, *out2.Marker)
 		}
 
-		if !compareObjects([]string{"foo"}, out2.Contents) {
-			return fmt.Errorf("unexpected output for list objects with max-keys")
+		contents = createEmptyObjectsList([]string{"foo"})
+
+		if !compareObjects(contents, out2.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out2.Contents)
 		}
 		return nil
 	})
@@ -3840,8 +3863,10 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects([]string{"foo", "qux", "hello", "xyz"}, out.Contents) {
-			return fmt.Errorf("expected output to be %v, instead got %v", []string{"foo", "qux", "hello", "xyz"}, out.Contents)
+		contents := createEmptyObjectsList([]string{"foo", "hello", "qux", "xyz"})
+
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected output to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
@@ -3866,8 +3891,10 @@ func ListObjectsV2_start_after(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects([]string{"baz", "foo"}, out.Contents) {
-			return fmt.Errorf("expected output to be %v, instead got %v", []string{"baz", "foo"}, out.Contents)
+		contents := createEmptyObjectsList([]string{"baz", "foo"})
+
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
@@ -3905,8 +3932,10 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out.NextContinuationToken)
 		}
 
-		if !compareObjects([]string{"bar"}, out.Contents) {
-			return fmt.Errorf("unexpected output for list objects with max-keys")
+		contents := createEmptyObjectsList([]string{"bar"})
+
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -3920,8 +3949,10 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects([]string{"foo", "quxx"}, resp.Contents) {
-			return fmt.Errorf("unexpected output for list objects with max-keys")
+		contents = createEmptyObjectsList([]string{"foo", "quxx"})
+
+		if !compareObjects(contents, resp.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, resp.Contents)
 		}
 
 		return nil
@@ -3946,8 +3977,10 @@ func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects([]string{"foo", "quxx"}, out.Contents) {
-			return fmt.Errorf("expected output to be %v, instead got %v", []string{"foo", "quxx"}, out.Contents)
+		contents := createEmptyObjectsList([]string{"foo", "quxx"})
+
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
@@ -4062,7 +4095,9 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects([]string{"a/"}, res.Contents) {
+		contents := createEmptyObjectsList([]string{"a/"})
+
+		if !compareObjects(contents, res.Contents) {
 			return fmt.Errorf("expected the object list to be %v, instead got %v", []string{"a/"}, res.Contents)
 		}
 		if len(res.CommonPrefixes) != 0 {
@@ -4185,8 +4220,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 func DeleteObjects_empty_input(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		objects := []string{"foo", "bar", "baz"}
-		err := putObjects(s3client, objects, bucket)
+		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4219,8 +4253,10 @@ func DeleteObjects_empty_input(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects(objects, res.Contents) {
-			return fmt.Errorf("unexpected output for list objects with prefix")
+		contents := createEmptyObjectsList([]string{"bar", "baz", "foo"})
+
+		if !compareObjects(contents, res.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, res.Contents)
 		}
 
 		return nil
@@ -4301,8 +4337,10 @@ func DeleteObjects_success(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects(objects, res.Contents) {
-			return fmt.Errorf("unexpected output for list objects with prefix")
+		contents := createEmptyObjectsList(objects)
+
+		if !compareObjects(contents, res.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents, res.Contents)
 		}
 
 		return nil
@@ -5967,6 +6005,9 @@ func ListParts_success(s *S3Conf) error {
 			return err
 		}
 
+		if res.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, res.StorageClass)
+		}
 		if ok := compareParts(parts, res.Parts); !ok {
 			return fmt.Errorf("expected parts %+v, instead got %+v", parts, res.Parts)
 		}
@@ -6038,7 +6079,11 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 			if err != nil {
 				return err
 			}
-			uploads = append(uploads, types.MultipartUpload{UploadId: out.UploadId, Key: out.Key})
+			uploads = append(uploads, types.MultipartUpload{
+				UploadId:     out.UploadId,
+				Key:          out.Key,
+				StorageClass: types.StorageClassStandard,
+			})
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		maxUploads := int32(2)
@@ -6119,7 +6164,11 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 			if err != nil {
 				return err
 			}
-			uploads = append(uploads, types.MultipartUpload{UploadId: out.UploadId, Key: out.Key})
+			uploads = append(uploads, types.MultipartUpload{
+				UploadId:     out.UploadId,
+				Key:          out.Key,
+				StorageClass: types.StorageClassStandard,
+			})
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
@@ -6163,12 +6212,14 @@ func ListMultipartUploads_success(s *S3Conf) error {
 
 		expected := []types.MultipartUpload{
 			{
-				Key:      &obj1,
-				UploadId: out1.UploadId,
+				Key:          &obj1,
+				UploadId:     out1.UploadId,
+				StorageClass: types.StorageClassStandard,
 			},
 			{
-				Key:      &obj2,
-				UploadId: out2.UploadId,
+				Key:          &obj2,
+				UploadId:     out2.UploadId,
+				StorageClass: types.StorageClassStandard,
 			},
 		}
 

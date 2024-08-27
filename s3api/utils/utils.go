@@ -259,7 +259,7 @@ func FilterObjectAttributes(attrs map[types.ObjectAttributes]struct{}, output s3
 		output.ObjectSize = nil
 	}
 	if _, ok := attrs[types.ObjectAttributesStorageClass]; !ok {
-		output.StorageClass = nil
+		output.StorageClass = ""
 	}
 
 	return output
