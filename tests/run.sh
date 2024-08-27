@@ -24,6 +24,7 @@ show_help() {
     echo "   s3                  Run tests with s3 cli"
     echo "   s3cmd               Run tests with s3cmd utility"
     echo "   mc                  Run tests with mc utility"
+    echo "   rest                Run tests with rest cli"
     echo "   aws-user            Run user tests with aws cli"
 }
 
@@ -33,7 +34,7 @@ handle_param() {
           show_help
           exit 0
           ;;
-      s3|s3api|aws|s3cmd|mc|aws-user)
+      s3|s3api|aws|s3cmd|mc|aws-user|rest)
           set_command_type "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -84,6 +85,10 @@ case $command_type in
   mc)
     echo "Running mc tests ..."
     "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
+    ;;
+  rest)
+    echo "Running rest tests ..."
+    "$HOME"/bin/bats ./tests/test_rest.sh || exit_code=$?
     ;;
   aws-user)
     echo "Running aws user tests ..."

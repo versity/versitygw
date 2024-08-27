@@ -31,6 +31,8 @@ list_buckets() {
     buckets=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3:// 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     buckets=$(mc --insecure ls "$MC_ALIAS" 2>&1) || exit_code=$?
+  elif [[ $1 == 'rest' ]]; then
+    list_buckets_rest || exit_code=$?
   else
     echo "list buckets command not implemented for '$1'"
     return 1
@@ -40,7 +42,7 @@ list_buckets() {
     return 1
   fi
 
-  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]] || [[ $1 == 'rest' ]]; then
     return 0
   fi
 
@@ -112,4 +114,33 @@ list_buckets_s3api() {
   IFS=$'\n' read -rd '' -a bucket_array <<<"$names"
 
   return 0
+}
+
+list_buckets_rest() {
+  generate_hash_for_payload ""
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  # shellcheck disable=SC2154
+  canonical_request="GET
+/
+
+host:${AWS_ENDPOINT_URL#*//}
+x-amz-content-sha256:$payload_hash
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+$payload_hash"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+
+  get_signature
+  # shellcheck disable=SC2034,SC2154
+  reply=$(curl -ks "$AWS_ENDPOINT_URL" \
+         -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+         -H "x-amz-content-sha256: $payload_hash" \
+         -H "x-amz-date: $current_date_time" 2>&1)
+  parse_bucket_list
 }

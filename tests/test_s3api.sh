@@ -20,7 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/util.sh
 source ./tests/util_aws.sh
-source ./tests/util_bucket_create.sh
+source ./tests/util_create_bucket.sh
 source ./tests/util_file.sh
 source ./tests/util_lock_config.sh
 source ./tests/util_users.sh

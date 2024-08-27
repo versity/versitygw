@@ -41,3 +41,21 @@ create_bucket_invalid_name() {
   fi
   export bucket_create_error
 }
+
+create_and_check_bucket_invalid_name() {
+  if [ $# -ne 1 ]; then
+    log 2 "'create_and_check_bucket_invalid_name' requires client"
+    return 1
+  fi
+  if ! create_bucket_invalid_name "$1"; then
+    log 2 "error creating bucket with invalid name"
+    return 1
+  fi
+
+  # shellcheck disable=SC2154
+  if [[ "$bucket_create_error" != *"Invalid bucket name "* ]]; then
+    log 2 "unexpected error:  $bucket_create_error"
+    return 1
+  fi
+  return 0
+}

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
@@ -14,24 +14,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
-  echo "Error:  VERSITYGW_TEST_ENV parameter must be set, or BYPASS_ENV_FILE must be set to true"
-  exit 1
-fi
+get_bucket_acl_and_check_owner() {
+  if [ $# -ne 2 ]; then
+    log 2 "'get_acl_and_check_owner' requires client, bucket name"
+    return 1
+  fi
+  if ! get_bucket_acl "$1" "$2"; then
+    log 2 "error getting bucket acl"
+    return 1
+  fi
 
-if ! ./tests/run.sh aws; then
-  exit 1
-fi
-if ! ./tests/run.sh s3; then
-  exit 1
-fi
-if ! ./tests/run.sh s3cmd; then
-  exit 1
-fi
-if ! ./tests/run.sh mc; then
-  exit 1
-fi
-if ! ./tests/run.sh rest; then
-  exit 1
-fi
-exit 0
+  # shellcheck disable=SC2154
+  log 5 "ACL: $acl"
+  id=$(echo "$acl" | jq -r '.Owner.ID')
+  [[ $id == "$AWS_ACCESS_KEY_ID" ]] || fail "Acl mismatch"
+}

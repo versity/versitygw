@@ -85,6 +85,17 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7076
             BACKEND: "s3"
+          - set: 8
+            LOCAL_FOLDER: /tmp/gw8
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam8
+            AWS_ENDPOINT_URL: https://127.0.0.1:7077
+            RUN_SET: "rest"
+            RECREATE_BUCKETS: "true"
+            PORT: 7077
+            BACKEND: "posix"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -114,6 +125,10 @@ jobs:
         run: |
           curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
           chmod 755 /usr/local/bin/mc
+
+      - name: Install xmllint (for rest)
+        run: |
+          sudo apt-get install libxml2-utils
 
       - name: Build and run, posix backend
         env:
