@@ -1,8 +1,11 @@
-FROM --platform=linux/arm64 ubuntu:latest
+FROM ubuntu:latest
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SECRETS_FILE=tests/.secrets
 ARG CONFIG_FILE=tests/.env.docker
+ARG GO_LIBRARY=go1.21.7.linux-arm64.tar.gz
+ARG AWS_CLI=awscli-exe-linux-aarch64.zip
+ARG MC_FOLDER=linux-arm64
 
 ENV TZ=Etc/UTC
 RUN apt-get update && \
@@ -24,20 +27,20 @@ RUN apt-get update && \
 WORKDIR /tmp
 
 # Install AWS cli
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
+RUN curl "https://awscli.amazonaws.com/${AWS_CLI}" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install
 
 # Install mc
-RUN curl https://dl.min.io/client/mc/release/linux-arm64/mc \
+RUN curl https://dl.min.io/client/mc/release/${MC_FOLDER}/mc \
   --create-dirs \
   -o /usr/local/minio-binaries/mc && \
 chmod -R 755 /usr/local/minio-binaries
 ENV PATH="/usr/local/minio-binaries":${PATH}
 
 # Download Go 1.21 (adjust the version and platform as needed)
-RUN wget https://golang.org/dl/go1.21.7.linux-arm64.tar.gz
+RUN wget https://golang.org/dl/${GO_LIBRARY}
 
 # Extract the downloaded archive
-RUN tar -xvf go1.21.7.linux-arm64.tar.gz -C /usr/local
+RUN tar -xvf $GO_LIBRARY -C /usr/local
 
 # Set Go environment variables
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -59,6 +62,10 @@ RUN git clone https://github.com/bats-core/bats-core.git && \
 
 USER tester
 COPY --chown=tester:tester . /home/tester
+
+# add bats support libraries
+RUN git clone https://github.com/bats-core/bats-support.git && rm -rf /home/tester/tests/bats-support && mv bats-support /home/tester/tests
+RUN git clone https://github.com/ztombol/bats-assert.git && rm -rf /home/tester/tests/bats-assert && mv bats-assert /home/tester/tests
 
 WORKDIR /home/tester
 RUN make

@@ -611,3 +611,26 @@ EOF
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
 }
+
+test_common_ls_directory_object() {
+  test_file="a"
+
+  run create_test_files "$test_file"
+  assert_success "error creating file"
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success "error setting up bucket"
+
+  if [ "$1" == 's3cmd' ]; then
+    put_object_client="s3api"
+  else
+    put_object_client="$1"
+  fi
+  run put_object "$put_object_client" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file/"
+  assert_success "error putting test file folder"
+
+  run list_and_check_directory_obj "$1" "$test_file"
+  assert_success "error listing and checking directory object"
+
+  delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
+}

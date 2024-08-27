@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 
+source ./tests/util_multipart.sh
 source ./tests/util_tags.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/put_bucket_tagging.sh
@@ -537,7 +538,7 @@ test_s3api_policy_put_bucket_tagging() {
   run setup_policy_with_single_statement "$test_file_folder/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success "error setting up policy"
   run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$USERNAME_ONE" "$PASSWORD_ONE"
-  assert_failure "able to put bucket tagging despite lack of permissions"
+  assert_failure
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"
   assert_success "error putting policy"
   run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$USERNAME_ONE" "$PASSWORD_ONE"
@@ -586,6 +587,7 @@ test_s3api_policy_put_acl() {
     [[ $id == "all-users" ]] || fail "unexpected ID: $id"
   fi
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file"
 }
 
 test_s3api_policy_get_bucket_tagging() {
@@ -609,7 +611,7 @@ test_s3api_policy_get_bucket_tagging() {
   assert_success "unable to put bucket tagging"
 
   run get_bucket_tagging_with_user "$USERNAME_ONE" "$PASSWORD_ONE" "$BUCKET_ONE_NAME"
-  assert_failure "able to get bucket tagging despite lack of permissions"
+  assert_failure
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$test_file_folder/$policy_file"
   assert_success "error putting policy"
@@ -617,4 +619,36 @@ test_s3api_policy_get_bucket_tagging() {
   assert_success "get and check bucket tags failed"
 
   delete_bucket_or_contents "s3api" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file"
+}
+
+test_s3api_policy_list_upload_parts() {
+  policy_file="policy_file"
+  test_file="test_file"
+  tag_key="TestKey"
+  tag_value="TestValue"
+
+  run create_test_files "$policy_file"
+  assert_success "error creating test files"
+
+  run create_large_file "$test_file"
+  assert_success "error creating large file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success "error setting up bucket"
+
+  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  assert_success "error creating user '$USERNAME_ONE'"
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  assert_success "error setting up policy"
+
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  assert_success "error putting policy"
+
+  run create_upload_and_test_parts_listing "$test_file" "$policy_file"
+  assert_success "error creating upload and testing parts listing"
+
+  delete_bucket_or_contents "s3api" "$BUCKET_ONE_NAME"
+  delete_test_files "$policy_file" "$test_file"
 }

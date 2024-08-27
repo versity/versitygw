@@ -122,4 +122,6 @@ export RUN_MC=true
   delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
 }
 
-
+@test "test_ls_directory_object" {
+  test_common_ls_directory_object "mc"
+}
