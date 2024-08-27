@@ -340,7 +340,13 @@ func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
 		return false
 	}
 	for i, item := range list1 {
-		if *item.Key != *list2[i].Key || *item.UploadId != *list2[i].UploadId {
+		if *item.Key != *list2[i].Key {
+			return false
+		}
+		if *item.UploadId != *list2[i].UploadId {
+			return false
+		}
+		if item.StorageClass != list2[i].StorageClass {
 			return false
 		}
 	}
@@ -454,24 +460,43 @@ func compareBuckets(list1 []types.Bucket, list2 []s3response.ListAllMyBucketsEnt
 	return true
 }
 
-func compareObjects(list1 []string, list2 []types.Object) bool {
+func compareObjects(list1, list2 []types.Object) bool {
 	if len(list1) != len(list2) {
 		return false
 	}
 
-	elementMap := make(map[string]bool)
-
-	for _, elem := range list1 {
-		elementMap[elem] = true
-	}
-
-	for _, elem := range list2 {
-		if _, found := elementMap[*elem.Key]; !found {
+	for i, obj := range list1 {
+		if *obj.Key != *list2[i].Key {
+			return false
+		}
+		if *obj.ETag != *list2[i].ETag {
+			return false
+		}
+		if *obj.Size != *list2[i].Size {
+			return false
+		}
+		if obj.StorageClass != list2[i].StorageClass {
 			return false
 		}
 	}
 
 	return true
+}
+
+// Creates a list of types.Object with the provided objects keys: objs []string
+func createEmptyObjectsList(objs []string) (result []types.Object) {
+	size := int64(0)
+	for _, obj := range objs {
+		o := obj
+		result = append(result, types.Object{
+			Key:          &o,
+			Size:         &size,
+			StorageClass: types.ObjectStorageClassStandard,
+			ETag:         &emptyObjETag,
+		})
+	}
+
+	return
 }
 
 func comparePrefixes(list1 []string, list2 []types.CommonPrefix) bool {

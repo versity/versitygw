@@ -203,7 +203,7 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 				ID:          *u.Owner.ID,
 				DisplayName: *u.Owner.DisplayName,
 			},
-			StorageClass: string(u.StorageClass),
+			StorageClass: u.StorageClass,
 			Initiated:    u.Initiated.Format(backend.RFC3339TimeFormat),
 		})
 	}
@@ -270,7 +270,7 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 			ID:          *output.Owner.ID,
 			DisplayName: *output.Owner.DisplayName,
 		},
-		StorageClass:         string(output.StorageClass),
+		StorageClass:         output.StorageClass,
 		PartNumberMarker:     pnm,
 		NextPartNumberMarker: npmn,
 		MaxParts:             int(*output.MaxParts),
@@ -362,7 +362,7 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		ETag:         out.ETag,
 		LastModified: out.LastModified,
 		ObjectSize:   out.ObjectSize,
-		StorageClass: &out.StorageClass,
+		StorageClass: out.StorageClass,
 		VersionId:    out.VersionId,
 		ObjectParts:  &parts,
 	}, handleError(err)

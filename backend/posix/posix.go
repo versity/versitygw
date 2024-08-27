@@ -941,9 +941,10 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 				keyMarkerInd = len(uploads)
 			}
 			uploads = append(uploads, s3response.Upload{
-				Key:       objectName,
-				UploadID:  uploadID,
-				Initiated: fi.ModTime().Format(backend.RFC3339TimeFormat),
+				Key:          objectName,
+				UploadID:     uploadID,
+				Initiated:    fi.ModTime().Format(backend.RFC3339TimeFormat),
+				StorageClass: types.StorageClassStandard,
 			})
 		}
 	}
@@ -1120,6 +1121,7 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		PartNumberMarker:     partNumberMarker,
 		Parts:                parts,
 		UploadID:             uploadID,
+		StorageClass:         types.StorageClassStandard,
 	}, nil
 }
 
@@ -1723,6 +1725,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			Metadata:        userMetaData,
 			TagCount:        tagCount,
 			ContentRange:    &contentRange,
+			StorageClass:    types.StorageClassStandard,
 		}, nil
 	}
 
@@ -1766,6 +1769,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		Metadata:        userMetaData,
 		TagCount:        tagCount,
 		ContentRange:    &contentRange,
+		StorageClass:    types.StorageClassStandard,
 		Body:            &backend.FileSectionReadCloser{R: rdr, F: f},
 	}, nil
 }
@@ -1820,6 +1824,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			ETag:          &etag,
 			PartsCount:    &partsCount,
 			ContentLength: &size,
+			StorageClass:  types.StorageClassStandard,
 		}, nil
 	}
 
@@ -1896,6 +1901,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ObjectLockLegalHoldStatus: objectLockLegalHoldStatus,
 		ObjectLockMode:            objectLockMode,
 		ObjectLockRetainUntilDate: objectLockRetainUntilDate,
+		StorageClass:              types.StorageClassStandard,
 	}, nil
 }
 
@@ -1909,7 +1915,7 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 			ETag:         data.ETag,
 			LastModified: data.LastModified,
 			ObjectSize:   data.ContentLength,
-			StorageClass: &data.StorageClass,
+			StorageClass: data.StorageClass,
 			VersionId:    data.VersionId,
 		}, nil
 	}
@@ -1960,6 +1966,7 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 			NextPartNumberMarker: resp.NextPartNumberMarker,
 			Parts:                parts,
 		},
+		StorageClass: types.StorageClassStandard,
 	}, nil
 }
 
@@ -2162,6 +2169,7 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 				Key:          &path,
 				LastModified: &mDate,
 				Size:         &size,
+				StorageClass: types.ObjectStorageClassStandard,
 			}, nil
 		}
 
@@ -2194,6 +2202,7 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 			Key:          &path,
 			LastModified: &mDate,
 			Size:         &size,
+			StorageClass: types.ObjectStorageClassStandard,
 		}, nil
 	}
 }

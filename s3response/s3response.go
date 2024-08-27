@@ -41,7 +41,7 @@ type ListPartsResult struct {
 	Owner     Owner
 
 	// The class of storage used to store the object.
-	StorageClass string
+	StorageClass types.StorageClass
 
 	PartNumberMarker     int
 	NextPartNumberMarker int
@@ -56,7 +56,7 @@ type GetObjectAttributesResult struct {
 	ETag         *string
 	LastModified *time.Time
 	ObjectSize   *int64
-	StorageClass *types.StorageClass
+	StorageClass types.StorageClass
 	VersionId    *string
 	ObjectParts  *ObjectParts
 }
@@ -137,7 +137,7 @@ type Upload struct {
 	UploadID     string `xml:"UploadId"`
 	Initiator    Initiator
 	Owner        Owner
-	StorageClass string
+	StorageClass types.StorageClass
 	Initiated    string
 }
 

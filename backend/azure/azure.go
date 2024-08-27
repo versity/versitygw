@@ -480,7 +480,7 @@ func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAtt
 			ETag:         data.ETag,
 			LastModified: data.LastModified,
 			ObjectSize:   data.ContentLength,
-			StorageClass: &data.StorageClass,
+			StorageClass: data.StorageClass,
 			VersionId:    data.VersionId,
 		}, nil
 	}

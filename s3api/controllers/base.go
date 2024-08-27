@@ -419,56 +419,65 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	utils.SetMetaHeaders(ctx, res.Metadata)
-	var lastmod string
-	if res.LastModified != nil {
-		lastmod = res.LastModified.Format(timefmt)
-	}
-
 	contentType := getstring(res.ContentType)
 	if contentType == "" {
 		contentType = defaultContentType
 	}
+	acceptRanges := getstring(res.AcceptRanges)
+	if acceptRanges == "" {
+		acceptRanges = "bytes"
+	}
 
-	utils.SetResponseHeaders(ctx, []utils.CustomHeader{
+	hdrs := []utils.CustomHeader{
 		{
 			Key:   "Content-Type",
 			Value: contentType,
-		},
-		{
-			Key:   "Content-Encoding",
-			Value: getstring(res.ContentEncoding),
 		},
 		{
 			Key:   "ETag",
 			Value: getstring(res.ETag),
 		},
 		{
-			Key:   "Last-Modified",
-			Value: lastmod,
+			Key:   "accept-ranges",
+			Value: acceptRanges,
 		},
-		{
-			Key:   "x-amz-storage-class",
-			Value: string(res.StorageClass),
-		},
-		{
+	}
+
+	if getstring(res.ContentRange) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "Content-Range",
 			Value: getstring(res.ContentRange),
-		},
-		{
-			Key:   "accept-ranges",
-			Value: getstring(res.AcceptRanges),
-		},
-	})
-
-	if res.TagCount != nil {
-		utils.SetResponseHeaders(ctx, []utils.CustomHeader{
-			{
-				Key:   "x-amz-tagging-count",
-				Value: fmt.Sprint(*res.TagCount),
-			},
 		})
 	}
+	if res.LastModified != nil {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Last-Modified",
+			Value: res.LastModified.Format(timefmt),
+		})
+	}
+	if getstring(res.ContentEncoding) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Content-Encoding",
+			Value: getstring(res.ContentEncoding),
+		})
+	}
+	if res.TagCount != nil {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-tagging-count",
+			Value: fmt.Sprint(*res.TagCount),
+		})
+	}
+	if res.StorageClass != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-storage-class",
+			Value: string(res.StorageClass),
+		})
+	}
+
+	// Set x-amz-meta-... headers
+	utils.SetMetaHeaders(ctx, res.Metadata)
+	// Set other response headers
+	utils.SetResponseHeaders(ctx, hdrs)
 
 	status := http.StatusOK
 	if acceptRange != "" {
@@ -2752,10 +2761,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: getstring(res.ETag),
 		},
 		{
-			Key:   "x-amz-storage-class",
-			Value: string(res.StorageClass),
-		},
-		{
 			Key:   "x-amz-restore",
 			Value: getstring(res.Restore),
 		},
@@ -2796,6 +2801,12 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		headers = append(headers, utils.CustomHeader{
 			Key:   "Content-Encoding",
 			Value: getstring(res.ContentEncoding),
+		})
+	}
+	if res.StorageClass != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-storage-class",
+			Value: string(res.StorageClass),
 		})
 	}
 
