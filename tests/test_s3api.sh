@@ -433,6 +433,10 @@ export RUN_USERS=true
   test_s3api_policy_get_bucket_tagging
 }
 
+@test "test_policy_list_upload_parts" {
+  test_s3api_policy_list_upload_parts
+}
+
 @test "test_policy_put_acl" {
   test_s3api_policy_put_acl
 }
@@ -454,5 +458,9 @@ export RUN_USERS=true
   assert_success "error getting and checking object lock config"
 
   delete_bucket_or_contents "aws" "$bucket_name"
+}
+
+@test "test_ls_directory_object" {
+  test_common_ls_directory_object "s3api"
 }
 

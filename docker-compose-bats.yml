@@ -19,6 +19,7 @@ services:
       dockerfile: Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.default
+    image: bats_test
   s3_backend:
     build:
       context: .

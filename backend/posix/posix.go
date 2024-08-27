@@ -943,8 +943,8 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 			uploads = append(uploads, s3response.Upload{
 				Key:          objectName,
 				UploadID:     uploadID,
-				Initiated:    fi.ModTime().Format(backend.RFC3339TimeFormat),
 				StorageClass: types.StorageClassStandard,
+				Initiated:    fi.ModTime(),
 			})
 		}
 	}
@@ -1089,7 +1089,7 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		parts = append(parts, s3response.Part{
 			PartNumber:   pn,
 			ETag:         etag,
-			LastModified: fi.ModTime().Format(backend.RFC3339TimeFormat),
+			LastModified: fi.ModTime(),
 			Size:         fi.Size(),
 		})
 	}
@@ -2162,12 +2162,12 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 			}
 
 			size := int64(0)
-			mDate := fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)
+			mtime := fi.ModTime()
 
 			return s3response.Object{
 				ETag:         &etag,
 				Key:          &path,
-				LastModified: &mDate,
+				LastModified: &mtime,
 				Size:         &size,
 				StorageClass: types.ObjectStorageClassStandard,
 			}, nil
@@ -2195,12 +2195,12 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 		}
 
 		size := fi.Size()
-		mDate := fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)
+		mtime := fi.ModTime()
 
 		return s3response.Object{
 			ETag:         &etag,
 			Key:          &path,
-			LastModified: &mDate,
+			LastModified: &mtime,
 			Size:         &size,
 			StorageClass: types.ObjectStorageClassStandard,
 		}, nil

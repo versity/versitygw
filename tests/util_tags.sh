@@ -45,3 +45,20 @@ get_and_check_bucket_tags() {
   assert_success "error getting and checking bucket tags"
   return 0
 }
+
+verify_no_bucket_tags() {
+  if [ $# -ne 1 ]; then
+    log 2 "'verify_no_bucket_tags' requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_tagging "$1"; then
+    log 2 "error retrieving bucket tagging"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if [[ "$tags" != "" ]]; then
+    log 2 "tags should be empty, but are: $tags"
+    return 1
+  fi
+  return 0
+}

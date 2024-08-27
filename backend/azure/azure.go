@@ -559,7 +559,7 @@ Pager:
 			objects = append(objects, s3response.Object{
 				ETag:         (*string)(v.Properties.ETag),
 				Key:          v.Name,
-				LastModified: backend.GetStringPtr(v.Properties.LastModified.UTC().Format(backend.RFC3339TimeFormat)),
+				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
@@ -620,7 +620,7 @@ Pager:
 			objects = append(objects, s3response.Object{
 				ETag:         (*string)(v.Properties.ETag),
 				Key:          v.Name,
-				LastModified: backend.GetStringPtr(v.Properties.LastModified.UTC().Format(backend.RFC3339TimeFormat)),
+				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClass(*v.Properties.AccessTier),
 			})
@@ -868,7 +868,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 			Size:         *el.Size,
 			ETag:         *el.Name,
 			PartNumber:   partNumber,
-			LastModified: time.Now().Format(backend.RFC3339TimeFormat),
+			LastModified: time.Now(),
 		})
 		if len(parts) >= int(maxParts) {
 			nextPartNumberMarker = partNumber
@@ -923,7 +923,7 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 				}
 				uploads = append(uploads, s3response.Upload{
 					Key:       *el.Name,
-					Initiated: el.Properties.CreationTime.Format(backend.RFC3339TimeFormat),
+					Initiated: *el.Properties.CreationTime,
 				})
 			}
 		}

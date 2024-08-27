@@ -204,7 +204,7 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 				DisplayName: *u.Owner.DisplayName,
 			},
 			StorageClass: u.StorageClass,
-			Initiated:    u.Initiated.Format(backend.RFC3339TimeFormat),
+			Initiated:    *u.Initiated,
 		})
 	}
 
@@ -241,7 +241,7 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
 			PartNumber:   int(*p.PartNumber),
-			LastModified: p.LastModified.Format(backend.RFC3339TimeFormat),
+			LastModified: *p.LastModified,
 			ETag:         *p.ETag,
 			Size:         *p.Size,
 		})
@@ -776,11 +776,10 @@ func convertObjects(objs []types.Object) []s3response.Object {
 	result := make([]s3response.Object, len(objs))
 
 	for _, obj := range objs {
-		lastModified := obj.LastModified.UTC().Format(backend.RFC3339TimeFormat)
 		result = append(result, s3response.Object{
 			ETag:          obj.ETag,
 			Key:           obj.Key,
-			LastModified:  &lastModified,
+			LastModified:  obj.LastModified,
 			Owner:         obj.Owner,
 			Size:          obj.Size,
 			RestoreStatus: obj.RestoreStatus,

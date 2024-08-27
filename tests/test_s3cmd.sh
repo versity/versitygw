@@ -109,3 +109,6 @@ export RUN_USERS=true
   delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
 }
 
+@test "test_ls_directory_object" {
+  test_common_ls_directory_object "s3cmd"
+}

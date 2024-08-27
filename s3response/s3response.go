@@ -21,12 +21,28 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+const RFC3339TimeFormat = "2006-01-02T15:04:05.999Z"
+
 // Part describes part metadata.
 type Part struct {
 	PartNumber   int
-	LastModified string
+	LastModified time.Time
 	ETag         string
 	Size         int64
+}
+
+func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias Part
+	aux := &struct {
+		LastModified string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&p),
+	}
+
+	aux.LastModified = p.LastModified.Format(RFC3339TimeFormat)
+
+	return e.EncodeElement(aux, start)
 }
 
 // ListPartsResponse - s3 api list parts response.
@@ -124,11 +140,28 @@ type ListObjectsV2Result struct {
 type Object struct {
 	ETag          *string
 	Key           *string
-	LastModified  *string
+	LastModified  *time.Time
 	Owner         *types.Owner
 	RestoreStatus *types.RestoreStatus
 	Size          *int64
 	StorageClass  types.ObjectStorageClass
+}
+
+func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias Object
+	aux := &struct {
+		LastModified *string `xml:"LastModified,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(&o),
+	}
+
+	if o.LastModified != nil {
+		formattedTime := o.LastModified.Format(RFC3339TimeFormat)
+		aux.LastModified = &formattedTime
+	}
+
+	return e.EncodeElement(aux, start)
 }
 
 // Upload describes in progress multipart upload
@@ -138,7 +171,21 @@ type Upload struct {
 	Initiator    Initiator
 	Owner        Owner
 	StorageClass types.StorageClass
-	Initiated    string
+	Initiated    time.Time
+}
+
+func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias Upload
+	aux := &struct {
+		Initiated string `xml:"Initiated"`
+		*Alias
+	}{
+		Alias: (*Alias)(&u),
+	}
+
+	aux.Initiated = u.Initiated.Format(RFC3339TimeFormat)
+
+	return e.EncodeElement(aux, start)
 }
 
 // CommonPrefix ListObjectsResponse common prefixes (directory abstraction)

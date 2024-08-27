@@ -65,3 +65,50 @@ list_objects_s3api() {
   fi
   return 0
 }
+
+# list objects in bucket, v1
+# param:  bucket
+# export objects on success, return 1 for failure
+list_objects_s3api_v1() {
+  if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    echo "list objects command requires bucket, (optional) delimiter"
+    return 1
+  fi
+  if [ "$2" == "" ]; then
+    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
+  else
+    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
+  fi
+  if [[ $result -ne 0 ]]; then
+    echo "error listing objects: $objects"
+    return 1
+  fi
+  export objects
+}
+
+list_objects_with_prefix() {
+  if [ $# -ne 3 ]; then
+    log 2 "'list_objects_with_prefix' command requires, client, bucket, prefix"
+    return 1
+  fi
+  local result=0
+  if [ "$1" == 's3' ]; then
+    objects=$(aws --no-verify-ssl s3 ls s3://"$2/$3" 2>&1) || result=$?
+  elif [ "$1" == 's3api' ]; then
+    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$2" --prefix "$3" 2>&1) || result=$?
+  elif [ "$1" == 's3cmd' ]; then
+    objects=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2/$3" 2>&1) || result=$?
+  elif [[ "$1" == 'mc' ]]; then
+    objects=$(mc --insecure ls "$MC_ALIAS/$2/$3" 2>&1) || result=$?
+  else
+    log 2 "invalid command type '$1'"
+    return 1
+  fi
+  if [ $result -ne 0 ]; then
+    log 2 "error listing objects: $objects"
+    return 1
+  fi
+  log 5 "output: $objects"
+  export objects
+  return 0
+}
