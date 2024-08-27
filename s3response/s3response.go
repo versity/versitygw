@@ -91,6 +91,46 @@ type ListMultipartUploadsResult struct {
 	CommonPrefixes []CommonPrefix
 }
 
+type ListObjectsResult struct {
+	XMLName        xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
+	Name           *string
+	Prefix         *string
+	Marker         *string
+	NextMarker     *string
+	MaxKeys        *int32
+	Delimiter      *string
+	IsTruncated    *bool
+	Contents       []Object
+	CommonPrefixes []types.CommonPrefix
+	EncodingType   types.EncodingType
+}
+
+type ListObjectsV2Result struct {
+	XMLName               xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
+	Name                  *string
+	Prefix                *string
+	StartAfter            *string
+	ContinuationToken     *string
+	NextContinuationToken *string
+	KeyCount              *int32
+	MaxKeys               *int32
+	Delimiter             *string
+	IsTruncated           *bool
+	Contents              []Object
+	CommonPrefixes        []types.CommonPrefix
+	EncodingType          types.EncodingType
+}
+
+type Object struct {
+	ETag          *string
+	Key           *string
+	LastModified  *string
+	Owner         *types.Owner
+	RestoreStatus *types.RestoreStatus
+	Size          *int64
+	StorageClass  types.ObjectStorageClass
+}
+
 // Upload describes in progress multipart upload
 type Upload struct {
 	Key          string

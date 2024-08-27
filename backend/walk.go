@@ -24,16 +24,17 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3response"
 )
 
 type WalkResults struct {
 	CommonPrefixes []types.CommonPrefix
-	Objects        []types.Object
+	Objects        []s3response.Object
 	Truncated      bool
 	NextMarker     string
 }
 
-type GetObjFunc func(path string, d fs.DirEntry) (types.Object, error)
+type GetObjFunc func(path string, d fs.DirEntry) (s3response.Object, error)
 
 var ErrSkipObj = errors.New("skip this object")
 
@@ -41,7 +42,7 @@ var ErrSkipObj = errors.New("skip this object")
 // objects responses
 func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
-	var objects []types.Object
+	var objects []s3response.Object
 
 	var pastMarker bool
 	if marker == "" {

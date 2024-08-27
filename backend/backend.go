@@ -63,8 +63,8 @@ type Backend interface {
 	GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error)
 	CopyObject(context.Context, *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
-	ListObjects(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
-	ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
+	ListObjects(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error)
+	ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error)
 	DeleteObject(context.Context, *s3.DeleteObjectInput) error
 	DeleteObjects(context.Context, *s3.DeleteObjectsInput) (s3response.DeleteResult, error)
 	PutObjectAcl(context.Context, *s3.PutObjectAclInput) error
@@ -191,11 +191,11 @@ func (BackendUnsupported) GetObjectAttributes(context.Context, *s3.GetObjectAttr
 func (BackendUnsupported) CopyObject(context.Context, *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListObjects(context.Context, *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListObjects(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+	return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteObject(context.Context, *s3.DeleteObjectInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)

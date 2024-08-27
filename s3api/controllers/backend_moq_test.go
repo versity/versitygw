@@ -116,10 +116,10 @@ var _ backend.Backend = &BackendMock{}
 //			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error) {
 //				panic("mock out the ListObjectVersions method")
 //			},
-//			ListObjectsFunc: func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+//			ListObjectsFunc: func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 //				panic("mock out the ListObjects method")
 //			},
-//			ListObjectsV2Func: func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+//			ListObjectsV2Func: func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
 //				panic("mock out the ListObjectsV2 method")
 //			},
 //			ListPartsFunc: func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error) {
@@ -277,10 +277,10 @@ type BackendMock struct {
 	ListObjectVersionsFunc func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (*s3.ListObjectVersionsOutput, error)
 
 	// ListObjectsFunc mocks the ListObjects method.
-	ListObjectsFunc func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error)
+	ListObjectsFunc func(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (s3response.ListObjectsResult, error)
 
 	// ListObjectsV2Func mocks the ListObjectsV2 method.
-	ListObjectsV2Func func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error)
+	ListObjectsV2Func func(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error)
 
 	// ListPartsFunc mocks the ListParts method.
 	ListPartsFunc func(contextMoqParam context.Context, listPartsInput *s3.ListPartsInput) (s3response.ListPartsResult, error)
@@ -1934,7 +1934,7 @@ func (mock *BackendMock) ListObjectVersionsCalls() []struct {
 }
 
 // ListObjects calls ListObjectsFunc.
-func (mock *BackendMock) ListObjects(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (*s3.ListObjectsOutput, error) {
+func (mock *BackendMock) ListObjects(contextMoqParam context.Context, listObjectsInput *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 	if mock.ListObjectsFunc == nil {
 		panic("BackendMock.ListObjectsFunc: method is nil but Backend.ListObjects was just called")
 	}
@@ -1970,7 +1970,7 @@ func (mock *BackendMock) ListObjectsCalls() []struct {
 }
 
 // ListObjectsV2 calls ListObjectsV2Func.
-func (mock *BackendMock) ListObjectsV2(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+func (mock *BackendMock) ListObjectsV2(contextMoqParam context.Context, listObjectsV2Input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
 	if mock.ListObjectsV2Func == nil {
 		panic("BackendMock.ListObjectsV2Func: method is nil but Backend.ListObjectsV2 was just called")
 	}
