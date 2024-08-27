@@ -44,11 +44,12 @@ func getObj(path string, d fs.DirEntry) (s3response.Object, error) {
 		if err != nil {
 			return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
 		}
+		mtime := fi.ModTime()
 
 		return s3response.Object{
 			ETag:         &etag,
 			Key:          &path,
-			LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
+			LastModified: &mtime,
 		}, nil
 	}
 
@@ -60,11 +61,12 @@ func getObj(path string, d fs.DirEntry) (s3response.Object, error) {
 	}
 
 	size := fi.Size()
+	mtime := fi.ModTime()
 
 	return s3response.Object{
 		ETag:         &etag,
 		Key:          &path,
-		LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
+		LastModified: &mtime,
 		Size:         &size,
 	}, nil
 }

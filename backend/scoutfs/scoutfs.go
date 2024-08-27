@@ -858,11 +858,12 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 			}
 
 			key := path + "/"
+			mtime := fi.ModTime()
 
 			return s3response.Object{
 				ETag:         &etag,
 				Key:          &key,
-				LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
+				LastModified: &mtime,
 				StorageClass: types.ObjectStorageClassStandard,
 			}, nil
 		}
@@ -905,11 +906,12 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 		}
 
 		size := fi.Size()
+		mtime := fi.ModTime()
 
 		return s3response.Object{
 			ETag:         &etag,
 			Key:          &path,
-			LastModified: backend.GetStringPtr(fi.ModTime().UTC().Format(backend.RFC3339TimeFormat)),
+			LastModified: &mtime,
 			Size:         &size,
 			StorageClass: sc,
 		}, nil
