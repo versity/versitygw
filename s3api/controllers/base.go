@@ -1535,6 +1535,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	// Copy source headers
 	copySource := ctx.Get("X-Amz-Copy-Source")
+	if len(copySource) > 0 && copySource[0] == '/' {
+		copySource = copySource[1:]
+	}
 	copySrcIfMatch := ctx.Get("X-Amz-Copy-Source-If-Match")
 	copySrcIfNoneMatch := ctx.Get("X-Amz-Copy-Source-If-None-Match")
 	copySrcModifSince := ctx.Get("X-Amz-Copy-Source-If-Modified-Since")

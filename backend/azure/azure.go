@@ -692,12 +692,7 @@ func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3
 		return nil, err
 	}
 
-	cpSrc := *input.CopySource
-	if cpSrc[0] == '/' {
-		cpSrc = cpSrc[1:]
-	}
-
-	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == cpSrc && isMetaSame(mdmap, input.Metadata) {
+	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource && isMetaSame(mdmap, input.Metadata) {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 
@@ -711,7 +706,7 @@ func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3
 		return nil, err
 	}
 
-	resp, err := bclient.CopyFromURL(ctx, az.serviceURL+"/"+cpSrc, &blob.CopyFromURLOptions{
+	resp, err := bclient.CopyFromURL(ctx, az.serviceURL+"/"+*input.CopySource, &blob.CopyFromURLOptions{
 		BlobTags: tags,
 		Metadata: parseMetadata(input.Metadata),
 	})

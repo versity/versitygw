@@ -1983,13 +1983,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	if input.ExpectedBucketOwner == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
-
-	cpSrc := *input.CopySource
-	if cpSrc[0] == '/' {
-		cpSrc = cpSrc[1:]
-	}
-
-	srcBucket, srcObject, ok := strings.Cut(cpSrc, "/")
+	srcBucket, srcObject, ok := strings.Cut(*input.CopySource, "/")
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
 	}
