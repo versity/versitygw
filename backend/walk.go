@@ -192,9 +192,16 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		// Common prefixes are a set, so should not have duplicates.
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
-		cpmap[prefix+before+delimiter] = struct{}{}
+		cpref := prefix + before + delimiter
+		if cpref == marker {
+			pastMarker = true
+			return nil
+		}
+		cpmap[cpref] = struct{}{}
 		if (len(objects) + len(cpmap)) == int(max) {
-			pastMax = true
+			newMarker = cpref
+			truncated = true
+			return fs.SkipAll
 		}
 
 		return nil

@@ -184,6 +184,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_start_after_empty_result(s)
 	ListObjectsV2_both_delimiter_and_prefix(s)
 	ListObjectsV2_single_dir_object_with_delim_and_prefix(s)
+	ListObjectsV2_truncated_common_prefixes(s)
 }
 
 func TestDeleteObject(s *S3Conf) {
@@ -620,6 +621,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_start_after_empty_result":                              ListObjectsV2_start_after_empty_result,
 		"ListObjectsV2_both_delimiter_and_prefix":                             ListObjectsV2_both_delimiter_and_prefix,
 		"ListObjectsV2_single_dir_object_with_delim_and_prefix":               ListObjectsV2_single_dir_object_with_delim_and_prefix,
+		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,

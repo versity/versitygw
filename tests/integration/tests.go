@@ -4108,6 +4108,61 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
+	testName := "ListObjectsV2_truncated_common_prefixes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		if err := putObjects(s3client, []string{"d1/f1", "d2/f2", "d3/f3", "d4/f4"}, bucket); err != nil {
+			return err
+		}
+
+		delim, maxKeys := "/", int32(3)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			MaxKeys:   &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !comparePrefixes([]string{"d1/", "d2/", "d3/"}, out.CommonPrefixes) {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"d1/", "d2/", "d3/"}, out.CommonPrefixes)
+		}
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+		}
+		if *out.NextContinuationToken != "d3/" {
+			return fmt.Errorf("expected the NextContinuationToken to be d3/, instead got %v", *out.NextContinuationToken)
+		}
+		if *out.Delimiter != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			Delimiter:         &delim,
+			ContinuationToken: out.NextContinuationToken,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !comparePrefixes([]string{"d4/"}, out.CommonPrefixes) {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"d4/"}, out.CommonPrefixes)
+		}
+		if *out.Delimiter != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
