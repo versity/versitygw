@@ -59,3 +59,6 @@ tests/!s3cfg.local.default
 
 # patches
 *.patch
+
+# grafana's local database (kept on filesystem for survival between instantiations)
+metrics-exploration/grafana_data/**

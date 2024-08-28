@@ -1,0 +1,64 @@
+services:
+  telegraf:
+    image: telegraf
+    container_name: telegraf
+    restart: always
+    volumes:
+    - ./metrics-exploration/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - influxdb
+    links:
+      - influxdb
+    ports:
+    - '8125:8125/udp'
+
+  influxdb:
+    image: influxdb
+    container_name: influxdb
+    restart: always
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpass
+      - DOCKER_INFLUXDB_INIT_ORG=myorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=metrics
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-super-secret-auth-token
+    ports:
+      - '8086:8086'
+    volumes:
+      - influxdb_data:/var/lib/influxdb
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana-server
+    restart: always
+    depends_on:
+      - influxdb
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    links:
+      - influxdb
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./metrics-exploration/grafana_data:/var/lib/grafana
+      - ./metrics-exploration/provisioning:/etc/grafana/provisioning
+
+  versitygw:
+    image: versity/versitygw:latest
+    container_name: versitygw
+    ports:
+      - "7070:7070"
+    environment:
+      - ROOT_ACCESS_KEY=user
+      - ROOT_SECRET_KEY=password
+      - VGW_METRICS_STATSD_SERVERS=telegraf:8125
+    depends_on:
+      - telegraf
+    command: >
+      posix /tmp/vgw
+
+volumes:
+  influxdb_data: {}
