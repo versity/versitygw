@@ -9876,6 +9876,47 @@ func AccessControl_user_PutBucketAcl_with_policy_access(s *S3Conf) error {
 	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
+func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
+	testName := "AccessControl_copy_object_with_starting_slash_for_user"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+			return err
+		}
+
+		usr := user{
+			access: "grt1",
+			secret: "grt1secret",
+			role:   "user",
+		}
+
+		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+			return err
+		}
+
+		copySource := fmt.Sprintf("/%v/%v", bucket, obj)
+		meta := map[string]string{
+			"key1": "val1",
+		}
+
+		userClient := getUserS3Client(usr, s)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := userClient.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			CopySource:        &copySource,
+			Metadata:          meta,
+			MetadataDirective: types.MetadataDirectiveReplace,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // IAM related tests
 // multi-user iam tests
 func IAM_user_access_denied(s *S3Conf) error {

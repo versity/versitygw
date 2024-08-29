@@ -499,6 +499,7 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_bucket_ownership_to_user(s)
 	AccessControl_root_PutBucketAcl(s)
 	AccessControl_user_PutBucketAcl_with_policy_access(s)
+	AccessControl_copy_object_with_starting_slash_for_user(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -808,5 +809,6 @@ func GetIntTests() IntTests {
 		"AccessControl_bucket_ownership_to_user":                              AccessControl_bucket_ownership_to_user,
 		"AccessControl_root_PutBucketAcl":                                     AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                  AccessControl_user_PutBucketAcl_with_policy_access,
+		"AccessControl_copy_object_with_starting_slash_for_user":              AccessControl_copy_object_with_starting_slash_for_user,
 	}
 }
