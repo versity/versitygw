@@ -33,21 +33,33 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
 
+# param:  command type
+# fail on test failure
 test_common_multipart_upload() {
-  if [[ $# -ne 1 ]]; then
-    echo "multipart upload command missing command type"
-    return 1
-  fi
+  assert [ $# -eq 1 ]
+
   bucket_file="largefile"
+  run create_large_file "$bucket_file"
+  assert_success
 
-  create_large_file "$bucket_file" || local created=$?
-  [[ $created -eq 0 ]] || fail "Error creating test file for multipart upload"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  if [ "$1" == 's3' ]; then
+    run copy_file_locally "$TEST_FILE_FOLDER/$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+    assert_success
+  fi
 
-  put_object "$1" "$test_file_folder/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || local put_result=$?
-  [[ $put_result -eq 0 ]] || fail "failed to copy file"
+  run put_object "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
+  assert_success
+
+  if [ "$1" == 's3' ]; then
+    run move_file_locally "$TEST_FILE_FOLDER/$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file"
+    assert_success
+  fi
+
+  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  assert_success
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -63,7 +75,8 @@ test_common_create_delete_bucket() {
 
   assert [ $# -eq 1 ]
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   bucket_exists "$1" "$BUCKET_ONE_NAME" || fail "failed bucket existence check"
 
@@ -74,12 +87,13 @@ test_common_copy_object() {
   if [[ $# -ne 1 ]]; then
     fail "copy object test requires command type"
   fi
-  local object_name="test-object"
-  create_test_files "$object_name" || fail "error creating test file"
-  echo "test data" > "$test_file_folder/$object_name"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
-  setup_bucket "$1" "$BUCKET_TWO_NAME"
+  local object_name="test-object"
+  run create_test_file "$object_name"
+  assert_success
+
+  run setup_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
 
   if [[ $1 == 's3' ]]; then
     copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to copy object to bucket one"
@@ -91,70 +105,84 @@ test_common_copy_object() {
   else
     copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || fail "object not copied to bucket two"
   fi
-  get_object "$1" "$BUCKET_TWO_NAME" "$object_name" "$test_file_folder/$object_name-copy" || fail "failed to retrieve object"
-
-  compare_files "$test_file_folder/$object_name" "$test_file_folder/$object_name-copy" || fail "files not the same"
+  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
+  assert_success
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
   delete_bucket_or_contents "$1" "$BUCKET_TWO_NAME"
   delete_test_files "$object_name" "$object_name-copy"
 }
 
+# param:  client
+# fail on error
 test_common_put_object_with_data() {
-  if [[ $# -ne 1 ]]; then
-    fail "put object test requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   local object_name="test-object"
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
-  echo "test data" > "$test_file_folder"/"$object_name"
+  run create_test_file "$object_name"
+  assert_success
+
   test_common_put_object "$1" "$object_name"
 }
 
+# param:  client
+# fail on error
 test_common_put_object_no_data() {
-  if [[ $# -ne 1 ]]; then
-    fail "put object test requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   local object_name="test-object"
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
+  run create_test_file "$object_name" 0
+  assert_success
+
   test_common_put_object "$1" "$object_name"
 }
 
+# params:  client, filename
+# fail on test failure
 test_common_put_object() {
-  if [[ $# -ne 2 ]]; then
-    fail "put object test requires command type, file"
+  assert [ $# -eq 2 ]
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
+  # s3 erases file locally, so we need to copy it first
+  if [ "$1" == 's3' ]; then
+    run copy_file_locally "$TEST_FILE_FOLDER/$2" "$TEST_FILE_FOLDER/${2}-copy"
+    assert_success
   fi
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run put_object "$1" "$test_file_folder/$2" "$BUCKET_ONE_NAME" "$2"
+  assert_success
 
-  put_object "$1" "$test_file_folder/$2" "$BUCKET_ONE_NAME" "$2" || local copy_result=$?
-  [[ $copy_result -eq 0 ]] || fail "Failed to add object to bucket"
-  object_exists "$1" "$BUCKET_ONE_NAME" "$2" || local exists_result_one=$?
-  [[ $exists_result_one -eq 0 ]] || fail "Object not added to bucket"
+  if [ "$1" == 's3' ]; then
+    run move_file_locally "$TEST_FILE_FOLDER/${2}-copy" "$TEST_FILE_FOLDER/$2"
+    assert_success
+  fi
 
-  delete_object "$1" "$BUCKET_ONE_NAME" "$2" || local delete_result=$?
-  [[ $delete_result -eq 0 ]] || fail "Failed to delete object"
-  object_exists "$1" "$BUCKET_ONE_NAME" "$2" || local exists_result_two=$?
-  [[ $exists_result_two -eq 1 ]] || fail "Object not removed from bucket"
+  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
+  assert_success
+
+  run delete_object "$1" "$BUCKET_ONE_NAME" "$2"
+  assert_success
+
+  run object_exists "$1" "$BUCKET_ONE_NAME" "$2"
+  assert_failure 1
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
-  delete_test_files "$2"
+  delete_test_files "$2" "${2}-copy"
 }
 
 test_common_put_get_object() {
   if [[ $# -ne 1 ]]; then
-    fail "put, get object test requires command type"
+    fail "put, get object test requires client"
   fi
 
   local object_name="test-object"
+  run create_test_files "$object_name"
+  assert_success
 
-  create_test_files "$object_name" || fail "error creating test file"
-  echo "test data" > "$test_file_folder"/"$object_name"
-
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   if [[ $1 == 's3' ]]; then
     copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
@@ -163,19 +191,21 @@ test_common_put_get_object() {
   fi
   object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || fail "object not added to bucket"
 
-  get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$test_file_folder/${object_name}_copy" || fail "failed to get object"
-  compare_files "$test_file_folder"/"$object_name" "$test_file_folder/${object_name}_copy" || fail "objects are different"
+  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" "$TEST_FILE_FOLDER/${2}-copy"
+  assert_success
 
   delete_bucket_or_contents "$1" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_name" "${object_name}_copy"
+  delete_test_files "$object_name" "${object_name}-copy"
 }
 
 test_common_get_set_versioning() {
   local object_name="test-object"
-  create_test_files "$object_name" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Error creating test file"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run create_test_files "$object_name"
+  assert_success
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   get_bucket_versioning "$1" "$BUCKET_ONE_NAME" || local get_result=$?
   [[ $get_result -eq 0 ]] || fail "error getting bucket versioning"
@@ -197,8 +227,8 @@ test_common_list_buckets() {
     fail "List buckets test requires one argument"
   fi
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
-  setup_bucket "$1" "$BUCKET_TWO_NAME"
+  run setup_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
 
   list_buckets "$1"
   local bucket_one_found=false
@@ -235,10 +265,15 @@ test_common_list_objects() {
   object_one="test-file-one"
   object_two="test-file-two"
 
-  create_test_files $object_one $object_two
+  run create_test_files $object_one $object_two
+  assert_success
+
   echo "test data" > "$test_file_folder"/"$object_one"
   echo "test data 2" > "$test_file_folder"/"$object_two"
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
   put_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME" "$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
   put_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
@@ -272,7 +307,8 @@ test_common_set_get_delete_bucket_tags() {
   local key="test_key"
   local value="test_value"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags first time"
 
@@ -294,7 +330,8 @@ test_common_set_get_delete_bucket_tags() {
     [[ $tag_set_key == "$key" ]] || fail "Key mismatch"
     [[ $tag_set_value == "$value" ]] || fail "Value mismatch"
   fi
-  delete_bucket_tagging "$1" "$BUCKET_ONE_NAME"
+  run delete_bucket_tagging "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   get_bucket_tagging "$1" "$BUCKET_ONE_NAME" || fail "Error getting bucket tags third time"
 
@@ -312,8 +349,12 @@ test_common_set_get_object_tags() {
   local key="test_key"
   local value="test_value"
 
-  create_test_files "$bucket_file" || fail "error creating test files"
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run create_test_files "$bucket_file"
+  assert_success
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || fail "Error getting object tags"
@@ -350,10 +391,12 @@ test_common_presigned_url_utf8_chars() {
   local bucket_file="my-$%^&*;"
   local bucket_file_copy="bucket-file-copy"
 
-  create_test_files "$bucket_file" || local created=$?
+  run create_test_file "$bucket_file"
+  assert_success
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to add object $bucket_file"
@@ -381,10 +424,12 @@ test_common_list_objects_file_count() {
     echo "list objects greater than 1000 missing command type"
     return 1
   fi
-  create_test_file_count 1001 || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "error creating test files"
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
-  [[ $result -eq 0 ]] || fail "Failed to create bucket '$BUCKET_ONE_NAME'"
+  run create_test_file_count 1001
+  assert_success
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
   put_object_multiple "$1" "$test_file_folder/file_*" "$BUCKET_ONE_NAME" || local put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to copy files to bucket"
   list_objects "$1" "$BUCKET_ONE_NAME"
@@ -403,9 +448,11 @@ test_common_delete_object_tagging() {
   tag_key="key"
   tag_value="value"
 
-  create_test_files "$bucket_file" || fail "Error creating test files"
+  run create_test_files "$bucket_file"
+  assert_success
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket"
 
@@ -422,8 +469,11 @@ test_common_delete_object_tagging() {
 }
 
 test_common_get_bucket_location() {
-  [[ $# -eq 1 ]] || fail "test common get bucket location missing command type"
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert [ $# -eq 1 ]
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
   get_bucket_location "$1" "$BUCKET_ONE_NAME"
   # shellcheck disable=SC2154
   [[ $bucket_location == "null" ]] || [[ $bucket_location == "us-east-1" ]] || fail "wrong location: '$bucket_location'"
@@ -434,7 +484,9 @@ test_put_bucket_acl_s3cmd() {
     # https://github.com/versity/versitygw/issues/695
     skip
   fi
-  setup_bucket  "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  assert_success
+
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
   username=$USERNAME_ONE
@@ -482,8 +534,11 @@ test_common_put_bucket_acl() {
     # https://github.com/versity/versitygw/issues/716
     skip
   fi
-  [[ $# -eq 1 ]] || fail "test common put bucket acl missing command type"
-  setup_bucket  "$1" "$BUCKET_ONE_NAME"
+  assert [ $# -eq 1 ]
+
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
+
   put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred" || fail "error putting bucket ownership controls"
 
   username=$USERNAME_ONE
@@ -566,7 +621,8 @@ test_common_get_put_delete_bucket_policy() {
 
   policy_file="policy_file"
 
-  create_test_files "$policy_file" || fail "error creating policy file"
+  run create_test_file "$policy_file"
+  assert_success
 
   effect="Allow"
   #principal="*"
@@ -593,7 +649,8 @@ test_common_get_put_delete_bucket_policy() {
 EOF
   log 5 "POLICY: $(cat "$test_file_folder/$policy_file")"
 
-  setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  assert_success
 
   check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || fail "policy not empty"
 
@@ -629,11 +686,11 @@ EOF
 test_common_ls_directory_object() {
   test_file="a"
 
-  run create_test_files "$test_file"
-  assert_success "error creating file"
+  run create_test_file "$test_file" 0
+  assert_success
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
-  assert_success "error setting up bucket"
+  assert_success
 
   if [ "$1" == 's3cmd' ]; then
     put_object_client="s3api"

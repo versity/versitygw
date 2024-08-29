@@ -62,6 +62,13 @@ setup() {
 
 # bats teardown function
 teardown() {
+  # shellcheck disable=SC2154
+  if [ "$REMOVE_TEST_FILE_FOLDER" == "true" ]; then
+    log 6 "removing test file folder"
+    if ! error=$(rm -rf "${TEST_FILE_FOLDER:?}" 2>&1); then
+      log 3 "unable to remove test file folder: $error"
+    fi
+  fi
   stop_versity
   if [[ $LOG_LEVEL -ge 5 ]]; then
     end_time=$(date +%s)
