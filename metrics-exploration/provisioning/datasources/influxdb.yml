@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: influxdb
+    type: influxdb
+    isDefault: true
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      dbName: 'metrics'
+      httpHeaderName1: 'Authorization'
+    secureJsonData:
+      httpHeaderValue1: 'Token my-super-secret-auth-token'
