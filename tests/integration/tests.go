@@ -3676,8 +3676,8 @@ func ListObjects_with_prefix(s *S3Conf) error {
 	})
 }
 
-func ListObject_truncated(s *S3Conf) error {
-	testName := "ListObject_truncated"
+func ListObjects_truncated(s *S3Conf) error {
+	testName := "ListObjects_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		maxKeys := int32(2)
 		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
@@ -4157,6 +4157,46 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 		}
 		if *out.Delimiter != delim {
 			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
+	testName := "ListObjectsV2_all_objs_max_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs := []string{"bar", "baz", "foo"}
+		if err := putObjects(s3client, objs, bucket); err != nil {
+			return err
+		}
+
+		maxKeys := int32(len(objs))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  &bucket,
+			MaxKeys: &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.IsTruncated {
+			return fmt.Errorf("expected the output not to be truncated")
+		}
+		if getString(out.NextContinuationToken) != "" {
+			return fmt.Errorf("expected empty NextContinuationToken, instead got %v", *out.NextContinuationToken)
+		}
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+		}
+
+		contents := createEmptyObjectsList(objs)
+
+		if !compareObjects(contents, out.Contents) {
+			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
