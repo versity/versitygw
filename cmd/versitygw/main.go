@@ -114,10 +114,13 @@ func main() {
 
 func initApp() *cli.App {
 	return &cli.App{
-		Name:  "versitygw",
-		Usage: "Start S3 gateway service with specified backend storage.",
-		Description: `The S3 gateway is an S3 protocol translator that allows an S3 client
-to access the supported backend storage as if it was a native S3 service.`,
+		Usage: "Versity S3 Gateway",
+		Description: `The Versity S3 Gateway is an S3 protocol translator that allows an S3 client
+to access the supported backend storage as if it was a native S3 service.
+VersityGW is an open-source project licensed under the Apache 2.0 License. The
+source code is hosted on GitHub at https://github.com/versity/versitygw, and
+documentation can be found in the GitHub wiki.`,
+		Copyright: "Copyright (c) 2023-2024 Versity Software",
 		Action: func(ctx *cli.Context) error {
 			return ctx.App.Command("help").Run(ctx)
 		},
