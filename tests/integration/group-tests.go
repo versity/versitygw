@@ -169,7 +169,7 @@ func TestGetObject(s *S3Conf) {
 func TestListObjects(s *S3Conf) {
 	ListObjects_non_existing_bucket(s)
 	ListObjects_with_prefix(s)
-	ListObject_truncated(s)
+	ListObjects_truncated(s)
 	ListObjects_invalid_max_keys(s)
 	ListObjects_max_keys_0(s)
 	ListObjects_delimiter(s)
@@ -185,6 +185,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_both_delimiter_and_prefix(s)
 	ListObjectsV2_single_dir_object_with_delim_and_prefix(s)
 	ListObjectsV2_truncated_common_prefixes(s)
+	ListObjectsV2_all_objs_max_keys(s)
 }
 
 func TestDeleteObject(s *S3Conf) {
@@ -609,7 +610,7 @@ func GetIntTests() IntTests {
 		"GetObject_non_existing_dir_object":                                   GetObject_non_existing_dir_object,
 		"ListObjects_non_existing_bucket":                                     ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                             ListObjects_with_prefix,
-		"ListObject_truncated":                                                ListObject_truncated,
+		"ListObjects_truncated":                                               ListObjects_truncated,
 		"ListObjects_invalid_max_keys":                                        ListObjects_invalid_max_keys,
 		"ListObjects_max_keys_0":                                              ListObjects_max_keys_0,
 		"ListObjects_delimiter":                                               ListObjects_delimiter,
@@ -622,6 +623,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_both_delimiter_and_prefix":                             ListObjectsV2_both_delimiter_and_prefix,
 		"ListObjectsV2_single_dir_object_with_delim_and_prefix":               ListObjectsV2_single_dir_object_with_delim_and_prefix,
 		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
+		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
