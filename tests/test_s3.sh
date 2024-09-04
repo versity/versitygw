@@ -59,7 +59,9 @@ source ./tests/util_file.sh
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"
   fi
-  setup_bucket "s3" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3" "$BUCKET_ONE_NAME"
+  assert_success
+
   delete_bucket "s3" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
 }
 

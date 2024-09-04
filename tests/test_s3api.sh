@@ -208,8 +208,11 @@ export RUN_USERS=true
     abort_all_multipart_uploads "$BUCKET_ONE_NAME" || fail "error aborting all uploads"
   fi
 
-  create_test_files "$bucket_file_one" "$bucket_file_two" || fail "error creating test files"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run create_test_files "$bucket_file_one" "$bucket_file_two"
+  assert_success
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two" || fail "failed to list multipart uploads"
 
@@ -232,9 +235,12 @@ export RUN_USERS=true
 @test "test-multipart-upload-from-bucket" {
   local bucket_file="bucket-file"
 
-  create_test_files "$bucket_file" || fail "error creating test files"
+  run create_test_file "$bucket_file"
+  assert_success
   dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error adding data to test file"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "error performing multipart upload"
 
@@ -247,9 +253,11 @@ export RUN_USERS=true
 
 @test "test_multipart_upload_from_bucket_range_too_large" {
   local bucket_file="bucket-file"
+  run create_large_file "$bucket_file"
+  assert_success
 
-  create_large_file "$bucket_file"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
   [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
@@ -262,9 +270,11 @@ export RUN_USERS=true
 
 @test "test_multipart_upload_from_bucket_range_valid" {
   local bucket_file="bucket-file"
+  run create_large_file "$bucket_file"
+  assert_success
 
-  create_large_file "$bucket_file"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   range_max=$((5*1024*1024-1))
   multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-$range_max" || fail "upload failure"
@@ -288,10 +298,15 @@ export RUN_USERS=true
 @test "test-list-objects-delimiter" {
   folder_name="two"
   object_name="three"
-  create_test_folder "$folder_name"
-  create_test_files "$folder_name"/"$object_name"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run create_test_folder "$folder_name"
+  assert_success
+
+  run create_test_file "$folder_name"/"$object_name"
+  assert_success
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   put_object "aws" "$test_file_folder/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || fail "failed to add object to bucket"
 
@@ -388,7 +403,9 @@ export RUN_USERS=true
 #}
 
 @test "test_head_bucket" {
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
   head_bucket "aws" "$BUCKET_ONE_NAME" || fail "error getting bucket info"
   log 5 "INFO:  $bucket_info"
   region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
@@ -401,7 +418,9 @@ export RUN_USERS=true
 }
 
 @test "test_head_bucket_doesnt_exist" {
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
   head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
   [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
   [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
@@ -413,9 +432,11 @@ export RUN_USERS=true
   test_key="x-test-data"
   test_value="test-value"
 
-  create_test_files "$object_one" || fail "error creating test files"
+  run create_test_files "$object_one"
+  assert_success
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   object="$test_file_folder"/"$object_one"
   put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"

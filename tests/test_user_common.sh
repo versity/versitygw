@@ -37,7 +37,9 @@ test_admin_user() {
   fi
   create_user_with_user "$admin_username" "$admin_password" "$user_username" "$user_password" "user" || fail "failed to create user '$user_username'"
 
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
   delete_bucket_or_contents_if_exists "aws" "versity-gwtest-admin-bucket"
   create_bucket_with_user "aws" "versity-gwtest-admin-bucket" "$admin_username" "$admin_password" || fail "error creating bucket with admin user"
 
@@ -93,7 +95,9 @@ test_user_user() {
 
   setup_user "$username" "$password" "user" || fail "error setting up user"
   delete_bucket_or_contents_if_exists "aws" "versity-gwtest-user-bucket"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   if create_bucket_with_user "aws" "versity-gwtest-user-bucket" "$username" "$password"; then
     fail "creating bucket with 'user' account failed to return error"
@@ -136,7 +140,9 @@ test_userplus_operation() {
 
   delete_bucket_or_contents_if_exists "aws" "versity-gwtest-userplus-bucket"
   setup_user "$username" "$password" "userplus" || fail "error creating user '$username'"
-  setup_bucket "aws" "$BUCKET_ONE_NAME"
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
 
   create_bucket_with_user "aws" "versity-gwtest-userplus-bucket" "$username" "$password" || fail "error creating bucket with user '$username'"
 

@@ -18,11 +18,11 @@ source ./tests/logger.sh
 
 # create a test file and export folder.  do so in temp folder
 # params:  filenames
-# return 0 for success, 1 for failure
+# fail if error
 create_test_files() {
   log 6 "create_test_files"
   if [ $# -lt 1 ]; then
-    log 2 "'create_test_files' requires minimum of one file name"
+    log 2 "'create_test_files' requires file names"
     return 1
   fi
   #test_file_folder=$PWD
@@ -42,43 +42,42 @@ create_test_files() {
   return 0
 }
 
+# params:  filename, size (optional, defaults to 10)
 create_test_file() {
-  if [ $# -ne 1 ]; then
-    log 2 "'create_test_file' requires name"
+  if [[ ( $# -lt 1 ) || ( $# -gt 2 ) ]]; then
+    log 2 "'create_test_file' requires filename, size (optional)"
     return 1
   fi
-  if [[ -e "$TEST_FILE_FOLDER/$name" ]]; then
-    if ! error=$(rm "$TEST_FILE_FOLDER/$name" 2>&1); then
-      log 2 "error removing old test file: $error"
+  if [[ -e "$TEST_FILE_FOLDER/$1" ]]; then
+    if ! error=$(rm "$TEST_FILE_FOLDER/$1" 2>&1); then
+      log 2 "error removing existing file: $error"
       return 1
     fi
   fi
-  if ! error=$(touch "$TEST_FILE_FOLDER/$name"); then
-    log 2 "error creating new test file: $error"
+  if ! error=$(touch "$TEST_FILE_FOLDER/$1"); then
+    log 2 "error creating new file: $error"
+    return 1
+  fi
+  if [ -z "$2" ]; then
+    file_size=10
+  else
+    file_size="$2"
+  fi
+  if [ "$file_size" -eq 0 ]; then
+    return 0
+  fi
+  if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER/$1" bs=1 count="$file_size" 2>&1); then
+    log 2 "error adding data to file: $error"
     return 1
   fi
   return 0
 }
 
-create_test_file_with_size() {
-  if [ $# -ne 2 ]; then
-    log 2 "'create test file with size' function requires name, size"
-    return 1
-  fi
-  if ! create_test_file_folder "$1"; then
-    log 2 "error creating test file"
-    return 1
-  fi
-  if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1 count="$2" 2>&1); then
-    log 2 "error writing file data: $error"
-    return 1
-  fi
-  return 0
-}
-
+# params:  folder name
+# fail if error
 create_test_folder() {
   if [ $# -lt 1 ]; then
-    log 2 "'create_test_folder' command requires at least one folder"
+    log 2 "'create_test_folder' requires folder names"
     return 1
   fi
   #test_file_folder=$PWD
@@ -89,8 +88,8 @@ create_test_folder() {
     fi
   fi
   for name in "$@"; do
-    if ! error=$(run mkdir -p "$TEST_FILE_FOLDER"/"$name" 2>&1); then
-      log 2 "error creating test folder $name: $error"
+    if ! error=$(mkdir -p "$TEST_FILE_FOLDER"/"$name" 2>&1); then
+      log 2 "error creating folder $name: $error"
       return 1
     fi
   done
@@ -161,13 +160,13 @@ compare_files() {
   return 1
 }
 
-# return 0 on success, 1 on failure
+# return 0 on success, 1 on error
 create_test_file_folder() {
   log 6 "create_test_file_folder"
   if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
     # shellcheck disable=SC2035
     if [[ "$error" != *"File exists"* ]]; then
-      log 2 "error creating test file folder: $error"
+      log 2 "error making test file folder: $error"
       return 1
     fi
   fi
@@ -177,44 +176,47 @@ create_test_file_folder() {
 
 # generate 160MB file
 # input: filename
-# return 0 on success, 1 on failure
+# fail on error
 create_large_file() {
   log 6 "create_large_file"
   if [ $# -ne 1 ]; then
-    log 2 "'create_large_file' requires filename"
+    log 2 "'create_large_file' requires file name"
     return 1
   fi
 
   #test_file_folder=$PWD/versity-gwtest-files
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
-      log 2 "error creating test file"
+      log 2 "error creating test file folder"
       return 1
     fi
   fi
 
   filesize=$((160*1024*1024))
   if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1024 count=$((filesize/1024)) 2>&1); then
-    log 2 "error creating large file: $error"
+    log 2 "error adding data to large file: $error"
     return 1
   fi
   return 0
 }
 
+# param: number of files
+# fail on error
 create_test_file_count() {
-  if [[ $# -ne 1 ]]; then
-    echo "create test file count function missing bucket name, count"
+  if [ $# -ne 1 ]; then
+    log 2 "'create_test_file_count' requires number of files"
     return 1
   fi
   #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
-    create_test_file_folder
+    if ! create_test_file_folder; then
+      log 2 "error creating test file folder"
+      return 1
+    fi
   fi
-  local touch_result
   for ((i=1;i<=$1;i++)) {
-    error=$(touch "$TEST_FILE_FOLDER/file_$i") || touch_result=$?
-    if [[ $touch_result -ne 0 ]]; then
-      echo "error creating file_$i:  $error"
+    if ! error=$(touch "$TEST_FILE_FOLDER/file_$i" 2>&1); then
+      log 2 "error creating file_$i: $error"
       return 1
     fi
   }
@@ -227,6 +229,7 @@ create_test_file_count() {
 }
 
 download_and_compare_file() {
+  log 6 "download_and_compare_file"
   if [[ $# -ne 5 ]]; then
     log 2 "'download and compare file' requires command type, original file, bucket, key, local file"
     return 1
@@ -236,6 +239,7 @@ download_and_compare_file() {
 }
 
 download_and_compare_file_with_user() {
+  log 6 "download_and_compare_file_with_user"
   if [[ $# -ne 7 ]]; then
     log 2 "'download and compare file with user' command requires command type, original file, bucket, key, local file, user, password"
     return 1
@@ -245,8 +249,41 @@ download_and_compare_file_with_user() {
     return 1
   fi
   log 5 "files: $2, $5"
-  if ! compare_files "$2" "$5"; then
+  #if [ "$1" == 'mc' ]; then
+  #  file_to_compare="$5/$(basename "$2")"
+  #else
+    file_to_compare="$5"
+  #fi
+  if ! compare_files "$2" "$file_to_compare"; then
     log 2 "files don't match"
+    return 1
+  fi
+  return 0
+}
+
+# params:  src, dst
+# fail if error
+copy_file_locally() {
+  if [ $# -ne 2 ]; then
+    log 2 "'copy_file_locally' requires src, dst"
+    return 1
+  fi
+  if ! error=$(cp "$1" "$2" 2>&1); then
+    log 2 "error copying file: $error"
+    return 1
+  fi
+  return 0
+}
+
+# params: src, dst
+# fail if error
+move_file_locally() {
+  if [ $# -ne 2 ]; then
+    log 2 "'move_file_locally' requires src, dst"
+    return 1
+  fi
+  if ! error=$(mv "$1" "$2" 2>&1); then
+    log 2 "error moving file: $error"
     return 1
   fi
   return 0
