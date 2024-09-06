@@ -145,6 +145,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_mp_success(s)
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_name_too_long(s)
+	HeadObject_with_contenttype(s)
 	HeadObject_success(s)
 }
 
@@ -161,6 +162,7 @@ func TestGetObject(s *S3Conf) {
 	GetObject_invalid_ranges(s)
 	GetObject_with_meta(s)
 	GetObject_success(s)
+	GetObject_directory_success(s)
 	GetObject_by_range_success(s)
 	GetObject_by_range_resp_status(s)
 	GetObject_non_existing_dir_object(s)
@@ -596,6 +598,7 @@ func GetIntTests() IntTests {
 		"HeadObject_mp_success":                                               HeadObject_mp_success,
 		"HeadObject_non_existing_dir_object":                                  HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                            HeadObject_name_too_long,
+		"HeadObject_with_contenttype":                                         HeadObject_with_contenttype,
 		"HeadObject_success":                                                  HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
@@ -606,6 +609,7 @@ func GetIntTests() IntTests {
 		"GetObject_invalid_ranges":                                            GetObject_invalid_ranges,
 		"GetObject_with_meta":                                                 GetObject_with_meta,
 		"GetObject_success":                                                   GetObject_success,
+		"GetObject_directory_success":                                         GetObject_directory_success,
 		"GetObject_by_range_success":                                          GetObject_by_range_success,
 		"GetObject_by_range_resp_status":                                      GetObject_by_range_resp_status,
 		"GetObject_non_existing_dir_object":                                   GetObject_non_existing_dir_object,

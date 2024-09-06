@@ -1530,6 +1530,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	versionId := ctx.Query("versionId")
 	acct := ctx.Locals("account").(auth.Account)
 	isRoot := ctx.Locals("isRoot").(bool)
+	contentType := ctx.Get("Content-Type")
+	contentEncoding := ctx.Get("Content-Encoding")
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	tagging := ctx.Get("x-amz-tagging")
 
@@ -2235,6 +2237,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			Bucket:                    &bucket,
 			Key:                       &keyStart,
 			ContentLength:             &contentLength,
+			ContentType:               &contentType,
+			ContentEncoding:           &contentEncoding,
 			Metadata:                  metadata,
 			Body:                      body,
 			Tagging:                   &tagging,
@@ -2842,6 +2846,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	contentType := ctx.Get("Content-Type")
+	contentEncoding := ctx.Get("Content-Encoding")
 	tagging := ctx.Get("X-Amz-Tagging")
 
 	if keyEnd != "" {
@@ -3071,6 +3076,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			Key:                       &key,
 			Tagging:                   &tagging,
 			ContentType:               &contentType,
+			ContentEncoding:           &contentEncoding,
 			ObjectLockRetainUntilDate: &objLockState.RetainUntilDate,
 			ObjectLockMode:            objLockState.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,

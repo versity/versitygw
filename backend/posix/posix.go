@@ -86,6 +86,9 @@ const (
 	objectRetentionKey  = "object-retention"
 	objectLegalHoldKey  = "object-legal-hold"
 
+	// this is the media type for directories in AWS and Nextcloud
+	dirContentType = "application/x-directory"
+
 	doFalloc   = true
 	skipFalloc = false
 )
@@ -474,7 +477,8 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 	}
 
 	// set content-type
-	if *mpu.ContentType != "" {
+	ctype := getString(mpu.ContentType)
+	if ctype != "" {
 		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID),
 			contentTypeHdr, []byte(*mpu.ContentType))
 		if err != nil {
@@ -482,6 +486,19 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set content-type: %w", err)
+		}
+	}
+
+	// set content-encoding
+	cenc := getString(mpu.ContentEncoding)
+	if cenc != "" {
+		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID), contentEncHdr,
+			[]byte(*mpu.ContentEncoding))
+		if err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set content-encoding: %w", err)
 		}
 	}
 
@@ -649,7 +666,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	cType, _ := p.loadUserMetaData(bucket, upiddir, userMetaData)
+	cType, cEnc := p.loadUserMetaData(bucket, upiddir, userMetaData)
 
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
@@ -693,6 +710,15 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 			// cleanup object
 			os.Remove(objname)
 			return nil, fmt.Errorf("set object content type: %w", err)
+		}
+	}
+
+	// set content-encoding
+	if cEnc != "" {
+		if err := p.meta.StoreAttribute(bucket, object, contentEncHdr, []byte(cEnc)); err != nil {
+			// cleanup object
+			os.Remove(objname)
+			return nil, fmt.Errorf("set object content encoding: %w", err)
 		}
 	}
 
@@ -796,15 +822,9 @@ func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (st
 	var contentType, contentEncoding string
 	b, _ := p.meta.RetrieveAttribute(bucket, object, contentTypeHdr)
 	contentType = string(b)
-	if contentType != "" {
-		m[contentTypeHdr] = contentType
-	}
 
 	b, _ = p.meta.RetrieveAttribute(bucket, object, contentEncHdr)
 	contentEncoding = string(b)
-	if contentEncoding != "" {
-		m[contentEncHdr] = contentEncoding
-	}
 
 	return contentType, contentEncoding
 }
@@ -1408,7 +1428,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		}
 
 		// set etag attribute to signify this dir was specifically put
-		err = p.meta.StoreAttribute(*po.Bucket, *po.Key, etagkey, []byte(emptyMD5))
+		err = p.meta.StoreAttribute(*po.Bucket, *po.Key, etagkey,
+			[]byte(emptyMD5))
 		if err != nil {
 			return "", fmt.Errorf("set etag attr: %w", err)
 		}
@@ -1478,7 +1499,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		if err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true); err != nil {
+		err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -1493,7 +1515,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 		if err != nil {
 			return "", fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
+		err = p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed)
+		if err != nil {
 			return "", err
 		}
 	}
@@ -1503,6 +1526,24 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, e
 	err = p.meta.StoreAttribute(*po.Bucket, *po.Key, etagkey, []byte(etag))
 	if err != nil {
 		return "", fmt.Errorf("set etag attr: %w", err)
+	}
+
+	ctype := getString(po.ContentType)
+	if ctype != "" {
+		err := p.meta.StoreAttribute(*po.Bucket, *po.Key, contentTypeHdr,
+			[]byte(*po.ContentType))
+		if err != nil {
+			return "", fmt.Errorf("set content-type attr: %w", err)
+		}
+	}
+
+	cenc := getString(po.ContentEncoding)
+	if cenc != "" {
+		err := p.meta.StoreAttribute(*po.Bucket, *po.Key, contentEncHdr,
+			[]byte(*po.ContentEncoding))
+		if err != nil {
+			return "", fmt.Errorf("set content-encoding attr: %w", err)
+		}
 	}
 
 	return etag, nil
@@ -1697,7 +1738,8 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if fi.IsDir() {
 		userMetaData := make(map[string]string)
 
-		contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+		_, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+		contentType := dirContentType
 
 		b, err := p.meta.RetrieveAttribute(bucket, object, etagkey)
 		etag := string(b)
@@ -1856,8 +1898,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
 
 	if fi.IsDir() {
-		// this is the media type for directories in AWS and Nextcloud
-		contentType = "application/x-directory"
+		contentType = dirContentType
 	}
 
 	b, err := p.meta.RetrieveAttribute(bucket, object, etagkey)
