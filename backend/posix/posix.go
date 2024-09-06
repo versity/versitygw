@@ -1571,7 +1571,7 @@ func (p *Posix) removeParents(bucket, object string) error {
 	for {
 		parent := filepath.Dir(objPath)
 
-		if parent == string(filepath.Separator) {
+		if parent == "." {
 			// stop removing parents if we hit the bucket directory.
 			break
 		}
