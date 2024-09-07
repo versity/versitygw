@@ -77,6 +77,23 @@ type GetObjectAttributesResult struct {
 	ObjectParts  *ObjectParts
 }
 
+func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias GetObjectAttributesResult
+	aux := &struct {
+		LastModified *string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	}
+
+	if r.LastModified != nil {
+		formattedTime := r.LastModified.Format(RFC3339TimeFormat)
+		aux.LastModified = &formattedTime
+	}
+
+	return e.EncodeElement(aux, start)
+}
+
 type ObjectParts struct {
 	PartNumberMarker     int
 	NextPartNumberMarker int
@@ -261,6 +278,20 @@ type ListAllMyBucketsEntry struct {
 	CreationDate time.Time
 }
 
+func (r ListAllMyBucketsEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias ListAllMyBucketsEntry
+	aux := &struct {
+		CreationDate string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	}
+
+	aux.CreationDate = r.CreationDate.Format(RFC3339TimeFormat)
+
+	return e.EncodeElement(aux, start)
+}
+
 type ListAllMyBucketsList struct {
 	Bucket []ListAllMyBucketsEntry
 }
@@ -274,6 +305,20 @@ type CopyObjectResult struct {
 	XMLName      xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
 	LastModified time.Time
 	ETag         string
+}
+
+func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias CopyObjectResult
+	aux := &struct {
+		LastModified string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	}
+
+	aux.LastModified = r.LastModified.Format(RFC3339TimeFormat)
+
+	return e.EncodeElement(aux, start)
 }
 
 type AccessControlPolicy struct {
