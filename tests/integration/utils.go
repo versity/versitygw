@@ -428,12 +428,15 @@ func getPtr(str string) *string {
 	return &str
 }
 
+// mp1 needs to be the response from the server
+// mp2 needs to be the expected values
+// The keys from the server are always converted to lowercase
 func areMapsSame(mp1, mp2 map[string]string) bool {
 	if len(mp1) != len(mp2) {
 		return false
 	}
-	for key, val := range mp1 {
-		if mp2[key] != val {
+	for key, val := range mp2 {
+		if mp1[strings.ToLower(key)] != val {
 			return false
 		}
 	}

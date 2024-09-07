@@ -2038,8 +2038,9 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
 
-		for key := range mdmap {
-			err := p.meta.DeleteAttribute(dstBucket, dstObject, key)
+		for k := range mdmap {
+			err := p.meta.DeleteAttribute(dstBucket, dstObject,
+				fmt.Sprintf("%v.%v", metaHdr, k))
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return nil, fmt.Errorf("delete user metadata: %w", err)
 			}
