@@ -4567,6 +4567,11 @@ func CopyObject_copy_to_itself_invalid_directive(s *S3Conf) error {
 
 func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	testName := "CopyObject_to_itself_with_new_metadata"
+
+	meta := map[string]string{
+		"Hello": "World",
+	}
+
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		err := putObjects(s3client, []string{obj}, bucket)
@@ -4575,17 +4580,60 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:     &bucket,
-			Key:        &obj,
-			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
-			Metadata: map[string]string{
-				"Hello": "World",
-			},
+			Bucket:            &bucket,
+			Key:               &obj,
+			CopySource:        getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			Metadata:          meta,
 			MetadataDirective: types.MetadataDirectiveReplace,
 		})
 		cancel()
 		if err != nil {
 			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !areMapsSame(resp.Metadata, meta) {
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+		}
+
+		// verify updating metadata has correct meta
+		meta = map[string]string{
+			"New": "Metadata",
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			CopySource:        getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			Metadata:          meta,
+			MetadataDirective: types.MetadataDirectiveReplace,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !areMapsSame(resp.Metadata, meta) {
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
 		}
 
 		return nil
