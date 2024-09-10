@@ -3028,6 +3028,60 @@ func HeadObject_non_existing_dir_object(s *S3Conf) error {
 
 const defaultContentType = "binary/octet-stream"
 
+func HeadObject_with_contenttype(s *S3Conf) error {
+	testName := "HeadObject_with_contenttype"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dataLen := "my-obj", int64(1234567)
+		contentType := "text/plain"
+		contentEncoding := "gzip"
+
+		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket:          &bucket,
+			Key:             &obj,
+			ContentType:     &contentType,
+			ContentEncoding: &contentEncoding,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err != nil {
+			return err
+		}
+
+		contentLength := int64(0)
+		if out.ContentLength != nil {
+			contentLength = *out.ContentLength
+		}
+		if contentLength != dataLen {
+			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
+		}
+		if out.ContentType == nil {
+			return fmt.Errorf("expected content type %v, instead got nil", contentType)
+		}
+		if *out.ContentType != contentType {
+			return fmt.Errorf("expected content type %v, instead got %v", contentType, *out.ContentType)
+		}
+		if out.ContentEncoding == nil {
+			return fmt.Errorf("expected content encoding %v, instead got nil", contentEncoding)
+		}
+		if *out.ContentEncoding != contentEncoding {
+			return fmt.Errorf("expected content encoding %v, instead got %v", contentEncoding, *out.ContentEncoding)
+		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3036,11 +3090,13 @@ func HeadObject_success(s *S3Conf) error {
 			"key1": "val1",
 			"key2": "val2",
 		}
+		ctype := defaultContentType
 
 		_, _, err := putObjectWithData(dataLen, &s3.PutObjectInput{
-			Bucket:   &bucket,
-			Key:      &obj,
-			Metadata: meta,
+			Bucket:      &bucket,
+			Key:         &obj,
+			Metadata:    meta,
+			ContentType: &ctype,
 		}, s3client)
 		if err != nil {
 			return err
@@ -3443,10 +3499,12 @@ func GetObject_success(s *S3Conf) error {
 	testName := "GetObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
+		ctype := defaultContentType
 
 		csum, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
+			Bucket:      &bucket,
+			Key:         &obj,
+			ContentType: &ctype,
 		}, s3client)
 		if err != nil {
 			return err
@@ -3480,6 +3538,45 @@ func GetObject_success(s *S3Conf) error {
 		if outCsum != csum {
 			return fmt.Errorf("invalid object data")
 		}
+		return nil
+	})
+}
+
+const directoryContentType = "application/x-directory"
+
+func GetObject_directory_success(s *S3Conf) error {
+	testName := "GetObject_directory_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(0), "my-dir/"
+
+		_, _, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err != nil {
+			return err
+		}
+		if *out.ContentLength != dataLength {
+			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+		}
+		if *out.ContentType != directoryContentType {
+			return fmt.Errorf("expected content type %v, instead got %v", directoryContentType, *out.ContentType)
+		}
+		if out.StorageClass != types.StorageClassStandard {
+			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
+
+		out.Body.Close()
 		return nil
 	})
 }
@@ -5087,11 +5184,16 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 			"prop1": "val1",
 			"prop2": "val2",
 		}
+		contentType := "application/text"
+		contentEncoding := "testenc"
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:   &bucket,
-			Key:      &obj,
-			Metadata: meta,
+			Bucket:          &bucket,
+			Key:             &obj,
+			Metadata:        meta,
+			ContentType:     &contentType,
+			ContentEncoding: &contentEncoding,
 		})
 		cancel()
 		if err != nil {
@@ -5137,6 +5239,19 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 
 		if !areMapsSame(resp.Metadata, meta) {
 			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+		}
+
+		if resp.ContentType == nil {
+			return fmt.Errorf("expected uploaded object content-type to be %v, instead got nil", contentType)
+		}
+		if *resp.ContentType != contentType {
+			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", contentType, *resp.ContentType)
+		}
+		if resp.ContentEncoding == nil {
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got nil", contentEncoding)
+		}
+		if *resp.ContentEncoding != contentEncoding {
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", contentEncoding, *resp.ContentEncoding)
 		}
 
 		return nil
