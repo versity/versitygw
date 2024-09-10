@@ -132,7 +132,6 @@ func TestPutObject(s *S3Conf) {
 	PutObject_special_chars(s)
 	PutObject_invalid_long_tags(s)
 	PutObject_missing_object_lock_retention_config(s)
-	PutObject_name_too_long(s)
 	PutObject_with_object_lock(s)
 	PutObject_success(s)
 	PutObject_invalid_credentials(s)
@@ -192,7 +191,6 @@ func TestListObjectsV2(s *S3Conf) {
 
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
-	DeleteObject_name_too_long(s)
 	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
@@ -480,6 +478,9 @@ func TestPosix(s *S3Conf) {
 	PutObject_overwrite_file_obj(s)
 	PutObject_dir_obj_with_data(s)
 	CreateMultipartUpload_dir_obj(s)
+	PutObject_name_too_long(s)
+	HeadObject_name_too_long(s)
+	DeleteObject_name_too_long(s)
 }
 
 func TestIAM(s *S3Conf) {
