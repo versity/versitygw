@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -282,19 +283,34 @@ func checkSdkApiErr(err error, code string) error {
 	return err
 }
 
-func putObjects(client *s3.Client, objs []string, bucket string) error {
+func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object, error) {
+	var contents []types.Object
+	var size int64
 	for _, key := range objs {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := client.PutObject(ctx, &s3.PutObjectInput{
+		res, err := client.PutObject(ctx, &s3.PutObjectInput{
 			Key:    &key,
 			Bucket: &bucket,
 		})
 		cancel()
 		if err != nil {
-			return err
+			return nil, err
 		}
+		k := key
+		etag := strings.Trim(*res.ETag, `"`)
+		contents = append(contents, types.Object{
+			Key:          &k,
+			ETag:         &etag,
+			StorageClass: types.ObjectStorageClassStandard,
+			Size:         &size,
+		})
 	}
-	return nil
+
+	sort.SliceStable(contents, func(i, j int) bool {
+		return *contents[i].Key < *contents[j].Key
+	})
+
+	return contents, nil
 }
 
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
@@ -484,22 +500,6 @@ func compareObjects(list1, list2 []types.Object) bool {
 	}
 
 	return true
-}
-
-// Creates a list of types.Object with the provided objects keys: objs []string
-func createEmptyObjectsList(objs []string) (result []types.Object) {
-	size := int64(0)
-	for _, obj := range objs {
-		o := obj
-		result = append(result, types.Object{
-			Key:          &o,
-			Size:         &size,
-			StorageClass: types.ObjectStorageClassStandard,
-			ETag:         &emptyObjETag,
-		})
-	}
-
-	return
 }
 
 func comparePrefixes(list1 []string, list2 []types.CommonPrefix) bool {

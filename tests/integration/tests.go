@@ -39,7 +39,6 @@ import (
 var (
 	shortTimeout  = 10 * time.Second
 	iso8601Format = "20060102T150405Z"
-	emptyObjETag  = "d41d8cd98f00b204e9800998ecf8427e"
 )
 
 func Authentication_empty_auth_header(s *S3Conf) error {
@@ -2188,7 +2187,7 @@ func DeleteBucket_non_existing_bucket(s *S3Conf) error {
 func DeleteBucket_non_empty_bucket(s *S3Conf) error {
 	testName := "DeleteBucket_non_empty_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo"}, bucket)
+		_, err := putObjects(s3client, []string{"foo"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -2682,7 +2681,7 @@ func DeleteBucketTagging_success(s *S3Conf) error {
 func PutObject_non_existing_bucket(s *S3Conf) error {
 	testName := "PutObject_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"my-obj"}, "non-existing-bucket")
+		_, err := putObjects(s3client, []string{"my-obj"}, "non-existing-bucket")
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
@@ -2693,7 +2692,7 @@ func PutObject_non_existing_bucket(s *S3Conf) error {
 func PutObject_special_chars(s *S3Conf) error {
 	testName := "PutObject_special_chars"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"my%key", "my^key", "my*key", "my.key", "my-key", "my_key", "my!key", "my'key", "my(key", "my)key", "my\\key", "my{}key", "my[]key", "my`key", "my+key", "my%25key", "my@key"}, bucket)
+		_, err := putObjects(s3client, []string{"my%key", "my^key", "my*key", "my.key", "my-key", "my_key", "my!key", "my'key", "my(key", "my)key", "my\\key", "my{}key", "my[]key", "my`key", "my+key", "my%25key", "my@key"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -2763,25 +2762,6 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-func PutObject_name_too_long(s *S3Conf) error {
-	testName := "PutObject_name_too_long"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		key := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket: &bucket,
-			Key:    &key,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
 			return err
 		}
 
@@ -2861,7 +2841,7 @@ func PutObject_with_object_lock(s *S3Conf) error {
 func PutObject_success(s *S3Conf) error {
 	testName := "PutObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"my-obj"}, bucket)
+		_, err := putObjects(s3client, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -2875,7 +2855,7 @@ func PutObject_invalid_credentials(s *S3Conf) error {
 		newconf := *s
 		newconf.awsSecret = newconf.awsSecret + "badpassword"
 		client := s3.NewFromConfig(newconf.Config())
-		err := putObjects(client, []string{"my-obj"}, bucket)
+		_, err := putObjects(client, []string{"my-obj"}, bucket)
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 	})
 }
@@ -2890,22 +2870,6 @@ func HeadObject_non_existing_object(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkSdkApiErr(err, "NotFound"); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
-func HeadObject_name_too_long(s *S3Conf) error {
-	testName := "HeadObject_name_too_long"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    getPtr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		})
-		cancel()
-		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
 			return err
 		}
 		return nil
@@ -3745,7 +3709,7 @@ func ListObjects_with_prefix(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "obj"
 		objWithPrefix := []string{prefix + "/bar", prefix + "/baz/bla", prefix + "/foo"}
-		err := putObjects(s3client, append(objWithPrefix, []string{"xzy/csf", "hell"}...), bucket)
+		contents, err := putObjects(s3client, append(objWithPrefix, []string{"azy/csf", "hell"}...), bucket)
 		if err != nil {
 			return err
 		}
@@ -3760,13 +3724,11 @@ func ListObjects_with_prefix(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList(objWithPrefix)
-
 		if *out.Prefix != prefix {
 			return fmt.Errorf("expected prefix %v, instead got %v", prefix, *out.Prefix)
 		}
-		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
+		if !compareObjects(contents[2:], out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out.Contents)
 		}
 
 		return nil
@@ -3777,7 +3739,7 @@ func ListObjects_truncated(s *S3Conf) error {
 	testName := "ListObjects_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		maxKeys := int32(2)
-		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -3804,9 +3766,8 @@ func ListObjects_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out1.NextMarker)
 		}
 
-		contents := createEmptyObjectsList([]string{"bar", "baz"})
-		if !compareObjects(contents, out1.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out1.Contents)
+		if !compareObjects(contents[:2], out1.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[:2], out1.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -3827,10 +3788,8 @@ func ListObjects_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected marker to be %v, instead got %v", *out1.NextMarker, *out2.Marker)
 		}
 
-		contents = createEmptyObjectsList([]string{"foo"})
-
-		if !compareObjects(contents, out2.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out2.Contents)
+		if !compareObjects(contents[2:], out2.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out2.Contents)
 		}
 		return nil
 	})
@@ -3858,7 +3817,7 @@ func ListObjects_max_keys_0(s *S3Conf) error {
 	testName := "ListObjects_max_keys_0"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects := []string{"foo", "bar", "baz"}
-		err := putObjects(s3client, objects, bucket)
+		_, err := putObjects(s3client, objects, bucket)
 		if err != nil {
 			return err
 		}
@@ -3884,7 +3843,7 @@ func ListObjects_max_keys_0(s *S3Conf) error {
 func ListObjects_delimiter(s *S3Conf) error {
 	testName := "ListObjects_delimiter"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo/bar/baz", "foo/bar/xyzzy", "quux/thud", "asdf"}, bucket)
+		_, err := putObjects(s3client, []string{"foo/bar/baz", "foo/bar/xyzzy", "quux/thud", "asdf"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -3920,7 +3879,7 @@ func ListObjects_delimiter(s *S3Conf) error {
 func ListObjects_max_keys_none(s *S3Conf) error {
 	testName := "ListObjects_max_keys_none"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		_, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -3945,7 +3904,7 @@ func ListObjects_max_keys_none(s *S3Conf) error {
 func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 	testName := "ListObjects_marker_not_from_obj_list"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz", "qux", "hello", "xyz"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz", "qux", "hello", "xyz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -3960,9 +3919,7 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList([]string{"foo", "hello", "qux", "xyz"})
-
-		if !compareObjects(contents, out.Contents) {
+		if !compareObjects(contents[2:], out.Contents) {
 			return fmt.Errorf("expected output to be %v, instead got %v", contents, out.Contents)
 		}
 
@@ -3973,7 +3930,7 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 func ListObjectsV2_start_after(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -3988,9 +3945,7 @@ func ListObjectsV2_start_after(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList([]string{"baz", "foo"})
-
-		if !compareObjects(contents, out.Contents) {
+		if !compareObjects(contents[1:], out.Contents) {
 			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
 
@@ -4001,7 +3956,7 @@ func ListObjectsV2_start_after(s *S3Conf) error {
 func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 	testName := "ListObjectsV2_both_start_after_and_continuation_token"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4029,10 +3984,8 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out.NextContinuationToken)
 		}
 
-		contents := createEmptyObjectsList([]string{"bar"})
-
-		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
+		if !compareObjects(contents[:1], out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[:1], out.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -4046,10 +3999,8 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 			return err
 		}
 
-		contents = createEmptyObjectsList([]string{"foo", "quxx"})
-
-		if !compareObjects(contents, resp.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, resp.Contents)
+		if !compareObjects(contents[2:], resp.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], resp.Contents)
 		}
 
 		return nil
@@ -4059,7 +4010,7 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after_not_in_list"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4074,10 +4025,8 @@ func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList([]string{"foo", "quxx"})
-
-		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
+		if !compareObjects(contents[2:], out.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out.Contents)
 		}
 
 		return nil
@@ -4087,7 +4036,7 @@ func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
 func ListObjectsV2_start_after_empty_result(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after_empty_result"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
+		_, err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4113,13 +4062,14 @@ func ListObjectsV2_start_after_empty_result(s *S3Conf) error {
 func ListObjectsV2_both_delimiter_and_prefix(s *S3Conf) error {
 	testName := "ListObjectsV2_both_delimiter_and_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := putObjects(s3client, []string{
+		_, err := putObjects(s3client, []string{
 			"sample.jpg",
 			"photos/2006/January/sample.jpg",
 			"photos/2006/February/sample2.jpg",
 			"photos/2006/February/sample3.jpg",
 			"photos/2006/February/sample4.jpg",
-		}, bucket); err != nil {
+		}, bucket)
+		if err != nil {
 			return err
 		}
 		delim, prefix := "/", "photos/2006/"
@@ -4155,7 +4105,8 @@ func ListObjectsV2_both_delimiter_and_prefix(s *S3Conf) error {
 func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 	testName := "ListObjectsV2_single_dir_object_with_delim_and_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := putObjects(s3client, []string{"a/"}, bucket); err != nil {
+		contents, err := putObjects(s3client, []string{"a/"}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -4192,8 +4143,6 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList([]string{"a/"})
-
 		if !compareObjects(contents, res.Contents) {
 			return fmt.Errorf("expected the object list to be %v, instead got %v", []string{"a/"}, res.Contents)
 		}
@@ -4208,7 +4157,8 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 	testName := "ListObjectsV2_truncated_common_prefixes"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := putObjects(s3client, []string{"d1/f1", "d2/f2", "d3/f3", "d4/f4"}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{"d1/f1", "d2/f2", "d3/f3", "d4/f4"}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -4263,12 +4213,12 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
 	testName := "ListObjectsV2_all_objs_max_keys"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		objs := []string{"bar", "baz", "foo"}
-		if err := putObjects(s3client, objs, bucket); err != nil {
+		contents, err := putObjects(s3client, []string{"bar", "baz", "foo"}, bucket)
+		if err != nil {
 			return err
 		}
 
-		maxKeys := int32(len(objs))
+		maxKeys := int32(3)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
@@ -4289,8 +4239,6 @@ func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
 		if *out.MaxKeys != maxKeys {
 			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
 		}
-
-		contents := createEmptyObjectsList(objs)
 
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, out.Contents)
@@ -4313,24 +4261,11 @@ func DeleteObject_non_existing_object(s *S3Conf) error {
 	})
 }
 
-func DeleteObject_name_too_long(s *S3Conf) error {
-	testName := "DeleteObject_name_too_long"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: &bucket,
-			Key:    getPtr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		})
-		cancel()
-		return err
-	})
-}
-
 func DeleteObject_non_existing_dir_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_dir_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4350,7 +4285,7 @@ func DeleteObject_success(s *S3Conf) error {
 	testName := "DeleteObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4382,7 +4317,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 	testName := "DeleteObject_success_status_code"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4412,7 +4347,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 func DeleteObjects_empty_input(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4444,8 +4379,6 @@ func DeleteObjects_empty_input(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-
-		contents := createEmptyObjectsList([]string{"bar", "baz", "foo"})
 
 		if !compareObjects(contents, res.Contents) {
 			return fmt.Errorf("expected the output to be %v, instead got %v", contents, res.Contents)
@@ -4487,7 +4420,7 @@ func DeleteObjects_success(s *S3Conf) error {
 	testName := "DeleteObjects_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objects, objToDel := []string{"obj1", "obj2", "obj3"}, []string{"foo", "bar", "baz"}
-		err := putObjects(s3client, append(objToDel, objects...), bucket)
+		contents, err := putObjects(s3client, append(objToDel, objects...), bucket)
 		if err != nil {
 			return err
 		}
@@ -4529,10 +4462,8 @@ func DeleteObjects_success(s *S3Conf) error {
 			return err
 		}
 
-		contents := createEmptyObjectsList(objects)
-
-		if !compareObjects(contents, res.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, res.Contents)
+		if !compareObjects(contents[3:], res.Contents) {
+			return fmt.Errorf("expected the output to be %v, instead got %v", contents[3:], res.Contents)
 		}
 
 		return nil
@@ -4543,7 +4474,7 @@ func CopyObject_non_existing_dst_bucket(s *S3Conf) error {
 	testName := "CopyObject_non_existing_dst_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4565,7 +4496,7 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 	testName := "CopyObject_not_owned_source_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		srcObj := "my-obj"
-		err := putObjects(s3client, []string{srcObj}, bucket)
+		_, err := putObjects(s3client, []string{srcObj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4621,7 +4552,7 @@ func CopyObject_copy_to_itself(s *S3Conf) error {
 	testName := "CopyObject_copy_to_itself"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4643,7 +4574,7 @@ func CopyObject_copy_to_itself_invalid_directive(s *S3Conf) error {
 	testName := "CopyObject_copy_to_itself_invalid_directive"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4671,7 +4602,7 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4919,7 +4850,7 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr(genRandString(129)), Value: getPtr("val")}}}
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4955,7 +4886,7 @@ func PutObjectTagging_success(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -4994,11 +4925,12 @@ func GetObjectTagging_unset_tags(s *S3Conf) error {
 	testName := "GetObjectTagging_unset_tags"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 			Bucket: &bucket,
 			Key:    &obj,
 		})
@@ -5015,7 +4947,7 @@ func GetObjectTagging_success(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -5068,7 +5000,7 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 	testName := "DeleteObjectTagging_success_status"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -5120,7 +5052,7 @@ func DeleteObjectTagging_success(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -5712,7 +5644,7 @@ func UploadPartCopy_incorrect_uploadId(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		err = putObjects(s3client, []string{srcObj}, srcBucket)
+		_, err = putObjects(s3client, []string{srcObj}, srcBucket)
 		if err != nil {
 			return err
 		}
@@ -5753,7 +5685,7 @@ func UploadPartCopy_incorrect_object_key(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		err = putObjects(s3client, []string{srcObj}, srcBucket)
+		_, err = putObjects(s3client, []string{srcObj}, srcBucket)
 		if err != nil {
 			return err
 		}
@@ -6366,7 +6298,7 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 			return fmt.Errorf("expected next-key-marker to be %v, instead got %v", *uploads[1].Key, *out.NextKeyMarker)
 		}
 		if *out.NextUploadIdMarker != *uploads[1].UploadId {
-			return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v", *uploads[1].Key, *out.NextKeyMarker)
+			return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v", *uploads[1].UploadId, *out.NextUploadIdMarker)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -6398,7 +6330,7 @@ func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:    &bucket,
-			KeyMarker: getPtr("incorrect_object_key"),
+			KeyMarker: getPtr("wrong_object_key"),
 		})
 		cancel()
 		if err != nil {
@@ -7027,7 +6959,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 		newConf.awsSecret = "grt1secret"
 		userClient := s3.NewFromConfig(newConf.Config())
 
-		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -7059,7 +6991,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 		newConf.awsSecret = "grt1secret"
 		userClient := s3.NewFromConfig(newConf.Config())
 
-		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -7091,7 +7023,7 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 		newConf.awsSecret = "grt1secret"
 		userClient := s3.NewFromConfig(newConf.Config())
 
-		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -7145,7 +7077,7 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 		newConf.awsSecret = "grt1secret"
 		userClient := s3.NewFromConfig(newConf.Config())
 
-		err = putObjects(userClient, []string{"my-obj"}, bucket)
+		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -8349,12 +8281,13 @@ func PutObjectRetention_unset_bucket_object_lock_config(s *S3Conf) error {
 		date := time.Now().Add(time.Hour * 3)
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &key,
 			Retention: &types.ObjectLockRetention{
@@ -8387,7 +8320,8 @@ func PutObjectRetention_disabled_bucket_object_lock_config(s *S3Conf) error {
 		date := time.Now().Add(time.Hour * 3)
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -8463,12 +8397,13 @@ func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		date := time.Now().Add(time.Hour * 3)
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
@@ -8508,12 +8443,13 @@ func PutObjectRetention_overwrite_governance_without_bypass_specified(s *S3Conf)
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		date := time.Now().Add(time.Hour * 3)
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
@@ -8553,12 +8489,13 @@ func PutObjectRetention_overwrite_governance_with_permission(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		date := time.Now().Add(time.Hour * 3)
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
@@ -8617,12 +8554,13 @@ func PutObjectRetention_success(s *S3Conf) error {
 		date := time.Now().Add(time.Hour * 3)
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &key,
 			Retention: &types.ObjectLockRetention{
@@ -8681,12 +8619,13 @@ func GetObjectRetention_unset_config(s *S3Conf) error {
 	testName := "GetObjectRetention_unset_config"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key := "my-obj"
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+		_, err = s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &key,
 		})
@@ -8706,7 +8645,8 @@ func GetObjectRetention_success(s *S3Conf) error {
 			return err
 		}
 		key := "my-obj"
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -8717,7 +8657,7 @@ func GetObjectRetention_success(s *S3Conf) error {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket:    &bucket,
 			Key:       &key,
 			Retention: &retention,
@@ -8842,12 +8782,13 @@ func PutObjectLegalHold_unset_bucket_object_lock_config(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket: &bucket,
 			Key:    &key,
 			LegalHold: &types.ObjectLockLegalHold{
@@ -8878,7 +8819,8 @@ func PutObjectLegalHold_disabled_bucket_object_lock_config(s *S3Conf) error {
 
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -8908,12 +8850,13 @@ func PutObjectLegalHold_success(s *S3Conf) error {
 
 		key := "my-obj"
 
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket: &bucket,
 			Key:    &key,
 			LegalHold: &types.ObjectLockLegalHold{
@@ -8971,12 +8914,13 @@ func GetObjectLegalHold_unset_config(s *S3Conf) error {
 	testName := "GetObjectLegalHold_unset_config"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		key := "my-obj"
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+		_, err = s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
 			Bucket: &bucket,
 			Key:    &key,
 		})
@@ -8996,12 +8940,13 @@ func GetObjectLegalHold_success(s *S3Conf) error {
 			return err
 		}
 		key := "my-obj"
-		if err := putObjects(s3client, []string{key}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket: &bucket,
 			Key:    &key,
 			LegalHold: &types.ObjectLockLegalHold{
@@ -9058,7 +9003,8 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 			return err
 		}
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -9096,7 +9042,8 @@ func WORMProtection_bucket_object_lock_configuration_governance_mode(s *S3Conf) 
 			return err
 		}
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -9134,7 +9081,8 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete(s *S3Conf) error
 			return err
 		}
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -9193,7 +9141,8 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s *S3Co
 			return err
 		}
 
-		if err := putObjects(s3client, []string{obj1, obj2, obj3}, bucket); err != nil {
+		_, err = putObjects(s3client, []string{obj1, obj2, obj3}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -9246,13 +9195,14 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-obj"
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
 		date := time.Now().Add(time.Hour * 3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &object,
 			Retention: &types.ObjectLockRetention{
@@ -9281,13 +9231,14 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-obj"
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
 		date := time.Now().Add(time.Hour * 3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &object,
 			Retention: &types.ObjectLockRetention{
@@ -9316,13 +9267,14 @@ func WORMProtection_object_lock_retention_governance_bypass_overwrite(s *S3Conf)
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-obj"
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
 		date := time.Now().Add(time.Hour * 3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &object,
 			Retention: &types.ObjectLockRetention{
@@ -9370,13 +9322,14 @@ func WORMProtection_object_lock_retention_governance_bypass_delete(s *S3Conf) er
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-obj"
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
 		date := time.Now().Add(time.Hour * 3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &object,
 			Retention: &types.ObjectLockRetention{
@@ -9426,7 +9379,8 @@ func WORMProtection_object_lock_retention_governance_bypass_delete_mul(s *S3Conf
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		objs := []string{"my-obj-1", "my-obj2", "my-obj-3"}
 
-		if err := putObjects(s3client, objs, bucket); err != nil {
+		_, err := putObjects(s3client, objs, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -9452,7 +9406,7 @@ func WORMProtection_object_lock_retention_governance_bypass_delete_mul(s *S3Conf
 		bypass := true
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 			Bucket: &bucket,
 			Policy: &policy,
 		})
@@ -9501,12 +9455,13 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 
 		object := "my-obj"
 
-		if err := putObjects(s3client, []string{object}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket: &bucket,
 			Key:    &object,
 			LegalHold: &types.ObjectLockLegalHold{
@@ -9518,7 +9473,7 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 			return err
 		}
 
-		err = putObjects(s3client, []string{object}, bucket)
+		_, err = putObjects(s3client, []string{object}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
@@ -9535,13 +9490,14 @@ func WORMProtection_root_bypass_governance_retention_delete_object(s *S3Conf) er
 	testName := "WORMProtection_root_bypass_governance_retention_delete_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 
 		retDate := time.Now().Add(time.Hour * 48)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 			Bucket: &bucket,
 			Key:    &obj,
 			Retention: &types.ObjectLockRetention{
@@ -9608,7 +9564,7 @@ func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
 
-		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -9634,7 +9590,7 @@ func AccessControl_default_ACL_userplus_access_denied(s *S3Conf) error {
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
 
-		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -9660,7 +9616,7 @@ func AccessControl_default_ACL_admin_successful_access(s *S3Conf) error {
 		cfg.awsID = admin.access
 		cfg.awsSecret = admin.secret
 
-		err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -9766,14 +9722,14 @@ func AccessControl_bucket_resource_all_action(s *S3Conf) error {
 		}
 
 		user1Client := getUserS3Client(usr1, s)
-		err = putObjects(user1Client, []string{"my-obj"}, bucket)
+		_, err = putObjects(user1Client, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
 
 		user2Client := getUserS3Client(usr2, s)
 
-		err = putObjects(user2Client, []string{"my-obj"}, bucket)
+		_, err = putObjects(user2Client, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -9786,7 +9742,7 @@ func AccessControl_single_object_resource_actions(s *S3Conf) error {
 	testName := "AccessControl_single_object_resource_actions"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj/nested-obj"
-		err := putObjects(s3client, []string{obj}, bucket)
+		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
@@ -10043,7 +9999,8 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 	testName := "AccessControl_copy_object_with_starting_slash_for_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		if err := putObjects(s3client, []string{obj}, bucket); err != nil {
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
 			return err
 		}
 
@@ -10064,7 +10021,7 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 
 		userClient := getUserS3Client(usr, s)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := userClient.CopyObject(ctx, &s3.CopyObjectInput{
+		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:            &bucket,
 			Key:               &obj,
 			CopySource:        &copySource,
@@ -10253,7 +10210,7 @@ func IAM_ChangeBucketOwner_back_to_root(s *S3Conf) error {
 func PutObject_overwrite_dir_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_dir_obj"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo/", "foo"}, bucket)
+		_, err := putObjects(s3client, []string{"foo/", "foo"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
 			return err
 		}
@@ -10264,7 +10221,7 @@ func PutObject_overwrite_dir_obj(s *S3Conf) error {
 func PutObject_overwrite_file_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_file_obj"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putObjects(s3client, []string{"foo", "foo/"}, bucket)
+		_, err := putObjects(s3client, []string{"foo", "foo/"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
 			return err
 		}
@@ -10294,5 +10251,53 @@ func CreateMultipartUpload_dir_obj(s *S3Conf) error {
 			return err
 		}
 		return nil
+	})
+}
+
+func PutObject_name_too_long(s *S3Conf) error {
+	testName := "PutObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := genRandString(300)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func HeadObject_name_too_long(s *S3Conf) error {
+	testName := "HeadObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr(genRandString(300)),
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func DeleteObject_name_too_long(s *S3Conf) error {
+	testName := "DeleteObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr(genRandString(300)),
+		})
+		cancel()
+		return err
 	})
 }

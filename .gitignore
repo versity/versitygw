@@ -45,6 +45,7 @@ tests/.secrets*
 
 # IAM users files often created in testing
 users.json
+users.json.backup
 
 # env files for testing
 **/.env*
