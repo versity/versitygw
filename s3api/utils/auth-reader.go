@@ -133,7 +133,6 @@ func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string,
 		},
 		req, checksum, service, auth.Region, tdate, signedHdrs,
 		func(options *v4.SignerOptions) {
-			options.DisableURIPathEscaping = true
 			if debug {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
