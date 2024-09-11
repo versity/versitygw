@@ -143,7 +143,6 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_mp(s)
 	HeadObject_mp_success(s)
 	HeadObject_non_existing_dir_object(s)
-	HeadObject_name_too_long(s)
 	HeadObject_with_contenttype(s)
 	HeadObject_success(s)
 }

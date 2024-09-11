@@ -30,6 +30,12 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
+const (
+	// this is the media type for directories in AWS and Nextcloud
+	DirContentType     = "application/x-directory"
+	DefaultContentType = "binary/octet-stream"
+)
+
 func IsValidBucketName(name string) bool { return true }
 
 type ByBucketName []s3response.ListAllMyBucketsEntry

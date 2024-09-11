@@ -67,8 +67,6 @@ const (
 	onameAttr              key = "Objname"
 	onameAttrLower         key = "objname"
 	metaTmpMultipartPrefix key = ".sgwtmp" + "/multipart"
-
-	defaultContentType = "binary/octet-stream"
 )
 
 func (key) Table() map[string]struct{} {
@@ -301,10 +299,15 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (string, 
 	opts.HTTPHeaders.BlobContentEncoding = po.ContentEncoding
 	opts.HTTPHeaders.BlobContentLanguage = po.ContentLanguage
 	opts.HTTPHeaders.BlobContentDisposition = po.ContentDisposition
-	opts.HTTPHeaders.BlobContentType = po.ContentType
+	if strings.HasSuffix(*po.Key, "/") {
+		// Hardcode "application/x-directory" for direcoty objects
+		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(backend.DirContentType)
+	} else {
+		opts.HTTPHeaders.BlobContentType = po.ContentType
+	}
 
 	if opts.HTTPHeaders.BlobContentType == nil {
-		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(string(defaultContentType))
+		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(backend.DefaultContentType)
 	}
 
 	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, opts)
@@ -401,7 +404,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 
 	contentType := blobDownloadResponse.ContentType
 	if contentType == nil {
-		contentType = backend.GetStringPtr(defaultContentType)
+		contentType = backend.GetStringPtr(backend.DefaultContentType)
 	}
 
 	return &s3.GetObjectOutput{
@@ -855,7 +858,8 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 	}
 	if getString(input.ContentType) != "" {
 		opts.HTTPHeaders = &blob.HTTPHeaders{
-			BlobContentType: input.ContentType,
+			BlobContentType:     input.ContentType,
+			BlobContentEncoding: input.ContentEncoding,
 		}
 	}
 
@@ -1190,7 +1194,8 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		Tags:     parseAzTags(tags.BlobTagSet),
 	}
 	opts.HTTPHeaders = &blob.HTTPHeaders{
-		BlobContentType: props.ContentType,
+		BlobContentType:     props.ContentType,
+		BlobContentEncoding: props.ContentEncoding,
 	}
 
 	resp, err := client.CommitBlockList(ctx, blockIds, opts)
