@@ -86,9 +86,6 @@ const (
 	objectRetentionKey  = "object-retention"
 	objectLegalHoldKey  = "object-legal-hold"
 
-	// this is the media type for directories in AWS and Nextcloud
-	dirContentType = "application/x-directory"
-
 	doFalloc   = true
 	skipFalloc = false
 )
@@ -1739,7 +1736,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		userMetaData := make(map[string]string)
 
 		_, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
-		contentType := dirContentType
+		contentType := backend.DirContentType
 
 		b, err := p.meta.RetrieveAttribute(bucket, object, etagkey)
 		etag := string(b)
@@ -1898,7 +1895,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
 
 	if fi.IsDir() {
-		contentType = dirContentType
+		contentType = backend.DirContentType
 	}
 
 	b, err := p.meta.RetrieveAttribute(bucket, object, etagkey)
