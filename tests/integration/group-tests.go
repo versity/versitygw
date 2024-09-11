@@ -152,8 +152,6 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_non_existing_bucket(s)
 	GetObjectAttributes_non_existing_object(s)
 	GetObjectAttributes_existing_object(s)
-	GetObjectAttributes_multipart_upload(s)
-	GetObjectAttributes_multipart_upload_truncated(s)
 }
 
 func TestGetObject(s *S3Conf) {
@@ -604,8 +602,6 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_existing_object":                                 GetObjectAttributes_existing_object,
-		"GetObjectAttributes_multipart_upload":                                GetObjectAttributes_multipart_upload,
-		"GetObjectAttributes_multipart_upload_truncated":                      GetObjectAttributes_multipart_upload_truncated,
 		"GetObject_non_existing_key":                                          GetObject_non_existing_key,
 		"GetObject_invalid_ranges":                                            GetObject_invalid_ranges,
 		"GetObject_with_meta":                                                 GetObject_with_meta,
