@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1951,63 +1950,15 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 		Bucket: input.Bucket,
 		Key:    input.Key,
 	})
-	if err == nil {
-		return s3response.GetObjectAttributesResult{
-			ETag:         data.ETag,
-			LastModified: data.LastModified,
-			ObjectSize:   data.ContentLength,
-			StorageClass: data.StorageClass,
-			VersionId:    data.VersionId,
-		}, nil
-	}
-	if !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-		return s3response.GetObjectAttributesResult{}, err
-	}
-
-	uploadId, _, err := p.retrieveUploadId(*input.Bucket, *input.Key)
 	if err != nil {
-		return s3response.GetObjectAttributesResult{}, err
+		return s3response.GetObjectAttributesResult{}, nil
 	}
 
-	resp, err := p.ListParts(ctx, &s3.ListPartsInput{
-		Bucket:           input.Bucket,
-		Key:              input.Key,
-		UploadId:         &uploadId,
-		PartNumberMarker: input.PartNumberMarker,
-		MaxParts:         input.MaxParts,
-	})
-	if err != nil {
-		return s3response.GetObjectAttributesResult{}, err
-	}
-
-	parts := []types.ObjectPart{}
-
-	for _, p := range resp.Parts {
-		if !(p.PartNumber > 0 && p.PartNumber <= math.MaxInt32) {
-			return s3response.GetObjectAttributesResult{},
-				s3err.GetAPIError(s3err.ErrInvalidPartNumber)
-		}
-
-		partNumber := int32(p.PartNumber)
-		size := p.Size
-
-		parts = append(parts, types.ObjectPart{
-			Size:       &size,
-			PartNumber: &partNumber,
-		})
-	}
-
-	//TODO: handle PartsCount prop
-	//TODO: Maybe simply calling ListParts isn't a good option
 	return s3response.GetObjectAttributesResult{
-		ObjectParts: &s3response.ObjectParts{
-			IsTruncated:          resp.IsTruncated,
-			MaxParts:             resp.MaxParts,
-			PartNumberMarker:     resp.PartNumberMarker,
-			NextPartNumberMarker: resp.NextPartNumberMarker,
-			Parts:                parts,
-		},
-		StorageClass: types.StorageClassStandard,
+		ETag:         data.ETag,
+		LastModified: data.LastModified,
+		ObjectSize:   data.ContentLength,
+		StorageClass: data.StorageClass,
 	}, nil
 }
 
