@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/util_list_objects.sh
+
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
@@ -35,6 +37,9 @@ list_objects() {
     output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then
     output=$(mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || result=$?
+  elif [[ $1 == 'rest' ]]; then
+    list_objects_rest "$2" || result=$?
+    return $result
   else
     fail "invalid command type $1"
     return 1
@@ -125,4 +130,42 @@ list_objects_with_prefix() {
   log 5 "output: $objects"
   export objects
   return 0
+}
+
+list_objects_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'list_objects_rest' requires bucket name"
+    return 1
+  fi
+
+  generate_hash_for_payload ""
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="GET
+/$1
+
+host:$aws_endpoint_url_address
+x-amz-content-sha256:$payload_hash
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+$payload_hash"
+
+  log 5 "canonical request: $canonical_request"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+  # shellcheck disable=SC2154
+  reply=$(curl -ks "$header://$aws_endpoint_url_address/$1" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: $payload_hash" \
+    -H "x-amz-date: $current_date_time" 2>&1)
+  log 5 "reply: $reply"
+  parse_objects_list_rest
 }

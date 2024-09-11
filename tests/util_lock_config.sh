@@ -62,3 +62,25 @@ get_and_check_object_lock_config() {
   fi
   return 0
 }
+
+get_check_object_lock_config_enabled() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_check_object_lock_config_enabled' requires bucket name"
+    return 1
+  fi
+  if ! get_object_lock_configuration "$1"; then
+    log 2 "error getting lock configuration"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "Lock config:  $lock_config"
+  if ! enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled" 2>&1); then
+    log 2 "error parsing enabled value: $enabled"
+    return 1
+  fi
+  if [[ $enabled != "Enabled" ]]; then
+    log 2 "ObjectLockEnabled should be 'Enabled', is '$enabled'"
+    return 1
+  fi
+  return 0
+}

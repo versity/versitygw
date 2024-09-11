@@ -44,7 +44,10 @@ check_for_empty_policy() {
 
 get_modified_principal() {
   log 6 "get_modified_principal"
-  assert [ $# -eq 1 ]
+  if [ $# -ne 1 ]; then
+    log 2 "'get_modified_principal' requires principal"
+    return 1
+  fi
   local first_char="${1:0:1}"
   if [ "$first_char" != '{' ] && [ "$first_char" != '[' ] && [ "$first_char" != '"' ]; then
     # shellcheck disable=SC2089
@@ -52,16 +55,40 @@ get_modified_principal() {
   else
     modified_principal=$1
   fi
-  export modified_principal
+}
+
+get_modified_action() {
+  log 6 "get_modified_action"
+  if [ $# -ne 1 ]; then
+    log 2 "'get_modified_action' requires action"
+    return 1
+  fi
+  local first_char="${1:0:1}"
+  if [ "$first_char" != '{' ] && [ "$first_char" != '[' ] && [ "$first_char" != '"' ]; then
+    # shellcheck disable=SC2089
+    modified_action="\"$1\""
+  else
+    modified_action=$1
+  fi
 }
 
 # params:  file, version, effect, principal, action, resource
 # fail on error
 setup_policy_with_single_statement() {
   log 6 "setup_policy_with_single_statement"
-  assert [ $# -eq 6 ]
+  if [ $# -ne 6 ]; then
+    log 2 "'setup_policy_with_single_statement' requires policy file, version, effect, principal, action, resource"
+    return 1
+  fi
   log 5 "policy file: $1"
-  get_modified_principal "$4"
+  if ! get_modified_principal "$4"; then
+    log 2 "error getting modified principal"
+    return 1
+  fi
+  if ! get_modified_action "$5"; then
+    log 2 "error getting modified action"
+    return 1
+  fi
   bash -c "cat <<EOF > $1
 {
   \"Version\": \"$2\",
@@ -69,7 +96,7 @@ setup_policy_with_single_statement() {
     {
        \"Effect\": \"$3\",
        \"Principal\": $modified_principal,
-       \"Action\": \"$5\",
+       \"Action\": $modified_action,
        \"Resource\": \"$6\"
     }
   ]
@@ -81,15 +108,24 @@ EOF"
 }
 
 # params:  file, version, two sets:  effect, principal, action, resource
-# fail on error
+# return 0 on success, 1 on error
 setup_policy_with_double_statement() {
   log 6 "setup_policy_with_double_statement"
-  assert [ $# -eq 10 ]
-  get_modified_principal "$4"
+  if [ $# -ne 10 ]; then
+    log 2 "invalid number of parameters"
+    return 1
+  fi
+  if ! get_modified_principal "$4"; then
+    log 2 "error getting first modified principal"
+    return 1
+  fi
   principal_one=$modified_principal
-  get_modified_principal "$8"
+  if ! get_modified_principal "$8"; then
+    log 2 "error getting second modified principal"
+    return 1
+  fi
   principal_two=$modified_principal
-  run bash -c "cat <<EOF > $1
+  bash -c "cat <<EOF > $1
 {
   \"Version\": \"$2\",
   \"Statement\": [
@@ -109,6 +145,5 @@ setup_policy_with_double_statement() {
 }
 EOF"
   # shellcheck disable=SC2154
-  assert_success "failed to set up policy: $output"
   log 5 "policy data: $(cat "$1")"
 }

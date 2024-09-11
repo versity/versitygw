@@ -16,7 +16,7 @@
 
 source ./tests/test_common.sh
 source ./tests/setup.sh
-source ./tests/util_bucket_create.sh
+source ./tests/util_create_bucket.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh

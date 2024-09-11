@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
@@ -14,24 +14,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
-  echo "Error:  VERSITYGW_TEST_ENV parameter must be set, or BYPASS_ENV_FILE must be set to true"
-  exit 1
-fi
-
-if ! ./tests/run.sh aws; then
-  exit 1
-fi
-if ! ./tests/run.sh s3; then
-  exit 1
-fi
-if ! ./tests/run.sh s3cmd; then
-  exit 1
-fi
-if ! ./tests/run.sh mc; then
-  exit 1
-fi
-if ! ./tests/run.sh rest; then
-  exit 1
-fi
-exit 0
+list_check_buckets_rest() {
+  if ! list_buckets "rest"; then
+    log 2 "error listing buckets"
+    return 1
+  fi
+  bucket_found=false
+  # shellcheck disable=SC2154
+  for bucket in "${bucket_array[@]}"; do
+    log 5 "bucket: $bucket"
+    if [[ $bucket == "$BUCKET_ONE_NAME" ]]; then
+      bucket_found=true
+      break
+    fi
+  done
+  if [[ $bucket_found == "false" ]]; then
+    log 2 "bucket not found"
+    return 1
+  fi
+  return 0
+}

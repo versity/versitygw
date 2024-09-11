@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_bucket_create.sh
+source ./tests/util_create_bucket.sh
 source ./tests/util_mc.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh
