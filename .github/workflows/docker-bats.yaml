@@ -17,12 +17,12 @@ jobs:
         run: |
           mv tests/.env.docker.default tests/.env.docker
           mv tests/.secrets.default tests/.secrets
-          docker build --build-arg="GO_LIBRARY=go1.21.7.linux-amd64.tar.gz" \
+          docker build --build-arg="GO_LIBRARY=go1.23.1.linux-amd64.tar.gz" \
             --build-arg="AWS_CLI=awscli-exe-linux-x86_64.zip" --build-arg="MC_FOLDER=linux-amd64" \
-            --progress=plain -f Dockerfile_test_bats -t bats_test .
+            --progress=plain -f tests/Dockerfile_test_bats -t bats_test .
 
       - name: Set up Docker Compose
         run: sudo apt-get install -y docker-compose
 
       - name: Run Docker Container
-        run: docker-compose -f docker-compose-bats.yml up --exit-code-from posix_backend posix_backend
+        run: docker-compose -f tests/docker-compose-bats.yml up --exit-code-from posix_backend posix_backend

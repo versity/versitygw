@@ -3,7 +3,7 @@ FROM ubuntu:latest
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SECRETS_FILE=tests/.secrets
 ARG CONFIG_FILE=tests/.env.docker
-ARG GO_LIBRARY=go1.21.7.linux-arm64.tar.gz
+ARG GO_LIBRARY=go1.23.1.linux-arm64.tar.gz
 ARG AWS_CLI=awscli-exe-linux-aarch64.zip
 ARG MC_FOLDER=linux-arm64
 
