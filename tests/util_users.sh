@@ -86,13 +86,13 @@ put_user_policy_userplus() {
     log 2 "'put user policy userplus' function requires username"
     return 1
   fi
-  if [[ -z "$test_file_folder" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
+  if [[ -z "$TEST_FILE_FOLDER" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
     log 2 "unable to create test file folder"
     return 1
   fi
           #"Resource": "arn:aws:s3:::${aws:username}-*"
 
-cat <<EOF > "$test_file_folder"/user_policy_file
+cat <<EOF > "$TEST_FILE_FOLDER"/user_policy_file
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -118,7 +118,7 @@ cat <<EOF > "$test_file_folder"/user_policy_file
   ]
 }
 EOF
-  if ! error=$(aws iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$test_file_folder/user_policy_file" 2>&1); then
+  if ! error=$(aws iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$TEST_FILE_FOLDER/user_policy_file" 2>&1); then
     log 2 "error putting user policy: $error"
     return 1
   fi
@@ -131,7 +131,7 @@ put_user_policy() {
     log 2 "attaching user policy requires user ID, role, bucket name"
     return 1
   fi
-  if [[ -z "$test_file_folder" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
+  if [[ -z "$TEST_FILE_FOLDER" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
     log 2 "unable to create test file folder"
     return 1
   fi

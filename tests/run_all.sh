@@ -19,19 +19,12 @@ if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
   exit 1
 fi
 
-if ! ./tests/run.sh aws; then
-  exit 1
-fi
-if ! ./tests/run.sh s3; then
-  exit 1
-fi
-if ! ./tests/run.sh s3cmd; then
-  exit 1
-fi
-if ! ./tests/run.sh mc; then
-  exit 1
-fi
-if ! ./tests/run.sh rest; then
-  exit 1
-fi
-exit 0
+status=0
+
+for cmd in aws s3 s3cmd mc rest; do
+  if ! ./tests/run.sh "$cmd"; then
+    status=1
+  fi
+done
+
+exit $status

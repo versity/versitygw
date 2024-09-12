@@ -57,7 +57,7 @@ reset_bucket_acl() {
     return 1
   fi
   # shellcheck disable=SC2154
-  cat <<EOF > "$test_file_folder/$acl_file"
+  cat <<EOF > "$TEST_FILE_FOLDER/$acl_file"
 {
   "Grants": [
     {
@@ -73,7 +73,7 @@ reset_bucket_acl() {
   }
 }
 EOF
-  if ! put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder/$acl_file"; then
+  if ! put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$acl_file"; then
     log 2 "error putting bucket acl (s3api)"
     return 1
   fi

@@ -96,9 +96,9 @@ test_common_copy_object() {
   assert_success
 
   if [[ $1 == 's3' ]]; then
-    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to copy object to bucket one"
+    copy_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to copy object to bucket one"
   else
-    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to put object to bucket one"
+    put_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to put object to bucket one"
   fi
   if [[ $1 == 's3' ]]; then
     copy_object "$1" "s3://$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name" || fail "object not copied to bucket two"
@@ -151,7 +151,7 @@ test_common_put_object() {
     assert_success
   fi
 
-  run put_object "$1" "$test_file_folder/$2" "$BUCKET_ONE_NAME" "$2"
+  run put_object "$1" "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2"
   assert_success
 
   if [ "$1" == 's3' ]; then
@@ -185,9 +185,9 @@ test_common_put_get_object() {
   assert_success
 
   if [[ $1 == 's3' ]]; then
-    copy_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
+    copy_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
   else
-    put_object "$1" "$test_file_folder/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
+    put_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" || fail "failed to add object to bucket"
   fi
   object_exists "$1" "$BUCKET_ONE_NAME" "$object_name" || fail "object not added to bucket"
 
@@ -268,15 +268,15 @@ test_common_list_objects() {
   run create_test_files $object_one $object_two
   assert_success
 
-  echo "test data" > "$test_file_folder"/"$object_one"
-  echo "test data 2" > "$test_file_folder"/"$object_two"
+  echo "test data" > "$TEST_FILE_FOLDER"/"$object_one"
+  echo "test data 2" > "$TEST_FILE_FOLDER"/"$object_two"
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "$1" "$test_file_folder"/$object_one "$BUCKET_ONE_NAME" "$object_one"  || local result_two=$?
+  put_object "$1" "$TEST_FILE_FOLDER"/$object_one "$BUCKET_ONE_NAME" "$object_one"  || local result_two=$?
   [[ result_two -eq 0 ]] || fail "Error adding object one"
-  put_object "$1" "$test_file_folder"/$object_two "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
+  put_object "$1" "$TEST_FILE_FOLDER"/$object_two "$BUCKET_ONE_NAME" "$object_two" || local result_three=$?
   [[ result_three -eq 0 ]] || fail "Error adding object two"
 
   list_objects "$1" "$BUCKET_ONE_NAME"
@@ -355,7 +355,7 @@ test_common_set_get_object_tags() {
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
+  put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket '$BUCKET_ONE_NAME'"
 
   get_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file || fail "Error getting object tags"
   if [[ $1 == 'aws' ]]; then
@@ -393,25 +393,25 @@ test_common_presigned_url_utf8_chars() {
 
   run create_test_file "$bucket_file"
   assert_success
-  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error creating test file"
+  dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1 || fail "error creating test file"
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || put_result=$?
+  put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to add object $bucket_file"
 
   create_presigned_url "$1" "$BUCKET_ONE_NAME" "$bucket_file" || presigned_result=$?
   [[ $presigned_result -eq 0 ]] || fail "presigned url creation failure"
 
-  error=$(curl -k -v "$presigned_url" -o "$test_file_folder"/"$bucket_file_copy") || curl_result=$?
+  error=$(curl -k -v "$presigned_url" -o "$TEST_FILE_FOLDER"/"$bucket_file_copy") || curl_result=$?
   if [[ $curl_result -ne 0 ]]; then
     fail "error downloading file with curl: $error"
   fi
-  compare_files "$test_file_folder"/"$bucket_file" "$test_file_folder"/"$bucket_file_copy" || compare_result=$?
+  compare_files "$TEST_FILE_FOLDER"/"$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file_copy" || compare_result=$?
   if [[ $compare_result -ne 0 ]]; then
-    echo "file one: $(cat "$test_file_folder"/"$bucket_file")"
-    echo "file two: $(cat "$test_file_folder"/"$bucket_file_copy")"
+    echo "file one: $(cat "$TEST_FILE_FOLDER"/"$bucket_file")"
+    echo "file two: $(cat "$TEST_FILE_FOLDER"/"$bucket_file_copy")"
     fail "files don't match"
   fi
 
@@ -430,7 +430,7 @@ test_common_list_objects_file_count() {
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object_multiple "$1" "$test_file_folder/file_*" "$BUCKET_ONE_NAME" || local put_result=$?
+  put_object_multiple "$1" "$TEST_FILE_FOLDER/file_*" "$BUCKET_ONE_NAME" || local put_result=$?
   [[ $put_result -eq 0 ]] || fail "Failed to copy files to bucket"
   list_objects "$1" "$BUCKET_ONE_NAME"
   if [[ $LOG_LEVEL -ge 5 ]]; then
@@ -454,7 +454,7 @@ test_common_delete_object_tagging() {
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "$1" "$test_file_folder"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket"
+  put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" || fail "Failed to add object to bucket"
 
   put_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value" || fail "failed to add tags to object"
 
@@ -563,7 +563,7 @@ test_common_put_bucket_acl() {
     grantee="{\"ID\": \"$username\", \"Type\": \"CanonicalUser\"}"
   fi
 
-cat <<EOF > "$test_file_folder"/"$acl_file"
+cat <<EOF > "$TEST_FILE_FOLDER"/"$acl_file"
   {
     "Grants": [
       {
@@ -578,7 +578,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
 EOF
 
   log 6 "before 1st put acl"
-  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting first acl"
+  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file" || fail "error putting first acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 1st put: $acl"
@@ -586,7 +586,7 @@ EOF
   permission=$(echo "$public_grants" | jq -r '.Permission' 2>&1) || fail "error getting permission: $permission"
   [[ $permission == "READ" ]] || fail "incorrect permission ($permission)"
 
-cat <<EOF > "$test_file_folder"/"$acl_file"
+cat <<EOF > "$TEST_FILE_FOLDER"/"$acl_file"
   {
     "Grants": [
       {
@@ -603,7 +603,7 @@ cat <<EOF > "$test_file_folder"/"$acl_file"
   }
 EOF
 
-  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$test_file_folder"/"$acl_file" || fail "error putting second acl"
+  put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file" || fail "error putting second acl"
   get_bucket_acl "$1" "$BUCKET_ONE_NAME" || fail "error retrieving second ACL"
 
   log 5 "Acls after 2nd put: $acl"
@@ -634,7 +634,7 @@ test_common_get_put_delete_bucket_policy() {
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
 
-  cat <<EOF > "$test_file_folder"/$policy_file
+  cat <<EOF > "$TEST_FILE_FOLDER"/$policy_file
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -647,14 +647,14 @@ test_common_get_put_delete_bucket_policy() {
   ]
 }
 EOF
-  log 5 "POLICY: $(cat "$test_file_folder/$policy_file")"
+  log 5 "POLICY: $(cat "$TEST_FILE_FOLDER/$policy_file")"
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
   check_for_empty_policy "$1" "$BUCKET_ONE_NAME" || fail "policy not empty"
 
-  put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$test_file_folder"/"$policy_file" || fail "error putting bucket policy"
+  put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$policy_file" || fail "error putting bucket policy"
 
   get_bucket_policy "$1" "$BUCKET_ONE_NAME" || fail "error getting bucket policy after setting"
 

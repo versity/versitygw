@@ -16,6 +16,11 @@
 
 # fail if unable to put bucket ownership controls
 put_bucket_ownership_controls() {
+  if [[ -n "$SKIP_BUCKET_OWNERSHIP_CONTROLS" ]]; then
+    log 5 "Skipping get bucket ownership controls"
+    return 0
+  fi
+
   log 6 "put_bucket_ownership_controls"
   record_command "put-bucket-ownership-controls" "client:s3api"
   assert [ $# -eq 2 ]
