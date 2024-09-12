@@ -25,7 +25,6 @@ create_test_files() {
     log 2 "'create_test_files' requires file names"
     return 1
   fi
-  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
       log 2 "error creating test file folder"
@@ -38,7 +37,6 @@ create_test_files() {
       return 1
     fi
   done
-  #export test_file_folder
   return 0
 }
 
@@ -47,6 +45,12 @@ create_test_file() {
   if [[ ( $# -lt 1 ) || ( $# -gt 2 ) ]]; then
     log 2 "'create_test_file' requires filename, size (optional)"
     return 1
+  fi
+  if [[ -z "$GITHUB_ACTIONS" ]]; then
+    if ! create_test_file_folder; then
+      log 2 "error creating test file folder"
+      return 1
+    fi
   fi
   if [[ -e "$TEST_FILE_FOLDER/$1" ]]; then
     if ! error=$(rm "$TEST_FILE_FOLDER/$1" 2>&1); then
@@ -80,7 +84,6 @@ create_test_folder() {
     log 2 "'create_test_folder' requires folder names"
     return 1
   fi
-  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
       log 2 "error creating test file folder"
@@ -170,7 +173,6 @@ create_test_file_folder() {
       return 1
     fi
   fi
-  export test_file_folder=$TEST_FILE_FOLDER
   return 0
 }
 
@@ -183,8 +185,6 @@ create_large_file() {
     log 2 "'create_large_file' requires file name"
     return 1
   fi
-
-  #test_file_folder=$PWD/versity-gwtest-files
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
       log 2 "error creating test file folder"
@@ -207,7 +207,6 @@ create_test_file_count() {
     log 2 "'create_test_file_count' requires number of files"
     return 1
   fi
-  #test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
       log 2 "error creating test file folder"

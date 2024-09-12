@@ -35,7 +35,7 @@ RUN curl https://dl.min.io/client/mc/release/${MC_FOLDER}/mc \
   --create-dirs \
   -o /usr/local/minio-binaries/mc && \
 chmod -R 755 /usr/local/minio-binaries
-ENV PATH="/usr/local/minio-binaries":${PATH}
+ENV PATH=/usr/local/minio-binaries:${PATH}
 
 # Download Go 1.21 (adjust the version and platform as needed)
 RUN wget https://golang.org/dl/${GO_LIBRARY}

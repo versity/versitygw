@@ -15,6 +15,11 @@
 # under the License.
 
 get_bucket_ownership_controls() {
+  if [[ -n "$SKIP_BUCKET_OWNERSHIP_CONTROLS" ]]; then
+    log 5 "Skipping get bucket ownership controls"
+    return 0
+  fi
+
   record_command "get-bucket-ownership-controls" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "'get bucket ownership controls' command requires bucket name"
@@ -32,6 +37,11 @@ get_bucket_ownership_controls() {
 }
 
 get_object_ownership_rule() {
+  if [[ -n "$SKIP_BUCKET_OWNERSHIP_CONTROLS" ]]; then
+    log 5 "Skipping get bucket ownership controls"
+    return 0
+  fi
+
   if [[ $# -ne 1 ]]; then
     log 2 "'get object ownership rule' command requires bucket name"
     return 1

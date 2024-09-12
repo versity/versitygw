@@ -63,10 +63,10 @@ setup() {
 # bats teardown function
 teardown() {
   # shellcheck disable=SC2154
-  if ! delete_bucket_or_contents_if_exists "$BUCKET_ONE_NAME"; then
+  if ! delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME"; then
     log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
   fi
-  if ! delete_bucket_or_contents_if_exists "$BUCKET_TWO_NAME"; then
+  if ! delete_bucket_or_contents_if_exists "s3api" "$BUCKET_TWO_NAME"; then
     log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
   fi
   if [ "$REMOVE_TEST_FILE_FOLDER" == "true" ]; then

@@ -90,6 +90,9 @@ export RUN_USERS=true
 
 # delete-bucket-policy
 @test "test_get_put_delete_bucket_policy" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_common_get_put_delete_bucket_policy "aws"
 }
 
@@ -214,7 +217,7 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$test_file_folder"/"$bucket_file_one" "$test_file_folder"/"$bucket_file_two" || fail "failed to list multipart uploads"
+  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$bucket_file_one" "$TEST_FILE_FOLDER"/"$bucket_file_two" || fail "failed to list multipart uploads"
 
   local key_one
   local key_two
@@ -225,8 +228,8 @@ export RUN_USERS=true
   key_two=$(echo "$raw_uploads" | jq -r '.Uploads[1].Key' 2>&1) || fail "error getting key two: $key_two"
   key_one=${key_one//\"/}
   key_two=${key_two//\"/}
-  [[ "$test_file_folder/$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($test_file_folder/$bucket_file_one, $key_one)"
-  [[ "$test_file_folder/$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($test_file_folder/$bucket_file_two, $key_two)"
+  [[ "$TEST_FILE_FOLDER/$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($TEST_FILE_FOLDER/$bucket_file_one, $key_one)"
+  [[ "$TEST_FILE_FOLDER/$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($TEST_FILE_FOLDER/$bucket_file_two, $key_two)"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$bucket_file_one" "$bucket_file_two"
@@ -237,15 +240,15 @@ export RUN_USERS=true
 
   run create_test_file "$bucket_file"
   assert_success
-  dd if=/dev/urandom of="$test_file_folder/$bucket_file" bs=5M count=1 || fail "error adding data to test file"
+  dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1 || fail "error adding data to test file"
 
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 || fail "error performing multipart upload"
+  multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 || fail "error performing multipart upload"
 
-  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy" || fail "error getting object"
-  compare_files "$test_file_folder"/$bucket_file-copy "$test_file_folder"/$bucket_file || fail "data doesn't match"
+  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy" || fail "error getting object"
+  compare_files "$TEST_FILE_FOLDER"/$bucket_file-copy "$TEST_FILE_FOLDER"/$bucket_file || fail "data doesn't match"
 
   delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
@@ -259,7 +262,7 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
+  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
   [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
   log 5 "error: $upload_part_copy_error"
   [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || [[ $upload_part_copy_error == *"InvalidRange"* ]] || fail "unexpected error: $upload_part_copy_error"
@@ -277,13 +280,13 @@ export RUN_USERS=true
   assert_success
 
   range_max=$((5*1024*1024-1))
-  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$test_file_folder"/"$bucket_file" 4 "bytes=0-$range_max" || fail "upload failure"
+  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 "bytes=0-$range_max" || fail "upload failure"
 
-  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$test_file_folder/$bucket_file-copy" || fail "error retrieving object after upload"
+  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy" || fail "error retrieving object after upload"
   if [[ $(uname) == 'Darwin' ]]; then
-    object_size=$(stat -f%z "$test_file_folder/$bucket_file-copy")
+    object_size=$(stat -f%z "$TEST_FILE_FOLDER/$bucket_file-copy")
   else
-    object_size=$(stat --format=%s "$test_file_folder/$bucket_file-copy")
+    object_size=$(stat --format=%s "$TEST_FILE_FOLDER/$bucket_file-copy")
   fi
   [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
 
@@ -308,7 +311,7 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "aws" "$test_file_folder/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || fail "failed to add object to bucket"
+  put_object "aws" "$TEST_FILE_FOLDER/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || fail "failed to add object to bucket"
 
   list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"
   prefix=$(echo "${objects[@]}" | jq -r ".CommonPrefixes[0].Prefix" 2>&1) || fail "error getting object prefix from object list: $prefix"
@@ -323,58 +326,100 @@ export RUN_USERS=true
 }
 
 @test "test_put_policy_invalid_action" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_invalid_action
 }
 
 @test "test_policy_get_object_with_user" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_object_with_user
 }
 
 @test "test_policy_get_object_specific_file" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_object_specific_file
 }
 
 @test "test_policy_get_object_file_wildcard" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_object_file_wildcard
 }
 
 @test "test_policy_get_object_folder_wildcard" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_object_folder_wildcard
 }
 
 @test "test_policy_allow_deny" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_allow_deny
 }
 
 @test "test_policy_deny" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_deny
 }
 
 @test "test_policy_put_wildcard" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_put_wildcard
 }
 
 @test "test_policy_delete" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_delete
 }
 
 @test "test_policy_get_bucket_policy" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_bucket_policy
 }
 
 @test "test_policy_list_multipart_uploads" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_list_multipart_uploads
 }
 
 @test "test_policy_put_bucket_policy" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_put_bucket_policy
 }
 
 @test "test_policy_delete_bucket_policy" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_delete_bucket_policy
 }
 
 @test "test_policy_get_bucket_acl" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_bucket_acl
 }
 
@@ -398,7 +443,7 @@ export RUN_USERS=true
 #  setup_bucket "aws" "$BUCKET_ONE_NAME" || local setup_result=$?
 #  [[ $setup_result -eq 0 ]] || fail "error setting up bucket"
 
-#  put_object "aws" "$test_file_folder"/"$file_name" "$BUCKET_ONE_NAME"/"$file_name" || local put_object=$?
+#  put_object "aws" "$TEST_FILE_FOLDER"/"$file_name" "$BUCKET_ONE_NAME"/"$file_name" || local put_object=$?
 #  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
 #}
 
@@ -438,7 +483,7 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  object="$test_file_folder"/"$object_one"
+  object="$TEST_FILE_FOLDER"/"$object_one"
   put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
   object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
 
@@ -453,26 +498,44 @@ export RUN_USERS=true
 }
 
 @test "test_policy_abort_multipart_upload" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_abort_multipart_upload
 }
 
 @test "test_policy_two_principals" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_two_principals
 }
 
 @test "test_policy_put_bucket_tagging" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_put_bucket_tagging
 }
 
 @test "test_policy_get_bucket_tagging" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_get_bucket_tagging
 }
 
 @test "test_policy_list_upload_parts" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_list_upload_parts
 }
 
 @test "test_policy_put_acl" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
   test_s3api_policy_put_acl
 }
 

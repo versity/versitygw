@@ -56,12 +56,12 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
   change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object"
+  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
 }
 
 @test "test_userplus_get_object" {
@@ -77,12 +77,12 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
   change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object"
+  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
 }
 
 @test "test_user_delete_object" {
@@ -98,11 +98,11 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password"; then
+  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
     fail "able to get object despite not being bucket owner"
   fi
   change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
+  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
   delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error deleting object"
 }
 
@@ -119,11 +119,11 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object_with_user "s3api" "$test_file_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy" "$username" "$password" || fail "error getting object"
-  compare_files "$test_file_folder/$test_file" "$test_file_folder/$test_file-copy" || fail "files don't match"
+  put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "failed to add object to bucket"
+  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
+  compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy" || fail "files don't match"
   delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error deleting object"
-  if get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_folder/$test_file-copy"; then
+  if get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
     fail "file not successfully deleted"
   fi
   # shellcheck disable=SC2154

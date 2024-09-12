@@ -58,6 +58,10 @@ export RUN_USERS=true
 
 # delete-bucket-policy
 @test "test_get_put_delete_bucket_policy" {
+  if [[ -n $SKIP_POLICY ]]; then
+    skip "will not test policy actions with SKIP_POLICY set"
+  fi
+
   test_common_get_put_delete_bucket_policy "s3cmd"
 }
 

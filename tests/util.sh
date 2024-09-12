@@ -89,14 +89,13 @@ add_governance_bypass_policy() {
     log 2 "'add governance bypass policy' command requires bucket name"
     return 1
   fi
-  test_file_folder=$PWD
   if [[ -z "$GITHUB_ACTIONS" ]]; then
     if ! create_test_file_folder; then
       log 2 "error creating test file folder"
       return 1
     fi
   fi
-  cat <<EOF > "$test_file_folder/policy-bypass-governance.txt"
+  cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
 {
   "Version": "dummy",
   "Statement": [
@@ -109,7 +108,7 @@ add_governance_bypass_policy() {
   ]
 }
 EOF
-  if ! put_bucket_policy "s3api" "$1" "$test_file_folder/policy-bypass-governance.txt"; then
+  if ! put_bucket_policy "s3api" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
     log 2 "error putting governance bypass policy"
     return 1
   fi
@@ -346,6 +345,8 @@ delete_bucket_contents() {
     delete_bucket_recursive "s3cmd" "$1"
   elif [[ $1 == "mc" ]]; then
     delete_bucket_recursive "mc" "$1"
+  elif [[ $1 == "s3" ]]; then
+    delete_bucket_recursive "s3" "$1"
   else
     log 2 "unrecognized client: '$1'"
     return 1
