@@ -14,20 +14,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/env.sh
 source ./tests/report.sh
 source ./tests/setup_mc.sh
+source ./tests/util.sh
 source ./tests/versity.sh
 
 # bats setup function
 setup() {
-  check_env_vars
-  if [ "$RUN_VERSITYGW" == "true" ]; then
-    if ! run_versity_app; then
-      log 2 "error starting versity apps"
-      return 1
-    fi
-  fi
+  base_setup
 
   log 4 "Running test $BATS_TEST_NAME"
   if [[ $LOG_LEVEL -ge 5 ]]; then
@@ -44,10 +42,7 @@ setup() {
   fi
 
   if [[ $RUN_MC == true ]]; then
-    if ! check_add_mc_alias; then
-      log 2 "mc alias check/add failed"
-      return 1
-    fi
+    check_add_mc_alias
   fi
 
   export AWS_PROFILE

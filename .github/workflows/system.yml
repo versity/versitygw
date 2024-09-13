@@ -8,7 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - set: 1
+          - set: "s3cmd, posix"
             LOCAL_FOLDER: /tmp/gw1
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-1
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-1
@@ -19,7 +19,7 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7070
             BACKEND: "posix"
-          - set: 2
+          - set: "s3, posix"
             LOCAL_FOLDER: /tmp/gw2
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-2
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-2
@@ -30,7 +30,7 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7071
             BACKEND: "posix"
-          - set: 3
+          - set: "s3api, posix"
             LOCAL_FOLDER: /tmp/gw3
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-3
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-3
@@ -41,7 +41,7 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7072
             BACKEND: "posix"
-          - set: 4
+          - set: "mc, posix"
             LOCAL_FOLDER: /tmp/gw4
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-4
@@ -52,40 +52,40 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7073
             BACKEND: "posix"
-          - set: 5
+          - set: "s3api-user, posix, s3 IAM"
             LOCAL_FOLDER: /tmp/gw5
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-5
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-5
             IAM_TYPE: s3
             USERS_BUCKET: versity-gwtest-iam
             AWS_ENDPOINT_URL: https://127.0.0.1:7074
-            RUN_SET: "aws-user"
+            RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "true"
             PORT: 7074
             BACKEND: "posix"
-          - set: 6
+          - set: "s3api non-policy, static buckets"
             LOCAL_FOLDER: /tmp/gw6
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-6
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-6
             IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam6
             AWS_ENDPOINT_URL: https://127.0.0.1:7075
-            RUN_SET: "aws"
+            RUN_SET: "s3api-non-policy"
             RECREATE_BUCKETS: "false"
             PORT: 7075
             BACKEND: "posix"
-          - set: 7
+          - set: "s3api, s3 backend"
             LOCAL_FOLDER: /tmp/gw7
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
             IAM_TYPE: folder
             USERS_FOLDER: /tmp/iam7
             AWS_ENDPOINT_URL: https://127.0.0.1:7076
-            RUN_SET: "aws"
+            RUN_SET: "s3api"
             RECREATE_BUCKETS: "true"
             PORT: 7076
             BACKEND: "s3"
-          - set: 8
+          - set: "REST, posix"
             LOCAL_FOLDER: /tmp/gw8
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
@@ -95,6 +95,28 @@ jobs:
             RUN_SET: "rest"
             RECREATE_BUCKETS: "true"
             PORT: 7077
+            BACKEND: "posix"
+          - set: "s3api policy, static buckets"
+            LOCAL_FOLDER: /tmp/gw9
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-8
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-8
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam9
+            AWS_ENDPOINT_URL: https://127.0.0.1:7078
+            RUN_SET: "s3api-policy"
+            RECREATE_BUCKETS: "false"
+            PORT: 7078
+            BACKEND: "posix"
+          - set: "s3api user, static buckets"
+            LOCAL_FOLDER: /tmp/gw10
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-9
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-9
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam10
+            AWS_ENDPOINT_URL: https://127.0.0.1:7079
+            RUN_SET: "s3api-user"
+            RECREATE_BUCKETS: "false"
+            PORT: 7079
             BACKEND: "posix"
     steps:
       - name: Check out code into the Go module directory

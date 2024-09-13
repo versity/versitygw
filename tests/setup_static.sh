@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/setup.sh
+source ./tests/env.sh
 source ./tests/util.sh
 source ./tests/commands/create_bucket.sh
 
@@ -40,15 +40,15 @@ create_bucket_if_not_exists() {
   return 0
 }
 
-if ! setup; then
-  log 2 "error starting versity to set up static buckets"
-  exit 1
-fi
+base_setup
 if ! create_bucket_if_not_exists "s3api" "$BUCKET_ONE_NAME"; then
   log 2 "error creating static bucket one"
 elif ! create_bucket_if_not_exists "s3api" "$BUCKET_TWO_NAME"; then
   log 2 "error creating static bucket two"
 fi
-if ! teardown; then
+
+# shellcheck disable=SC2034
+RECREATE_BUCKETS=false
+if ! stop_versity; then
   log 2 "error stopping versity"
 fi

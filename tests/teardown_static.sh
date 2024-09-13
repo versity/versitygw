@@ -17,7 +17,7 @@
 source ./tests/setup.sh
 source ./tests/util.sh
 
-if ! setup; then
+if ! base_setup; then
   log 2 "error starting versity to set up static buckets"
   exit 1
 fi
@@ -27,6 +27,6 @@ elif ! delete_bucket_recursive "s3" "$BUCKET_TWO_NAME"; then
   log 2 "error creating static bucket two"
 fi
 log 4 "buckets deleted successfully"
-if ! teardown; then
+if ! stop_versity; then
   log 2 "error stopping versity"
 fi
