@@ -40,7 +40,7 @@ func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&p),
 	}
 
-	aux.LastModified = p.LastModified.Format(RFC3339TimeFormat)
+	aux.LastModified = p.LastModified.UTC().Format(RFC3339TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -87,7 +87,7 @@ func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartEle
 	}
 
 	if r.LastModified != nil {
-		formattedTime := r.LastModified.Format(RFC3339TimeFormat)
+		formattedTime := r.LastModified.UTC().Format(RFC3339TimeFormat)
 		aux.LastModified = &formattedTime
 	}
 
@@ -174,7 +174,7 @@ func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	}
 
 	if o.LastModified != nil {
-		formattedTime := o.LastModified.Format(RFC3339TimeFormat)
+		formattedTime := o.LastModified.UTC().Format(RFC3339TimeFormat)
 		aux.LastModified = &formattedTime
 	}
 
@@ -200,7 +200,7 @@ func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&u),
 	}
 
-	aux.Initiated = u.Initiated.Format(RFC3339TimeFormat)
+	aux.Initiated = u.Initiated.UTC().Format(RFC3339TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -281,13 +281,13 @@ type ListAllMyBucketsEntry struct {
 func (r ListAllMyBucketsEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias ListAllMyBucketsEntry
 	aux := &struct {
-		CreationDate string `xml:"LastModified"`
+		CreationDate string `xml:"CreationDate"`
 		*Alias
 	}{
 		Alias: (*Alias)(&r),
 	}
 
-	aux.CreationDate = r.CreationDate.Format(RFC3339TimeFormat)
+	aux.CreationDate = r.CreationDate.UTC().Format(RFC3339TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -316,7 +316,7 @@ func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) err
 		Alias: (*Alias)(&r),
 	}
 
-	aux.LastModified = r.LastModified.Format(RFC3339TimeFormat)
+	aux.LastModified = r.LastModified.UTC().Format(RFC3339TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
