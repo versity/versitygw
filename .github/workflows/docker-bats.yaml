@@ -25,4 +25,4 @@ jobs:
         run: sudo apt-get install -y docker-compose
 
       - name: Run Docker Container
-        run: docker-compose -f tests/docker-compose-bats.yml up --exit-code-from posix_backend posix_backend
+        run: docker-compose -f tests/docker-compose-bats.yml up --exit-code-from s3api_only s3api_only

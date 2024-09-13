@@ -119,3 +119,50 @@ list_check_objects_rest() {
   fi
   return 0
 }
+
+list_check_objects_common() {
+  if [ $# -ne 4 ]; then
+    log 2 "'list_check_objects_common' requires client, bucket, object one, object two"
+    return 1
+  fi
+  if ! list_objects "$1" "$2"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  local object_one_found=false
+  local object_two_found=false
+  # shellcheck disable=SC2154
+  for object in "${object_array[@]}"; do
+    if [ "$object" == "$3" ] || [ "$object" == "s3://$2/$3" ]; then
+      object_one_found=true
+    elif [ "$object" == "$4" ] || [ "$object" == "s3://$2/$4" ]; then
+      object_two_found=true
+    fi
+  done
+
+  if [ $object_one_found != true ] || [ $object_two_found != true ]; then
+    log 2 "$3 and/or $4 not listed (all objects: ${object_array[*]})"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_check_file_count() {
+  if [ $# -ne 3 ]; then
+    log 2 "'list_objects_check_file_count' requires client, bucket, count"
+    return 1
+  fi
+  if ! list_objects "$1" "$2"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  if [[ $LOG_LEVEL -ge 5 ]]; then
+    log 5 "Array: ${object_array[*]}"
+  fi
+  local file_count="${#object_array[@]}"
+  if [[ $file_count != "$3" ]]; then
+    log 2 "file count should be $3, is $file_count"
+    return 1
+  fi
+  return 0
+}

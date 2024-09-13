@@ -31,6 +31,8 @@ delete_object() {
     delete_object_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rm "s3://$2/$3" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     delete_object_error=$(mc --insecure rm "$MC_ALIAS/$2/$3" 2>&1) || exit_code=$?
+  elif [[ $1 == 'rest' ]]; then
+    delete_object_rest "$2" "$3" || exit_code=$?
   else
     log 2 "invalid command type $1"
     return 1
@@ -76,6 +78,46 @@ delete_object_with_user() {
   if [ $exit_code -ne 0 ]; then
     log 2 "error deleting object: $delete_object_error"
     export delete_object_error
+    return 1
+  fi
+  return 0
+}
+
+delete_object_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'delete_object_rest' requires bucket name, object name"
+    return 1
+  fi
+
+  generate_hash_for_payload ""
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="DELETE
+/$1/$2
+
+host:$aws_endpoint_url_address
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+UNSIGNED-PAYLOAD"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+  # shellcheck disable=SC2154
+  reply=$(curl -ks -w "%{http_code}" -X DELETE "$header://$aws_endpoint_url_address/$1/$2" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -H "x-amz-date: $current_date_time" \
+    -o "$TEST_FILE_FOLDER"/delete_object_error.txt 2>&1)
+  if [[ "$reply" != "204" ]]; then
+    log 2 "delete object command returned error: $(cat "$TEST_FILE_FOLDER"/delete_object_error.txt)"
     return 1
   fi
   return 0
