@@ -24,7 +24,10 @@ source ./tests/report.sh
 head_bucket() {
   log 6 "head_bucket"
   record_command "head-bucket" "client:$1"
-  assert [ $# -eq 2 ]
+  if [ $# -ne 2 ]; then
+    log 2 "'head_bucket' command requires client, bucket name"
+    return 1
+  fi
   local exit_code=0
   if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     bucket_info=$(aws --no-verify-ssl s3api head-bucket --bucket "$2" 2>&1) || exit_code=$?

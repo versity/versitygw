@@ -21,7 +21,7 @@ fi
 
 status=0
 
-for cmd in aws s3 s3cmd mc rest; do
+for cmd in s3api s3 s3cmd mc rest; do
   if ! ./tests/run.sh "$cmd"; then
     status=1
   fi
