@@ -28,7 +28,8 @@ services:
   direct:
     build:
       context: .
-      dockerfile: Dockerfile_test_bats
-      args:
-        - CONFIG_FILE=tests/.env.direct
-        - SECRETS_FILE=tests/.secrets.direct
+      dockerfile: Dockerfile_direct
+    volumes:
+      - ./.env.direct:/home/tester/tests/.env.direct
+      - ./.secrets.direct:/home/tester/tests/.secrets.direct
+

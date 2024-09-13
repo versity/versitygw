@@ -19,6 +19,9 @@ if [[ -z "$VERSITYGW_TEST_ENV" ]] && [[ $BYPASS_ENV_FILE != "true" ]]; then
   exit 1
 fi
 
+# print config for test results info
+grep -v ^# "$VERSITYGW_TEST_ENV"
+
 status=0
 
 for cmd in s3api s3 s3cmd mc rest; do
