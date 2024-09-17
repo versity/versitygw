@@ -382,3 +382,125 @@ func TestIsValidOwnership(t *testing.T) {
 		})
 	}
 }
+
+func Test_shouldEscape(t *testing.T) {
+	type args struct {
+		c byte
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "shouldn't-escape-alphanum",
+			args: args{
+				c: 'h',
+			},
+			want: false,
+		},
+		{
+			name: "shouldn't-escape-unreserved-char",
+			args: args{
+				c: '_',
+			},
+			want: false,
+		},
+		{
+			name: "shouldn't-escape-unreserved-number",
+			args: args{
+				c: '0',
+			},
+			want: false,
+		},
+		{
+			name: "shouldn't-escape-path-separator",
+			args: args{
+				c: '/',
+			},
+			want: false,
+		},
+		{
+			name: "should-escape-special-char-1",
+			args: args{
+				c: '&',
+			},
+			want: true,
+		},
+		{
+			name: "should-escape-special-char-2",
+			args: args{
+				c: '*',
+			},
+			want: true,
+		},
+		{
+			name: "should-escape-special-char-3",
+			args: args{
+				c: '(',
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldEscape(tt.args.c); got != tt.want {
+				t.Errorf("shouldEscape() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_escapePath(t *testing.T) {
+	type args struct {
+		s string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "empty-string",
+			args: args{
+				s: "",
+			},
+			want: "",
+		},
+		{
+			name: "alphanum-path",
+			args: args{
+				s: "/test-bucket/test-key",
+			},
+			want: "/test-bucket/test-key",
+		},
+		{
+			name: "path-with-unescapable-chars",
+			args: args{
+				s: "/test~bucket/test.key",
+			},
+			want: "/test~bucket/test.key",
+		},
+		{
+			name: "path-with-escapable-chars",
+			args: args{
+				s: "/bucket-*(/test=key&",
+			},
+			want: "/bucket-%2A%28/test%3Dkey%26",
+		},
+		{
+			name: "path-with-space",
+			args: args{
+				s: "/test-bucket/my key",
+			},
+			want: "/test-bucket/my%20key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapePath(tt.args.s); got != tt.want {
+				t.Errorf("escapePath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

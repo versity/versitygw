@@ -2692,10 +2692,29 @@ func PutObject_non_existing_bucket(s *S3Conf) error {
 func PutObject_special_chars(s *S3Conf) error {
 	testName := "PutObject_special_chars"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		_, err := putObjects(s3client, []string{"my%key", "my^key", "my*key", "my.key", "my-key", "my_key", "my!key", "my'key", "my(key", "my)key", "my\\key", "my{}key", "my[]key", "my`key", "my+key", "my%25key", "my@key"}, bucket)
+		objs, err := putObjects(s3client, []string{
+			"my!key", "my-key", "my_key", "my.key", "my'key", "my(key", "my)key",
+			"my&key", "my@key", "my=key", "my;key", "my:key", "my key", "my,key",
+			"my?key", "my\\key", "my^key", "my{}key", "my%key", "my`key",
+			"my[]key", "my~key", "my<>key", "my|key", "my#key",
+		}, bucket)
 		if err != nil {
 			return err
 		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects(res.Contents, objs) {
+			return fmt.Errorf("expected the objects to be %v, instead got %v", objs, res.Contents)
+		}
+
 		return nil
 	})
 }

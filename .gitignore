@@ -63,3 +63,7 @@ tests/!s3cfg.local.default
 
 # grafana's local database (kept on filesystem for survival between instantiations)
 metrics-exploration/grafana_data/**
+
+# bats tools
+/tests/bats-assert
+/tests/bats-support
