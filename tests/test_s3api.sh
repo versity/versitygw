@@ -206,7 +206,8 @@ export RUN_USERS=true
   local bucket_file_two="bucket-file-two"
 
   if [[ $RECREATE_BUCKETS == false ]]; then
-    abort_all_multipart_uploads "$BUCKET_ONE_NAME" || fail "error aborting all uploads"
+    run abort_all_multipart_uploads "$BUCKET_ONE_NAME"
+    assert_success
   fi
 
   run create_test_files "$bucket_file_one" "$bucket_file_two"
@@ -215,8 +216,7 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  run create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
-  assert_success
+  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
 
   local key_one
   local key_two
@@ -227,11 +227,8 @@ export RUN_USERS=true
   key_two=$(echo "$raw_uploads" | jq -r '.Uploads[1].Key' 2>&1) || fail "error getting key two: $key_two"
   key_one=${key_one//\"/}
   key_two=${key_two//\"/}
-  [[ "$TEST_FILE_FOLDER/$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($TEST_FILE_FOLDER/$bucket_file_one, $key_one)"
-  [[ "$TEST_FILE_FOLDER/$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($TEST_FILE_FOLDER/$bucket_file_two, $key_two)"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files "$bucket_file_one" "$bucket_file_two"
+  [[ "$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($bucket_file_one, $key_one)"
+  [[ "$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($bucket_file_two, $key_two)"
 }
 
 @test "test-multipart-upload-from-bucket" {
