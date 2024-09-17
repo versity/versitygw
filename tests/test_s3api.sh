@@ -215,7 +215,8 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$bucket_file_one" "$TEST_FILE_FOLDER"/"$bucket_file_two" || fail "failed to list multipart uploads"
+  run create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
+  assert_success
 
   local key_one
   local key_two
