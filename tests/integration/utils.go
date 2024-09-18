@@ -313,6 +313,76 @@ func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object
 	return contents, nil
 }
 
+func listObjects(client *s3.Client, bucket, prefix, delimiter string, maxKeys int32) ([]types.Object, []types.CommonPrefix, error) {
+	var contents []types.Object
+	var commonPrefixes []types.CommonPrefix
+
+	var continuationToken *string
+
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			ContinuationToken: continuationToken,
+			Prefix:            &prefix,
+			Delimiter:         &delimiter,
+			MaxKeys:           &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return nil, nil, err
+		}
+		contents = append(contents, res.Contents...)
+		commonPrefixes = append(commonPrefixes, res.CommonPrefixes...)
+		continuationToken = res.NextContinuationToken
+
+		if !*res.IsTruncated {
+			break
+		}
+	}
+
+	return contents, commonPrefixes, nil
+}
+
+func hasObjNames(objs []types.Object, names []string) bool {
+	if len(objs) != len(names) {
+		return false
+	}
+
+	for _, obj := range objs {
+		if contains(names, *obj.Key) {
+			continue
+		}
+		return false
+	}
+
+	return true
+}
+
+func hasPrefixName(prefixes []types.CommonPrefix, names []string) bool {
+	if len(prefixes) != len(names) {
+		return false
+	}
+
+	for _, prefix := range prefixes {
+		if contains(names, *prefix.Prefix) {
+			continue
+		}
+		return false
+	}
+
+	return true
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (csum [32]byte, data []byte, err error) {
 	data = make([]byte, lgth)
 	rand.Read(data)
@@ -773,4 +843,20 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 	}
 
 	return nil
+}
+
+func objStrings(objs []types.Object) []string {
+	objStrs := make([]string, len(objs))
+	for i, obj := range objs {
+		objStrs[i] = *obj.Key
+	}
+	return objStrs
+}
+
+func pfxStrings(pfxs []types.CommonPrefix) []string {
+	pfxStrs := make([]string, len(pfxs))
+	for i, pfx := range pfxs {
+		pfxStrs[i] = *pfx.Prefix
+	}
+	return pfxStrs
 }

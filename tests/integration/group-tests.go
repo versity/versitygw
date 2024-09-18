@@ -168,6 +168,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_non_existing_bucket(s)
 	ListObjects_with_prefix(s)
 	ListObjects_truncated(s)
+	ListObjects_paginated(s)
 	ListObjects_invalid_max_keys(s)
 	ListObjects_max_keys_0(s)
 	ListObjects_delimiter(s)
@@ -612,6 +613,7 @@ func GetIntTests() IntTests {
 		"ListObjects_non_existing_bucket":                                     ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                             ListObjects_with_prefix,
 		"ListObjects_truncated":                                               ListObjects_truncated,
+		"ListObjects_paginated":                                               ListObjects_paginated,
 		"ListObjects_invalid_max_keys":                                        ListObjects_invalid_max_keys,
 		"ListObjects_max_keys_0":                                              ListObjects_max_keys_0,
 		"ListObjects_delimiter":                                               ListObjects_delimiter,

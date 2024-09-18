@@ -3590,6 +3590,33 @@ func ListObjects_with_prefix(s *S3Conf) error {
 	})
 }
 
+func ListObjects_paginated(s *S3Conf) error {
+	testName := "ListObjects_paginated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"dir1/subdir/file.txt", "dir1/subdir.ext", "dir1/subdir1.ext", "dir1/subdir2.ext"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		objs, prefixes, err := listObjects(s3client, bucket, "dir1/", "/", 2)
+		if err != nil {
+			return err
+		}
+
+		expected := []string{"dir1/subdir.ext", "dir1/subdir1.ext", "dir1/subdir2.ext"}
+		if !hasObjNames(objs, expected) {
+			return fmt.Errorf("expected objects %v, instead got %v", expected, objStrings(objs))
+		}
+
+		expectedPrefix := []string{"dir1/subdir/"}
+		if !hasPrefixName(prefixes, expectedPrefix) {
+			return fmt.Errorf("expected prefixes %v, instead got %v", expectedPrefix, pfxStrings(prefixes))
+		}
+
+		return nil
+	})
+}
+
 func ListObjects_truncated(s *S3Conf) error {
 	testName := "ListObjects_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

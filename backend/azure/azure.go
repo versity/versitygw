@@ -567,13 +567,18 @@ Pager:
 				isTruncated = true
 				break Pager
 			}
+
+			marker := getString(input.Marker)
+			pfx := strings.TrimSuffix(*v.Name, getString(input.Delimiter))
+			if marker != "" && strings.HasPrefix(marker, pfx) {
+				continue
+			}
+
 			cPrefixes = append(cPrefixes, types.CommonPrefix{
 				Prefix: v.Name,
 			})
 		}
 	}
-
-	// TODO: generate common prefixes when appropriate
 
 	return s3response.ListObjectsResult{
 		Contents:       objects,
@@ -644,6 +649,13 @@ Pager:
 				isTruncated = true
 				break Pager
 			}
+
+			marker := getString(input.ContinuationToken)
+			pfx := strings.TrimSuffix(*v.Name, getString(input.Delimiter))
+			if marker != "" && strings.HasPrefix(marker, pfx) {
+				continue
+			}
+
 			cPrefixes = append(cPrefixes, types.CommonPrefix{
 				Prefix: v.Name,
 			})
