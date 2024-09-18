@@ -844,3 +844,19 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 
 	return nil
 }
+
+func objStrings(objs []types.Object) []string {
+	objStrs := make([]string, len(objs))
+	for i, obj := range objs {
+		objStrs[i] = *obj.Key
+	}
+	return objStrs
+}
+
+func pfxStrings(pfxs []types.CommonPrefix) []string {
+	pfxStrs := make([]string, len(pfxs))
+	for i, pfx := range pfxs {
+		pfxStrs[i] = *pfx.Prefix
+	}
+	return pfxStrs
+}

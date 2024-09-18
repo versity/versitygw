@@ -3605,12 +3605,12 @@ func ListObjects_paginated(s *S3Conf) error {
 
 		expected := []string{"dir1/subdir.ext", "dir1/subdir1.ext", "dir1/subdir2.ext"}
 		if !hasObjNames(objs, expected) {
-			return fmt.Errorf("expected objects %v, instead got %v", expected, objs)
+			return fmt.Errorf("expected objects %v, instead got %v", expected, objStrings(objs))
 		}
 
 		expectedPrefix := []string{"dir1/subdir/"}
 		if !hasPrefixName(prefixes, expectedPrefix) {
-			return fmt.Errorf("expected prefixes %v, instead got %v", expectedPrefix, prefixes)
+			return fmt.Errorf("expected prefixes %v, instead got %v", expectedPrefix, pfxStrings(prefixes))
 		}
 
 		return nil
