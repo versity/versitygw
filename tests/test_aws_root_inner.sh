@@ -190,7 +190,7 @@ test_get_object_invalid_range_aws_root() {
   assert_success
 
   run get_object_with_range "$BUCKET_ONE_NAME" "$bucket_file" "bytes=0-0" "$TEST_FILE_FOLDER/$bucket_file-range"
-  assert_failure
+  assert_success
 }
 
 test_put_object_aws_root() {

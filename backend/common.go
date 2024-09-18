@@ -95,7 +95,7 @@ func ParseRange(size int64, acceptRange string) (int64, int64, error) {
 		return 0, 0, errInvalidRange
 	}
 
-	if endOffset <= startOffset {
+	if endOffset < startOffset {
 		return 0, 0, errInvalidRange
 	}
 
