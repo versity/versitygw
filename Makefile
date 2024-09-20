@@ -18,6 +18,10 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 
+# docker-compose
+DCCMD=docker-compose
+DOCKERCOMPOSE=$(DCCMD) -f tests/docker-compose.yml --env-file .env.dev --project-directory .
+
 BIN=versitygw
 
 VERSION := $(shell if test -e VERSION; then cat VERSION; else git describe --abbrev=0 --tags HEAD; fi)
@@ -71,19 +75,19 @@ dist:
 # Creates and runs S3 gateway instance in a docker container
 .PHONY: up-posix
 up-posix:
-	docker compose --env-file .env.dev up posix
+	$(DOCKERCOMPOSE) up posix
 
 # Creates and runs S3 gateway proxy instance in a docker container
 .PHONY: up-proxy
 up-proxy:
-	docker compose --env-file .env.dev up proxy
+	$(DOCKERCOMPOSE) up proxy
 
 # Creates and runs S3 gateway to azurite instance in a docker container
 .PHONY: up-azurite
 up-azurite:
-	docker compose --env-file .env.dev up azurite azuritegw
+	$(DOCKERCOMPOSE) up azurite azuritegw
 
 # Creates and runs both S3 gateway and proxy server instances in docker containers
 .PHONY: up-app
 up-app:
-	docker compose --env-file .env.dev up
+	$(DOCKERCOMPOSE) up
