@@ -31,15 +31,16 @@ import (
 )
 
 type S3Conf struct {
-	awsID           string
-	awsSecret       string
-	awsRegion       string
-	endpoint        string
-	checksumDisable bool
-	pathStyle       bool
-	PartSize        int64
-	Concurrency     int
-	debug           bool
+	awsID             string
+	awsSecret         string
+	awsRegion         string
+	endpoint          string
+	checksumDisable   bool
+	pathStyle         bool
+	PartSize          int64
+	Concurrency       int
+	debug             bool
+	versioningEnabled bool
 }
 
 func NewS3Conf(opts ...Option) *S3Conf {
@@ -79,6 +80,9 @@ func WithConcurrency(c int) Option {
 }
 func WithDebug() Option {
 	return func(s *S3Conf) { s.debug = true }
+}
+func WithVersioningEnabled() Option {
+	return func(s *S3Conf) { s.versioningEnabled = true }
 }
 
 func (c *S3Conf) getCreds() credentials.StaticCredentialsProvider {

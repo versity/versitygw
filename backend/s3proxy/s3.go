@@ -161,6 +161,48 @@ func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket stri
 	return handleError(err)
 }
 
+func (s *S3Proxy) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
+	_, err := s.client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+		Bucket: &bucket,
+		VersioningConfiguration: &types.VersioningConfiguration{
+			Status: status,
+		},
+	})
+
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+	out, err := s.client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+		Bucket: &bucket,
+	})
+
+	return out, handleError(err)
+}
+
+func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
+	out, err := s.client.ListObjectVersions(ctx, input)
+	if err != nil {
+		return s3response.ListVersionsResult{}, handleError(err)
+	}
+
+	return s3response.ListVersionsResult{
+		CommonPrefixes:      out.CommonPrefixes,
+		DeleteMarkers:       out.DeleteMarkers,
+		Delimiter:           out.Delimiter,
+		EncodingType:        out.EncodingType,
+		IsTruncated:         out.IsTruncated,
+		KeyMarker:           out.KeyMarker,
+		MaxKeys:             out.MaxKeys,
+		Name:                out.Name,
+		NextKeyMarker:       out.NextKeyMarker,
+		NextVersionIdMarker: out.NextVersionIdMarker,
+		Prefix:              out.Prefix,
+		VersionIdMarker:     input.VersionIdMarker,
+		Versions:            out.Versions,
+	}, nil
+}
+
 func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	out, err := s.client.CreateMultipartUpload(ctx, input)
 	if err != nil {
@@ -304,17 +346,25 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 	}, nil
 }
 
-func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (string, error) {
+func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
 	output, err := s.client.PutObject(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
 	if err != nil {
-		return "", handleError(err)
+		return s3response.PutObjectOutput{}, handleError(err)
 	}
 
-	return *output.ETag, nil
+	var versionID string
+	if output.VersionId != nil {
+		versionID = *output.VersionId
+	}
+
+	return s3response.PutObjectOutput{
+		ETag:      *output.ETag,
+		VersionID: versionID,
+	}, nil
 }
 
 func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
@@ -416,9 +466,9 @@ func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 	}, nil
 }
 
-func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) error {
-	_, err := s.client.DeleteObject(ctx, input)
-	return handleError(err)
+func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	res, err := s.client.DeleteObject(ctx, input)
+	return res, handleError(err)
 }
 
 func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {

@@ -16,6 +16,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault-client-go v0.4.3
 	github.com/nats-io/nats.go v1.37.0
+	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pkg/xattr v0.4.10
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/smira/go-statsd v1.3.3
