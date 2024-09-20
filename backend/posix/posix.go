@@ -2155,6 +2155,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		if getString(input.VersionId) == "" {
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
+			if errors.Is(err, syscall.ENAMETOOLONG) {
+				return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+			}
 			if err != nil {
 				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 			}
@@ -2282,6 +2285,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			isDelMarker, _ := p.isObjDeleteMarker(versionPath, *input.VersionId)
 
 			err = os.Remove(filepath.Join(versionPath, *input.VersionId))
+			if errors.Is(err, syscall.ENAMETOOLONG) {
+				return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+			}
 			if errors.Is(err, fs.ErrNotExist) {
 				return &s3.DeleteObjectOutput{
 					DeleteMarker: &isDelMarker,
@@ -2300,6 +2306,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	}
 
 	fi, err := os.Stat(objpath)
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		// AWS returns success if the object does not exist
 		return &s3.DeleteObjectOutput{}, nil

@@ -10186,7 +10186,7 @@ func HeadObject_name_too_long(s *S3Conf) error {
 			Key:    getPtr(genRandString(300)),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
 			return err
 		}
 
@@ -10487,7 +10487,10 @@ func DeleteObject_name_too_long(s *S3Conf) error {
 			Key:    getPtr(genRandString(300)),
 		})
 		cancel()
-		return err
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
