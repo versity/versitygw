@@ -147,3 +147,61 @@ EOF"
   # shellcheck disable=SC2154
   log 5 "policy data: $(cat "$1")"
 }
+
+get_and_check_policy() {
+  if [ $# -ne 6 ]; then
+    log 2 "'get_and_check_policy' requires client, bucket, expected effect, principal, action, resource"
+    return 1
+  fi
+  if ! get_bucket_policy "$1" "$BUCKET_ONE_NAME"; then
+    log 2 "error getting bucket policy after setting"
+    return 1
+  fi
+
+  # shellcheck disable=SC2154
+  log 5 "POLICY:  $bucket_policy"
+  if ! statement=$(echo "$bucket_policy" | jq -r '.Statement[0]' 2>&1); then
+    log 2 "error getting statement value: $statement"
+    return 1
+  fi
+  if ! returned_effect=$(echo "$statement" | jq -r '.Effect' 2>&1); then
+    log 2 "error getting effect: $returned_effect"
+    return 1
+  fi
+  if [[ "$3" != "$returned_effect" ]]; then
+    log 2 "effect mismatch ($3, $returned_effect)"
+    return 1
+  fi
+  if ! returned_principal=$(echo "$statement" | jq -r '.Principal' 2>&1); then
+    log 2 "error getting principal: $returned_principal"
+    return 1
+  fi
+  if [[ -n $DIRECT ]] && arn=$(echo "$returned_principal" | jq -r '.AWS' 2>&1); then
+    if [[ $arn != "arn:aws:iam::$DIRECT_AWS_USER_ID:user/s3user" ]]; then
+      log 2 "arn mismatch"
+      return 1
+    fi
+  else
+    if [[ "$4" != "\"$returned_principal\"" ]]; then
+      log 2 "principal mismatch ($4, $returned_principal)"
+      return 1
+    fi
+  fi
+  if ! returned_action=$(echo "$statement" | jq -r '.Action' 2>&1); then
+    log 2 "error getting action: $returned_action"
+    return 1
+  fi
+  if [[ "$5" != "$returned_action" ]]; then
+    log 2 "action mismatch ($5, $returned_action)"
+    return 1
+  fi
+  if ! returned_resource=$(echo "$statement" | jq -r '.Resource' 2>&1); then
+    log 2 "error getting resource: $returned_resource"
+    return 1
+  fi
+  if [[ "$6" != "$returned_resource" ]]; then
+    log 2 "resource mismatch ($6, $returned_resource)"
+    return 1
+  fi
+  return 0
+}

@@ -86,4 +86,5 @@ RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen
 ENV WORKSPACE=.
 ENV VERSITYGW_TEST_ENV=$CONFIG_FILE
 
-CMD ["tests/run_all.sh"]
+ENTRYPOINT ["tests/run.sh"]
+CMD ["s3api,s3,s3cmd,mc,rest"]

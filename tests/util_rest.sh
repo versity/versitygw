@@ -57,6 +57,14 @@ generate_hash_for_payload() {
   payload_hash="$(echo -n "$1" | sha256sum | awk '{print $1}')"
 }
 
+generate_hash_for_payload_file() {
+  if [ $# -ne 1 ]; then
+    log 2 "'generate_hash_for_payload' requires filename"
+    return 1
+  fi
+  payload_hash="$(sha256sum "$1" | awk '{print $1}')"
+}
+
 get_creq_string_list_buckets() {
 
   current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")

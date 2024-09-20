@@ -34,3 +34,38 @@ list_check_buckets_rest() {
   fi
   return 0
 }
+
+list_and_check_buckets() {
+  if [ $# -ne 3 ]; then
+    log 2 "'list_and_check_buckets' requires client, two bucket names"
+    return 1
+  fi
+  if ! list_buckets "$1"; then
+    log 2 "error listing buckets"
+    return 1
+  fi
+
+  local bucket_one_found=false
+  local bucket_two_found=false
+  if [ -z "$bucket_array" ]; then
+    log 2 "bucket_array parameter not exported"
+    return 1
+  fi
+  log 5 "bucket array: ${bucket_array[*]}"
+  for bucket in "${bucket_array[@]}"; do
+    if [ "$bucket" == "$2" ] || [ "$bucket" == "s3://$2" ]; then
+      bucket_one_found=true
+    elif [ "$bucket" == "$3" ] || [ "$bucket" == "s3://$3" ]; then
+      bucket_two_found=true
+    fi
+    if [ $bucket_one_found == true ] && [ $bucket_two_found == true ]; then
+      break
+    fi
+  done
+  echo $bucket_one_found $bucket_two_found
+  if [ $bucket_one_found == false ] || [ $bucket_two_found == false ]; then
+    log 2 "Not all buckets found"
+    return 1
+  fi
+  return 0
+}

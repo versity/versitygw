@@ -33,6 +33,8 @@ put_object() {
     error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(mc --insecure put "$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
+  elif [[ $1 == 'rest' ]]; then
+    put_object_rest "$2" "$3" "$4" || exit_code=$?
   else
     log 2 "'put object' command not implemented for '$1'"
     return 1
@@ -62,6 +64,46 @@ put_object_with_user() {
   if [ $exit_code -ne 0 ]; then
     log 2 "error putting object into bucket: $put_object_error"
     export put_object_error
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object_rest' requires local file, bucket name, key"
+    return 1
+  fi
+
+  generate_hash_for_payload_file "$1"
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="PUT
+/$2/$3
+
+host:$aws_endpoint_url_address
+x-amz-content-sha256:$payload_hash
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+$payload_hash"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+  # shellcheck disable=SC2154
+  reply=$(curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$2/$3" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: $payload_hash" \
+    -H "x-amz-date: $current_date_time" \
+    -T "$1" -o "$TEST_FILE_FOLDER"/put_object_error.txt 2>&1)
+  if [[ "$reply" != "200" ]]; then
+    log 2 "put object command returned error: $(cat "$TEST_FILE_FOLDER"/put_object_error.txt)"
     return 1
   fi
   return 0

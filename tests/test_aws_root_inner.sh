@@ -101,14 +101,14 @@ test_create_multipart_upload_properties_aws_root() {
     "$expected_hold_status" \
     "$expected_retention_mode" \
     "$later" \
-    "$expected_tag_key=$expected_tag_val" || fail "error performing multipart upload"
+    "$expected_tag_key=$expected_tag_val"
   assert_success
 
   run get_and_verify_metadata "$bucket_file" "$expected_content_type" "$expected_meta_key" "$expected_meta_val" \
     "$expected_hold_status" "$expected_retention_mode" "$later"
   assert_success
 
-  run get_and_check_bucket_tags "$BUCKET_ONE_NAME" "$expected_tag_key" "$expected_tag_val"
+  run check_verify_object_tags "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$expected_tag_key" "$expected_tag_val"
   assert_success
 
   run put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
