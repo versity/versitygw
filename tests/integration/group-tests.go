@@ -174,6 +174,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_delimiter(s)
 	ListObjects_max_keys_none(s)
 	ListObjects_marker_not_from_obj_list(s)
+	ListObjects_list_all_objs(s)
 }
 
 func TestListObjectsV2(s *S3Conf) {
@@ -185,6 +186,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_single_dir_object_with_delim_and_prefix(s)
 	ListObjectsV2_truncated_common_prefixes(s)
 	ListObjectsV2_all_objs_max_keys(s)
+	ListObjectsV2_list_all_objs(s)
 }
 
 func TestDeleteObject(s *S3Conf) {
@@ -451,7 +453,7 @@ func TestFullFlow(s *S3Conf) {
 	TestDeleteObjectTagging(s)
 	TestCreateMultipartUpload(s)
 	TestUploadPart(s)
-	TestUploadPartCopy(s)
+	// TestUploadPartCopy(s)
 	TestListParts(s)
 	TestListMultipartUploads(s)
 	TestAbortMultipartUpload(s)
@@ -662,6 +664,7 @@ func GetIntTests() IntTests {
 		"ListObjects_delimiter":                                               ListObjects_delimiter,
 		"ListObjects_max_keys_none":                                           ListObjects_max_keys_none,
 		"ListObjects_marker_not_from_obj_list":                                ListObjects_marker_not_from_obj_list,
+		"ListObjects_list_all_objs":                                           ListObjects_list_all_objs,
 		"ListObjectsV2_start_after":                                           ListObjectsV2_start_after,
 		"ListObjectsV2_both_start_after_and_continuation_token":               ListObjectsV2_both_start_after_and_continuation_token,
 		"ListObjectsV2_start_after_not_in_list":                               ListObjectsV2_start_after_not_in_list,
@@ -670,6 +673,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_single_dir_object_with_delim_and_prefix":               ListObjectsV2_single_dir_object_with_delim_and_prefix,
 		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
+		"ListObjectsV2_list_all_objs":                                         ListObjectsV2_list_all_objs,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,

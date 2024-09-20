@@ -54,6 +54,13 @@ func GetStringPtr(s string) *string {
 	return &s
 }
 
+func GetPtrFromString(str string) *string {
+	if str == "" {
+		return nil
+	}
+	return &str
+}
+
 func GetTimePtr(t time.Time) *time.Time {
 	return &t
 }

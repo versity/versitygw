@@ -3809,6 +3809,44 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 	})
 }
 
+func ListObjects_list_all_objs(s *S3Conf) error {
+	testName := "ListObjects_list_all_objs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"foo", "bar", "baz", "quxx/ceil", "ceil", "hello/world"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.Marker != nil {
+			return fmt.Errorf("expected the Marker to be nil, instead got %v", *out.Marker)
+		}
+		if out.NextMarker != nil {
+			return fmt.Errorf("expected the NextMarker to be nil, instead got %v", *out.NextMarker)
+		}
+		if out.Delimiter != nil {
+			return fmt.Errorf("expected the Delimiter to be nil, instead got %v", *out.Delimiter)
+		}
+		if out.Prefix != nil {
+			return fmt.Errorf("expected the Prefix to be nil, instead got %v", *out.Prefix)
+		}
+
+		if !compareObjects(out.Contents, contents) {
+			return fmt.Errorf("expected the contents to be %v, instead got %v", contents, out.Contents)
+		}
+
+		return nil
+	})
+}
+
 func ListObjectsV2_start_after(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3817,16 +3855,20 @@ func ListObjectsV2_start_after(s *S3Conf) error {
 			return err
 		}
 
+		startAfter := "bar"
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket:     &bucket,
-			StartAfter: getPtr("bar"),
+			StartAfter: &startAfter,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
+		if *out.StartAfter != startAfter {
+			return fmt.Errorf("expected StartAfter to be %v, insted got %v", startAfter, *out.StartAfter)
+		}
 		if !compareObjects(contents[1:], out.Contents) {
 			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
 		}
@@ -4124,6 +4166,47 @@ func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
 
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, out.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_list_all_objs(s *S3Conf) error {
+	testName := "ListObjectsV2_list_all_objs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"bar", "baz", "foo", "obj1", "hell/", "xyzz/quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.StartAfter != nil {
+			return fmt.Errorf("expected the StartAfter to be nil, instead got %v", *out.StartAfter)
+		}
+		if out.ContinuationToken != nil {
+			return fmt.Errorf("expected the ContinuationToken to be nil, instead got %v", *out.ContinuationToken)
+		}
+		if out.NextContinuationToken != nil {
+			return fmt.Errorf("expected the NextContinuationToken to be nil, instead got %v", *out.NextContinuationToken)
+		}
+		if out.Delimiter != nil {
+			return fmt.Errorf("expected the Delimiter to be nil, instead got %v", *out.Delimiter)
+		}
+		if out.Prefix != nil {
+			return fmt.Errorf("expected the Prefix to be nil, instead got %v", *out.Prefix)
+		}
+
+		if !compareObjects(out.Contents, contents) {
+			return fmt.Errorf("expected the contents to be %v, instead got %v", contents, out.Contents)
 		}
 
 		return nil
