@@ -10113,6 +10113,17 @@ func PutObject_overwrite_file_obj(s *S3Conf) error {
 	})
 }
 
+func PutObject_overwrite_file_obj_with_nested_obj(s *S3Conf) error {
+	testName := "PutObject_overwrite_file_obj_with_nested_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"foo", "foo/bar"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutObject_dir_obj_with_data(s *S3Conf) error {
 	testName := "PutObject_dir_obj_with_data"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
