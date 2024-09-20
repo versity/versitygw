@@ -2411,8 +2411,8 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 			} else {
 				errs = append(errs, types.Error{
 					Key:     obj.Key,
-					Code:    getStringPtr("InternalError"),
-					Message: getStringPtr(err.Error()),
+					Code:    backend.GetPtrFromString("InternalError"),
+					Message: backend.GetPtrFromString(err.Error()),
 				})
 			}
 		}
@@ -2996,13 +2996,13 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 	return s3response.ListObjectsResult{
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
-		Delimiter:      &delim,
+		Delimiter:      backend.GetPtrFromString(delim),
+		Marker:         backend.GetPtrFromString(marker),
+		NextMarker:     backend.GetPtrFromString(results.NextMarker),
+		Prefix:         backend.GetPtrFromString(prefix),
 		IsTruncated:    &results.Truncated,
-		Marker:         &marker,
 		MaxKeys:        &maxkeys,
 		Name:           &bucket,
-		NextMarker:     &results.NextMarker,
-		Prefix:         &prefix,
 	}, nil
 }
 
@@ -3130,14 +3130,15 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 	return s3response.ListObjectsV2Result{
 		CommonPrefixes:        results.CommonPrefixes,
 		Contents:              results.Objects,
-		Delimiter:             &delim,
 		IsTruncated:           &results.Truncated,
-		ContinuationToken:     &marker,
 		MaxKeys:               &maxkeys,
 		Name:                  &bucket,
-		NextContinuationToken: &results.NextMarker,
-		Prefix:                &prefix,
 		KeyCount:              &count,
+		Delimiter:             backend.GetPtrFromString(delim),
+		ContinuationToken:     backend.GetPtrFromString(marker),
+		NextContinuationToken: backend.GetPtrFromString(results.NextMarker),
+		Prefix:                backend.GetPtrFromString(prefix),
+		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
 	}, nil
 }
 
@@ -3624,8 +3625,4 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
-}
-
-func getStringPtr(str string) *string {
-	return &str
 }

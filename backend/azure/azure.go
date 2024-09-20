@@ -584,13 +584,13 @@ Pager:
 
 	return s3response.ListObjectsResult{
 		Contents:       objects,
-		Marker:         input.Marker,
+		Marker:         backend.GetPtrFromString(*input.Marker),
 		MaxKeys:        input.MaxKeys,
 		Name:           input.Bucket,
 		NextMarker:     nextMarker,
-		Prefix:         input.Prefix,
+		Prefix:         backend.GetPtrFromString(*input.Prefix),
 		IsTruncated:    &isTruncated,
-		Delimiter:      input.Delimiter,
+		Delimiter:      backend.GetPtrFromString(*input.Delimiter),
 		CommonPrefixes: cPrefixes,
 	}, nil
 }
@@ -666,14 +666,15 @@ Pager:
 
 	return s3response.ListObjectsV2Result{
 		Contents:              objects,
-		ContinuationToken:     input.ContinuationToken,
+		ContinuationToken:     backend.GetPtrFromString(*input.ContinuationToken),
 		MaxKeys:               input.MaxKeys,
 		Name:                  input.Bucket,
 		NextContinuationToken: nextMarker,
-		Prefix:                input.Prefix,
+		Prefix:                backend.GetPtrFromString(*input.Prefix),
 		IsTruncated:           &isTruncated,
-		Delimiter:             input.Delimiter,
+		Delimiter:             backend.GetPtrFromString(*input.Delimiter),
 		CommonPrefixes:        cPrefixes,
+		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
 	}, nil
 }
 
