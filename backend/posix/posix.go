@@ -2446,12 +2446,12 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj versionId: %w", err)
+		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			bucket = filepath.Join(p.versioningDir, bucket)
 			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("get obj versionId: %w", err)
 		}
 
 		if string(vId) != *input.VersionId {
@@ -2678,12 +2678,12 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj versionId: %w", err)
+		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			bucket = filepath.Join(p.versioningDir, bucket)
 			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("get obj versionId: %w", err)
 		}
 
 		if string(vId) != *input.VersionId {
