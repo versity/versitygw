@@ -477,6 +477,7 @@ func TestFullFlow(s *S3Conf) {
 func TestPosix(s *S3Conf) {
 	PutObject_overwrite_dir_obj(s)
 	PutObject_overwrite_file_obj(s)
+	PutObject_overwrite_file_obj_with_nested_obj(s)
 	PutObject_dir_obj_with_data(s)
 	CreateMultipartUpload_dir_obj(s)
 	PutObject_name_too_long(s)
@@ -836,6 +837,7 @@ func GetIntTests() IntTests {
 		"WORMProtection_root_bypass_governance_retention_delete_object":       WORMProtection_root_bypass_governance_retention_delete_object,
 		"PutObject_overwrite_dir_obj":                                         PutObject_overwrite_dir_obj,
 		"PutObject_overwrite_file_obj":                                        PutObject_overwrite_file_obj,
+		"PutObject_overwrite_file_obj_with_nested_obj":                        PutObject_overwrite_file_obj_with_nested_obj,
 		"PutObject_dir_obj_with_data":                                         PutObject_dir_obj_with_data,
 		"CreateMultipartUpload_dir_obj":                                       CreateMultipartUpload_dir_obj,
 		"IAM_user_access_denied":                                              IAM_user_access_denied,
