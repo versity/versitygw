@@ -142,6 +142,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_invalid_part_number(s)
 	HeadObject_non_existing_mp(s)
 	HeadObject_mp_success(s)
+	HeadObject_directory_object_noslash(s)
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_with_contenttype(s)
 	HeadObject_success(s)
@@ -155,6 +156,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 
 func TestGetObject(s *S3Conf) {
 	GetObject_non_existing_key(s)
+	GetObject_directory_object_noslash(s)
 	GetObject_invalid_ranges(s)
 	GetObject_with_meta(s)
 	GetObject_success(s)
@@ -191,6 +193,7 @@ func TestListObjectsV2(s *S3Conf) {
 
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
+	DeleteObject_directory_object_noslash(s)
 	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
@@ -640,6 +643,7 @@ func GetIntTests() IntTests {
 		"HeadObject_invalid_part_number":                                      HeadObject_invalid_part_number,
 		"HeadObject_non_existing_mp":                                          HeadObject_non_existing_mp,
 		"HeadObject_mp_success":                                               HeadObject_mp_success,
+		"HeadObject_directory_object_noslash":                                 HeadObject_directory_object_noslash,
 		"HeadObject_non_existing_dir_object":                                  HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                            HeadObject_name_too_long,
 		"HeadObject_with_contenttype":                                         HeadObject_with_contenttype,
@@ -648,6 +652,7 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_existing_object":                                 GetObjectAttributes_existing_object,
 		"GetObject_non_existing_key":                                          GetObject_non_existing_key,
+		"GetObject_directory_object_noslash":                                  GetObject_directory_object_noslash,
 		"GetObject_invalid_ranges":                                            GetObject_invalid_ranges,
 		"GetObject_with_meta":                                                 GetObject_with_meta,
 		"GetObject_success":                                                   GetObject_success,
@@ -675,6 +680,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                         ListObjectsV2_list_all_objs,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
+		"DeleteObject_directory_object_noslash":                               DeleteObject_directory_object_noslash,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
 		"DeleteObject_success":                                                DeleteObject_success,
