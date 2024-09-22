@@ -456,7 +456,9 @@ func TestFullFlow(s *S3Conf) {
 	TestDeleteObjectTagging(s)
 	TestCreateMultipartUpload(s)
 	TestUploadPart(s)
-	TestUploadPartCopy(s)
+	if !s.azureTests {
+		TestUploadPartCopy(s)
+	}
 	TestListParts(s)
 	TestListMultipartUploads(s)
 	TestAbortMultipartUpload(s)

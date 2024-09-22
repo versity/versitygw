@@ -109,32 +109,57 @@ func teardown(s *S3Conf, bucket string) error {
 		return nil
 	}
 
-	in := &s3.ListObjectVersionsInput{Bucket: &bucket}
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.ListObjectVersions(ctx, in)
-		cancel()
-		if err != nil {
-			return fmt.Errorf("failed to list objects: %w", err)
-		}
-
-		for _, item := range out.Versions {
-			err = deleteObject(&bucket, item.Key, item.VersionId)
+	if s.versioningEnabled {
+		in := &s3.ListObjectVersionsInput{Bucket: &bucket}
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectVersions(ctx, in)
+			cancel()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to list objects: %w", err)
+			}
+
+			for _, item := range out.Versions {
+				err = deleteObject(&bucket, item.Key, item.VersionId)
+				if err != nil {
+					return err
+				}
+			}
+			for _, item := range out.DeleteMarkers {
+				err = deleteObject(&bucket, item.Key, item.VersionId)
+				if err != nil {
+					return err
+				}
+			}
+
+			if out.IsTruncated != nil && *out.IsTruncated {
+				in.KeyMarker = out.KeyMarker
+				in.VersionIdMarker = out.NextVersionIdMarker
+			} else {
+				break
 			}
 		}
-		for _, item := range out.DeleteMarkers {
-			err = deleteObject(&bucket, item.Key, item.VersionId)
+	} else {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket: &bucket,
+			})
+			cancel()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to list objects: %w", err)
 			}
-		}
 
-		if out.IsTruncated != nil && *out.IsTruncated {
-			in.KeyMarker = out.KeyMarker
-			in.VersionIdMarker = out.NextVersionIdMarker
-		} else {
+			for _, item := range out.Contents {
+				err = deleteObject(&bucket, item.Key, nil)
+				if err != nil {
+					return err
+				}
+			}
+
+			if out.IsTruncated != nil && *out.IsTruncated {
+				continue
+			}
 			break
 		}
 	}
@@ -594,20 +619,28 @@ func compareBuckets(list1 []types.Bucket, list2 []s3response.ListAllMyBucketsEnt
 
 func compareObjects(list1, list2 []types.Object) bool {
 	if len(list1) != len(list2) {
+		fmt.Println("list lengths are not equal")
 		return false
 	}
 
 	for i, obj := range list1 {
 		if *obj.Key != *list2[i].Key {
+			fmt.Printf("keys are not equal: %q != %q\n", *obj.Key, *list2[i].Key)
 			return false
 		}
 		if *obj.ETag != *list2[i].ETag {
+			fmt.Printf("etags are not equal: (%q %q)  %q != %q\n",
+				*obj.Key, *list2[i].Key, *obj.ETag, *list2[i].ETag)
 			return false
 		}
 		if *obj.Size != *list2[i].Size {
+			fmt.Printf("sizes are not equal: (%q %q)  %v != %v\n",
+				*obj.Key, *list2[i].Key, *obj.Size, *list2[i].Size)
 			return false
 		}
 		if obj.StorageClass != list2[i].StorageClass {
+			fmt.Printf("storage classes are not equal: (%q %q)  %v != %v\n",
+				*obj.Key, *list2[i].Key, obj.StorageClass, list2[i].StorageClass)
 			return false
 		}
 	}
