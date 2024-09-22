@@ -50,8 +50,7 @@ get_object_with_range() {
     log 2 "'get object with range' requires bucket, key, range, outfile"
     return 1
   fi
-  get_object_error=$(aws --no-verify-ssl s3api get-object --bucket "$1" --key "$2" --range "$3" "$4" 2>&1) || local exit_code=$?
-  if [[ $exit_code -ne 0 ]]; then
+  if ! get_object_error=$(aws --no-verify-ssl s3api get-object --bucket "$1" --key "$2" --range "$3" "$4" 2>&1); then
     log 2 "error getting object with range: $get_object_error"
     return 1
   fi

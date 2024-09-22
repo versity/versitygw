@@ -87,7 +87,12 @@ verify_no_object_tags() {
     log 2 "'verify_no_object_tags' requires client, bucket, object"
     return 1
   fi
-  if ! get_object_tagging "$1" "$2" "$3"; then
+  result=0
+  get_object_tagging "$1" "$2" "$3" || result=$?
+  if [ $result == 1 ]; then
+    if [ "$1" == 'rest' ]; then
+      return 0
+    fi
     log 2 "error getting object tagging"
     return 1
   fi
@@ -117,32 +122,52 @@ check_verify_object_tags() {
     return 1
   fi
   if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
-    if ! tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key' 2>&1); then
-      log 2 "error retrieving tag key: $tag_set_key"
+    if ! parse_object_tags_s3api; then
+      log 2 "error parsing object tags"
       return 1
     fi
-    if ! tag_set_value=$(echo "$tags" | jq -r '.TagSet[0].Value' 2>&1); then
-      log 2 "error retrieving tag value: $tag_set_value"
+  elif [ "$1" == 'rest' ]; then
+    if ! parse_object_tags_rest; then
+      log 2 "error parsing object tags"
       return 1
     fi
-    if [[ $tag_set_key != "$4" ]]; then
-      log 2 "key mismatch ($tag_set_key, $4)"
-      return 1
-    fi
-    if [[ $tag_set_value != "$5" ]]; then
-      log 2 "value mismatch ($tag_set_value, $5)"
-      return 1
-    fi
-  else
+  elif [[ $1 == 'mc' ]]; then
     read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
-    if [[ $tag_set_key != "$4" ]]; then
-      log 2 "Key mismatch ($tag_set_key, $4)"
-      return 1
-    fi
-    if [[ $tag_set_value != "$5" ]]; then
-      log 2 "Value mismatch ($tag_set_value, $5)"
-      return 1
-    fi
+  else
+    log 2 "unrecognized client for check_verify_object_tags: $1"
+    return 1
+  fi
+  if [[ $tag_set_key != "$4" ]]; then
+    log 2 "Key mismatch ($tag_set_key, $4)"
+    return 1
+  fi
+  if [[ $tag_set_value != "$5" ]]; then
+    log 2 "Value mismatch ($tag_set_value, $5)"
+    return 1
+  fi
+  return 0
+}
+
+parse_object_tags_s3api() {
+  if ! tag_set_key=$(echo "$tags" | jq -r '.TagSet[0].Key' 2>&1); then
+    log 2 "error retrieving tag key: $tag_set_key"
+    return 1
+  fi
+  if ! tag_set_value=$(echo "$tags" | jq -r '.TagSet[0].Value' 2>&1); then
+    log 2 "error retrieving tag value: $tag_set_value"
+    return 1
+  fi
+  return 0
+}
+
+parse_object_tags_rest() {
+  if ! tag_set_key=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/object_tags.txt" 2>&1); then
+    log 2 "error getting key: $tag_set_key"
+    return 1
+  fi
+  if ! tag_set_value=$(xmllint --xpath '//*[local-name()="Value"]/text()' "$TEST_FILE_FOLDER/object_tags.txt" 2>&1); then
+    log 2 "error getting value: $value"
+    return 1
   fi
   return 0
 }

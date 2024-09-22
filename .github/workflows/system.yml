@@ -30,7 +30,7 @@ jobs:
             RECREATE_BUCKETS: "true"
             PORT: 7071
             BACKEND: "posix"
-          - set: "s3api, posix"
+          - set: "s3api non-policy, posix"
             LOCAL_FOLDER: /tmp/gw3
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-3
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-3
@@ -74,7 +74,7 @@ jobs:
             RECREATE_BUCKETS: "false"
             PORT: 7075
             BACKEND: "posix"
-          - set: "s3api, s3 backend"
+          - set: "s3api non-policy, s3 backend"
             LOCAL_FOLDER: /tmp/gw7
             BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
             BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
@@ -118,6 +118,28 @@ jobs:
             RECREATE_BUCKETS: "false"
             PORT: 7079
             BACKEND: "posix"
+          - set: "s3api policy and user, posix"
+            LOCAL_FOLDER: /tmp/gw11
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-10
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-10
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam11
+            AWS_ENDPOINT_URL: https://127.0.0.1:7080
+            RUN_SET: "s3api-policy,s3api-user"
+            RECREATE_BUCKETS: "true"
+            PORT: 7080
+            BACKEND: "posix"
+          - set: "s3api policy and user, s3 backend"
+            LOCAL_FOLDER: /tmp/gw12
+            BUCKET_ONE_NAME: versity-gwtest-bucket-one-11
+            BUCKET_TWO_NAME: versity-gwtest-bucket-two-11
+            IAM_TYPE: folder
+            USERS_FOLDER: /tmp/iam12
+            AWS_ENDPOINT_URL: https://127.0.0.1:7081
+            RUN_SET: "s3api-policy,s3api-user"
+            RECREATE_BUCKETS: "true"
+            PORT: 7081
+            BACKEND: "s3"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -152,7 +174,7 @@ jobs:
         run: |
           sudo apt-get install libxml2-utils
 
-      - name: Build and run, posix backend
+      - name: Build and run
         env:
           LOCAL_FOLDER: ${{ matrix.LOCAL_FOLDER }}
           BUCKET_ONE_NAME: ${{ matrix.BUCKET_ONE_NAME }}
