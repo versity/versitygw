@@ -17,6 +17,7 @@
 source ./tests/util_create_bucket.sh
 source ./tests/util_mc.sh
 source ./tests/util_multipart.sh
+source ./tests/util_versioning.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh
 source ./tests/commands/complete_multipart_upload.sh
@@ -29,6 +30,7 @@ source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/get_bucket_tagging.sh
+source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
@@ -38,6 +40,7 @@ source ./tests/commands/list_objects.sh
 source ./tests/commands/list_parts.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_ownership_controls.sh
+source ./tests/commands/put_bucket_policy.sh
 source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
@@ -149,6 +152,12 @@ list_and_delete_objects() {
       return 1
     fi
   done
+
+  if ! delete_old_versions "$1"; then
+    log 2 "error deleting old version"
+    return 1
+  fi
+  return 0
 }
 
 # param: bucket name
@@ -173,28 +182,23 @@ check_ownership_rule_and_reset_acl() {
   fi
 }
 
-# param: bucket name
-# return 0 for success, 1 for error
-check_and_disable_object_lock_config() {
+check_object_lock_config() {
   if [ $# -ne 1 ]; then
-    log 2 "'check_and_disable_object_lock_config' requires bucket name"
+    log 2 "'check_object_lock_config' requires bucket name"
     return 1
   fi
-
-  local lock_config_exists=true
+  lock_config_exists=true
   if ! get_object_lock_configuration "$1"; then
     # shellcheck disable=SC2154
     if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
+      # shellcheck disable=SC2034
       lock_config_exists=false
     else
       log 2 "error getting object lock config"
       return 1
     fi
   fi
-  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
-    log 2 "error disabling object lock config"
-    return 1
-  fi
+  return 0
 }
 
 # restore bucket to pre-test state (or prep for deletion)
@@ -214,6 +218,11 @@ clear_bucket_s3api() {
     fi
   fi
 
+  if ! check_object_lock_config "$1"; then
+    log 2 "error checking object lock config"
+    return 1
+  fi
+
   if ! list_and_delete_objects "$1"; then
     log 2 "error listing and deleting objects"
     return 1
@@ -227,8 +236,8 @@ clear_bucket_s3api() {
   #run check_ownership_rule_and_reset_acl "$1"
   #assert_success "error checking ownership rule and resetting acl"
 
-  if ! check_and_disable_object_lock_config "$1"; then
-    log 2 "error checking and disabling object lock config"
+  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
+    log 2 "error disabling object lock config"
     return 1
   fi
 
@@ -258,18 +267,18 @@ clear_object_in_bucket() {
 }
 
 # params: bucket, object, possible WORM error after deletion attempt
-# return 0 for success, 1 for error
+# return 0 for success, 1 for no WORM protection, 2 for error
 check_for_and_remove_worm_protection() {
   if [ $# -ne 3 ]; then
     log 2 "'check_for_and_remove_worm_protection' command requires bucket, object, error"
-    return 1
+    return 2
   fi
 
   if [[ $3 == *"WORM"* ]]; then
     log 5 "WORM protection found"
     if ! put_object_legal_hold "$1" "$2" "OFF"; then
       log 2 "error removing object legal hold"
-      return 1
+      return 2
     fi
     sleep 1
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
@@ -277,12 +286,15 @@ check_for_and_remove_worm_protection() {
     fi
     if ! add_governance_bypass_policy "$1"; then
       log 2 "error adding new governance bypass policy"
-      return 1
+      return 2
     fi
     if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
-      return 1
+      return 2
     fi
+  else
+    log 5 "no WORM protection found"
+    return 1
   fi
   return 0
 }
@@ -423,6 +435,12 @@ delete_bucket_or_contents() {
       log 2 "error aborting all multipart uploads"
       return 1
     fi
+
+    if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$2"; then
+      log 2 "error resetting bucket owner"
+      return 1
+    fi
+
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi

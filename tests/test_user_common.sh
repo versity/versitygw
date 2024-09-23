@@ -18,6 +18,7 @@ source ./tests/setup.sh
 source ./tests/util_users.sh
 source ./tests/util.sh
 source ./tests/util_create_bucket.sh
+source ./tests/util_list_buckets.sh
 source ./tests/commands/list_buckets.sh
 
 test_admin_user() {
@@ -30,40 +31,32 @@ test_admin_user() {
   user_username="$USERNAME_TWO"
   user_password="$PASSWORD_TWO"
 
-  setup_user "$admin_username" "$admin_password" "admin" || fail "error setting up admin user"
+  run setup_user "$admin_username" "$admin_password" "admin"
+  assert_success
 
   if user_exists "$user_username"; then
-    delete_user "$user_username" || fail "failed to delete user '$user_username'"
+    run delete_user "$user_username"
+    assert_success
   fi
-  create_user_with_user "$admin_username" "$admin_password" "$user_username" "$user_password" "user" || fail "failed to create user '$user_username'"
+  run create_user_with_user "$admin_username" "$admin_password" "$user_username" "$user_password" "user"
+  assert_success
 
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-admin-bucket"
-  create_bucket_with_user "aws" "versity-gwtest-admin-bucket" "$admin_username" "$admin_password" || fail "error creating bucket with admin user"
-
-  bucket_one_found=false
-  bucket_two_found=false
-  list_buckets_with_user "aws" "$admin_username" "$admin_password" || fail "error listing buckets with admin user"
-  # shellcheck disable=SC2154
-  for bucket in "${bucket_array[@]}"; do
-    if [ "$bucket" == "$BUCKET_ONE_NAME" ]; then
-      bucket_one_found=true
-    elif [ "$bucket" == "versity-gwtest-admin-bucket" ]; then
-      bucket_two_found=true
-    fi
-    if [ $bucket_one_found == true ] && [ $bucket_two_found == true ]; then
-      break
-    fi
-  done
-  if [ $bucket_one_found == false ] || [ $bucket_two_found == false ]; then
-    fail "not all expected buckets listed"
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    run create_bucket_with_user "s3api" "$BUCKET_TWO_NAME" "$admin_username" "$admin_password"
+    assert_success
+  else
+    run change_bucket_owner "$admin_username" "$admin_password" "$BUCKET_TWO_NAME" "$admin_username"
+    assert_success
   fi
-  change_bucket_owner "$admin_username" "$admin_password" "versity-gwtest-admin-bucket" "$user_username" || fail "error changing bucket owner"
 
-  run delete_bucket "aws" "versity-gwtest-admin-bucket"
-  assert_success "failed to delete bucket"
+  run list_and_check_buckets_with_user "aws" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME" "$admin_username" "$admin_password"
+  assert_success
+
+  run change_bucket_owner "$admin_username" "$admin_password" "$BUCKET_TWO_NAME" "$user_username"
+  assert_success
 
   delete_user "$user_username"
   delete_user "$admin_username"

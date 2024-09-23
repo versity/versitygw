@@ -339,7 +339,19 @@ change_bucket_owner_direct() {
     echo "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
   fi
+  # TODO add
+}
 
+reset_bucket_owner() {
+  if [ $# -ne 1 ]; then
+    log 2 "'reset_bucket_owner' requires bucket name"
+    return 1
+  fi
+  if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+    log 2 "error changing bucket owner back to root"
+    return 1
+  fi
+  return 0
 }
 
 change_bucket_owner() {

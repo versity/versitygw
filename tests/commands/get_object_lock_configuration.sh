@@ -29,3 +29,43 @@ get_object_lock_configuration() {
   lock_config=$(echo "$lock_config" | grep -v "InsecureRequestWarning")
   return 0
 }
+
+get_object_lock_configuration_rest() {
+  log 6 "get_object_lock_configuration_rest"
+  if [ $# -ne 1 ]; then
+    log 2 "'get_object_lock_configuration_rest' requires bucket name"
+    return 1
+  fi
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="GET
+/$1
+object-lock=
+host:$aws_endpoint_url_address
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+UNSIGNED-PAYLOAD"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+  # shellcheck disable=SC2154
+  reply=$(curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?object-lock" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -H "x-amz-date: $current_date_time" \
+    -o "$TEST_FILE_FOLDER/object-lock-config.txt" 2>&1)
+  log 5 "reply: $reply"
+  if [[ "$reply" != "200" ]]; then
+    log 2 "get object command returned error: $(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
+    return 1
+  fi
+  return 0
+}

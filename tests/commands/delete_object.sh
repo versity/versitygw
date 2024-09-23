@@ -58,6 +58,30 @@ delete_object_bypass_retention() {
   return 0
 }
 
+delete_object_version() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'delete_object_version' requires bucket, key, version ID"
+    return 1
+  fi
+  if ! delete_object_error=$(aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --version-id "$3" 2>&1); then
+    log 2 "error deleting object version: $delete_object_error"
+    return 1
+  fi
+  return 0
+}
+
+delete_object_version_bypass_retention() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'delete_object_version_bypass_retention' requires bucket, key, version ID"
+    return 1
+  fi
+  if ! delete_object_error=$(aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --version-id "$3" --bypass-governance-retention 2>&1); then
+    log 2 "error deleting object version with bypass retention: $delete_object_error"
+    return 1
+  fi
+  return 0
+}
+
 delete_object_with_user() {
   record_command "delete-object" "client:$1"
   if [ $# -ne 5 ]; then
