@@ -2326,6 +2326,12 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		// AWS returns success if the object does not exist
 		return &s3.DeleteObjectOutput{}, nil
 	}
+	if !strings.HasSuffix(object, "/") && fi.IsDir() {
+		// requested object is expecting a file, but the object is a
+		// directory. treat this as a non-existent object.
+		// AWS returns success if the object does not exist
+		return &s3.DeleteObjectOutput{}, nil
+	}
 
 	err = os.Remove(objpath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -2489,6 +2495,9 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if !strings.HasSuffix(object, "/") && fi.IsDir() {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
@@ -2722,6 +2731,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	if strings.HasSuffix(object, "/") && !fi.IsDir() {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if !strings.HasSuffix(object, "/") && fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 
 	if *input.VersionId != "" {
 		isDelMarker, err := p.isObjDeleteMarker(bucket, object)
@@ -2890,6 +2902,9 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 	if strings.HasSuffix(srcObject, "/") && !fi.IsDir() {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 

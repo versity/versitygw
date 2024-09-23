@@ -3009,6 +3009,35 @@ func HeadObject_non_existing_dir_object(s *S3Conf) error {
 	})
 }
 
+func HeadObject_directory_object_noslash(s *S3Conf) error {
+	testName := "HeadObject_directory_object_noslash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 const defaultContentType = "binary/octet-stream"
 
 func HeadObject_with_contenttype(s *S3Conf) error {
@@ -3219,6 +3248,35 @@ func GetObject_non_existing_key(s *S3Conf) error {
 		_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    getPtr("non-existing-key"),
+		})
+		cancel()
+		var bae *types.NoSuchKey
+		if !errors.As(err, &bae) {
+			return err
+		}
+		return nil
+	})
+}
+
+func GetObject_directory_object_noslash(s *S3Conf) error {
+	testName := "GetObject_directory_object_noslash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
 		})
 		cancel()
 		var bae *types.NoSuchKey
@@ -4220,6 +4278,45 @@ func DeleteObject_non_existing_object(s *S3Conf) error {
 		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &bucket,
 			Key:    getPtr("my-obj"),
+		})
+		cancel()
+		return err
+	})
+}
+
+func DeleteObject_directory_object_noslash(s *S3Conf) error {
+	testName := "DeleteObject_directory_object_noslash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj = "my-obj"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// the delete above should succeed, but the object should not be deleted
+		// since it should not correctly match the directory name
+		// so the below head object should also succeed
+		obj = "my-obj/"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
 		})
 		cancel()
 		return err
