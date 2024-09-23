@@ -183,12 +183,14 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		var acl auth.ACL
 		if len(aclBytes) > 0 {
 			if err := json.Unmarshal(aclBytes, &acl); err != nil {
-				return fmt.Errorf("unmarshal bucket acl: %w", err)
+				return fmt.Errorf("unmarshal acl: %w", err)
 			}
 		}
+
 		if acl.Owner == acct.Access {
 			return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
 		}
+		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
 	return azureErrToS3Err(err)
 }

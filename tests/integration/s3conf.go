@@ -41,6 +41,7 @@ type S3Conf struct {
 	Concurrency       int
 	debug             bool
 	versioningEnabled bool
+	azureTests        bool
 }
 
 func NewS3Conf(opts ...Option) *S3Conf {
@@ -83,6 +84,9 @@ func WithDebug() Option {
 }
 func WithVersioningEnabled() Option {
 	return func(s *S3Conf) { s.versioningEnabled = true }
+}
+func WithAzureMode() Option {
+	return func(s *S3Conf) { s.azureTests = true }
 }
 
 func (c *S3Conf) getCreds() credentials.StaticCredentialsProvider {

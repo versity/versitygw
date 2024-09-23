@@ -2,7 +2,7 @@ services:
   posix:
     build: 
       context: .
-      dockerfile: ./Dockerfile.dev
+      dockerfile: tests/Dockerfile.dev
       args:
         - IAM_DIR=${IAM_DIR}
         - SETUP_DIR=${SETUP_DIR}
@@ -14,7 +14,7 @@ services:
   proxy:
     build: 
       context: .
-      dockerfile: ./Dockerfile.dev
+      dockerfile: tests/Dockerfile.dev
     volumes:
       - ./:/app
     ports:
@@ -34,9 +34,9 @@ services:
   azuritegw:
     build:
       context: .
-      dockerfile: ./Dockerfile.dev
+      dockerfile: tests/Dockerfile.dev
     volumes:
       - ./:/app
     ports:
       - 7070:7070
-    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url https://azurite:10000/$AZ_ACCOUNT_NAME"]
+    command: ["sh", "-c", CompileDaemon -build="go build -C ./cmd/versitygw -buildvcs=false -o versitygw" -command="./cmd/versitygw/versitygw -a $ACCESS_KEY_ID -s $SECRET_ACCESS_KEY --iam-dir $IAM_DIR azure -a $AZ_ACCOUNT_NAME -k $AZ_ACCOUNT_KEY --url https://azurite:10000/$AZ_ACCOUNT_NAME"]

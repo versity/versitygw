@@ -2691,13 +2691,20 @@ func PutObject_non_existing_bucket(s *S3Conf) error {
 
 func PutObject_special_chars(s *S3Conf) error {
 	testName := "PutObject_special_chars"
+
+	objnames := []string{
+		"my!key", "my-key", "my_key", "my.key", "my'key", "my(key", "my)key",
+		"my&key", "my@key", "my=key", "my;key", "my:key", "my key", "my,key",
+		"my?key", "my^key", "my{}key", "my%key", "my`key",
+		"my[]key", "my~key", "my<>key", "my|key", "my#key",
+	}
+	if !s.azureTests {
+		// azure currently can't handle backslashes in object names
+		objnames = append(objnames, "my\\key")
+	}
+
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		objs, err := putObjects(s3client, []string{
-			"my!key", "my-key", "my_key", "my.key", "my'key", "my(key", "my)key",
-			"my&key", "my@key", "my=key", "my;key", "my:key", "my key", "my,key",
-			"my?key", "my\\key", "my^key", "my{}key", "my%key", "my`key",
-			"my[]key", "my~key", "my<>key", "my|key", "my#key",
-		}, bucket)
+		objs, err := putObjects(s3client, objnames, bucket)
 		if err != nil {
 			return err
 		}
@@ -2712,7 +2719,8 @@ func PutObject_special_chars(s *S3Conf) error {
 		}
 
 		if !compareObjects(res.Contents, objs) {
-			return fmt.Errorf("expected the objects to be %v, instead got %v", objs, res.Contents)
+			return fmt.Errorf("expected the objects to be %v, instead got %v",
+				objStrings(objs), objStrings(res.Contents))
 		}
 
 		return nil
