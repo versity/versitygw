@@ -456,7 +456,7 @@ func TestFullFlow(s *S3Conf) {
 	TestDeleteObjectTagging(s)
 	TestCreateMultipartUpload(s)
 	TestUploadPart(s)
-	// TestUploadPartCopy(s)
+	TestUploadPartCopy(s)
 	TestListParts(s)
 	TestListMultipartUploads(s)
 	TestAbortMultipartUpload(s)
