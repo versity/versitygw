@@ -17,6 +17,7 @@
 source ./tests/test_common.sh
 source ./tests/setup.sh
 source ./tests/util_create_bucket.sh
+source ./tests/util_head_bucket.sh
 source ./tests/util_tags.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
@@ -47,7 +48,8 @@ export RUN_MC=true
   run setup_bucket "mc" "$BUCKET_ONE_NAME"
   assert_success
 
-  delete_bucket "mc" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
+  run delete_bucket "mc" "$BUCKET_ONE_NAME"
+  assert_success
 }
 
 # delete-bucket-policy
@@ -119,31 +121,24 @@ export RUN_MC=true
     return
   fi
 
-  create_bucket_invalid_name "mc" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Invalid name test failed"
-
-  [[ "$bucket_create_error" == *"Bucket name cannot be empty"* ]] || fail "unexpected error:  $bucket_create_error"
-
-  delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
+  run create_and_check_bucket_invalid_name "mc"
+  assert_success
 }
 
 @test "test_get_bucket_info_mc" {
   run setup_bucket "mc" "$BUCKET_ONE_NAME"
   assert_success
 
-  head_bucket "mc" "$BUCKET_ONE_NAME"
-  [[ $bucket_info == *"$BUCKET_ONE_NAME"* ]] || fail "failure to retrieve correct bucket info: $bucket_info"
-  delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
+  run bucket_info_contains_bucket "mc" "$BUCKET_ONE_NAME"
+  assert_success
 }
 
 @test "test_get_bucket_info_doesnt_exist_mc" {
   run setup_bucket "mc" "$BUCKET_ONE_NAME"
   assert_success
 
-  head_bucket "mc" "$BUCKET_ONE_NAME"a || local info_result=$?
-  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
-  [[ $bucket_info == *"does not exist"* ]] || fail "404 not returned for non-existent bucket info"
-  delete_bucket_or_contents "mc" "$BUCKET_ONE_NAME"
+  run head_bucket "mc" "$BUCKET_ONE_NAME"a
+  assert_failure 1
 }
 
 @test "test_ls_directory_object" {

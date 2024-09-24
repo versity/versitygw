@@ -49,27 +49,38 @@ log_mask() {
     echo "mask and log requires level, string"
     return 1
   fi
-  local masked_args=()  # Initialize an array to hold the masked arguments
+  masked_args=()  # Initialize an array to hold the masked arguments
 
   IFS=' ' read -r -a array <<< "$2"
 
   mask_next=false
   for arg in "${array[@]}"; do
-    if [[ $mask_next == true ]]; then
-      masked_args+=("********")
-      mask_next=false
-    elif [[ "$arg" == --secret_key=* ]]; then
-      masked_args+=("--secret_key=********")
-    elif [[ "$arg" == --secret=* ]]; then
-      masked_args+=("--secret=********")
-    else
-      if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]] || [[ "$arg" == "--s3-iam-secret" ]]; then
-        mask_next=true
-      fi
-      masked_args+=("$arg")
+    if ! check_arg_for_mask "$arg"; then
+      echo "error checking arg for mask"
+      return 1
     fi
   done
   log_message "$log_level" "${masked_args[*]}"
+}
+
+check_arg_for_mask() {
+  if [ $# -ne 1 ]; then
+    echo "'check_arg_for_mask' requires arg"
+    return 1
+  fi
+  if [[ $mask_next == true ]]; then
+    masked_args+=("********")
+    mask_next=false
+  elif [[ "$arg" == --secret_key=* ]]; then
+    masked_args+=("--secret_key=********")
+  elif [[ "$arg" == --secret=* ]]; then
+    masked_args+=("--secret=********")
+  else
+    if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]] || [[ "$arg" == "--s3-iam-secret" ]]; then
+      mask_next=true
+    fi
+    masked_args+=("$arg")
+  fi
 }
 
 log_message() {
