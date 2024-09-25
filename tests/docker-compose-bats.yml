@@ -1,33 +1,28 @@
 services:
   no_certs:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.nocerts
   static_buckets:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.static
   posix_backend:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.default
     image: bats_test
   s3_backend:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.s3
         - SECRETS_FILE=tests/.secrets.s3
   s3api_np_only:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_test_bats
       args:
         - CONFIG_FILE=tests/.env.default
@@ -35,7 +30,6 @@ services:
     command: ["s3api-non-policy"]
   direct:
     build:
-      context: ../
       dockerfile: tests/Dockerfile_direct
     volumes:
       - ./.env.direct:/home/tester/tests/.env.direct
