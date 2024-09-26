@@ -10927,6 +10927,36 @@ func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
 	}, withVersioning())
 }
 
+func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_non_existing_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		ctx, canel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		canel()
+		if err != nil {
+			return err
+		}
+
+		ctx, canel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("non_existing_version_id"),
+		})
+		canel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning())
+}
+
 func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_delete_a_delete_marker"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
