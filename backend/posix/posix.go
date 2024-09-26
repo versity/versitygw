@@ -2187,7 +2187,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 
 			return &s3.DeleteObjectOutput{
-				VersionId: &versionId,
+				DeleteMarker: getBoolPtr(true),
+				VersionId:    &versionId,
 			}, nil
 		} else {
 			versionPath := p.genObjVersionPath(bucket, object)
@@ -2401,11 +2402,10 @@ func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput)
 			delEntity := types.DeletedObject{
 				Key:          obj.Key,
 				DeleteMarker: res.DeleteMarker,
+				VersionId:    obj.VersionId,
 			}
 			if delEntity.DeleteMarker != nil && *delEntity.DeleteMarker {
 				delEntity.DeleteMarkerVersionId = res.VersionId
-			} else {
-				delEntity.VersionId = res.VersionId
 			}
 
 			delResult = append(delResult, delEntity)

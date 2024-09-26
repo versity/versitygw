@@ -10950,6 +10950,9 @@ func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
 			return err
 		}
 
+		if out.DeleteMarker == nil || !*out.DeleteMarker {
+			return fmt.Errorf("expected the response DeleteMarker to be true")
+		}
 		if out.VersionId == nil || *out.VersionId == "" {
 			return fmt.Errorf("expected non empty versionId")
 		}
@@ -11019,14 +11022,17 @@ func Versioning_DeleteObjects_success(s *S3Conf) error {
 
 		delResult := []types.DeletedObject{
 			{
-				Key:       obj1Version[0].Key,
-				VersionId: obj1Version[0].VersionId,
+				Key:          obj1Version[0].Key,
+				VersionId:    obj1Version[0].VersionId,
+				DeleteMarker: getBoolPtr(false),
 			},
 			{
-				Key: obj2Version[0].Key,
+				Key:          obj2Version[0].Key,
+				DeleteMarker: getBoolPtr(true),
 			},
 			{
-				Key: obj3Version[0].Key,
+				Key:          obj3Version[0].Key,
+				DeleteMarker: getBoolPtr(true),
 			},
 		}
 
@@ -11054,15 +11060,14 @@ func Versioning_DeleteObjects_success(s *S3Conf) error {
 			{
 				IsLatest:  getBoolPtr(true),
 				Key:       out.Deleted[1].Key,
-				VersionId: out.Deleted[1].VersionId,
+				VersionId: out.Deleted[1].DeleteMarkerVersionId,
 			},
 			{
 				IsLatest:  getBoolPtr(true),
 				Key:       out.Deleted[2].Key,
-				VersionId: out.Deleted[2].VersionId,
+				VersionId: out.Deleted[2].DeleteMarkerVersionId,
 			},
 		}
-
 		if !compareVersions(versions, res.Versions) {
 			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, res.Versions)
 		}
@@ -11109,10 +11114,12 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 
 		delResult := []types.DeletedObject{
 			{
-				Key: obj1Version[0].Key,
+				Key:          obj1Version[0].Key,
+				DeleteMarker: getBoolPtr(true),
 			},
 			{
-				Key: obj2Version[0].Key,
+				Key:          obj2Version[0].Key,
+				DeleteMarker: getBoolPtr(true),
 			},
 		}
 
@@ -11152,11 +11159,13 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 				Key:                   out.Deleted[0].Key,
 				DeleteMarker:          getBoolPtr(true),
 				DeleteMarkerVersionId: out.Deleted[0].VersionId,
+				VersionId:             out.Deleted[0].VersionId,
 			},
 			{
 				Key:                   out.Deleted[1].Key,
 				DeleteMarker:          getBoolPtr(true),
 				DeleteMarkerVersionId: out.Deleted[1].VersionId,
+				VersionId:             out.Deleted[1].VersionId,
 			},
 		}
 
