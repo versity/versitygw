@@ -47,7 +47,7 @@ RUN git clone https://github.com/bats-core/bats-core.git && \
 
 USER tester
 RUN mkdir -p /home/tester/tests
-COPY --chown=tester:tester . /home/tester/tests
+COPY --chown=tester:tester . /home/tester
 
 # add bats support libraries
 RUN git clone https://github.com/bats-core/bats-support.git && rm -rf /home/tester/tests/bats-support && mv bats-support /home/tester/tests
