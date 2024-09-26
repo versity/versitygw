@@ -2158,6 +2158,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		if getString(input.VersionId) == "" {
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
+			if errors.Is(err, fs.ErrNotExist) {
+				// AWS returns success if the object does not exist
+				return &s3.DeleteObjectOutput{}, nil
+			}
 			if errors.Is(err, syscall.ENAMETOOLONG) {
 				return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 			}
@@ -2193,7 +2197,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			versionPath := p.genObjVersionPath(bucket, object)
 
 			vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
-			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("get obj versionId: %w", err)
 			}
 
@@ -2292,10 +2296,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
 			}
 			if errors.Is(err, fs.ErrNotExist) {
-				return &s3.DeleteObjectOutput{
-					DeleteMarker: &isDelMarker,
-					VersionId:    input.VersionId,
-				}, nil
+				return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 			}
 			if err != nil {
 				return nil, fmt.Errorf("delete object: %w", err)
