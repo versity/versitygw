@@ -10447,6 +10447,29 @@ func GetBucketVersioning_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func GetBucketVersioning_empty_response(s *S3Conf) error {
+	testName := "GetBucketVersioning_empty_response"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Status != "" {
+			return fmt.Errorf("expected empty versioning status, instead got %v", res.Status)
+		}
+		if res.MFADelete != "" {
+			return fmt.Errorf("expected empty mfa delete status, instead got %v", res.MFADelete)
+		}
+
+		return nil
+	})
+}
+
 func GetBucketVersioning_success(s *S3Conf) error {
 	testName := "GetBucketVersioning_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

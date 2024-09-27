@@ -74,7 +74,7 @@ var _ backend.Backend = &BackendMock{}
 //			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 //				panic("mock out the GetBucketTagging method")
 //			},
-//			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+//			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 //				panic("mock out the GetBucketVersioning method")
 //			},
 //			GetObjectFunc: func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
@@ -235,7 +235,7 @@ type BackendMock struct {
 	GetBucketTaggingFunc func(contextMoqParam context.Context, bucket string) (map[string]string, error)
 
 	// GetBucketVersioningFunc mocks the GetBucketVersioning method.
-	GetBucketVersioningFunc func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
+	GetBucketVersioningFunc func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error)
 
 	// GetObjectFunc mocks the GetObject method.
 	GetObjectFunc func(contextMoqParam context.Context, getObjectInput *s3.GetObjectInput) (*s3.GetObjectOutput, error)
@@ -1412,7 +1412,7 @@ func (mock *BackendMock) GetBucketTaggingCalls() []struct {
 }
 
 // GetBucketVersioning calls GetBucketVersioningFunc.
-func (mock *BackendMock) GetBucketVersioning(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+func (mock *BackendMock) GetBucketVersioning(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 	if mock.GetBucketVersioningFunc == nil {
 		panic("BackendMock.GetBucketVersioningFunc: method is nil but Backend.GetBucketVersioning was just called")
 	}

@@ -382,8 +382,8 @@ func TestS3ApiController_ListActions(t *testing.T) {
 			GetBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) (map[string]string, error) {
 				return map[string]string{}, nil
 			},
-			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
-				return &s3.GetBucketVersioningOutput{}, nil
+			GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+				return s3response.GetBucketVersioningOutput{}, nil
 			},
 			ListObjectVersionsFunc: func(contextMoqParam context.Context, listObjectVersionsInput *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
 				return s3response.ListVersionsResult{}, nil

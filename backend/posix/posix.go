@@ -466,38 +466,41 @@ func (p *Posix) PutBucketVersioning(_ context.Context, bucket string, status typ
 	return nil
 }
 
-func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 	if !p.versioningEnabled() {
 		// AWS returns empty response, if versioning is not set
 		//TODO: Maybe we need to return our custom error here?
-		return &s3.GetBucketVersioningOutput{}, nil
+		return s3response.GetBucketVersioningOutput{}, nil
 	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.GetBucketVersioningOutput{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	vData, err := p.meta.RetrieveAttribute(bucket, "", versioningKey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return &s3.GetBucketVersioningOutput{}, nil
+		return s3response.GetBucketVersioningOutput{}, nil
+	} else if err != nil {
+		return s3response.GetBucketVersioningOutput{}, fmt.Errorf("get bucket versioning config: %w", err)
 	}
 
+	enabled, suspended := types.BucketVersioningStatusEnabled, types.BucketVersioningStatusSuspended
 	switch vData[0] {
 	case 1:
-		return &s3.GetBucketVersioningOutput{
-			Status: types.BucketVersioningStatusEnabled,
+		return s3response.GetBucketVersioningOutput{
+			Status: &enabled,
 		}, nil
 	case 0:
-		return &s3.GetBucketVersioningOutput{
-			Status: types.BucketVersioningStatusSuspended,
+		return s3response.GetBucketVersioningOutput{
+			Status: &suspended,
 		}, nil
 	}
 
-	return &s3.GetBucketVersioningOutput{}, nil
+	return s3response.GetBucketVersioningOutput{}, nil
 }
 
 // Returns the specified bucket versioning status
@@ -507,7 +510,11 @@ func (p *Posix) isBucketVersioningEnabled(ctx context.Context, bucket string) (b
 		return false, err
 	}
 
-	return res.Status == types.BucketVersioningStatusEnabled, nil
+	if res.Status != nil {
+		return *res.Status == types.BucketVersioningStatusEnabled, nil
+	}
+
+	return false, nil
 }
 
 // Generates the object version path in the versioning directory
