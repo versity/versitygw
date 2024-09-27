@@ -10811,6 +10811,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 			return err
 		}
 
+		// Get the object by versionId
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket:    &bucket,
@@ -10833,8 +10834,38 @@ func Versioning_GetObject_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+		defer out.Body.Close()
 
 		outCsum := sha256.Sum256(bdy)
+		if outCsum != r.csum {
+			return fmt.Errorf("incorrect output content")
+		}
+
+		// Get the object without versionId
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.ContentLength != dLen {
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v", dLen, *out.ContentLength)
+		}
+		if *out.VersionId != *r.res.VersionId {
+			return fmt.Errorf("expected the versionId to be %v, instead got %v", *r.res.VersionId, *out.VersionId)
+		}
+
+		bdy, err = io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		outCsum = sha256.Sum256(bdy)
 		if outCsum != r.csum {
 			return fmt.Errorf("incorrect output content")
 		}

@@ -92,6 +92,8 @@ const (
 	deleteMarkerKey     = "delete-marker"
 	versionIdKey        = "version-id"
 
+	nullVersionId = "null"
+
 	doFalloc   = true
 	skipFalloc = false
 )
@@ -2444,8 +2446,12 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if input.Range == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
 	}
+	var versionId string
+	if input.VersionId != nil {
+		versionId = *input.VersionId
+	}
 
-	if !p.versioningEnabled() && *input.VersionId != "" {
+	if !p.versioningEnabled() && versionId != "" {
 		//TODO: Maybe we need to return our custom error here?
 		return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 	}
@@ -2460,7 +2466,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	object := *input.Key
-	if *input.VersionId != "" {
+	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -2470,12 +2476,12 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
+			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
 
-		if string(vId) != *input.VersionId {
+		if string(vId) != versionId {
 			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
+			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
 	}
 
@@ -2483,7 +2489,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		if *input.VersionId != "" {
+		if versionId != "" {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -2502,7 +2508,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	if *input.VersionId != "" {
+	if versionId != "" {
 		isDelMarker, err := p.isObjDeleteMarker(bucket, object)
 		if err != nil {
 			return nil, err
@@ -2577,8 +2583,20 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			TagCount:        tagCount,
 			ContentRange:    &contentRange,
 			StorageClass:    types.StorageClassStandard,
-			VersionId:       input.VersionId,
+			VersionId:       &versionId,
 		}, nil
+	}
+
+	// If versioning is configured get the object versionId
+	if p.versioningEnabled() && versionId == "" {
+		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			versionId = nullVersionId
+		} else if err != nil {
+			return nil, err
+		}
+
+		versionId = string(vId)
 	}
 
 	userMetaData := make(map[string]string)
@@ -2622,7 +2640,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		TagCount:        tagCount,
 		ContentRange:    &contentRange,
 		StorageClass:    types.StorageClassStandard,
-		VersionId:       input.VersionId,
+		VersionId:       &versionId,
 		Body:            &backend.FileSectionReadCloser{R: rdr, F: f},
 	}, nil
 }
