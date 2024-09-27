@@ -466,38 +466,38 @@ func (p *Posix) PutBucketVersioning(_ context.Context, bucket string, status typ
 	return nil
 }
 
-func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (s3response.VersioningConfiguration, error) {
 	if !p.versioningEnabled() {
 		// AWS returns empty response, if versioning is not set
 		//TODO: Maybe we need to return our custom error here?
-		return &s3.GetBucketVersioningOutput{}, nil
+		return s3response.VersioningConfiguration{}, nil
 	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.VersioningConfiguration{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.VersioningConfiguration{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	vData, err := p.meta.RetrieveAttribute(bucket, "", versioningKey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return &s3.GetBucketVersioningOutput{}, nil
+		return s3response.VersioningConfiguration{}, nil
 	}
 
 	switch vData[0] {
 	case 1:
-		return &s3.GetBucketVersioningOutput{
+		return s3response.VersioningConfiguration{
 			Status: types.BucketVersioningStatusEnabled,
 		}, nil
 	case 0:
-		return &s3.GetBucketVersioningOutput{
+		return s3response.VersioningConfiguration{
 			Status: types.BucketVersioningStatusSuspended,
 		}, nil
 	}
 
-	return &s3.GetBucketVersioningOutput{}, nil
+	return s3response.VersioningConfiguration{}, nil
 }
 
 // Returns the specified bucket versioning status

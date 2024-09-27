@@ -39,7 +39,7 @@ type Backend interface {
 	PutBucketAcl(_ context.Context, bucket string, data []byte) error
 	DeleteBucket(context.Context, *s3.DeleteBucketInput) error
 	PutBucketVersioning(_ context.Context, bucket string, status types.BucketVersioningStatus) error
-	GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error)
+	GetBucketVersioning(_ context.Context, bucket string) (s3response.VersioningConfiguration, error)
 	PutBucketPolicy(_ context.Context, bucket string, policy []byte) error
 	GetBucketPolicy(_ context.Context, bucket string) ([]byte, error)
 	DeleteBucketPolicy(_ context.Context, bucket string) error
@@ -129,8 +129,8 @@ func (BackendUnsupported) DeleteBucket(context.Context, *s3.DeleteBucketInput) e
 func (BackendUnsupported) PutBucketVersioning(_ context.Context, bucket string, status types.BucketVersioningStatus) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) GetBucketVersioning(_ context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) GetBucketVersioning(_ context.Context, bucket string) (s3response.VersioningConfiguration, error) {
+	return s3response.VersioningConfiguration{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) PutBucketPolicy(_ context.Context, bucket string, policy []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)

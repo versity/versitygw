@@ -384,3 +384,9 @@ type ListVersionsResult struct {
 	VersionIdMarker     *string
 	Versions            []types.ObjectVersion `xml:"Version"`
 }
+
+type VersioningConfiguration struct {
+	XMLName   xml.Name                     `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
+	Status    types.BucketVersioningStatus `xml:"Status,omitempty"`
+	MFADelete types.MFADeleteStatus        `xml:"MFADelete,omitempty"`
+}
