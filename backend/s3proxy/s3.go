@@ -172,12 +172,15 @@ func (s *S3Proxy) PutBucketVersioning(ctx context.Context, bucket string, status
 	return handleError(err)
 }
 
-func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (*s3.GetBucketVersioningOutput, error) {
+func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 	out, err := s.client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: &bucket,
 	})
 
-	return out, handleError(err)
+	return s3response.GetBucketVersioningOutput{
+		Status:    &out.Status,
+		MFADelete: &out.MFADelete,
+	}, handleError(err)
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {

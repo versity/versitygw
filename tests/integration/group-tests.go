@@ -521,6 +521,7 @@ func TestVersioning(s *S3Conf) {
 	PutBucketVersioning_success(s)
 	// GetBucketVersioning action
 	GetBucketVersioning_non_existing_bucket(s)
+	GetBucketVersioning_empty_response(s)
 	GetBucketVersioning_success(s)
 	Versioning_PutObject_success(s)
 	// CopyObject action
@@ -873,6 +874,7 @@ func GetIntTests() IntTests {
 		"PutBucketVersioning_invalid_status":                                  PutBucketVersioning_invalid_status,
 		"PutBucketVersioning_success":                                         PutBucketVersioning_success,
 		"GetBucketVersioning_non_existing_bucket":                             GetBucketVersioning_non_existing_bucket,
+		"GetBucketVersioning_empty_response":                                  GetBucketVersioning_empty_response,
 		"GetBucketVersioning_success":                                         GetBucketVersioning_success,
 		"Versioning_PutObject_success":                                        Versioning_PutObject_success,
 		"Versioning_CopyObject_success":                                       Versioning_CopyObject_success,
