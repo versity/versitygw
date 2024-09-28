@@ -30,11 +30,11 @@ type S3EventSender interface {
 }
 
 type EventMeta struct {
+	ObjectETag  *string
+	VersionId   *string
 	BucketOwner string
 	EventName   EventType
 	ObjectSize  int64
-	ObjectETag  *string
-	VersionId   *string
 }
 
 type EventSchema struct {
@@ -99,11 +99,11 @@ type EventS3BucketData struct {
 }
 
 type EventObjectData struct {
-	Key       string  `json:"key"`
-	Size      int64   `json:"size"`
 	ETag      *string `json:"eTag"`
 	VersionId *string `json:"versionId"`
+	Key       string  `json:"key"`
 	Sequencer string  `json:"sequencer"`
+	Size      int64   `json:"size"`
 }
 
 type EventConfig struct {

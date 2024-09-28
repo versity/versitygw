@@ -149,8 +149,8 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 }
 
 type accounts struct {
-	root RootUserConfig
 	iam  auth.IAMService
+	root RootUserConfig
 }
 
 func (a accounts) getAccount(access string) (auth.Account, error) {

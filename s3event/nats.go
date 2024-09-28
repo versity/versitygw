@@ -27,10 +27,10 @@ import (
 )
 
 type NatsEventSender struct {
-	topic  string
 	client *nats.Conn
-	mu     sync.Mutex
 	filter EventFilter
+	topic  string
+	mu     sync.Mutex
 }
 
 func InitNatsEventService(url, topic string, filter EventFilter) (S3EventSender, error) {

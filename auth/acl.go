@@ -45,18 +45,18 @@ type GetBucketAclOutput struct {
 
 type PutBucketAclInput struct {
 	Bucket              *string
-	ACL                 types.BucketCannedACL
 	AccessControlPolicy *AccessControlPolicy
 	GrantFullControl    *string
 	GrantRead           *string
 	GrantReadACP        *string
 	GrantWrite          *string
 	GrantWriteACP       *string
+	ACL                 types.BucketCannedACL
 }
 
 type AccessControlPolicy struct {
-	AccessControlList AccessControlList `xml:"AccessControlList"`
 	Owner             *types.Owner
+	AccessControlList AccessControlList `xml:"AccessControlList"`
 }
 
 type AccessControlList struct {
@@ -352,13 +352,13 @@ func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
 }
 
 type AccessOptions struct {
-	Acl           ACL
 	AclPermission types.Permission
-	IsRoot        bool
-	Acc           Account
 	Bucket        string
 	Object        string
 	Action        Action
+	Acl           ACL
+	Acc           Account
+	IsRoot        bool
 	Readonly      bool
 }
 

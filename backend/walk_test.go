@@ -32,8 +32,8 @@ import (
 
 type walkTest struct {
 	fsys     fs.FS
-	expected backend.WalkResults
 	getobj   backend.GetObjFunc
+	expected backend.WalkResults
 }
 
 func getObj(path string, d fs.DirEntry) (s3response.Object, error) {

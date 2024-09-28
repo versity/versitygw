@@ -41,10 +41,10 @@ const (
 // data requests where the data size is not known until
 // the data is completely read.
 type PresignedAuthReader struct {
+	r      io.Reader
 	ctx    *fiber.Ctx
 	auth   AuthData
 	secret string
-	r      io.Reader
 	debug  bool
 }
 

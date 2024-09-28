@@ -76,9 +76,9 @@ var (
 )
 
 type Opts struct {
-	RootAccount            Account
-	Dir                    string
-	LDAPServerURL          string
+	VaultMountPath         string
+	S3Secret               string
+	VaultRootToken         string
 	LDAPBindDN             string
 	LDAPPassword           string
 	LDAPQueryBase          string
@@ -90,23 +90,23 @@ type Opts struct {
 	LDAPGroupIdAtr         string
 	VaultEndpointURL       string
 	VaultSecretStoragePath string
-	VaultMountPath         string
-	VaultRootToken         string
-	VaultRoleId            string
+	LDAPServerURL          string
+	S3Endpoint             string
+	Dir                    string
 	VaultRoleSecret        string
 	VaultServerCert        string
 	VaultClientCert        string
 	VaultClientCertKey     string
 	S3Access               string
-	S3Secret               string
+	VaultRoleId            string
 	S3Region               string
 	S3Bucket               string
-	S3Endpoint             string
+	RootAccount            Account
+	CachePrune             int
+	CacheTTL               int
 	S3DisableSSlVerfiy     bool
 	S3Debug                bool
 	CacheDisable           bool
-	CacheTTL               int
-	CachePrune             int
 }
 
 func New(o *Opts) (IAMService, error) {

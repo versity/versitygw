@@ -30,17 +30,17 @@ type PutObjectOutput struct {
 
 // Part describes part metadata.
 type Part struct {
-	PartNumber   int
 	LastModified time.Time
 	ETag         string
+	PartNumber   int
 	Size         int64
 }
 
 func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias Part
 	aux := &struct {
-		LastModified string `xml:"LastModified"`
 		*Alias
+		LastModified string `xml:"LastModified"`
 	}{
 		Alias: (*Alias)(&p),
 	}
@@ -52,34 +52,27 @@ func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 // ListPartsResponse - s3 api list parts response.
 type ListPartsResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`
-
-	Bucket   string
-	Key      string
-	UploadID string `xml:"UploadId"`
-
-	Initiator Initiator
-	Owner     Owner
-
-	// The class of storage used to store the object.
-	StorageClass types.StorageClass
-
+	XMLName              xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`
+	Initiator            Initiator
+	Owner                Owner
+	Bucket               string
+	Key                  string
+	UploadID             string `xml:"UploadId"`
+	StorageClass         types.StorageClass
+	Parts                []Part `xml:"Part"`
 	PartNumberMarker     int
 	NextPartNumberMarker int
 	MaxParts             int
 	IsTruncated          bool
-
-	// List of parts.
-	Parts []Part `xml:"Part"`
 }
 
 type GetObjectAttributesResult struct {
 	ETag         *string
 	LastModified *time.Time
 	ObjectSize   *int64
-	StorageClass types.StorageClass
 	VersionId    *string
 	ObjectParts  *ObjectParts
+	StorageClass types.StorageClass
 }
 
 func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -100,37 +93,31 @@ func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartEle
 }
 
 type ObjectParts struct {
+	Parts                []types.ObjectPart `xml:"Part"`
 	PartNumberMarker     int
 	NextPartNumberMarker int
 	MaxParts             int
 	IsTruncated          bool
-	Parts                []types.ObjectPart `xml:"Part"`
 }
 
 // ListMultipartUploadsResponse - s3 api list multipart uploads response.
 type ListMultipartUploadsResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListMultipartUploadsResult" json:"-"`
-
-	Bucket             string
+	XMLName            xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListMultipartUploadsResult" json:"-"`
+	Delimiter          string
 	KeyMarker          string
 	UploadIDMarker     string `xml:"UploadIdMarker"`
 	NextKeyMarker      string
 	NextUploadIDMarker string `xml:"NextUploadIdMarker"`
-	Delimiter          string
+	Bucket             string
 	Prefix             string
-	EncodingType       string `xml:"EncodingType,omitempty"`
+	EncodingType       string   `xml:"EncodingType,omitempty"`
+	Uploads            []Upload `xml:"Upload"`
+	CommonPrefixes     []CommonPrefix
 	MaxUploads         int
 	IsTruncated        bool
-
-	// List of pending uploads.
-	Uploads []Upload `xml:"Upload"`
-
-	// Delimed common prefixes.
-	CommonPrefixes []CommonPrefix
 }
 
 type ListObjectsResult struct {
-	XMLName        xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
 	Name           *string
 	Prefix         *string
 	Marker         *string
@@ -138,25 +125,26 @@ type ListObjectsResult struct {
 	MaxKeys        *int32
 	Delimiter      *string
 	IsTruncated    *bool
+	XMLName        xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
+	EncodingType   types.EncodingType
 	Contents       []Object
 	CommonPrefixes []types.CommonPrefix
-	EncodingType   types.EncodingType
 }
 
 type ListObjectsV2Result struct {
-	XMLName               xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
+	KeyCount              *int32
 	Name                  *string
 	Prefix                *string
 	StartAfter            *string
 	ContinuationToken     *string
 	NextContinuationToken *string
-	KeyCount              *int32
 	MaxKeys               *int32
 	Delimiter             *string
 	IsTruncated           *bool
+	XMLName               xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult" json:"-"`
+	EncodingType          types.EncodingType
 	Contents              []Object
 	CommonPrefixes        []types.CommonPrefix
-	EncodingType          types.EncodingType
 }
 
 type Object struct {
@@ -188,19 +176,19 @@ func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 // Upload describes in progress multipart upload
 type Upload struct {
-	Key          string
-	UploadID     string `xml:"UploadId"`
+	Initiated    time.Time
 	Initiator    Initiator
 	Owner        Owner
+	Key          string
+	UploadID     string `xml:"UploadId"`
 	StorageClass types.StorageClass
-	Initiated    time.Time
 }
 
 func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias Upload
 	aux := &struct {
-		Initiated string `xml:"Initiated"`
 		*Alias
+		Initiated string `xml:"Initiated"`
 	}{
 		Alias: (*Alias)(&u),
 	}
@@ -252,11 +240,11 @@ type DeleteResult struct {
 }
 type SelectObjectContentPayload struct {
 	Expression          *string
-	ExpressionType      types.ExpressionType
 	RequestProgress     *types.RequestProgress
 	InputSerialization  *types.InputSerialization
 	OutputSerialization *types.OutputSerialization
 	ScanRange           *types.ScanRange
+	ExpressionType      types.ExpressionType
 }
 
 type SelectObjectContentResult struct {
@@ -279,15 +267,15 @@ type ListAllMyBucketsResult struct {
 }
 
 type ListAllMyBucketsEntry struct {
-	Name         string
 	CreationDate time.Time
+	Name         string
 }
 
 func (r ListAllMyBucketsEntry) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias ListAllMyBucketsEntry
 	aux := &struct {
-		CreationDate string `xml:"CreationDate"`
 		*Alias
+		CreationDate string `xml:"CreationDate"`
 	}{
 		Alias: (*Alias)(&r),
 	}
@@ -316,8 +304,8 @@ type CopyObjectResult struct {
 func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias CopyObjectResult
 	aux := &struct {
-		LastModified string `xml:"LastModified"`
 		*Alias
+		LastModified string `xml:"LastModified"`
 	}{
 		Alias: (*Alias)(&r),
 	}
@@ -386,7 +374,7 @@ type ListVersionsResult struct {
 }
 
 type GetBucketVersioningOutput struct {
-	XMLName   xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
 	MFADelete *types.MFADeleteStatus
 	Status    *types.BucketVersioningStatus
+	XMLName   xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
 }

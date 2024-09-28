@@ -204,7 +204,6 @@ func genErrorMessage(errorCode, errorMessage string) []byte {
 type GetProgress func() (bytesScanned int64, bytesProcessed int64)
 
 type MessageHandler struct {
-	sync.Mutex
 	ctx           context.Context
 	cancel        context.CancelFunc
 	writer        *bufio.Writer
@@ -213,6 +212,7 @@ type MessageHandler struct {
 	stopCh        chan bool
 	resetCh       chan bool
 	bytesReturned int64
+	sync.Mutex
 }
 
 // NewMessageHandler creates a new MessageHandler instance and starts the event streaming

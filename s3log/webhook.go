@@ -33,8 +33,8 @@ import (
 
 // WebhookLogger is a webhook URL audit log
 type WebhookLogger struct {
-	mu  sync.Mutex
 	url string
+	mu  sync.Mutex
 }
 
 var _ AuditLogger = &WebhookLogger{}

@@ -47,33 +47,15 @@ type ScoutfsOpts struct {
 }
 
 type ScoutFS struct {
-	*posix.Posix
-	rootfd  *os.File
-	rootdir string
-
-	// bucket/object metadata storage facility
 	meta meta.MetadataStorer
-
-	// glaciermode enables the following behavior:
-	// GET object:  if file offline, return invalid object state
-	// HEAD object: if file offline, set obj storage class to GLACIER
-	//              if file offline and staging, x-amz-restore: ongoing-request="true"
-	//              if file offline and not staging, x-amz-restore: ongoing-request="false"
-	//              if file online, x-amz-restore: ongoing-request="false", expiry-date="Fri, 2 Dec 2050 00:00:00 GMT"
-	//              note: this expiry-date is not used but provided for client glacier compatibility
-	// ListObjects: if file offline, set obj storage class to GLACIER
-	// RestoreObject: add batch stage request to file
+	*posix.Posix
+	rootfd      *os.File
+	rootdir     string
+	euid        int
+	egid        int
 	glaciermode bool
-
-	// chownuid/gid enable chowning of files to the account uid/gid
-	// when objects are uploaded
-	chownuid bool
-	chowngid bool
-
-	// euid/egid are the effective uid/gid of the running versitygw process
-	// used to determine if chowning is needed
-	euid int
-	egid int
+	chownuid    bool
+	chowngid    bool
 }
 
 var _ backend.Backend = &ScoutFS{}

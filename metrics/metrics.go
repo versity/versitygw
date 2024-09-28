@@ -43,13 +43,11 @@ type Tag struct {
 
 // Manager is a manager of metrics plugins
 type Manager struct {
-	wg  sync.WaitGroup
-	ctx context.Context
-
-	config Config
-
-	publishers  []publisher
+	ctx         context.Context
 	addDataChan chan datapoint
+	config      Config
+	publishers  []publisher
+	wg          sync.WaitGroup
 }
 
 type Config struct {
@@ -220,6 +218,6 @@ func (m *Manager) addForwarder(addChan <-chan datapoint) {
 
 type datapoint struct {
 	key   string
-	value int64
 	tags  []Tag
+	value int64
 }

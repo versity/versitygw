@@ -41,10 +41,10 @@ const (
 // the data is completely read.
 type AuthReader struct {
 	ctx    *fiber.Ctx
+	r      *HashReader
 	auth   AuthData
 	secret string
 	size   int
-	r      *HashReader
 	debug  bool
 }
 

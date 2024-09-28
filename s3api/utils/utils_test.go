@@ -47,11 +47,11 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 	request2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
 
 	tests := []struct {
-		name    string
 		args    args
 		want    *http.Request
-		wantErr bool
+		name    string
 		hdrs    []string
+		wantErr bool
 	}{
 		{
 			name: "Success-response",
@@ -99,9 +99,9 @@ func TestGetUserMetaData(t *testing.T) {
 	req := ctx.Request()
 
 	tests := []struct {
-		name         string
 		args         args
 		wantMetadata map[string]string
+		name         string
 	}{
 		{
 			name: "Success-empty-response",
@@ -288,9 +288,9 @@ func TestFilterObjectAttributes(t *testing.T) {
 	}
 	etag, objSize := "etag", int64(3222)
 	tests := []struct {
-		name string
 		args args
 		want s3response.GetObjectAttributesResult
+		name string
 	}{
 		{
 			name: "keep only ETag",

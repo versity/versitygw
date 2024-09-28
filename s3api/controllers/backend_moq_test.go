@@ -621,12 +621,9 @@ type BackendMock struct {
 		}
 		// PutBucketTagging holds details about calls to the PutBucketTagging method.
 		PutBucketTagging []struct {
-			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// Bucket is the bucket argument value.
-			Bucket string
-			// Tags is the tags argument value.
-			Tags map[string]string
+			Tags            map[string]string
+			Bucket          string
 		}
 		// PutBucketVersioning holds details about calls to the PutBucketVersioning method.
 		PutBucketVersioning []struct {
@@ -675,29 +672,19 @@ type BackendMock struct {
 		}
 		// PutObjectRetention holds details about calls to the PutObjectRetention method.
 		PutObjectRetention []struct {
-			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// Bucket is the bucket argument value.
-			Bucket string
-			// Object is the object argument value.
-			Object string
-			// VersionId is the versionId argument value.
-			VersionId string
-			// Bypass is the bypass argument value.
-			Bypass bool
-			// Retention is the retention argument value.
-			Retention []byte
+			Bucket          string
+			Object          string
+			VersionId       string
+			Retention       []byte
+			Bypass          bool
 		}
 		// PutObjectTagging holds details about calls to the PutObjectTagging method.
 		PutObjectTagging []struct {
-			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// Bucket is the bucket argument value.
-			Bucket string
-			// Object is the object argument value.
-			Object string
-			// Tags is the tags argument value.
-			Tags map[string]string
+			Tags            map[string]string
+			Bucket          string
+			Object          string
 		}
 		// RestoreObject holds details about calls to the RestoreObject method.
 		RestoreObject []struct {
@@ -2170,8 +2157,8 @@ func (mock *BackendMock) PutBucketTagging(contextMoqParam context.Context, bucke
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
-		Bucket          string
 		Tags            map[string]string
+		Bucket          string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
@@ -2189,13 +2176,13 @@ func (mock *BackendMock) PutBucketTagging(contextMoqParam context.Context, bucke
 //	len(mockedBackend.PutBucketTaggingCalls())
 func (mock *BackendMock) PutBucketTaggingCalls() []struct {
 	ContextMoqParam context.Context
-	Bucket          string
 	Tags            map[string]string
+	Bucket          string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
-		Bucket          string
 		Tags            map[string]string
+		Bucket          string
 	}
 	mock.lockPutBucketTagging.RLock()
 	calls = mock.calls.PutBucketTagging
@@ -2413,8 +2400,8 @@ func (mock *BackendMock) PutObjectRetention(contextMoqParam context.Context, buc
 		Bucket          string
 		Object          string
 		VersionId       string
-		Bypass          bool
 		Retention       []byte
+		Bypass          bool
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
@@ -2438,16 +2425,16 @@ func (mock *BackendMock) PutObjectRetentionCalls() []struct {
 	Bucket          string
 	Object          string
 	VersionId       string
-	Bypass          bool
 	Retention       []byte
+	Bypass          bool
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
 		VersionId       string
-		Bypass          bool
 		Retention       []byte
+		Bypass          bool
 	}
 	mock.lockPutObjectRetention.RLock()
 	calls = mock.calls.PutObjectRetention
@@ -2462,9 +2449,9 @@ func (mock *BackendMock) PutObjectTagging(contextMoqParam context.Context, bucke
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
+		Tags            map[string]string
 		Bucket          string
 		Object          string
-		Tags            map[string]string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
@@ -2483,15 +2470,15 @@ func (mock *BackendMock) PutObjectTagging(contextMoqParam context.Context, bucke
 //	len(mockedBackend.PutObjectTaggingCalls())
 func (mock *BackendMock) PutObjectTaggingCalls() []struct {
 	ContextMoqParam context.Context
+	Tags            map[string]string
 	Bucket          string
 	Object          string
-	Tags            map[string]string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
+		Tags            map[string]string
 		Bucket          string
 		Object          string
-		Tags            map[string]string
 	}
 	mock.lockPutObjectTagging.RLock()
 	calls = mock.calls.PutObjectTagging

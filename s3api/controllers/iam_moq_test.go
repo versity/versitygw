@@ -86,10 +86,8 @@ type IAMServiceMock struct {
 		}
 		// UpdateUserAccount holds details about calls to the UpdateUserAccount method.
 		UpdateUserAccount []struct {
-			// Access is the access argument value.
+			Props  auth.MutableProps
 			Access string
-			// Props is the props argument value.
-			Props auth.MutableProps
 		}
 	}
 	lockCreateAccount     sync.RWMutex
@@ -256,8 +254,8 @@ func (mock *IAMServiceMock) UpdateUserAccount(access string, props auth.MutableP
 		panic("IAMServiceMock.UpdateUserAccountFunc: method is nil but IAMService.UpdateUserAccount was just called")
 	}
 	callInfo := struct {
-		Access string
 		Props  auth.MutableProps
+		Access string
 	}{
 		Access: access,
 		Props:  props,
@@ -273,12 +271,12 @@ func (mock *IAMServiceMock) UpdateUserAccount(access string, props auth.MutableP
 //
 //	len(mockedIAMService.UpdateUserAccountCalls())
 func (mock *IAMServiceMock) UpdateUserAccountCalls() []struct {
-	Access string
 	Props  auth.MutableProps
+	Access string
 } {
 	var calls []struct {
-		Access string
 		Props  auth.MutableProps
+		Access string
 	}
 	mock.lockUpdateUserAccount.RLock()
 	calls = mock.calls.UpdateUserAccount

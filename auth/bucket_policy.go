@@ -63,10 +63,10 @@ func (bp *BucketPolicy) isAllowed(principal string, action Action, resource stri
 }
 
 type BucketPolicyItem struct {
-	Effect     BucketPolicyAccessType `json:"Effect"`
 	Principals Principals             `json:"Principal"`
 	Actions    Actions                `json:"Action"`
 	Resources  Resources              `json:"Resource"`
+	Effect     BucketPolicyAccessType `json:"Effect"`
 }
 
 func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {

@@ -34,10 +34,10 @@ const (
 
 // FileLogger is a local file audit log
 type FileLogger struct {
-	logfile string
 	f       *os.File
-	gotErr  bool
+	logfile string
 	mu      sync.Mutex
+	gotErr  bool
 }
 
 var _ AuditLogger = &FileLogger{}

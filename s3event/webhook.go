@@ -30,9 +30,9 @@ import (
 )
 
 type Webhook struct {
-	url    string
 	client *http.Client
 	filter EventFilter
+	url    string
 	mu     sync.Mutex
 }
 

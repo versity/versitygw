@@ -33,8 +33,8 @@ type AuditLogger interface {
 
 type LogMeta struct {
 	BucketOwner string
-	ObjectSize  int64
 	Action      string
+	ObjectSize  int64
 	HttpStatus  int
 }
 
@@ -45,52 +45,52 @@ type LogConfig struct {
 }
 
 type LogFields struct {
-	BucketOwner        string
-	Bucket             string
 	Time               time.Time
-	RemoteIP           string
-	Requester          string
+	HostID             string
 	RequestID          string
+	AclRequired        string
+	Requester          string
+	AccessPointARN     string
 	Operation          string
 	Key                string
-	RequestURI         string
-	HttpStatus         int
-	ErrorCode          string
-	BytesSent          int
-	ObjectSize         int64
-	TotalTime          int64
-	TurnAroundTime     int64
 	Referer            string
+	TLSVersion         string
+	ErrorCode          string
+	HostHeader         string
+	AuthenticationType string
+	RemoteIP           string
+	Bucket             string
+	RequestURI         string
 	UserAgent          string
 	VersionID          string
-	HostID             string
+	BucketOwner        string
 	SignatureVersion   string
 	CipherSuite        string
-	AuthenticationType string
-	HostHeader         string
-	TLSVersion         string
-	AccessPointARN     string
-	AclRequired        string
+	ObjectSize         int64
+	BytesSent          int
+	HttpStatus         int
+	TurnAroundTime     int64
+	TotalTime          int64
 }
 
 type AdminLogFields struct {
 	Time               time.Time
-	RemoteIP           string
-	Requester          string
+	UserAgent          string
+	Referer            string
 	RequestID          string
 	Operation          string
-	RequestURI         string
-	HttpStatus         int
-	ErrorCode          string
-	BytesSent          int
-	TotalTime          int64
-	TurnAroundTime     int64
-	Referer            string
-	UserAgent          string
-	SignatureVersion   string
-	CipherSuite        string
-	AuthenticationType string
 	TLSVersion         string
+	AuthenticationType string
+	Requester          string
+	ErrorCode          string
+	RequestURI         string
+	CipherSuite        string
+	SignatureVersion   string
+	RemoteIP           string
+	BytesSent          int
+	TurnAroundTime     int64
+	HttpStatus         int
+	TotalTime          int64
 }
 
 type Loggers struct {

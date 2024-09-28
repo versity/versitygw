@@ -48,15 +48,15 @@ const (
 // object data stream
 type ChunkReader struct {
 	r                io.Reader
-	signingKey       []byte
+	chunkHash        hash.Hash
 	prevSig          string
 	parsedSig        string
+	strToSignPrefix  string
+	signingKey       []byte
+	stash            []byte
 	currentChunkSize int64
 	chunkDataLeft    int64
 	trailerExpected  int
-	stash            []byte
-	chunkHash        hash.Hash
-	strToSignPrefix  string
 	skipcheck        bool
 }
 

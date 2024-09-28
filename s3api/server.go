@@ -29,15 +29,15 @@ import (
 )
 
 type S3ApiServer struct {
-	app      *fiber.App
 	backend  backend.Backend
+	app      *fiber.App
 	router   *S3ApiRouter
-	port     string
 	cert     *tls.Certificate
+	port     string
+	health   string
 	quiet    bool
 	debug    bool
 	readonly bool
-	health   string
 }
 
 func New(

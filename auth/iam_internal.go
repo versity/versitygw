@@ -33,15 +33,9 @@ const (
 
 // IAMServiceInternal manages the internal IAM service
 type IAMServiceInternal struct {
-	// This mutex will help with racing updates to the IAM data
-	// from multiple requests to this gateway instance, but
-	// will not help with racing updates to multiple load balanced
-	// gateway instances. This is a limitation of the internal
-	// IAM service. All account updates should be sent to a single
-	// gateway instance if possible.
-	sync.RWMutex
 	dir     string
 	rootAcc Account
+	sync.RWMutex
 }
 
 // UpdateAcctFunc accepts the current data and returns the new data to be stored

@@ -270,9 +270,9 @@ func (c AdminController) ListBuckets(ctx *fiber.Ctx) error {
 }
 
 type metaOptions struct {
+	logger s3log.AuditLogger
 	action string
 	status int
-	logger s3log.AuditLogger
 }
 
 func sendResponse(ctx *fiber.Ctx, err error, data any, m *metaOptions) error {

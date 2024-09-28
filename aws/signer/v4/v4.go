@@ -85,40 +85,18 @@ type keyDerivator interface {
 
 // SignerOptions is the SigV4 Signer options.
 type SignerOptions struct {
-	// Disables the Signer's moving HTTP header key/value pairs from the HTTP
-	// request header to the request's query string. This is most commonly used
-	// with pre-signed requests preventing headers from being added to the
-	// request's query string.
-	DisableHeaderHoisting bool
-
-	// Disables the automatic escaping of the URI path of the request for the
-	// siganture's canonical string's path. For services that do not need additional
-	// escaping then use this to disable the signer escaping the path.
-	//
-	// S3 is an example of a service that does not need additional escaping.
-	//
-	// http://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+	Logger                 logging.Logger
+	DisableHeaderHoisting  bool
 	DisableURIPathEscaping bool
-
-	// The logger to send log messages to.
-	Logger logging.Logger
-
-	// Enable logging of signed requests.
-	// This will enable logging of the canonical request, the string to sign, and for presigning the subsequent
-	// presigned URL.
-	LogSigning bool
-
-	// Disables setting the session token on the request as part of signing
-	// through X-Amz-Security-Token. This is needed for variations of v4 that
-	// present the token elsewhere.
-	DisableSessionToken bool
+	LogSigning             bool
+	DisableSessionToken    bool
 }
 
 // Signer applies AWS v4 signing to given request. Use this to sign requests
 // that need to be signed with AWS V4 Signatures.
 type Signer struct {
-	options      SignerOptions
 	keyDerivator keyDerivator
+	options      SignerOptions
 }
 
 // NewSigner returns a new SigV4 Signer
@@ -133,17 +111,15 @@ func NewSigner(optFns ...func(signer *SignerOptions)) *Signer {
 }
 
 type httpSigner struct {
-	Request      *http.Request
-	ServiceName  string
-	Region       string
-	Time         v4Internal.SigningTime
-	Credentials  aws.Credentials
-	KeyDerivator keyDerivator
-	IsPreSign    bool
-	SignedHdrs   []string
-
-	PayloadHash string
-
+	KeyDerivator           keyDerivator
+	Request                *http.Request
+	Credentials            aws.Credentials
+	Time                   v4Internal.SigningTime
+	ServiceName            string
+	Region                 string
+	PayloadHash            string
+	SignedHdrs             []string
+	IsPreSign              bool
 	DisableHeaderHoisting  bool
 	DisableURIPathEscaping bool
 	DisableSessionToken    bool
