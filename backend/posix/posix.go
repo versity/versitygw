@@ -2792,7 +2792,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	size := fi.Size()
 
 	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
-	status, err := p.GetObjectLegalHold(ctx, bucket, object, "")
+	status, err := p.GetObjectLegalHold(ctx, bucket, object, *input.VersionId)
 	if err == nil {
 		if *status {
 			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
@@ -2803,7 +2803,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	var objectLockMode types.ObjectLockMode
 	var objectLockRetainUntilDate *time.Time
-	retention, err := p.GetObjectRetention(ctx, bucket, object, "")
+	retention, err := p.GetObjectRetention(ctx, bucket, object, *input.VersionId)
 	if err == nil {
 		var config types.ObjectLockRetention
 		if err := json.Unmarshal(retention, &config); err == nil {
@@ -3495,8 +3495,30 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 		statusData = []byte{0}
 	}
 
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
 	err = p.meta.StoreAttribute(bucket, object, objectLegalHoldKey, statusData)
 	if errors.Is(err, fs.ErrNotExist) {
+		if versionId != "" {
+			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -3515,8 +3537,30 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
 	data, err := p.meta.RetrieveAttribute(bucket, object, objectLegalHoldKey)
 	if errors.Is(err, fs.ErrNotExist) {
+		if versionId != "" {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
@@ -3557,8 +3601,30 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
 	}
 
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
 	objectLockCfg, err := p.meta.RetrieveAttribute(bucket, object, objectRetentionKey)
 	if errors.Is(err, fs.ErrNotExist) {
+		if versionId != "" {
+			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
@@ -3604,8 +3670,30 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
 	data, err := p.meta.RetrieveAttribute(bucket, object, objectRetentionKey)
 	if errors.Is(err, fs.ErrNotExist) {
+		if versionId != "" {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
