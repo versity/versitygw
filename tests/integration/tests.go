@@ -11745,3 +11745,336 @@ func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
 		return nil
 	}, withVersioning())
 }
+
+func Versionsin_PutObjectRetention_invalid_versionId(s *S3Conf) error {
+	testName := "Versionsin_PutObjectRetention_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		rDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &rDate,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectRetention_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
+	testName := "Versioning_Put_GetObjectRetention_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+		objVersion := objVersions[1]
+
+		rDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objVersion.VersionId,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &rDate,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objVersion.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected the object retention mode to be %v, instead got %v", types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versionsin_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
+	testName := "Versionsin_PutObjectLegalHold_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectLegalHold_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
+	testName := "Versioning_Put_GetObjectLegalHold_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+		objVersion := objVersions[1]
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objVersion.VersionId,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objVersion.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected the object version legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
+	testName := "Versioning_WORM_obj_version_locked_with_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+		version := objVersions[1]
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) error {
+	testName := "Versioning_WORM_obj_version_locked_with_governance_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+		version := objVersions[0]
+
+		rDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &rDate,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}
+
+func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) error {
+	testName := "Versioning_WORM_obj_version_locked_with_compliance_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+		version := objVersions[0]
+
+		rDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &rDate,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: version.VersionId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock(), withVersioning())
+}

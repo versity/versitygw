@@ -135,7 +135,7 @@ func ParseObjectLegalHoldOutput(status *bool) *types.ObjectLockLegalHold {
 	}
 }
 
-func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []string, bypass bool, be backend.Backend) error {
+func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []types.ObjectIdentifier, bypass bool, be backend.Backend) error {
 	data, err := be.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
@@ -171,8 +171,15 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 	}
 
 	for _, obj := range objects {
+		var key, versionId string
+		if obj.Key != nil {
+			key = *obj.Key
+		}
+		if obj.VersionId != nil {
+			versionId = *obj.VersionId
+		}
 		checkRetention := true
-		retentionData, err := be.GetObjectRetention(ctx, bucket, obj, "")
+		retentionData, err := be.GetObjectRetention(ctx, bucket, key, versionId)
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
 			continue
 		}
@@ -203,7 +210,7 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 							if err != nil {
 								return err
 							}
-							err = VerifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
+							err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
 							if err != nil {
 								return s3err.GetAPIError(s3err.ErrObjectLocked)
 							}
@@ -217,7 +224,7 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 
 		checkLegalHold := true
 
-		status, err := be.GetObjectLegalHold(ctx, bucket, obj, "")
+		status, err := be.GetObjectLegalHold(ctx, bucket, key, versionId)
 		if err != nil {
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
 				checkLegalHold = false
@@ -243,7 +250,7 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 					if err != nil {
 						return err
 					}
-					err = VerifyBucketPolicy(policy, userAccess, bucket, obj, BypassGovernanceRetentionAction)
+					err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
 					if err != nil {
 						return s3err.GetAPIError(s3err.ErrObjectLocked)
 					}

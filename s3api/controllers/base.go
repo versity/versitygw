@@ -2243,7 +2243,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{keyStart}, true, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &keyStart}}, true, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2527,7 +2527,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	// The AWS CLI sends 'True', while Go SDK sends 'true'
 	bypass := strings.EqualFold(bypassHdr, "true")
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, utils.ParseDeleteObjects(dObj.Objects), bypass, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, dObj.Objects, bypass, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2680,7 +2680,7 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 	// The AWS CLI sends 'True', while Go SDK sends 'true'
 	bypass := strings.EqualFold(bypassHdr, "true")
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []string{key}, bypass, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key, VersionId: &versionId}}, bypass, c.be)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{

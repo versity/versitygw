@@ -553,6 +553,18 @@ func TestVersioning(s *S3Conf) {
 	Versioning_Multipart_Upload_overwrite_an_object(s)
 	Versioning_UploadPartCopy_non_existing_versionId(s)
 	Versioning_UploadPartCopy_from_an_object_version(s)
+	// Object-Lock Retention
+	Versionsin_PutObjectRetention_invalid_versionId(s)
+	Versioning_GetObjectRetention_invalid_versionId(s)
+	Versioning_Put_GetObjectRetention_success(s)
+	// Object-Lock Legal hold
+	Versionsin_PutObjectLegalHold_invalid_versionId(s)
+	Versioning_GetObjectLegalHold_invalid_versionId(s)
+	Versioning_Put_GetObjectLegalHold_success(s)
+	// WORM protection
+	Versioning_WORM_obj_version_locked_with_legal_hold(s)
+	Versioning_WORM_obj_version_locked_with_governance_retention(s)
+	Versioning_WORM_obj_version_locked_with_compliance_retention(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error
@@ -900,5 +912,14 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_overwrite_an_object":                     Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_non_existing_versionId":                    Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                    Versioning_UploadPartCopy_from_an_object_version,
+		"Versionsin_PutObjectRetention_invalid_versionId":                     Versionsin_PutObjectRetention_invalid_versionId,
+		"Versioning_GetObjectRetention_invalid_versionId":                     Versioning_GetObjectRetention_invalid_versionId,
+		"Versioning_Put_GetObjectRetention_success":                           Versioning_Put_GetObjectRetention_success,
+		"Versionsin_PutObjectLegalHold_invalid_versionId":                     Versionsin_PutObjectLegalHold_invalid_versionId,
+		"Versioning_GetObjectLegalHold_invalid_versionId":                     Versioning_GetObjectLegalHold_invalid_versionId,
+		"Versioning_Put_GetObjectLegalHold_success":                           Versioning_Put_GetObjectLegalHold_success,
+		"Versioning_WORM_obj_version_locked_with_legal_hold":                  Versioning_WORM_obj_version_locked_with_legal_hold,
+		"Versioning_WORM_obj_version_locked_with_governance_retention":        Versioning_WORM_obj_version_locked_with_governance_retention,
+		"Versioning_WORM_obj_version_locked_with_compliance_retention":        Versioning_WORM_obj_version_locked_with_compliance_retention,
 	}
 }

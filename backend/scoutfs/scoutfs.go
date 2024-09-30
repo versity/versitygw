@@ -554,7 +554,7 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	contentLength := fi.Size()
 
 	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
-	status, err := s.Posix.GetObjectLegalHold(ctx, bucket, object, "")
+	status, err := s.Posix.GetObjectLegalHold(ctx, bucket, object, *input.VersionId)
 	if err == nil {
 		if *status {
 			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
@@ -565,7 +565,7 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 
 	var objectLockMode types.ObjectLockMode
 	var objectLockRetainUntilDate *time.Time
-	retention, err := s.Posix.GetObjectRetention(ctx, bucket, object, "")
+	retention, err := s.Posix.GetObjectRetention(ctx, bucket, object, *input.VersionId)
 	if err == nil {
 		var config types.ObjectLockRetention
 		if err := json.Unmarshal(retention, &config); err == nil {
