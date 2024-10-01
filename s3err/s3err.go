@@ -134,6 +134,7 @@ const (
 	ErrKeyTooLong
 	ErrInvalidVersionId
 	ErrNoSuchVersion
+	ErrSuspendedVersioningNotAllowed
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -536,6 +537,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "NoSuchVersion",
 		Description:    "The specified version does not exist.",
 		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrSuspendedVersioningNotAllowed: {
+		Code:           "InvalidBucketState",
+		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// non aws errors

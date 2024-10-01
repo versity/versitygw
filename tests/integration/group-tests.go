@@ -553,6 +553,9 @@ func TestVersioning(s *S3Conf) {
 	Versioning_Multipart_Upload_overwrite_an_object(s)
 	Versioning_UploadPartCopy_non_existing_versionId(s)
 	Versioning_UploadPartCopy_from_an_object_version(s)
+	// Object lock configuration
+	Versioning_Enable_object_lock(s)
+	Versioning_status_switch_to_suspended_with_object_lock(s)
 	// Object-Lock Retention
 	Versionsin_PutObjectRetention_invalid_versionId(s)
 	Versioning_GetObjectRetention_invalid_versionId(s)
@@ -912,6 +915,8 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_overwrite_an_object":                     Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_non_existing_versionId":                    Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                    Versioning_UploadPartCopy_from_an_object_version,
+		"Versioning_Enable_object_lock":                                       Versioning_Enable_object_lock,
+		"Versioning_status_switch_to_suspended_with_object_lock":              Versioning_status_switch_to_suspended_with_object_lock,
 		"Versionsin_PutObjectRetention_invalid_versionId":                     Versionsin_PutObjectRetention_invalid_versionId,
 		"Versioning_GetObjectRetention_invalid_versionId":                     Versioning_GetObjectRetention_invalid_versionId,
 		"Versioning_Put_GetObjectRetention_success":                           Versioning_Put_GetObjectRetention_success,
