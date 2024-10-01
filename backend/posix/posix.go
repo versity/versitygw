@@ -325,6 +325,15 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	}
 
 	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {
+		// First enable bucket versioning
+		// Bucket versioning is enabled automatically with object lock
+		if p.versioningEnabled() {
+			err = p.PutBucketVersioning(ctx, bucket, types.BucketVersioningStatusEnabled)
+			if err != nil {
+				return err
+			}
+		}
+
 		now := time.Now()
 		defaultLock := auth.BucketLockConfig{
 			Enabled:   true,
@@ -437,7 +446,7 @@ func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) 
 	return nil
 }
 
-func (p *Posix) PutBucketVersioning(_ context.Context, bucket string, status types.BucketVersioningStatus) error {
+func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
 	if !p.versioningEnabled() {
 		//TODO: Maybe we need to return our custom error here?
 		return nil
@@ -457,6 +466,18 @@ func (p *Posix) PutBucketVersioning(_ context.Context, bucket string, status typ
 		// '1' maps to 'Enabled'
 		versioning = []byte{1}
 	case types.BucketVersioningStatusSuspended:
+		lockRaw, err := p.GetObjectLockConfiguration(ctx, bucket)
+		if err != nil {
+			return err
+		}
+		lockStatus, err := auth.ParseBucketLockConfigurationOutput(lockRaw)
+		if err != nil {
+			return err
+		}
+		if lockStatus.ObjectLockEnabled == types.ObjectLockEnabledEnabled {
+			return s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)
+		}
+
 		// '0' maps to 'Suspended'
 		versioning = []byte{0}
 	}
@@ -3409,7 +3430,7 @@ func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return p.PutBucketPolicy(ctx, bucket, nil)
 }
 
-func (p *Posix) PutObjectLockConfiguration(_ context.Context, bucket string, config []byte) error {
+func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
