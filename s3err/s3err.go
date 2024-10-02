@@ -356,7 +356,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidAccessKeyID: {
 		Code:           "InvalidAccessKeyId",
-		Description:    "The access key ID you provided does not exist in our records.",
+		Description:    "The AWS Access Key Id you provided does not exist in our records.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrRequestNotReadyYet: {

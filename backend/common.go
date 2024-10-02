@@ -116,15 +116,13 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 		copySourceHeader = copySourceHeader[1:]
 	}
 
-	cSplitted := strings.Split(copySourceHeader, "?")
-	copySource := cSplitted[0]
-	var versionId string
-	if len(cSplitted) > 1 {
-		versionIdParts := strings.Split(cSplitted[1], "=")
-		if len(versionIdParts) != 2 || versionIdParts[0] != "versionId" {
-			return "", "", "", s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-		versionId = versionIdParts[1]
+	var copySource, versionId string
+	i := strings.LastIndex(copySourceHeader, "?versionId=")
+	if i == -1 {
+		copySource = copySourceHeader
+	} else {
+		copySource = copySourceHeader[:i]
+		versionId = copySourceHeader[i+11:]
 	}
 
 	srcBucket, srcObject, ok := strings.Cut(copySource, "/")
