@@ -10673,6 +10673,59 @@ func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 	}, withVersioning())
 }
 
+func Versioning_CopyObject_special_chars(s *S3Conf) error {
+	testName := "Versioning_CopyObject_special_chars"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstBucket, dstObj := "foo?bar", getBucketName(), "bar&foo"
+		err := setup(s, dstBucket)
+		if err != nil {
+			return err
+		}
+
+		srcObjVersions, err := createObjVersions(s3client, bucket, srcObj, 1)
+		if err != nil {
+			return err
+		}
+
+		srcObjVersionId := *srcObjVersions[0].VersionId
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=%v", bucket, srcObj, srcObjVersionId)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.VersionId == nil || *res.VersionId == "" {
+			return fmt.Errorf("expected non empty versionId")
+		}
+		if *res.CopySourceVersionId != srcObjVersionId {
+			return fmt.Errorf("expected the SourceVersionId to be %v, instead got %v", srcObjVersionId, *res.CopySourceVersionId)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &dstObj,
+			VersionId: res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.VersionId != *res.VersionId {
+			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v", *res.VersionId, *out.VersionId)
+		}
+
+		return nil
+	}, withVersioning())
+}
+
 func Versioning_HeadObject_invalid_versionId(s *S3Conf) error {
 	testName := "Versioning_HeadObject_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

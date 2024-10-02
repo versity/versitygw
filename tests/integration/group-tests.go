@@ -528,6 +528,7 @@ func TestVersioning(s *S3Conf) {
 	Versioning_CopyObject_success(s)
 	Versioning_CopyObject_non_existing_version_id(s)
 	Versioning_CopyObject_from_an_object_version(s)
+	Versioning_CopyObject_special_chars(s)
 	// HeadObject action
 	Versioning_HeadObject_invalid_versionId(s)
 	Versioning_HeadObject_success(s)
@@ -895,6 +896,7 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_success":                                       Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                       Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                        Versioning_CopyObject_from_an_object_version,
+		"Versioning_CopyObject_special_chars":                                 Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                             Versioning_HeadObject_invalid_versionId,
 		"Versioning_HeadObject_success":                                       Versioning_HeadObject_success,
 		"Versioning_HeadObject_delete_marker":                                 Versioning_HeadObject_delete_marker,
