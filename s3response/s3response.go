@@ -19,9 +19,14 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/versity/versitygw/s3err"
 )
 
-const RFC3339TimeFormat = "2006-01-02T15:04:05.999Z"
+const (
+	iso8601TimeFormat         = "2006-01-02T15:04:05.000Z"
+	iso8601TimeFormatExtended = "2006-01-02T15:04:05.000000Z"
+	iso8601TimeFormatWithTZ   = "2006-01-02T15:04:05-0700"
+)
 
 type PutObjectOutput struct {
 	ETag      string
@@ -45,7 +50,7 @@ func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&p),
 	}
 
-	aux.LastModified = p.LastModified.UTC().Format(RFC3339TimeFormat)
+	aux.LastModified = p.LastModified.UTC().Format(iso8601TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -92,7 +97,7 @@ func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartEle
 	}
 
 	if r.LastModified != nil {
-		formattedTime := r.LastModified.UTC().Format(RFC3339TimeFormat)
+		formattedTime := r.LastModified.UTC().Format(iso8601TimeFormat)
 		aux.LastModified = &formattedTime
 	}
 
@@ -179,7 +184,7 @@ func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	}
 
 	if o.LastModified != nil {
-		formattedTime := o.LastModified.UTC().Format(RFC3339TimeFormat)
+		formattedTime := o.LastModified.UTC().Format(iso8601TimeFormat)
 		aux.LastModified = &formattedTime
 	}
 
@@ -205,7 +210,7 @@ func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&u),
 	}
 
-	aux.Initiated = u.Initiated.UTC().Format(RFC3339TimeFormat)
+	aux.Initiated = u.Initiated.UTC().Format(iso8601TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -292,7 +297,7 @@ func (r ListAllMyBucketsEntry) MarshalXML(e *xml.Encoder, start xml.StartElement
 		Alias: (*Alias)(&r),
 	}
 
-	aux.CreationDate = r.CreationDate.UTC().Format(RFC3339TimeFormat)
+	aux.CreationDate = r.CreationDate.UTC().Format(iso8601TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -322,7 +327,7 @@ func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) err
 		Alias: (*Alias)(&r),
 	}
 
-	aux.LastModified = r.LastModified.UTC().Format(RFC3339TimeFormat)
+	aux.LastModified = r.LastModified.UTC().Format(iso8601TimeFormat)
 
 	return e.EncodeElement(aux, start)
 }
@@ -389,4 +394,58 @@ type GetBucketVersioningOutput struct {
 	XMLName   xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ VersioningConfiguration" json:"-"`
 	MFADelete *types.MFADeleteStatus
 	Status    *types.BucketVersioningStatus
+}
+
+type PutObjectRetentionInput struct {
+	XMLName         xml.Name `xml:"Retention"`
+	Mode            types.ObjectLockRetentionMode
+	RetainUntilDate AmzDate
+}
+
+type AmzDate struct {
+	time.Time
+}
+
+// Parses the date from xml string and validates for predefined date formats
+func (d *AmzDate) UnmarshalXML(e *xml.Decoder, startElement xml.StartElement) error {
+	var dateStr string
+	err := e.DecodeElement(&dateStr, &startElement)
+	if err != nil {
+		return err
+	}
+
+	retDate, err := d.ISO8601Parse(dateStr)
+	if err != nil {
+		return s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	*d = AmzDate{retDate}
+	return nil
+}
+
+// Encodes expiration date if it is non-zero
+// Encodes empty string if it's zero
+func (d AmzDate) MarshalXML(e *xml.Encoder, startElement xml.StartElement) error {
+	if d.IsZero() {
+		return nil
+	}
+	return e.EncodeElement(d.UTC().Format(iso8601TimeFormat), startElement)
+}
+
+// Parses ISO8601 date string to time.Time by
+// validating different time layouts
+func (AmzDate) ISO8601Parse(date string) (t time.Time, err error) {
+	for _, layout := range []string{
+		iso8601TimeFormat,
+		iso8601TimeFormatExtended,
+		iso8601TimeFormatWithTZ,
+		time.RFC3339,
+	} {
+		t, err = time.Parse(layout, date)
+		if err == nil {
+			return t, nil
+		}
+	}
+
+	return t, err
 }
