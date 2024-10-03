@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3response"
 )
 
 type BucketLockConfig struct {
@@ -92,12 +93,12 @@ func ParseBucketLockConfigurationOutput(input []byte) (*types.ObjectLockConfigur
 }
 
 func ParseObjectLockRetentionInput(input []byte) ([]byte, error) {
-	var retention types.ObjectLockRetention
+	var retention s3response.PutObjectRetentionInput
 	if err := xml.Unmarshal(input, &retention); err != nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
-	if retention.RetainUntilDate == nil || retention.RetainUntilDate.Before(time.Now()) {
+	if retention.RetainUntilDate.Before(time.Now()) {
 		return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
 	}
 	switch retention.Mode {
