@@ -12170,3 +12170,37 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 		return nil
 	}, withLock(), withVersioning())
 }
+
+func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
+	testName := "VersioningDisabled_GetBucketVersioning_not_configured"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: &bucket,
+			VersioningConfiguration: &types.VersioningConfiguration{
+				Status: types.BucketVersioningStatusEnabled,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+func VersioningDisabled_PutBucketVersioning_not_configured(s *S3Conf) error {
+	testName := "VersioningDisabled_PutBucketVersioning_not_configured"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
