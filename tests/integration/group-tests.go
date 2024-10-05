@@ -490,6 +490,10 @@ func TestPosix(s *S3Conf) {
 	PutObject_name_too_long(s)
 	HeadObject_name_too_long(s)
 	DeleteObject_name_too_long(s)
+	// posix specific versioning tests
+	if !s.versioningEnabled {
+		TestVersioningDisabled(s)
+	}
 }
 
 func TestIAM(s *S3Conf) {
@@ -569,6 +573,11 @@ func TestVersioning(s *S3Conf) {
 	Versioning_WORM_obj_version_locked_with_legal_hold(s)
 	Versioning_WORM_obj_version_locked_with_governance_retention(s)
 	Versioning_WORM_obj_version_locked_with_compliance_retention(s)
+}
+
+func TestVersioningDisabled(s *S3Conf) {
+	VersioningDisabled_GetBucketVersioning_not_configured(s)
+	VersioningDisabled_PutBucketVersioning_not_configured(s)
 }
 
 type IntTests map[string]func(s *S3Conf) error

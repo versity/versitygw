@@ -448,8 +448,7 @@ func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) 
 
 func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
 	if !p.versioningEnabled() {
-		//TODO: Maybe we need to return our custom error here?
-		return nil
+		return s3err.GetAPIError(s3err.ErrVersioningNotConfigured)
 	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -491,9 +490,7 @@ func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status t
 
 func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 	if !p.versioningEnabled() {
-		// AWS returns empty response, if versioning is not set
-		//TODO: Maybe we need to return our custom error here?
-		return s3response.GetBucketVersioningOutput{}, nil
+		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)
 	}
 
 	_, err := os.Stat(bucket)
@@ -529,7 +526,10 @@ func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (s3respons
 // Returns the specified bucket versioning status
 func (p *Posix) isBucketVersioningEnabled(ctx context.Context, bucket string) (bool, error) {
 	res, err := p.GetBucketVersioning(ctx, bucket)
-	if err != nil {
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)) {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)) {
 		return false, err
 	}
 

@@ -141,6 +141,7 @@ const (
 	ErrObjectParentIsFile
 	ErrDirectoryObjectContainsData
 	ErrQuotaExceeded
+	ErrVersioningNotConfigured
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -564,6 +565,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "QuotaExceeded",
 		Description:    "Your request was denied due to quota exceeded.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrVersioningNotConfigured: {
+		Code:           "VersioningNotConfigured",
+		Description:    "Versioning has not been configured for the gateway.",
+		HTTPStatusCode: http.StatusNotImplemented,
 	},
 }
 
