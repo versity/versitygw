@@ -227,6 +227,9 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 
 		status, err := be.GetObjectLegalHold(ctx, bucket, key, versionId)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				continue
+			}
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
 				checkLegalHold = false
 			} else {

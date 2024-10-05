@@ -23,6 +23,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.4
 	github.com/valyala/fasthttp v1.56.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
+	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.26.0
 )
 
