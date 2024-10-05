@@ -262,7 +262,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		// scoutfs move data is a metadata only operation that moves the data
 		// extent references from the source, appeding to the destination.
 		// this needs to be 4k aligned.
-		err = moveData(pf, f.f)
+		err = moveData(pf, f.File())
 		pf.Close()
 		if err != nil {
 			return nil, fmt.Errorf("move blocks part %v: %v", *part.PartNumber, err)
@@ -282,76 +282,69 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 			return nil, err
 		}
 	}
-	err = f.link()
-	if err != nil {
-		return nil, fmt.Errorf("link object in namespace: %w", err)
-	}
 
 	for k, v := range userMetaData {
-		err = s.meta.StoreAttribute(bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
+		err = s.meta.StoreAttribute(f.File(), bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
-			// cleanup object if returning error
-			os.Remove(objname)
 			return nil, fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
 	// load and set tagging
 	tagging, err := s.meta.RetrieveAttribute(bucket, upiddir, tagHdr)
-	if err == nil {
-		if err := s.meta.StoreAttribute(bucket, object, tagHdr, tagging); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object tagging: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object tagging: %w", err)
+	}
+	if err == nil {
+		err := s.meta.StoreAttribute(f.File(), bucket, object, tagHdr, tagging)
+		if err != nil {
+			return nil, fmt.Errorf("set object tagging: %w", err)
+		}
 	}
 
 	// set content-type
 	if cType != "" {
-		if err := s.meta.StoreAttribute(bucket, object, contentTypeHdr, []byte(cType)); err != nil {
-			// cleanup object
-			os.Remove(objname)
+		err := s.meta.StoreAttribute(f.File(), bucket, object, contentTypeHdr, []byte(cType))
+		if err != nil {
 			return nil, fmt.Errorf("set object content type: %w", err)
 		}
 	}
 
 	// load and set legal hold
 	lHold, err := s.meta.RetrieveAttribute(bucket, upiddir, objectLegalHoldKey)
-	if err == nil {
-		if err := s.meta.StoreAttribute(bucket, object, objectLegalHoldKey, lHold); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object legal hold: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object legal hold: %w", err)
+	}
+	if err == nil {
+		err := s.meta.StoreAttribute(f.File(), bucket, object, objectLegalHoldKey, lHold)
+		if err != nil {
+			return nil, fmt.Errorf("set object legal hold: %w", err)
+		}
 	}
 
 	// load and set retention
 	ret, err := s.meta.RetrieveAttribute(bucket, upiddir, objectRetentionKey)
-	if err == nil {
-		if err := s.meta.StoreAttribute(bucket, object, objectRetentionKey, ret); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object retention: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object retention: %w", err)
+	}
+	if err == nil {
+		err := s.meta.StoreAttribute(f.File(), bucket, object, objectRetentionKey, ret)
+		if err != nil {
+			return nil, fmt.Errorf("set object retention: %w", err)
+		}
 	}
 
 	// Calculate s3 compatible md5sum for complete multipart.
 	s3MD5 := backend.GetMultipartMD5(parts)
 
-	err = s.meta.StoreAttribute(bucket, object, etagkey, []byte(s3MD5))
+	err = s.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(s3MD5))
 	if err != nil {
-		// cleanup object if returning error
-		os.Remove(objname)
 		return nil, fmt.Errorf("set etag attr: %w", err)
+	}
+
+	err = f.link()
+	if err != nil {
+		return nil, fmt.Errorf("link object in namespace: %w", err)
 	}
 
 	// cleanup tmp dirs

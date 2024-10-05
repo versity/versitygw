@@ -153,8 +153,6 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		if !vDir.IsDir() {
 			return nil, fmt.Errorf("versioning path should be a directory")
 		}
-
-		fmt.Printf("Bucket versioning enabled with directory: %v\n", verioningdirAbs)
 	}
 
 	return &Posix{
@@ -317,10 +315,12 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 		}
 	}
 
-	if err := p.meta.StoreAttribute(bucket, "", aclkey, acl); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", aclkey, acl)
+	if err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
-	if err := p.meta.StoreAttribute(bucket, "", ownershipkey, []byte(input.ObjectOwnership)); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", ownershipkey, []byte(input.ObjectOwnership))
+	if err != nil {
 		return fmt.Errorf("set ownership: %w", err)
 	}
 
@@ -345,7 +345,8 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 			return fmt.Errorf("parse default bucket lock state: %w", err)
 		}
 
-		if err := p.meta.StoreAttribute(bucket, "", bucketLockKey, defaultLockParsed); err != nil {
+		err = p.meta.StoreAttribute(nil, bucket, "", bucketLockKey, defaultLockParsed)
+		if err != nil {
 			return fmt.Errorf("set default bucket lock: %w", err)
 		}
 	}
@@ -400,7 +401,8 @@ func (p *Posix) PutBucketOwnershipControls(_ context.Context, bucket string, own
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := p.meta.StoreAttribute(bucket, "", ownershipkey, []byte(ownership)); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", ownershipkey, []byte(ownership))
+	if err != nil {
 		return fmt.Errorf("set ownership: %w", err)
 	}
 
@@ -435,7 +437,8 @@ func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) 
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := p.meta.DeleteAttribute(bucket, "", ownershipkey); err != nil {
+	err = p.meta.DeleteAttribute(bucket, "", ownershipkey)
+	if err != nil {
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			return nil
 		}
@@ -481,7 +484,8 @@ func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status t
 		versioning = []byte{0}
 	}
 
-	if err := p.meta.StoreAttribute(bucket, "", versioningKey, versioning); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", versioningKey, versioning)
+	if err != nil {
 		return fmt.Errorf("set versioning: %w", err)
 	}
 
@@ -605,7 +609,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 			return versionPath, fmt.Errorf("list %v attribute: %w", attr, err)
 		}
 
-		if err := p.meta.StoreAttribute(versionPath, "", attr, data); err != nil {
+		err = p.meta.StoreAttribute(nil, versionPath, "", attr, data)
+		if err != nil {
 			return versionPath, fmt.Errorf("store %v attribute: %w", attr, err)
 		}
 	}
@@ -969,7 +974,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 
 	// set an attribute with the original object name so that we can
 	// map the hashed name back to the original object name
-	err = p.meta.StoreAttribute(bucket, objdir, onameAttr, []byte(object))
+	err = p.meta.StoreAttribute(nil, bucket, objdir, onameAttr, []byte(object))
 	if err != nil {
 		// if we fail, cleanup the container directories
 		// but ignore errors because there might still be
@@ -981,7 +986,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 
 	// set user metadata
 	for k, v := range mpu.Metadata {
-		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID),
+		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID),
 			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
 			// cleanup object if returning error
@@ -1005,7 +1010,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 	// set content-type
 	ctype := getString(mpu.ContentType)
 	if ctype != "" {
-		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID),
+		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID),
 			contentTypeHdr, []byte(*mpu.ContentType))
 		if err != nil {
 			// cleanup object if returning error
@@ -1018,7 +1023,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 	// set content-encoding
 	cenc := getString(mpu.ContentEncoding)
 	if cenc != "" {
-		err := p.meta.StoreAttribute(bucket, filepath.Join(objdir, uploadID), contentEncHdr,
+		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), contentEncHdr,
 			[]byte(*mpu.ContentEncoding))
 		if err != nil {
 			// cleanup object if returning error
@@ -1030,7 +1035,8 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 
 	// set object legal hold
 	if mpu.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		if err := p.PutObjectLegalHold(ctx, bucket, filepath.Join(objdir, uploadID), "", true); err != nil {
+		err := p.PutObjectLegalHold(ctx, bucket, filepath.Join(objdir, uploadID), "", true)
+		if err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
@@ -1051,7 +1057,8 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 			os.Remove(tmppath)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", true, retParsed); err != nil {
+		err = p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", true, retParsed)
+		if err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
@@ -1219,95 +1226,87 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 	}
 
-	err = f.link()
-	if err != nil {
-		return nil, fmt.Errorf("link object in namespace: %w", err)
-	}
-
 	// if the versioning is enabled, generate a new versionID for the object
 	var versionID string
 	if p.versioningEnabled() && vEnabled {
 		versionID = ulid.Make().String()
 
-		if err := p.meta.StoreAttribute(bucket, object, versionIdKey, []byte(versionID)); err != nil {
+		err := p.meta.StoreAttribute(f.File(), bucket, object, versionIdKey, []byte(versionID))
+		if err != nil {
 			return nil, fmt.Errorf("set versionId attr: %w", err)
 		}
 	}
 
 	for k, v := range userMetaData {
-		err = p.meta.StoreAttribute(bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
+		err = p.meta.StoreAttribute(f.File(), bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
-			// cleanup object if returning error
-			os.Remove(objname)
 			return nil, fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
 	// load and set tagging
 	tagging, err := p.meta.RetrieveAttribute(bucket, upiddir, tagHdr)
-	if err == nil {
-		if err := p.meta.StoreAttribute(bucket, object, tagHdr, tagging); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object tagging: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object tagging: %w", err)
+	}
+	if err == nil {
+		err := p.meta.StoreAttribute(f.File(), bucket, object, tagHdr, tagging)
+		if err != nil {
+			return nil, fmt.Errorf("set object tagging: %w", err)
+		}
 	}
 
 	// set content-type
 	if cType != "" {
-		if err := p.meta.StoreAttribute(bucket, object, contentTypeHdr, []byte(cType)); err != nil {
-			// cleanup object
-			os.Remove(objname)
+		err := p.meta.StoreAttribute(f.File(), bucket, object, contentTypeHdr, []byte(cType))
+		if err != nil {
 			return nil, fmt.Errorf("set object content type: %w", err)
 		}
 	}
 
 	// set content-encoding
 	if cEnc != "" {
-		if err := p.meta.StoreAttribute(bucket, object, contentEncHdr, []byte(cEnc)); err != nil {
-			// cleanup object
-			os.Remove(objname)
+		err := p.meta.StoreAttribute(f.File(), bucket, object, contentEncHdr, []byte(cEnc))
+		if err != nil {
 			return nil, fmt.Errorf("set object content encoding: %w", err)
 		}
 	}
 
 	// load and set legal hold
 	lHold, err := p.meta.RetrieveAttribute(bucket, upiddir, objectLegalHoldKey)
-	if err == nil {
-		if err := p.meta.StoreAttribute(bucket, object, objectLegalHoldKey, lHold); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object legal hold: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object legal hold: %w", err)
+	}
+	if err == nil {
+		err := p.meta.StoreAttribute(f.File(), bucket, object, objectLegalHoldKey, lHold)
+		if err != nil {
+			return nil, fmt.Errorf("set object legal hold: %w", err)
+		}
 	}
 
 	// load and set retention
 	ret, err := p.meta.RetrieveAttribute(bucket, upiddir, objectRetentionKey)
-	if err == nil {
-		if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, ret); err != nil {
-			// cleanup object
-			os.Remove(objname)
-			return nil, fmt.Errorf("set object retention: %w", err)
-		}
-	}
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get object retention: %w", err)
+	}
+	if err == nil {
+		err := p.meta.StoreAttribute(f.File(), bucket, object, objectRetentionKey, ret)
+		if err != nil {
+			return nil, fmt.Errorf("set object retention: %w", err)
+		}
 	}
 
 	// Calculate s3 compatible md5sum for complete multipart.
 	s3MD5 := backend.GetMultipartMD5(parts)
 
-	err = p.meta.StoreAttribute(bucket, object, etagkey, []byte(s3MD5))
+	err = p.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(s3MD5))
 	if err != nil {
-		// cleanup object if returning error
-		os.Remove(objname)
 		return nil, fmt.Errorf("set etag attr: %w", err)
+	}
+
+	err = f.link()
+	if err != nil {
+		return nil, fmt.Errorf("link object in namespace: %w", err)
 	}
 
 	// cleanup tmp dirs
@@ -1750,6 +1749,7 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 		}
 		return "", fmt.Errorf("open temp file: %w", err)
 	}
+	defer f.cleanup()
 
 	hash := md5.New()
 	tr := io.TeeReader(r, hash)
@@ -1761,18 +1761,16 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 		return "", fmt.Errorf("write part data: %w", err)
 	}
 
+	dataSum := hash.Sum(nil)
+	etag := hex.EncodeToString(dataSum)
+	err = p.meta.StoreAttribute(f.File(), bucket, partPath, etagkey, []byte(etag))
+	if err != nil {
+		return "", fmt.Errorf("set etag attr: %w", err)
+	}
+
 	err = f.link()
 	if err != nil {
 		return "", fmt.Errorf("link object in namespace: %w", err)
-	}
-
-	f.cleanup()
-
-	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum)
-	err = p.meta.StoreAttribute(bucket, partPath, etagkey, []byte(etag))
-	if err != nil {
-		return "", fmt.Errorf("set etag attr: %w", err)
 	}
 
 	return etag, nil
@@ -1910,16 +1908,16 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyObjectResult{}, fmt.Errorf("copy part data: %w", err)
 	}
 
+	dataSum := hash.Sum(nil)
+	etag := hex.EncodeToString(dataSum)
+	err = p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, etagkey, []byte(etag))
+	if err != nil {
+		return s3response.CopyObjectResult{}, fmt.Errorf("set etag attr: %w", err)
+	}
+
 	err = f.link()
 	if err != nil {
 		return s3response.CopyObjectResult{}, fmt.Errorf("link object in namespace: %w", err)
-	}
-
-	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum)
-	err = p.meta.StoreAttribute(*upi.Bucket, partPath, etagkey, []byte(etag))
-	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
 	fi, err = os.Stat(filepath.Join(*upi.Bucket, partPath))
@@ -1997,7 +1995,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		}
 
 		for k, v := range po.Metadata {
-			err := p.meta.StoreAttribute(*po.Bucket, *po.Key,
+			err := p.meta.StoreAttribute(nil, *po.Bucket, *po.Key,
 				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 			if err != nil {
 				return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
@@ -2005,7 +2003,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		}
 
 		// set etag attribute to signify this dir was specifically put
-		err = p.meta.StoreAttribute(*po.Bucket, *po.Key, etagkey,
+		err = p.meta.StoreAttribute(nil, *po.Bucket, *po.Key, etagkey,
 			[]byte(emptyMD5))
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
@@ -2064,6 +2062,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		}
 		return s3response.PutObjectOutput{}, fmt.Errorf("write object data: %w", err)
 	}
+
 	dir := filepath.Dir(name)
 	if dir != "" {
 		err = backend.MkdirAll(dir, uid, gid, doChown)
@@ -2072,22 +2071,73 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		}
 	}
 
-	err = f.link()
-	if err != nil {
-		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	dataSum := hash.Sum(nil)
+	etag := hex.EncodeToString(dataSum[:])
+
+	// if the versioning is enabled, generate a new versionID for the object
+	var versionID string
+	if p.versioningEnabled() && vEnabled {
+		versionID = ulid.Make().String()
 	}
 
 	for k, v := range po.Metadata {
-		err := p.meta.StoreAttribute(*po.Bucket, *po.Key,
+		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key,
 			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
+	err = p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, etagkey, []byte(etag))
+	if err != nil {
+		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
+	}
+
+	ctype := getString(po.ContentType)
+	if ctype != "" {
+		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, contentTypeHdr,
+			[]byte(*po.ContentType))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
+		}
+	}
+
+	cenc := getString(po.ContentEncoding)
+	if cenc != "" {
+		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, contentEncHdr,
+			[]byte(*po.ContentEncoding))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set content-encoding attr: %w", err)
+		}
+	}
+
+	if versionID != "" {
+		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, versionIdKey, []byte(versionID))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set versionId attr: %w", err)
+		}
+	}
+
+	err = f.link()
+	if errors.Is(err, syscall.EEXIST) {
+		return s3response.PutObjectOutput{
+			ETag:      etag,
+			VersionID: versionID,
+		}, nil
+	}
+	if err != nil {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
+	}
+
 	// Set object tagging
 	if tagsStr != "" {
 		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, tags)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3response.PutObjectOutput{
+				ETag:      etag,
+				VersionID: versionID,
+			}, nil
+		}
 		if err != nil {
 			return s3response.PutObjectOutput{}, err
 		}
@@ -2095,7 +2145,8 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 
 	// Set object legal hold
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		if err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true); err != nil {
+		err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
+		if err != nil {
 			return s3response.PutObjectOutput{}, err
 		}
 	}
@@ -2110,43 +2161,9 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
-		if err := p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed); err != nil {
+		err = p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed)
+		if err != nil {
 			return s3response.PutObjectOutput{}, err
-		}
-	}
-
-	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum[:])
-	err = p.meta.StoreAttribute(*po.Bucket, *po.Key, etagkey, []byte(etag))
-	if err != nil {
-		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
-	}
-
-	ctype := getString(po.ContentType)
-	if ctype != "" {
-		err := p.meta.StoreAttribute(*po.Bucket, *po.Key, contentTypeHdr,
-			[]byte(*po.ContentType))
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
-		}
-	}
-
-	cenc := getString(po.ContentEncoding)
-	if cenc != "" {
-		err := p.meta.StoreAttribute(*po.Bucket, *po.Key, contentEncHdr,
-			[]byte(*po.ContentEncoding))
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set content-encoding attr: %w", err)
-		}
-	}
-
-	// if the versioning is enabled, generate a new versionID for the object
-	var versionID string
-	if p.versioningEnabled() && vEnabled {
-		versionID = ulid.Make().String()
-
-		if err := p.meta.StoreAttribute(*po.Bucket, *po.Key, versionIdKey, []byte(versionID)); err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set versionId attr: %w", err)
 		}
 	}
 
@@ -2211,12 +2228,14 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 
 			// Mark the object as a delete marker
-			if err := p.meta.StoreAttribute(bucket, object, deleteMarkerKey, []byte{}); err != nil {
+			err = p.meta.StoreAttribute(nil, bucket, object, deleteMarkerKey, []byte{})
+			if err != nil {
 				return nil, fmt.Errorf("set delete marker: %w", err)
 			}
 			// Generate & set a unique versionId for the delete marker
 			versionId := ulid.Make().String()
-			if err := p.meta.StoreAttribute(bucket, object, versionIdKey, []byte(versionId)); err != nil {
+			err = p.meta.StoreAttribute(nil, bucket, object, versionIdKey, []byte(versionId))
+			if err != nil {
 				return nil, fmt.Errorf("set versionId: %w", err)
 			}
 
@@ -2305,12 +2324,14 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 						return nil, fmt.Errorf("load %v attribute", attr)
 					}
 
-					if err := p.meta.StoreAttribute(bucket, object, attr, data); err != nil {
+					err = p.meta.StoreAttribute(nil, bucket, object, attr, data)
+					if err != nil {
 						return nil, fmt.Errorf("store %v attribute", attr)
 					}
 				}
 
-				if err := os.Remove(filepath.Join(versionPath, srcVersionId)); err != nil {
+				err = os.Remove(filepath.Join(versionPath, srcVersionId))
+				if err != nil {
 					return nil, fmt.Errorf("remove obj version %w", err)
 				}
 
@@ -2975,7 +2996,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			}
 		}
 		for k, v := range input.Metadata {
-			err := p.meta.StoreAttribute(dstBucket, dstObject,
+			err := p.meta.StoreAttribute(nil, dstBucket, dstObject,
 				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 			if err != nil {
 				return nil, fmt.Errorf("set user attr %q: %w", k, err)
@@ -3216,7 +3237,8 @@ func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) erro
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if err := p.meta.StoreAttribute(bucket, "", aclkey, data); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", aclkey, data)
+	if err != nil {
 		return fmt.Errorf("set acl: %w", err)
 	}
 
@@ -3268,7 +3290,7 @@ func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[stri
 		return fmt.Errorf("marshal tags: %w", err)
 	}
 
-	err = p.meta.StoreAttribute(bucket, "", tagHdr, b)
+	err = p.meta.StoreAttribute(nil, bucket, "", tagHdr, b)
 	if err != nil {
 		return fmt.Errorf("set tags: %w", err)
 	}
@@ -3358,7 +3380,7 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 		return fmt.Errorf("marshal tags: %w", err)
 	}
 
-	err = p.meta.StoreAttribute(bucket, object, tagHdr, b)
+	err = p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -3395,7 +3417,7 @@ func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byt
 		return nil
 	}
 
-	err = p.meta.StoreAttribute(bucket, "", policykey, policy)
+	err = p.meta.StoreAttribute(nil, bucket, "", policykey, policy)
 	if err != nil {
 		return fmt.Errorf("set policy: %w", err)
 	}
@@ -3456,7 +3478,8 @@ func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, c
 		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
 	}
 
-	if err := p.meta.StoreAttribute(bucket, "", bucketLockKey, config); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, "", bucketLockKey, config)
+	if err != nil {
 		return fmt.Errorf("set object lock config: %w", err)
 	}
 
@@ -3535,7 +3558,7 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 		}
 	}
 
-	err = p.meta.StoreAttribute(bucket, object, objectLegalHoldKey, statusData)
+	err = p.meta.StoreAttribute(nil, bucket, object, objectLegalHoldKey, statusData)
 	if errors.Is(err, fs.ErrNotExist) {
 		if versionId != "" {
 			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
@@ -3649,7 +3672,8 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, retention); err != nil {
+		err := p.meta.StoreAttribute(nil, bucket, object, objectRetentionKey, retention)
+		if err != nil {
 			return fmt.Errorf("set object lock config: %w", err)
 		}
 
@@ -3675,7 +3699,8 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 		}
 	}
 
-	if err := p.meta.StoreAttribute(bucket, object, objectRetentionKey, retention); err != nil {
+	err = p.meta.StoreAttribute(nil, bucket, object, objectRetentionKey, retention)
+	if err != nil {
 		return fmt.Errorf("set object lock config: %w", err)
 	}
 

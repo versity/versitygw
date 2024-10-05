@@ -14,6 +14,8 @@
 
 package meta
 
+import "os"
+
 // MetadataStorer defines the interface for managing metadata.
 // When object == "", the operation is on the bucket.
 type MetadataStorer interface {
@@ -24,7 +26,7 @@ type MetadataStorer interface {
 	// StoreAttribute stores the value of a specific attribute for an object or a bucket.
 	// If attribute already exists, new attribute should replace existing.
 	// Returns an error if the operation fails.
-	StoreAttribute(bucket, object, attribute string, value []byte) error
+	StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error
 
 	// DeleteAttribute removes the value of a specific attribute for an object or a bucket.
 	// Returns an error if the operation fails.

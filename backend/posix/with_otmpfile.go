@@ -134,6 +134,9 @@ func (tmp *tmpfile) falloc() error {
 }
 
 func (tmp *tmpfile) link() error {
+	// make sure this is cleaned up in all error cases
+	defer tmp.f.Close()
+
 	// We use Linkat/Rename as the atomic operation for object puts. The
 	// upload is written to a temp (or unnamed/O_TMPFILE) file to not conflict
 	// with any other simultaneous uploads. The final operation is to move the
@@ -170,11 +173,21 @@ func (tmp *tmpfile) link() error {
 	}
 	defer dirf.Close()
 
-	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
-	if err != nil {
-		return fmt.Errorf("link tmpfile (%q in %q): %w",
-			filepath.Dir(objPath), filepath.Base(tmp.f.Name()), err)
+	for {
+		err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
+			int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
+		if errors.Is(err, syscall.EEXIST) {
+			err := os.Remove(objPath)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove stale path: %w", err)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
+				filepath.Base(tmp.f.Name()), objPath, err)
+		}
+		break
 	}
 
 	err = tmp.f.Close()
