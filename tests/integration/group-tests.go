@@ -522,7 +522,8 @@ func TestVersioning(s *S3Conf) {
 	// PutBucketVersioning action
 	PutBucketVersioning_non_existing_bucket(s)
 	PutBucketVersioning_invalid_status(s)
-	PutBucketVersioning_success(s)
+	PutBucketVersioning_success_enabled(s)
+	PutBucketVersioning_success_suspended(s)
 	// GetBucketVersioning action
 	GetBucketVersioning_non_existing_bucket(s)
 	GetBucketVersioning_empty_response(s)
@@ -897,7 +898,8 @@ func GetIntTests() IntTests {
 		"AccessControl_copy_object_with_starting_slash_for_user":              AccessControl_copy_object_with_starting_slash_for_user,
 		"PutBucketVersioning_non_existing_bucket":                             PutBucketVersioning_non_existing_bucket,
 		"PutBucketVersioning_invalid_status":                                  PutBucketVersioning_invalid_status,
-		"PutBucketVersioning_success":                                         PutBucketVersioning_success,
+		"PutBucketVersioning_success_enabled":                                 PutBucketVersioning_success_enabled,
+		"PutBucketVersioning_success_suspended":                               PutBucketVersioning_success_suspended,
 		"GetBucketVersioning_non_existing_bucket":                             GetBucketVersioning_non_existing_bucket,
 		"GetBucketVersioning_empty_response":                                  GetBucketVersioning_empty_response,
 		"GetBucketVersioning_success":                                         GetBucketVersioning_success,

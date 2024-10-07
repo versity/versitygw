@@ -10412,14 +10412,33 @@ func PutBucketVersioning_invalid_status(s *S3Conf) error {
 	})
 }
 
-func PutBucketVersioning_success(s *S3Conf) error {
-	testName := "PutBucketVersioning_success"
+func PutBucketVersioning_success_enabled(s *S3Conf) error {
+	testName := "PutBucketVersioning_success_enabled"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 			Bucket: &bucket,
 			VersioningConfiguration: &types.VersioningConfiguration{
 				Status: types.BucketVersioningStatusEnabled,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketVersioning_success_suspended(s *S3Conf) error {
+	testName := "PutBucketVersioning_success_suspended"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+			Bucket: &bucket,
+			VersioningConfiguration: &types.VersioningConfiguration{
+				Status: types.BucketVersioningStatusSuspended,
 			},
 		})
 		cancel()
