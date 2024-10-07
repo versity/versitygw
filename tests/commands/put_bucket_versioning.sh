@@ -30,3 +30,54 @@ put_bucket_versioning() {
   fi
   return 0
 }
+
+put_bucket_versioning_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_bucket_versioning_rest' requires bucket, 'Enabled' or 'Suspended'"
+    return 1
+  fi
+
+  versioning="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
+  <Status>$2</Status>
+</VersioningConfiguration>"
+
+  generate_hash_for_payload "$versioning"
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  content_md5=$(echo -n "$versioning" | openssl dgst -binary -md5 | openssl base64)
+  # shellcheck disable=SC2154
+  canonical_request="PUT
+/$1
+versioning=
+content-md5:$content_md5
+host:$aws_endpoint_url_address
+x-amz-content-sha256:$payload_hash
+x-amz-date:$current_date_time
+
+content-md5;host;x-amz-content-sha256;x-amz-date
+$payload_hash"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+
+  # shellcheck disable=SC2154
+  reply=$(curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1?versioning" \
+    -H "Content-MD5: $content_md5" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: $payload_hash" \
+    -H "x-amz-date: $current_date_time" \
+    -d "$versioning" -o "$TEST_FILE_FOLDER"/put_versioning_error.txt 2>&1)
+  log 5 "reply status code: $reply"
+  if [[ "$reply" != "200" ]]; then
+    log 2 "reply error: $reply"
+    log 2 "put bucket versioning command returned error: $(cat "$TEST_FILE_FOLDER"/put_versioning_error.txt)"
+    return 1
+  fi
+  return 0
+}

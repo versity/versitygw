@@ -120,6 +120,12 @@ check_universal_vars() {
     log 1 "TEST_FILE_FOLDER missing"
     exit 1
   fi
+  if [ ! -d "$TEST_FILE_FOLDER" ]; then
+    if ! error=$(mkdir -p "$TEST_FILE_FOLDER"); then
+      log 2 "error creating test folder: $error"
+      exit 1
+    fi
+  fi
   # exporting these since they're needed for subshells
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
 }
@@ -128,6 +134,18 @@ check_versity_vars() {
   if [ -z "$LOCAL_FOLDER" ]; then
     log 1 "LOCAL_FOLDER missing"
     exit 1
+  fi
+  if [ ! -d "$LOCAL_FOLDER" ]; then
+    if ! error=$(mkdir -p "$LOCAL_FOLDER"); then
+      log 2 "error creating local posix folder: $error"
+      exit 1
+    fi
+  fi
+  if [ -n "$VERSIONING_DIR" ] && [ ! -d "$VERSIONING_DIR" ]; then
+    if ! error=$(mkdir -p "$VERSIONING_DIR"); then
+      log 2 "error creating versioning folder: $error"
+      return 1
+    fi
   fi
   if [ -z "$VERSITY_EXE" ]; then
     log 1 "VERSITY_EXE missing"

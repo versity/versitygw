@@ -2,6 +2,7 @@
 
 parse_bucket_list() {
   # shellcheck disable=SC2154
+  log 5 "bucket list: $reply"
   bucket_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' -)
   bucket_array=()
   while read -r bucket; do

@@ -61,8 +61,6 @@ source ./tests/util_file.sh
   fi
   run setup_bucket "s3" "$BUCKET_ONE_NAME"
   assert_success
-
-  delete_bucket "s3" "$BUCKET_ONE_NAME" || fail "error deleting bucket"
 }
 
 @test "test_ls_directory_object" {

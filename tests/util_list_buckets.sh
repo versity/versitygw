@@ -35,12 +35,12 @@ list_check_buckets_rest() {
   return 0
 }
 
-list_and_check_buckets() {
-  if [ $# -ne 3 ]; then
-    log 2 "'list_and_check_buckets' requires client, two bucket names"
+list_and_check_buckets_with_user() {
+  if [ $# -ne 5 ]; then
+    log 2 "'list_and_check_buckets' requires client, two bucket names, id, key"
     return 1
   fi
-  if ! list_buckets "$1"; then
+  if ! list_buckets_with_user "$1" "$4" "$5"; then
     log 2 "error listing buckets"
     return 1
   fi
@@ -65,6 +65,17 @@ list_and_check_buckets() {
   echo $bucket_one_found $bucket_two_found
   if [ $bucket_one_found == false ] || [ $bucket_two_found == false ]; then
     log 2 "Not all buckets found"
+    return 1
+  fi
+  return 0
+}
+
+list_and_check_buckets() {
+  if [ $# -ne 3 ]; then
+    log 2 "'list_and_check_buckets' requires client, two bucket names"
+  fi
+  if ! list_and_check_buckets_with_user "$1" "$2" "$3" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    log 2 "error listing and checking buckets"
     return 1
   fi
   return 0
