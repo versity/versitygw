@@ -466,15 +466,17 @@ func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status t
 		versioning = []byte{1}
 	case types.BucketVersioningStatusSuspended:
 		lockRaw, err := p.GetObjectLockConfiguration(ctx, bucket)
-		if err != nil {
+		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
 			return err
 		}
-		lockStatus, err := auth.ParseBucketLockConfigurationOutput(lockRaw)
-		if err != nil {
-			return err
-		}
-		if lockStatus.ObjectLockEnabled == types.ObjectLockEnabledEnabled {
-			return s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)
+		if err == nil {
+			lockStatus, err := auth.ParseBucketLockConfigurationOutput(lockRaw)
+			if err != nil {
+				return err
+			}
+			if lockStatus.ObjectLockEnabled == types.ObjectLockEnabledEnabled {
+				return s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)
+			}
 		}
 
 		// '0' maps to 'Suspended'
