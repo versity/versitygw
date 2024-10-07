@@ -4279,6 +4279,47 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 	})
 }
 
+func ListObjectVersions_VD_success(s *S3Conf) error {
+	testName := "ListObjectVersions_VD_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versions := []types.ObjectVersion{}
+		for i := 0; i < 5; i++ {
+			dLgth := int64(i * 100)
+			key := fmt.Sprintf("my-obj-%v", i)
+			out, err := putObjectWithData(dLgth, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &key,
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			versions = append(versions, types.ObjectVersion{
+				ETag:         out.res.ETag,
+				IsLatest:     getBoolPtr(true),
+				Key:          &key,
+				Size:         &dLgth,
+				VersionId:    getPtr("null"),
+				StorageClass: types.ObjectVersionStorageClassStandard,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(res.Versions, versions) {
+			return fmt.Errorf("expected object versions output to be %v, instead got %v", versions, res.Versions)
+		}
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -10556,11 +10597,12 @@ func Versioning_CopyObject_success(s *S3Conf) error {
 		dstObjVersions[0].IsLatest = getBoolPtr(false)
 		versions := append([]types.ObjectVersion{
 			{
-				ETag:      out.CopyObjectResult.ETag,
-				IsLatest:  getBoolPtr(true),
-				Key:       &dstObj,
-				Size:      &srcObjLen,
-				VersionId: out.VersionId,
+				ETag:         out.CopyObjectResult.ETag,
+				IsLatest:     getBoolPtr(true),
+				Key:          &dstObj,
+				Size:         &srcObjLen,
+				VersionId:    out.VersionId,
+				StorageClass: types.ObjectVersionStorageClassStandard,
 			},
 		}, dstObjVersions...)
 
@@ -11668,11 +11710,12 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 		objVersions[0].IsLatest = getBoolPtr(false)
 		versions := append([]types.ObjectVersion{
 			{
-				Key:       &obj,
-				VersionId: res.VersionId,
-				ETag:      res.ETag,
-				IsLatest:  getBoolPtr(true),
-				Size:      &size,
+				Key:          &obj,
+				VersionId:    res.VersionId,
+				ETag:         res.ETag,
+				IsLatest:     getBoolPtr(true),
+				Size:         &size,
+				StorageClass: types.ObjectVersionStorageClassStandard,
 			},
 		}, objVersions...)
 

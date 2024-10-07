@@ -614,9 +614,6 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 }
 
 func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
-	if !p.versioningEnabled() {
-		return s3response.ListVersionsResult{}, nil
-	}
 	bucket := *input.Bucket
 	var prefix, delim, keyMarker, versionIdMarker string
 	var max int
@@ -734,6 +731,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				IsLatest:     getBoolPtr(true),
 				Size:         &size,
 				VersionId:    &versionId,
+				StorageClass: types.ObjectVersionStorageClassStandard,
 			})
 
 			return &backend.ObjVersionFuncResult{
@@ -795,6 +793,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Size:         &size,
 					VersionId:    &versionId,
 					IsLatest:     getBoolPtr(true),
+					StorageClass: types.ObjectVersionStorageClassStandard,
 				})
 			}
 
@@ -888,6 +887,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Size:         &size,
 					VersionId:    &versionId,
 					IsLatest:     getBoolPtr(false),
+					StorageClass: types.ObjectVersionStorageClassStandard,
 				})
 			}
 
