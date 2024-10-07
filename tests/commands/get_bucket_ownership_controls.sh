@@ -26,7 +26,7 @@ get_bucket_ownership_controls() {
     return 1
   fi
 
-  if ! raw_bucket_ownership_controls=$(aws --no-verify-ssl s3api get-bucket-ownership-controls --bucket "$1" 2>&1); then
+  if ! raw_bucket_ownership_controls=$(send_command aws --no-verify-ssl s3api get-bucket-ownership-controls --bucket "$1" 2>&1); then
     log 2 "error getting bucket ownership controls: $raw_bucket_ownership_controls"
     return 1
   fi

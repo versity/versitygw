@@ -20,7 +20,7 @@ list_object_versions() {
     log 2 "'list object versions' command requires bucket name"
     return 1
   fi
-  versions=$(aws --no-verify-ssl s3api list-object-versions --bucket "$1" 2>&1) || local list_result=$?
+  versions=$(send_command aws --no-verify-ssl s3api list-object-versions --bucket "$1" 2>&1) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     log 2 "error listing object versions: $versions"
     return 1
@@ -55,7 +55,7 @@ $payload_hash"
 
   get_signature
   # shellcheck disable=SC2034,SC2154
-  reply=$(curl -ks "$AWS_ENDPOINT_URL/$1?versions" \
+  reply=$(send_command curl -ks "$AWS_ENDPOINT_URL/$1?versions" \
          -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
          -H "x-amz-content-sha256: $payload_hash" \
          -H "x-amz-date: $current_date_time" \

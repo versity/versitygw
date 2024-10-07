@@ -22,7 +22,7 @@ put_bucket_versioning() {
   fi
   local put_result=0
   if [[ $1 == 's3api' ]]; then
-    error=$(aws --no-verify-ssl s3api put-bucket-versioning --bucket "$2" --versioning-configuration "{ \"Status\": \"$3\"}" 2>&1) || put_result=$?
+    error=$(send_command aws --no-verify-ssl s3api put-bucket-versioning --bucket "$2" --versioning-configuration "{ \"Status\": \"$3\"}" 2>&1) || put_result=$?
   fi
   if [[ $put_result -ne 0 ]]; then
     log 2 "error putting bucket versioning: $error"
@@ -67,7 +67,7 @@ $payload_hash"
   get_signature
 
   # shellcheck disable=SC2154
-  reply=$(curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1?versioning" \
+  reply=$(send_command curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1?versioning" \
     -H "Content-MD5: $content_md5" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \

@@ -22,9 +22,9 @@ get_bucket_tagging() {
   record_command "get-bucket-tagging" "client:$1"
   local result
   if [[ $1 == 'aws' ]]; then
-    tags=$(aws --no-verify-ssl s3api get-bucket-tagging --bucket "$2" 2>&1) || result=$?
+    tags=$(send_command aws --no-verify-ssl s3api get-bucket-tagging --bucket "$2" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then
-    tags=$(mc --insecure tag list "$MC_ALIAS"/"$2" 2>&1) || result=$?
+    tags=$(send_command mc --insecure tag list "$MC_ALIAS"/"$2" 2>&1) || result=$?
   else
     fail "invalid command type $1"
   fi
@@ -49,7 +49,7 @@ get_bucket_tagging_with_user() {
   fi
   record_command "get-bucket-tagging" "client:s3api"
   local result
-  if ! tags=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" aws --no-verify-ssl s3api get-bucket-tagging --bucket "$3" 2>&1); then
+  if ! tags=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" send_command aws --no-verify-ssl s3api get-bucket-tagging --bucket "$3" 2>&1); then
     log 5 "tags error: $tags"
     if [[ $tags =~ "No tags found" ]] || [[ $tags =~ "The TagSet does not exist" ]]; then
       export tags=

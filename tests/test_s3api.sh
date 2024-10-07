@@ -398,8 +398,10 @@ export RUN_USERS=true
 @test "test_put_object_lock_configuration" {
   bucket_name=$BUCKET_ONE_NAME
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    delete_bucket "s3api" "$bucket_name" || fail "error deleting bucket"
-    create_bucket_object_lock_enabled "$bucket_name" || fail "error setting up bucket"
+    run delete_bucket "s3api" "$bucket_name"
+    assert_success
+    run create_bucket_object_lock_enabled "$bucket_name"
+    assert_success
   fi
   local enabled="Enabled"
   local governance="GOVERNANCE"

@@ -28,6 +28,9 @@ setup() {
   base_setup
 
   log 4 "Running test $BATS_TEST_NAME"
+  if [ -n "$COMMAND_LOG" ]; then
+    echo "$(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME" >> "$COMMAND_LOG"
+  fi
   if [[ $LOG_LEVEL -ge 5 ]]; then
     start_time=$(date +%s)
     export start_time

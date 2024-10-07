@@ -24,7 +24,7 @@ put_bucket_acl_s3api() {
     return 1
   fi
   log 5 "bucket name: $1, acls: $2"
-  if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
     log 2 "error putting bucket acl: $error"
     return 1
   fi
@@ -39,7 +39,7 @@ put_bucket_acl_s3api_with_user() {
     return 1
   fi
   log 5 "bucket name: $1, acls: $2"
-  if ! error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
+  if ! error=$(send_command AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
     log 2 "error putting bucket acl: $error"
     return 1
   fi
@@ -87,7 +87,7 @@ put_bucket_canned_acl_s3cmd() {
     log 2 "put bucket acl command requires bucket name, permission"
     return 1
   fi
-  if ! error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setacl "s3://$1" "$2" 2>&1); then
+  if ! error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setacl "s3://$1" "$2" 2>&1); then
     log 2 "error putting s3cmd canned ACL:  $error"
     return 1
   fi
@@ -100,7 +100,7 @@ put_bucket_canned_acl() {
     return 1
   fi
   record_command "put-bucket-acl" "client:s3api"
-  if ! error=$(aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
     log 2 "error re-setting bucket acls: $error"
     return 1
   fi
@@ -113,7 +113,7 @@ put_bucket_canned_acl_with_user() {
     return 1
   fi
   record_command "put-bucket-acl" "client:s3api"
-  if ! error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
+  if ! error=$(send_command AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
     log 2 "error re-setting bucket acls: $error"
     return 1
   fi

@@ -42,7 +42,7 @@ get_bucket_location_aws() {
     echo "get bucket location (aws) requires bucket name"
     return 1
   fi
-  location_json=$(aws --no-verify-ssl s3api get-bucket-location --bucket "$1") || location_result=$?
+  location_json=$(send_command aws --no-verify-ssl s3api get-bucket-location --bucket "$1") || location_result=$?
   if [[ $location_result -ne 0 ]]; then
     echo "error getting bucket location: $location"
     return 1
@@ -57,7 +57,7 @@ get_bucket_location_s3cmd() {
     echo "get bucket location (s3cmd) requires bucket name"
     return 1
   fi
-  info=$(s3cmd --no-check-certificate info "s3://$1") || results=$?
+  info=$(send_command s3cmd --no-check-certificate info "s3://$1") || results=$?
   if [[ $results -ne 0 ]]; then
     echo "error getting s3cmd info: $info"
     return 1
@@ -72,7 +72,7 @@ get_bucket_location_mc() {
     echo "get bucket location (mc) requires bucket name"
     return 1
   fi
-  info=$(mc --insecure stat "$MC_ALIAS/$1") || results=$?
+  info=$(send_command mc --insecure stat "$MC_ALIAS/$1") || results=$?
   if [[ $results -ne 0 ]]; then
     echo "error getting s3cmd info: $info"
     return 1

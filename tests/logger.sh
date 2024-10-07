@@ -49,9 +49,22 @@ log_mask() {
     echo "mask and log requires level, string"
     return 1
   fi
-  masked_args=()  # Initialize an array to hold the masked arguments
 
-  IFS=' ' read -r -a array <<< "$2"
+  if ! mask_args "$2"; then
+    echo "error masking args"
+    return 1
+  fi
+
+  log_message "$log_level" "${masked_args[*]}"
+}
+
+mask_args() {
+  masked_args=()  # Initialize an array to hold the masked arguments
+  if [ $# -ne 1 ]; then
+    echo "'mask_args' requires string"
+    return 1
+  fi
+  IFS=' ' read -r -a array <<< "$1"
 
   mask_next=false
   for arg in "${array[@]}"; do
@@ -60,7 +73,6 @@ log_mask() {
       return 1
     fi
   done
-  log_message "$log_level" "${masked_args[*]}"
 }
 
 check_arg_for_mask() {

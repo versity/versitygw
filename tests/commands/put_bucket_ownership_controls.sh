@@ -22,9 +22,13 @@ put_bucket_ownership_controls() {
   fi
 
   log 6 "put_bucket_ownership_controls"
+  if [ $# -ne 2 ]; then
+    log 2 "'put_bucket_ownership_controls' requires bucket name, rule"
+    return 1
+  fi
   record_command "put-bucket-ownership-controls" "client:s3api"
-  assert [ $# -eq 2 ]
-  run aws --no-verify-ssl s3api put-bucket-ownership-controls --bucket "$1" --ownership-controls="Rules=[{ObjectOwnership=$2}]"
-  # shellcheck disable=SC2154
-  assert_success "error putting bucket ownership controls: $output"
+  if ! error=$(send_command aws --no-verify-ssl s3api put-bucket-ownership-controls --bucket "$1" --ownership-controls="Rules=[{ObjectOwnership=$2}]" 2>&1); then
+    log 2 "error putting bucket ownership controls: $error"
+    return 1
+  fi
 }

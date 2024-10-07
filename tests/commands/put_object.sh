@@ -26,13 +26,13 @@ put_object() {
   local exit_code=0
   local error
   if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 mv "$2" s3://"$3/$4" 2>&1) || exit_code=$?
+    error=$(send_command aws --no-verify-ssl s3 mv "$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
+    error=$(send_command aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$3/$4" 2>&1) || exit_code=$?
+    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure put "$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
+    error=$(send_command mc --insecure put "$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
     put_object_rest "$2" "$3" "$4" || exit_code=$?
   else
@@ -55,7 +55,7 @@ put_object_with_user() {
   fi
   local exit_code=0
   if [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    put_object_error=$(AWS_ACCESS_KEY_ID="$5" AWS_SECRET_ACCESS_KEY="$6" aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
+    put_object_error=$(AWS_ACCESS_KEY_ID="$5" AWS_SECRET_ACCESS_KEY="$6" send_command aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   else
     log 2 "'put object with user' command not implemented for '$1'"
     return 1
@@ -97,7 +97,7 @@ $payload_hash"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$2/$3" \
+  reply=$(send_command curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$2/$3" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \
     -H "x-amz-date: $current_date_time" \

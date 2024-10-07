@@ -223,13 +223,13 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! list_and_delete_objects "$1"; then
-    log 2 "error listing and deleting objects"
+  if ! delete_bucket_policy "s3api" "$1"; then
+    log 2 "error deleting bucket policy"
     return 1
   fi
 
-  if ! delete_bucket_policy "s3api" "$1"; then
-    log 2 "error deleting bucket policy"
+  if ! list_and_delete_objects "$1"; then
+    log 2 "error listing and deleting objects"
     return 1
   fi
 

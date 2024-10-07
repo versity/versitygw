@@ -22,7 +22,7 @@ get_bucket_versioning() {
   fi
   local get_result=0
   if [[ $1 == 's3api' ]]; then
-    versioning=$(aws --no-verify-ssl s3api get-bucket-versioning --bucket "$2" 2>&1) || get_result=$?
+    versioning=$(send_command aws --no-verify-ssl s3api get-bucket-versioning --bucket "$2" 2>&1) || get_result=$?
   fi
   if [[ $get_result -ne 0 ]]; then
     log 2 "error getting bucket versioning: $versioning"
@@ -60,7 +60,7 @@ UNSIGNED-PAYLOAD"
   fi
   get_signature
   # shellcheck disable=SC2154
-  if ! reply=$(curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?versioning" \
+  if ! reply=$(send_command curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?versioning" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
     -H "x-amz-date: $current_date_time" \

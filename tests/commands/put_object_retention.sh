@@ -20,7 +20,7 @@ put_object_retention() {
     log 2 "'put object retention' command requires bucket, key, retention mode, retention date"
     return 1
   fi
-  error=$(aws --no-verify-ssl s3api put-object-retention --bucket "$1" --key "$2" --retention "{\"Mode\": \"$3\", \"RetainUntilDate\": \"$4\"}" 2>&1) || local put_result=$?
+  error=$(send_command aws --no-verify-ssl s3api put-object-retention --bucket "$1" --key "$2" --retention "{\"Mode\": \"$3\", \"RetainUntilDate\": \"$4\"}" 2>&1) || local put_result=$?
   if [[ $put_result -ne 0 ]]; then
     log 2 "error putting object retention:  $error"
     return 1
@@ -66,7 +66,7 @@ $payload_hash"
   get_signature
 
   # shellcheck disable=SC2154
-  reply=$(curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1/$2?retention" \
+  reply=$(send_command curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1/$2?retention" \
     -H "Content-MD5: $content_md5" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \
