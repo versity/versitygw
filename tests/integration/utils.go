@@ -976,11 +976,12 @@ func createObjVersions(client *s3.Client, bucket, object string, count int) ([]t
 		isLatest := i == count-1
 
 		versions = append(versions, types.ObjectVersion{
-			ETag:      r.res.ETag,
-			IsLatest:  &isLatest,
-			Key:       &object,
-			Size:      &dataLength,
-			VersionId: r.res.VersionId,
+			ETag:         r.res.ETag,
+			IsLatest:     &isLatest,
+			Key:          &object,
+			Size:         &dataLength,
+			VersionId:    r.res.VersionId,
+			StorageClass: types.ObjectVersionStorageClassStandard,
 		})
 	}
 
@@ -1035,6 +1036,10 @@ func compareVersions(v1, v2 []types.ObjectVersion) bool {
 			return false
 		}
 		if *version.ETag != *v2[i].ETag {
+			return false
+		}
+
+		if version.StorageClass != v2[i].StorageClass {
 			return false
 		}
 	}

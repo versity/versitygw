@@ -385,7 +385,6 @@ type ListVersionsResult struct {
 	NextKeyMarker       *string
 	NextVersionIdMarker *string
 	Prefix              *string
-	RequestCharged      types.RequestCharged
 	VersionIdMarker     *string
 	Versions            []types.ObjectVersion `xml:"Version"`
 }

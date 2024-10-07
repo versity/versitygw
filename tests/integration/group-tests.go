@@ -191,6 +191,11 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_list_all_objs(s)
 }
 
+// VD stands for Versioning Disabled
+func TestListObjectVersions_VD(s *S3Conf) {
+	ListObjectVersions_VD_success(s)
+}
+
 func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
 	DeleteObject_directory_object_noslash(s)
@@ -449,6 +454,9 @@ func TestFullFlow(s *S3Conf) {
 	TestGetObject(s)
 	TestListObjects(s)
 	TestListObjectsV2(s)
+	if !s.versioningEnabled && !s.azureTests {
+		TestListObjectVersions_VD(s)
+	}
 	TestDeleteObject(s)
 	TestDeleteObjects(s)
 	TestCopyObject(s)
@@ -708,6 +716,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                         ListObjectsV2_list_all_objs,
+		"ListObjectVersions_VD_success":                                       ListObjectVersions_VD_success,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                               DeleteObject_directory_object_noslash,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
