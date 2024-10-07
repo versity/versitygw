@@ -44,7 +44,7 @@ get_bucket_policy_aws() {
     log 2 "aws 'get bucket policy' command requires bucket"
     return 1
   fi
-  policy_json=$(aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || local get_result=$?
+  policy_json=$(send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || local get_result=$?
   policy_json=$(echo "$policy_json" | grep -v "InsecureRequestWarning")
   log 5 "$policy_json"
   if [[ $get_result -ne 0 ]]; then
@@ -66,7 +66,7 @@ get_bucket_policy_with_user() {
     log 2 "'get bucket policy with user' command requires bucket, username, password"
     return 1
   fi
-  if policy_json=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1); then
+  if policy_json=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1); then
     policy_json=$(echo "$policy_json" | grep -v "InsecureRequestWarning")
     bucket_policy=$(echo "$policy_json" | jq -r '.Policy')
   else
@@ -87,7 +87,7 @@ get_bucket_policy_s3cmd() {
     return 1
   fi
 
-  if ! info=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1" 2>&1); then
+  if ! info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1" 2>&1); then
     log 2 "error getting bucket policy: $info"
     return 1
   fi
@@ -129,7 +129,7 @@ get_bucket_policy_mc() {
     echo "aws 'get bucket policy' command requires bucket"
     return 1
   fi
-  bucket_policy=$(mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?
+  bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?
   if [[ $get_result -ne 0 ]]; then
     echo "error getting policy: $bucket_policy"
     return 1

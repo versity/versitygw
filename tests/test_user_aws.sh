@@ -107,6 +107,9 @@ export RUN_USERS=true
 }
 
 @test "test_admin_put_get_object" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
   test_file="test_file"
@@ -122,7 +125,12 @@ export RUN_USERS=true
   put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "failed to add object to bucket"
   get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
   compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy" || fail "files don't match"
-  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error deleting object"
+  list_object_versions "$BUCKET_ONE_NAME"
+  log 5 "versions: $versions"
+  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  assert_success
+  list_object_versions "$BUCKET_ONE_NAME"
+  log 5 "versions: $versions"
   if get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
     fail "file not successfully deleted"
   fi

@@ -36,3 +36,24 @@ get_and_check_legal_hold() {
   fi
   return 0
 }
+
+check_legal_hold_without_lock_enabled() {
+  if [ $# -ne 2 ]; then
+    log 2 "'check_legal_hold_without_lock_enabled' requires bucket, key names"
+    return 1
+  fi
+  if get_object_legal_hold_rest "$1" "$2"; then
+    log 2 "get legal hold using REST succeeded without lock enabled"
+    return 1
+  fi
+  log 5 "legal hold info: $(cat "$TEST_FILE_FOLDER/object_legal_hold.txt")"
+  if ! code=$(xmllint --xpath '//*[local-name()="Code"]/text()' "$TEST_FILE_FOLDER/object_legal_hold.txt" 2>&1); then
+    log 2 "error getting error code: $code"
+    return 1
+  fi
+  if [ "$code" != "InvalidRequest" ]; then
+    log 2 "code mismatch (expected 'InvalidRequest', actual '$code')"
+    return 1
+  fi
+  return 0
+}

@@ -108,6 +108,9 @@ export RUN_USERS=true
 
 # delete-objects
 @test "test_delete_objects" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
   test_delete_objects_aws_root
 }
 
@@ -151,10 +154,16 @@ export RUN_USERS=true
 
 # test adding and removing an object on versitygw
 @test "test_put_object_with_data" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
   test_common_put_object_with_data "aws"
 }
 
 @test "test_put_object_no_data" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
   test_common_put_object_no_data "aws"
 }
 
@@ -216,19 +225,8 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  create_and_list_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
-
-  local key_one
-  local key_two
-  # shellcheck disable=SC2154
-  log 5 "Uploads:  $uploads"
-  raw_uploads=$(echo "$uploads" | grep -v "InsecureRequestWarning")
-  key_one=$(echo "$raw_uploads" | jq -r '.Uploads[0].Key' 2>&1) || fail "error getting key one: $key_one"
-  key_two=$(echo "$raw_uploads" | jq -r '.Uploads[1].Key' 2>&1) || fail "error getting key two: $key_two"
-  key_one=${key_one//\"/}
-  key_two=${key_two//\"/}
-  [[ "$bucket_file_one" == *"$key_one" ]] || fail "Key mismatch ($bucket_file_one, $key_one)"
-  [[ "$bucket_file_two" == *"$key_two" ]] || fail "Key mismatch ($bucket_file_two, $key_two)"
+  run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
+  assert_success
 }
 
 @test "test-multipart-upload-from-bucket" {
@@ -398,8 +396,10 @@ export RUN_USERS=true
 @test "test_put_object_lock_configuration" {
   bucket_name=$BUCKET_ONE_NAME
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    delete_bucket "s3api" "$bucket_name" || fail "error deleting bucket"
-    create_bucket_object_lock_enabled "$bucket_name" || fail "error setting up bucket"
+    run delete_bucket "s3api" "$bucket_name"
+    assert_success
+    run create_bucket_object_lock_enabled "$bucket_name"
+    assert_success
   fi
   local enabled="Enabled"
   local governance="GOVERNANCE"

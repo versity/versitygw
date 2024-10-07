@@ -19,7 +19,7 @@ put_public_access_block() {
     log 2 "'put_public_access_block' command requires bucket, access block list"
     return 1
   fi
-  if ! error=$(aws --no-verify-ssl s3api put-public-access-block --bucket "$1" --public-access-block-configuration "$2"); then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-public-access-block --bucket "$1" --public-access-block-configuration "$2"); then
     log 2 "error updating public access block: $error"
     return 1
   fi

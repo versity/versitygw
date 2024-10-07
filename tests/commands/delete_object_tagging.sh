@@ -22,9 +22,9 @@ delete_object_tagging() {
   fi
   delete_result=0
   if [[ $1 == 'aws' ]]; then
-    error=$(aws --no-verify-ssl s3api delete-object-tagging --bucket "$2" --key "$3" 2>&1) || delete_result=$?
+    error=$(send_command aws --no-verify-ssl s3api delete-object-tagging --bucket "$2" --key "$3" 2>&1) || delete_result=$?
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure tag remove "$MC_ALIAS/$2/$3") || delete_result=$?
+    error=$(send_command mc --insecure tag remove "$MC_ALIAS/$2/$3") || delete_result=$?
   elif [ "$1" == 'rest' ]; then
     delete_object_tagging_rest "$2" "$3" || delete_result=$?
   else
@@ -66,7 +66,7 @@ $payload_hash"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -ks -w "%{http_code}" -X DELETE "$header://$aws_endpoint_url_address/$1/$2?tagging" \
+  reply=$(send_command curl -ks -w "%{http_code}" -X DELETE "$header://$aws_endpoint_url_address/$1/$2?tagging" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \
     -H "x-amz-date: $current_date_time" \

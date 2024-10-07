@@ -31,13 +31,13 @@ delete_bucket() {
 
   exit_code=0
   if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 rb s3://"$2") || exit_code=$?
+    error=$(send_command aws --no-verify-ssl s3 rb s3://"$2") || exit_code=$?
   elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
-    error=$(aws --no-verify-ssl s3api delete-bucket --bucket "$2" 2>&1) || exit_code=$?
+    error=$(send_command aws --no-verify-ssl s3api delete-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" 2>&1) || exit_code=$?
+    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
-    error=$(mc --insecure rb "$MC_ALIAS/$2" 2>&1) || exit_code=$?
+    error=$(send_command mc --insecure rb "$MC_ALIAS/$2" 2>&1) || exit_code=$?
   else
     log 2 "Invalid command type $1"
     return 1

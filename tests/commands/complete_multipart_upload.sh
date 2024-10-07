@@ -21,7 +21,7 @@ complete_multipart_upload() {
   fi
   log 5 "complete multipart upload id: $3, parts: $4"
   record_command "complete-multipart-upload" "client:s3api"
-  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$3" --multipart-upload '{"Parts": '"$4"'}' 2>&1) || local completed=$?
+  error=$(send_command aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2" --upload-id "$3" --multipart-upload '{"Parts": '"$4"'}' 2>&1) || local completed=$?
   if [[ $completed -ne 0 ]]; then
     log 2 "error completing multipart upload: $error"
     return 1

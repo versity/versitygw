@@ -8,11 +8,11 @@ create_presigned_url() {
 
   local presign_result=0
   if [[ $1 == 'aws' ]]; then
-    presigned_url=$(aws s3 presign "s3://$2/$3" --expires-in 900) || presign_result=$?
+    presigned_url=$(send_command aws s3 presign "s3://$2/$3" --expires-in 900) || presign_result=$?
   elif [[ $1 == 's3cmd' ]]; then
-    presigned_url=$(s3cmd --no-check-certificate "${S3CMD_OPTS[@]}" signurl "s3://$2/$3" "$(echo "$(date +%s)" + 900 | bc)") || presign_result=$?
+    presigned_url=$(send_command s3cmd --no-check-certificate "${S3CMD_OPTS[@]}" signurl "s3://$2/$3" "$(echo "$(date +%s)" + 900 | bc)") || presign_result=$?
   elif [[ $1 == 'mc' ]]; then
-    presigned_url_data=$(mc --insecure share download --recursive "$MC_ALIAS/$2/$3") || presign_result=$?
+    presigned_url_data=$(send_command mc --insecure share download --recursive "$MC_ALIAS/$2/$3") || presign_result=$?
     presigned_url="${presigned_url_data#*Share: }"
   else
     log 2 "unrecognized command type $1"

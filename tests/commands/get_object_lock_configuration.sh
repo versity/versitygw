@@ -20,7 +20,7 @@ get_object_lock_configuration() {
     log 2 "'get object lock configuration' command missing bucket name"
     return 1
   fi
-  if ! lock_config=$(aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$1" 2>&1); then
+  if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$1" 2>&1); then
     log 2 "error obtaining lock config: $lock_config"
     # shellcheck disable=SC2034
     get_object_lock_config_err=$lock_config
@@ -57,7 +57,7 @@ UNSIGNED-PAYLOAD"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?object-lock" \
+  reply=$(send_command curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?object-lock" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
     -H "x-amz-date: $current_date_time" \

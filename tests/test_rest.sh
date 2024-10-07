@@ -14,6 +14,7 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util.sh
+source ./tests/util_legal_hold.sh
 source ./tests/util_list_buckets.sh
 source ./tests/util_list_objects.sh
 source ./tests/util_lock_config.sh
@@ -124,9 +125,7 @@ source ./tests/util_versioning.sh
   assert_success
 }
 
-@test "test_rest_set_get_versioning" {
-  skip "https://github.com/versity/versitygw/issues/866"
-
+@test "REST - check, enable, suspend versioning" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
@@ -198,5 +197,70 @@ source ./tests/util_versioning.sh
   assert_success
 
   run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "2" "true" "false" "false" "true"
+  assert_success
+}
+
+@test "versioning - add version, then delete and check for marker" {
+  skip "https://github.com/versity/versitygw/issues/864"
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  assert_success
+
+  run delete_object_rest "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_versions_after_file_deletion "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "versioning - retrieve after delete" {
+  skip "https://github.com/versity/versitygw/issues/888"
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  assert_success
+
+  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_failure
+}
+
+@test "REST - legal hold, get without config" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/883"
+  fi
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
