@@ -17,6 +17,7 @@ package meta
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -36,7 +37,15 @@ var (
 type XattrMeta struct{}
 
 // RetrieveAttribute retrieves the value of a specific attribute for an object in a bucket.
-func (x XattrMeta) RetrieveAttribute(bucket, object, attribute string) ([]byte, error) {
+func (x XattrMeta) RetrieveAttribute(f *os.File, bucket, object, attribute string) ([]byte, error) {
+	if f != nil {
+		b, err := xattr.FGet(f, xattrPrefix+attribute)
+		if errors.Is(err, xattr.ENOATTR) {
+			return nil, ErrNoSuchKey
+		}
+		return b, err
+	}
+
 	b, err := xattr.Get(filepath.Join(bucket, object), xattrPrefix+attribute)
 	if errors.Is(err, xattr.ENOATTR) {
 		return nil, ErrNoSuchKey
@@ -45,7 +54,11 @@ func (x XattrMeta) RetrieveAttribute(bucket, object, attribute string) ([]byte, 
 }
 
 // StoreAttribute stores the value of a specific attribute for an object in a bucket.
-func (x XattrMeta) StoreAttribute(bucket, object, attribute string, value []byte) error {
+func (x XattrMeta) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
+	if f != nil {
+		return xattr.FSet(f, xattrPrefix+attribute, value)
+	}
+
 	return xattr.Set(filepath.Join(bucket, object), xattrPrefix+attribute, value)
 }
 

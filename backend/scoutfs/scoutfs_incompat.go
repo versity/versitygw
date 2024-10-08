@@ -28,9 +28,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	return nil, fmt.Errorf("scoutfs only available on linux")
 }
 
-type tmpfile struct {
-	f *os.File
-}
+type tmpfile struct{}
 
 var (
 	errNotSupported = errors.New("not supported")
@@ -54,6 +52,10 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 }
 
 func (tmp *tmpfile) cleanup() {
+}
+
+func (tmp *tmpfile) File() *os.File {
+	return nil
 }
 
 func moveData(_, _ *os.File) error {

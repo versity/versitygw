@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -34,6 +36,7 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -2865,6 +2868,52 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	return nil
 }
 
+func PutObject_racey_success(s *S3Conf) error {
+	testName := "PutObject_racey_success"
+	runF(testName)
+	bucket, obj, lockStatus := getBucketName(), "my-obj", true
+
+	client := s3.NewFromConfig(s.Config())
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket:                     &bucket,
+		ObjectLockEnabledForBucket: &lockStatus,
+	})
+	cancel()
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	eg := errgroup.Group{}
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			return err
+		})
+	}
+	err = eg.Wait()
+
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	err = teardown(s, bucket)
+	if err != nil {
+		failF("%v: %v", err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	passF(testName)
+	return nil
+}
+
 func PutObject_success(s *S3Conf) error {
 	testName := "PutObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2943,7 +2992,7 @@ func HeadObject_mp_success(s *S3Conf) error {
 	testName := "HeadObject_mp_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		partCount, partSize := 5, 1024
+		partCount, partSize := int64(5), int64(1024)
 		partNumber := int32(3)
 
 		mp, err := createMp(s3client, bucket, obj)
@@ -2951,7 +3000,7 @@ func HeadObject_mp_success(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, partCount*partSize, partCount, bucket, obj, *mp.UploadId)
+		parts, _, err := uploadParts(s3client, partCount*partSize, partCount, bucket, obj, *mp.UploadId)
 		if err != nil {
 			return err
 		}
@@ -5245,7 +5294,7 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -5319,7 +5368,7 @@ func CreateMultipartUpload_with_content_type(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -5382,7 +5431,7 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -5540,7 +5589,7 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -6228,7 +6277,7 @@ func ListParts_truncated(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -6292,7 +6341,7 @@ func ListParts_success(s *S3Conf) error {
 			return err
 		}
 
-		parts, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -6781,8 +6830,8 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
-		objSize := 5 * 1024 * 1024
-		parts, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+		objSize := int64(5 * 1024 * 1024)
+		parts, csum, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -6830,7 +6879,159 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", objSize, resp.ContentLength)
 		}
 
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		defer cancel()
+		rget, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		if err != nil {
+			return err
+		}
+
+		if *rget.ContentLength != int64(objSize) {
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v", objSize, *rget.ContentLength)
+		}
+
+		bdy, err := io.ReadAll(rget.Body)
+		if err != nil {
+			return err
+		}
+		defer rget.Body.Close()
+
+		sum := sha256.Sum256(bdy)
+		getsum := hex.EncodeToString(sum[:])
+
+		if csum != getsum {
+			return fmt.Errorf("expected the object checksum to be %v, instead got %v", csum, getsum)
+		}
+
 		return nil
+	})
+}
+
+type mpinfo struct {
+	uploadId *string
+	parts    []types.CompletedPart
+}
+
+func CompleteMultipartUpload_racey_success(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_racey_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		var mu sync.RWMutex
+		uploads := make([]mpinfo, 10)
+		sums := make([]string, 10)
+		objSize := int64(5 * 1024 * 1024)
+
+		eg := errgroup.Group{}
+		for i := 0; i < 10; i++ {
+			func(i int) {
+				eg.Go(func() error {
+					out, err := createMp(s3client, bucket, obj)
+					if err != nil {
+						return err
+					}
+
+					parts, csum, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+					mu.Lock()
+					sums[i] = csum
+					mu.Unlock()
+					if err != nil {
+						return err
+					}
+
+					compParts := []types.CompletedPart{}
+					for _, el := range parts {
+						compParts = append(compParts, types.CompletedPart{
+							ETag:       el.ETag,
+							PartNumber: el.PartNumber,
+						})
+					}
+
+					mu.Lock()
+					uploads[i] = mpinfo{
+						uploadId: out.UploadId,
+						parts:    compParts,
+					}
+					mu.Unlock()
+					return nil
+				})
+			}(i)
+		}
+
+		err := eg.Wait()
+		if err != nil {
+			return err
+		}
+
+		eg = errgroup.Group{}
+		for i := 0; i < 10; i++ {
+			func(i int) {
+				eg.Go(func() error {
+					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+					mu.RLock()
+					res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+						Bucket:   &bucket,
+						Key:      &obj,
+						UploadId: uploads[i].uploadId,
+						MultipartUpload: &types.CompletedMultipartUpload{
+							Parts: uploads[i].parts,
+						},
+					})
+					mu.RUnlock()
+					cancel()
+					if err != nil {
+						fmt.Println("GOT ERROR: ", err)
+						return err
+					}
+
+					if *res.Key != obj {
+						return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+					}
+
+					return nil
+				})
+			}(i)
+		}
+
+		err = eg.Wait()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		defer cancel()
+		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		if err != nil {
+			return err
+		}
+
+		if *out.ContentLength != int64(objSize) {
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v", objSize, *out.ContentLength)
+		}
+
+		bdy, err := io.ReadAll(out.Body)
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		sum := sha256.Sum256(bdy)
+		csum := hex.EncodeToString(sum[:])
+
+		mu.RLock()
+		defer mu.RUnlock()
+		for _, s := range sums {
+			if csum == s {
+				return nil
+			}
+		}
+		return fmt.Errorf("expected the object checksum to be one of %v, instead got %v", sums, csum)
 	})
 }
 
@@ -11594,8 +11795,8 @@ func Versioning_Multipart_Upload_success(s *S3Conf) error {
 			return err
 		}
 
-		objSize := 5 * 1024 * 1024
-		parts, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+		objSize := int64(5 * 1024 * 1024)
+		parts, _, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -11674,8 +11875,8 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 			return err
 		}
 
-		objSize := 5 * 1024 * 1024
-		parts, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
+		objSize := int64(5 * 1024 * 1024)
+		parts, _, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
 		}
@@ -11900,8 +12101,8 @@ func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 	}, withLock())
 }
 
-func Versionsin_PutObjectRetention_invalid_versionId(s *S3Conf) error {
-	testName := "Versionsin_PutObjectRetention_invalid_versionId"
+func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_PutObjectRetention_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		_, err := createObjVersions(s3client, bucket, obj, 3)
@@ -12002,8 +12203,8 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 	}, withLock(), withVersioning())
 }
 
-func Versionsin_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
-	testName := "Versionsin_PutObjectLegalHold_invalid_versionId"
+func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_PutObjectLegalHold_invalid_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		_, err := createObjVersions(s3client, bucket, obj, 3)
@@ -12251,6 +12452,7 @@ func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
 		return nil
 	})
 }
+
 func VersioningDisabled_PutBucketVersioning_not_configured(s *S3Conf) error {
 	testName := "VersioningDisabled_PutBucketVersioning_not_configured"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -12265,4 +12467,66 @@ func VersioningDisabled_PutBucketVersioning_not_configured(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func Versioning_concurrent_upload_object(s *S3Conf) error {
+	testName := "Versioninig_concurrent_upload_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versionCount := 5
+		// Channel to collect errors
+		errCh := make(chan error, versionCount)
+
+		uploadVersion := func(wg *sync.WaitGroup) {
+			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				// Send error to the channel
+				errCh <- err
+				return
+			}
+
+			fmt.Printf("uploaded object successfully: versionId: %v\n", *res.VersionId)
+		}
+
+		wg := &sync.WaitGroup{}
+		wg.Add(versionCount)
+
+		for i := 0; i < versionCount; i++ {
+			go uploadVersion(wg)
+		}
+
+		wg.Wait()
+		close(errCh)
+
+		// Check if there were any errors
+		for err := range errCh {
+			if err != nil {
+				fmt.Printf("error uploading an object: %v\n", err.Error())
+				return err
+			}
+		}
+
+		// List object versions after all uploads
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Versions) != versionCount {
+			return fmt.Errorf("expected %v object versions, instead got %v", versionCount, len(res.Versions))
+		}
+
+		return nil
+	}, withVersioning())
 }

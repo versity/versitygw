@@ -115,6 +115,7 @@ func (c *S3Conf) Config() aws.Config {
 		config.WithRegion(c.awsRegion),
 		config.WithCredentialsProvider(creds),
 		config.WithHTTPClient(client),
+		config.WithRetryMaxAttempts(1),
 	}
 
 	if c.checksumDisable {

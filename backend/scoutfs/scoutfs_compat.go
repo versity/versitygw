@@ -174,6 +174,10 @@ func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
 }
 
+func (tmp *tmpfile) File() *os.File {
+	return tmp.f
+}
+
 func moveData(from *os.File, to *os.File) error {
 	return scoutfs.MoveData(from, to)
 }

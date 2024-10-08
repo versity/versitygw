@@ -134,6 +134,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
 	PutObject_success(s)
+	PutObject_racey_success(s)
 	PutObject_invalid_credentials(s)
 }
 
@@ -304,6 +305,9 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 	CompleteMultipartUpload_invalid_part_number(s)
 	CompleteMultipartUpload_invalid_ETag(s)
 	CompleteMultipartUpload_success(s)
+	if !s.azureTests {
+		CompleteMultipartUpload_racey_success(s)
+	}
 }
 
 func TestPutBucketAcl(s *S3Conf) {
@@ -571,17 +575,19 @@ func TestVersioning(s *S3Conf) {
 	Versioning_Enable_object_lock(s)
 	Versioning_status_switch_to_suspended_with_object_lock(s)
 	// Object-Lock Retention
-	Versionsin_PutObjectRetention_invalid_versionId(s)
+	Versioning_PutObjectRetention_invalid_versionId(s)
 	Versioning_GetObjectRetention_invalid_versionId(s)
 	Versioning_Put_GetObjectRetention_success(s)
 	// Object-Lock Legal hold
-	Versionsin_PutObjectLegalHold_invalid_versionId(s)
+	Versioning_PutObjectLegalHold_invalid_versionId(s)
 	Versioning_GetObjectLegalHold_invalid_versionId(s)
 	Versioning_Put_GetObjectLegalHold_success(s)
 	// WORM protection
 	Versioning_WORM_obj_version_locked_with_legal_hold(s)
 	Versioning_WORM_obj_version_locked_with_governance_retention(s)
 	Versioning_WORM_obj_version_locked_with_compliance_retention(s)
+	// Concurrent requests
+	//Versioninig_concurrent_upload_object(s)
 }
 
 func TestVersioningDisabled(s *S3Conf) {
@@ -677,6 +683,7 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                                             PutObject_special_chars,
 		"PutObject_invalid_long_tags":                                         PutObject_invalid_long_tags,
 		"PutObject_success":                                                   PutObject_success,
+		"PutObject_racey_success":                                             PutObject_racey_success,
 		"HeadObject_non_existing_object":                                      HeadObject_non_existing_object,
 		"HeadObject_invalid_part_number":                                      HeadObject_invalid_part_number,
 		"HeadObject_non_existing_mp":                                          HeadObject_non_existing_mp,
@@ -790,6 +797,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_invalid_part_number":                         CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_invalid_ETag":                                CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_success":                                     CompleteMultipartUpload_success,
+		"CompleteMultipartUpload_racey_success":                               CompleteMultipartUpload_racey_success,
 		"PutBucketAcl_non_existing_bucket":                                    PutBucketAcl_non_existing_bucket,
 		"PutBucketAcl_disabled":                                               PutBucketAcl_disabled,
 		"PutBucketAcl_none_of_the_options_specified":                          PutBucketAcl_none_of_the_options_specified,
@@ -939,14 +947,15 @@ func GetIntTests() IntTests {
 		"Versioning_UploadPartCopy_from_an_object_version":                    Versioning_UploadPartCopy_from_an_object_version,
 		"Versioning_Enable_object_lock":                                       Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":              Versioning_status_switch_to_suspended_with_object_lock,
-		"Versionsin_PutObjectRetention_invalid_versionId":                     Versionsin_PutObjectRetention_invalid_versionId,
+		"Versioning_PutObjectRetention_invalid_versionId":                     Versioning_PutObjectRetention_invalid_versionId,
 		"Versioning_GetObjectRetention_invalid_versionId":                     Versioning_GetObjectRetention_invalid_versionId,
 		"Versioning_Put_GetObjectRetention_success":                           Versioning_Put_GetObjectRetention_success,
-		"Versionsin_PutObjectLegalHold_invalid_versionId":                     Versionsin_PutObjectLegalHold_invalid_versionId,
+		"Versioning_PutObjectLegalHold_invalid_versionId":                     Versioning_PutObjectLegalHold_invalid_versionId,
 		"Versioning_GetObjectLegalHold_invalid_versionId":                     Versioning_GetObjectLegalHold_invalid_versionId,
 		"Versioning_Put_GetObjectLegalHold_success":                           Versioning_Put_GetObjectLegalHold_success,
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                  Versioning_WORM_obj_version_locked_with_legal_hold,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":        Versioning_WORM_obj_version_locked_with_governance_retention,
 		"Versioning_WORM_obj_version_locked_with_compliance_retention":        Versioning_WORM_obj_version_locked_with_compliance_retention,
+		"Versioning_concurrent_upload_object":                                 Versioning_concurrent_upload_object,
 	}
 }

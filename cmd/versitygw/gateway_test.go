@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
@@ -75,6 +76,9 @@ func initPosix(ctx context.Context) {
 		}
 		wg.Done()
 	}()
+
+	// wait for server to start
+	time.Sleep(1 * time.Second)
 }
 
 func TestIntegration(t *testing.T) {

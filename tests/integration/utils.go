@@ -28,7 +28,6 @@ import (
 	rnd "math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -707,39 +706,22 @@ func compareDelObjects(list1, list2 []types.DeletedObject) bool {
 	return true
 }
 
-func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId string) (parts []types.Part, err error) {
-	dr := NewDataReader(size, size)
-	datafile := "rand.data"
-	w, err := os.Create(datafile)
-	if err != nil {
-		return parts, err
-	}
-	defer w.Close()
+func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string) (parts []types.Part, csum string, err error) {
+	partSize := size / partCount
 
-	_, err = io.Copy(w, dr)
-	if err != nil {
-		return parts, err
-	}
+	hash := sha256.New()
 
-	fileInfo, err := w.Stat()
-	if err != nil {
-		return parts, err
-	}
-
-	partSize := fileInfo.Size() / int64(partCount)
-	var offset int64
-
-	for partNumber := int64(1); partNumber <= int64(partCount); partNumber++ {
+	for partNumber := int64(1); partNumber <= partCount; partNumber++ {
 		partStart := (partNumber - 1) * partSize
 		partEnd := partStart + partSize - 1
-		if partEnd > fileInfo.Size()-1 {
-			partEnd = fileInfo.Size() - 1
+		if partEnd > size-1 {
+			partEnd = size - 1
 		}
+
 		partBuffer := make([]byte, partEnd-partStart+1)
-		_, err := w.ReadAt(partBuffer, partStart)
-		if err != nil {
-			return parts, err
-		}
+		rand.Read(partBuffer)
+		hash.Write(partBuffer)
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		pn := int32(partNumber)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
@@ -751,17 +733,20 @@ func uploadParts(client *s3.Client, size, partCount int, bucket, key, uploadId s
 		})
 		cancel()
 		if err != nil {
-			return parts, err
+			return parts, "", err
 		}
+
 		parts = append(parts, types.Part{
 			ETag:       out.ETag,
 			PartNumber: &pn,
 			Size:       &partSize,
 		})
-		offset += partSize
 	}
 
-	return parts, err
+	sum := hash.Sum(nil)
+	csum = hex.EncodeToString(sum[:])
+
+	return parts, csum, err
 }
 
 type user struct {
