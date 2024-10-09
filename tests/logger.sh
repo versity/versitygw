@@ -66,8 +66,20 @@ mask_args() {
   fi
   IFS=' ' read -r -a array <<< "$1"
 
+  if ! mask_arg_array "${array[@]}"; then
+    echo "error masking arg array"
+    return 1
+  fi
+
+}
+
+mask_arg_array() {
+  if [ $# -eq 0 ]; then
+    echo "'mask_arg_array' requires parameters"
+    return 1
+  fi
   mask_next=false
-  for arg in "${array[@]}"; do
+  for arg in "$@"; do
     if ! check_arg_for_mask "$arg"; then
       echo "error checking arg for mask"
       return 1

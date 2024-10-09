@@ -21,11 +21,15 @@ send_command() {
     return 1
   fi
   if [ -n "$COMMAND_LOG" ]; then
-    if ! mask_args "$*"; then
-      return 1
+    if [[ "$*" == *"secret"* ]]; then
+      if ! mask_arg_array "$@"; then
+        return 1
+      fi
+      # shellcheck disable=SC2154
+      echo "${masked_args[*]}" >> "$COMMAND_LOG"
+      return 0
     fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    echo "$*" >> "$COMMAND_LOG"
   fi
   "$@"
 }

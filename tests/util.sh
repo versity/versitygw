@@ -102,7 +102,7 @@ add_governance_bypass_policy() {
   fi
   cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
 {
-  "Version": "dummy",
+  "Version": "2012-10-17",
   "Statement": [
     {
        "Effect": "Allow",
@@ -223,8 +223,8 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! delete_bucket_policy "s3api" "$1"; then
-    log 2 "error deleting bucket policy"
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+    log 2 "error adding governance bypass policy"
     return 1
   fi
 

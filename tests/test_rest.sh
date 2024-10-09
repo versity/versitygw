@@ -200,3 +200,25 @@ source ./tests/util_versioning.sh
   run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "2" "true" "false" "false" "true"
   assert_success
 }
+
+@test "versioning - add version, then delete and check for marker" {
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  assert_success
+
+  run delete_object_rest "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_versions_after_file_deletion "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
