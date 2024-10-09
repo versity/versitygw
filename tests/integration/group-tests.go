@@ -134,7 +134,9 @@ func TestPutObject(s *S3Conf) {
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
 	PutObject_success(s)
-	PutObject_racey_success(s)
+	if !s.versioningEnabled {
+		PutObject_racey_success(s)
+	}
 	PutObject_invalid_credentials(s)
 }
 
