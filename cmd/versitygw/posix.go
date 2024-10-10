@@ -16,6 +16,8 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
+	"math"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend/meta"
@@ -26,6 +28,7 @@ var (
 	chownuid, chowngid bool
 	bucketlinks        bool
 	versioningDir      string
+	dirPerms           uint
 )
 
 func posixCommand() *cli.Command {
@@ -68,6 +71,14 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_VERSIONING_DIR"},
 				Destination: &versioningDir,
 			},
+			&cli.UintFlag{
+				Name:        "dir-perms",
+				Usage:       "default directory permissions for new directories",
+				EnvVars:     []string{"VGW_DIR_PERMS"},
+				Destination: &dirPerms,
+				DefaultText: "0755",
+				Value:       0755,
+			},
 		},
 	}
 }
@@ -83,11 +94,16 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("posix xattr check: %v", err)
 	}
 
+	if dirPerms > math.MaxUint32 {
+		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
+	}
+
 	be, err := posix.New(gwroot, meta.XattrMeta{}, posix.PosixOpts{
 		ChownUID:      chownuid,
 		ChownGID:      chowngid,
 		BucketLinks:   bucketlinks,
 		VersioningDir: versioningDir,
+		NewDirPerm:    fs.FileMode(dirPerms),
 	})
 	if err != nil {
 		return fmt.Errorf("init posix: %v", err)

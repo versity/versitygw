@@ -43,6 +43,7 @@ type tmpfile struct {
 	needsChown bool
 	uid        int
 	gid        int
+	newDirPerm fs.FileMode
 }
 
 var (
@@ -62,7 +63,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
 	if err != nil {
 		// O_TMPFILE not supported, try fallback
-		err = backend.MkdirAll(dir, uid, gid, doChown)
+		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
 			return nil, fmt.Errorf("make temp dir: %w", err)
 		}
@@ -108,6 +109,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		needsChown: doChown,
 		uid:        uid,
 		gid:        gid,
+		newDirPerm: p.newDirPerm,
 	}
 
 	// falloc is best effort, its fine if this fails
@@ -151,7 +153,7 @@ func (tmp *tmpfile) link() error {
 
 	dir := filepath.Dir(objPath)
 
-	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown)
+	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
 	if err != nil {
 		return fmt.Errorf("make parent dir: %w", err)
 	}

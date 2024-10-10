@@ -40,6 +40,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		ChownUID:    opts.ChownUID,
 		ChownGID:    opts.ChownGID,
 		BucketLinks: opts.BucketLinks,
+		NewDirPerm:  opts.NewDirPerm,
 	})
 	if err != nil {
 		return nil, err
@@ -58,6 +59,7 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		chownuid:    opts.ChownUID,
 		chowngid:    opts.ChownGID,
 		glaciermode: opts.GlacierMode,
+		newDirPerm:  opts.NewDirPerm,
 	}, nil
 }
 
@@ -71,10 +73,10 @@ type tmpfile struct {
 	needsChown bool
 	uid        int
 	gid        int
+	newDirPerm fs.FileMode
 }
 
 var (
-	// TODO: make this configurable
 	defaultFilePerm uint32 = 0644
 )
 
@@ -102,6 +104,7 @@ func (s *ScoutFS) openTmpFile(dir, bucket, obj string, size int64, acct auth.Acc
 		needsChown: doChown,
 		uid:        uid,
 		gid:        gid,
+		newDirPerm: s.newDirPerm,
 	}
 
 	if doChown {
@@ -129,7 +132,7 @@ func (tmp *tmpfile) link() error {
 
 	dir := filepath.Dir(objPath)
 
-	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown)
+	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
 	if err != nil {
 		return fmt.Errorf("make parent dir: %w", err)
 	}

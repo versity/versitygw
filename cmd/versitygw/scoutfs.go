@@ -16,6 +16,8 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
+	"math"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend/scoutfs"
@@ -69,6 +71,14 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_BUCKET_LINKS"},
 				Destination: &bucketlinks,
 			},
+			&cli.UintFlag{
+				Name:        "dir-perms",
+				Usage:       "default directory permissions for new directories",
+				EnvVars:     []string{"VGW_DIR_PERMS"},
+				Destination: &dirPerms,
+				DefaultText: "0755",
+				Value:       0755,
+			},
 		},
 	}
 }
@@ -78,11 +88,16 @@ func runScoutfs(ctx *cli.Context) error {
 		return fmt.Errorf("no directory provided for operation")
 	}
 
+	if dirPerms > math.MaxUint32 {
+		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
+	}
+
 	var opts scoutfs.ScoutfsOpts
 	opts.GlacierMode = glacier
 	opts.ChownUID = chownuid
 	opts.ChownGID = chowngid
 	opts.BucketLinks = bucketlinks
+	opts.NewDirPerm = fs.FileMode(dirPerms)
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {

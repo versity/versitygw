@@ -68,6 +68,9 @@ type Posix struct {
 
 	// bucket versioning directory path
 	versioningDir string
+
+	// newDirPerm is the permission to set on newly created directories
+	newDirPerm fs.FileMode
 }
 
 var _ backend.Backend = &Posix{}
@@ -103,6 +106,7 @@ type PosixOpts struct {
 	ChownGID      bool
 	BucketLinks   bool
 	VersioningDir string
+	NewDirPerm    fs.FileMode
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -167,6 +171,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		chowngid:      opts.ChownGID,
 		bucketlinks:   opts.BucketLinks,
 		versioningDir: verioningdirAbs,
+		newDirPerm:    opts.NewDirPerm,
 	}, nil
 }
 
@@ -291,11 +296,6 @@ func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.He
 	return &s3.HeadBucketOutput{}, nil
 }
 
-var (
-	// TODO: make this configurable
-	defaultDirPerm fs.FileMode = 0755
-)
-
 func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	if input.Bucket == nil {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
@@ -310,7 +310,7 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 
 	bucket := *input.Bucket
 
-	err := os.Mkdir(bucket, defaultDirPerm)
+	err := os.Mkdir(bucket, p.newDirPerm)
 	if err != nil && os.IsExist(err) {
 		aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
 		if err != nil {
@@ -642,7 +642,7 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 
 	versionPath = filepath.Join(versionBucketPath, versioningKey)
 
-	err = os.MkdirAll(filepath.Join(versionBucketPath, genObjVersionKey(key)), defaultDirPerm)
+	err = os.MkdirAll(filepath.Join(versionBucketPath, genObjVersionKey(key)), p.newDirPerm)
 	if err != nil {
 		return versionPath, err
 	}
@@ -1375,7 +1375,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	dir := filepath.Dir(objname)
 	if dir != "" {
 		uid, gid, doChown := p.getChownIDs(acct)
-		err = backend.MkdirAll(dir, uid, gid, doChown)
+		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
 			return nil, err
 		}
@@ -2158,7 +2158,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 		}
 
-		err = backend.MkdirAll(name, uid, gid, doChown)
+		err = backend.MkdirAll(name, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
 				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -2248,7 +2248,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 
 	dir := filepath.Dir(name)
 	if dir != "" {
-		err = backend.MkdirAll(dir, uid, gid, doChown)
+		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 		}

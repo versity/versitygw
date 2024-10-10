@@ -44,6 +44,7 @@ type ScoutfsOpts struct {
 	ChownGID    bool
 	GlacierMode bool
 	BucketLinks bool
+	NewDirPerm  fs.FileMode
 }
 
 type ScoutFS struct {
@@ -74,6 +75,9 @@ type ScoutFS struct {
 	// used to determine if chowning is needed
 	euid int
 	egid int
+
+	// newDirPerm is the permissions to use when creating new directories
+	newDirPerm fs.FileMode
 }
 
 var _ backend.Backend = &ScoutFS{}
@@ -277,7 +281,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	dir := filepath.Dir(objname)
 	if dir != "" {
 		uid, gid, doChown := s.getChownIDs(acct)
-		err = backend.MkdirAll(dir, uid, gid, doChown)
+		err = backend.MkdirAll(dir, uid, gid, doChown, s.newDirPerm)
 		if err != nil {
 			return nil, err
 		}
