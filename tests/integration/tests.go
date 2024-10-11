@@ -42,6 +42,7 @@ import (
 var (
 	shortTimeout  = 10 * time.Second
 	iso8601Format = "20060102T150405Z"
+	nullVersionId = "null"
 )
 
 func Authentication_empty_auth_header(s *S3Conf) error {
@@ -10602,14 +10603,7 @@ func PutObject_name_too_long(s *S3Conf) error {
 func PutBucketVersioning_non_existing_bucket(s *S3Conf) error {
 	testName := "PutBucketVersioning_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: getPtr(getBucketName()),
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusEnabled,
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, getBucketName(), types.BucketVersioningStatusSuspended)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
@@ -10638,14 +10632,7 @@ func HeadObject_name_too_long(s *S3Conf) error {
 func PutBucketVersioning_invalid_status(s *S3Conf) error {
 	testName := "PutBucketVersioning_invalid_status"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: &bucket,
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatus("invalid_status"),
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatus("invalid_status"))
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
 		}
@@ -10657,14 +10644,7 @@ func PutBucketVersioning_invalid_status(s *S3Conf) error {
 func PutBucketVersioning_success_enabled(s *S3Conf) error {
 	testName := "PutBucketVersioning_success_enabled"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: &bucket,
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusEnabled,
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
 		if err != nil {
 			return err
 		}
@@ -10676,14 +10656,7 @@ func PutBucketVersioning_success_enabled(s *S3Conf) error {
 func PutBucketVersioning_success_suspended(s *S3Conf) error {
 	testName := "PutBucketVersioning_success_suspended"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: &bucket,
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusSuspended,
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
 		if err != nil {
 			return err
 		}
@@ -10747,7 +10720,148 @@ func GetBucketVersioning_success(s *S3Conf) error {
 			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v", types.BucketVersioningStatusEnabled, res.Status)
 		}
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutObject_suspended_null_versionId_obj(s *S3Conf) error {
+	testName := "Versioning_PutObject_suspended_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := putObjectWithData(1222, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		if getString(out.res.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", nullVersionId, getString(out.res.VersionId))
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusSuspended))
+}
+
+func Versioning_PutObject_null_versionId_obj(s *S3Conf) error {
+	testName := "Versioning_PutObject_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, lgth := "my-obj", int64(1234)
+		out, err := putObjectWithData(lgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// Enable bucket versioning
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		versions, err := createObjVersions(s3client, bucket, obj, 4)
+		if err != nil {
+			return err
+		}
+
+		versions = append(versions, types.ObjectVersion{
+			ETag:         out.res.ETag,
+			IsLatest:     getBoolPtr(false),
+			Key:          &obj,
+			Size:         &lgth,
+			VersionId:    &nullVersionId,
+			StorageClass: types.ObjectVersionStorageClassStandard,
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(versions, res.Versions) {
+			return fmt.Errorf("expected the listed versions to be %v, instead got %v", versions, res.Versions)
+		}
+
+		return nil
+	})
+}
+
+func Versioning_PutObject_overwrite_null_versionId_obj(s *S3Conf) error {
+	testName := "Versioning_PutObject_overwrite_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(int64(1233), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// Enable bucket versioning
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		versions, err := createObjVersions(s3client, bucket, obj, 4)
+		if err != nil {
+			return err
+		}
+
+		// Set bucket versioning status to Suspended
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		lgth := int64(3200)
+		out, err := putObjectWithData(lgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		if getString(out.res.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the uploaded object versionId to be %v, insted got %v", nullVersionId, getString(out.res.VersionId))
+		}
+
+		versions[0].IsLatest = getBoolPtr(false)
+
+		versions = append([]types.ObjectVersion{
+			{
+				ETag:         out.res.ETag,
+				IsLatest:     getBoolPtr(true),
+				Key:          &obj,
+				Size:         &lgth,
+				VersionId:    &nullVersionId,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+			},
+		}, versions...)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(versions, res.Versions) {
+			return fmt.Errorf("expected the listed versions to be %v, instead got %v", versions, res.Versions)
+		}
+
+		return nil
+	})
 }
 
 func Versioning_PutObject_success(s *S3Conf) error {
@@ -10768,7 +10882,7 @@ func Versioning_PutObject_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_CopyObject_success(s *S3Conf) error {
@@ -10840,7 +10954,7 @@ func Versioning_CopyObject_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_CopyObject_non_existing_version_id(s *S3Conf) error {
@@ -10874,14 +10988,14 @@ func Versioning_CopyObject_non_existing_version_id(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 	testName := "Versioning_CopyObject_from_an_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		srcBucket, srcObj, dstObj := getBucketName(), "my-obj", "my-dst-obj"
-		if err := setup(s, srcBucket, withVersioning()); err != nil {
+		if err := setup(s, srcBucket, withVersioning(types.BucketVersioningStatusEnabled)); err != nil {
 			return err
 		}
 
@@ -10932,7 +11046,7 @@ func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_CopyObject_special_chars(s *S3Conf) error {
@@ -10985,7 +11099,7 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_HeadObject_invalid_versionId(s *S3Conf) error {
@@ -11063,7 +11177,7 @@ func Versioning_HeadObject_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_HeadObject_delete_marker(s *S3Conf) error {
@@ -11105,7 +11219,7 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_GetObject_invalid_versionId(s *S3Conf) error {
@@ -11133,7 +11247,7 @@ func Versioning_GetObject_invalid_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_GetObject_success(s *S3Conf) error {
@@ -11209,7 +11323,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_GetObject_delete_marker(s *S3Conf) error {
@@ -11251,7 +11365,7 @@ func Versioning_GetObject_delete_marker(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
@@ -11293,7 +11407,7 @@ func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
@@ -11323,7 +11437,7 @@ func Versioning_DeleteObject_non_existing_object(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
@@ -11375,7 +11489,47 @@ func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_Delete_null_versionId_object(s *S3Conf) error {
+	testName := "Versioning_Delete_null_versionId_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, nObjLgth := "my-obj", int64(3211)
+		_, err := putObjectWithData(nObjLgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		_, err = createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr(nullVersionId),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(res.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the versionId to be %v, instead got %v", nullVersionId, getString(res.VersionId))
+		}
+
+		return nil
+	})
 }
 
 func Versioning_DeleteObjects_success(s *S3Conf) error {
@@ -11475,7 +11629,7 @@ func Versioning_DeleteObjects_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
@@ -11573,7 +11727,7 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func ListObjectVersions_non_existing_bucket(s *S3Conf) error {
@@ -11589,7 +11743,7 @@ func ListObjectVersions_non_existing_bucket(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func ListObjectVersions_list_single_object_versions(s *S3Conf) error {
@@ -11615,7 +11769,7 @@ func ListObjectVersions_list_single_object_versions(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func ListObjectVersions_list_multiple_object_versions(s *S3Conf) error {
@@ -11652,7 +11806,7 @@ func ListObjectVersions_list_multiple_object_versions(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
@@ -11735,7 +11889,7 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func ListObjectVersions_with_delete_markers(s *S3Conf) error {
@@ -11783,7 +11937,76 @@ func ListObjectVersions_with_delete_markers(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
+	testName := "ListObjectVersions_containing_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		objLgth := int64(543)
+		out, err := putObjectWithData(objLgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		if getString(out.res.VersionId) != nullVersionId {
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", nullVersionId, getString(out.res.VersionId))
+		}
+
+		versions[0].IsLatest = getBoolPtr(false)
+
+		versions = append([]types.ObjectVersion{
+			{
+				ETag:         out.res.ETag,
+				IsLatest:     getBoolPtr(false),
+				Key:          &obj,
+				Size:         &objLgth,
+				VersionId:    &nullVersionId,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+			},
+		}, versions...)
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		newVersions, err := createObjVersions(s3client, bucket, obj, 4)
+		if err != nil {
+			return err
+		}
+
+		versions = append(newVersions, versions...)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(res.Versions, versions) {
+			return fmt.Errorf("expected the listed object versions to be %v, instead got %v", versions, res.Versions)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Multipart_Upload_success(s *S3Conf) error {
@@ -11858,7 +12081,7 @@ func Versioning_Multipart_Upload_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
@@ -11944,7 +12167,7 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
@@ -11989,7 +12212,7 @@ func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
@@ -12059,7 +12282,7 @@ func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Enable_object_lock(s *S3Conf) error {
@@ -12085,14 +12308,7 @@ func Versioning_Enable_object_lock(s *S3Conf) error {
 func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 	testName := "Versioning_status_switch_to_suspended_with_object_lock"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: &bucket,
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusSuspended,
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrSuspendedVersioningNotAllowed)); err != nil {
 			return err
 		}
@@ -12127,7 +12343,7 @@ func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
@@ -12151,7 +12367,7 @@ func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
@@ -12200,7 +12416,7 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
@@ -12227,7 +12443,7 @@ func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
@@ -12251,7 +12467,7 @@ func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
@@ -12298,7 +12514,7 @@ func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
@@ -12341,7 +12557,7 @@ func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) error {
@@ -12386,7 +12602,7 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) error {
@@ -12431,20 +12647,13 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 		}
 
 		return nil
-	}, withLock(), withVersioning())
+	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
 	testName := "VersioningDisabled_GetBucketVersioning_not_configured"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
-			Bucket: &bucket,
-			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusEnabled,
-			},
-		})
-		cancel()
+		err := putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)); err != nil {
 			return err
 		}
@@ -12528,5 +12737,5 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 		}
 
 		return nil
-	}, withVersioning())
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
