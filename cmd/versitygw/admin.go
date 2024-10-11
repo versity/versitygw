@@ -37,6 +37,7 @@ import (
 var (
 	adminAccess   string
 	adminSecret   string
+	adminRegion   string
 	adminEndpoint string
 	allowInsecure bool
 )
@@ -172,6 +173,14 @@ func adminCommand() *cli.Command {
 				Destination: &adminSecret,
 			},
 			&cli.StringFlag{
+				Name:        "region",
+				Usage:       "admin s3 region string",
+				EnvVars:     []string{"ADMIN_REGION"},
+				Value:       "us-east-1",
+				Destination: &adminRegion,
+				Aliases:     []string{"r"},
+			},
+			&cli.StringFlag{
 				Name:        "endpoint-url",
 				Usage:       "admin apis endpoint url",
 				EnvVars:     []string{"ADMIN_ENDPOINT_URL"},
@@ -232,7 +241,7 @@ func createUser(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
@@ -277,7 +286,7 @@ func deleteUser(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
@@ -334,7 +343,7 @@ func updateUser(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
@@ -374,7 +383,7 @@ func listUsers(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
@@ -441,7 +450,7 @@ func changeBucketOwner(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
@@ -493,7 +502,7 @@ func listBuckets(ctx *cli.Context) error {
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
 
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", region, time.Now())
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
 	if signErr != nil {
 		return fmt.Errorf("failed to sign the request: %w", err)
 	}
