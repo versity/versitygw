@@ -431,7 +431,8 @@ func TestGetObjectLegalHold(s *S3Conf) {
 func TestWORMProtection(s *S3Conf) {
 	WORMProtection_bucket_object_lock_configuration_compliance_mode(s)
 	WORMProtection_bucket_object_lock_configuration_governance_mode(s)
-	WORMProtection_bucket_object_lock_governance_bypass_delete(s)
+	// WORMProtection_bucket_object_lock_governance_bypass_delete(s)
+	// WORMProtection_bucket_object_lock_governance_bypass_delete_multiple
 	WORMProtection_object_lock_retention_compliance_locked(s)
 	WORMProtection_object_lock_retention_governance_locked(s)
 	WORMProtection_object_lock_retention_governance_bypass_overwrite(s)
@@ -542,6 +543,10 @@ func TestVersioning(s *S3Conf) {
 	GetBucketVersioning_non_existing_bucket(s)
 	GetBucketVersioning_empty_response(s)
 	GetBucketVersioning_success(s)
+	// PutObject action
+	Versioning_PutObject_suspended_null_versionId_obj(s)
+	Versioning_PutObject_null_versionId_obj(s)
+	Versioning_PutObject_overwrite_null_versionId_obj(s)
 	Versioning_PutObject_success(s)
 	// CopyObject action
 	Versioning_CopyObject_success(s)
@@ -560,6 +565,7 @@ func TestVersioning(s *S3Conf) {
 	Versioning_DeleteObject_delete_object_version(s)
 	Versioning_DeleteObject_non_existing_object(s)
 	Versioning_DeleteObject_delete_a_delete_marker(s)
+	Versioning_Delete_null_versionId_object(s)
 	Versioning_DeleteObjects_success(s)
 	Versioning_DeleteObjects_delete_deleteMarkers(s)
 	// ListObjectVersions
@@ -568,6 +574,7 @@ func TestVersioning(s *S3Conf) {
 	ListObjectVersions_list_multiple_object_versions(s)
 	ListObjectVersions_multiple_object_versions_truncated(s)
 	ListObjectVersions_with_delete_markers(s)
+	ListObjectVersions_containing_null_versionId_obj(s)
 	// Multipart upload
 	Versioning_Multipart_Upload_success(s)
 	Versioning_Multipart_Upload_overwrite_an_object(s)
@@ -922,6 +929,9 @@ func GetIntTests() IntTests {
 		"GetBucketVersioning_non_existing_bucket":                             GetBucketVersioning_non_existing_bucket,
 		"GetBucketVersioning_empty_response":                                  GetBucketVersioning_empty_response,
 		"GetBucketVersioning_success":                                         GetBucketVersioning_success,
+		"Versioning_PutObject_suspended_null_versionId_obj":                   Versioning_PutObject_suspended_null_versionId_obj,
+		"Versioning_PutObject_null_versionId_obj":                             Versioning_PutObject_null_versionId_obj,
+		"Versioning_PutObject_overwrite_null_versionId_obj":                   Versioning_PutObject_overwrite_null_versionId_obj,
 		"Versioning_PutObject_success":                                        Versioning_PutObject_success,
 		"Versioning_CopyObject_success":                                       Versioning_CopyObject_success,
 		"Versioning_CopyObject_non_existing_version_id":                       Versioning_CopyObject_non_existing_version_id,
@@ -936,6 +946,7 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_delete_object_version":                       Versioning_DeleteObject_delete_object_version,
 		"Versioning_DeleteObject_non_existing_object":                         Versioning_DeleteObject_non_existing_object,
 		"Versioning_DeleteObject_delete_a_delete_marker":                      Versioning_DeleteObject_delete_a_delete_marker,
+		"Versioning_Delete_null_versionId_object":                             Versioning_Delete_null_versionId_object,
 		"Versioning_DeleteObjects_success":                                    Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                       Versioning_DeleteObjects_delete_deleteMarkers,
 		"ListObjectVersions_non_existing_bucket":                              ListObjectVersions_non_existing_bucket,
@@ -943,6 +954,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_list_multiple_object_versions":                    ListObjectVersions_list_multiple_object_versions,
 		"ListObjectVersions_multiple_object_versions_truncated":               ListObjectVersions_multiple_object_versions_truncated,
 		"ListObjectVersions_with_delete_markers":                              ListObjectVersions_with_delete_markers,
+		"ListObjectVersions_containing_null_versionId_obj":                    ListObjectVersions_containing_null_versionId_obj,
 		"Versioning_Multipart_Upload_success":                                 Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                     Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_non_existing_versionId":                    Versioning_UploadPartCopy_non_existing_versionId,

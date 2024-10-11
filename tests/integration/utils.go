@@ -74,12 +74,12 @@ func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
 		return err
 	}
 
-	if cfg.VersioningEnabled {
+	if cfg.VersioningStatus != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 			Bucket: &bucket,
 			VersioningConfiguration: &types.VersioningConfiguration{
-				Status: types.BucketVersioningStatusEnabled,
+				Status: cfg.VersioningStatus,
 			},
 		})
 		cancel()
@@ -172,9 +172,9 @@ func teardown(s *S3Conf, bucket string) error {
 }
 
 type setupCfg struct {
-	LockEnabled       bool
-	VersioningEnabled bool
-	Ownership         types.ObjectOwnership
+	LockEnabled      bool
+	VersioningStatus types.BucketVersioningStatus
+	Ownership        types.ObjectOwnership
 }
 
 type setupOpt func(*setupCfg)
@@ -185,8 +185,8 @@ func withLock() setupOpt {
 func withOwnership(o types.ObjectOwnership) setupOpt {
 	return func(s *setupCfg) { s.Ownership = o }
 }
-func withVersioning() setupOpt {
-	return func(s *setupCfg) { s.VersioningEnabled = true }
+func withVersioning(v types.BucketVersioningStatus) setupOpt {
+	return func(s *setupCfg) { s.VersioningStatus = v }
 }
 
 func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, opts ...setupOpt) error {
@@ -883,6 +883,19 @@ func changeBucketObjectLockStatus(client *s3.Client, bucket string, status bool)
 	}
 
 	return nil
+}
+
+func putBucketVersioningStatus(client *s3.Client, bucket string, status types.BucketVersioningStatus) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
+		Bucket: &bucket,
+		VersioningConfiguration: &types.VersioningConfiguration{
+			Status: status,
+		},
+	})
+	cancel()
+
+	return err
 }
 
 func checkWORMProtection(client *s3.Client, bucket, object string) error {

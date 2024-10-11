@@ -337,10 +337,21 @@ func extractIntTests() (commands []*cli.Command) {
 				if debug {
 					opts = append(opts, integration.WithDebug())
 				}
+				if versioningEnabled {
+					opts = append(opts, integration.WithVersioningEnabled())
+				}
 
 				s := integration.NewS3Conf(opts...)
 				err := testFunc(s)
 				return err
+			},
+			Flags: []cli.Flag{
+				&cli.BoolFlag{
+					Name:        "versioning-enabled",
+					Usage:       "Test the bucket object versioning, if the versioning is enabled",
+					Destination: &versioningEnabled,
+					Aliases:     []string{"vs"},
+				},
 			},
 		})
 	}
