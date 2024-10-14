@@ -183,6 +183,26 @@ func (p *Posix) versioningEnabled() bool {
 	return p.versioningDir != ""
 }
 
+func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	_, err = os.Stat(filepath.Join(bucket, object))
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return fmt.Errorf("stat object: %w", err)
+	}
+
+	return nil
+}
+
 func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -3626,6 +3646,30 @@ func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return p.PutBucketPolicy(ctx, bucket, nil)
 }
 
+func (p *Posix) isBucketObjectLockEnabled(bucket string) error {
+	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+	if err != nil {
+		return fmt.Errorf("get object lock config: %w", err)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	return nil
+}
+
 func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -3681,29 +3725,13 @@ func (p *Posix) GetObjectLockConfiguration(_ context.Context, bucket string) ([]
 }
 
 func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId string, status bool) error {
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
+	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
-		return fmt.Errorf("stat bucket: %w", err)
+		return err
 	}
-
-	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
-	if errors.Is(err, meta.ErrNoSuchKey) {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
-	}
+	err = p.isBucketObjectLockEnabled(bucket)
 	if err != nil {
-		return fmt.Errorf("get object lock config: %w", err)
-	}
-
-	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
-		return fmt.Errorf("parse bucket lock config: %w", err)
-	}
-
-	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return err
 	}
 
 	var statusData []byte
@@ -3747,12 +3775,13 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*bool, error) {
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
+	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return nil, err
+	}
+	err = p.isBucketObjectLockEnabled(bucket)
+	if err != nil {
+		return nil, err
 	}
 
 	if versionId != "" {
@@ -3794,29 +3823,13 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
+	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
-		return fmt.Errorf("stat bucket: %w", err)
+		return err
 	}
-
-	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
-	if errors.Is(err, meta.ErrNoSuchKey) {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
-	}
+	err = p.isBucketObjectLockEnabled(bucket)
 	if err != nil {
-		return fmt.Errorf("get object lock config: %w", err)
-	}
-
-	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
-		return fmt.Errorf("parse bucket lock config: %w", err)
-	}
-
-	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return err
 	}
 
 	if versionId != "" {
@@ -3882,12 +3895,13 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId string) ([]byte, error) {
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
+	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return nil, err
+	}
+	err = p.isBucketObjectLockEnabled(bucket)
+	if err != nil {
+		return nil, err
 	}
 
 	if versionId != "" {
