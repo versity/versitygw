@@ -552,3 +552,61 @@ abort_all_multipart_uploads() {
     fi
   done
 }
+
+create_upload_and_get_id_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create_upload_and_get_id_rest' requires bucket, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" ./tests/rest_scripts/create_multipart_upload.sh); then
+    log 2 "error creating multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "error:  response code: $result, output: $(cat "$TEST_FILE_FOLDER/output.txt")"
+    return 1
+  fi
+  log 5 "multipart upload create info: $(cat "$TEST_FILE_FOLDER/output.txt")"
+  if ! upload_id=$(xmllint --xpath '//*[local-name()="UploadId"]/text()' "$TEST_FILE_FOLDER/output.txt" 2>&1); then
+    log 2 "error getting upload ID: $upload_id"
+    return 1
+  fi
+  log 5 "upload ID: $upload_id"
+  return 0
+}
+
+create_abort_multipart_upload_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create_abort_upload_rest' requires bucket, key"
+    return 1
+  fi
+  if ! create_upload_and_get_id_rest "$1" "$2"; then
+    log 2 "error creating upload"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
+    log 2 "error aborting multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/output.txt)"
+    return 1
+  fi
+}
+
+multipart_upload_range_too_large() {
+  if [ $# -ne 3 ]; then
+    log 2 "'multipart_upload_range_too_large' requires bucket name, key, file location"
+    return 1
+  fi
+  if multipart_upload_from_bucket_range "$1" "$2" "$3" 4 "bytes=0-1000000000"; then
+    log 2 "multipart upload succeeded despite overly large range"
+    return 1
+  fi
+  log 5 "error: $upload_part_copy_error"
+  if [[ $upload_part_copy_error != *"Range specified is not valid"* ]] && [[ $upload_part_copy_error != *"InvalidRange"* ]]; then
+    log 2 "unexpected error: $upload_part_copy_error"
+    return 1
+  fi
+  return 0
+}
