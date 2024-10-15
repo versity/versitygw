@@ -46,8 +46,8 @@ check_legal_hold_without_lock_enabled() {
     log 2 "get legal hold using REST succeeded without lock enabled"
     return 1
   fi
-  log 5 "legal hold info: $(cat "$TEST_FILE_FOLDER/object_legal_hold.txt")"
-  if ! code=$(xmllint --xpath '//*[local-name()="Code"]/text()' "$TEST_FILE_FOLDER/object_legal_hold.txt" 2>&1); then
+  log 5 "legal hold info: $(cat "$TEST_FILE_FOLDER/legal_hold.txt")"
+  if ! code=$(xmllint --xpath '//*[local-name()="Code"]/text()' "$TEST_FILE_FOLDER/legal_hold.txt" 2>&1); then
     log 2 "error getting error code: $code"
     return 1
   fi

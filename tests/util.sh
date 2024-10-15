@@ -29,10 +29,8 @@ source ./tests/commands/delete_object.sh
 source ./tests/commands/get_bucket_acl.sh
 source ./tests/commands/get_bucket_ownership_controls.sh
 source ./tests/commands/get_bucket_policy.sh
-source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
-source ./tests/commands/get_object_tagging.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/head_object.sh
 source ./tests/commands/list_multipart_uploads.sh
@@ -718,85 +716,6 @@ get_object_acl() {
     return 1
   fi
   export acl
-}
-
-check_tags_empty() {
-  if [[ $# -ne 1 ]]; then
-    echo "check tags empty requires command type"
-    return 1
-  fi
-  if [[ $1 == 'aws' ]]; then
-    if [[ $tags != "" ]]; then
-      tag_set=$(echo "$tags" | jq '.TagSet')
-      if [[ $tag_set != "[]" ]]; then
-        echo "error:  tags not empty: $tags"
-        return 1
-      fi
-    fi
-  else
-    if [[ $tags != "" ]] && [[ $tags != *"No tags found"* ]]; then
-      echo "Error:  tags not empty: $tags"
-      return 1
-    fi
-  fi
-  return 0
-}
-
-check_object_tags_empty() {
-  if [[ $# -ne 3 ]]; then
-    echo "bucket tags empty check requires command type, bucket, and key"
-    return 2
-  fi
-  if ! get_object_tagging "$1" "$2" "$3"; then
-    echo "failed to get tags"
-    return 2
-  fi
-  check_tags_empty "$1" || local check_result=$?
-  # shellcheck disable=SC2086
-  return $check_result
-}
-
-check_bucket_tags_empty() {
-  if [[ $# -ne 2 ]]; then
-    echo "bucket tags empty check requires command type, bucket"
-    return 2
-  fi
-  if ! get_bucket_tagging "$1" "$2"; then
-    echo "failed to get tags"
-    return 2
-  fi
-  check_tags_empty "$1" || local check_result=$?
-  # shellcheck disable=SC2086
-  return $check_result
-}
-
-get_and_verify_object_tags() {
-  if [[ $# -ne 5 ]]; then
-    echo "get and verify object tags missing command type, bucket, key, tag key, tag value"
-    return 1
-  fi
-  get_object_tagging "$1" "$2" "$3" || get_result=$?
-  if [[ $get_result -ne 0 ]]; then
-    echo "failed to get tags"
-    return 1
-  fi
-  if [[ $1 == 'aws' ]]; then
-    tag_set_key=$(echo "$tags" | jq '.TagSet[0].Key')
-    tag_set_value=$(echo "$tags" | jq '.TagSet[0].Value')
-    if [[ $tag_set_key != '"'$4'"' ]]; then
-      echo "Key mismatch ($tag_set_key, \"$4\")"
-      return 1
-    fi
-    if [[ $tag_set_value != '"'$5'"' ]]; then
-      echo "Value mismatch ($tag_set_value, \"$5\")"
-      return 1
-    fi
-  else
-    read -r tag_set_key tag_set_value <<< "$(echo "$tags" | awk 'NR==2 {print $1, $3}')"
-    [[ $tag_set_key == "$4" ]] || fail "Key mismatch"
-    [[ $tag_set_value == "$5" ]] || fail "Value mismatch"
-  fi
-  return 0
 }
 
 # copy a file to/from S3

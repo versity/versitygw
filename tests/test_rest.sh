@@ -1,5 +1,20 @@
 #!/usr/bin/env bats
 
+# Copyright 2024 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+source ./tests/commands/create_multipart_upload.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/get_object.sh
@@ -224,7 +239,9 @@ source ./tests/util_versioning.sh
 }
 
 @test "versioning - retrieve after delete" {
-  skip "https://github.com/versity/versitygw/issues/888"
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -262,5 +279,15 @@ source ./tests/util_versioning.sh
   assert_success
 
   run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - multipart upload create then abort" {
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_abort_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
