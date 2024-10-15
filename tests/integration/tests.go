@@ -11372,6 +11372,47 @@ func Versioning_GetObject_success(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_GetObject_delete_marker_without_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObject_delete_marker_without_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(1234, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func Versioning_GetObject_delete_marker(s *S3Conf) error {
 	testName := "Versioning_GetObject_delete_marker"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
