@@ -24,7 +24,7 @@ create_multipart_upload() {
     return 1
   fi
 
-  if ! multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+  if ! multipart_data=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
     log 2 "Error creating multipart upload: $multipart_data"
     return 1
   fi
@@ -44,7 +44,7 @@ create_multipart_upload_with_user() {
     return 1
   fi
 
-  if ! multipart_data=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
+  if ! multipart_data=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1); then
     log 2 "Error creating multipart upload: $multipart_data"
     return 1
   fi
@@ -65,7 +65,7 @@ create_multipart_upload_params() {
     return 1
   fi
   local multipart_data
-  multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload \
+  multipart_data=$(send_command aws --no-verify-ssl s3api create-multipart-upload \
     --bucket "$1" \
     --key "$2" \
     --content-type "$3" \
@@ -96,7 +96,7 @@ create_multipart_upload_custom() {
   done
   log 5 "${*:3}"
   log 5 "aws --no-verify-ssl s3api create-multipart-upload --bucket $1 --key $2 ${*:3}"
-  multipart_data=$(aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1) || local result=$?
+  multipart_data=$(send_command aws --no-verify-ssl s3api create-multipart-upload --bucket "$1" --key "$2" 2>&1) || local result=$?
   if [[ $result -ne 0 ]]; then
     log 2 "error creating custom multipart data command: $multipart_data"
     return 1

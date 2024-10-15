@@ -37,7 +37,7 @@ log() {
     6) log_level="TRACE";;
     *) echo "invalid log level $1"; return 1
   esac
-  if [[ "$2" == *"secret"* ]]; then
+  if [[ ( "$2" == *"access"* ) || ( "$2" == *"secret"* ) || ( "$2" == *"Credential="* ) ]]; then
     log_mask "$log_level" "$2"
     return 0
   fi
@@ -49,18 +49,42 @@ log_mask() {
     echo "mask and log requires level, string"
     return 1
   fi
+
+  if ! mask_args "$2"; then
+    echo "error masking args"
+    return 1
+  fi
+
+  log_message "$log_level" "${masked_args[*]}"
+}
+
+mask_args() {
+  if [ $# -ne 1 ]; then
+    echo "'mask_args' requires string"
+    return 1
+  fi
+  IFS=' ' read -r -a array <<< "$1"
+
+  if ! mask_arg_array "${array[@]}"; then
+    echo "error masking arg array"
+    return 1
+  fi
+}
+
+mask_arg_array() {
   masked_args=()  # Initialize an array to hold the masked arguments
-
-  IFS=' ' read -r -a array <<< "$2"
-
+  if [ $# -eq 0 ]; then
+    echo "'mask_arg_array' requires parameters"
+    return 1
+  fi
   mask_next=false
-  for arg in "${array[@]}"; do
+  is_access=false
+  for arg in "$@"; do
     if ! check_arg_for_mask "$arg"; then
       echo "error checking arg for mask"
       return 1
     fi
   done
-  log_message "$log_level" "${masked_args[*]}"
 }
 
 check_arg_for_mask() {
@@ -69,15 +93,31 @@ check_arg_for_mask() {
     return 1
   fi
   if [[ $mask_next == true ]]; then
-    masked_args+=("********")
+    if [ "$is_access" == "true" ]; then
+      masked_args+=("${arg:0:4}****")
+      is_access=false
+    else
+      masked_args+=("********")
+    fi
     mask_next=false
   elif [[ "$arg" == --secret_key=* ]]; then
     masked_args+=("--secret_key=********")
   elif [[ "$arg" == --secret=* ]]; then
     masked_args+=("--secret=********")
+  elif [[ "$arg" == --access=* ]]; then
+    masked_args+=("${arg:0:13}****")
+  elif [[ "$arg" == --access_key=* ]]; then
+    masked_args+=("${arg:0:17}****")
+  elif [[ "$arg" == *"Credential="* ]]; then
+    masked_args+=("$(echo "$arg" | sed -E 's/(Credential=[A-Z]{4})[^\/]*/\1****/g')")
+  elif [[ "$arg" == *"AWS_ACCESS_KEY_ID="* ]]; then
+    masked_args+=("AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:0:4}****")
   else
     if [[ "$arg" == "--secret_key" ]] || [[ "$arg" == "--secret" ]] || [[ "$arg" == "--s3-iam-secret" ]]; then
       mask_next=true
+    elif [[ ( "$arg" == "--access" ) || ( "$arg" == "--owner") ]]; then
+      mask_next=true
+      is_access=true
     fi
     masked_args+=("$arg")
   fi

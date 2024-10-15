@@ -41,6 +41,7 @@ source ./tests/commands/list_parts.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_ownership_controls.sh
 source ./tests/commands/put_bucket_policy.sh
+source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
@@ -102,7 +103,7 @@ add_governance_bypass_policy() {
   fi
   cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
 {
-  "Version": "dummy",
+  "Version": "2012-10-17",
   "Statement": [
     {
        "Effect": "Allow",
@@ -223,13 +224,13 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! list_and_delete_objects "$1"; then
-    log 2 "error listing and deleting objects"
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+    log 2 "error adding governance bypass policy"
     return 1
   fi
 
-  if ! delete_bucket_policy "s3api" "$1"; then
-    log 2 "error deleting bucket policy"
+  if ! list_and_delete_objects "$1"; then
+    log 2 "error listing and deleting objects"
     return 1
   fi
 
@@ -240,6 +241,10 @@ clear_bucket_s3api() {
     log 2 "error disabling object lock config"
     return 1
   fi
+  #if ! put_bucket_versioning "s3api" "$1" "Suspended"; then
+  #  log 2 "error suspending bucket versioning"
+  #  return 1
+  #fi
 
   #if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
   #  log 2 "error changing bucket owner back to root"

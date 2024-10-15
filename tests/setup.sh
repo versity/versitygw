@@ -57,6 +57,10 @@ setup() {
 
 # bats teardown function
 teardown() {
+  if [[ ( "$BATS_TEST_COMPLETED" -ne 1 ) && ( -e "$COMMAND_LOG" ) ]]; then
+    cat "$COMMAND_LOG"
+    echo "**********************************************************************************"
+  fi
   # shellcheck disable=SC2154
   if ! delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME"; then
     log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"

@@ -159,6 +159,37 @@ start_multipart_upload_and_list_parts() {
   export listed_parts
 }
 
+create_list_check_multipart_uploads() {
+  if [ $# -ne 3 ]; then
+    log 2 "list multipart uploads command requires bucket and two keys"
+    return 1
+  fi
+  if ! create_and_list_multipart_uploads "$1" "$2" "$3"; then
+    log 2 "error creating and listing multipart uploads"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "Uploads:  $uploads"
+  raw_uploads=$(echo "$uploads" | grep -v "InsecureRequestWarning")
+  if ! key_one=$(echo "$raw_uploads" | jq -r '.Uploads[0].Key' 2>&1); then
+    log 2 "error getting key one: $key_one"
+    return 1
+  fi
+  if ! key_two=$(echo "$raw_uploads" | jq -r '.Uploads[1].Key' 2>&1); then
+    log 2 "error getting key two: $key_two"
+    return 1
+  fi
+  if [[ "$2" != "$key_one" ]]; then
+    log 2 "Key mismatch ($2, $key_one)"
+    return 1
+  fi
+  if [[ "$3" != "$key_two" ]]; then
+    log 2 "Key mismatch ($3, $key_two)"
+    return 1
+  fi
+  return 0
+}
+
 # list unfinished multipart uploads
 # params:  bucket, key one, key two
 # export current two uploads on success, return 1 for error

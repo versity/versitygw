@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source ./tests/util_list_objects.sh
+source ./tests/commands/command.sh
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
@@ -29,14 +30,14 @@ list_objects() {
   local output
   local result=0
   if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
-    output=$(aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
   elif [[ $1 == 's3api' ]]; then
     list_objects_s3api "$2" || result=$?
     return $result
   elif [[ $1 == 's3cmd' ]]; then
-    output=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then
-    output=$(mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || result=$?
+    output=$(send_command mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || result=$?
   elif [[ $1 == 'rest' ]]; then
     list_objects_rest "$2" || result=$?
     return $result
@@ -66,7 +67,7 @@ list_objects_s3api() {
     log 2 "'list_objects_s3api' requires bucket"
     return 1
   fi
-  if ! output=$(aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1); then
+  if ! output=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1); then
     log 2 "error listing objects: $output"
     return 1
   fi
@@ -94,9 +95,9 @@ list_objects_s3api_v1() {
     return 1
   fi
   if [ "$2" == "" ]; then
-    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
+    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1") || local result=$?
   else
-    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
+    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
   fi
   if [[ $result -ne 0 ]]; then
     echo "error listing objects: $objects"
@@ -112,13 +113,13 @@ list_objects_with_prefix() {
   fi
   local result=0
   if [ "$1" == 's3' ]; then
-    objects=$(aws --no-verify-ssl s3 ls s3://"$2/$3" 2>&1) || result=$?
+    objects=$(send_command aws --no-verify-ssl s3 ls s3://"$2/$3" 2>&1) || result=$?
   elif [ "$1" == 's3api' ]; then
-    objects=$(aws --no-verify-ssl s3api list-objects --bucket "$2" --prefix "$3" 2>&1) || result=$?
+    objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$2" --prefix "$3" 2>&1) || result=$?
   elif [ "$1" == 's3cmd' ]; then
-    objects=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2/$3" 2>&1) || result=$?
+    objects=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2/$3" 2>&1) || result=$?
   elif [[ "$1" == 'mc' ]]; then
-    objects=$(mc --insecure ls "$MC_ALIAS/$2/$3" 2>&1) || result=$?
+    objects=$(send_command mc --insecure ls "$MC_ALIAS/$2/$3" 2>&1) || result=$?
   else
     log 2 "invalid command type '$1'"
     return 1
@@ -162,7 +163,7 @@ $payload_hash"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -ks "$header://$aws_endpoint_url_address/$1" \
+  reply=$(send_command curl -ks "$header://$aws_endpoint_url_address/$1" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \
     -H "x-amz-date: $current_date_time" 2>&1)

@@ -20,7 +20,7 @@ put_object_lock_configuration() {
     return 1
   fi
   local config="{\"ObjectLockEnabled\": \"$2\", \"Rule\": {\"DefaultRetention\": {\"Mode\": \"$3\", \"Days\": $4}}}"
-  if ! error=$(aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
     log 2 "error putting object lock configuration: $error"
     return 1
   fi
@@ -33,7 +33,7 @@ put_object_lock_configuration_disabled() {
     return 1
   fi
   local config="{\"ObjectLockEnabled\": \"Enabled\"}"
-  if ! error=$(aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
     log 2 "error putting object lock configuration: $error"
     return 1
   fi

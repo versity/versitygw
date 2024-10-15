@@ -20,7 +20,7 @@ list_parts() {
     return 1
   fi
   record_command "list-parts" "client:s3api"
-  if ! listed_parts=$(aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$3" 2>&1); then
+  if ! listed_parts=$(send_command aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$3" 2>&1); then
     log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi
@@ -32,7 +32,7 @@ list_parts_with_user() {
     return 1
   fi
   record_command 'list-parts' 'client:s3api'
-  if ! listed_parts=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" aws --no-verify-ssl s3api list-parts --bucket "$3" --key "$4" --upload-id "$5" 2>&1); then
+  if ! listed_parts=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" send_command aws --no-verify-ssl s3api list-parts --bucket "$3" --key "$4" --upload-id "$5" 2>&1); then
     log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi

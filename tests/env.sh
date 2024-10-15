@@ -62,6 +62,15 @@ check_universal_vars() {
   if [[ $BYPASS_ENV_FILE != "true" ]]; then
     source_config_file
   fi
+  if [ -n "$COMMAND_LOG" ]; then
+    if [ -e "$COMMAND_LOG" ]; then
+      if ! error=$(rm "$COMMAND_LOG"); then
+        log 3 "error removing command log: $error"
+        return 1
+      fi
+    fi
+    echo "******** $(date +"%Y-%m-%d %H:%M:%S") $BATS_TEST_NAME COMMANDS ********" >> "$COMMAND_LOG"
+  fi
 
   if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
     # shellcheck source=./tests/.secrets

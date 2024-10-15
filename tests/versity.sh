@@ -27,6 +27,11 @@ start_versity_process() {
   fi
   IFS=' ' read -r -a full_command <<< "${base_command[@]}"
   log 5 "versity command: ${full_command[*]}"
+  if [ -n "$COMMAND_LOG" ]; then
+    mask_args "${full_command[*]}"
+    # shellcheck disable=SC2154
+    echo "${masked_args[@]}" >> "$COMMAND_LOG"
+  fi
   if [ -n "$VERSITY_LOG_FILE" ]; then
     "${full_command[@]}" >> "$VERSITY_LOG_FILE" 2>&1 &
   else

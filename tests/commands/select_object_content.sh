@@ -20,7 +20,7 @@ select_object_content() {
     log 2 "'select object content' command requires bucket, key, expression, expression type, input serialization, output serialization, outfile"
     return 1
   fi
-  error=$(aws --no-verify-ssl s3api select-object-content \
+  error=$(send_command aws --no-verify-ssl s3api select-object-content \
     --bucket "$1" \
     --key "$2" \
     --expression "$3" \

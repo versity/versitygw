@@ -23,13 +23,13 @@ get_object() {
   fi
   local exit_code=0
   if [[ $1 == 's3' ]]; then
-    get_object_error=$(aws --no-verify-ssl s3 mv "s3://$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command aws --no-verify-ssl s3 mv "s3://$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    get_object_error=$(aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    get_object_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate get "s3://$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate get "s3://$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
-    get_object_error=$(mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
     get_object_rest "$2" "$3" "$4" || exit_code=$?
   else
@@ -50,7 +50,7 @@ get_object_with_range() {
     log 2 "'get object with range' requires bucket, key, range, outfile"
     return 1
   fi
-  if ! get_object_error=$(aws --no-verify-ssl s3api get-object --bucket "$1" --key "$2" --range "$3" "$4" 2>&1); then
+  if ! get_object_error=$(send_command aws --no-verify-ssl s3api get-object --bucket "$1" --key "$2" --range "$3" "$4" 2>&1); then
     log 2 "error getting object with range: $get_object_error"
     return 1
   fi
@@ -66,13 +66,13 @@ get_object_with_user() {
   fi
   local exit_code=0
   if [[ $1 == 's3' ]] || [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    get_object_error=$(AWS_ACCESS_KEY_ID="$5" AWS_SECRET_ACCESS_KEY="$6" aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(AWS_ACCESS_KEY_ID="$5" AWS_SECRET_ACCESS_KEY="$6" send_command aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
     log 5 "s3cmd filename: $3"
-    get_object_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --access_key="$5" --secret_key="$6" get "s3://$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --access_key="$5" --secret_key="$6" get "s3://$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == "mc" ]]; then
     log 5 "save location: $4"
-    get_object_error=$(mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
   else
     log 2 "'get_object_with_user' not implemented for client '$1'"
     return 1
@@ -114,7 +114,7 @@ UNSIGNED-PAYLOAD"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1/$2" \
+  reply=$(send_command curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1/$2" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
     -H "x-amz-date: $current_date_time" \

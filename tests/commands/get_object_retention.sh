@@ -20,7 +20,7 @@ get_object_retention() {
     log 2 "'get object retention' command requires bucket, key"
     return 1
   fi
-  if ! retention=$(aws --no-verify-ssl s3api get-object-retention --bucket "$1" --key "$2" 2>&1); then
+  if ! retention=$(send_command aws --no-verify-ssl s3api get-object-retention --bucket "$1" --key "$2" 2>&1); then
     log 2 "error getting object retention: $retention"
     get_object_retention_error=$retention
     export get_object_retention_error
@@ -57,7 +57,7 @@ $payload_hash"
   fi
   get_signature
   # shellcheck disable=SC2154
-  reply=$(curl -ks -w "%{http_code}" "$header://$aws_endpoint_url_address/$1/$2?retention" \
+  reply=$(send_command curl -ks -w "%{http_code}" "$header://$aws_endpoint_url_address/$1/$2?retention" \
     -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
     -H "x-amz-content-sha256: $payload_hash" \
     -H "x-amz-date: $current_date_time" \

@@ -14,20 +14,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-delete_objects() {
-  record_command "delete-objects" "client:s3api"
-  if [[ $# -ne 3 ]]; then
-    log 2 "'delete-objects' command requires bucket name, two object keys"
+source ./tests/logger.sh
+
+send_command() {
+  if [ $# -eq 0 ]; then
     return 1
   fi
-  if ! error=$(send_command aws --no-verify-ssl s3api delete-objects --bucket "$1" --delete "{
-      \"Objects\": [
-        {\"Key\": \"$2\"},
-        {\"Key\": \"$3\"}
-      ]
-    }" 2>&1); then
-    log 2 "error deleting objects: $error"
-    return 1
+  if [ -n "$COMMAND_LOG" ]; then
+    args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
+    if ! mask_arg_array "${args[@]}"; then
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    "$@"
+    return $?
   fi
-  return 0
+  "$@"
 }
