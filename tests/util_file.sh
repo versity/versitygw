@@ -124,6 +124,10 @@ delete_test_files() {
 # param: file location
 # return 0 for success, 1 for error
 split_file() {
+  if [ $# -ne 2 ]; then
+    log 2 "'split_file' requires file name, number of pieces"
+    return 1
+  fi
   file_size=$(stat -c %s "$1" 2>/dev/null || stat -f %z "$1" 2>/dev/null)
   part_size=$((file_size / $2))
   remainder=$((file_size % $2))

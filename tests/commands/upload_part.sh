@@ -31,3 +31,43 @@ upload_part() {
   fi
   export etag
 }
+
+upload_part_rest() {
+  if [ $# -ne 4 ]; then
+    log 2 "'upload_part_rest' requires bucket name, key, part number, upload ID"
+    return 1
+  fi
+
+  generate_hash_for_payload ""
+
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="PUT
+/$1/$2
+
+host:$aws_endpoint_url_address
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+x-amz-date:$current_date_time
+
+host;x-amz-content-sha256;x-amz-date
+UNSIGNED-PAYLOAD"
+
+  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
+    log 2 "error generating sts string"
+    return 1
+  fi
+  get_signature
+  # shellcheck disable=SC2154
+  reply=$(send_command curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$1/$2?partNumber=$3&uploadId=$4" \
+    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -H "x-amz-date: $current_date_time" \
+    -o "$TEST_FILE_FOLDER"/upload_part_error.txt 2>&1)
+  if [[ "$reply" != "200" ]]; then
+    log 2 "delete object command returned error: $(cat "$TEST_FILE_FOLDER"/upload_part_error.txt)"
+    return 1
+  fi
+  return 0
+}
