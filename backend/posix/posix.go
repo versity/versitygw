@@ -2750,7 +2750,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	if versionId != "" {
+	if p.versioningEnabled() {
 		isDelMarker, err := p.isObjDeleteMarker(bucket, object)
 		if err != nil {
 			return nil, err
@@ -2758,10 +2758,15 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 		// if the specified object version is a delete marker, return MethodNotAllowed
 		if isDelMarker {
+			if versionId != "" {
+				err = s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			} else {
+				err = s3err.GetAPIError(s3err.ErrNoSuchKey)
+			}
 			return &s3.GetObjectOutput{
 				DeleteMarker: getBoolPtr(true),
 				LastModified: backend.GetTimePtr(fi.ModTime()),
-			}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}, err
 		}
 	}
 

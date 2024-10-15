@@ -562,6 +562,7 @@ func TestVersioning(s *S3Conf) {
 	// GetObject action
 	Versioning_GetObject_invalid_versionId(s)
 	Versioning_GetObject_success(s)
+	Versioning_GetObject_delete_marker_without_versionId(s)
 	Versioning_GetObject_delete_marker(s)
 	// DeleteObject(s) actions
 	Versioning_DeleteObject_delete_object_version(s)
@@ -946,6 +947,7 @@ func GetIntTests() IntTests {
 		"Versioning_HeadObject_delete_marker":                                 Versioning_HeadObject_delete_marker,
 		"Versioning_GetObject_invalid_versionId":                              Versioning_GetObject_invalid_versionId,
 		"Versioning_GetObject_success":                                        Versioning_GetObject_success,
+		"Versioning_GetObject_delete_marker_without_versionId":                Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                  Versioning_GetObject_delete_marker,
 		"Versioning_DeleteObject_delete_object_version":                       Versioning_DeleteObject_delete_object_version,
 		"Versioning_DeleteObject_non_existing_object":                         Versioning_DeleteObject_non_existing_object,
