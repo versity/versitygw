@@ -437,12 +437,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrNoSuchObjectLockConfiguration: {
 		Code:           "NoSuchObjectLockConfiguration",
-		Description:    "The specified object does not have an ObjectLock configuration.",
+		Description:    "The specified object does not have a ObjectLock configuration.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidBucketObjectLockConfiguration: {
 		Code:           "InvalidRequest",
-		Description:    "Bucket is missing ObjectLockConfiguration.",
+		Description:    "Bucket is missing Object Lock Configuration.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLockConfigurationNotAllowed: {
@@ -521,8 +521,9 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusNotFound,
 	},
 	ErrInvalidMetadataDirective: {
-		Code:        "InvalidArgument",
-		Description: "Unknown metadata directive.",
+		Code:           "InvalidArgument",
+		Description:    "Unknown metadata directive.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidVersionId: {
 		Code:           "InvalidArgument",

@@ -1300,22 +1300,9 @@ func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) 
 }
 
 func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
-	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
+	err := az.isBucketObjectLockEnabled(ctx, bucket)
 	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	if len(cfg) == 0 {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
-	}
-
-	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
-		return fmt.Errorf("parse bucket lock config: %w", err)
-	}
-
-	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return err
 	}
 
 	blobClient, err := az.getBlobClient(bucket, object)
@@ -1376,6 +1363,11 @@ func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, version
 		return nil, azureErrToS3Err(err)
 	}
 
+	err = az.isBucketObjectLockEnabled(ctx, bucket)
+	if err != nil {
+		return nil, err
+	}
+
 	retentionPtr, ok := props.Metadata[string(keyObjRetention)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
@@ -1385,22 +1377,9 @@ func (az *Azure) GetObjectRetention(ctx context.Context, bucket, object, version
 }
 
 func (az *Azure) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
-	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
+	err := az.isBucketObjectLockEnabled(ctx, bucket)
 	if err != nil {
-		return azureErrToS3Err(err)
-	}
-
-	if len(cfg) == 0 {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
-	}
-
-	var bucketLockConfig auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
-		return fmt.Errorf("parse bucket lock config: %w", err)
-	}
-
-	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return err
 	}
 
 	blobClient, err := az.getBlobClient(bucket, object)
@@ -1447,6 +1426,11 @@ func (az *Azure) GetObjectLegalHold(ctx context.Context, bucket, object, version
 		return nil, azureErrToS3Err(err)
 	}
 
+	err = az.isBucketObjectLockEnabled(ctx, bucket)
+	if err != nil {
+		return nil, err
+	}
+
 	retentionPtr, ok := props.Metadata[string(keyObjLegalHold)]
 	if !ok {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)
@@ -1484,6 +1468,28 @@ func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response
 		}
 	}
 	return buckets, nil
+}
+
+func (az *Azure) isBucketObjectLockEnabled(ctx context.Context, bucket string) error {
+	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
+	if err != nil {
+		return azureErrToS3Err(err)
+	}
+
+	if len(cfg) == 0 {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	var bucketLockConfig auth.BucketLockConfig
+	if err := json.Unmarshal(cfg, &bucketLockConfig); err != nil {
+		return fmt.Errorf("parse bucket lock config: %w", err)
+	}
+
+	if !bucketLockConfig.Enabled {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+	}
+
+	return nil
 }
 
 func (az *Azure) getContainerURL(cntr string) string {

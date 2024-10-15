@@ -407,6 +407,7 @@ func TestPutObjectRetention(s *S3Conf) {
 func TestGetObjectRetention(s *S3Conf) {
 	GetObjectRetention_non_existing_bucket(s)
 	GetObjectRetention_non_existing_object(s)
+	GetObjectRetention_disabled_lock(s)
 	GetObjectRetention_unset_config(s)
 	GetObjectRetention_success(s)
 }
@@ -424,6 +425,7 @@ func TestPutObjectLegalHold(s *S3Conf) {
 func TestGetObjectLegalHold(s *S3Conf) {
 	GetObjectLegalHold_non_existing_bucket(s)
 	GetObjectLegalHold_non_existing_object(s)
+	GetObjectLegalHold_disabled_lock(s)
 	GetObjectLegalHold_unset_config(s)
 	GetObjectLegalHold_success(s)
 }
@@ -877,6 +879,7 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_success":                                          PutObjectRetention_success,
 		"GetObjectRetention_non_existing_bucket":                              GetObjectRetention_non_existing_bucket,
 		"GetObjectRetention_non_existing_object":                              GetObjectRetention_non_existing_object,
+		"GetObjectRetention_disabled_lock":                                    GetObjectRetention_disabled_lock,
 		"GetObjectRetention_unset_config":                                     GetObjectRetention_unset_config,
 		"GetObjectRetention_success":                                          GetObjectRetention_success,
 		"PutObjectLegalHold_non_existing_bucket":                              PutObjectLegalHold_non_existing_bucket,
@@ -888,6 +891,7 @@ func GetIntTests() IntTests {
 		"PutObjectLegalHold_success":                                          PutObjectLegalHold_success,
 		"GetObjectLegalHold_non_existing_bucket":                              GetObjectLegalHold_non_existing_bucket,
 		"GetObjectLegalHold_non_existing_object":                              GetObjectLegalHold_non_existing_object,
+		"GetObjectLegalHold_disabled_lock":                                    GetObjectLegalHold_disabled_lock,
 		"GetObjectLegalHold_unset_config":                                     GetObjectLegalHold_unset_config,
 		"GetObjectLegalHold_success":                                          GetObjectLegalHold_success,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":     WORMProtection_bucket_object_lock_configuration_compliance_mode,

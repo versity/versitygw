@@ -8930,6 +8930,29 @@ func GetObjectRetention_non_existing_object(s *S3Conf) error {
 	})
 }
 
+func GetObjectRetention_disabled_lock(s *S3Conf) error {
+	testName := "GetObjectRetention_disabled_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func GetObjectRetention_unset_config(s *S3Conf) error {
 	testName := "GetObjectRetention_unset_config"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -8950,7 +8973,7 @@ func GetObjectRetention_unset_config(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func GetObjectRetention_success(s *S3Conf) error {
@@ -9225,6 +9248,29 @@ func GetObjectLegalHold_non_existing_object(s *S3Conf) error {
 	})
 }
 
+func GetObjectLegalHold_disabled_lock(s *S3Conf) error {
+	testName := "GetObjectLegalHold_disabled_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		_, err := putObjects(s3client, []string{key}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func GetObjectLegalHold_unset_config(s *S3Conf) error {
 	testName := "GetObjectLegalHold_unset_config"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -9245,7 +9291,7 @@ func GetObjectLegalHold_unset_config(s *S3Conf) error {
 		}
 
 		return nil
-	})
+	}, withLock())
 }
 
 func GetObjectLegalHold_success(s *S3Conf) error {
