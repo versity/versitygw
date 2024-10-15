@@ -16,33 +16,43 @@
 
 source ./tests/rest_scripts/rest.sh
 
-# Fields
-
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
 key="$OBJECT_KEY"
-# shellcheck disable=SC2153,SC2034
+# shellcheck disable=SC2153
+part_number="$PART_NUMBER"
+# shellcheck disable=SC2153
 upload_id="$UPLOAD_ID"
+# shellcheck disable=SC2153
+data=$DATA_FILE
 
-current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+payload_hash="$(sha256sum "$data" | awk '{print $1}')"
 
-canonical_request="DELETE
+  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+  # shellcheck disable=SC2034
+  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+  # shellcheck disable=SC2154
+  canonical_request="PUT
 /$bucket_name/$key
-uploadId=$UPLOAD_ID
-host:$host
-x-amz-content-sha256:UNSIGNED-PAYLOAD
+partNumber=$part_number&uploadId=$upload_id
+host:$aws_endpoint_url_address
+x-amz-content-sha256:$payload_hash
 x-amz-date:$current_date_time
 
 host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
+$payload_hash"
 
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "$AWS_ENDPOINT_URL/$bucket_name/$key?uploadId=$upload_id"
+sleep 5
+
+curl_command+=(curl -isk -w "\"%{http_code}\"" "\"$AWS_ENDPOINT_URL/$bucket_name/$key?partNumber=$part_number&uploadId=$upload_id\""
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
+-H "\"x-amz-content-sha256: $payload_hash\""
 -H "\"x-amz-date: $current_date_time\""
--o "$OUTPUT_FILE")
+-o "\"$OUTPUT_FILE\""
+-T "\"$data\"")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

@@ -87,7 +87,7 @@ test_create_multipart_upload_properties_aws_root() {
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
-  run delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
   assert_success
   # in static bucket config, bucket will still exist
   if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
@@ -360,7 +360,7 @@ test_retention_bypass_aws_root() {
 legal_hold_retention_setup() {
   assert [ $# -eq 3 ]
 
-  run delete_bucket_or_contents_if_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user "$1" "$2" "user"

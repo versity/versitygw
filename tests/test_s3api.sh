@@ -283,7 +283,7 @@ export RUN_USERS=true
   fi
   [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
 
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
   delete_test_files $bucket_file
 }
 
@@ -314,7 +314,7 @@ export RUN_USERS=true
   key=$(echo "${objects[@]}" | jq -r ".Contents[0].Key" 2>&1) || fail "error getting key from object list: $key"
   [[ $key == "$folder_name/$object_name" ]] || fail "key doesn't match (expected $key, actual $folder_name/$object_name)"
 
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
   delete_test_files $folder_name
 }
 
@@ -350,7 +350,7 @@ export RUN_USERS=true
   log 5 "INFO:  $bucket_info"
   region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
   [[ $region != "" ]] || fail "empty bucket region"
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
 }
 
 @test "test_retention_bypass" {
@@ -364,7 +364,7 @@ export RUN_USERS=true
   head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
   [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
   [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
 }
 
 @test "test_add_object_metadata" {
@@ -388,7 +388,7 @@ export RUN_USERS=true
   [[ $key == "$test_key" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
   [[ $value == "$test_value" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
 
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
   delete_test_files "$object_one"
 }
 
@@ -410,7 +410,7 @@ export RUN_USERS=true
   run get_and_check_object_lock_config "$bucket_name" "$enabled" "$governance" "$days"
   assert_success "error getting and checking object lock config"
 
-  delete_bucket_or_contents "aws" "$bucket_name"
+  bucket_cleanup "aws" "$bucket_name"
 }
 
 @test "test_ls_directory_object" {

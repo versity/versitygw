@@ -87,7 +87,7 @@ test_user_user() {
   password="$PASSWORD_ONE"
 
   setup_user "$username" "$password" "user" || fail "error setting up user"
-  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-user-bucket"
+  bucket_cleanup_if_bucket_exists "aws" "versity-gwtest-user-bucket"
 
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
@@ -131,7 +131,7 @@ test_userplus_operation() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  delete_bucket_or_contents_if_exists "aws" "versity-gwtest-userplus-bucket"
+  bucket_cleanup_if_bucket_exists "aws" "versity-gwtest-userplus-bucket"
   setup_user "$username" "$password" "userplus" || fail "error creating user '$username'"
 
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
