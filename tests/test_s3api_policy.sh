@@ -187,7 +187,8 @@ test_s3api_policy_invalid_action() {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  check_for_empty_policy "s3api" "$BUCKET_ONE_NAME" || fail "policy not empty"
+  run check_for_empty_policy "s3api" "$BUCKET_ONE_NAME"
+  assert_success
 
   if put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"; then
     fail "put succeeded despite malformed policy"
@@ -335,17 +336,23 @@ test_s3api_policy_get_object_folder_wildcard() {
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
 
-  setup_user "$username" "$password" "user" || fail "error creating user"
+  run setup_user "$username" "$password" "user"
+  assert_success
 
-  setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource" || fail "failed to set up policy"
-  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file" || fail "error putting policy"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
 
-  put_object "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" || fail "error copying object to bucket"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  assert_success
 
-  download_and_compare_file_with_user "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error downloading and comparing file"
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files "$test_folder/$test_file" "$policy_file"
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file"
+  assert_success
+
+  run download_and_compare_file_with_user "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_success
 }
 
 test_s3api_policy_allow_deny() {

@@ -32,6 +32,7 @@ source ./tests/util.sh
 source ./tests/util_legal_hold.sh
 source ./tests/util_list_buckets.sh
 source ./tests/util_list_objects.sh
+source ./tests/util_list_parts.sh
 source ./tests/util_lock_config.sh
 source ./tests/util_rest.sh
 source ./tests/util_tags.sh
@@ -289,5 +290,28 @@ source ./tests/util_versioning.sh
   assert_success
 
   run create_abort_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - multipart upload create, list parts" {
+  test_file="test_file"
+
+  run create_large_file "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run upload_check_parts "$BUCKET_ONE_NAME" "$test_file" \
+    "$TEST_FILE_FOLDER/$test_file-0" "$TEST_FILE_FOLDER/$test_file-1" "$TEST_FILE_FOLDER/$test_file-2" "$TEST_FILE_FOLDER/$test_file-3"
+  assert_success
+
+  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+
+  run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
