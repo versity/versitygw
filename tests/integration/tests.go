@@ -11455,6 +11455,48 @@ func Versioning_GetObject_delete_marker(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_GetObject_null_versionId_obj(s *S3Conf) error {
+	testName := "Versioning_GetObject_null_versionId_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, lgth := "my-obj", int64(234)
+		out, err := putObjectWithData(lgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: &nullVersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *res.ContentLength != lgth {
+			return fmt.Errorf("expected the Content-Length to be %v, instead got %v", lgth, *res.ContentLength)
+		}
+		if *res.VersionId != nullVersionId {
+			return fmt.Errorf("expected the versionId to be %v, insted got %v", nullVersionId, *res.VersionId)
+		}
+		if *res.ETag != *out.res.ETag {
+			return fmt.Errorf("expecte the ETag to be %v, instead got %v", *out.res.ETag, *res.ETag)
+		}
+
+		return nil
+	})
+}
+
 func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_delete_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
