@@ -2722,8 +2722,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			return nil, fmt.Errorf("get obj versionId: %w", err)
 		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
-			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), versionId)
+			vId = []byte(nullVersionId)
 		}
 
 		if string(vId) != versionId {
