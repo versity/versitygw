@@ -12096,6 +12096,71 @@ func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func ListObjectVersions_single_null_versionId_object(s *S3Conf) error {
+	testName := "ListObjectVersions_single_null_versionId_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, objLgth := "my-obj", int64(890)
+		out, err := putObjectWithData(objLgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusEnabled)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		versions := []types.ObjectVersion{
+			{
+				ETag:         out.res.ETag,
+				Key:          &obj,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+				IsLatest:     getBoolPtr(false),
+				Size:         &objLgth,
+				VersionId:    &nullVersionId,
+			},
+		}
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				IsLatest:  getBoolPtr(true),
+				Key:       &obj,
+				VersionId: res.VersionId,
+			},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareDelMarkers(resp.DeleteMarkers, delMarkers) {
+			return fmt.Errorf("expected the delete markers list to be %v, instaed got %v", delMarkers, resp.DeleteMarkers)
+		}
+		if !compareVersions(resp.Versions, versions) {
+			return fmt.Errorf("expected the object versions list to be %v, instead got %v", versions, resp.Versions)
+		}
+
+		return nil
+	})
+}
+
 func Versioning_Multipart_Upload_success(s *S3Conf) error {
 	testName := "Versioning_Multipart_Upload_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
