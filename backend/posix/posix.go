@@ -952,6 +952,11 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Truncated:           true,
 					NextVersionIdMarker: nullVersionId,
 				}, nil
+			} else {
+				return &backend.ObjVersionFuncResult{
+					ObjectVersions: objects,
+					DelMarkers:     delMarkers,
+				}, nil
 			}
 		}
 
