@@ -16,6 +16,7 @@
 
 source ./tests/setup.sh
 source ./tests/test_common.sh
+source ./tests/test_common_acl.sh
 source ./tests/util.sh
 source ./tests/util_create_bucket.sh
 source ./tests/util_users.sh

@@ -82,3 +82,55 @@ For the s3 backend, see the **S3 Backend** instructions above.
 If using AMD rather than ARM architecture, add the corresponding **args** values matching those in the Dockerfile for **amd** libraries.
 
 A single instance can be run with `docker-compose -f docker-compose-bats.yml up <service name>`
+
+## Environment Parameters
+
+**AWS_PROFILE**, **AWS_ENDPOINT_URL**, **AWS_REGION**, **AWS_ACCESS_KEY_ID**, **AWS_SECRET_ACCESS_KEY**:  identical to the same parameters in **s3**.
+
+**VERSITY_EXE**:  location of the versity executable relative to test folder.
+
+**RUN_VERSITYGW**:  whether to run the versitygw executable, should be set to **false** when running tests directly against **s3**.
+
+**BACKEND**:  the storage backend type for the gateway, e.g. **posix** or **s3**.
+
+**LOCAL_FOLDER**:  if running with a **posix** backend, the backend storage folder.
+
+**BUCKET_ONE_NAME**, **BUCKET_TWO_NAME**:  test bucket names.
+
+**RECREATE_BUCKETS**:  whether to delete buckets between tests.  If set to false, the bucket will be restored to an original state for the purpose of ensuring consistent tests, but not deleted.
+
+**CERT**, **KEY**:  certificate and key locations if using SSL.
+
+**S3CMD_CONFIG**:  location of **s3cmd** config file if running **s3cmd** tests.
+
+**SECRETS_FILE**:  file where sensitive values, such as **AWS_SECRET_ACCESS_KEY**, should be stored.
+
+**MC_ALIAS**:  Minio MC alias if running MC tests.
+
+**LOG_LEVEL**:  level for test logger (1 - only critical, 2 - errors, 3 - warnings, 4 - info, 5 - debug info, 6 - tracing)
+
+**GOCOVERDIR**:  folder to put golang coverage info in, if checking coverage info.
+
+**USERS_FOLDER**:  folder to use if storing IAM data in a folder.
+
+**IAM_TYPE**:  how to store IAM data (**s3** or **folder**).
+
+**TEST_LOG_FILE**:  log file location for these bats tests.
+
+**VERSITY_LOG_FILE**:  log file for versity application as it is tested by bats tests.
+
+**DIRECT**:  if **true**, bypass versitygw and run directly against s3 (for comparison and validity-checking purposes).
+
+**DIRECT_DISPLAY_NAME**:  username if **DIRECT** is set to **true**.
+
+**COVERAGE_DB**:  database to store client command coverage info and usage counts, if using.
+
+**USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  credentials for users created and tested for non-root user **versitygw** operations.
+
+**TEST_FILE_FOLDER**:  where to put temporary test files.
+
+**REMOVE_TEST_FILE_FOLDER**:  whether to delete the test file folder between tests, should be set to **true** unless checking the files after a single test, or not yet sure that the test folder is in a safe location to avoid deleting other files.
+
+**VERSIONING_DIR**:  where to put gateway file versioning info.
+
+**COMMAND_LOG**:  where to store list of client commands, which if using will be reported during test failures.

@@ -14,20 +14,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
-get_host() {
-  if [ -z "$HOST" ]; then
-    host="localhost:7070"
-    return
-  fi
-  # shellcheck disable=SC2034
-  host="$HOST"
-}
+source ./tests/commands/command.sh
 
-get_aws_region() {
-  if [ -z "$AWS_REGION" ]; then
-    aws_region="us-east-1"
-    return
-  fi
+# shellcheck disable=SC2153,SC2034
+aws_access_key_id="$AWS_ACCESS_KEY_ID"
+# shellcheck disable=SC2153,SC2034
+aws_secret_access_key="$AWS_SECRET_ACCESS_KEY"
+
+if [ -z "$AWS_ENDPOINT_URL" ]; then
+  host="localhost:7070"
+else
+  # shellcheck disable=SC2034
+  host="$(echo "$AWS_ENDPOINT_URL" | awk -F'//' '{print $2}')"
+fi
+
+if [ -z "$AWS_REGION" ]; then
+  aws_region="us-east-1"
+else
   # shellcheck disable=SC2034
   aws_region="$AWS_REGION"
+fi
+
+add_command_recording_if_enabled() {
+  if [ -n "$COMMAND_LOG" ]; then
+    curl_command+=(send_command)
+  fi
 }
