@@ -15,11 +15,6 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-var (
-	// TODO: make this configurable
-	defaultDirPerm fs.FileMode = 0755
-)
-
 // MkdirAll is similar to os.MkdirAll but it will return
 // ErrObjectParentIsFile when appropriate
 // MkdirAll creates a directory named path,
@@ -32,7 +27,7 @@ var (
 // and returns nil.
 // Any directory created will be set to provided uid/gid ownership
 // if doChown is true.
-func MkdirAll(path string, uid, gid int, doChown bool) error {
+func MkdirAll(path string, uid, gid int, doChown bool, dirPerm fs.FileMode) error {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
 	dir, err := os.Stat(path)
 	if err == nil {
@@ -55,14 +50,14 @@ func MkdirAll(path string, uid, gid int, doChown bool) error {
 
 	if j > 1 {
 		// Create parent.
-		err = MkdirAll(path[:j-1], uid, gid, doChown)
+		err = MkdirAll(path[:j-1], uid, gid, doChown, dirPerm)
 		if err != nil {
 			return err
 		}
 	}
 
 	// Parent now exists; invoke Mkdir and use its result.
-	err = os.Mkdir(path, defaultDirPerm)
+	err = os.Mkdir(path, dirPerm)
 	if err != nil {
 		// Handle arguments like "foo/." by
 		// double-checking that directory doesn't exist.

@@ -58,7 +58,9 @@ func initPosix(ctx context.Context) {
 		log.Fatalf("make temp directory: %v", err)
 	}
 
-	be, err := posix.New(tempdir, meta.XattrMeta{}, posix.PosixOpts{})
+	be, err := posix.New(tempdir, meta.XattrMeta{}, posix.PosixOpts{
+		NewDirPerm: 0755,
+	})
 	if err != nil {
 		log.Fatalf("init posix: %v", err)
 	}
