@@ -10769,6 +10769,28 @@ func GetBucketVersioning_success(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_DeleteBucket_not_empty(s *S3Conf) error {
+	testName := "Versioning_DeleteBucket_not_empty"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 2)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrVersionedBucketNotEmpty)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_PutObject_suspended_null_versionId_obj(s *S3Conf) error {
 	testName := "Versioning_PutObject_suspended_null_versionId_obj"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -11142,6 +11164,11 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 
 		if *out.VersionId != *res.VersionId {
 			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v", *res.VersionId, *out.VersionId)
+		}
+
+		err = teardown(s, dstBucket)
+		if err != nil {
+			return err
 		}
 
 		return nil

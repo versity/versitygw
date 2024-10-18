@@ -57,6 +57,7 @@ const (
 	ErrAccessDenied
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
+	ErrVersionedBucketNotEmpty
 	ErrBucketAlreadyExists
 	ErrBucketAlreadyOwnedByYou
 	ErrNoSuchBucket
@@ -158,6 +159,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrBucketNotEmpty: {
 		Code:           "BucketNotEmpty",
 		Description:    "The bucket you tried to delete is not empty.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrVersionedBucketNotEmpty: {
+		Code:           "BucketNotEmpty",
+		Description:    "The bucket you tried to delete is not empty. You must delete all versions in the bucket.",
 		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrBucketAlreadyExists: {

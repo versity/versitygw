@@ -41,7 +41,7 @@ var _ backend.Backend = &BackendMock{}
 //			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 //				panic("mock out the CreateMultipartUpload method")
 //			},
-//			DeleteBucketFunc: func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
+//			DeleteBucketFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucket method")
 //			},
 //			DeleteBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) error {
@@ -202,7 +202,7 @@ type BackendMock struct {
 	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
 
 	// DeleteBucketFunc mocks the DeleteBucket method.
-	DeleteBucketFunc func(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error
+	DeleteBucketFunc func(contextMoqParam context.Context, bucket string) error
 
 	// DeleteBucketOwnershipControlsFunc mocks the DeleteBucketOwnershipControls method.
 	DeleteBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string) error
@@ -388,8 +388,8 @@ type BackendMock struct {
 		DeleteBucket []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// DeleteBucketInput is the deleteBucketInput argument value.
-			DeleteBucketInput *s3.DeleteBucketInput
+			// Bucket is the bucket argument value.
+			Bucket string
 		}
 		// DeleteBucketOwnershipControls holds details about calls to the DeleteBucketOwnershipControls method.
 		DeleteBucketOwnershipControls []struct {
@@ -1012,21 +1012,21 @@ func (mock *BackendMock) CreateMultipartUploadCalls() []struct {
 }
 
 // DeleteBucket calls DeleteBucketFunc.
-func (mock *BackendMock) DeleteBucket(contextMoqParam context.Context, deleteBucketInput *s3.DeleteBucketInput) error {
+func (mock *BackendMock) DeleteBucket(contextMoqParam context.Context, bucket string) error {
 	if mock.DeleteBucketFunc == nil {
 		panic("BackendMock.DeleteBucketFunc: method is nil but Backend.DeleteBucket was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam   context.Context
-		DeleteBucketInput *s3.DeleteBucketInput
+		ContextMoqParam context.Context
+		Bucket          string
 	}{
-		ContextMoqParam:   contextMoqParam,
-		DeleteBucketInput: deleteBucketInput,
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
 	}
 	mock.lockDeleteBucket.Lock()
 	mock.calls.DeleteBucket = append(mock.calls.DeleteBucket, callInfo)
 	mock.lockDeleteBucket.Unlock()
-	return mock.DeleteBucketFunc(contextMoqParam, deleteBucketInput)
+	return mock.DeleteBucketFunc(contextMoqParam, bucket)
 }
 
 // DeleteBucketCalls gets all the calls that were made to DeleteBucket.
@@ -1034,12 +1034,12 @@ func (mock *BackendMock) DeleteBucket(contextMoqParam context.Context, deleteBuc
 //
 //	len(mockedBackend.DeleteBucketCalls())
 func (mock *BackendMock) DeleteBucketCalls() []struct {
-	ContextMoqParam   context.Context
-	DeleteBucketInput *s3.DeleteBucketInput
+	ContextMoqParam context.Context
+	Bucket          string
 } {
 	var calls []struct {
-		ContextMoqParam   context.Context
-		DeleteBucketInput *s3.DeleteBucketInput
+		ContextMoqParam context.Context
+		Bucket          string
 	}
 	mock.lockDeleteBucket.RLock()
 	calls = mock.calls.DeleteBucket

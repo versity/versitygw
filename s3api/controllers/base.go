@@ -2468,10 +2468,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err = c.be.DeleteBucket(ctx.Context(),
-		&s3.DeleteBucketInput{
-			Bucket: &bucket,
-		})
+	err = c.be.DeleteBucket(ctx.Context(), bucket)
 	return SendResponse(ctx, err,
 		&MetaOpts{
 			Logger:      c.logger,

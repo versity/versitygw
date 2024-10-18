@@ -545,6 +545,8 @@ func TestVersioning(s *S3Conf) {
 	GetBucketVersioning_non_existing_bucket(s)
 	GetBucketVersioning_empty_response(s)
 	GetBucketVersioning_success(s)
+	// DeleteBucket action
+	Versioning_DeleteBucket_not_empty(s)
 	// PutObject action
 	Versioning_PutObject_suspended_null_versionId_obj(s)
 	Versioning_PutObject_null_versionId_obj(s)
@@ -936,6 +938,7 @@ func GetIntTests() IntTests {
 		"GetBucketVersioning_non_existing_bucket":                             GetBucketVersioning_non_existing_bucket,
 		"GetBucketVersioning_empty_response":                                  GetBucketVersioning_empty_response,
 		"GetBucketVersioning_success":                                         GetBucketVersioning_success,
+		"Versioning_DeleteBucket_not_empty":                                   Versioning_DeleteBucket_not_empty,
 		"Versioning_PutObject_suspended_null_versionId_obj":                   Versioning_PutObject_suspended_null_versionId_obj,
 		"Versioning_PutObject_null_versionId_obj":                             Versioning_PutObject_null_versionId_obj,
 		"Versioning_PutObject_overwrite_null_versionId_obj":                   Versioning_PutObject_overwrite_null_versionId_obj,

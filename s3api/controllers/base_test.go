@@ -1217,7 +1217,7 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			DeleteBucketFunc: func(context.Context, *s3.DeleteBucketInput) error {
+			DeleteBucketFunc: func(_ context.Context, bucket string) error {
 				return nil
 			},
 			DeleteBucketTaggingFunc: func(contextMoqParam context.Context, bucket string) error {
