@@ -250,8 +250,8 @@ func (az *Azure) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3
 	return &s3.HeadBucketOutput{}, nil
 }
 
-func (az *Azure) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
-	pager := az.client.NewListBlobsFlatPager(*input.Bucket, nil)
+func (az *Azure) DeleteBucket(ctx context.Context, bucket string) error {
+	pager := az.client.NewListBlobsFlatPager(bucket, nil)
 
 	pg, err := pager.NextPage(ctx)
 	if err != nil {
@@ -261,7 +261,7 @@ func (az *Azure) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) 
 	if len(pg.Segment.BlobItems) > 0 {
 		return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
 	}
-	_, err = az.client.DeleteContainer(ctx, *input.Bucket, nil)
+	_, err = az.client.DeleteContainer(ctx, bucket, nil)
 	return azureErrToS3Err(err)
 }
 

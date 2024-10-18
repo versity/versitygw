@@ -125,8 +125,10 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 	return handleError(err)
 }
 
-func (s *S3Proxy) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput) error {
-	_, err := s.client.DeleteBucket(ctx, input)
+func (s *S3Proxy) DeleteBucket(ctx context.Context, bucket string) error {
+	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: &bucket,
+	})
 	return handleError(err)
 }
 

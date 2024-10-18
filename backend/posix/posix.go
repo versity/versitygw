@@ -376,39 +376,59 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	return nil
 }
 
-func (p *Posix) DeleteBucket(_ context.Context, input *s3.DeleteBucketInput) error {
-	if input.Bucket == nil {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
-	}
-
-	names, err := os.ReadDir(*input.Bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
-	if err != nil {
-		return fmt.Errorf("readdir bucket: %w", err)
-	}
-
-	if len(names) == 1 && names[0].Name() == metaTmpDir {
-		// if .sgwtmp is only item in directory
-		// then clean this up before trying to remove the bucket
-		err = os.RemoveAll(filepath.Join(*input.Bucket, metaTmpDir))
+func (p *Posix) isBucketEmpty(bucket string) error {
+	if p.versioningEnabled() {
+		ents, err := os.ReadDir(filepath.Join(p.versioningDir, bucket))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("remove temp dir: %w", err)
+			return fmt.Errorf("readdir bucket: %w", err)
+		}
+		if err == nil {
+			if len(ents) == 1 && ents[0].Name() != metaTmpDir {
+				return s3err.GetAPIError(s3err.ErrVersionedBucketNotEmpty)
+			} else if len(ents) > 1 {
+				return s3err.GetAPIError(s3err.ErrVersionedBucketNotEmpty)
+			}
 		}
 	}
 
-	err = os.Remove(*input.Bucket)
-	if err != nil && err.(*os.PathError).Err == syscall.ENOTEMPTY {
+	ents, err := os.ReadDir(bucket)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("readdir bucket: %w", err)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if len(ents) == 1 && ents[0].Name() != metaTmpDir {
+		return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
+	} else if len(ents) > 1 {
 		return s3err.GetAPIError(s3err.ErrBucketNotEmpty)
 	}
+
+	return nil
+}
+
+func (p *Posix) DeleteBucket(_ context.Context, bucket string) error {
+	if bucket == "" {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
+	// Check if the bucket is empty
+	err := p.isBucketEmpty(bucket)
+	if err != nil {
+		return err
+	}
+
+	// Remove the bucket
+	err = os.RemoveAll(bucket)
 	if err != nil {
 		return fmt.Errorf("remove bucket: %w", err)
 	}
-
-	err = p.meta.DeleteAttributes(*input.Bucket, "")
-	if err != nil {
-		return fmt.Errorf("remove bucket attributes: %w", err)
+	// Remove the bucket from versioning directory
+	if p.versioningEnabled() {
+		err = os.RemoveAll(filepath.Join(p.versioningDir, bucket))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove bucket version: %w", err)
+		}
 	}
 
 	return nil
@@ -2393,10 +2413,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	if err != nil {
 		return nil, err
 	}
-	vEnabled := p.isBucketVersioningEnabled(vStatus)
 
 	// Directory objects can't have versions
-	if !isDir && p.versioningEnabled() && vEnabled {
+	if !isDir && p.versioningEnabled() && vStatus != "" {
 		if getString(input.VersionId) == "" {
 			// if the versionId is not specified, make the current version a delete marker
 			fi, err := os.Stat(objpath)
@@ -2533,6 +2552,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					return nil, fmt.Errorf("remove obj version %w", err)
 				}
 
+				p.removeParents(filepath.Join(p.versioningDir, bucket), filepath.Join(genObjVersionKey(object), *input.VersionId))
+
 				return &s3.DeleteObjectOutput{
 					DeleteMarker: &isDelMarker,
 					VersionId:    input.VersionId,
@@ -2551,6 +2572,8 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			if err != nil {
 				return nil, fmt.Errorf("delete object: %w", err)
 			}
+
+			p.removeParents(filepath.Join(p.versioningDir, bucket), filepath.Join(genObjVersionKey(object), *input.VersionId))
 
 			return &s3.DeleteObjectOutput{
 				DeleteMarker: &isDelMarker,
@@ -2597,15 +2620,12 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, fmt.Errorf("delete object attributes: %w", err)
 	}
 
-	err = p.removeParents(bucket, object)
-	if err != nil {
-		return nil, err
-	}
+	p.removeParents(bucket, object)
 
 	return &s3.DeleteObjectOutput{}, nil
 }
 
-func (p *Posix) removeParents(bucket, object string) error {
+func (p *Posix) removeParents(bucket, object string) {
 	// this will remove all parent directories that were not
 	// specifically uploaded with a put object. we detect
 	// this with a special attribute to indicate these. stop
@@ -2614,7 +2634,6 @@ func (p *Posix) removeParents(bucket, object string) error {
 	objPath := object
 	for {
 		parent := filepath.Dir(objPath)
-
 		if parent == string(filepath.Separator) || parent == "." {
 			// stop removing parents if we hit the bucket directory.
 			break
@@ -2635,7 +2654,6 @@ func (p *Posix) removeParents(bucket, object string) error {
 
 		objPath = parent
 	}
-	return nil
 }
 
 func (p *Posix) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
