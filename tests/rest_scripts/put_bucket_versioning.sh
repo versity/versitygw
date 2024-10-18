@@ -21,15 +21,7 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 status="$STATUS"
 # shellcheck disable=SC2153
-aws_access_key_id="$AWS_ACCESS_KEY_ID"
-# shellcheck disable=SC2153
-aws_secret_access_key="$AWS_SECRET_ACCESS_KEY"
-# shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
-get_host
-get_aws_region
-
-# Step 1:  generate payload hash
 
 payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
@@ -37,9 +29,6 @@ payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 </VersioningConfiguration>"
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
-
-# Step 2:  generate canonical hash
-
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 canonical_request="PUT
@@ -52,31 +41,13 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-date
 $payload_hash"
 
-canonical_request_hash="$(echo -n "$canonical_request" | openssl dgst -sha256 | awk '{print $2}')"
+create_canonical_hash_sts_and_signature
 
-# Step 3:  create STS data string
-
-year_month_day="$(echo "$current_date_time" | cut -c1-8)"
-
-sts_data="AWS4-HMAC-SHA256
-$current_date_time
-$year_month_day/$aws_region/s3/aws4_request
-$canonical_request_hash"
-
-# Step 4:  generate signature
-
-date_key=$(echo -n "$year_month_day" | openssl dgst -sha256 -mac HMAC -macopt key:"AWS4${aws_secret_access_key}" | awk '{print $2}')
-date_region_key=$(echo -n "$aws_region" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$date_key" | awk '{print $2}')
-date_region_service_key=$(echo -n "s3" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$date_region_key" | awk '{print $2}')
-signing_key=$(echo -n "aws4_request" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$date_region_service_key" | awk '{print $2}')
-signature=$(echo -n "$sts_data" | openssl dgst -sha256 \
-                 -mac HMAC \
-                 -macopt hexkey:"$signing_key" | awk '{print $2}')
-
-# Step 5:  send curl command
-
-curl -ks -X PUT "https://$host/$BUCKET_NAME?versioning" \
-       -H "Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-       -H "x-amz-content-sha256: $payload_hash" \
-       -H "x-amz-date: $current_date_time" \
-       -d "$payload"
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name?versioning="
+-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
+-H "\"x-amz-content-sha256: $payload_hash\""
+-H "\"x-amz-date: $current_date_time\""
+-d "\"${payload//\"/\\\"}\""
+-o "$OUTPUT_FILE")
+# shellcheck disable=SC2154
+eval "${curl_command[*]}" 2>&1

@@ -25,6 +25,7 @@ source ./tests/util_tags.sh
 source ./tests/util_users.sh
 source ./tests/test_aws_root_inner.sh
 source ./tests/test_common.sh
+source ./tests/test_common_acl.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object_tagging.sh
@@ -234,18 +235,21 @@ export RUN_USERS=true
 
   run create_test_file "$bucket_file"
   assert_success
-  dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1 || fail "error adding data to test file"
+
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
 
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 || fail "error performing multipart upload"
+  run multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
+  assert_success
 
-  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy" || fail "error getting object"
-  compare_files "$TEST_FILE_FOLDER"/$bucket_file-copy "$TEST_FILE_FOLDER"/$bucket_file || fail "data doesn't match"
+  run get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  assert_success
 
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
+  run compare_files "$TEST_FILE_FOLDER"/$bucket_file-copy "$TEST_FILE_FOLDER"/$bucket_file
+  assert_success
 }
 
 @test "test_multipart_upload_from_bucket_range_too_large" {
@@ -256,13 +260,8 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 "bytes=0-1000000000" || local upload_result=$?
-  [[ $upload_result -eq 1 ]] || fail "multipart upload with overly large range should have failed"
-  log 5 "error: $upload_part_copy_error"
-  [[ $upload_part_copy_error == *"Range specified is not valid"* ]] || [[ $upload_part_copy_error == *"InvalidRange"* ]] || fail "unexpected error: $upload_part_copy_error"
-
-  delete_bucket_or_contents "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
+  run multipart_upload_range_too_large "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
+  assert_success
 }
 
 @test "test_multipart_upload_from_bucket_range_valid" {

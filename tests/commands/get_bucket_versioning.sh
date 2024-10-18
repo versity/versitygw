@@ -37,40 +37,12 @@ get_bucket_versioning_rest() {
     log 2 "'get_bucket_versioning_rest' requires bucket name"
     return 1
   fi
-
-  #generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1
-versioning=
-host:$aws_endpoint_url_address
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OUTPUT_FILE="$TEST_FILE_FOLDER/versioning.txt" ./tests/rest_scripts/get_bucket_versioning.sh); then
+    log 2 "error getting bucket versioning: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  if ! reply=$(send_command curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1?versioning" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-    -H "x-amz-date: $current_date_time" \
-    -o "$TEST_FILE_FOLDER/versioning.txt" 2>&1); then
-      log 2 "error retrieving curl reply: $reply"
-      return 1
-  fi
-  log 5 "reply: $reply"
-  if [[ "$reply" != "200" ]]; then
-    log 2 "get object command returned error: $(cat "$TEST_FILE_FOLDER/versioning.txt")"
+  if [ "$result" != "200" ]; then
+    log 2 "get-bucket-versioning returned code $result: $(cat "$TEST_FILE_FOLDER/versioning.txt")"
     return 1
   fi
   return 0
