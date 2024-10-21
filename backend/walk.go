@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"sort"
 	"strings"
 
@@ -85,8 +84,16 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			// building to match. So only skip if path isn't a prefix of prefix
 			// and prefix isn't a prefix of path.
 			if prefix != "" &&
-				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
-				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
+				!strings.HasPrefix(path+"/", prefix) &&
+				!strings.HasPrefix(prefix, path+"/") {
+				return fs.SkipDir
+			}
+
+			// Don't recurse into subdirectories when listing with delimiter.
+			if delimiter == "/" &&
+				prefix != path+"/" &&
+				strings.HasPrefix(path+"/", prefix) {
+				cpmap[path+"/"] = struct{}{}
 				return fs.SkipDir
 			}
 
@@ -97,7 +104,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 				return fmt.Errorf("readdir %q: %w", path, err)
 			}
 
-			path += string(os.PathSeparator)
+			path += "/"
 
 			if len(ents) == 0 && delimiter == "" {
 				dirobj, err := getObj(path, d)
@@ -315,8 +322,16 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			// building to match. So only skip if path isn't a prefix of prefix
 			// and prefix isn't a prefix of path.
 			if prefix != "" &&
-				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
-				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
+				!strings.HasPrefix(path+"/", prefix) &&
+				!strings.HasPrefix(prefix, path+"/") {
+				return fs.SkipDir
+			}
+
+			// Don't recurse into subdirectories when listing with delimiter.
+			if delimiter == "/" &&
+				prefix != path+"/" &&
+				strings.HasPrefix(path+"/", prefix) {
+				cpmap[path+"/"] = struct{}{}
 				return fs.SkipDir
 			}
 
