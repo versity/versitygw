@@ -2435,10 +2435,21 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				acct = auth.Account{}
 			}
 
-			// Creates a new version in the versioning directory
-			_, err = p.createObjVersion(bucket, object, fi.Size(), acct)
-			if err != nil {
-				return nil, err
+			// Get object versionId
+			vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("get obj versionId: %w", err)
+			}
+			if errors.Is(err, meta.ErrNoSuchKey) {
+				vId = []byte(nullVersionId)
+			}
+
+			// Creates a new object version in the versioning directory
+			if p.isBucketVersioningEnabled(vStatus) || string(vId) != nullVersionId {
+				_, err = p.createObjVersion(bucket, object, fi.Size(), acct)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			// Mark the object as a delete marker
@@ -2446,11 +2457,20 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			if err != nil {
 				return nil, fmt.Errorf("set delete marker: %w", err)
 			}
-			// Generate & set a unique versionId for the delete marker
-			versionId := ulid.Make().String()
-			err = p.meta.StoreAttribute(nil, bucket, object, versionIdKey, []byte(versionId))
-			if err != nil {
-				return nil, fmt.Errorf("set versionId: %w", err)
+
+			versionId := nullVersionId
+			if p.isBucketVersioningEnabled(vStatus) {
+				// Generate & set a unique versionId for the delete marker
+				versionId = ulid.Make().String()
+				err = p.meta.StoreAttribute(nil, bucket, object, versionIdKey, []byte(versionId))
+				if err != nil {
+					return nil, fmt.Errorf("set versionId: %w", err)
+				}
+			} else {
+				err = p.meta.DeleteAttribute(bucket, object, versionIdKey)
+				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+					return nil, fmt.Errorf("delete versionId: %w", err)
+				}
 			}
 
 			return &s3.DeleteObjectOutput{

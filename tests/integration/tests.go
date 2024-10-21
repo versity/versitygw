@@ -11688,6 +11688,68 @@ func Versioning_Delete_null_versionId_object(s *S3Conf) error {
 	})
 }
 
+func Versioning_DeleteObject_suspended(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_suspended"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		versions[0].IsLatest = getBoolPtr(false)
+
+		err = putBucketVersioningStatus(s3client, bucket, types.BucketVersioningStatusSuspended)
+		if err != nil {
+			return err
+		}
+
+		for i := 0; i < 5; i++ {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if !*res.DeleteMarker {
+				return fmt.Errorf("expected the delete marker to be true, instead got %v", *res.DeleteMarker)
+			}
+			if *res.VersionId != nullVersionId {
+				return fmt.Errorf("expected the versionId to be %v, instead got %v", nullVersionId, *res.VersionId)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				IsLatest:  getBoolPtr(true),
+				Key:       &obj,
+				VersionId: &nullVersionId,
+			},
+		}
+
+		if !compareVersions(res.Versions, versions) {
+			return fmt.Errorf("expected the versions to be %v, instead got %v", versions, res.Versions)
+		}
+		if !compareDelMarkers(res.DeleteMarkers, delMarkers) {
+			return fmt.Errorf("expected the delete markers to be %v, instead got %v", delMarkers, res.DeleteMarkers)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_DeleteObjects_success(s *S3Conf) error {
 	testName := "Versioning_DeleteObjects_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
