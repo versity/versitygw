@@ -83,7 +83,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	uploadId := ctx.Query("uploadId")
-	maxParts := int32(ctx.QueryInt("max-parts", -1))
 	partNumberMarker := ctx.Query("part-number-marker")
 	acceptRange := ctx.Get("Range")
 	acct := ctx.Locals("account").(auth.Account)
@@ -221,16 +220,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if uploadId != "" {
-		if maxParts < 0 && ctx.Request().URI().QueryArgs().Has("max-parts") {
-			return SendResponse(ctx,
-				s3err.GetAPIError(s3err.ErrInvalidMaxParts),
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionListParts,
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
 		if partNumberMarker != "" {
 			n, err := strconv.Atoi(partNumberMarker)
 			if err != nil || n < 0 {
@@ -248,8 +237,24 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					})
 			}
 		}
+		mxParts := ctx.Query("max-parts")
+		maxParts, err := utils.ParseUint(mxParts)
+		if err != nil {
+			if c.debug {
+				log.Printf("error parsing max parts %q: %v",
+					mxParts, err)
+			}
+			return SendResponse(ctx,
+				s3err.GetAPIError(s3err.ErrInvalidMaxParts),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionListParts,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
 
-		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
 			AclPermission: types.PermissionRead,
@@ -268,17 +273,13 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		var mxParts *int32
-		if ctx.Request().URI().QueryArgs().Has("max-parts") {
-			mxParts = &maxParts
-		}
 
 		res, err := c.be.ListParts(ctx.Context(), &s3.ListPartsInput{
 			Bucket:           &bucket,
 			Key:              &key,
 			UploadId:         &uploadId,
 			PartNumberMarker: &partNumberMarker,
-			MaxParts:         mxParts,
+			MaxParts:         &maxParts,
 		})
 		return SendXMLResponse(ctx, res, err,
 			&MetaOpts{
@@ -346,7 +347,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		partNumberMarker := ctx.Get("X-Amz-Part-Number-Marker")
 		maxPartsParsed, err := utils.ParseUint(maxParts)
 		if err != nil {
-			return SendXMLResponse(ctx, nil, err,
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxParts),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
@@ -736,7 +737,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				log.Printf("error parsing max keys %q: %v",
 					maxkeysStr, err)
 			}
-			return SendXMLResponse(ctx, nil, err,
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
@@ -869,12 +870,13 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				log.Printf("error parsing max uploads %q: %v",
 					maxUploadsStr, err)
 			}
-			return SendXMLResponse(ctx, nil, err, &MetaOpts{
-				Logger:      c.logger,
-				MetricsMng:  c.mm,
-				Action:      metrics.ActionListMultipartUploads,
-				BucketOwner: parsedAcl.Owner,
-			})
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxUploads),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionListMultipartUploads,
+					BucketOwner: parsedAcl.Owner,
+				})
 		}
 		res, err := c.be.ListMultipartUploads(ctx.Context(),
 			&s3.ListMultipartUploadsInput{
@@ -919,7 +921,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				log.Printf("error parsing max keys %q: %v",
 					maxkeysStr, err)
 			}
-			return SendXMLResponse(ctx, nil, err,
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
@@ -970,7 +972,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			log.Printf("error parsing max keys %q: %v",
 				maxkeysStr, err)
 		}
-		return SendXMLResponse(ctx, nil, err,
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,

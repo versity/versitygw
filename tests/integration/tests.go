@@ -6269,6 +6269,60 @@ func ListParts_incorrect_object_key(s *S3Conf) error {
 	})
 }
 
+func ListParts_invalid_max_parts(s *S3Conf) error {
+	testName := "ListParts_invalid_max_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		invMaxParts := int32(-3)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MaxParts: &invMaxParts,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxParts)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func ListParts_default_max_parts(s *S3Conf) error {
+	testName := "ListParts_default_max_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *res.MaxParts != 1000 {
+			return fmt.Errorf("expected max parts to be 1000, instead got %v", *res.MaxParts)
+		}
+
+		return nil
+	})
+}
+
 func ListParts_truncated(s *S3Conf) error {
 	testName := "ListParts_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6407,15 +6461,15 @@ func ListMultipartUploads_empty_result(s *S3Conf) error {
 
 func ListMultipartUploads_invalid_max_uploads(s *S3Conf) error {
 	testName := "ListMultipartUploads_invalid_max_uploads"
-	maxUploads := int32(-3)
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		maxUploads := int32(-3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
 			Bucket:     &bucket,
 			MaxUploads: &maxUploads,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxUploads)); err != nil {
 			return err
 		}
 
