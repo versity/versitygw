@@ -33,43 +33,13 @@ get_object_legal_hold_rest() {
     log 2 "'get_object_legal_hold_rest' requires bucket, key"
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1/$2
-legal-hold=
-host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/legal_hold.txt" ./tests/rest_scripts/get_object_legal_hold.sh); then
+    log 2 "error getting object legal hold: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks -w "%{http_code}" "$header://$aws_endpoint_url_address/$1/$2?legal-hold" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: $payload_hash" \
-    -H "x-amz-date: $current_date_time" \
-    -o "$TEST_FILE_FOLDER"/object_legal_hold.txt 2>&1)
-  log 5 "reply status code: $reply"
-  if [[ "$reply" != "200" ]]; then
-    if [ "$reply" == "404" ]; then
-      return 1
-    fi
-    log 2 "reply error: $reply"
-    log 2 "get object retention command returned error: $(cat "$TEST_FILE_FOLDER"/object_legal_hold.txt)"
-    return 2
+  if [ "$result" != "200" ]; then
+    log 2 "get-object-legal-hold returned code $result: $(cat "$TEST_FILE_FOLDER/legal_hold.txt")"
+    return 1
   fi
-  log 5 "object legal hold:  $(cat "$TEST_FILE_FOLDER"/object_legal_hold.txt)"
   return 0
 }

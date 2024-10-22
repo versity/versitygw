@@ -117,30 +117,14 @@ list_buckets_s3api() {
 }
 
 list_buckets_rest() {
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/
-
-host:${AWS_ENDPOINT_URL#*//}
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG OUTPUT_FILE="$TEST_FILE_FOLDER/buckets.txt" ./tests/rest_scripts/list_buckets.sh); then
+    log 2 "error listing buckets: $result"
     return 1
   fi
-
-  get_signature
-  # shellcheck disable=SC2034,SC2154
-  reply=$(send_command curl -ks "$AWS_ENDPOINT_URL" \
-         -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-         -H "x-amz-content-sha256: $payload_hash" \
-         -H "x-amz-date: $current_date_time" 2>&1)
+  if [ "$result" != "200" ]; then
+    log 2 "list-buckets returned code $result: $(cat "$TEST_FILE_FOLDER/buckets.txt")"
+    return 1
+  fi
   parse_bucket_list
+  return 0
 }

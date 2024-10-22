@@ -107,3 +107,19 @@ create_multipart_upload_custom() {
   log 5 "upload id: $upload_id"
   return 0
 }
+
+create_multipart_upload_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create_multipart_upload_rest' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" COMMAND_LOG=$COMMAND_LOG ./tests/rest_scripts/create_multipart_upload.sh); then
+    log 2 "error creating multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "put-object-retention returned code $result: $(cat "$TEST_FILE_FOLDER/output.txt")"
+    return 1
+  fi
+  return 0
+}

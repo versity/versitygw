@@ -2,8 +2,8 @@
 
 parse_bucket_list() {
   # shellcheck disable=SC2154
-  log 5 "bucket list: $reply"
-  bucket_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' -)
+  log 5 "bucket list: $(cat "$TEST_FILE_FOLDER/buckets.txt")"
+  bucket_list=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$TEST_FILE_FOLDER/buckets.txt")
   bucket_array=()
   while read -r bucket; do
     bucket_array+=("$bucket")
@@ -12,6 +12,7 @@ parse_bucket_list() {
 }
 
 parse_object_list() {
+  # shellcheck disable=SC2154
   object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' -)
   object_array=()
   while read -r object; do
@@ -67,7 +68,6 @@ generate_hash_for_payload_file() {
 }
 
 get_creq_string_list_buckets() {
-
   current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
     canonical_request="GET
 /
@@ -151,4 +151,3 @@ $creq_hash"
   echo "TEST STS"
   cat test.sts
 }
-
