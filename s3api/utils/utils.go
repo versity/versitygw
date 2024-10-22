@@ -180,7 +180,7 @@ func ParseUint(str string) (int32, error) {
 	}
 	num, err := strconv.ParseUint(str, 10, 16)
 	if err != nil {
-		return 1000, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+		return 1000, fmt.Errorf("invalid uint: %w", err)
 	}
 	return int32(num), nil
 }
