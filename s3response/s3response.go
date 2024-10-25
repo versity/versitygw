@@ -448,3 +448,8 @@ func (AmzDate) ISO8601Parse(date string) (t time.Time, err error) {
 
 	return t, err
 }
+
+// Admin api response types
+type ListBucketsResult struct {
+	Buckets []Bucket
+}

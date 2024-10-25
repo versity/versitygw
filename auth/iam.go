@@ -28,6 +28,19 @@ const (
 	RoleUserPlus Role = "userplus"
 )
 
+func (r Role) IsValid() bool {
+	switch r {
+	case RoleAdmin:
+		return true
+	case RoleUser:
+		return true
+	case RoleUserPlus:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account is a gateway IAM account
 type Account struct {
 	Access  string `json:"access"`
@@ -35,6 +48,10 @@ type Account struct {
 	Role    Role   `json:"role"`
 	UserID  int    `json:"userID"`
 	GroupID int    `json:"groupID"`
+}
+
+type ListUserAccountsResult struct {
+	Accounts []Account
 }
 
 // Mutable props, which could be changed when updating an IAM account

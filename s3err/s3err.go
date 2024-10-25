@@ -143,6 +143,13 @@ const (
 	ErrDirectoryObjectContainsData
 	ErrQuotaExceeded
 	ErrVersioningNotConfigured
+
+	// Admin api errors
+	ErrAdminAccessDenied
+	ErrAdminUserNotFound
+	ErrAdminUserExists
+	ErrAdminInvalidUserRole
+	ErrAdminMissingUserAcess
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -577,6 +584,33 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "VersioningNotConfigured",
 		Description:    "Versioning has not been configured for the gateway.",
 		HTTPStatusCode: http.StatusNotImplemented,
+	},
+
+	// Admin api errors
+	ErrAdminAccessDenied: {
+		Code:           "XAdminAccessDenied",
+		Description:    "Only admin users have access to this resource.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAdminUserNotFound: {
+		Code:           "XAdminUserNotFound",
+		Description:    "No user exists with the provided access key ID.",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrAdminUserExists: {
+		Code:           "XAdminUserExists",
+		Description:    "A user with the provided access key ID already exists.",
+		HTTPStatusCode: http.StatusConflict,
+	},
+	ErrAdminInvalidUserRole: {
+		Code:           "XAdminInvalidArgument",
+		Description:    "User role has to be one of the following: 'user', 'admin', 'userplus'.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrAdminMissingUserAcess: {
+		Code:           "XAdminInvalidArgument",
+		Description:    "User access key ID is missing.",
+		HTTPStatusCode: http.StatusNotFound,
 	},
 }
 
