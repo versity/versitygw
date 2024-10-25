@@ -29,6 +29,7 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util.sh
+source ./tests/util_attributes.sh
 source ./tests/util_legal_hold.sh
 source ./tests/util_list_buckets.sh
 source ./tests/util_list_objects.sh
@@ -313,5 +314,62 @@ source ./tests/util_versioning.sh
   assert_success
 
   run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}
+
+@test "REST - get object attributes" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/916"
+  fi
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_large_file "$test_file"
+  assert_success
+
+  # shellcheck disable=SC2034
+  file_size=$(stat -c %s "$TEST_FILE_FOLDER/$test_file" 2>/dev/null || stat -f %z "$TEST_FILE_FOLDER/$test_file" 2>/dev/null)
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run upload_and_check_attributes "$test_file" "$file_size"
+  assert_success
+}
+
+@test "REST - attributes - invalid param" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/917"
+  fi
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_attributes_invalid_param "$test_file"
+  assert_success
+}
+
+@test "REST - attributes - checksum" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/928"
+  fi
+  test_file="test_file"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
   assert_success
 }

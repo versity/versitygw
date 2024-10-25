@@ -25,18 +25,7 @@ start_versity_process() {
     log 1 "error creating test log folder"
     exit 1
   fi
-  IFS=' ' read -r -a full_command <<< "${base_command[@]}"
-  log 5 "versity command: ${full_command[*]}"
-  if [ -n "$COMMAND_LOG" ]; then
-    mask_args "${full_command[*]}"
-    # shellcheck disable=SC2154
-    echo "${masked_args[@]}" >> "$COMMAND_LOG"
-  fi
-  if [ -n "$VERSITY_LOG_FILE" ]; then
-    "${full_command[@]}" >> "$VERSITY_LOG_FILE" 2>&1 &
-  else
-    "${full_command[@]}" 2>&1 &
-  fi
+  build_run_and_log_command
   # shellcheck disable=SC2181
   if [[ $? -ne 0 ]]; then
     sleep 1
@@ -64,6 +53,21 @@ start_versity_process() {
     exit 1
   fi
   export versitygw_pid_"$1"
+}
+
+build_run_and_log_command() {
+  IFS=' ' read -r -a full_command <<< "${base_command[@]}"
+  log 5 "versity command: ${full_command[*]}"
+  if [ -n "$COMMAND_LOG" ]; then
+    mask_args "${full_command[*]}"
+    # shellcheck disable=SC2154
+    echo "${masked_args[@]}" >> "$COMMAND_LOG"
+  fi
+  if [ -n "$VERSITY_LOG_FILE" ]; then
+    "${full_command[@]}" >> "$VERSITY_LOG_FILE" 2>&1 &
+  else
+    "${full_command[@]}" 2>&1 &
+  fi
 }
 
 run_versity_app_posix() {
@@ -147,14 +151,16 @@ run_versity_app() {
     log 1 "unrecognized backend type $BACKEND"
     exit 1
   fi
-  if [[ $IAM_TYPE == "s3" ]]; then
-    if ! bucket_exists "s3api" "$USERS_BUCKET"; then
-      if ! create_bucket "s3api" "$USERS_BUCKET"; then
-        log 1 "error creating IAM bucket"
-        teardown
-        exit 1
-      fi
-    fi
+  if [[ $IAM_TYPE != "s3" ]]; then
+    return 0
+  fi
+  if bucket_exists "s3api" "$USERS_BUCKET"; then
+    return 0
+  fi
+  if ! create_bucket "s3api" "$USERS_BUCKET"; then
+    log 1 "error creating IAM bucket"
+    teardown
+    exit 1
   fi
 }
 

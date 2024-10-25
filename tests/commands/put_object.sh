@@ -74,36 +74,12 @@ put_object_rest() {
     log 2 "'put_object_rest' requires local file, bucket name, key"
     return 1
   fi
-
-  generate_hash_for_payload_file "$1"
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="PUT
-/$2/$3
-
-host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
+    log 2 "error sending object file: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks -w "%{http_code}" -X PUT "$header://$aws_endpoint_url_address/$2/$3" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: $payload_hash" \
-    -H "x-amz-date: $current_date_time" \
-    -T "$1" -o "$TEST_FILE_FOLDER"/put_object_error.txt 2>&1)
-  if [[ "$reply" != "200" ]]; then
-    log 2 "put object command returned error: $(cat "$TEST_FILE_FOLDER"/put_object_error.txt)"
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' (output: $(cat "$TEST_FILE_FOLDER/result.txt")"
     return 1
   fi
   return 0

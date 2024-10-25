@@ -272,19 +272,8 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  range_max=$((5*1024*1024-1))
-  multipart_upload_from_bucket_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 "bytes=0-$range_max" || fail "upload failure"
-
-  get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy" || fail "error retrieving object after upload"
-  if [[ $(uname) == 'Darwin' ]]; then
-    object_size=$(stat -f%z "$TEST_FILE_FOLDER/$bucket_file-copy")
-  else
-    object_size=$(stat --format=%s "$TEST_FILE_FOLDER/$bucket_file-copy")
-  fi
-  [[ object_size -eq $((range_max*4+4)) ]] || fail "object size mismatch ($object_size, $((range_max*4+4)))"
-
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
+  run run_and_verify_multipart_upload_with_valid_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
+  assert_success
 }
 
 @test "test-presigned-url-utf8-chars" {
