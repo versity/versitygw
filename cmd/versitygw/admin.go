@@ -19,7 +19,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +29,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/smithy-go"
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3response"
@@ -224,19 +225,19 @@ func createUser(ctx *cli.Context) error {
 		GroupID: groupID,
 	}
 
-	accJson, err := json.Marshal(acc)
+	accxml, err := xml.Marshal(acc)
 	if err != nil {
 		return fmt.Errorf("failed to parse user data: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user", adminEndpoint), bytes.NewBuffer(accJson))
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/create-user", adminEndpoint), bytes.NewBuffer(accxml))
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
 
 	signer := v4.NewSigner()
 
-	hashedPayload := sha256.Sum256(accJson)
+	hashedPayload := sha256.Sum256(accxml)
 	hexPayload := hex.EncodeToString(hashedPayload[:])
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
@@ -260,10 +261,8 @@ func createUser(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
-
-	fmt.Printf("%s\n", body)
 
 	return nil
 }
@@ -305,10 +304,8 @@ func deleteUser(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
-
-	fmt.Printf("%s\n", body)
 
 	return nil
 }
@@ -326,19 +323,19 @@ func updateUser(ctx *cli.Context) error {
 		props.GroupID = &groupId
 	}
 
-	propsJSON, err := json.Marshal(props)
+	propsxml, err := xml.Marshal(props)
 	if err != nil {
 		return fmt.Errorf("failed to parse user attributes: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/update-user?access=%v", adminEndpoint, access), bytes.NewBuffer(propsJSON))
+	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/update-user?access=%v", adminEndpoint, access), bytes.NewBuffer(propsxml))
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
 	}
 
 	signer := v4.NewSigner()
 
-	hashedPayload := sha256.Sum256(propsJSON)
+	hashedPayload := sha256.Sum256(propsxml)
 	hexPayload := hex.EncodeToString(hashedPayload[:])
 
 	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
@@ -362,10 +359,8 @@ func updateUser(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
-
-	fmt.Printf("%s\n", body)
 
 	return nil
 }
@@ -402,15 +397,15 @@ func listUsers(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
 
-	var accs []auth.Account
-	if err := json.Unmarshal(body, &accs); err != nil {
+	var accs auth.ListUserAccountsResult
+	if err := xml.Unmarshal(body, &accs); err != nil {
 		return err
 	}
 
-	printAcctTable(accs)
+	printAcctTable(accs.Accounts)
 
 	return nil
 }
@@ -469,10 +464,8 @@ func changeBucketOwner(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
-
-	fmt.Println(string(body))
 
 	return nil
 }
@@ -521,15 +514,26 @@ func listBuckets(ctx *cli.Context) error {
 	}
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", body)
+		return parseApiError(body)
 	}
 
-	var buckets []s3response.Bucket
-	if err := json.Unmarshal(body, &buckets); err != nil {
+	var result s3response.ListBucketsResult
+	if err := xml.Unmarshal(body, &result); err != nil {
 		return err
 	}
 
-	printBuckets(buckets)
+	printBuckets(result.Buckets)
 
 	return nil
+}
+
+func parseApiError(body []byte) error {
+	var apiErr smithy.GenericAPIError
+	err := xml.Unmarshal(body, &apiErr)
+	if err != nil {
+		apiErr.Code = "InternalServerError"
+		apiErr.Message = err.Error()
+	}
+
+	return &apiErr
 }

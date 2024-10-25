@@ -72,6 +72,14 @@ var (
 	ActionPutBucketOwnershipControls    = "s3_PutBucketOwnershipControls"
 	ActionGetBucketOwnershipControls    = "s3_GetBucketOwnershipControls"
 	ActionDeleteBucketOwnershipControls = "s3_DeleteBucketOwnershipControls"
+
+	// Admin actions
+	ActionAdminCreateUser        = "admin_CreateUser"
+	ActionAdminUpdateUser        = "admin_UpdateUser"
+	ActionAdminDeleteUser        = "admin_DeleteUser"
+	ActionAdminChangeBucketOwner = "admin_ChangeBucketOwner"
+	ActionAdminListUsers         = "admin_ListUsers"
+	ActionAdminListBuckets       = "admin_ListBuckets"
 )
 
 func init() {

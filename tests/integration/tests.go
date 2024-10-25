@@ -2744,7 +2744,6 @@ func PutObject_invalid_long_tags(s *S3Conf) error {
 			Tagging: &tagging,
 		})
 		cancel()
-
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
 			return err
 		}
@@ -10421,9 +10420,9 @@ func IAM_user_access_denied(s *S3Conf) error {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)
 	}
-	if !strings.Contains(string(out), adminAccessDeniedMsg) {
-		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
-		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+	if !strings.Contains(string(out), s3err.GetAPIError(s3err.ErrAdminAccessDenied).Code) {
+		failF("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
 	}
 
 	passF(testName)
@@ -10452,9 +10451,9 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)
 	}
-	if !strings.Contains(string(out), adminAccessDeniedMsg) {
-		failF("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
-		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, adminAccessDeniedMsg, out)
+	if !strings.Contains(string(out), s3err.GetAPIError(s3err.ErrAdminAccessDenied).Code) {
+		failF("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
 	}
 
 	passF(testName)

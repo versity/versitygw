@@ -43,11 +43,8 @@ import (
 )
 
 var (
-	bcktCount            = 0
-	succUsrCrt           = "The user has been created successfully"
-	failUsrCrt           = "failed to create user: update iam data: account already exists"
-	adminAccessDeniedMsg = "access denied: only admin users have access to this resource"
-	succDeleteUserMsg    = "The user has been deleted successfully"
+	bcktCount        = 0
+	adminErrorPrefix = "XAdmin"
 )
 
 func getBucketName() string {
@@ -765,8 +762,8 @@ func createUsers(s *S3Conf, users []user) error {
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(string(out), succUsrCrt) && !strings.Contains(string(out), failUsrCrt) {
-			return fmt.Errorf("failed to create user account")
+		if strings.Contains(string(out), adminErrorPrefix) {
+			return fmt.Errorf("failed to create user account: %s", out)
 		}
 	}
 	return nil
@@ -777,8 +774,8 @@ func deleteUser(s *S3Conf, access string) error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(out), succDeleteUserMsg) {
-		return fmt.Errorf("failed to delete the user account")
+	if strings.Contains(string(out), adminErrorPrefix) {
+		return fmt.Errorf("failed to delete the user account, %s", out)
 	}
 
 	return nil
@@ -790,8 +787,8 @@ func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(string(out), "Bucket owner has been updated successfully") {
-			return fmt.Errorf("%v", string(out))
+		if strings.Contains(string(out), adminErrorPrefix) {
+			return fmt.Errorf("failed to change the bucket owner: %s", out)
 		}
 	}
 

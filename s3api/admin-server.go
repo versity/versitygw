@@ -53,6 +53,9 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 	app.Use(middlewares.VerifyV4Signature(root, iam, l, nil, region, false))
 	app.Use(middlewares.VerifyMD5Body(l))
 
+	// Admin role checker
+	app.Use(middlewares.IsAdmin(l))
+
 	server.router.Init(app, be, iam, l)
 
 	return server
