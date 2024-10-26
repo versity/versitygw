@@ -3472,15 +3472,10 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
-	_, err := os.Stat(*input.Bucket)
+	b, err := p.meta.RetrieveAttribute(nil, *input.Bucket, "", aclkey)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
-	}
-
-	b, err := p.meta.RetrieveAttribute(nil, *input.Bucket, "", aclkey)
 	if errors.Is(err, meta.ErrNoSuchKey) {
 		return []byte{}, nil
 	}
