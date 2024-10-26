@@ -26,6 +26,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1389,7 +1390,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	cType, cEnc := p.loadUserMetaData(bucket, upiddir, userMetaData)
+	cType, cEnc, _ := p.loadUserMetaData(bucket, upiddir, userMetaData)
 
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
@@ -1542,10 +1543,10 @@ func (p *Posix) retrieveUploadId(bucket, object string) (string, [32]byte, error
 
 // fll out the user metadata map with the metadata for the object
 // and return the content type and encoding
-func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (string, string) {
+func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (string, string, []string) {
 	ents, err := p.meta.ListAttributes(bucket, object)
 	if err != nil || len(ents) == 0 {
-		return "", ""
+		return "", "", nil
 	}
 	for _, e := range ents {
 		if !isValidMeta(e) {
@@ -1563,13 +1564,16 @@ func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (st
 	}
 
 	var contentType, contentEncoding string
-	b, _ := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
-	contentType = string(b)
+	if slices.Contains(ents, contentTypeHdr) {
+		b, _ := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
+		contentType = string(b)
+	}
+	if slices.Contains(ents, contentEncHdr) {
+		b, _ := p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
+		contentEncoding = string(b)
+	}
 
-	b, _ = p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
-	contentEncoding = string(b)
-
-	return contentType, contentEncoding
+	return contentType, contentEncoding, ents
 }
 
 func isValidMeta(val string) bool {
@@ -2824,7 +2828,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if fi.IsDir() {
 		userMetaData := make(map[string]string)
 
-		_, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+		_, contentEncoding, _ := p.loadUserMetaData(bucket, object, userMetaData)
 		contentType := backend.DirContentType
 
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
@@ -2872,22 +2876,25 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	userMetaData := make(map[string]string)
 
-	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+	contentType, contentEncoding, xattrs := p.loadUserMetaData(bucket, object, userMetaData)
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-	etag := string(b)
-	if err != nil {
-		etag = ""
+	var etag string
+	if slices.Contains(xattrs, etagkey) {
+		if b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey); err == nil {
+			etag = string(b)
+		}
 	}
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object)
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
-		return nil, err
-	}
-	if tags != nil {
-		tgCount := int32(len(tags))
-		tagCount = &tgCount
+	if slices.Contains(xattrs, tagHdr) {
+		tags, err := p.getAttrTags(bucket, object)
+		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+			return nil, err
+		}
+		if tags != nil {
+			tgCount := int32(len(tags))
+			tagCount = &tgCount
+		}
 	}
 
 	f, err := os.Open(objPath)
@@ -3041,7 +3048,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	userMetaData := make(map[string]string)
-	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+	contentType, contentEncoding, _ := p.loadUserMetaData(bucket, object, userMetaData)
 
 	if fi.IsDir() {
 		contentType = backend.DirContentType
