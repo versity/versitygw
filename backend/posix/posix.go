@@ -2931,7 +2931,12 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, fmt.Errorf("open object: %w", err)
 	}
 
-	rdr := io.NewSectionReader(f, startOffset, length)
+	// using an os.File allows zero-copy sendfile via io.Copy(os.File, net.Conn)
+	var body io.ReadCloser = f
+	if startOffset != 0 || length != objSize {
+		rdr := io.NewSectionReader(f, startOffset, length)
+		body = &backend.FileSectionReadCloser{R: rdr, F: f}
+	}
 
 	return &s3.GetObjectOutput{
 		AcceptRanges:    &acceptRange,
@@ -2945,7 +2950,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		ContentRange:    &contentRange,
 		StorageClass:    types.StorageClassStandard,
 		VersionId:       &versionId,
-		Body:            &backend.FileSectionReadCloser{R: rdr, F: f},
+		Body:            body,
 	}, nil
 }
 
