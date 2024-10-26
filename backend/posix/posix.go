@@ -2721,19 +2721,17 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 	}
 
+	// NOTE: os.Stat(bucket) removed here, and moved inside the first fs.ErrNotExist handlers below
+	// if any more fs.ErrNotExist checks are added below for the file, they should also stat the bucket
 	bucket := *input.Bucket
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
-	}
-
 	object := *input.Key
 	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) {
+			// os.Stat(bucket) fallback 1
+			if _, err := os.Stat(bucket); errors.Is(err, fs.ErrNotExist) {
+				return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+			}
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -2753,6 +2751,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
+		// os.Stat(bucket) fallback 2
+		if _, err := os.Stat(bucket); errors.Is(err, fs.ErrNotExist) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		}
 		if versionId != "" {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 		}
