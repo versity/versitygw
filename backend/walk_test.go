@@ -90,10 +90,10 @@ func TestWalk(t *testing.T) {
 			},
 			expected: backend.WalkResults{
 				CommonPrefixes: []types.CommonPrefix{{
-					Prefix: backend.GetStringPtr("photos/"),
+					Prefix: backend.GetPtrFromString("photos/"),
 				}},
 				Objects: []s3response.Object{{
-					Key: backend.GetStringPtr("sample.jpg"),
+					Key: backend.GetPtrFromString("sample.jpg"),
 				}},
 			},
 			getobj: getObj,
@@ -105,7 +105,7 @@ func TestWalk(t *testing.T) {
 			},
 			expected: backend.WalkResults{
 				CommonPrefixes: []types.CommonPrefix{{
-					Prefix: backend.GetStringPtr("test/"),
+					Prefix: backend.GetPtrFromString("test/"),
 				}},
 				Objects: []s3response.Object{},
 			},

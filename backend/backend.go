@@ -32,7 +32,7 @@ type Backend interface {
 	Shutdown()
 
 	// bucket operations
-	ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error)
+	ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error)
 	HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
 	GetBucketAcl(context.Context, *s3.GetBucketAclInput) ([]byte, error)
 	CreateBucket(_ context.Context, _ *s3.CreateBucketInput, defaultACL []byte) error
@@ -108,7 +108,7 @@ func (BackendUnsupported) Shutdown() {}
 func (BackendUnsupported) String() string {
 	return "Unsupported"
 }
-func (BackendUnsupported) ListBuckets(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
+func (BackendUnsupported) ListBuckets(context.Context, s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) HeadBucket(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {

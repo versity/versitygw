@@ -104,7 +104,7 @@ var _ backend.Backend = &BackendMock{}
 //			HeadObjectFunc: func(contextMoqParam context.Context, headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 //				panic("mock out the HeadObject method")
 //			},
-//			ListBucketsFunc: func(contextMoqParam context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+//			ListBucketsFunc: func(contextMoqParam context.Context, listBucketsInput s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 //				panic("mock out the ListBuckets method")
 //			},
 //			ListBucketsAndOwnersFunc: func(contextMoqParam context.Context) ([]s3response.Bucket, error) {
@@ -265,7 +265,7 @@ type BackendMock struct {
 	HeadObjectFunc func(contextMoqParam context.Context, headObjectInput *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
 
 	// ListBucketsFunc mocks the ListBuckets method.
-	ListBucketsFunc func(contextMoqParam context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error)
+	ListBucketsFunc func(contextMoqParam context.Context, listBucketsInput s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error)
 
 	// ListBucketsAndOwnersFunc mocks the ListBucketsAndOwners method.
 	ListBucketsAndOwnersFunc func(contextMoqParam context.Context) ([]s3response.Bucket, error)
@@ -547,10 +547,8 @@ type BackendMock struct {
 		ListBuckets []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// Owner is the owner argument value.
-			Owner string
-			// IsAdmin is the isAdmin argument value.
-			IsAdmin bool
+			// ListBucketsInput is the listBucketsInput argument value.
+			ListBucketsInput s3response.ListBucketsInput
 		}
 		// ListBucketsAndOwners holds details about calls to the ListBucketsAndOwners method.
 		ListBucketsAndOwners []struct {
@@ -1792,23 +1790,21 @@ func (mock *BackendMock) HeadObjectCalls() []struct {
 }
 
 // ListBuckets calls ListBucketsFunc.
-func (mock *BackendMock) ListBuckets(contextMoqParam context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+func (mock *BackendMock) ListBuckets(contextMoqParam context.Context, listBucketsInput s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	if mock.ListBucketsFunc == nil {
 		panic("BackendMock.ListBucketsFunc: method is nil but Backend.ListBuckets was just called")
 	}
 	callInfo := struct {
-		ContextMoqParam context.Context
-		Owner           string
-		IsAdmin         bool
+		ContextMoqParam  context.Context
+		ListBucketsInput s3response.ListBucketsInput
 	}{
-		ContextMoqParam: contextMoqParam,
-		Owner:           owner,
-		IsAdmin:         isAdmin,
+		ContextMoqParam:  contextMoqParam,
+		ListBucketsInput: listBucketsInput,
 	}
 	mock.lockListBuckets.Lock()
 	mock.calls.ListBuckets = append(mock.calls.ListBuckets, callInfo)
 	mock.lockListBuckets.Unlock()
-	return mock.ListBucketsFunc(contextMoqParam, owner, isAdmin)
+	return mock.ListBucketsFunc(contextMoqParam, listBucketsInput)
 }
 
 // ListBucketsCalls gets all the calls that were made to ListBuckets.
@@ -1816,14 +1812,12 @@ func (mock *BackendMock) ListBuckets(contextMoqParam context.Context, owner stri
 //
 //	len(mockedBackend.ListBucketsCalls())
 func (mock *BackendMock) ListBucketsCalls() []struct {
-	ContextMoqParam context.Context
-	Owner           string
-	IsAdmin         bool
+	ContextMoqParam  context.Context
+	ListBucketsInput s3response.ListBucketsInput
 } {
 	var calls []struct {
-		ContextMoqParam context.Context
-		Owner           string
-		IsAdmin         bool
+		ContextMoqParam  context.Context
+		ListBucketsInput s3response.ListBucketsInput
 	}
 	mock.lockListBuckets.RLock()
 	calls = mock.calls.ListBuckets

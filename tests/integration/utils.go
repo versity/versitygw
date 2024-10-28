@@ -39,7 +39,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3response"
 )
 
 var (
@@ -593,19 +592,13 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 	return true
 }
 
-func compareBuckets(list1 []types.Bucket, list2 []s3response.ListAllMyBucketsEntry) bool {
+func compareBuckets(list1 []types.Bucket, list2 []types.Bucket) bool {
 	if len(list1) != len(list2) {
 		return false
 	}
 
-	elementMap := make(map[string]bool)
-
-	for _, elem := range list1 {
-		elementMap[*elem.Name] = true
-	}
-
-	for _, elem := range list2 {
-		if _, found := elementMap[elem.Name]; !found {
+	for i, elem := range list1 {
+		if *elem.Name != *list2[i].Name {
 			return false
 		}
 	}

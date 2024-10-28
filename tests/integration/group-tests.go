@@ -82,6 +82,9 @@ func TestHeadBucket(s *S3Conf) {
 func TestListBuckets(s *S3Conf) {
 	ListBuckets_as_user(s)
 	ListBuckets_as_admin(s)
+	ListBuckets_with_prefix(s)
+	ListBuckets_invalid_max_buckets(s)
+	ListBuckets_truncated(s)
 	ListBuckets_success(s)
 }
 
@@ -676,6 +679,9 @@ func GetIntTests() IntTests {
 		"HeadBucket_success":                                                  HeadBucket_success,
 		"ListBuckets_as_user":                                                 ListBuckets_as_user,
 		"ListBuckets_as_admin":                                                ListBuckets_as_admin,
+		"ListBuckets_with_prefix":                                             ListBuckets_with_prefix,
+		"ListBuckets_invalid_max_buckets":                                     ListBuckets_invalid_max_buckets,
+		"ListBuckets_truncated":                                               ListBuckets_truncated,
 		"ListBuckets_success":                                                 ListBuckets_success,
 		"DeleteBucket_non_existing_bucket":                                    DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                       DeleteBucket_non_empty_bucket,

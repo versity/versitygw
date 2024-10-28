@@ -149,8 +149,8 @@ func (az *Azure) String() string {
 
 func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
 	meta := map[string]*string{
-		string(keyAclCapital): backend.GetStringPtr(encodeBytes(acl)),
-		string(keyOwnership):  backend.GetStringPtr(encodeBytes([]byte(input.ObjectOwnership))),
+		string(keyAclCapital): backend.GetPtrFromString(encodeBytes(acl)),
+		string(keyOwnership):  backend.GetPtrFromString(encodeBytes([]byte(input.ObjectOwnership))),
 	}
 
 	acct, ok := ctx.Value("account").(auth.Account)
@@ -170,7 +170,7 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 			return fmt.Errorf("parse default bucket lock state: %w", err)
 		}
 
-		meta[string(keyBucketLock)] = backend.GetStringPtr(encodeBytes(defaultLockParsed))
+		meta[string(keyBucketLock)] = backend.GetPtrFromString(encodeBytes(defaultLockParsed))
 	}
 
 	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
@@ -195,48 +195,56 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 	return azureErrToS3Err(err)
 }
 
-func (az *Azure) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+func (az *Azure) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
+	fmt.Printf("%+v\n", input)
 	pager := az.client.NewListContainersPager(
 		&service.ListContainersOptions{
 			Include: service.ListContainersInclude{
 				Metadata: true,
 			},
+			Marker:     &input.ContinuationToken,
+			MaxResults: &input.MaxBuckets,
+			Prefix:     &input.Prefix,
 		})
 
 	var buckets []s3response.ListAllMyBucketsEntry
-	var result s3response.ListAllMyBucketsResult
+	result := s3response.ListAllMyBucketsResult{
+		Prefix: input.Prefix,
+	}
 
-	for pager.More() {
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			return result, azureErrToS3Err(err)
-		}
-		for _, v := range resp.ContainerItems {
-			if isAdmin {
+	resp, err := pager.NextPage(ctx)
+	if err != nil {
+		return result, azureErrToS3Err(err)
+	}
+	for _, v := range resp.ContainerItems {
+		if input.IsAdmin {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name: *v.Name,
+				// TODO: using modification date here instead of creation, is that ok?
+				CreationDate: *v.Properties.LastModified,
+			})
+		} else {
+			acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
+			if err != nil {
+				return result, err
+			}
+
+			if acl.Owner == input.Owner {
 				buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 					Name: *v.Name,
 					// TODO: using modification date here instead of creation, is that ok?
 					CreationDate: *v.Properties.LastModified,
 				})
-			} else {
-				acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
-				if err != nil {
-					return result, err
-				}
-
-				if acl.Owner == owner {
-					buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-						Name: *v.Name,
-						// TODO: using modification date here instead of creation, is that ok?
-						CreationDate: *v.Properties.LastModified,
-					})
-				}
 			}
 		}
 	}
 
+	if resp.NextMarker != nil {
+		result.ContinuationToken = *resp.NextMarker
+	}
+
 	result.Buckets.Bucket = buckets
-	result.Owner.ID = owner
+	result.Owner.ID = input.Owner
 
 	return result, nil
 }
@@ -303,13 +311,13 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respon
 	opts.HTTPHeaders.BlobContentDisposition = po.ContentDisposition
 	if strings.HasSuffix(*po.Key, "/") {
 		// Hardcode "application/x-directory" for direcoty objects
-		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(backend.DirContentType)
+		opts.HTTPHeaders.BlobContentType = backend.GetPtrFromString(backend.DirContentType)
 	} else {
 		opts.HTTPHeaders.BlobContentType = po.ContentType
 	}
 
 	if opts.HTTPHeaders.BlobContentType == nil {
-		opts.HTTPHeaders.BlobContentType = backend.GetStringPtr(backend.DefaultContentType)
+		opts.HTTPHeaders.BlobContentType = backend.GetPtrFromString(backend.DefaultContentType)
 	}
 
 	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, opts)
@@ -408,7 +416,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 
 	contentType := blobDownloadResponse.ContentType
 	if contentType == nil {
-		contentType = backend.GetStringPtr(backend.DefaultContentType)
+		contentType = backend.GetPtrFromString(backend.DefaultContentType)
 	}
 
 	return &s3.GetObjectOutput{
@@ -712,8 +720,8 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 			} else {
 				errs = append(errs, types.Error{
 					Key:     obj.Key,
-					Code:    backend.GetStringPtr("InternalError"),
-					Message: backend.GetStringPtr(err.Error()),
+					Code:    backend.GetPtrFromString("InternalError"),
+					Message: backend.GetPtrFromString(err.Error()),
 				})
 			}
 		}
@@ -849,7 +857,7 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 
 	// set blob legal hold status in metadata
 	if input.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
-		meta[string(keyObjLegalHold)] = backend.GetStringPtr("1")
+		meta[string(keyObjLegalHold)] = backend.GetPtrFromString("1")
 	}
 
 	// set blob retention date
@@ -862,7 +870,7 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 		if err != nil {
 			return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
 		}
-		meta[string(keyObjRetention)] = backend.GetStringPtr(string(retParsed))
+		meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retParsed))
 	}
 
 	uploadId := uuid.New().String()
@@ -1318,12 +1326,12 @@ func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, version
 	meta := blobProps.Metadata
 	if meta == nil {
 		meta = map[string]*string{
-			string(keyObjRetention): backend.GetStringPtr(string(retention)),
+			string(keyObjRetention): backend.GetPtrFromString(string(retention)),
 		}
 	} else {
 		objLockCfg, ok := meta[string(keyObjRetention)]
 		if !ok {
-			meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+			meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
 		} else {
 			var lockCfg types.ObjectLockRetention
 			if err := json.Unmarshal([]byte(*objLockCfg), &lockCfg); err != nil {
@@ -1341,7 +1349,7 @@ func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, version
 				}
 			}
 
-			meta[string(keyObjRetention)] = backend.GetStringPtr(string(retention))
+			meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
 		}
 	}
 
@@ -1689,7 +1697,7 @@ func (az *Azure) setContainerMetaData(ctx context.Context, bucket, key string, v
 	}
 
 	str := encodeBytes(value)
-	mdmap[key] = backend.GetStringPtr(str)
+	mdmap[key] = backend.GetPtrFromString(str)
 
 	_, err = client.SetMetadata(ctx, &container.SetMetadataOptions{Metadata: mdmap})
 	if err != nil {

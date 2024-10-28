@@ -66,6 +66,7 @@ const (
 	ErrInvalidBucketName
 	ErrInvalidDigest
 	ErrInvalidMaxKeys
+	ErrInvalidMaxBuckets
 	ErrInvalidMaxUploads
 	ErrInvalidMaxParts
 	ErrInvalidPartNumberMarker
@@ -191,6 +192,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidDigest: {
 		Code:           "InvalidDigest",
 		Description:    "The Content-Md5 you specified is not valid.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidMaxBuckets: {
+		Code:           "InvalidArgument",
+		Description:    "Argument max-buckets must be an integer between 1 and 10000.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidMaxUploads: {
