@@ -1044,7 +1044,8 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 	prefix := string(metaTmpMultipartPrefix)
 
 	pager := client.NewListBlobsFlatPager(&container.ListBlobsFlatOptions{
-		Prefix: &prefix,
+		Include: container.ListBlobsInclude{Metadata: true},
+		Prefix:  &prefix,
 	})
 
 	for pager.More() {
