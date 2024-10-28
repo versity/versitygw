@@ -50,15 +50,18 @@ func (d ByObjectName) Len() int           { return len(d) }
 func (d ByObjectName) Swap(i, j int)      { d[i], d[j] = d[j], d[i] }
 func (d ByObjectName) Less(i, j int) bool { return *d[i].Key < *d[j].Key }
 
-func GetStringPtr(s string) *string {
-	return &s
-}
-
 func GetPtrFromString(str string) *string {
 	if str == "" {
 		return nil
 	}
 	return &str
+}
+
+func GetStringFromPtr(str *string) string {
+	if str == nil {
+		return ""
+	}
+	return *str
 }
 
 func GetTimePtr(t time.Time) *time.Time {

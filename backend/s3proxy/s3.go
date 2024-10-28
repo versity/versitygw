@@ -75,8 +75,12 @@ func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify
 	return s, nil
 }
 
-func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
-	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{})
+func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
+	output, err := s.client.ListBuckets(ctx, &s3.ListBucketsInput{
+		ContinuationToken: &input.ContinuationToken,
+		MaxBuckets:        &input.MaxBuckets,
+		Prefix:            &input.Prefix,
+	})
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{}, handleError(err)
 	}
@@ -96,6 +100,8 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, owner string, isAdmin bool) (
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
 		},
+		ContinuationToken: backend.GetStringFromPtr(output.ContinuationToken),
+		Prefix:            backend.GetStringFromPtr(output.Prefix),
 	}, nil
 }
 
@@ -112,8 +118,8 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 
 	var tagSet []types.Tag
 	tagSet = append(tagSet, types.Tag{
-		Key:   backend.GetStringPtr(aclKey),
-		Value: backend.GetStringPtr(base64Encode(acl)),
+		Key:   backend.GetPtrFromString(aclKey),
+		Value: backend.GetPtrFromString(base64Encode(acl)),
 	})
 
 	_, err = s.client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
@@ -525,8 +531,8 @@ func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) 
 	for i, tag := range tagout.TagSet {
 		if *tag.Key == aclKey {
 			tagout.TagSet[i] = types.Tag{
-				Key:   backend.GetStringPtr(aclKey),
-				Value: backend.GetStringPtr(base64Encode(data)),
+				Key:   backend.GetPtrFromString(aclKey),
+				Value: backend.GetPtrFromString(base64Encode(data)),
 			}
 			found = true
 			break
@@ -534,8 +540,8 @@ func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) 
 	}
 	if !found {
 		tagout.TagSet = append(tagout.TagSet, types.Tag{
-			Key:   backend.GetStringPtr(aclKey),
-			Value: backend.GetStringPtr(base64Encode(data)),
+			Key:   backend.GetPtrFromString(aclKey),
+			Value: backend.GetPtrFromString(base64Encode(data)),
 		})
 	}
 
@@ -595,7 +601,7 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string
 func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
 	_, err := s.client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 		Bucket: &bucket,
-		Policy: backend.GetStringPtr(string(policy)),
+		Policy: backend.GetPtrFromString(string(policy)),
 	})
 	return handleError(err)
 }

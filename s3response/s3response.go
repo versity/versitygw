@@ -277,10 +277,20 @@ type Bucket struct {
 	Owner string `json:"owner"`
 }
 
+type ListBucketsInput struct {
+	Owner             string
+	IsAdmin           bool
+	ContinuationToken string
+	Prefix            string
+	MaxBuckets        int32
+}
+
 type ListAllMyBucketsResult struct {
-	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListAllMyBucketsResult" json:"-"`
-	Owner   CanonicalUser
-	Buckets ListAllMyBucketsList
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListAllMyBucketsResult" json:"-"`
+	Owner             CanonicalUser
+	Buckets           ListAllMyBucketsList
+	ContinuationToken string `xml:"ContinuationToken,omitempty"`
+	Prefix            string `xml:"Prefix,omitempty"`
 }
 
 type ListAllMyBucketsEntry struct {

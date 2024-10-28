@@ -35,7 +35,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3response"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1967,7 +1966,7 @@ func HeadBucket_success(s *S3Conf) error {
 func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		buckets := []types.Bucket{{Name: &bucket}}
 		for i := 0; i < 6; i++ {
 			bckt := getBucketName()
 
@@ -1976,8 +1975,8 @@ func ListBuckets_as_user(s *S3Conf) error {
 				return err
 			}
 
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name: bckt,
+			buckets = append(buckets, types.Bucket{
+				Name: &bckt,
 			})
 		}
 		usr := user{
@@ -1997,7 +1996,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 
 		bckts := []string{}
 		for i := 0; i < 3; i++ {
-			bckts = append(bckts, buckets[i].Name)
+			bckts = append(bckts, *buckets[i].Name)
 		}
 
 		err = changeBucketsOwner(s, bckts, usr.access)
@@ -2017,12 +2016,12 @@ func ListBuckets_as_user(s *S3Conf) error {
 		if *out.Owner.ID != usr.access {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v", usr.access, *out.Owner.ID)
 		}
-		if ok := compareBuckets(out.Buckets, buckets[:3]); !ok {
+		if !compareBuckets(out.Buckets, buckets[:3]) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[:3], out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
-			err = teardown(s, elem.Name)
+			err = teardown(s, *elem.Name)
 			if err != nil {
 				return err
 			}
@@ -2035,7 +2034,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		buckets := []types.Bucket{{Name: &bucket}}
 		for i := 0; i < 6; i++ {
 			bckt := getBucketName()
 
@@ -2044,8 +2043,8 @@ func ListBuckets_as_admin(s *S3Conf) error {
 				return err
 			}
 
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name: bckt,
+			buckets = append(buckets, types.Bucket{
+				Name: &bckt,
 			})
 		}
 		usr := user{
@@ -2070,7 +2069,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 
 		bckts := []string{}
 		for i := 0; i < 3; i++ {
-			bckts = append(bckts, buckets[i].Name)
+			bckts = append(bckts, *buckets[i].Name)
 		}
 
 		err = changeBucketsOwner(s, bckts, usr.access)
@@ -2090,12 +2089,163 @@ func ListBuckets_as_admin(s *S3Conf) error {
 		if *out.Owner.ID != admin.access {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v", admin.access, *out.Owner.ID)
 		}
-		if ok := compareBuckets(out.Buckets, buckets); !ok {
+		if !compareBuckets(out.Buckets, buckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
-			err = teardown(s, elem.Name)
+			err = teardown(s, *elem.Name)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_with_prefix(s *S3Conf) error {
+	testName := "ListBuckets_with_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		prefix := "my-prefix-"
+		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket}}, []types.Bucket{}
+		for i := 0; i < 5; i++ {
+			bckt := getBucketName()
+			if i%2 == 0 {
+				bckt = prefix + bckt
+			}
+
+			err := setup(s, bckt)
+			if err != nil {
+				return err
+			}
+
+			allBuckets = append(allBuckets, types.Bucket{
+				Name: &bckt,
+			})
+
+			if i%2 == 0 {
+				prefixedBuckets = append(prefixedBuckets, types.Bucket{
+					Name: &bckt,
+				})
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			Prefix: &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+		if getString(out.Prefix) != prefix {
+			return fmt.Errorf("expected prefix to be %v, instead got %v", prefix, getString(out.Prefix))
+		}
+		if !compareBuckets(out.Buckets, prefixedBuckets) {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", prefixedBuckets, out.Buckets)
+		}
+
+		for _, elem := range allBuckets[1:] {
+			err = teardown(s, *elem.Name)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+func ListBuckets_invalid_max_buckets(s *S3Conf) error {
+	testName := "ListBuckets_invalid_max_buckets"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		listBuckets := func(maxBuckets int32) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+				MaxBuckets: &maxBuckets,
+			})
+			cancel()
+			return err
+		}
+
+		invMaxBuckets := int32(-3)
+		err := listBuckets(invMaxBuckets)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)); err != nil {
+			return err
+		}
+
+		invMaxBuckets = 2000000
+		err = listBuckets(invMaxBuckets)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_truncated(s *S3Conf) error {
+	testName := "ListBuckets_truncated"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		buckets := []types.Bucket{{Name: &bucket}}
+		for i := 0; i < 5; i++ {
+			bckt := getBucketName()
+
+			err := setup(s, bckt)
+			if err != nil {
+				return err
+			}
+
+			buckets = append(buckets, types.Bucket{
+				Name: &bckt,
+			})
+		}
+
+		maxBuckets := int32(3)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			MaxBuckets: &maxBuckets,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if *out.Owner.ID != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		}
+		if !compareBuckets(out.Buckets, buckets[:maxBuckets]) {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[:maxBuckets], out.Buckets)
+		}
+		if getString(out.ContinuationToken) != *buckets[maxBuckets-1].Name {
+			return fmt.Errorf("expected ContinuationToken to be %v, instead got %v", *buckets[maxBuckets-1].Name, getString(out.ContinuationToken))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err = s3client.ListBuckets(ctx, &s3.ListBucketsInput{
+			ContinuationToken: out.ContinuationToken,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareBuckets(out.Buckets, buckets[maxBuckets:]) {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[maxBuckets:], out.Buckets)
+		}
+		if out.ContinuationToken != nil {
+			return fmt.Errorf("expected nil continuation token, instead got %v", *out.ContinuationToken)
+		}
+		if out.Prefix != nil {
+			return fmt.Errorf("expected nil prefix, instead got %v", *out.Prefix)
+		}
+
+		for _, elem := range buckets[1:] {
+			err = teardown(s, *elem.Name)
 			if err != nil {
 				return err
 			}
@@ -2108,7 +2258,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []s3response.ListAllMyBucketsEntry{{Name: bucket}}
+		buckets := []types.Bucket{{Name: &bucket}}
 		for i := 0; i < 5; i++ {
 			bckt := getBucketName()
 
@@ -2117,8 +2267,8 @@ func ListBuckets_success(s *S3Conf) error {
 				return err
 			}
 
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name: bckt,
+			buckets = append(buckets, types.Bucket{
+				Name: &bckt,
 			})
 		}
 
@@ -2132,12 +2282,12 @@ func ListBuckets_success(s *S3Conf) error {
 		if *out.Owner.ID != s.awsID {
 			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
 		}
-		if ok := compareBuckets(out.Buckets, buckets); !ok {
+		if !compareBuckets(out.Buckets, buckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
-			err = teardown(s, elem.Name)
+			err = teardown(s, *elem.Name)
 			if err != nil {
 				return err
 			}

@@ -92,7 +92,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	app := fiber.New()
 	s3ApiController := S3ApiController{
 		be: &BackendMock{
-			ListBucketsFunc: func(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
+			ListBucketsFunc: func(contextMoqParam context.Context, listBucketsInput s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, nil
 			},
 		},
@@ -109,7 +109,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr := fiber.New()
 	s3ApiControllerErr := S3ApiController{
 		be: &BackendMock{
-			ListBucketsFunc: func(context.Context, string, bool) (s3response.ListAllMyBucketsResult, error) {
+			ListBucketsFunc: func(contextMoqParam context.Context, listBucketsInput s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 				return s3response.ListAllMyBucketsResult{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 			},
 		},
@@ -1628,7 +1628,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 				return acldata, nil
 			},
 			HeadObjectFunc: func(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
-				return nil, s3err.GetAPIError(42)
+				return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 			},
 		},
 	}

@@ -208,12 +208,14 @@ func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
 	return nil
 }
 
-func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3response.ListAllMyBucketsResult, error) {
+func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		return s3response.ListAllMyBucketsResult{},
 			fmt.Errorf("readdir buckets: %w", err)
 	}
+
+	var cToken string
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, entry := range entries {
@@ -236,8 +238,21 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 			continue
 		}
 
+		if !strings.HasPrefix(fi.Name(), input.Prefix) {
+			continue
+		}
+
+		if len(buckets) == int(input.MaxBuckets) {
+			cToken = buckets[len(buckets)-1].Name
+			break
+		}
+
+		if fi.Name() <= input.ContinuationToken {
+			continue
+		}
+
 		// return all the buckets for admin users
-		if isAdmin {
+		if input.IsAdmin {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 				Name:         entry.Name(),
 				CreationDate: fi.ModTime(),
@@ -260,7 +275,7 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("parse acl tag: %w", err)
 		}
 
-		if acl.Owner == owner {
+		if acl.Owner == input.Owner {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 				Name:         entry.Name(),
 				CreationDate: fi.ModTime(),
@@ -268,15 +283,15 @@ func (p *Posix) ListBuckets(_ context.Context, owner string, isAdmin bool) (s3re
 		}
 	}
 
-	sort.Sort(backend.ByBucketName(buckets))
-
 	return s3response.ListAllMyBucketsResult{
 		Buckets: s3response.ListAllMyBucketsList{
 			Bucket: buckets,
 		},
 		Owner: s3response.CanonicalUser{
-			ID: owner,
+			ID: input.Owner,
 		},
+		Prefix:            input.Prefix,
+		ContinuationToken: cToken,
 	}, nil
 }
 
@@ -926,7 +941,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			// Check to see if the null versionId object is delete marker or not
 			if isDel {
 				nullObjDelMarker = &types.DeleteMarkerEntry{
-					VersionId:    backend.GetStringPtr("null"),
+					VersionId:    backend.GetPtrFromString("null"),
 					LastModified: backend.GetTimePtr(nf.ModTime()),
 					Key:          &path,
 					IsLatest:     getBoolPtr(false),
@@ -948,7 +963,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Key:          &path,
 					LastModified: backend.GetTimePtr(nf.ModTime()),
 					Size:         &size,
-					VersionId:    backend.GetStringPtr("null"),
+					VersionId:    backend.GetPtrFromString("null"),
 					IsLatest:     getBoolPtr(false),
 					StorageClass: types.ObjectVersionStorageClassStandard,
 				}
@@ -3250,7 +3265,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
-		version = backend.GetStringPtr(string(vId))
+		version = backend.GetPtrFromString(string(vId))
 	} else {
 		contentLength := fi.Size()
 		res, err := p.PutObject(ctx,
