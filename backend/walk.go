@@ -52,7 +52,15 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 	var newMarker string
 	var truncated bool
 
-	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+	root := "."
+	if strings.Contains(prefix, "/") {
+		idx := strings.LastIndex(prefix, "/")
+		if idx > 0 {
+			root = prefix[:idx]
+		}
+	}
+
+	err := fs.WalkDir(fileSystem, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -222,6 +230,10 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		return skipflag
 	})
 	if err != nil {
+		// suppress file not found caused by user's prefix
+		if errors.Is(err, fs.ErrNotExist) {
+			return WalkResults{}, nil
+		}
 		return WalkResults{}, err
 	}
 
