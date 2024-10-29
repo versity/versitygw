@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"sort"
 	"strings"
 
@@ -76,6 +75,9 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			return fs.SkipAll
 		}
 
+		// After this point, return skipflag instead of nil
+		// so we can skip a directory without an early return
+		var skipflag error
 		if d.IsDir() {
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
@@ -85,51 +87,57 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			// building to match. So only skip if path isn't a prefix of prefix
 			// and prefix isn't a prefix of path.
 			if prefix != "" &&
-				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
-				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
+				!strings.HasPrefix(path+"/", prefix) &&
+				!strings.HasPrefix(prefix, path+"/") {
 				return fs.SkipDir
 			}
 
-			// TODO: can we do better here rather than a second readdir
-			// per directory?
-			ents, err := fs.ReadDir(fileSystem, path)
-			if err != nil {
-				return fmt.Errorf("readdir %q: %w", path, err)
-			}
-
-			path += string(os.PathSeparator)
-
-			if len(ents) == 0 && delimiter == "" {
-				dirobj, err := getObj(path, d)
-				if err == ErrSkipObj {
-					return nil
-				}
+			// Don't recurse into subdirectories which contain the delimiter
+			// after reaching the prefix
+			if delimiter != "" &&
+				strings.HasPrefix(path+"/", prefix) &&
+				strings.Contains(strings.TrimPrefix(path+"/", prefix), delimiter) {
+				skipflag = fs.SkipDir
+			} else {
+				// TODO: can we do better here rather than a second readdir
+				// per directory?
+				ents, err := fs.ReadDir(fileSystem, path)
 				if err != nil {
-					return fmt.Errorf("directory to object %q: %w", path, err)
+					return fmt.Errorf("readdir %q: %w", path, err)
 				}
-				objects = append(objects, dirobj)
+				if len(ents) == 0 && delimiter == "" {
+					dirobj, err := getObj(path+"/", d)
+					if err == ErrSkipObj {
+						return skipflag
+					}
+					if err != nil {
+						return fmt.Errorf("directory to object %q: %w", path, err)
+					}
+					objects = append(objects, dirobj)
 
-				return nil
-			}
+					return skipflag
+				}
 
-			if len(ents) != 0 {
-				return nil
+				if len(ents) != 0 {
+					return skipflag
+				}
 			}
+			path += "/"
 		}
 
 		if !pastMarker {
 			if path == marker {
 				pastMarker = true
-				return nil
+				return skipflag
 			}
 			if path < marker {
-				return nil
+				return skipflag
 			}
 		}
 
 		// If object doesn't have prefix, don't include in results.
 		if prefix != "" && !strings.HasPrefix(path, prefix) {
-			return nil
+			return skipflag
 		}
 
 		if delimiter == "" {
@@ -137,7 +145,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			// prefix are included in results
 			obj, err := getObj(path, d)
 			if err == ErrSkipObj {
-				return nil
+				return skipflag
 			}
 			if err != nil {
 				return fmt.Errorf("file to object %q: %w", path, err)
@@ -148,7 +156,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 				pastMax = true
 			}
 
-			return nil
+			return skipflag
 		}
 
 		// Since delimiter is specified, we only want results that
@@ -177,7 +185,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		if !found {
 			obj, err := getObj(path, d)
 			if err == ErrSkipObj {
-				return nil
+				return skipflag
 			}
 			if err != nil {
 				return fmt.Errorf("file to object %q: %w", path, err)
@@ -186,7 +194,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			if (len(objects) + len(cpmap)) == int(max) {
 				pastMax = true
 			}
-			return nil
+			return skipflag
 		}
 
 		// Common prefixes are a set, so should not have duplicates.
@@ -196,12 +204,12 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		cpref := prefix + before + delimiter
 		if cpref == marker {
 			pastMarker = true
-			return nil
+			return skipflag
 		}
 
 		if marker != "" && strings.HasPrefix(marker, cprefNoDelim) {
 			// skip common prefixes that are before the marker
-			return nil
+			return skipflag
 		}
 
 		cpmap[cpref] = struct{}{}
@@ -211,7 +219,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			return fs.SkipAll
 		}
 
-		return nil
+		return skipflag
 	})
 	if err != nil {
 		return WalkResults{}, err
@@ -315,8 +323,16 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			// building to match. So only skip if path isn't a prefix of prefix
 			// and prefix isn't a prefix of path.
 			if prefix != "" &&
-				!strings.HasPrefix(path+string(os.PathSeparator), prefix) &&
-				!strings.HasPrefix(prefix, path+string(os.PathSeparator)) {
+				!strings.HasPrefix(path+"/", prefix) &&
+				!strings.HasPrefix(prefix, path+"/") {
+				return fs.SkipDir
+			}
+
+			// Don't recurse into subdirectories when listing with delimiter.
+			if delimiter == "/" &&
+				prefix != path+"/" &&
+				strings.HasPrefix(path+"/", prefix) {
+				cpmap[path+"/"] = struct{}{}
 				return fs.SkipDir
 			}
 
