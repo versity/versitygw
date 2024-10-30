@@ -70,6 +70,7 @@ const (
 	ErrInvalidMaxUploads
 	ErrInvalidMaxParts
 	ErrInvalidPartNumberMarker
+	ErrInvalidObjectAttributes
 	ErrInvalidPart
 	ErrInvalidPartNumber
 	ErrInternalError
@@ -217,6 +218,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPartNumberMarker: {
 		Code:           "InvalidArgument",
 		Description:    "Argument partNumberMarker must be an integer.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidObjectAttributes: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid attribute name specified.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchBucket: {

@@ -254,35 +254,47 @@ func ParseDeleteObjects(objs []types.ObjectIdentifier) (result []string) {
 	return
 }
 
-func FilterObjectAttributes(attrs map[types.ObjectAttributes]struct{}, output s3response.GetObjectAttributesResult) s3response.GetObjectAttributesResult {
-	if _, ok := attrs[types.ObjectAttributesEtag]; !ok {
+func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, output s3response.GetObjectAttributesResponse) s3response.GetObjectAttributesResponse {
+	// These properties shouldn't appear in the final response body
+	output.LastModified = nil
+	output.VersionId = nil
+	output.DeleteMarker = nil
+
+	if _, ok := attrs[s3response.ObjectAttributesEtag]; !ok {
 		output.ETag = nil
 	}
-	if _, ok := attrs[types.ObjectAttributesObjectParts]; !ok {
+	if _, ok := attrs[s3response.ObjectAttributesObjectParts]; !ok {
 		output.ObjectParts = nil
 	}
-	if _, ok := attrs[types.ObjectAttributesObjectSize]; !ok {
+	if _, ok := attrs[s3response.ObjectAttributesObjectSize]; !ok {
 		output.ObjectSize = nil
 	}
-	if _, ok := attrs[types.ObjectAttributesStorageClass]; !ok {
+	if _, ok := attrs[s3response.ObjectAttributesStorageClass]; !ok {
 		output.StorageClass = ""
 	}
+	fmt.Printf("%+v\n", output)
 
 	return output
 }
 
-func ParseObjectAttributes(ctx *fiber.Ctx) map[types.ObjectAttributes]struct{} {
-	attrs := map[types.ObjectAttributes]struct{}{}
+func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]struct{}, error) {
+	attrs := map[s3response.ObjectAttributes]struct{}{}
+	var err error
 	ctx.Request().Header.VisitAll(func(key, value []byte) {
 		if string(key) == "X-Amz-Object-Attributes" {
 			oattrs := strings.Split(string(value), ",")
 			for _, a := range oattrs {
-				attrs[types.ObjectAttributes(a)] = struct{}{}
+				attr := s3response.ObjectAttributes(a)
+				if !attr.IsValid() {
+					err = s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)
+					break
+				}
+				attrs[attr] = struct{}{}
 			}
 		}
 	})
 
-	return attrs
+	return attrs, err
 }
 
 type objLockCfg struct {

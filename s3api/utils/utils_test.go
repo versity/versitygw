@@ -19,10 +19,12 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -283,47 +285,68 @@ func TestParseUint(t *testing.T) {
 
 func TestFilterObjectAttributes(t *testing.T) {
 	type args struct {
-		attrs  map[types.ObjectAttributes]struct{}
-		output s3response.GetObjectAttributesResult
+		attrs  map[s3response.ObjectAttributes]struct{}
+		output s3response.GetObjectAttributesResponse
 	}
+
 	etag, objSize := "etag", int64(3222)
+	delMarker := true
+
 	tests := []struct {
 		name string
 		args args
-		want s3response.GetObjectAttributesResult
+		want s3response.GetObjectAttributesResponse
 	}{
 		{
 			name: "keep only ETag",
 			args: args{
-				attrs: map[types.ObjectAttributes]struct{}{
-					types.ObjectAttributesEtag: {},
+				attrs: map[s3response.ObjectAttributes]struct{}{
+					s3response.ObjectAttributesEtag: {},
 				},
-				output: s3response.GetObjectAttributesResult{
+				output: s3response.GetObjectAttributesResponse{
 					ObjectSize: &objSize,
 					ETag:       &etag,
 				},
 			},
-			want: s3response.GetObjectAttributesResult{ETag: &etag},
+			want: s3response.GetObjectAttributesResponse{ETag: &etag},
 		},
 		{
 			name: "keep multiple props",
 			args: args{
-				attrs: map[types.ObjectAttributes]struct{}{
-					types.ObjectAttributesEtag:         {},
-					types.ObjectAttributesObjectSize:   {},
-					types.ObjectAttributesStorageClass: {},
+				attrs: map[s3response.ObjectAttributes]struct{}{
+					s3response.ObjectAttributesEtag:         {},
+					s3response.ObjectAttributesObjectSize:   {},
+					s3response.ObjectAttributesStorageClass: {},
 				},
-				output: s3response.GetObjectAttributesResult{
+				output: s3response.GetObjectAttributesResponse{
 					ObjectSize:  &objSize,
 					ETag:        &etag,
 					ObjectParts: &s3response.ObjectParts{},
 					VersionId:   &etag,
 				},
 			},
-			want: s3response.GetObjectAttributesResult{
+			want: s3response.GetObjectAttributesResponse{
 				ETag:       &etag,
 				ObjectSize: &objSize,
-				VersionId:  &etag,
+			},
+		},
+		{
+			name: "make sure LastModified, DeleteMarker and VersionId are removed",
+			args: args{
+				attrs: map[s3response.ObjectAttributes]struct{}{
+					s3response.ObjectAttributesEtag: {},
+				},
+				output: s3response.GetObjectAttributesResponse{
+					ObjectSize:   &objSize,
+					ETag:         &etag,
+					ObjectParts:  &s3response.ObjectParts{},
+					VersionId:    &etag,
+					LastModified: backend.GetTimePtr(time.Now()),
+					DeleteMarker: &delMarker,
+				},
+			},
+			want: s3response.GetObjectAttributesResponse{
+				ETag: &etag,
 			},
 		},
 	}

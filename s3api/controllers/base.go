@@ -51,8 +51,9 @@ type S3ApiController struct {
 }
 
 const (
-	iso8601Format      = "20060102T150405Z"
-	defaultContentType = "binary/octet-stream"
+	iso8601Format             = "20060102T150405Z"
+	iso8601TimeFormatExtended = "Mon Jan _2 15:04:05 2006"
+	defaultContentType        = "binary/octet-stream"
 )
 
 func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) S3ApiController {
@@ -379,7 +380,19 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		attrs := utils.ParseObjectAttributes(ctx)
+		attrs, err := utils.ParseObjectAttributes(ctx)
+		if err != nil {
+			if c.debug {
+				log.Printf("error parsing object attributes: %v", err)
+			}
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionGetObjectAttributes,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
 
 		res, err := c.be.GetObjectAttributes(ctx.Context(),
 			&s3.GetObjectAttributesInput{
@@ -390,6 +403,22 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 				VersionId:        &versionId,
 			})
 		if err != nil {
+			hdrs := []utils.CustomHeader{}
+
+			if res.DeleteMarker != nil {
+				hdrs = append(hdrs, utils.CustomHeader{
+					Key:   "x-amz-delete-marker",
+					Value: "true",
+				})
+			}
+			if getstring(res.VersionId) != "" {
+				hdrs = append(hdrs, utils.CustomHeader{
+					Key:   "x-amz-version-id",
+					Value: getstring(res.VersionId),
+				})
+			}
+
+			utils.SetResponseHeaders(ctx, hdrs)
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -398,7 +427,31 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		return SendXMLResponse(ctx, utils.FilterObjectAttributes(attrs, res), err,
+
+		hdrs := []utils.CustomHeader{}
+
+		if getstring(res.VersionId) != "" {
+			hdrs = append(hdrs, utils.CustomHeader{
+				Key:   "x-amz-version-id",
+				Value: getstring(res.VersionId),
+			})
+		}
+		if res.DeleteMarker != nil && *res.DeleteMarker {
+			hdrs = append(hdrs, utils.CustomHeader{
+				Key:   "x-amz-delete-marker",
+				Value: "true",
+			})
+		}
+		if res.LastModified != nil {
+			hdrs = append(hdrs, utils.CustomHeader{
+				Key:   "Last-Modified",
+				Value: res.LastModified.UTC().Format(iso8601TimeFormatExtended),
+			})
+		}
+
+		utils.SetResponseHeaders(ctx, hdrs)
+
+		return SendXMLResponse(ctx, utils.FilterObjectAttributes(attrs, res), nil,
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
@@ -2893,15 +2946,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			})
 		}
 		return SendResponse(ctx, err,
-			&MetaOpts{
-				Logger:      c.logger,
-				MetricsMng:  c.mm,
-				Action:      metrics.ActionHeadObject,
-				BucketOwner: parsedAcl.Owner,
-			})
-	}
-	if res == nil {
-		return SendResponse(ctx, fmt.Errorf("head object nil response"),
 			&MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,

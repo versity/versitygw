@@ -3375,12 +3375,41 @@ func GetObjectAttributes_non_existing_object(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
-			Bucket:           &bucket,
-			Key:              getPtr("my-obj"),
-			ObjectAttributes: []types.ObjectAttributes{},
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+			},
 		})
 		cancel()
 		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_invalid_attrs(s *S3Conf) error {
+	testName := "GetObjectAttributes_invalid_attrs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+				types.ObjectAttributes("Invalid_argument"),
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)); err != nil {
 			return err
 		}
 
@@ -3438,10 +3467,13 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 			return fmt.Errorf("expected object size to be %v, instead got %v", data_len, *out.ObjectSize)
 		}
 		if out.Checksum != nil {
-			return fmt.Errorf("expected checksum do be nil, instead got %v", *out.Checksum)
+			return fmt.Errorf("expected checksum to be nil, instead got %v", *out.Checksum)
 		}
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
+		if out.LastModified == nil {
+			return fmt.Errorf("expected non nil LastModified")
 		}
 
 		return nil
@@ -10848,19 +10880,6 @@ func PutObject_name_too_long(s *S3Conf) error {
 	})
 }
 
-// Versioning tests
-func PutBucketVersioning_non_existing_bucket(s *S3Conf) error {
-	testName := "PutBucketVersioning_non_existing_bucket"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := putBucketVersioningStatus(s3client, getBucketName(), types.BucketVersioningStatusSuspended)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
 func HeadObject_name_too_long(s *S3Conf) error {
 	testName := "HeadObject_name_too_long"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -10871,6 +10890,35 @@ func HeadObject_name_too_long(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func DeleteObject_name_too_long(s *S3Conf) error {
+	testName := "DeleteObject_name_too_long"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr(genRandString(300)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// Versioning tests
+func PutBucketVersioning_non_existing_bucket(s *S3Conf) error {
+	testName := "PutBucketVersioning_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketVersioningStatus(s3client, getBucketName(), types.BucketVersioningStatusSuspended)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
 			return err
 		}
 
@@ -11405,22 +11453,6 @@ func Versioning_HeadObject_invalid_versionId(s *S3Conf) error {
 	})
 }
 
-func DeleteObject_name_too_long(s *S3Conf) error {
-	testName := "DeleteObject_name_too_long"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: &bucket,
-			Key:    getPtr(genRandString(300)),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrKeyTooLong)); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 func Versioning_HeadObject_success(s *S3Conf) error {
 	testName := "Versioning_HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -11450,6 +11482,35 @@ func Versioning_HeadObject_success(s *S3Conf) error {
 		}
 		if *out.VersionId != *r.res.VersionId {
 			return fmt.Errorf("expected the versionId to be %v, instead got %v", *r.res.VersionId, *out.VersionId)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_HeadObject_without_versionId(s *S3Conf) error {
+	testName := "Versioning_HeadObject_without_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		lastVersion := versions[0]
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.VersionId) != *lastVersion.VersionId {
+			return fmt.Errorf("expected versionId to be %v, instead got %v", *lastVersion.VersionId, getString(res.VersionId))
 		}
 
 		return nil
@@ -11725,6 +11786,97 @@ func Versioning_GetObject_null_versionId_obj(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
+	testName := "Versioning_GetObjectAttributes_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		version := versions[0]
+
+		getObjAttrs := func(versionId *string) (*s3.GetObjectAttributesOutput, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: versionId,
+				ObjectAttributes: []types.ObjectAttributes{
+					types.ObjectAttributesEtag,
+				},
+			})
+			cancel()
+			return res, err
+		}
+
+		// By specifying the versionId
+		res, err := getObjAttrs(version.VersionId)
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ETag) != *version.ETag {
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", *version.ETag, getString(res.ETag))
+		}
+		if getString(res.VersionId) != *version.VersionId {
+			return fmt.Errorf("expected the uploaded versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))
+		}
+
+		// Without versionId
+		res, err = getObjAttrs(nil)
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ETag) != *version.ETag {
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", *version.ETag, getString(res.ETag))
+		}
+		if getString(res.VersionId) != *version.VersionId {
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_GetObjectAttributes_delete_marker(s *S3Conf) error {
+	testName := "Versioning_GetObjectAttributes_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: res.VersionId,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+			},
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NoSuchKey"); err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
