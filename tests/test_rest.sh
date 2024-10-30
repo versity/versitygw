@@ -373,3 +373,25 @@ source ./tests/util_versioning.sh
   run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
   assert_success
 }
+
+@test "REST - bucket tagging - no tags" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run verify_no_bucket_tags_rest "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - bucket tagging - tags" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/932"
+  fi
+  test_key="testKey"
+  test_value="testValue"
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
+  assert_success
+}

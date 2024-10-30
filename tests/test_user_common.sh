@@ -70,7 +70,9 @@ test_create_user_already_exists() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  setup_user "$username" "123456" "admin" || fail "error setting up user"
+  run setup_user "$username" "123456" "admin"
+  assert_success "error setting up user"
+
   if create_user "$username" "123456" "admin"; then
     fail "'user already exists' error not returned"
   fi

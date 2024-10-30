@@ -253,3 +253,60 @@ get_and_verify_object_tags() {
   fi
   return 0
 }
+
+verify_no_bucket_tags_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'verify_no_bucket_tags_rest' requires bucket name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/bucket_tagging.txt" ./tests/rest_scripts/get_bucket_tagging.sh); then
+    log 2 "error listing bucket tags: $result"
+    return 1
+  fi
+  if [ "$result" != "404" ]; then
+    log 2 "expected response code of '404', was '$result' (error: $(cat "$TEST_FILE_FOLDER/bucket_tagging.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+add_verify_bucket_tags_rest() {
+  if [ $# -ne 3 ]; then
+    log 2 "'add_verify_bucket_tags_rest' requires bucket name, test key, test value"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" TAG_KEY="$2" TAG_VALUE="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_tagging.sh); then
+    log 2 "error putting bucket tags: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    log 2 "expected response code of '204', was '$result' (error: $(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/bucket_tagging.txt" ./tests/rest_scripts/get_bucket_tagging.sh); then
+    log 2 "error listing bucket tags: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' (error: $(cat "$TEST_FILE_FOLDER/bucket_tagging.txt"))"
+    return 1
+  fi
+  log 5 "tags: $(cat "$TEST_FILE_FOLDER/bucket_tagging.txt")"
+  if ! key=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/bucket_tagging.txt" 2>&1); then
+    log 2 "error retrieving key: $key"
+    return 1
+  fi
+  if [ "$key" != "$2" ]; then
+    log 2 "key mismatch (expected '$2', actual '$key')"
+    return 1
+  fi
+  if ! value=$(xmllint --xpath '//*[local-name()="Value"]/text()' "$TEST_FILE_FOLDER/bucket_tagging.txt" 2>&1); then
+    log 2 "error retrieving value: $value"
+    return 1
+  fi
+  if [ "$value" != "$3" ]; then
+    log 2 "value mismatch (expected '$3', actual '$value')"
+    return 1
+  fi
+  return 0
+}

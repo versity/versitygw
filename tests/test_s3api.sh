@@ -293,18 +293,11 @@ export RUN_USERS=true
   run setup_bucket "aws" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object "aws" "$TEST_FILE_FOLDER/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name" || fail "failed to add object to bucket"
+  run put_object "aws" "$TEST_FILE_FOLDER/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name"
+  assert_success
 
-  list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"
-  prefix=$(echo "${objects[@]}" | jq -r ".CommonPrefixes[0].Prefix" 2>&1) || fail "error getting object prefix from object list: $prefix"
-  [[ $prefix == "$folder_name/" ]] || fail "prefix doesn't match (expected $prefix, actual $folder_name/)"
-
-  list_objects_s3api_v1 "$BUCKET_ONE_NAME" "#"
-  key=$(echo "${objects[@]}" | jq -r ".Contents[0].Key" 2>&1) || fail "error getting key from object list: $key"
-  [[ $key == "$folder_name/$object_name" ]] || fail "key doesn't match (expected $key, actual $folder_name/$object_name)"
-
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
-  delete_test_files $folder_name
+  run check_object_listing_with_prefixes "$BUCKET_ONE_NAME" "$folder_name" "$object_name"
+  assert_success
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly

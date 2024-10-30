@@ -166,3 +166,35 @@ list_objects_check_file_count() {
   fi
   return 0
 }
+
+check_object_listing_with_prefixes() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_object_listing_with_prefixes' requires bucket name, folder name, object name"
+    return 1
+  fi
+  if ! list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"; then
+    log 2 "error listing objects with delimiter '/'"
+    return 1
+  fi
+  if ! prefix=$(echo "${objects[@]}" | jq -r ".CommonPrefixes[0].Prefix" 2>&1); then
+    log 2 "error getting object prefix from object list: $prefix"
+    return 1
+  fi
+  if [[ $prefix != "$2/" ]]; then
+    log 2 "prefix doesn't match (expected $2, actual $prefix/)"
+    return 1
+  fi
+  if ! list_objects_s3api_v1 "$BUCKET_ONE_NAME" "#"; then
+    log 2 "error listing objects with delimiter '#"
+    return 1
+  fi
+  if ! key=$(echo "${objects[@]}" | jq -r ".Contents[0].Key" 2>&1); then
+    log 2 "error getting key from object list: $key"
+    return 1
+  fi
+  if [[ $key != "$2/$3" ]]; then
+    log 2 "key doesn't match (expected $key, actual $2/$3)"
+    return 1
+  fi
+  return 0
+}
