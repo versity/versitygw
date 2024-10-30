@@ -187,8 +187,8 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			GetObjectAclFunc: func(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 				return &s3.GetObjectAclOutput{}, nil
 			},
-			GetObjectAttributesFunc: func(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
-				return s3response.GetObjectAttributesResult{}, nil
+			GetObjectAttributesFunc: func(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+				return s3response.GetObjectAttributesResponse{}, nil
 			},
 			GetObjectFunc: func(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 				return &s3.GetObjectOutput{

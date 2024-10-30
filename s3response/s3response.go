@@ -78,30 +78,34 @@ type ListPartsResult struct {
 	Parts []Part `xml:"Part"`
 }
 
-type GetObjectAttributesResult struct {
-	ETag         *string
-	LastModified *time.Time
-	ObjectSize   *int64
-	StorageClass types.StorageClass
-	VersionId    *string
-	ObjectParts  *ObjectParts
+type ObjectAttributes string
+
+const (
+	ObjectAttributesEtag         ObjectAttributes = "ETag"
+	ObjectAttributesChecksum     ObjectAttributes = "Checksum"
+	ObjectAttributesObjectParts  ObjectAttributes = "ObjectParts"
+	ObjectAttributesStorageClass ObjectAttributes = "StorageClass"
+	ObjectAttributesObjectSize   ObjectAttributes = "ObjectSize"
+)
+
+func (o ObjectAttributes) IsValid() bool {
+	return o == ObjectAttributesChecksum ||
+		o == ObjectAttributesEtag ||
+		o == ObjectAttributesObjectParts ||
+		o == ObjectAttributesObjectSize ||
+		o == ObjectAttributesStorageClass
 }
 
-func (r GetObjectAttributesResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	type Alias GetObjectAttributesResult
-	aux := &struct {
-		LastModified *string `xml:"LastModified"`
-		*Alias
-	}{
-		Alias: (*Alias)(&r),
-	}
+type GetObjectAttributesResponse struct {
+	ETag         *string
+	ObjectSize   *int64
+	StorageClass types.StorageClass `xml:",omitempty"`
+	ObjectParts  *ObjectParts
 
-	if r.LastModified != nil {
-		formattedTime := r.LastModified.UTC().Format(iso8601TimeFormat)
-		aux.LastModified = &formattedTime
-	}
-
-	return e.EncodeElement(aux, start)
+	// Not included in the response body
+	VersionId    *string
+	LastModified *time.Time
+	DeleteMarker *bool
 }
 
 type ObjectParts struct {

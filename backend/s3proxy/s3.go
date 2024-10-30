@@ -392,7 +392,7 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	return output, nil
 }
 
-func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	out, err := s.client.GetObjectAttributes(ctx, input)
 
 	parts := s3response.ObjectParts{}
@@ -419,12 +419,11 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		}
 	}
 
-	return s3response.GetObjectAttributesResult{
+	return s3response.GetObjectAttributesResponse{
 		ETag:         out.ETag,
 		LastModified: out.LastModified,
 		ObjectSize:   out.ObjectSize,
 		StorageClass: out.StorageClass,
-		VersionId:    out.VersionId,
 		ObjectParts:  &parts,
 	}, handleError(err)
 }

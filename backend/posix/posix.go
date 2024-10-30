@@ -2961,8 +2961,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	if input.Key == nil {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	versionId := backend.GetStringFromPtr(input.VersionId)
 
-	if !p.versioningEnabled() && *input.VersionId != "" {
+	if !p.versioningEnabled() && versionId != "" {
 		//TODO: Maybe we need to return our custom error here?
 		return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 	}
@@ -3022,7 +3023,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if *input.VersionId != "" {
+	if versionId != "" {
 		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -3032,12 +3033,12 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
+			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
 
-		if string(vId) != *input.VersionId {
+		if string(vId) != versionId {
 			bucket = filepath.Join(p.versioningDir, bucket)
-			object = filepath.Join(genObjVersionKey(object), *input.VersionId)
+			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
 	}
 
@@ -3045,7 +3046,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		if *input.VersionId != "" {
+		if versionId != "" {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
@@ -3063,7 +3064,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	if *input.VersionId != "" {
+	if p.versioningEnabled() {
 		isDelMarker, err := p.isObjDeleteMarker(bucket, object)
 		if err != nil {
 			return nil, err
@@ -3076,6 +3077,15 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 				LastModified: backend.GetTimePtr(fi.ModTime()),
 			}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 		}
+	}
+
+	if p.versioningEnabled() && versionId == "" {
+		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get object versionId: %v", err)
+		}
+
+		versionId = string(vId)
 	}
 
 	userMetaData := make(map[string]string)
@@ -3094,7 +3104,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	size := fi.Size()
 
 	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
-	status, err := p.GetObjectLegalHold(ctx, bucket, object, *input.VersionId)
+	status, err := p.GetObjectLegalHold(ctx, bucket, object, versionId)
 	if err == nil {
 		if *status {
 			objectLockLegalHoldStatus = types.ObjectLockLegalHoldStatusOn
@@ -3105,7 +3115,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	var objectLockMode types.ObjectLockMode
 	var objectLockRetainUntilDate *time.Time
-	retention, err := p.GetObjectRetention(ctx, bucket, object, *input.VersionId)
+	retention, err := p.GetObjectRetention(ctx, bucket, object, versionId)
 	if err == nil {
 		var config types.ObjectLockRetention
 		if err := json.Unmarshal(retention, &config); err == nil {
@@ -3113,8 +3123,6 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			objectLockRetainUntilDate = config.RetainUntilDate
 		}
 	}
-
-	//TODO: the method must handle multipart upload case
 
 	return &s3.HeadObjectOutput{
 		ContentLength:             &size,
@@ -3127,25 +3135,34 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ObjectLockMode:            objectLockMode,
 		ObjectLockRetainUntilDate: objectLockRetainUntilDate,
 		StorageClass:              types.StorageClassStandard,
-		VersionId:                 input.VersionId,
+		VersionId:                 &versionId,
 	}, nil
 }
 
-func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	data, err := p.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket:    input.Bucket,
 		Key:       input.Key,
 		VersionId: input.VersionId,
 	})
 	if err != nil {
-		return s3response.GetObjectAttributesResult{}, nil
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)) && data != nil {
+			return s3response.GetObjectAttributesResponse{
+				DeleteMarker: data.DeleteMarker,
+				VersionId:    data.VersionId,
+			}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+
+		return s3response.GetObjectAttributesResponse{}, err
 	}
 
-	return s3response.GetObjectAttributesResult{
+	return s3response.GetObjectAttributesResponse{
 		ETag:         data.ETag,
-		LastModified: data.LastModified,
 		ObjectSize:   data.ContentLength,
 		StorageClass: data.StorageClass,
+		LastModified: data.LastModified,
+		VersionId:    data.VersionId,
+		DeleteMarker: data.DeleteMarker,
 	}, nil
 }
 

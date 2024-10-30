@@ -157,6 +157,7 @@ func TestHeadObject(s *S3Conf) {
 func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_non_existing_bucket(s)
 	GetObjectAttributes_non_existing_object(s)
+	GetObjectAttributes_invalid_attrs(s)
 	GetObjectAttributes_existing_object(s)
 }
 
@@ -565,6 +566,7 @@ func TestVersioning(s *S3Conf) {
 	// HeadObject action
 	Versioning_HeadObject_invalid_versionId(s)
 	Versioning_HeadObject_success(s)
+	Versioning_HeadObject_without_versionId(s)
 	Versioning_HeadObject_delete_marker(s)
 	// GetObject action
 	Versioning_GetObject_invalid_versionId(s)
@@ -572,6 +574,9 @@ func TestVersioning(s *S3Conf) {
 	Versioning_GetObject_delete_marker_without_versionId(s)
 	Versioning_GetObject_delete_marker(s)
 	Versioning_GetObject_null_versionId_obj(s)
+	// GetObjectAttributes action
+	Versioning_GetObjectAttributes_object_version(s)
+	Versioning_GetObjectAttributes_delete_marker(s)
 	// DeleteObject(s) actions
 	Versioning_DeleteObject_delete_object_version(s)
 	Versioning_DeleteObject_non_existing_object(s)
@@ -720,6 +725,7 @@ func GetIntTests() IntTests {
 		"HeadObject_success":                                                  HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
+		"GetObjectAttributes_invalid_attrs":                                   GetObjectAttributes_invalid_attrs,
 		"GetObjectAttributes_existing_object":                                 GetObjectAttributes_existing_object,
 		"GetObject_non_existing_key":                                          GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                  GetObject_directory_object_noslash,
@@ -960,12 +966,15 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_special_chars":                                 Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                             Versioning_HeadObject_invalid_versionId,
 		"Versioning_HeadObject_success":                                       Versioning_HeadObject_success,
+		"Versioning_HeadObject_without_versionId":                             Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_delete_marker":                                 Versioning_HeadObject_delete_marker,
 		"Versioning_GetObject_invalid_versionId":                              Versioning_GetObject_invalid_versionId,
 		"Versioning_GetObject_success":                                        Versioning_GetObject_success,
 		"Versioning_GetObject_delete_marker_without_versionId":                Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                  Versioning_GetObject_delete_marker,
 		"Versioning_GetObject_null_versionId_obj":                             Versioning_GetObject_null_versionId_obj,
+		"Versioning_GetObjectAttributes_object_version":                       Versioning_GetObjectAttributes_object_version,
+		"Versioning_GetObjectAttributes_delete_marker":                        Versioning_GetObjectAttributes_delete_marker,
 		"Versioning_DeleteObject_delete_object_version":                       Versioning_DeleteObject_delete_object_version,
 		"Versioning_DeleteObject_non_existing_object":                         Versioning_DeleteObject_non_existing_object,
 		"Versioning_DeleteObject_delete_a_delete_marker":                      Versioning_DeleteObject_delete_a_delete_marker,

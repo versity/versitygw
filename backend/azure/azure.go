@@ -512,20 +512,22 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 	return result, nil
 }
 
-func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	data, err := az.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: input.Bucket,
 		Key:    input.Key,
 	})
 	if err != nil {
-		return s3response.GetObjectAttributesResult{}, err
+		return s3response.GetObjectAttributesResponse{}, err
 	}
 
-	return s3response.GetObjectAttributesResult{
+	return s3response.GetObjectAttributesResponse{
 		ETag:         data.ETag,
-		LastModified: data.LastModified,
 		ObjectSize:   data.ContentLength,
 		StorageClass: data.StorageClass,
+		LastModified: data.LastModified,
+		VersionId:    data.VersionId,
+		DeleteMarker: data.DeleteMarker,
 	}, nil
 }
 

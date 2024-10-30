@@ -83,7 +83,7 @@ var _ backend.Backend = &BackendMock{}
 //			GetObjectAclFunc: func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error) {
 //				panic("mock out the GetObjectAcl method")
 //			},
-//			GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+//			GetObjectAttributesFunc: func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 //				panic("mock out the GetObjectAttributes method")
 //			},
 //			GetObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) (*bool, error) {
@@ -244,7 +244,7 @@ type BackendMock struct {
 	GetObjectAclFunc func(contextMoqParam context.Context, getObjectAclInput *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
 
 	// GetObjectAttributesFunc mocks the GetObjectAttributes method.
-	GetObjectAttributesFunc func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error)
+	GetObjectAttributesFunc func(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error)
 
 	// GetObjectLegalHoldFunc mocks the GetObjectLegalHold method.
 	GetObjectLegalHoldFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) (*bool, error)
@@ -1518,7 +1518,7 @@ func (mock *BackendMock) GetObjectAclCalls() []struct {
 }
 
 // GetObjectAttributes calls GetObjectAttributesFunc.
-func (mock *BackendMock) GetObjectAttributes(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResult, error) {
+func (mock *BackendMock) GetObjectAttributes(contextMoqParam context.Context, getObjectAttributesInput *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	if mock.GetObjectAttributesFunc == nil {
 		panic("BackendMock.GetObjectAttributesFunc: method is nil but Backend.GetObjectAttributes was just called")
 	}
