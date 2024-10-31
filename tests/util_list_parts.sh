@@ -51,6 +51,48 @@ check_part_list_rest() {
   return 0
 }
 
+perform_multipart_upload_rest() {
+  if [ $# -ne 6 ]; then
+    log 2 "'upload_check_parts' requires bucket, key, part list"
+    return 1
+  fi
+  if ! create_upload_and_get_id_rest "$1" "$2"; then
+    log 2 "error creating upload"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! upload_part_and_get_etag_rest "$1" "$2" "$upload_id" 1 "$3"; then
+    log 2 "error uploading part 1"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  parts_payload="<Part><ETag>$etag</ETag><PartNumber>1</PartNumber></Part>"
+  if ! upload_part_and_get_etag_rest "$1" "$2" "$upload_id" 2 "$4"; then
+    log 2 "error uploading part 2"
+    return 1
+  fi
+  parts_payload+="<Part><ETag>$etag</ETag><PartNumber>2</PartNumber></Part>"
+  if ! upload_part_and_get_etag_rest "$1" "$2" "$upload_id" 3 "$5"; then
+    log 2 "error uploading part 3"
+    return 1
+  fi
+  parts_payload+="<Part><ETag>$etag</ETag><PartNumber>3</PartNumber></Part>"
+  if ! upload_part_and_get_etag_rest "$1" "$2" "$upload_id" 4 "$6"; then
+    log 2 "error uploading part 4"
+    return 1
+  fi
+  parts_payload+="<Part><ETag>$etag</ETag><PartNumber>4</PartNumber></Part>"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  return 0
+}
+
 upload_check_parts() {
   if [ $# -ne 6 ]; then
     log 2 "'upload_check_parts' requires bucket, key, part list"

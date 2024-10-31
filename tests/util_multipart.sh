@@ -265,35 +265,27 @@ multipart_upload_from_bucket_range() {
     echo "multipart upload from bucket with range command requires bucket, copy source, key, part count, and range"
     return 1
   fi
-
-  split_file "$3" "$4" || local split_result=$?
-  if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file"
+  if ! split_file "$3" "$4"; then
+    log 2 "error splitting file"
     return 1
   fi
-
   for ((i=0;i<$4;i++)) {
-    echo "key: $3"
-    log 5 "file info: $(ls -l "$3"-"$i")"
-    put_object "s3api" "$3-$i" "$1" "$2-$i" || local copy_result=$?
-    if [[ $copy_result -ne 0 ]]; then
-      echo "error copying object"
+    log 5 "key: $3, file info: $(ls -l "$3"-"$i")"
+    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+      log 2 "error copying object"
       return 1
     fi
   }
 
-  create_multipart_upload "$1" "$2-copy" || local create_multipart_result=$?
-  if [[ $create_multipart_result -ne 0 ]]; then
-    echo "error running first multpart upload"
+  if ! create_multipart_upload "$1" "$2-copy"; then
+    log 2 "error running first multpart upload"
     return 1
   fi
-
   parts="["
   for ((i = 1; i <= $4; i++)); do
-    upload_part_copy_with_range "$1" "$2-copy" "$upload_id" "$2" "$i" "$5" || local upload_part_copy_result=$?
-    if [[ $upload_part_copy_result -ne 0 ]]; then
+    if ! upload_part_copy_with_range "$1" "$2-copy" "$upload_id" "$2" "$i" "$5"; then
       # shellcheck disable=SC2154
-      echo "error uploading part $i: $upload_part_copy_error"
+      log 2 "error uploading part $i: $upload_part_copy_error"
       return 1
     fi
     parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
@@ -302,10 +294,8 @@ multipart_upload_from_bucket_range() {
     fi
   done
   parts+="]"
-
-  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
-  if [[ $completed -ne 0 ]]; then
-    echo "Error completing upload: $error"
+  if ! error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}'); then
+    log 2 "Error completing upload: $error"
     return 1
   fi
   return 0
@@ -659,6 +649,32 @@ list_and_check_upload() {
   fi
   if [ "$upload_id" != "$3" ]; then
     log 2 "upload ID mismatch (expected '$3', actual '$upload_id')"
+    return 1
+  fi
+  return 0
+}
+
+run_and_verify_multipart_upload_with_valid_range() {
+  if [ $# -ne 3 ]; then
+    log 2 "'run_and_verify_multipart_upload_with_valid_range' requires bucket, key, 5MB file"
+    return 1
+  fi
+  range_max=$((5*1024*1024-1))
+  if ! multipart_upload_from_bucket_range "$1" "$2" "$3" 4 "bytes=0-$range_max"; then
+    log 2 "error with multipart upload"
+    return 1
+  fi
+  if ! get_object "s3api" "$1" "$2-copy" "$3-copy"; then
+    log 2 "error getting object"
+    return 1
+  fi
+  if [[ $(uname) == 'Darwin' ]]; then
+    object_size=$(stat -f%z "$3-copy")
+  else
+    object_size=$(stat --format=%s "$3-copy")
+  fi
+  if [[ object_size -ne $((range_max*4+4)) ]]; then
+    log 2 "object size mismatch ($object_size, $((range_max*4+4)))"
     return 1
   fi
   return 0

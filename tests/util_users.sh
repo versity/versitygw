@@ -90,9 +90,8 @@ put_user_policy_userplus() {
     log 2 "unable to create test file folder"
     return 1
   fi
-          #"Resource": "arn:aws:s3:::${aws:username}-*"
 
-cat <<EOF > "$TEST_FILE_FOLDER"/user_policy_file
+  cat <<EOF > "$TEST_FILE_FOLDER"/user_policy_file
 {
   "Version": "2012-10-17",
   "Statement": [
