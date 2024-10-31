@@ -136,7 +136,7 @@ export RUN_USERS=true
   fi
   # shellcheck disable=SC2154
   [[ "$get_object_error" == *"NoSuchKey"* ]] || fail "unexpected error message: $get_object_error"
-  delete_bucket_or_contents "s3api" "$BUCKET_ONE_NAME"
+  bucket_cleanup "s3api" "$BUCKET_ONE_NAME"
   delete_test_files "$test_file" "$test_file-copy"
 }
 

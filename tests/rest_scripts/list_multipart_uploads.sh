@@ -20,16 +20,15 @@ source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
-# shellcheck disable=SC2153
-key="$OBJECT_KEY"
 # shellcheck disable=SC2153,SC2034
 upload_id="$UPLOAD_ID"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request="DELETE
-/$bucket_name/$key
-uploadId=$UPLOAD_ID
+# shellcheck disable=SC2034
+canonical_request="GET
+/$bucket_name/
+uploads=
 host:$host
 x-amz-content-sha256:UNSIGNED-PAYLOAD
 x-amz-date:$current_date_time
@@ -39,7 +38,7 @@ UNSIGNED-PAYLOAD"
 
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "$AWS_ENDPOINT_URL/$bucket_name/$key?uploadId=$upload_id"
+curl_command+=(curl -ks -w "\"%{http_code}\"" "https://$host/$bucket_name/$key?uploads="
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
 -H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
 -H "\"x-amz-date: $current_date_time\""

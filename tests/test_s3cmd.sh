@@ -52,7 +52,7 @@ export RUN_USERS=true
 
   [[ "$bucket_create_error" == *"just the bucket name"* ]] || fail "unexpected error:  $bucket_create_error"
 
-  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
+  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
 }
 
 # delete-bucket - test_create_delete_bucket
@@ -119,7 +119,7 @@ export RUN_USERS=true
 
   head_bucket "s3cmd" "$BUCKET_ONE_NAME"
   [[ $bucket_info == *"s3://$BUCKET_ONE_NAME"* ]] || fail "failure to retrieve correct bucket info: $bucket_info"
-  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
+  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
 }
 
 @test "test_get_bucket_info_doesnt_exist_s3cmd" {
@@ -129,7 +129,7 @@ export RUN_USERS=true
   head_bucket "s3cmd" "$BUCKET_ONE_NAME"a || local info_result=$?
   [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
   [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  delete_bucket_or_contents "s3cmd" "$BUCKET_ONE_NAME"
+  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
 }
 
 @test "test_ls_directory_object" {

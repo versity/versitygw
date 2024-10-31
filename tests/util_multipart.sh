@@ -218,36 +218,32 @@ create_and_list_multipart_uploads() {
 
 multipart_upload_from_bucket() {
   if [ $# -ne 4 ]; then
-    echo "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
+    log 2 "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
     return 1
   fi
 
-  split_file "$3" "$4" || split_result=$?
-  if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file"
+  if ! split_file "$3" "$4"; then
+    log 2 "error splitting file"
     return 1
   fi
 
   for ((i=0;i<$4;i++)) {
     echo "key: $3"
-    put_object "s3api" "$3-$i" "$1" "$2-$i" || copy_result=$?
-    if [[ $copy_result -ne 0 ]]; then
-      echo "error copying object"
+    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+      log 2 "error copying object"
       return 1
     fi
   }
 
-  create_multipart_upload "$1" "$2-copy" || upload_result=$?
-  if [[ $upload_result -ne 0 ]]; then
-    echo "error running first multpart upload"
+  if ! create_multipart_upload "$1" "$2-copy"; then
+    log 2 "error running first multpart upload"
     return 1
   fi
 
   parts="["
   for ((i = 1; i <= $4; i++)); do
-    upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i" || local upload_result=$?
-    if [[ $upload_result -ne 0 ]]; then
-      echo "error uploading part $i"
+    if ! upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i"; then
+      log 2 "error uploading part $i"
       return 1
     fi
     parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
@@ -257,9 +253,8 @@ multipart_upload_from_bucket() {
   done
   parts+="]"
 
-  error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}') || local completed=$?
-  if [[ $completed -ne 0 ]]; then
-    echo "Error completing upload: $error"
+  if ! error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}' 2>&1); then
+    log 2 "Error completing upload: $error"
     return 1
   fi
   return 0
@@ -580,18 +575,34 @@ create_abort_multipart_upload_rest() {
     log 2 "'create_abort_upload_rest' requires bucket, key"
     return 1
   fi
+  if ! list_and_check_upload "$1" "$2"; then
+    log 2 "error listing multipart uploads before creation"
+    return 1
+  fi
+  log 5 "uploads before upload: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
   if ! create_upload_and_get_id_rest "$1" "$2"; then
     log 2 "error creating upload"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
+  if ! list_and_check_upload "$1" "$2" "$upload_id"; then
+    log 2 "error listing multipart uploads after upload creation"
+    return 1
+  fi
+  log 5 "uploads after upload creation: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
     log 2 "error aborting multipart upload: $result"
     return 1
   fi
   if [ "$result" != "204" ]; then
-    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/output.txt)"
+    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/result.txt)"
     return 1
   fi
+  log 5 "final uploads: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
+  if ! list_and_check_upload "$1" "$2"; then
+    log 2 "error listing multipart uploads after abort"
+    return 1
+  fi
+  return 0
 }
 
 multipart_upload_range_too_large() {
@@ -606,6 +617,48 @@ multipart_upload_range_too_large() {
   log 5 "error: $upload_part_copy_error"
   if [[ $upload_part_copy_error != *"Range specified is not valid"* ]] && [[ $upload_part_copy_error != *"InvalidRange"* ]]; then
     log 2 "unexpected error: $upload_part_copy_error"
+    return 1
+  fi
+  return 0
+}
+
+list_and_check_upload() {
+  if [ $# -lt 2 ]; then
+    log 2 "'list_and_check_upload' requires bucket, key, upload ID (optional)"
+    return 1
+  fi
+  if ! uploads=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/uploads.txt" ./tests/rest_scripts/list_multipart_uploads.sh); then
+    log 2 "error listing multipart uploads before upload: $result"
+    return 1
+  fi
+  if ! upload_count=$(xmllint --xpath 'count(//*[local-name()="Upload"])' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
+    log 2 "error retrieving upload count: $upload_count"
+    return 1
+  fi
+  if [[ (( $# == 2 ) && ( $upload_count != 0 )) ]]; then
+    log 2 "upload count mismatch (expected 0, actual $upload_count)"
+    return 1
+  elif [[ (( $# == 3 ) && ( $upload_count != 1 )) ]]; then
+    log 2 "upload count mismatch (expected 1, actual $upload_count)"
+    return 1
+  fi
+  if [ $# -eq 2 ]; then
+    return 0
+  fi
+  if ! key=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
+    log 2 "error retrieving key: $key"
+    return 1
+  fi
+  if [ "$key" != "$2" ]; then
+    log 2 "key mismatch (expected '$2', actual '$key')"
+    return 1
+  fi
+  if ! upload_id=$(xmllint --xpath '//*[local-name()="UploadId"]/text()' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
+    log 2 "error retrieving upload ID: $upload_id"
+    return 1
+  fi
+  if [ "$upload_id" != "$3" ]; then
+    log 2 "upload ID mismatch (expected '$3', actual '$upload_id')"
     return 1
   fi
   return 0
