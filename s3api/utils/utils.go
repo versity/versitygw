@@ -294,6 +294,10 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 		}
 	})
 
+	if len(attrs) == 0 {
+		return nil, s3err.GetAPIError(s3err.ErrObjectAttributesInvalidHeader)
+	}
+
 	return attrs, err
 }
 

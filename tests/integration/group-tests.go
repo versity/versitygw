@@ -158,6 +158,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_non_existing_bucket(s)
 	GetObjectAttributes_non_existing_object(s)
 	GetObjectAttributes_invalid_attrs(s)
+	GetObjectAttributes_empty_attrs(s)
 	GetObjectAttributes_existing_object(s)
 }
 
@@ -726,6 +727,7 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                   GetObjectAttributes_invalid_attrs,
+		"GetObjectAttributes_empty_attrs":                                     GetObjectAttributes_empty_attrs,
 		"GetObjectAttributes_existing_object":                                 GetObjectAttributes_existing_object,
 		"GetObject_non_existing_key":                                          GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                  GetObject_directory_object_noslash,
