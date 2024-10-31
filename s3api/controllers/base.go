@@ -1150,6 +1150,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				MetricsMng:  c.mm,
 				Action:      metrics.ActionPutBucketTagging,
 				BucketOwner: parsedAcl.Owner,
+				Status:      http.StatusNoContent,
 			})
 	}
 

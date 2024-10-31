@@ -116,6 +116,7 @@ func TestPutBucketTagging(s *S3Conf) {
 	PutBucketTagging_non_existing_bucket(s)
 	PutBucketTagging_long_tags(s)
 	PutBucketTagging_success(s)
+	PutBucketTagging_success_status(s)
 }
 
 func TestGetBucketTagging(s *S3Conf) {
@@ -703,6 +704,7 @@ func GetIntTests() IntTests {
 		"PutBucketTagging_non_existing_bucket":                                PutBucketTagging_non_existing_bucket,
 		"PutBucketTagging_long_tags":                                          PutBucketTagging_long_tags,
 		"PutBucketTagging_success":                                            PutBucketTagging_success,
+		"PutBucketTagging_success_status":                                     PutBucketTagging_success_status,
 		"GetBucketTagging_non_existing_bucket":                                GetBucketTagging_non_existing_bucket,
 		"GetBucketTagging_unset_tags":                                         GetBucketTagging_unset_tags,
 		"GetBucketTagging_success":                                            GetBucketTagging_success,

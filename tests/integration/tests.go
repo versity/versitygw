@@ -2672,6 +2672,45 @@ func PutBucketTagging_success(s *S3Conf) error {
 	})
 }
 
+func PutBucketTagging_success_status(s *S3Conf) error {
+	testName := "PutBucketTagging_success_status"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{
+					Key:   getPtr("key"),
+					Value: getPtr("val"),
+				},
+			},
+		}
+
+		taggingParsed, err := xml.Marshal(tagging)
+		if err != nil {
+			return fmt.Errorf("err parsing tagging: %w", err)
+		}
+
+		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, taggingParsed, time.Now(), nil)
+		if err != nil {
+			return fmt.Errorf("err signing the request: %w", err)
+		}
+
+		client := http.Client{
+			Timeout: shortTimeout,
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("err sending request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected the response status code to be %v, instad got %v", http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
 func GetBucketTagging_non_existing_bucket(s *S3Conf) error {
 	testName := "GetBucketTagging_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
