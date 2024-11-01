@@ -27,7 +27,7 @@ services:
       args:
         - CONFIG_FILE=tests/.env.default
     image: bats_test
-    command: ["s3api-non-policy"]
+    command: ["s3api-bucket,s3api-object"]
   direct:
     build:
       dockerfile: tests/Dockerfile_direct

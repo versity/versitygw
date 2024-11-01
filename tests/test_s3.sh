@@ -51,10 +51,6 @@ source ./tests/util_file.sh
   test_common_list_buckets "s3"
 }
 
-@test "test_list_objects_file_count" {
-  test_common_list_objects_file_count "s3"
-}
-
 @test "test_delete_bucket" {
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"

@@ -20,7 +20,6 @@ source ./tests/util_aws.sh
 source ./tests/util_create_bucket.sh
 source ./tests/util_file.sh
 source ./tests/util_lock_config.sh
-source ./tests/util_multipart.sh
 source ./tests/util_tags.sh
 source ./tests/util_users.sh
 source ./tests/test_aws_root_inner.sh
@@ -38,7 +37,6 @@ source ./tests/commands/get_object_legal_hold.sh
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/get_object_retention.sh
 source ./tests/commands/get_object_tagging.sh
-source ./tests/commands/list_multipart_uploads.sh
 source ./tests/commands/list_object_versions.sh
 source ./tests/commands/put_bucket_acl.sh
 source ./tests/commands/put_bucket_policy.sh
@@ -52,16 +50,6 @@ source ./tests/commands/select_object_content.sh
 
 export RUN_USERS=true
 
-# abort-multipart-upload
-@test "test_abort_multipart_upload" {
-  test_abort_multipart_upload_aws_root
-}
-
-# complete-multipart-upload
-@test "test_complete_multipart_upload" {
-  test_complete_multipart_upload_aws_root
-}
-
 # copy-object
 @test "test_copy_object" {
   test_common_copy_object "s3api"
@@ -69,35 +57,6 @@ export RUN_USERS=true
 
 @test "test_copy_object_empty" {
   copy_object_empty || fail "copy objects with no parameters test failure"
-}
-
-# create-bucket
-@test "test_create_delete_bucket_aws" {
-  test_common_create_delete_bucket "aws"
-}
-
-@test "test_create_bucket_invalid_name" {
-  test_create_bucket_invalid_name_aws_root
-}
-
-# create-multipart-upload
-@test "test_create_multipart_upload_properties" {
-  test_create_multipart_upload_properties_aws_root
-}
-
-# delete-bucket - test_create_delete_bucket_aws
-
-# delete-bucket-policy
-@test "test_get_put_delete_bucket_policy" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
-  test_common_get_put_delete_bucket_policy "aws"
-}
-
-# delete-bucket-tagging
-@test "test-set-get-delete-bucket-tags" {
-  test_common_set_get_delete_bucket_tags "aws"
 }
 
 # delete-object - tested with bucket cleanup before or after tests
@@ -115,20 +74,6 @@ export RUN_USERS=true
   test_delete_objects_aws_root
 }
 
-# get-bucket-acl
-@test "test_get_bucket_acl" {
-  test_get_bucket_acl_aws_root
-}
-
-# get-bucket-location
-@test "test_get_bucket_location" {
-  test_common_get_bucket_location "aws"
-}
-
-# get-bucket-policy - test_get_put_delete_bucket_policy
-
-# get-bucket-tagging - test_set_get_delete_bucket_tags
-
 # get-object
 @test "test_get_object_full_range" {
   test_get_object_full_range_aws_root
@@ -141,12 +86,6 @@ export RUN_USERS=true
 # get-object-attributes
 @test "test_get_object_attributes" {
   test_get_object_attributes_aws_root
-}
-
-@test "test_head_bucket_invalid_name" {
-  if head_bucket "aws" ""; then
-    fail "able to get bucket info for invalid name"
-  fi
 }
 
 @test "test_put_object" {
@@ -168,11 +107,6 @@ export RUN_USERS=true
   test_common_put_object_no_data "aws"
 }
 
-# test listing buckets on versitygw
-@test "test_list_buckets" {
-  test_common_list_buckets "s3api"
-}
-
 # test listing a bucket's objects on versitygw
 @test "test_list_objects" {
   test_common_list_objects "aws"
@@ -184,10 +118,6 @@ export RUN_USERS=true
 
 @test "test_get_put_object_retention" {
   test_get_put_object_retention_aws_root
-}
-
-@test "test_put_bucket_acl" {
-  test_common_put_bucket_acl "s3api"
 }
 
 # test v1 s3api list objects command
@@ -203,77 +133,6 @@ export RUN_USERS=true
 # test abilty to set and retrieve object tags
 @test "test-set-get-object-tags" {
   test_common_set_get_object_tags "aws"
-}
-
-# test multi-part upload list parts command
-@test "test-multipart-upload-list-parts" {
-  test_multipart_upload_list_parts_aws_root
-}
-
-# test listing of active uploads
-@test "test-multipart-upload-list-uploads" {
-  local bucket_file_one="bucket-file-one"
-  local bucket_file_two="bucket-file-two"
-
-  if [[ $RECREATE_BUCKETS == false ]]; then
-    run abort_all_multipart_uploads "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run create_test_files "$bucket_file_one" "$bucket_file_two"
-  assert_success
-
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
-  assert_success
-}
-
-@test "test-multipart-upload-from-bucket" {
-  local bucket_file="bucket-file"
-
-  run create_test_file "$bucket_file"
-  assert_success
-
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
-  assert_success
-
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
-  assert_success
-
-  run get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy"
-  assert_success
-
-  run compare_files "$TEST_FILE_FOLDER"/$bucket_file-copy "$TEST_FILE_FOLDER"/$bucket_file
-  assert_success
-}
-
-@test "test_multipart_upload_from_bucket_range_too_large" {
-  local bucket_file="bucket-file"
-  run create_large_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run multipart_upload_range_too_large "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
-  assert_success
-}
-
-@test "test_multipart_upload_from_bucket_range_valid" {
-  local bucket_file="bucket-file"
-  run create_large_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run run_and_verify_multipart_upload_with_valid_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
-  assert_success
 }
 
 @test "test-presigned-url-utf8-chars" {
@@ -324,29 +183,8 @@ export RUN_USERS=true
 #  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
 #}
 
-@test "test_head_bucket" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  head_bucket "aws" "$BUCKET_ONE_NAME" || fail "error getting bucket info"
-  log 5 "INFO:  $bucket_info"
-  region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
-  [[ $region != "" ]] || fail "empty bucket region"
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
-}
-
 @test "test_retention_bypass" {
   test_retention_bypass_aws_root
-}
-
-@test "test_head_bucket_doesnt_exist" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
-  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
-  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
 }
 
 @test "test_add_object_metadata" {

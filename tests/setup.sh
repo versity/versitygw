@@ -28,7 +28,7 @@ setup() {
   base_setup
 
   log 4 "Running test $BATS_TEST_NAME"
-  if [[ $LOG_LEVEL -ge 5 ]]; then
+  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
     start_time=$(date +%s)
     export start_time
   fi
@@ -75,9 +75,13 @@ teardown() {
     fi
   fi
   stop_versity
-  if [[ $LOG_LEVEL -ge 5 ]]; then
+  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
     end_time=$(date +%s)
-    log 4 "Total test time: $((end_time - start_time))"
+    total_time=$((end_time - start_time))
+    log 4 "Total test time: $total_time"
+    if [[ -n "$TIME_LOG" ]]; then
+      echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
+    fi
   fi
   if [[ -n "$COVERAGE_DB" ]]; then
     record_result

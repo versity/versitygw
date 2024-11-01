@@ -109,10 +109,6 @@ export RUN_USERS=true
 #  test_common_presigned_url_utf8_chars "s3cmd"
 #}
 
-@test "test_list_objects_file_count" {
-  test_common_list_objects_file_count "s3cmd"
-}
-
 @test "test_get_bucket_info_s3cmd" {
   run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
   assert_success
