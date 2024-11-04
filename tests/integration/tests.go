@@ -3417,6 +3417,30 @@ func GetObjectAttributes_invalid_attrs(s *S3Conf) error {
 	})
 }
 
+func GetObjectAttributes_empty_attrs(s *S3Conf) error {
+	testName := "GetObjectAttributes_empty_attrs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket:           &bucket,
+			Key:              &obj,
+			ObjectAttributes: []types.ObjectAttributes{},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectAttributesInvalidHeader)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func GetObjectAttributes_existing_object(s *S3Conf) error {
 	testName := "GetObjectAttributes_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

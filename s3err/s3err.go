@@ -125,6 +125,7 @@ const (
 	ErrNoSuchBucketPolicy
 	ErrBucketTaggingNotFound
 	ErrObjectLockInvalidHeaders
+	ErrObjectAttributesInvalidHeader
 	ErrRequestTimeTooSkewed
 	ErrInvalidBucketAclWithObjectOwnership
 	ErrBothCannedAndHeaderGrants
@@ -503,6 +504,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrObjectLockInvalidHeaders: {
 		Code:           "InvalidRequest",
 		Description:    "x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectAttributesInvalidHeader: {
+		Code:           "InvalidRequest",
+		Description:    "The x-amz-object-attributes header specifying the attributes to be retrieved is either missing or empty",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrRequestTimeTooSkewed: {
