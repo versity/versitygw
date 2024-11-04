@@ -750,7 +750,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 				req: httptest.NewRequest(http.MethodPut, "/my-bucket?tagging", strings.NewReader(tagBody)),
 			},
 			wantErr:    false,
-			statusCode: 200,
+			statusCode: 204,
 		},
 		{
 			name: "Put-bucket-ownership-controls-invalid-ownership",
