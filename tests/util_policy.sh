@@ -205,3 +205,20 @@ get_and_check_policy() {
   fi
   return 0
 }
+
+put_and_check_for_malformed_policy() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_and_check_for_malformed_policy' requires bucket name, policy file"
+    return 1
+  fi
+  if put_bucket_policy "s3api" "$1" "$2"; then
+    log 2 "put succeeded despite malformed policy"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if [[ "$put_bucket_policy_error" != *"MalformedPolicy"*"invalid action"* ]]; then
+    log 2 "invalid policy error: $put_bucket_policy_error"
+    return 1
+  fi
+  return 0
+}

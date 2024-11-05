@@ -400,3 +400,20 @@ get_bucket_owner() {
   bucket_owner=
   return 0
 }
+
+verify_user_cant_get_object() {
+  if [ $# -ne 6 ]; then
+    log 2 "'verify_user_cant_get_object' requires client, bucket, key, save file, username, password"
+    return 1
+  fi
+  if get_object_with_user "$1" "$2" "$3" "$4" "$5" "$6"; then
+    log 2 "get object with user succeeded despite lack of permissions"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if [[ "$get_object_error" != *"Access Denied"* ]]; then
+    log 2 "invalid get object error: $get_object_error"
+    return 1
+  fi
+  return 0
+}
