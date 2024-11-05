@@ -112,10 +112,6 @@ export RUN_MC=true
   test_common_presigned_url_utf8_chars "mc"
 }
 
-@test "test_list_objects_file_count" {
-  test_common_list_objects_file_count "mc"
-}
-
 @test "test_create_bucket_invalid_name_mc" {
   if [[ $RECREATE_BUCKETS != "true" ]]; then
     return

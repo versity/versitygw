@@ -19,14 +19,21 @@ show_help() {
     echo "Usage: $0 [option...]"
     echo "   -h, --help          Display this help message and exit"
     echo "                       Separate the below by comma"
-    echo "   s3api               Run tests with s3api cli"
-    echo "   s3api-non-policy    Run policy tests with s3api cli"
+    echo "   s3api               Run all tests with s3api cli"
+    echo "   s3api-multipart     Run multipart tests with s3api cli"
+    echo "   s3api-bucket        Run bucket tests with s3api cli"
+    echo "   s3api-object        Run object tests with s3api cli"
     echo "   s3api-policy        Run policy tests with s3api cli"
+    echo "   s3api-user          Run user tests with s3api cli"
     echo "   s3                  Run tests with s3 cli"
     echo "   s3cmd               Run tests with s3cmd utility"
+    echo "   s3cmd-user          Run user tests with s3cmd utility"
+    echo "   s3cmd-non-user      Run non-user tests with s3cmd utility"
+    echo "   s3cmd-file-count    Run file count test with s3cmd utility"
     echo "   mc                  Run tests with mc utility"
+    echo "   mc-non-file-count   Run non-file count tests with mc utility"
+    echo "   mc-file-count       Run file count test with mc utility"
     echo "   rest                Run tests with rest cli"
-    echo "   s3api-user          Run user tests with aws cli"
 }
 
 handle_param() {
@@ -35,7 +42,7 @@ handle_param() {
           show_help
           exit 0
           ;;
-      s3|s3api|s3cmd|mc|s3api-user|rest|s3api-policy|s3api-non-policy)
+      s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|s3api-bucket|s3api-object|s3api-multipart)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -50,25 +57,50 @@ run_suite() {
   case $1 in
     s3api)
       echo "Running all s3api tests ..."
-      "$HOME"/bin/bats ./tests/test_s3api.sh || exit_code=$?
+      "$HOME"/bin/bats ./tests/test_s3api_bucket.sh || exit_code=$?
+      if [[ $exit_code -eq 0 ]]; then
+        "$HOME"/bin/bats ./tests/test_s3api_object.sh || exit_code=$?
+      fi
       if [[ $exit_code -eq 0 ]]; then
         "$HOME"/bin/bats ./tests/test_s3api_policy.sh || exit_code=$?
+      fi
+      if [[ $exit_code -eq 0 ]]; then
+        "$HOME"/bin/bats ./tests/test_s3api_multipart.sh || exit_code=$?
       fi
       if [[ $exit_code -eq 0 ]]; then
         "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
       fi
       ;;
+    s3api-multipart)
+      echo "Running s3api multipart tests ..."
+      "$HOME"/bin/bats ./tests/test_s3api_multipart.sh || exit_code=$?
+      ;;
     s3api-policy)
       echo "Running s3api policy tests ..."
       "$HOME"/bin/bats ./tests/test_s3api_policy.sh || exit_code=$?
       ;;
-    s3api-non-policy)
-      echo "Running s3api non-policy tests ..."
-      "$HOME"/bin/bats ./tests/test_s3api.sh || exit_code=$?
+    s3api-bucket)
+      echo "Running s3api bucket tests ..."
+      "$HOME"/bin/bats ./tests/test_s3api_bucket.sh || exit_code=$?
+      ;;
+    s3api-object)
+      echo "Running s3api object tests ..."
+      "$HOME"/bin/bats ./tests/test_s3api_object.sh || exit_code=$?
       ;;
     s3)
       echo "Running s3 tests ..."
       "$HOME"/bin/bats ./tests/test_s3.sh || exit_code=$?
+      if [[ $exit_code -eq 0 ]]; then
+        "$HOME"/bin/bats ./tests/test_s3_file_count.sh || exit_code=$?
+      fi
+      ;;
+    s3-non-file-count)
+      echo "Running s3 non-file count tests ..."
+      "$HOME"/bin/bats ./tests/test_s3.sh || exit_code=$?
+      ;;
+    s3-file-count)
+      echo "Running s3 file count test ..."
+      "$HOME"/bin/bats ./tests/test_s3_file_count.sh || exit_code=$?
       ;;
     s3cmd)
       echo "Running s3cmd tests ..."
@@ -76,10 +108,36 @@ run_suite() {
       if [[ $exit_code -eq 0 ]]; then
         "$HOME"/bin/bats ./tests/test_user_s3cmd.sh || exit_code=$?
       fi
+      if [[ $exit_code -eq 0 ]]; then
+        "$HOME"/bin/bats ./tests/test_s3cmd_file_count.sh || exit_code=$?
+      fi
+      ;;
+    s3cmd-user)
+      echo "Running s3cmd user tests ..."
+      "$HOME"/bin/bats ./tests/test_user_s3cmd.sh || exit_code=$?
+      ;;
+    s3cmd-non-user)
+      echo "Running s3cmd non-user tests ..."
+      "$HOME"/bin/bats ./tests/test_s3cmd.sh || exit_code=$?
+      ;;
+    s3cmd-file-count)
+      echo "Running s3cmd file count test ..."
+      "$HOME"/bin/bats ./tests/test_s3cmd_file_count.sh || exit_code=$?
       ;;
     mc)
       echo "Running mc tests ..."
       "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
+      if [[ $exit_code -eq 0 ]]; then
+        "$HOME"/bin/bats ./tests/test_mc_file_count.sh || exit_code=$?
+      fi
+      ;;
+    mc-non-file-count)
+      echo "Running mc non-file count tests ..."
+      "$HOME"/bin/bats ./tests/test_mc.sh || exit_code=$?
+      ;;
+    mc-file-count)
+      echo "Running mc file count test ..."
+      "$HOME"/bin/bats ./tests/test_mc_file_count.sh || exit_code=$?
       ;;
     rest)
       echo "Running rest tests ..."

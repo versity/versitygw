@@ -8,138 +8,96 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - set: "s3cmd, posix"
-            LOCAL_FOLDER: /tmp/gw1
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-1
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-1
+          - set: "mc, posix, non-file count, non-static, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam1
-            AWS_ENDPOINT_URL: https://127.0.0.1:7070
-            RUN_SET: "s3cmd"
+            RUN_SET: "mc-non-file-count"
             RECREATE_BUCKETS: "true"
-            PORT: 7070
             BACKEND: "posix"
-          - set: "s3, posix"
-            LOCAL_FOLDER: /tmp/gw2
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-2
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-2
+          - set: "mc, posix, file count, non-static, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam2
-            AWS_ENDPOINT_URL: https://127.0.0.1:7071
-            RUN_SET: "s3"
+            RUN_SET: "mc-file-count"
             RECREATE_BUCKETS: "true"
-            PORT: 7071
             BACKEND: "posix"
-          - set: "s3api non-policy, posix"
-            LOCAL_FOLDER: /tmp/gw3
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-3
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-3
+          - set: "REST, posix, non-static, all, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam3
-            AWS_ENDPOINT_URL: https://127.0.0.1:7072
-            RUN_SET: "s3api"
-            RECREATE_BUCKETS: "true"
-            PORT: 7072
-            BACKEND: "posix"
-          - set: "mc, posix"
-            LOCAL_FOLDER: /tmp/gw4
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-4
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-4
-            IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam4
-            AWS_ENDPOINT_URL: https://127.0.0.1:7073
-            RUN_SET: "mc"
-            RECREATE_BUCKETS: "true"
-            PORT: 7073
-            BACKEND: "posix"
-          - set: "s3api-user, posix, s3 IAM"
-            LOCAL_FOLDER: /tmp/gw5
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-5
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-5
-            IAM_TYPE: s3
-            USERS_BUCKET: versity-gwtest-iam
-            AWS_ENDPOINT_URL: https://127.0.0.1:7074
-            RUN_SET: "s3api-user"
-            RECREATE_BUCKETS: "true"
-            PORT: 7074
-            BACKEND: "posix"
-          - set: "s3api non-policy, static buckets"
-            LOCAL_FOLDER: /tmp/gw6
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-6
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-6
-            IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam6
-            AWS_ENDPOINT_URL: https://127.0.0.1:7075
-            RUN_SET: "s3api-non-policy"
-            RECREATE_BUCKETS: "false"
-            PORT: 7075
-            BACKEND: "posix"
-          - set: "s3api non-policy, s3 backend"
-            LOCAL_FOLDER: /tmp/gw7
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
-            IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam7
-            AWS_ENDPOINT_URL: https://127.0.0.1:7076
-            RUN_SET: "s3api"
-            RECREATE_BUCKETS: "true"
-            PORT: 7076
-            BACKEND: "s3"
-          - set: "REST, posix"
-            LOCAL_FOLDER: /tmp/gw8
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-7
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-7
-            IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam8
-            AWS_ENDPOINT_URL: https://127.0.0.1:7077
             RUN_SET: "rest"
             RECREATE_BUCKETS: "true"
-            PORT: 7077
             BACKEND: "posix"
-          - set: "s3api policy, static buckets"
-            LOCAL_FOLDER: /tmp/gw9
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-8
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-8
+          - set: "s3, posix, non-file count, non-static, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam9
-            AWS_ENDPOINT_URL: https://127.0.0.1:7078
+            RUN_SET: "s3-non-file-count"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3, posix, file count, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3-file-count"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3api, posix, bucket|object|multipart, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-bucket,s3api-object,s3api-multipart"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3api, posix, policy, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-policy"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3api, posix, user, non-static, s3 IAM"
+            IAM_TYPE: s3
+            RUN_SET: "s3api-user"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3api, posix, bucket, static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-bucket"
+            RECREATE_BUCKETS: "false"
+            BACKEND: "posix"
+          - set: "s3api, posix, multipart, static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-multipart"
+            RECREATE_BUCKETS: "false"
+            BACKEND: "posix"
+          - set: "s3api, posix, object, static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-object"
+            RECREATE_BUCKETS: "false"
+            BACKEND: "posix"
+          - set: "s3api, posix, policy, static, folder IAM"
+            IAM_TYPE: folder
             RUN_SET: "s3api-policy"
             RECREATE_BUCKETS: "false"
-            PORT: 7078
             BACKEND: "posix"
-          - set: "s3api user, static buckets"
-            LOCAL_FOLDER: /tmp/gw10
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-9
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-9
+          - set: "s3api, posix, user, static, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam10
-            AWS_ENDPOINT_URL: https://127.0.0.1:7079
             RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "false"
-            PORT: 7079
             BACKEND: "posix"
-          - set: "s3api policy and user, posix"
-            LOCAL_FOLDER: /tmp/gw11
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-10
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-10
+          - set: "s3api, s3, multipart|object, non-static, folder IAM"
             IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam11
-            AWS_ENDPOINT_URL: https://127.0.0.1:7080
-            RUN_SET: "s3api-policy,s3api-user"
+            RUN_SET: "s3api-bucket,s3api-object,s3api-multipart"
             RECREATE_BUCKETS: "true"
-            PORT: 7080
-            BACKEND: "posix"
-          - set: "s3api policy and user, s3 backend"
-            LOCAL_FOLDER: /tmp/gw12
-            BUCKET_ONE_NAME: versity-gwtest-bucket-one-11
-            BUCKET_TWO_NAME: versity-gwtest-bucket-two-11
-            IAM_TYPE: folder
-            USERS_FOLDER: /tmp/iam12
-            AWS_ENDPOINT_URL: https://127.0.0.1:7081
-            RUN_SET: "s3api-policy,s3api-user"
-            RECREATE_BUCKETS: "true"
-            PORT: 7081
             BACKEND: "s3"
+          - set: "s3api, s3, policy|user, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3api-policy,s3api-user"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "s3"
+          - set: "s3cmd, posix, file count, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3cmd-file-count"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3cmd, posix, non-user, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3cmd-non-user"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
+          - set: "s3cmd, posix, user, non-static, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "s3cmd-user"
+            RECREATE_BUCKETS: "true"
+            BACKEND: "posix"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -176,15 +134,8 @@ jobs:
 
       - name: Build and run
         env:
-          LOCAL_FOLDER: ${{ matrix.LOCAL_FOLDER }}
-          BUCKET_ONE_NAME: ${{ matrix.BUCKET_ONE_NAME }}
-          BUCKET_TWO_NAME: ${{ matrix.BUCKET_TWO_NAME }}
-          USERS_FOLDER: ${{ matrix.USERS_FOLDER }}
-          USERS_BUCKET: ${{ matrix.USERS_BUCKET }}
           IAM_TYPE: ${{ matrix.IAM_TYPE }}
-          AWS_ENDPOINT_URL: ${{ matrix.AWS_ENDPOINT_URL }}
           RUN_SET: ${{ matrix.RUN_SET }}
-          PORT: ${{ matrix.PORT }}
           AWS_PROFILE: versity
           VERSITY_EXE: ${{ github.workspace }}/versitygw
           RUN_VERSITYGW: true
@@ -192,6 +143,13 @@ jobs:
           RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
           CERT: ${{ github.workspace }}/cert.pem
           KEY: ${{ github.workspace }}/versitygw.pem
+          LOCAL_FOLDER: /tmp/gw
+          BUCKET_ONE_NAME: versity-gwtest-bucket-one
+          BUCKET_TWO_NAME: versity-gwtest-bucket-two
+          USERS_FOLDER: /tmp/iam
+          USERS_BUCKET: versity-gwtest-iam
+          AWS_ENDPOINT_URL: https://127.0.0.1:7070
+          PORT: 7070
           S3CMD_CONFIG: tests/s3cfg.local.default
           MC_ALIAS: versity
           LOG_LEVEL: 4
@@ -204,6 +162,7 @@ jobs:
           REMOVE_TEST_FILE_FOLDER: true
           VERSIONING_DIR: ${{ github.workspace }}/versioning
           COMMAND_LOG: command.log
+          TIME_LOG: time.log
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
@@ -223,6 +182,9 @@ jobs:
             BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/setup_static.sh
           fi
           BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/run.sh $RUN_SET
+
+      - name: Time report
+        run: cat ${{ github.workspace }}/time.log
 
       - name: Coverage report
         run: |
