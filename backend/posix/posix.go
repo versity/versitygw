@@ -29,6 +29,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -71,6 +73,8 @@ type Posix struct {
 
 	// newDirPerm is the permission to set on newly created directories
 	newDirPerm fs.FileMode
+
+	objLocks *sync.Map
 }
 
 var _ backend.Backend = &Posix{}
@@ -172,6 +176,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		bucketlinks:   opts.BucketLinks,
 		versioningDir: verioningdirAbs,
 		newDirPerm:    opts.NewDirPerm,
+		objLocks:      &sync.Map{},
 	}, nil
 }
 
@@ -2139,6 +2144,31 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}, nil
 }
 
+type refCountedLock struct {
+	mu    sync.Mutex
+	count int32
+}
+
+func (p *Posix) getLock(key string) *refCountedLock {
+	actual, _ := p.objLocks.LoadOrStore(key, &refCountedLock{count: 0})
+	lock := actual.(*refCountedLock)
+
+	// Increment counter if the lock already exists
+	if actual != nil {
+		atomic.AddInt32(&lock.count, 1)
+	}
+	return lock
+}
+
+func (p *Posix) releaseLock(key string, lock *refCountedLock) {
+	lock.mu.Unlock()
+
+	// Decrement the counter
+	if atomic.AddInt32(&lock.count, -1) == 0 {
+		p.objLocks.Delete(key)
+	}
+}
+
 func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
@@ -2228,13 +2258,20 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 	}
 	vEnabled := p.isBucketVersioningEnabled(vStatus)
 
+	// Lock the call, if it indicates a new object version creation
+	if vEnabled {
+		objLock := p.getLock(name)
+		objLock.mu.Lock()
+		defer p.releaseLock(name, objLock)
+	}
+
 	// object is file
 	d, err := os.Stat(name)
 	if err == nil && d.IsDir() {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	// if the versioninng is enabled first create the file object version
+	// if the versioning is enabled first create the file object version
 	if p.versioningEnabled() && vStatus != "" && err == nil {
 		var isVersionIdMissing bool
 		if p.isBucketVersioningSuspended(vStatus) {

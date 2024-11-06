@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13386,34 +13387,43 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 		versionCount := 5
 		// Channel to collect errors
 		errCh := make(chan error, versionCount)
+		// Channel to collect object verisons
+		versionsCh := make(chan types.ObjectVersion, versionCount)
 
-		uploadVersion := func(wg *sync.WaitGroup) {
+		uploadVersion := func(wg *sync.WaitGroup, length int64) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-			res, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			out, err := putObjectWithData(length, &s3.PutObjectInput{
 				Bucket: &bucket,
 				Key:    &obj,
-			})
-			cancel()
+			}, s3client)
 			if err != nil {
 				// Send error to the channel
 				errCh <- err
-				return
 			}
 
-			fmt.Printf("uploaded object successfully: versionId: %v\n", *res.VersionId)
+			versionsCh <- types.ObjectVersion{
+				ETag:         out.res.ETag,
+				StorageClass: types.ObjectVersionStorageClassStandard,
+				IsLatest:     getBoolPtr(false),
+				Key:          &obj,
+				VersionId:    out.res.VersionId,
+				Size:         &length,
+			}
+
+			fmt.Printf("uploaded object successfully: versionId: %v\n", *out.res.VersionId)
 		}
 
 		wg := &sync.WaitGroup{}
 		wg.Add(versionCount)
 
 		for i := 0; i < versionCount; i++ {
-			go uploadVersion(wg)
+			go uploadVersion(wg, int64(i*100))
 		}
 
 		wg.Wait()
 		close(errCh)
+		close(versionsCh)
 
 		// Check if there were any errors
 		for err := range errCh {
@@ -13422,6 +13432,18 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 				return err
 			}
 		}
+
+		versions := []types.ObjectVersion{}
+
+		for el := range versionsCh {
+			versions = append(versions, el)
+		}
+
+		sort.SliceStable(versions, func(i, j int) bool {
+			return *versions[i].VersionId > *versions[j].VersionId
+		})
+
+		versions[0].IsLatest = getBoolPtr(true)
 
 		// List object versions after all uploads
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -13433,8 +13455,8 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 			return err
 		}
 
-		if len(res.Versions) != versionCount {
-			return fmt.Errorf("expected %v object versions, instead got %v", versionCount, len(res.Versions))
+		if !compareVersions(versions, res.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", versions, res.Versions)
 		}
 
 		return nil

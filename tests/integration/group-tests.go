@@ -616,7 +616,7 @@ func TestVersioning(s *S3Conf) {
 	Versioning_WORM_obj_version_locked_with_governance_retention(s)
 	Versioning_WORM_obj_version_locked_with_compliance_retention(s)
 	// Concurrent requests
-	//Versioninig_concurrent_upload_object(s)
+	Versioning_concurrent_upload_object(s)
 }
 
 func TestVersioningDisabled(s *S3Conf) {
