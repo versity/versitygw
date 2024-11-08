@@ -123,11 +123,11 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
 
 	tests := []struct {
-		name       string
 		args       args
 		app        *fiber.App
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "List-bucket-method-not-allowed",
@@ -233,11 +233,11 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	getObjAttrs.Header.Set("X-Amz-Object-Attributes", "hello")
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Get-actions-get-tags-success",
@@ -435,11 +435,11 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	appError.Get("/:bucket", s3ApiControllerError.ListActions)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Get-bucket-tagging-non-existing-bucket",
@@ -728,11 +728,11 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	invAclOwnershipReq.Header.Set("X-Amz-Grant-Read", "hello")
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Put-bucket-tagging-invalid-body",
@@ -1034,11 +1034,11 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	invAclBodyGrtReq.Header.Set("X-Amz-Grant-Read", "hello")
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Put-object-part-error-case",
@@ -1243,11 +1243,11 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	app.Delete("/:bucket", s3ApiController.DeleteBucket)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Delete-bucket-success",
@@ -1334,11 +1334,11 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	request.Header.Set("Content-Type", "application/xml")
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Delete-Objects-success",
@@ -1432,11 +1432,11 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	appErr.Delete("/:bucket/:key/*", s3ApiControllerErr.DeleteActions)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Abort-multipart-upload-success",
@@ -1541,11 +1541,11 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	appErr.Head("/:bucket", s3ApiControllerErr.HeadBucket)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Head-bucket-success",
@@ -1643,11 +1643,11 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Head-object-success",
@@ -1723,11 +1723,11 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Restore-object-success",
@@ -1808,10 +1808,10 @@ func Test_XMLresponse(t *testing.T) {
 	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
 	tests := []struct {
-		name       string
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Internal-server-error",
@@ -1883,10 +1883,10 @@ func Test_response(t *testing.T) {
 	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
 
 	tests := []struct {
-		name       string
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Internal-server-error",

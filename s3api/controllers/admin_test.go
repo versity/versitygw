@@ -64,11 +64,11 @@ func TestAdminController_CreateUser(t *testing.T) {
 	`
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Admin-create-user-malformed-body",
@@ -149,11 +149,11 @@ func TestAdminController_UpdateUser(t *testing.T) {
 	`
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Admin-update-user-success",
@@ -223,11 +223,11 @@ func TestAdminController_DeleteUser(t *testing.T) {
 	app.Patch("/delete-user", adminController.DeleteUser)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Admin-delete-user-success",
@@ -280,11 +280,11 @@ func TestAdminController_ListUsers(t *testing.T) {
 	appSucc.Patch("/list-users", adminController.ListUsers)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Admin-list-users-iam-error",
@@ -361,11 +361,11 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	appIamNoSuchUser.Patch("/change-bucket-owner", adminControllerIamAccDoesNotExist.ChangeBucketOwner)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "Change-bucket-owner-check-account-server-error",
@@ -424,11 +424,11 @@ func TestAdminController_ListBuckets(t *testing.T) {
 	app.Patch("/list-buckets", adminController.ListBuckets)
 
 	tests := []struct {
-		name       string
 		app        *fiber.App
 		args       args
-		wantErr    bool
+		name       string
 		statusCode int
+		wantErr    bool
 	}{
 		{
 			name: "List-buckets-success",

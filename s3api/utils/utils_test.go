@@ -49,11 +49,11 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 	request2.Header.Add("X-Amz-Mfa", "Some valid Mfa")
 
 	tests := []struct {
-		name    string
 		args    args
 		want    *http.Request
-		wantErr bool
+		name    string
 		hdrs    []string
+		wantErr bool
 	}{
 		{
 			name: "Success-response",
@@ -101,9 +101,9 @@ func TestGetUserMetaData(t *testing.T) {
 	req := ctx.Request()
 
 	tests := []struct {
-		name         string
 		args         args
 		wantMetadata map[string]string
+		name         string
 	}{
 		{
 			name: "Success-empty-response",

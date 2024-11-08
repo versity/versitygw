@@ -48,12 +48,21 @@ type ScoutfsOpts struct {
 }
 
 type ScoutFS struct {
+
+	// bucket/object metadata storage facility
+	meta meta.MetadataStorer
+
 	*posix.Posix
 	rootfd  *os.File
 	rootdir string
 
-	// bucket/object metadata storage facility
-	meta meta.MetadataStorer
+	// euid/egid are the effective uid/gid of the running versitygw process
+	// used to determine if chowning is needed
+	euid int
+	egid int
+
+	// newDirPerm is the permissions to use when creating new directories
+	newDirPerm fs.FileMode
 
 	// glaciermode enables the following behavior:
 	// GET object:  if file offline, return invalid object state
@@ -70,14 +79,6 @@ type ScoutFS struct {
 	// when objects are uploaded
 	chownuid bool
 	chowngid bool
-
-	// euid/egid are the effective uid/gid of the running versitygw process
-	// used to determine if chowning is needed
-	euid int
-	egid int
-
-	// newDirPerm is the permissions to use when creating new directories
-	newDirPerm fs.FileMode
 }
 
 var _ backend.Backend = &ScoutFS{}

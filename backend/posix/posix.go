@@ -52,25 +52,25 @@ type Posix struct {
 	rootfd  *os.File
 	rootdir string
 
-	// chownuid/gid enable chowning of files to the account uid/gid
-	// when objects are uploaded
-	chownuid bool
-	chowngid bool
+	// bucket versioning directory path
+	versioningDir string
 
 	// euid/egid are the effective uid/gid of the running versitygw process
 	// used to determine if chowning is needed
 	euid int
 	egid int
 
+	// newDirPerm is the permission to set on newly created directories
+	newDirPerm fs.FileMode
+
+	// chownuid/gid enable chowning of files to the account uid/gid
+	// when objects are uploaded
+	chownuid bool
+	chowngid bool
+
 	// bucketlinks is a flag to enable symlinks to directories at the top
 	// level gateway directory to be treated as buckets the same as directories
 	bucketlinks bool
-
-	// bucket versioning directory path
-	versioningDir string
-
-	// newDirPerm is the permission to set on newly created directories
-	newDirPerm fs.FileMode
 }
 
 var _ backend.Backend = &Posix{}
@@ -102,11 +102,11 @@ const (
 )
 
 type PosixOpts struct {
+	VersioningDir string
+	NewDirPerm    fs.FileMode
 	ChownUID      bool
 	ChownGID      bool
 	BucketLinks   bool
-	VersioningDir string
-	NewDirPerm    fs.FileMode
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {

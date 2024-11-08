@@ -35,10 +35,10 @@ type S3Conf struct {
 	awsSecret         string
 	awsRegion         string
 	endpoint          string
-	checksumDisable   bool
-	pathStyle         bool
 	PartSize          int64
 	Concurrency       int
+	checksumDisable   bool
+	pathStyle         bool
 	debug             bool
 	versioningEnabled bool
 	azureTests        bool

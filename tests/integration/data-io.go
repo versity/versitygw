@@ -22,9 +22,9 @@ import (
 )
 
 type RReader struct {
+	hash     hash.Hash
 	buf      []byte
 	dataleft int
-	hash     hash.Hash
 }
 
 func NewDataReader(totalsize, bufsize int) *RReader {

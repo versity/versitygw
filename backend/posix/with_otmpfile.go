@@ -38,12 +38,12 @@ type tmpfile struct {
 	f          *os.File
 	bucket     string
 	objname    string
-	isOTmp     bool
 	size       int64
-	needsChown bool
 	uid        int
 	gid        int
 	newDirPerm fs.FileMode
+	isOTmp     bool
+	needsChown bool
 }
 
 var (

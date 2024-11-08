@@ -93,7 +93,6 @@ var (
 )
 
 type Opts struct {
-	RootAccount            Account
 	Dir                    string
 	LDAPServerURL          string
 	LDAPBindDN             string
@@ -119,11 +118,12 @@ type Opts struct {
 	S3Region               string
 	S3Bucket               string
 	S3Endpoint             string
+	RootAccount            Account
+	CacheTTL               int
+	CachePrune             int
 	S3DisableSSlVerfiy     bool
 	S3Debug                bool
 	CacheDisable           bool
-	CacheTTL               int
-	CachePrune             int
 }
 
 func New(o *Opts) (IAMService, error) {

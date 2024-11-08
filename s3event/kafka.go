@@ -31,9 +31,9 @@ import (
 var sequencer = 0
 
 type Kafka struct {
-	key    string
 	writer *kafka.Writer
 	filter EventFilter
+	key    string
 	mu     sync.Mutex
 }
 

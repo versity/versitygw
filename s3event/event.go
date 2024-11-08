@@ -30,11 +30,11 @@ type S3EventSender interface {
 }
 
 type EventMeta struct {
+	ObjectETag  *string
+	VersionId   *string
 	BucketOwner string
 	EventName   EventType
 	ObjectSize  int64
-	ObjectETag  *string
-	VersionId   *string
 }
 
 type EventSchema struct {
@@ -42,6 +42,8 @@ type EventSchema struct {
 }
 
 type EventRecord struct {
+	ResponseElements  EventResponseElements `json:"responseElements"`
+	GlacierEventData  EventGlacierData      `json:"glacierEventData"`
 	EventVersion      string                `json:"eventVersion"`
 	EventSource       string                `json:"eventSource"`
 	AwsRegion         string                `json:"awsRegion"`
@@ -49,9 +51,7 @@ type EventRecord struct {
 	EventName         EventType             `json:"eventName"`
 	UserIdentity      EventUserIdentity     `json:"userIdentity"`
 	RequestParameters EventRequestParams    `json:"requestParameters"`
-	ResponseElements  EventResponseElements `json:"responseElements"`
 	S3                EventS3Data           `json:"s3"`
-	GlacierEventData  EventGlacierData      `json:"glacierEventData"`
 }
 
 type EventUserIdentity struct {
@@ -99,11 +99,11 @@ type EventS3BucketData struct {
 }
 
 type EventObjectData struct {
-	Key       string  `json:"key"`
-	Size      int64   `json:"size"`
 	ETag      *string `json:"eTag"`
 	VersionId *string `json:"versionId"`
+	Key       string  `json:"key"`
 	Sequencer string  `json:"sequencer"`
+	Size      int64   `json:"size"`
 }
 
 type EventConfig struct {

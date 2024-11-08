@@ -85,6 +85,10 @@ type keyDerivator interface {
 
 // SignerOptions is the SigV4 Signer options.
 type SignerOptions struct {
+
+	// The logger to send log messages to.
+	Logger logging.Logger
+
 	// Disables the Signer's moving HTTP header key/value pairs from the HTTP
 	// request header to the request's query string. This is most commonly used
 	// with pre-signed requests preventing headers from being added to the
@@ -100,9 +104,6 @@ type SignerOptions struct {
 	// http://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
 	DisableURIPathEscaping bool
 
-	// The logger to send log messages to.
-	Logger logging.Logger
-
 	// Enable logging of signed requests.
 	// This will enable logging of the canonical request, the string to sign, and for presigning the subsequent
 	// presigned URL.
@@ -117,8 +118,8 @@ type SignerOptions struct {
 // Signer applies AWS v4 signing to given request. Use this to sign requests
 // that need to be signed with AWS V4 Signatures.
 type Signer struct {
-	options      SignerOptions
 	keyDerivator keyDerivator
+	options      SignerOptions
 }
 
 // NewSigner returns a new SigV4 Signer
@@ -133,16 +134,18 @@ func NewSigner(optFns ...func(signer *SignerOptions)) *Signer {
 }
 
 type httpSigner struct {
+	KeyDerivator keyDerivator
 	Request      *http.Request
+	Credentials  aws.Credentials
+	Time         v4Internal.SigningTime
 	ServiceName  string
 	Region       string
-	Time         v4Internal.SigningTime
-	Credentials  aws.Credentials
-	KeyDerivator keyDerivator
-	IsPreSign    bool
-	SignedHdrs   []string
 
 	PayloadHash string
+
+	SignedHdrs []string
+
+	IsPreSign bool
 
 	DisableHeaderHoisting  bool
 	DisableURIPathEscaping bool

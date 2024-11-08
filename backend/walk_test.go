@@ -41,8 +41,8 @@ type testcase struct {
 	prefix    string
 	delimiter string
 	marker    string
-	maxObjs   int32
 	expected  backend.WalkResults
+	maxObjs   int32
 }
 
 func getObj(path string, d fs.DirEntry) (s3response.Object, error) {

@@ -1,0 +1,23 @@
+name: betteralign
+on: pull_request
+jobs:
+  build:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+        id: go
+
+      - name: Install betteralign
+        run: go install github.com/dkorunic/betteralign/cmd/betteralign@latest
+
+      - name: Run betteralign
+        run: betteralign -test_files ./...

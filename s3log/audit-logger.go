@@ -33,8 +33,8 @@ type AuditLogger interface {
 
 type LogMeta struct {
 	BucketOwner string
-	ObjectSize  int64
 	Action      string
+	ObjectSize  int64
 	HttpStatus  int
 }
 
@@ -45,21 +45,16 @@ type LogConfig struct {
 }
 
 type LogFields struct {
+	Time               time.Time
 	BucketOwner        string
 	Bucket             string
-	Time               time.Time
 	RemoteIP           string
 	Requester          string
 	RequestID          string
 	Operation          string
 	Key                string
 	RequestURI         string
-	HttpStatus         int
 	ErrorCode          string
-	BytesSent          int
-	ObjectSize         int64
-	TotalTime          int64
-	TurnAroundTime     int64
 	Referer            string
 	UserAgent          string
 	VersionID          string
@@ -71,6 +66,11 @@ type LogFields struct {
 	TLSVersion         string
 	AccessPointARN     string
 	AclRequired        string
+	HttpStatus         int
+	BytesSent          int
+	ObjectSize         int64
+	TotalTime          int64
+	TurnAroundTime     int64
 }
 
 type AdminLogFields struct {
@@ -80,17 +80,17 @@ type AdminLogFields struct {
 	RequestID          string
 	Operation          string
 	RequestURI         string
-	HttpStatus         int
 	ErrorCode          string
-	BytesSent          int
-	TotalTime          int64
-	TurnAroundTime     int64
 	Referer            string
 	UserAgent          string
 	SignatureVersion   string
 	CipherSuite        string
 	AuthenticationType string
 	TLSVersion         string
+	HttpStatus         int
+	BytesSent          int
+	TotalTime          int64
+	TurnAroundTime     int64
 }
 
 type Loggers struct {

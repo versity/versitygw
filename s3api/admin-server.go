@@ -26,11 +26,11 @@ import (
 )
 
 type S3AdminServer struct {
-	app     *fiber.App
 	backend backend.Backend
+	app     *fiber.App
 	router  *S3AdminRouter
-	port    string
 	cert    *tls.Certificate
+	port    string
 }
 
 func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {

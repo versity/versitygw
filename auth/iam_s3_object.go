@@ -42,6 +42,14 @@ import (
 // coming from iAMConfig and iamFile in iam_internal.
 
 type IAMServiceS3 struct {
+	client *s3.Client
+
+	access   string
+	secret   string
+	region   string
+	bucket   string
+	endpoint string
+	rootAcc  Account
 	// This mutex will help with racing updates to the IAM data
 	// from multiple requests to this gateway instance, but
 	// will not help with racing updates to multiple load balanced
@@ -50,15 +58,8 @@ type IAMServiceS3 struct {
 	// gateway instance if possible.
 	sync.RWMutex
 
-	access        string
-	secret        string
-	region        string
-	bucket        string
-	endpoint      string
 	sslSkipVerify bool
 	debug         bool
-	rootAcc       Account
-	client        *s3.Client
 }
 
 var _ IAMService = &IAMServiceS3{}

@@ -70,10 +70,10 @@ type tmpfile struct {
 	bucket     string
 	objname    string
 	size       int64
-	needsChown bool
 	uid        int
 	gid        int
 	newDirPerm fs.FileMode
+	needsChown bool
 }
 
 var (

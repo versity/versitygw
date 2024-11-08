@@ -39,9 +39,9 @@ func TestNew(t *testing.T) {
 	port := ":7070"
 
 	tests := []struct {
-		name            string
-		args            args
 		wantS3ApiServer *S3ApiServer
+		args            args
+		name            string
 		wantErr         bool
 	}{
 		{
@@ -78,8 +78,8 @@ func TestNew(t *testing.T) {
 
 func TestS3ApiServer_Serve(t *testing.T) {
 	tests := []struct {
-		name    string
 		sa      *S3ApiServer
+		name    string
 		wantErr bool
 	}{
 		{

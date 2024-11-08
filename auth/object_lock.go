@@ -29,9 +29,9 @@ import (
 )
 
 type BucketLockConfig struct {
-	Enabled          bool
 	DefaultRetention *types.DefaultRetention
 	CreatedAt        *time.Time
+	Enabled          bool
 }
 
 func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {

@@ -3308,14 +3308,14 @@ type MetaOpts struct {
 	Logger        s3log.AuditLogger
 	EvSender      s3event.S3EventSender
 	MetricsMng    *metrics.Manager
-	ContentLength int64
-	Action        string
-	BucketOwner   string
-	ObjectSize    int64
-	ObjectCount   int64
-	EventName     s3event.EventType
 	ObjectETag    *string
 	VersionId     *string
+	Action        string
+	BucketOwner   string
+	EventName     s3event.EventType
+	ContentLength int64
+	ObjectSize    int64
+	ObjectCount   int64
 	Status        int
 }
 

@@ -168,9 +168,9 @@ func teardown(s *S3Conf, bucket string) error {
 }
 
 type setupCfg struct {
-	LockEnabled      bool
 	VersioningStatus types.BucketVersioningStatus
 	Ownership        types.ObjectOwnership
+	LockEnabled      bool
 }
 
 type setupOpt func(*setupCfg)
@@ -214,12 +214,12 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 }
 
 type authConfig struct {
+	date     time.Time
 	testName string
 	path     string
 	method   string
-	body     []byte
 	service  string
-	date     time.Time
+	body     []byte
 }
 
 func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) error) error {
@@ -434,9 +434,9 @@ func contains(s []string, e string) bool {
 }
 
 type putObjectOutput struct {
-	csum [32]byte
-	data []byte
 	res  *s3.PutObjectOutput
+	data []byte
+	csum [32]byte
 }
 
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (*putObjectOutput, error) {

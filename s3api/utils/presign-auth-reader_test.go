@@ -23,13 +23,13 @@ import (
 
 func Test_validateExpiration(t *testing.T) {
 	type args struct {
-		str  string
 		date time.Time
+		str  string
 	}
 	tests := []struct {
-		name string
 		args args
 		err  error
+		name string
 	}{
 		{
 			name: "empty-expiration",

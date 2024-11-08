@@ -36,14 +36,14 @@ type IAMCache struct {
 var _ IAMService = &IAMCache{}
 
 type item struct {
-	value Account
 	exp   time.Time
+	value Account
 }
 
 type icache struct {
-	sync.RWMutex
-	expire time.Duration
 	items  map[string]item
+	expire time.Duration
+	sync.RWMutex
 }
 
 func (i *icache) set(k string, v Account) {

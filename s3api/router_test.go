@@ -29,9 +29,9 @@ func TestS3ApiRouter_Init(t *testing.T) {
 		iam auth.IAMService
 	}
 	tests := []struct {
-		name string
-		sa   *S3ApiRouter
 		args args
+		sa   *S3ApiRouter
+		name string
 	}{
 		{
 			name: "Initialize S3 api router",

@@ -26,9 +26,9 @@ import (
 )
 
 type prefResult struct {
+	err     error
 	elapsed time.Duration
 	size    int64
-	err     error
 }
 
 func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) error {

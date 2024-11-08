@@ -27,10 +27,10 @@ import (
 )
 
 type WalkResults struct {
+	NextMarker     string
 	CommonPrefixes []types.CommonPrefix
 	Objects        []s3response.Object
 	Truncated      bool
-	NextMarker     string
 }
 
 type GetObjFunc func(path string, d fs.DirEntry) (s3response.Object, error)
@@ -268,18 +268,18 @@ func contains(a string, strs []string) bool {
 }
 
 type WalkVersioningResults struct {
+	NextMarker          string
+	NextVersionIdMarker string
 	CommonPrefixes      []types.CommonPrefix
 	ObjectVersions      []types.ObjectVersion
 	DelMarkers          []types.DeleteMarkerEntry
 	Truncated           bool
-	NextMarker          string
-	NextVersionIdMarker string
 }
 
 type ObjVersionFuncResult struct {
+	NextVersionIdMarker string
 	ObjectVersions      []types.ObjectVersion
 	DelMarkers          []types.DeleteMarkerEntry
-	NextVersionIdMarker string
 	Truncated           bool
 }
 
