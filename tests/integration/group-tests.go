@@ -152,6 +152,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_directory_object_noslash(s)
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_with_contenttype(s)
+	HeadObject_invalid_parent_dir(s)
 	HeadObject_success(s)
 }
 
@@ -159,6 +160,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_non_existing_bucket(s)
 	GetObjectAttributes_non_existing_object(s)
 	GetObjectAttributes_invalid_attrs(s)
+	GetObjectAttributes_invalid_parent(s)
 	GetObjectAttributes_empty_attrs(s)
 	GetObjectAttributes_existing_object(s)
 }
@@ -167,6 +169,7 @@ func TestGetObject(s *S3Conf) {
 	GetObject_non_existing_key(s)
 	GetObject_directory_object_noslash(s)
 	GetObject_invalid_ranges(s)
+	GetObject_invalid_parent(s)
 	GetObject_with_meta(s)
 	GetObject_success(s)
 	GetObject_directory_success(s)
@@ -239,6 +242,7 @@ func TestPutObjectTagging(s *S3Conf) {
 func TestGetObjectTagging(s *S3Conf) {
 	GetObjectTagging_non_existing_object(s)
 	GetObjectTagging_unset_tags(s)
+	GetObjectTagging_invalid_parent(s)
 	GetObjectTagging_success(s)
 }
 
@@ -567,6 +571,7 @@ func TestVersioning(s *S3Conf) {
 	Versioning_CopyObject_special_chars(s)
 	// HeadObject action
 	Versioning_HeadObject_invalid_versionId(s)
+	Versioning_HeadObject_invalid_parent(s)
 	Versioning_HeadObject_success(s)
 	Versioning_HeadObject_without_versionId(s)
 	Versioning_HeadObject_delete_marker(s)
@@ -725,15 +730,18 @@ func GetIntTests() IntTests {
 		"HeadObject_non_existing_dir_object":                                  HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                            HeadObject_name_too_long,
 		"HeadObject_with_contenttype":                                         HeadObject_with_contenttype,
+		"HeadObject_invalid_parent_dir":                                       HeadObject_invalid_parent_dir,
 		"HeadObject_success":                                                  HeadObject_success,
 		"GetObjectAttributes_non_existing_bucket":                             GetObjectAttributes_non_existing_bucket,
 		"GetObjectAttributes_non_existing_object":                             GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                   GetObjectAttributes_invalid_attrs,
+		"GetObjectAttributes_invalid_parent":                                  GetObjectAttributes_invalid_parent,
 		"GetObjectAttributes_empty_attrs":                                     GetObjectAttributes_empty_attrs,
 		"GetObjectAttributes_existing_object":                                 GetObjectAttributes_existing_object,
 		"GetObject_non_existing_key":                                          GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                  GetObject_directory_object_noslash,
 		"GetObject_invalid_ranges":                                            GetObject_invalid_ranges,
+		"GetObject_invalid_parent":                                            GetObject_invalid_parent,
 		"GetObject_with_meta":                                                 GetObject_with_meta,
 		"GetObject_success":                                                   GetObject_success,
 		"GetObject_directory_success":                                         GetObject_directory_success,
@@ -782,6 +790,7 @@ func GetIntTests() IntTests {
 		"PutObjectTagging_success":                                            PutObjectTagging_success,
 		"GetObjectTagging_non_existing_object":                                GetObjectTagging_non_existing_object,
 		"GetObjectTagging_unset_tags":                                         GetObjectTagging_unset_tags,
+		"GetObjectTagging_invalid_parent":                                     GetObjectTagging_invalid_parent,
 		"GetObjectTagging_success":                                            GetObjectTagging_success,
 		"DeleteObjectTagging_non_existing_object":                             DeleteObjectTagging_non_existing_object,
 		"DeleteObjectTagging_success_status":                                  DeleteObjectTagging_success_status,
@@ -969,6 +978,7 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_from_an_object_version":                        Versioning_CopyObject_from_an_object_version,
 		"Versioning_CopyObject_special_chars":                                 Versioning_CopyObject_special_chars,
 		"Versioning_HeadObject_invalid_versionId":                             Versioning_HeadObject_invalid_versionId,
+		"Versioning_HeadObject_invalid_parent":                                Versioning_HeadObject_invalid_parent,
 		"Versioning_HeadObject_success":                                       Versioning_HeadObject_success,
 		"Versioning_HeadObject_without_versionId":                             Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_delete_marker":                                 Versioning_HeadObject_delete_marker,
