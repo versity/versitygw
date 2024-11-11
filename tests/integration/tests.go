@@ -3340,6 +3340,34 @@ func HeadObject_with_contenttype(s *S3Conf) error {
 	})
 }
 
+func HeadObject_invalid_parent_dir(s *S3Conf) error {
+	testName := "HeadObject_invalid_parent_dir"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, dataLen := "not-a-dir", int64(1)
+
+		_, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		obj = "not-a-dir/bad-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		defer cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3449,6 +3477,34 @@ func GetObjectAttributes_invalid_attrs(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func GetObjectAttributes_invalid_parent(s *S3Conf) error {
+	testName := "GetObjectAttributes_invalid_parent"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "not-a-dir"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		obj = "not-a-dir/bad-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+			},
+		})
+		cancel()
+		var bae *types.NoSuchKey
+		if !errors.As(err, &bae) {
 			return err
 		}
 
@@ -3637,6 +3693,33 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 
 		if *resp.ContentLength != dataLength-1500 {
 			return fmt.Errorf("expected content-length to be %v, instead got %v", dataLength-1500, *resp.ContentLength)
+		}
+		return nil
+	})
+}
+
+func GetObject_invalid_parent(s *S3Conf) error {
+	testName := "GetObject_invalid_parent"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(1234567), "not-a-dir"
+
+		_, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("not-a-dir/bad-obj"),
+		})
+		cancel()
+		var bae *types.NoSuchKey
+		if !errors.As(err, &bae) {
+			return err
 		}
 		return nil
 	})
@@ -5343,6 +5426,29 @@ func GetObjectTagging_unset_tags(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func GetObjectTagging_invalid_parent(s *S3Conf) error {
+	testName := "GetObjectTagging_invalid_parent"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "not-a-dir"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		obj = "not-a-dir/bad-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchKey)); err != nil {
 			return err
 		}
 		return nil
@@ -11510,6 +11616,34 @@ func Versioning_HeadObject_invalid_versionId(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func Versioning_HeadObject_invalid_parent(s *S3Conf) error {
+	testName := "Versioning_HeadObject_invalid_parent"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dLen := int64(2000)
+		obj := "not-a-dir"
+		r, err := putObjectWithData(dLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		obj = "not-a-dir/bad-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: r.res.VersionId,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
 			return err
 		}
 		return nil
