@@ -4749,6 +4749,37 @@ func DeleteObject_directory_object_noslash(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_directory_not_empty(s *S3Conf) error {
+	testName := "DeleteObject_directory_not_empty"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "dir/my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj = "dir/"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		// object servers will return no error, but the posix backend returns
+		// a non-standard directory not empty. This test is a posix only test
+		// to validate the specific error response.
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func DeleteObject_non_existing_dir_object(s *S3Conf) error {
 	testName := "DeleteObject_non_existing_dir_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
