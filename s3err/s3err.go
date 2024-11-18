@@ -144,6 +144,7 @@ const (
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
 	ErrDirectoryObjectContainsData
+	ErrDirectoryNotEmpty
 	ErrQuotaExceeded
 	ErrVersioningNotConfigured
 
@@ -591,6 +592,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrDirectoryObjectContainsData: {
 		Code:           "DirectoryObjectContainsData",
 		Description:    "Directory object contains data payload.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDirectoryNotEmpty: {
+		Code:           "ErrDirectoryNotEmpty",
+		Description:    "Directory object not empty.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrQuotaExceeded: {
