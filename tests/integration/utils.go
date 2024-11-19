@@ -213,6 +213,21 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 	return handlerErr
 }
 
+func actionHandlerNoSetup(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, _ ...setupOpt) error {
+	runF(testName)
+	client := s3.NewFromConfig(s.Config())
+	handlerErr := handler(client, "")
+	if handlerErr != nil {
+		failF("%v: %v", testName, handlerErr)
+	}
+
+	if handlerErr == nil {
+		passF(testName)
+	}
+
+	return handlerErr
+}
+
 type authConfig struct {
 	testName string
 	path     string
