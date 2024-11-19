@@ -88,30 +88,6 @@ export RUN_USERS=true
   test_get_object_attributes_aws_root
 }
 
-@test "test_put_object" {
-  test_put_object_aws_root
-}
-
-# test adding and removing an object on versitygw
-@test "test_put_object_with_data" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/888"
-  fi
-  test_common_put_object_with_data "aws"
-}
-
-@test "test_put_object_no_data" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/888"
-  fi
-  test_common_put_object_no_data "aws"
-}
-
-# test listing a bucket's objects on versitygw
-@test "test_list_objects" {
-  test_common_list_objects "aws"
-}
-
 @test "test_get_put_object_legal_hold" {
   test_get_put_object_legal_hold_aws_root
 }
@@ -120,23 +96,9 @@ export RUN_USERS=true
   test_get_put_object_retention_aws_root
 }
 
-# test v1 s3api list objects command
-@test "test-s3api-list-objects-v1" {
-  test_s3api_list_objects_v1_aws_root
-}
-
-# test v2 s3api list objects command
-@test "test-s3api-list-objects-v2" {
-  test_s3api_list_objects_v2_aws_root
-}
-
-# test abilty to set and retrieve object tags
-@test "test-set-get-object-tags" {
-  test_common_set_get_object_tags "aws"
-}
-
-@test "test-presigned-url-utf8-chars" {
-  test_common_presigned_url_utf8_chars "aws"
+# test listing a bucket's objects on versitygw
+@test "test_list_objects" {
+  test_common_list_objects "aws"
 }
 
 @test "test-list-objects-delimiter" {
@@ -157,6 +119,94 @@ export RUN_USERS=true
 
   run check_object_listing_with_prefixes "$BUCKET_ONE_NAME" "$folder_name" "$object_name"
   assert_success
+}
+
+@test "test_put_object" {
+  test_put_object_aws_root
+}
+
+# test adding and removing an object on versitygw
+@test "test_put_object_with_data" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
+  test_common_put_object_with_data "aws"
+}
+
+@test "test_put_object_no_data" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "https://github.com/versity/versitygw/issues/888"
+  fi
+  test_common_put_object_no_data "aws"
+}
+
+@test "test-presigned-url-utf8-chars" {
+  test_common_presigned_url_utf8_chars "aws"
+}
+
+@test "test_put_object_lock_configuration" {
+  bucket_name=$BUCKET_ONE_NAME
+  if [[ $RECREATE_BUCKETS == "true" ]]; then
+    run delete_bucket "s3api" "$bucket_name"
+    assert_success
+    run create_bucket_object_lock_enabled "$bucket_name"
+    assert_success
+  fi
+  local enabled="Enabled"
+  local governance="GOVERNANCE"
+  local days="1"
+
+  run put_object_lock_configuration "$bucket_name" "$enabled" "$governance" "$days"
+  assert_success "error putting object lock config"
+
+  run get_and_check_object_lock_config "$bucket_name" "$enabled" "$governance" "$days"
+  assert_success "error getting and checking object lock config"
+
+  bucket_cleanup "aws" "$bucket_name"
+}
+
+@test "test_put_object_metadata" {
+  object_one="object-one"
+  test_key="x-test-data"
+  test_value="test-value"
+
+  run create_test_files "$object_one"
+  assert_success
+
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
+  object="$TEST_FILE_FOLDER"/"$object_one"
+  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
+  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
+
+  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "error getting object metadata"
+  key=$(echo "$metadata" | jq -r 'keys[]' 2>&1) || fail "error getting key from metadata: $key"
+  value=$(echo "$metadata" | jq -r '.[]' 2>&1) || fail "error getting value from metadata: $value"
+  [[ $key == "$test_key" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
+  [[ $value == "$test_value" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
+  delete_test_files "$object_one"
+}
+
+@test "test_retention_bypass" {
+  test_retention_bypass_aws_root
+}
+
+# test v1 s3api list objects command
+@test "test-s3api-list-objects-v1" {
+  test_s3api_list_objects_v1_aws_root
+}
+
+# test v2 s3api list objects command
+@test "test-s3api-list-objects-v2" {
+  test_s3api_list_objects_v2_aws_root
+}
+
+# test abilty to set and retrieve object tags
+@test "test-set-get-object-tags" {
+  test_common_set_get_object_tags "aws"
 }
 
 # ensure that lists of files greater than a size of 1000 (pagination) are returned properly
@@ -183,55 +233,6 @@ export RUN_USERS=true
 #  [[ $put_object -eq 0 ]] || fail "Failed to add object to bucket"
 #}
 
-@test "test_retention_bypass" {
-  test_retention_bypass_aws_root
-}
-
-@test "test_add_object_metadata" {
-  object_one="object-one"
-  test_key="x-test-data"
-  test_value="test-value"
-
-  run create_test_files "$object_one"
-  assert_success
-
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  object="$TEST_FILE_FOLDER"/"$object_one"
-  put_object_with_metadata "aws" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
-  object_exists "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
-
-  get_object_metadata "aws" "$BUCKET_ONE_NAME" "$object_one" || fail "error getting object metadata"
-  key=$(echo "$metadata" | jq -r 'keys[]' 2>&1) || fail "error getting key from metadata: $key"
-  value=$(echo "$metadata" | jq -r '.[]' 2>&1) || fail "error getting value from metadata: $value"
-  [[ $key == "$test_key" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
-  [[ $value == "$test_value" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
-
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_one"
-}
-
-@test "test_put_object_lock_configuration" {
-  bucket_name=$BUCKET_ONE_NAME
-  if [[ $RECREATE_BUCKETS == "true" ]]; then
-    run delete_bucket "s3api" "$bucket_name"
-    assert_success
-    run create_bucket_object_lock_enabled "$bucket_name"
-    assert_success
-  fi
-  local enabled="Enabled"
-  local governance="GOVERNANCE"
-  local days="1"
-
-  run put_object_lock_configuration "$bucket_name" "$enabled" "$governance" "$days"
-  assert_success "error putting object lock config"
-
-  run get_and_check_object_lock_config "$bucket_name" "$enabled" "$governance" "$days"
-  assert_success "error getting and checking object lock config"
-
-  bucket_cleanup "aws" "$bucket_name"
-}
 
 @test "test_ls_directory_object" {
   test_common_ls_directory_object "s3api"

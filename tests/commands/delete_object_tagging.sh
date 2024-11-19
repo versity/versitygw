@@ -17,7 +17,7 @@
 delete_object_tagging() {
   record_command "delete-object-tagging" "client:$1"
   if [[ $# -ne 3 ]]; then
-    echo "delete object tagging command missing command type, bucket, key"
+    log 2 "delete object tagging command missing command type, bucket, key"
     return 1
   fi
   delete_result=0
@@ -28,11 +28,11 @@ delete_object_tagging() {
   elif [ "$1" == 'rest' ]; then
     delete_object_tagging_rest "$2" "$3" || delete_result=$?
   else
-    echo "delete-object-tagging command not implemented for '$1'"
+    log 2 "delete-object-tagging command not implemented for '$1'"
     return 1
   fi
   if [[ $delete_result -ne 0 ]]; then
-    echo "error deleting object tagging: $error"
+    log 2 "error deleting object tagging: $error"
     return 1
   fi
   return 0

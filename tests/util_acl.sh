@@ -149,3 +149,52 @@ get_check_acl_after_second_put() {
   fi
   return 0
 }
+
+get_check_acl_after_policy() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_check_acl_after_policy' requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_acl "s3api" "$1"; then
+    log 2 "error getting bucket acl"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "ACL: $acl"
+  if ! second_grant=$(echo "$acl" | jq -r ".Grants[1]" 2>&1); then
+    log 2 "error getting second grant: $second_grant"
+    return 1
+  fi
+  if ! second_grantee=$(echo "$second_grant" | jq -r ".Grantee" 2>&1); then
+    log 2 "error getting second grantee: $second_grantee"
+    return 1
+  fi
+  if ! permission=$(echo "$second_grant" | jq -r ".Permission" 2>&1); then
+    log 2 "error getting permission: $permission"
+    return 1
+  fi
+  log 5 "second grantee: $second_grantee"
+  if [[ $permission != "READ" ]]; then
+    log 2 "incorrect permission: $permission"
+    return 1
+  fi
+  if [[ $DIRECT == "true" ]]; then
+    if ! uri=$(echo "$second_grantee" | jq -r ".URI" 2>&1); then
+      log 2 "error getting uri: $uri"
+      return 1
+    fi
+    if [[ $uri != "http://acs.amazonaws.com/groups/global/AllUsers" ]]; then
+      log 2 "unexpected URI: $uri"
+      return 1
+    fi
+  else
+    if ! id=$(echo "$second_grantee" | jq -r ".ID" 2>&1); then
+      log 2 "error getting ID: $id"
+      return 1
+    fi
+    if [[ $id != "all-users" ]]; then
+      log 2 "unexpected ID: $id"
+      return 1
+    fi
+  fi
+}

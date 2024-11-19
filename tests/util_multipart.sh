@@ -210,7 +210,7 @@ create_and_list_multipart_uploads() {
   fi
 
   if ! list_multipart_uploads "$1"; then
-    echo "error listing uploads"
+    log 2 "error listing uploads"
     return 1
   fi
   return 0
@@ -228,7 +228,7 @@ multipart_upload_from_bucket() {
   fi
 
   for ((i=0;i<$4;i++)) {
-    echo "key: $3"
+    log 5 "key: $3"
     if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
       log 2 "error copying object"
       return 1
@@ -262,7 +262,7 @@ multipart_upload_from_bucket() {
 
 multipart_upload_from_bucket_range() {
   if [ $# -ne 5 ]; then
-    echo "multipart upload from bucket with range command requires bucket, copy source, key, part count, and range"
+    log 2 "multipart upload from bucket with range command requires bucket, copy source, key, part count, and range"
     return 1
   fi
   if ! split_file "$3" "$4"; then
@@ -324,7 +324,7 @@ multipart_upload_before_completion() {
   for ((i = 1; i <= $4; i++)); do
     # shellcheck disable=SC2154
     if ! upload_part "$1" "$2" "$upload_id" "$3" "$i"; then
-      echo "error uploading part $i"
+      log 2 "error uploading part $i"
       return 1
     fi
     parts+="{\"ETag\": $etag, \"PartNumber\": $i}"

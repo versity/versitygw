@@ -91,7 +91,7 @@ list_objects_s3api() {
 # export objects on success, return 1 for failure
 list_objects_s3api_v1() {
   if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "list objects command requires bucket, (optional) delimiter"
+    log 2 "list objects command requires bucket, (optional) delimiter"
     return 1
   fi
   if [ "$2" == "" ]; then
@@ -100,7 +100,7 @@ list_objects_s3api_v1() {
     objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
   fi
   if [[ $result -ne 0 ]]; then
-    echo "error listing objects: $objects"
+    log 2 "error listing objects: $objects"
     return 1
   fi
   export objects

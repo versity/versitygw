@@ -35,6 +35,7 @@ source ./tests/util_list_buckets.sh
 source ./tests/util_list_objects.sh
 source ./tests/util_list_parts.sh
 source ./tests/util_lock_config.sh
+source ./tests/util_ownership.sh
 source ./tests/util_rest.sh
 source ./tests/util_tags.sh
 source ./tests/util_time.sh
@@ -393,5 +394,19 @@ source ./tests/util_versioning.sh
   assert_success
 
   run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
+  assert_success
+}
+
+@test "REST - get, put bucket ownership controls" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerEnforced"
+  assert_success
+
+  run put_bucket_ownership_controls_rest "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
   assert_success
 }

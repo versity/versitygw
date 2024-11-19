@@ -287,7 +287,7 @@ setup_bucket() {
 # return 0 for yes, 1 for no, 2 for error
 bucket_is_accessible() {
   if [ $# -ne 1 ]; then
-    echo "bucket accessibility check missing bucket name"
+    log 2 "bucket accessibility check missing bucket name"
     return 2
   fi
   local exit_code=0
@@ -299,6 +299,28 @@ bucket_is_accessible() {
   if [[ "$error" == *"500"* ]]; then
     return 1
   fi
-  echo "Error checking bucket accessibility: $error"
+  log 2 "Error checking bucket accessibility: $error"
   return 2
+}
+
+check_for_empty_region() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_for_empty_region' requires bucket name"
+    return 1
+  fi
+  if ! head_bucket "aws" "$BUCKET_ONE_NAME"; then
+    log 2 "error getting bucket info"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "INFO:  $bucket_info"
+  if ! region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1); then
+    log 2 "error getting region: $region"
+    return 1
+  fi
+  if [[ $region == "" ]]; then
+    log 2 "empty bucket region"
+    return 1
+  fi
+  return 0
 }

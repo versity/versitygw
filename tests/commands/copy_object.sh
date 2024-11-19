@@ -16,7 +16,7 @@
 
 copy_object() {
   if [ $# -ne 4 ]; then
-    echo "copy object command requires command type, source, bucket, key"
+    log 2 "copy object command requires command type, source, bucket, key"
     return 1
   fi
   local exit_code=0
@@ -32,12 +32,12 @@ copy_object() {
   elif [[ $1 == 'mc' ]]; then
     error=$(send_command mc --insecure cp "$MC_ALIAS/$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
   else
-    echo "'copy-object' not implemented for '$1'"
+    log 2 "'copy-object' not implemented for '$1'"
     return 1
   fi
   log 5 "copy object exit code: $exit_code"
   if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
+    log 2 "error copying object to bucket: $error"
     return 1
   fi
   return 0

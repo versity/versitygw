@@ -18,7 +18,7 @@ list_buckets() {
   log 6 "list_buckets"
   record_command "list-buckets" "client:$1"
   if [ $# -ne 1 ]; then
-    echo "list buckets command missing command type"
+    log 2 "list buckets command missing command type"
     return 1
   fi
 
@@ -34,11 +34,11 @@ list_buckets() {
   elif [[ $1 == 'rest' ]]; then
     list_buckets_rest || exit_code=$?
   else
-    echo "list buckets command not implemented for '$1'"
+    log 2 "list buckets command not implemented for '$1'"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error listing buckets: $buckets"
+    log 2 "error listing buckets: $buckets"
     return 1
   fi
 
@@ -57,7 +57,7 @@ list_buckets() {
 list_buckets_with_user() {
   record_command "list-buckets" "client:$1"
   if [ $# -ne 3 ]; then
-    echo "'list buckets as user' command missing command type, username, password"
+    log 2 "'list buckets as user' command missing command type, username, password"
     return 1
   fi
 
@@ -71,11 +71,11 @@ list_buckets_with_user() {
   elif [[ $1 == 'mc' ]]; then
     buckets=$(send_command mc --insecure ls "$MC_ALIAS" 2>&1) || exit_code=$?
   else
-    echo "list buckets command not implemented for '$1'"
+    log 2 "list buckets command not implemented for '$1'"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error listing buckets: $buckets"
+    log 2 "error listing buckets: $buckets"
     return 1
   fi
 
@@ -97,7 +97,7 @@ list_buckets_s3api() {
     return 1
   fi
   if ! output=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" send_command aws --no-verify-ssl s3api list-buckets 2>&1); then
-    echo "error listing buckets: $output"
+    log 2 "error listing buckets: $output"
     return 1
   fi
   log 5 "bucket data: $output"

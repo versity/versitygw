@@ -35,7 +35,7 @@ get_bucket_tagging() {
       export tags=
       return 0
     fi
-    echo "error getting bucket tags: $tags"
+    log 2 "error getting bucket tags: $tags"
     return 1
   fi
   export tags
