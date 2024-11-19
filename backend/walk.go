@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3response"
@@ -231,7 +232,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 	})
 	if err != nil {
 		// suppress file not found caused by user's prefix
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 			return WalkResults{}, nil
 		}
 		return WalkResults{}, err

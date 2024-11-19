@@ -201,6 +201,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_truncated_common_prefixes(s)
 	ListObjectsV2_all_objs_max_keys(s)
 	ListObjectsV2_list_all_objs(s)
+	ListObjectsV2_invalid_parent_prefix(s)
 }
 
 // VD stands for Versioning Disabled
@@ -768,6 +769,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                         ListObjectsV2_list_all_objs,
+		"ListObjectsV2_invalid_parent_prefix":                                 ListObjectsV2_invalid_parent_prefix,
 		"ListObjectVersions_VD_success":                                       ListObjectVersions_VD_success,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                               DeleteObject_directory_object_noslash,

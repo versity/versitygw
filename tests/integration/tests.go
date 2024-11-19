@@ -4656,6 +4656,45 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_invalid_parent_prefix(s *S3Conf) error {
+	testName := "ListObjectsV2_invalid_parent_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"file"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, maxKeys := "/", int32(100)
+		prefix := "file/file/file"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			MaxKeys:   &maxKeys,
+			Prefix:    &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.CommonPrefixes) > 0 {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{""}, out.CommonPrefixes)
+		}
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+		}
+		if *out.Delimiter != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		}
+		if len(out.Contents) > 0 {
+			return fmt.Errorf("expected the objects to be %v, instead got %v", []types.Object{}, out.Contents)
+		}
+		return nil
+	})
+}
+
 func ListObjectVersions_VD_success(s *S3Conf) error {
 	testName := "ListObjectVersions_VD_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
