@@ -86,6 +86,7 @@ func TestListBuckets(s *S3Conf) {
 	ListBuckets_invalid_max_buckets(s)
 	ListBuckets_truncated(s)
 	ListBuckets_success(s)
+	ListBuckets_empty_success(s)
 }
 
 func TestDeleteBucket(s *S3Conf) {
@@ -697,6 +698,7 @@ func GetIntTests() IntTests {
 		"ListBuckets_invalid_max_buckets":                                     ListBuckets_invalid_max_buckets,
 		"ListBuckets_truncated":                                               ListBuckets_truncated,
 		"ListBuckets_success":                                                 ListBuckets_success,
+		"ListBuckets_empty_success":                                           ListBuckets_empty_success,
 		"DeleteBucket_non_existing_bucket":                                    DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                       DeleteBucket_non_empty_bucket,
 		"DeleteBucket_success_status_code":                                    DeleteBucket_success_status_code,

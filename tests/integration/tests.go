@@ -2160,6 +2160,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 		return nil
 	})
 }
+
 func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 	testName := "ListBuckets_invalid_max_buckets"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2249,6 +2250,24 @@ func ListBuckets_truncated(s *S3Conf) error {
 			if err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_empty_success(s *S3Conf) error {
+	testName := "ListBuckets_empty_success"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Buckets) > 0 {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", []types.Bucket{}, out.Buckets)
 		}
 
 		return nil
