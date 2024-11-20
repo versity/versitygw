@@ -14,7 +14,7 @@ delete_bucket_recursive() {
   local error
   if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
-  elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     if ! delete_bucket_recursive_s3api "$2"; then
       log 2 "error deleting bucket recursively (s3api)"
       return 1
@@ -123,7 +123,7 @@ delete_bucket_contents() {
 
   local exit_code=0
   local error
-  if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     if ! clear_bucket_s3api "$2"; then
       log 2 "error clearing bucket (s3api)"
       return 1
@@ -308,7 +308,7 @@ check_for_empty_region() {
     log 2 "'check_for_empty_region' requires bucket name"
     return 1
   fi
-  if ! head_bucket "aws" "$BUCKET_ONE_NAME"; then
+  if ! head_bucket "s3api" "$BUCKET_ONE_NAME"; then
     log 2 "error getting bucket info"
     return 1
   fi

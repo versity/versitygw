@@ -15,13 +15,11 @@
 # under the License.
 
 test_put_bucket_acl_s3cmd() {
-  if [[ $DIRECT != "true" ]]; then
-    skip "https://github.com/versity/versitygw/issues/695"
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/963"
   fi
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
-  assert_success
 
-  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
   assert_success
 
   username=$USERNAME_ONE

@@ -21,7 +21,7 @@ delete_bucket_policy() {
     return 1
   fi
   local delete_result=0
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3api delete-bucket-policy --bucket "$2" 2>&1) || delete_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate delpolicy "s3://$2" 2>&1) || delete_result=$?

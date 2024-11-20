@@ -31,7 +31,7 @@ create_bucket() {
   log 6 "create bucket"
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
-  elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api create-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
     log 5 "s3cmd ${S3CMD_OPTS[*]} --no-check-certificate mb s3://$2"

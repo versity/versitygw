@@ -27,7 +27,7 @@ put_object() {
   local error
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 mv "$2" s3://"$3/$4" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$3/$4" 2>&1) || exit_code=$?

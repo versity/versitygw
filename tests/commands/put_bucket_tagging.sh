@@ -23,7 +23,7 @@ put_bucket_tagging() {
   local error
   local result=0
   record_command "put-bucket-tagging" "client:$1"
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api put-bucket-tagging --bucket "$2" --tagging "TagSet=[{Key=$3,Value=$4}]") || result=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(send_command mc --insecure tag set "$MC_ALIAS"/"$2" "$3=$4" 2>&1) || result=$?

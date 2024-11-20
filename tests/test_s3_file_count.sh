@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/test_common.sh
-source ./tests/util_file.sh
+source ./tests/util/util_file.sh
 
 @test "test_list_objects_file_count" {
   test_common_list_objects_file_count "s3"

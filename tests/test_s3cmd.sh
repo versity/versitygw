@@ -17,9 +17,9 @@
 source ./tests/setup.sh
 source ./tests/test_common.sh
 source ./tests/test_common_acl.sh
-source ./tests/util.sh
-source ./tests/util_create_bucket.sh
-source ./tests/util_users.sh
+source ./tests/util/util.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_users.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh

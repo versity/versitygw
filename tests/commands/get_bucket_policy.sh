@@ -21,7 +21,7 @@ get_bucket_policy() {
     return 1
   fi
   local get_bucket_policy_result=0
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     get_bucket_policy_aws "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?

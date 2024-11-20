@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_mc.sh
+source ./tests/util/util_mc.sh
 source ./tests/logger.sh
 
 create_bucket_invalid_name() {

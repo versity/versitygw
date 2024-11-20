@@ -21,7 +21,7 @@ get_bucket_location() {
     return 1
   fi
   get_result=0
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     get_bucket_location_aws "$2" || get_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_location_s3cmd "$2" || get_result=$?

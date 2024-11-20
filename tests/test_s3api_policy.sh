@@ -19,11 +19,11 @@ source ./tests/setup.sh
 source ./tests/test_s3api_policy_bucket.sh
 source ./tests/test_s3api_policy_multipart.sh
 source ./tests/test_s3api_policy_object.sh
-source ./tests/util_multipart.sh
-source ./tests/util_file.sh
-source ./tests/util_policy.sh
-source ./tests/util_tags.sh
-source ./tests/util_users.sh
+source ./tests/util/util_multipart.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_tags.sh
+source ./tests/util/util_users.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/get_bucket_tagging.sh
 source ./tests/commands/get_object.sh

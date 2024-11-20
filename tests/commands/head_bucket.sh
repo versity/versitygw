@@ -29,7 +29,7 @@ head_bucket() {
     return 1
   fi
   local exit_code=0
-  if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     bucket_info=$(send_command aws --no-verify-ssl s3api head-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
     bucket_info=$(send_command s3cmd --no-check-certificate info "s3://$2" 2>&1) || exit_code=$?

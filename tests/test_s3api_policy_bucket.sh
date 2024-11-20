@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_acl.sh
+source ./tests/util/util_acl.sh
 
 test_s3api_policy_delete_bucket_policy() {
   policy_file="policy_file"

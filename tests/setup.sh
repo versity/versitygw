@@ -20,7 +20,7 @@ load ./bats-assert/load
 source ./tests/env.sh
 source ./tests/report.sh
 source ./tests/setup_mc.sh
-source ./tests/util.sh
+source ./tests/util/util.sh
 source ./tests/versity.sh
 
 # bats setup function
