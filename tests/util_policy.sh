@@ -16,7 +16,7 @@
 
 check_for_empty_policy() {
   if [[ $# -ne 2 ]]; then
-    echo "check for empty policy command requires command type, bucket name"
+    log 2 "check for empty policy command requires command type, bucket name"
     return 1
   fi
 
@@ -36,7 +36,7 @@ check_for_empty_policy() {
   statement=$(echo "$bucket_policy" | jq -r '.Statement[0]')
   log 5 "statement: $statement"
   if [[ "" != "$statement" ]] && [[ "null" != "$statement" ]]; then
-    echo "policy should be empty (actual value: '$statement')"
+    log 2 "policy should be empty (actual value: '$statement')"
     return 1
   fi
   return 0
@@ -218,6 +218,26 @@ put_and_check_for_malformed_policy() {
   # shellcheck disable=SC2154
   if [[ "$put_bucket_policy_error" != *"MalformedPolicy"*"invalid action"* ]]; then
     log 2 "invalid policy error: $put_bucket_policy_error"
+    return 1
+  fi
+  return 0
+}
+
+get_and_compare_policy_with_file() {
+  if [ $# -ne 4 ]; then
+    log 2 "'get_and_compare_policies' reuires bucket, username, password, filename"
+    return 1
+  fi
+  if ! get_bucket_policy_with_user "$1" "$2" "$3"; then
+    log 2 "error getting bucket policy"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  echo "$bucket_policy" > "$4-copy"
+  log 5 "ORIG: $(cat "$4")"
+  log 5 "COPY: $(cat "$4-copy")"
+  if ! compare_files "$4" "$4-copy"; then
+    log 2 "policies not equal"
     return 1
   fi
   return 0

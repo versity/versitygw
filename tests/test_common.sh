@@ -218,7 +218,7 @@ test_common_list_buckets() {
 
 test_common_list_objects() {
   if [[ $# -ne 1 ]]; then
-    echo "common test function for listing objects requires command type"
+    log 2 "common test function for listing objects requires command type"
     return 1
   fi
 
@@ -294,7 +294,7 @@ test_common_set_get_object_tags() {
 
 test_common_presigned_url_utf8_chars() {
   if [[ $# -ne 1 ]]; then
-    echo "presigned url command missing command type"
+    log 2 "presigned url command missing command type"
     return 1
   fi
 

@@ -50,13 +50,13 @@ source ./tests/commands/select_object_content.sh
 
 export RUN_USERS=true
 
+@test "test_create_bucket_invalid_name" {
+  test_create_bucket_invalid_name_aws_root
+}
+
 # create-bucket
 @test "test_create_delete_bucket_aws" {
   test_common_create_delete_bucket "aws"
-}
-
-@test "test_create_bucket_invalid_name" {
-  test_create_bucket_invalid_name_aws_root
 }
 
 # delete-bucket - test_create_delete_bucket_aws
@@ -69,10 +69,6 @@ export RUN_USERS=true
   test_common_get_put_delete_bucket_policy "aws"
 }
 
-# delete-bucket-tagging
-@test "test-set-get-delete-bucket-tags" {
-  test_common_set_get_delete_bucket_tags "aws"
-}
 
 # get-bucket-acl
 @test "test_get_bucket_acl" {
@@ -87,6 +83,24 @@ export RUN_USERS=true
 # get-bucket-policy - test_get_put_delete_bucket_policy
 
 # get-bucket-tagging - test_set_get_delete_bucket_tags
+
+@test "test_head_bucket" {
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run check_for_empty_region "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "test_head_bucket_doesnt_exist" {
+  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  assert_success
+
+  head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
+  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
+  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
+  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
+}
 
 @test "test_head_bucket_invalid_name" {
   if head_bucket "aws" ""; then
@@ -103,23 +117,7 @@ export RUN_USERS=true
   test_common_put_bucket_acl "s3api"
 }
 
-@test "test_head_bucket" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  head_bucket "aws" "$BUCKET_ONE_NAME" || fail "error getting bucket info"
-  log 5 "INFO:  $bucket_info"
-  region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1) || fail "error getting bucket region: $region"
-  [[ $region != "" ]] || fail "empty bucket region"
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
-}
-
-@test "test_head_bucket_doesnt_exist" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
-  assert_success
-
-  head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
-  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
-  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
+# delete-bucket-tagging
+@test "test-set-get-delete-bucket-tags" {
+  test_common_set_get_delete_bucket_tags "aws"
 }

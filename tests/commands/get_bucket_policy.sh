@@ -126,12 +126,12 @@ get_bucket_policy_s3cmd() {
 get_bucket_policy_mc() {
   record_command "get-bucket-policy" "client:mc"
   if [[ $# -ne 1 ]]; then
-    echo "aws 'get bucket policy' command requires bucket"
+    log 2 "aws 'get bucket policy' command requires bucket"
     return 1
   fi
   bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?
   if [[ $get_result -ne 0 ]]; then
-    echo "error getting policy: $bucket_policy"
+    log 2 "error getting policy: $bucket_policy"
     return 1
   fi
   return 0

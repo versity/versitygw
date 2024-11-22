@@ -104,17 +104,17 @@ create_test_folder() {
 # return:  0 for success, 1 for error
 delete_test_files() {
   if [ $# -lt 1 ]; then
-    echo "delete test files command missing filenames"
+    log 2 "delete test files command missing filenames"
     return 1
   fi
   if [ -z "$TEST_FILE_FOLDER" ]; then
-    echo "no test file folder defined, not deleting"
+    log 2 "no test file folder defined, not deleting"
     return 1
   fi
   for name in "$@"; do
     rm -rf "${TEST_FILE_FOLDER:?}"/"${name:?}" || rm_result=$?
     if [[ $rm_result -ne 0 ]]; then
-      echo "error deleting file $name"
+      log 2 "error deleting file $name"
     fi
   done
   return 0
@@ -139,7 +139,7 @@ split_file() {
   local split_result
   error=$(split -a 1 -d -b "$part_size" "$1" "$1"-) || split_result=$?
   if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file: $error"
+    log 2 "error splitting file: $error"
     return 1
   fi
   return 0
@@ -150,7 +150,7 @@ split_file() {
 # return 0 for same data, 1 for different data, 2 for error
 compare_files() {
   if [ $# -ne 2 ]; then
-    echo "file comparison requires two files"
+    log 2 "file comparison requires two files"
     return 2
   fi
   os=$(uname)

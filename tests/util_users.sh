@@ -69,7 +69,7 @@ create_user_versitygw() {
 create_user_if_nonexistent() {
   log 6 "create_user_if_nonexistent"
   if [[ $# -ne 3 ]]; then
-    echo "create user command requires user ID, key, and role"
+    log 2 "create user command requires user ID, key, and role"
     return 1
   fi
   if user_exists "$1"; then
@@ -230,7 +230,7 @@ list_users_versitygw() {
   log 6 "list_users_versitygw"
   users=$(send_command "$VERSITY_EXE" admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
-    echo "error listing users: $users"
+    log 2 "error listing users: $users"
     return 1
   fi
   parsed_users=()
@@ -335,7 +335,7 @@ delete_user() {
 change_bucket_owner_direct() {
   log 6 "change_bucket_owner_direct"
   if [[ $# -ne 4 ]]; then
-    echo "change bucket owner command requires ID, key, bucket name, and new owner"
+    log 2 "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
   fi
   # TODO add
@@ -356,7 +356,7 @@ reset_bucket_owner() {
 change_bucket_owner() {
   log 6 "change_bucket_owner"
   if [[ $# -ne 4 ]]; then
-    echo "change bucket owner command requires ID, key, bucket name, and new owner"
+    log 2 "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
   fi
   if [[ $DIRECT == "true" ]]; then
@@ -369,7 +369,7 @@ change_bucket_owner() {
   log 5 "changing owner for bucket $3, new owner: $4"
   error=$(send_command "$VERSITY_EXE" admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?
   if [[ $change_result -ne 0 ]]; then
-    echo "error changing bucket owner: $error"
+    log 2 "error changing bucket owner: $error"
     return 1
   fi
   return 0

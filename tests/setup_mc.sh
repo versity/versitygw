@@ -18,7 +18,7 @@ check_for_alias() {
   local alias_result
   aliases=$(mc alias list)
   if [[ $alias_result -ne 0 ]]; then
-    echo "error checking for aliases: $aliases"
+    log 2 "error checking for aliases: $aliases"
     return 2
   fi
   while IFS= read -r line; do
@@ -32,7 +32,7 @@ check_for_alias() {
 check_add_mc_alias() {
   check_for_alias || alias_result=$?
   if [[ $alias_result -eq 2 ]]; then
-    echo "error checking for aliases"
+    log 2 "error checking for aliases"
     return 1
   fi
   if [[ $alias_result -eq 0 ]]; then
@@ -41,7 +41,7 @@ check_add_mc_alias() {
   local set_result
   error=$(mc alias set --insecure "$MC_ALIAS" "$AWS_ENDPOINT_URL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY") || set_result=$?
   if [[ $set_result -ne 0 ]]; then
-    echo "error setting alias: $error"
+    log 2 "error setting alias: $error"
     return 1
   fi
   return 0

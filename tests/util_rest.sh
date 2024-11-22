@@ -107,10 +107,10 @@ x-amz-date:$current_time
 
 host;x-amz-content-sha256;x-amz-date
 $3"
-  echo "canonical: $canonical_request"
+  log 5 "canonical: $canonical_request"
 
-  echo "TEST CREQ"
-  cat test.creq
+  log 5 "TEST CREQ"
+  log 5 "$(cat test.creq)"
 }
 
 generate_sts_string() {
@@ -148,6 +148,6 @@ $1
 $ymd/us-west-2/s3/aws4_request
 $creq_hash"
 
-  echo "TEST STS"
-  cat test.sts
+  log 5 "TEST STS"
+  log 5 "$(cat test.sts)"
 }

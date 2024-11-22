@@ -62,7 +62,7 @@ list_and_check_buckets_with_user() {
       break
     fi
   done
-  echo $bucket_one_found $bucket_two_found
+  log 5 "buckets found? one: $bucket_one_found, two: $bucket_two_found"
   if [ $bucket_one_found == false ] || [ $bucket_two_found == false ]; then
     log 2 "Not all buckets found"
     return 1
