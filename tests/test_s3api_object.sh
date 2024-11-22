@@ -55,7 +55,8 @@ export RUN_USERS=true
 }
 
 @test "test_copy_object_empty" {
-  copy_object_empty || fail "copy objects with no parameters test failure"
+  run copy_object_empty
+  assert_success
 }
 
 # delete-object - tested with bucket cleanup before or after tests
@@ -160,8 +161,6 @@ export RUN_USERS=true
 
   run get_and_check_object_lock_config "$bucket_name" "$enabled" "$governance" "$days"
   assert_success "error getting and checking object lock config"
-
-  bucket_cleanup "s3api" "$bucket_name"
 }
 
 @test "test_put_object_metadata" {
@@ -176,17 +175,14 @@ export RUN_USERS=true
   assert_success
 
   object="$TEST_FILE_FOLDER"/"$object_one"
-  put_object_with_metadata "s3api" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value" || fail "failed to add object to bucket"
-  object_exists "s3api" "$BUCKET_ONE_NAME" "$object_one" || fail "object not found after being added to bucket"
+  run put_object_with_metadata "s3api" "$object" "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value"
+  assert_success
 
-  get_object_metadata "s3api" "$BUCKET_ONE_NAME" "$object_one" || fail "error getting object metadata"
-  key=$(echo "$metadata" | jq -r 'keys[]' 2>&1) || fail "error getting key from metadata: $key"
-  value=$(echo "$metadata" | jq -r '.[]' 2>&1) || fail "error getting value from metadata: $value"
-  [[ $key == "$test_key" ]] || fail "keys doesn't match (expected $key, actual \"$test_key\")"
-  [[ $value == "$test_value" ]] || fail "values doesn't match (expected $value, actual \"$test_value\")"
+  run object_exists "s3api" "$BUCKET_ONE_NAME" "$object_one"
+  assert_success
 
-  bucket_cleanup "s3api" "$BUCKET_ONE_NAME"
-  delete_test_files "$object_one"
+  run get_object_metadata_and_check_keys "$BUCKET_ONE_NAME" "$object_one" "$test_key" "$test_value"
+  assert_success
 }
 
 @test "test_retention_bypass" {

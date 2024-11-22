@@ -44,9 +44,6 @@ test_put_bucket_acl_s3cmd() {
 }
 
 test_common_put_bucket_acl() {
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    skip "https://github.com/versity/versitygw/issues/716"
-  fi
   assert [ $# -eq 1 ]
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"

@@ -679,3 +679,42 @@ run_and_verify_multipart_upload_with_valid_range() {
   fi
   return 0
 }
+
+check_abort_access_denied() {
+  if [ $# -ne 5 ]; then
+    log 2 "'check_abort_access_denied' requires bucket, file, username, password"
+    return 1
+  fi
+  if abort_multipart_upload_with_user "$1" "$2" "$3" "$4" "$5"; then
+    log 2 "abort multipart upload succeeded despite lack of permissions"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if [[ "$abort_multipart_upload_error" != *"AccessDenied"* ]]; then
+    log 2 "unexpected abort error:  $abort_multipart_upload_error"
+    return 1
+  fi
+  return 0
+}
+
+list_check_multipart_upload_key() {
+  if [ $# -ne 4 ]; then
+    log 2 "'list_check_multipart_upload_key' requires bucket, username, password, expected key"
+    return 1
+  fi
+  if ! list_multipart_uploads_with_user "$1" "$2" "$3"; then
+    log 2 "error listing multipart uploads with user"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "$uploads"
+  if ! upload_key=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -r ".Uploads[0].Key" 2>&1); then
+    log 2 "error parsing upload key from uploads message: $upload_key"
+    return 1
+  fi
+  if [[ "$4" != "$upload_key" ]]; then
+    log 2 "upload key doesn't match file marked as being uploaded (expected: '$4', actual: '$upload_key')"
+    return 1
+  fi
+  return 0
+}

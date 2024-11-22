@@ -129,8 +129,10 @@ log_message() {
     return 1
   fi
   now="$(date "+%Y-%m-%d %H:%M:%S")"
-  echo "$now $1 $2"
+  if [[ ( "$1" == "CRIT" ) || ( "$1" == "ERROR" ) ]]; then
+    echo "$now $1 $2" >&2
+  fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$now $1 $2" >> "$TEST_LOG_FILE"
+    echo "$now $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
 }

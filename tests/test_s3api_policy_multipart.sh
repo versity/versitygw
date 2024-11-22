@@ -17,10 +17,6 @@
 test_s3api_policy_abort_multipart_upload() {
   policy_file="policy_file"
   test_file="test_file"
-  username=$USERNAME_ONE
-
-  run create_test_file "$policy_file"
-  assert_success
 
   run create_large_file "$test_file"
   assert_success
@@ -28,43 +24,42 @@ test_s3api_policy_abort_multipart_upload() {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if [[ $DIRECT == "true" ]]; then
-    setup_user_direct "$username" "user" "$BUCKET_ONE_NAME" || fail "error setting up direct user $username"
-    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$username\"}"
-    # shellcheck disable=SC2154
-    username=$key_id
-    # shellcheck disable=SC2154
-    password=$secret_key
-  else
-    password=$PASSWORD_ONE
-    setup_user "$username" "$password" "user" || fail "error setting up user $username"
-    principal="\"$username\""
-  fi
-
-  setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" \
-    "Allow" "$principal" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*" \
-    "Deny" "$principal" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
-  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file" || fail "error putting first policy"
-
-  create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error creating multipart upload"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
   # shellcheck disable=SC2154
-  if abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"; then
-    fail "abort multipart upload succeeded despite lack of permissions"
-  fi
+  username=${lines[0]}
+  password=${lines[1]}
+
+  run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" \
+    "Allow" "$USERNAME_ONE" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*" \
+    "Deny" "$USERNAME_ONE" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  assert_success
   # shellcheck disable=SC2154
-  [[ "$abort_multipart_upload_error" == *"AccessDenied"* ]] || fail "unexpected abort error:  $abort_multipart_upload_error"
 
-  setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$principal" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  assert_success
 
-  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file" || fail "error putting policy"
-  abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password" || fail "error aborting multipart upload despite permissions"
+  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  assert_success
+  # shellcheck disable=SC2154
+  upload_id="$output"
+
+  run check_abort_access_denied "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"
+  assert_success
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  assert_success
+
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  assert_success
+
+  run abort_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"
+  assert_success
 }
 
 test_s3api_policy_list_multipart_uploads() {
   policy_file="policy_file"
   test_file="test_file"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_file "$policy_file"
   assert_success
@@ -73,35 +68,33 @@ test_s3api_policy_list_multipart_uploads() {
   assert_success
 
   effect="Allow"
-  principal="$username"
+  principal="$USERNAME_ONE"
   action="s3:ListBucketMultipartUploads"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-  setup_user "$username" "$password" "user" || fail "error creating user"
+
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  get_bucket_policy "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket policy"
-  # shellcheck disable=SC2154
-  log 5 "BUCKET POLICY: $bucket_policy"
-  get_bucket_acl "s3api" "$BUCKET_ONE_NAME" || fail "error getting bucket ACL"
-  # shellcheck disable=SC2154
-  log 5 "ACL: $acl"
   run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
-  assert_success "failed to set up policy"
+  assert_success
+
   run create_multipart_upload "$BUCKET_ONE_NAME" "$test_file"
-  assert_success "failed to create multipart upload"
-  if list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"; then
-    fail "able to list multipart uploads despite lack of permissions"
-  fi
-  # shellcheck disable=SC2154
-  [[ "$list_multipart_uploads_error" == *"Access Denied"* ]] || fail "invalid list multipart uploads error: $list_multipart_uploads_error"
-  put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file" || fail "error putting policy"
-  list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password" || fail "error listing multipart uploads"
-  # shellcheck disable=SC2154
-  log 5 "$uploads"
-  upload_key=$(echo "$uploads" | grep -v "InsecureRequestWarning" | jq -r ".Uploads[0].Key" 2>&1) || fail "error parsing upload key from uploads message: $upload_key"
-  [[ $upload_key == "$test_file" ]] || fail "upload key doesn't match file marked as being uploaded"
+  assert_success
+
+  run list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"
+  assert_failure
+  assert_output -p "Access Denied"
+
+  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  assert_success
+
+  run list_check_multipart_upload_key "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
+  assert_success
 }
 
 test_s3api_policy_list_upload_parts() {

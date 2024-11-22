@@ -39,7 +39,7 @@ create_bucket_invalid_name() {
     log 2 "error:  bucket should have not been created but was"
     return 1
   fi
-  export bucket_create_error
+  echo "$bucket_create_error"
 }
 
 create_and_check_bucket_invalid_name() {

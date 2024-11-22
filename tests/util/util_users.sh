@@ -53,6 +53,30 @@ setup_user_direct() {
   return 0
 }
 
+setup_user_versitygw_or_direct() {
+  if [ $# -ne 4 ]; then
+    # NOTE:  bucket name is required for direct
+    log 2 "'setup_user_versitygw_or_direct' requires username, password, role, bucket name"
+    return 1
+  fi
+  if [ "$DIRECT" != "true" ]; then
+    if ! setup_user "$1" "$2" "$3"; then
+      log 2 "error setting up versitygw user"
+      return 1
+    fi
+    echo "$1"
+    echo "$2"
+  else
+    if ! setup_user_direct "$1" "$3" "$4"; then
+      log 2 "error setting up direct user"
+      return 1
+    fi
+    echo "$key_id"
+    echo "$secret_key"
+  fi
+  return 0
+}
+
 create_user_versitygw() {
   log 6 "create_user_versitygw"
   if [[ $# -ne 3 ]]; then
@@ -117,7 +141,7 @@ put_user_policy_userplus() {
   ]
 }
 EOF
-  if ! error=$(send_command aws iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$TEST_FILE_FOLDER/user_policy_file" 2>&1); then
+  if ! error=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$TEST_FILE_FOLDER/user_policy_file" 2>&1); then
     log 2 "error putting user policy: $error"
     return 1
   fi
@@ -154,7 +178,7 @@ create_user_direct() {
     log 2 "create user direct command requires desired username, role, bucket name"
     return 1
   fi
-  if ! error=$(send_command aws iam create-user --user-name "$1" 2>&1); then
+  if ! error=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam create-user --user-name "$1" 2>&1); then
     log 2 "error creating new user: $error"
     return 1
   fi
@@ -162,7 +186,7 @@ create_user_direct() {
     log 2 "error attaching user policy"
     return 1
   fi
-  if ! keys=$(send_command aws iam create-access-key --user-name "$1" 2>&1); then
+  if ! keys=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam create-access-key --user-name "$1" 2>&1); then
     log 2 "error creating keys for new user: $keys"
     return 1
   fi
@@ -193,7 +217,7 @@ create_user_with_user() {
 list_users_direct() {
   log 6 "list_users_direct"
   # AWS_ENDPOINT_URL of s3.amazonaws.com doesn't work here
-  if ! users=$(send_command aws --profile="$AWS_PROFILE" iam list-users 2>&1); then
+  if ! users=$(send_command aws --profile="$AWS_PROFILE" --endpoint-url=https://iam.amazonaws.com iam list-users 2>&1); then
     log 2 "error listing users via direct s3 call: $users"
     return 1
   fi
@@ -266,17 +290,17 @@ delete_user_direct() {
     log 2 "delete user direct command requires username"
     return 1
   fi
-  if ! policies=$(send_command aws iam list-user-policies --user-name "$1" --query 'PolicyNames' --output text 2>&1); then
+  if ! policies=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam list-user-policies --user-name "$1" --query 'PolicyNames' --output text 2>&1); then
     log 2 "error getting user policies: $error"
     return 1
   fi
   for policy_name in $policies; do
-    if ! user_policy_delete_error=$(send_command aws iam delete-user-policy --user-name "$1" --policy-name "$policy_name" 2>&1); then
+    if ! user_policy_delete_error=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam delete-user-policy --user-name "$1" --policy-name "$policy_name" 2>&1); then
       log 2 "error deleting user policy: $user_policy_delete_error"
       return 1
     fi
   done
-  if ! keys=$(send_command aws iam list-access-keys --user-name "$1" 2>&1); then
+  if ! keys=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam list-access-keys --user-name "$1" 2>&1); then
     log 2 "error getting keys: $keys"
     return 1
   fi
@@ -285,12 +309,12 @@ delete_user_direct() {
     return 1
   fi
   if [[ $key != "null" ]]; then
-    if ! error=$(send_command aws iam delete-access-key --user-name "$1" --access-key-id "$key" 2>&1); then
+    if ! error=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam delete-access-key --user-name "$1" --access-key-id "$key" 2>&1); then
       log 2 "error deleting access key: $error"
       return 1
     fi
   fi
-  if ! error=$(send_command aws --profile="$AWS_PROFILE" iam delete-user --user-name "$1" 2>&1); then
+  if ! error=$(send_command aws --endpoint-url=https://iam.amazonaws.com --profile="$AWS_PROFILE" iam delete-user --user-name "$1" 2>&1); then
     log 2 "error deleting user: $error"
     return 1
   fi

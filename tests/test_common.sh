@@ -382,12 +382,7 @@ test_common_get_put_delete_bucket_policy() {
   assert_success
 
   effect="Allow"
-  #principal="*"
-  if [[ $DIRECT == "true" ]]; then
-    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/s3user\"}"
-  else
-    principal="\"*\""
-  fi
+  principal="*"
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
 
