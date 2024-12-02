@@ -2986,9 +2986,15 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockMode: types.ObjectLockModeCompliance,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// 	return err
+		// }
 
 		retainDate := time.Now().Add(time.Hour * 48)
 
@@ -2999,9 +3005,15 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &retainDate,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// 	return err
+		// }
 
 		return nil
 	})
@@ -10328,9 +10340,15 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 		}
 
 		_, err = putObjects(s3client, []string{object}, bucket)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -13484,9 +13502,15 @@ func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -13529,9 +13553,15 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -13574,9 +13604,15 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
