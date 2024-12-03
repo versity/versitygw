@@ -534,6 +534,7 @@ func TestIAM(s *S3Conf) {
 	IAM_userplus_CreateBucket(s)
 	IAM_admin_ChangeBucketOwner(s)
 	IAM_ChangeBucketOwner_back_to_root(s)
+	IAM_ListBuckets(s)
 }
 
 func TestAccessControl(s *S3Conf) {
@@ -956,6 +957,7 @@ func GetIntTests() IntTests {
 		"IAM_userplus_CreateBucket":                                           IAM_userplus_CreateBucket,
 		"IAM_admin_ChangeBucketOwner":                                         IAM_admin_ChangeBucketOwner,
 		"IAM_ChangeBucketOwner_back_to_root":                                  IAM_ChangeBucketOwner_back_to_root,
+		"IAM_ListBuckets":                                                     IAM_ListBuckets,
 		"AccessControl_default_ACL_user_access_denied":                        AccessControl_default_ACL_user_access_denied,
 		"AccessControl_default_ACL_userplus_access_denied":                    AccessControl_default_ACL_userplus_access_denied,
 		"AccessControl_default_ACL_admin_successful_access":                   AccessControl_default_ACL_admin_successful_access,

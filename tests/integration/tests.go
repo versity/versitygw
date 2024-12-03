@@ -11060,6 +11060,18 @@ func IAM_ChangeBucketOwner_back_to_root(s *S3Conf) error {
 	})
 }
 
+func IAM_ListBuckets(s *S3Conf) error {
+	testName := "IAM_ListBuckets"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := listBuckets(s)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // Posix related tests
 func PutObject_overwrite_dir_obj(s *S3Conf) error {
 	testName := "PutObject_overwrite_dir_obj"
