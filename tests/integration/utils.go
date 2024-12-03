@@ -803,6 +803,18 @@ func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 	return nil
 }
 
+func listBuckets(s *S3Conf) error {
+	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "list-buckets")
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(out), adminErrorPrefix) {
+		return fmt.Errorf("failed to list buckets, %s", out)
+	}
+
+	return nil
+}
+
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func genRandString(length int) string {
