@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util.sh
+source ./tests/util/util.sh
 
 if ! base_setup; then
   log 2 "error starting versity to set up static buckets"

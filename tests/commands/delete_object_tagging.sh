@@ -21,7 +21,7 @@ delete_object_tagging() {
     return 1
   fi
   delete_result=0
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api delete-object-tagging --bucket "$2" --key "$3" 2>&1) || delete_result=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(send_command mc --insecure tag remove "$MC_ALIAS/$2/$3") || delete_result=$?

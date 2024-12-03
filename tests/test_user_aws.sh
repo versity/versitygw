@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/test_user_common.sh
-source ./tests/util_users.sh
+source ./tests/util/util_users.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
 

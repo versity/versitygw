@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ./tests/util_list_objects.sh
+source ./tests/util/util_list_objects.sh
 source ./tests/commands/command.sh
 
 # Copyright 2024 Versity Software
@@ -29,7 +29,7 @@ list_objects() {
 
   local output
   local result=0
-  if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3' ]]; then
     output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
   elif [[ $1 == 's3api' ]]; then
     list_objects_s3api "$2" || result=$?

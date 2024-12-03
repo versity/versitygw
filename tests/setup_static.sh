@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/env.sh
-source ./tests/util.sh
+source ./tests/util/util.sh
 source ./tests/commands/create_bucket.sh
 
 create_bucket_if_not_exists() {

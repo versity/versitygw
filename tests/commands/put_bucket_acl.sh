@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_file.sh
+source ./tests/util/util_file.sh
 source ./tests/commands/command.sh
 
 put_bucket_acl_s3api() {

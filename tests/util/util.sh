@@ -14,11 +14,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_bucket.sh
-source ./tests/util_create_bucket.sh
-source ./tests/util_mc.sh
-source ./tests/util_multipart.sh
-source ./tests/util_versioning.sh
+source ./tests/util/util_bucket.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_mc.sh
+source ./tests/util/util_multipart.sh
+source ./tests/util/util_versioning.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh
 source ./tests/commands/complete_multipart_upload.sh
@@ -45,7 +45,7 @@ source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
-source ./tests/util_users.sh
+source ./tests/util/util_users.sh
 
 # params:  bucket name
 # return 0 for success, 1 for error
@@ -275,7 +275,7 @@ put_object_with_metadata() {
 
   local exit_code=0
   local error
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     error=$(aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" --metadata "{\"$5\":\"$6\"}") || exit_code=$?
   else
     log 2 "invalid command type $1"
@@ -296,7 +296,7 @@ get_object_metadata() {
   fi
 
   local exit_code=0
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     metadata_struct=$(aws --no-verify-ssl s3api head-object --bucket "$2" --key "$3") || exit_code=$?
   else
     log 2 "invalid command type $1"
@@ -320,7 +320,7 @@ put_object_multiple() {
   fi
   local exit_code=0
   local error
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     # shellcheck disable=SC2086
     error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
@@ -350,7 +350,7 @@ check_and_put_object() {
     log 2 "check and put object function requires source, bucket, destination"
     return 1
   fi
-  object_exists "aws" "$2" "$3" || local exists_result=$?
+  object_exists "s3api" "$2" "$3" || local exists_result=$?
   if [ "$exists_result" -eq 2 ]; then
     log 2 "error checking if object exists"
     return 1

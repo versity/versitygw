@@ -223,6 +223,31 @@ put_and_check_for_malformed_policy() {
   return 0
 }
 
+get_and_check_no_policy_error() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_and_check_no_policy_error' requires bucket name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
+    log 2 "error attempting to get bucket policy response: $result"
+    return 1
+  fi
+  if [ "$result" != "404" ]; then
+    log 2 "GetBucketOwnershipControls returned unexpected response code: $result, reply:  $(cat "$TEST_FILE_FOLDER/response.txt")"
+    return 1
+  fi
+  log 5 "response: $(cat "$TEST_FILE_FOLDER/response.txt")"
+  if ! bucket_name=$(xmllint --xpath '//*[local-name()="BucketName"]/text()' "$TEST_FILE_FOLDER/response.txt" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if [ "$bucket_name" != "$1" ]; then
+    log 2 "rule mismatch (expected '$1', actual '$bucket_name')"
+    return 1
+  fi
+  return 0
+}
+
 get_and_compare_policy_with_file() {
   if [ $# -ne 4 ]; then
     log 2 "'get_and_compare_policies' reuires bucket, username, password, filename"

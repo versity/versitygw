@@ -25,7 +25,7 @@ list_buckets() {
   local exit_code=0
   if [[ $1 == 's3' ]]; then
     buckets=$(send_command aws --no-verify-ssl s3 ls 2>&1 s3://) || exit_code=$?
-  elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     list_buckets_s3api "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     buckets=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3:// 2>&1) || exit_code=$?

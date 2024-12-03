@@ -15,14 +15,13 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util.sh
-source ./tests/util_aws.sh
-source ./tests/util_create_bucket.sh
-source ./tests/util_file.sh
-source ./tests/util_lock_config.sh
-source ./tests/util_tags.sh
-source ./tests/util_users.sh
-source ./tests/test_aws_root_inner.sh
+source ./tests/util/util.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_lock_config.sh
+source ./tests/util/util_tags.sh
+source ./tests/util/util_users.sh
+source ./tests/test_s3api_root_inner.sh
 source ./tests/test_common.sh
 source ./tests/test_common_acl.sh
 source ./tests/commands/copy_object.sh
@@ -51,33 +50,42 @@ source ./tests/commands/select_object_content.sh
 export RUN_USERS=true
 
 @test "test_create_bucket_invalid_name" {
-  test_create_bucket_invalid_name_aws_root
+  if [[ $RECREATE_BUCKETS != "true" ]]; then
+    return
+  fi
+
+  run create_and_check_bucket_invalid_name "s3api"
+  assert_success
 }
 
 # create-bucket
-@test "test_create_delete_bucket_aws" {
-  test_common_create_delete_bucket "aws"
+@test "test_create_delete_bucket_s3api" {
+  test_common_create_delete_bucket "s3api"
 }
 
-# delete-bucket - test_create_delete_bucket_aws
+# delete-bucket - test_create_delete_bucket_s3api
 
 # delete-bucket-policy
 @test "test_get_put_delete_bucket_policy" {
   if [[ -n $SKIP_POLICY ]]; then
     skip "will not test policy actions with SKIP_POLICY set"
   fi
-  test_common_get_put_delete_bucket_policy "aws"
+  test_common_get_put_delete_bucket_policy "s3api"
 }
 
 
 # get-bucket-acl
 @test "test_get_bucket_acl" {
-  test_get_bucket_acl_aws_root
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_bucket_acl_and_check_owner "s3api" "$BUCKET_ONE_NAME"
+  assert_success
 }
 
 # get-bucket-location
 @test "test_get_bucket_location" {
-  test_common_get_bucket_location "aws"
+  test_common_get_bucket_location "s3api"
 }
 
 # get-bucket-policy - test_get_put_delete_bucket_policy
@@ -85,7 +93,7 @@ export RUN_USERS=true
 # get-bucket-tagging - test_set_get_delete_bucket_tags
 
 @test "test_head_bucket" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run check_for_empty_region "$BUCKET_ONE_NAME"
@@ -93,17 +101,17 @@ export RUN_USERS=true
 }
 
 @test "test_head_bucket_doesnt_exist" {
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  head_bucket "aws" "$BUCKET_ONE_NAME"a || local info_result=$?
+  head_bucket "s3api" "$BUCKET_ONE_NAME"a || local info_result=$?
   [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
   [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  bucket_cleanup "aws" "$BUCKET_ONE_NAME"
+  bucket_cleanup "s3api" "$BUCKET_ONE_NAME"
 }
 
 @test "test_head_bucket_invalid_name" {
-  if head_bucket "aws" ""; then
+  if head_bucket "s3api" ""; then
     fail "able to get bucket info for invalid name"
   fi
 }
@@ -119,5 +127,5 @@ export RUN_USERS=true
 
 # delete-bucket-tagging
 @test "test-set-get-delete-bucket-tags" {
-  test_common_set_get_delete_bucket_tags "aws"
+  test_common_set_get_delete_bucket_tags "s3api"
 }

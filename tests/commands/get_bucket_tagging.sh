@@ -21,7 +21,7 @@ get_bucket_tagging() {
   assert [ $# -eq 2 ]
   record_command "get-bucket-tagging" "client:$1"
   local result
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     tags=$(send_command aws --no-verify-ssl s3api get-bucket-tagging --bucket "$2" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then
     tags=$(send_command mc --insecure tag list "$MC_ALIAS"/"$2" 2>&1) || result=$?

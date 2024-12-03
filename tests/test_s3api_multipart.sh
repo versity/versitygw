@@ -15,27 +15,112 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/test_aws_root_inner.sh
-source ./tests/util_file.sh
-source ./tests/util_multipart.sh
-source ./tests/util_tags.sh
+source ./tests/test_s3api_root_inner.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_multipart.sh
+source ./tests/util/util_tags.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/list_multipart_uploads.sh
 
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
-  test_abort_multipart_upload_aws_root
+  local bucket_file="bucket-file"
+
+  run create_test_file "$bucket_file"
+  assert_success
+  # shellcheck disable=SC2154
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
+  assert_success
+
+  run object_exists "s3api" "$BUCKET_ONE_NAME" "$bucket_file"
+  assert_failure 1
 }
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
-  test_complete_multipart_upload_aws_root
+  local bucket_file="bucket-file"
+  run create_test_files "$bucket_file"
+  assert_success
+
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  assert_success
 }
 
 # create-multipart-upload
 @test "test_create_multipart_upload_properties" {
-  test_create_multipart_upload_properties_aws_root
+  local bucket_file="bucket-file"
+
+  local expected_content_type="application/zip"
+  local expected_meta_key="testKey"
+  local expected_meta_val="testValue"
+  local expected_hold_status="ON"
+  local expected_retention_mode="GOVERNANCE"
+  local expected_tag_key="TestTag"
+  local expected_tag_val="TestTagVal"
+
+  os_name="$(uname)"
+  if [[ "$os_name" == "Darwin" ]]; then
+    now=$(date -u +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -j -v +15S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+  else
+    now=$(date +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -d "$now 15 seconds" +"%Y-%m-%dT%H:%M:%S")
+  fi
+
+  run create_test_files "$bucket_file"
+  assert_success
+
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
+
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  run multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 \
+    "$expected_content_type" \
+    "{\"$expected_meta_key\": \"$expected_meta_val\"}" \
+    "$expected_hold_status" \
+    "$expected_retention_mode" \
+    "$later" \
+    "$expected_tag_key=$expected_tag_val"
+  assert_success
+
+  run get_and_verify_metadata "$bucket_file" "$expected_content_type" "$expected_meta_key" "$expected_meta_val" \
+    "$expected_hold_status" "$expected_retention_mode" "$later"
+  assert_success
+
+  run check_verify_object_tags "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$expected_tag_key" "$expected_tag_val"
+  assert_success
+
+  run put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  assert_success
+
+  run get_and_check_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy" || fail "error getting object"
+  assert_success
 }
 
 @test "test-multipart-upload-from-bucket" {
@@ -47,7 +132,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
@@ -65,7 +150,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run create_large_file "$bucket_file"
   assert_success
 
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run multipart_upload_range_too_large "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
@@ -77,7 +162,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run create_large_file "$bucket_file"
   assert_success
 
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run run_and_verify_multipart_upload_with_valid_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
@@ -86,7 +171,21 @@ source ./tests/commands/list_multipart_uploads.sh
 
 # test multi-part upload list parts command
 @test "test-multipart-upload-list-parts" {
-  test_multipart_upload_list_parts_aws_root
+  local bucket_file="bucket-file"
+
+  run create_test_file "$bucket_file" 0
+  assert_success
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run start_multipart_upload_list_check_parts "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
+  assert_success
+
+  run run_then_abort_multipart_upload "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file" 4
+  assert_success
 }
 
 # test listing of active uploads
@@ -102,7 +201,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run create_test_files "$bucket_file_one" "$bucket_file_two"
   assert_success
 
-  run setup_bucket "aws" "$BUCKET_ONE_NAME"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"

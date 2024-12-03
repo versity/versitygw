@@ -32,7 +32,7 @@ delete_bucket() {
   exit_code=0
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 rb s3://"$2") || exit_code=$?
-  elif [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api delete-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" 2>&1) || exit_code=$?

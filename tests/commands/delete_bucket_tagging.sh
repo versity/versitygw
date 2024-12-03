@@ -21,7 +21,7 @@ delete_bucket_tagging() {
     return 1
   fi
   local result
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     tags=$(send_command aws --no-verify-ssl s3api delete-bucket-tagging --bucket "$2" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then
     tags=$(send_command mc --insecure tag remove "$MC_ALIAS"/"$2" 2>&1) || result=$?

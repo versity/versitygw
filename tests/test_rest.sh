@@ -28,18 +28,19 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util.sh
-source ./tests/util_attributes.sh
-source ./tests/util_legal_hold.sh
-source ./tests/util_list_buckets.sh
-source ./tests/util_list_objects.sh
-source ./tests/util_list_parts.sh
-source ./tests/util_lock_config.sh
-source ./tests/util_ownership.sh
-source ./tests/util_rest.sh
-source ./tests/util_tags.sh
-source ./tests/util_time.sh
-source ./tests/util_versioning.sh
+source ./tests/util/util.sh
+source ./tests/util/util_attributes.sh
+source ./tests/util/util_legal_hold.sh
+source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_list_objects.sh
+source ./tests/util/util_list_parts.sh
+source ./tests/util/util_lock_config.sh
+source ./tests/util/util_ownership.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_rest.sh
+source ./tests/util/util_tags.sh
+source ./tests/util/util_time.sh
+source ./tests/util/util_versioning.sh
 
 @test "test_rest_list_objects" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -408,5 +409,17 @@ source ./tests/util_versioning.sh
   assert_success
 
   run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+}
+
+@test "REST - get policy w/o policy" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/959"
+  fi
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
   assert_success
 }

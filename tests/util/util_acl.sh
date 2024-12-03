@@ -44,6 +44,7 @@ get_check_post_change_acl_s3cmd() {
   log 5 "ACL after read put: $acl"
   acl_lines=$(echo "$acl" | grep "ACL")
   log 5 "ACL lines:  $acl_lines"
+  lines=()
   while IFS= read -r line; do
     lines+=("$line")
   done <<< "$acl_lines"

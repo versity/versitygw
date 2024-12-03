@@ -21,7 +21,7 @@ put_bucket_policy() {
     return 1
   fi
   local put_policy_result=0
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     policy=$(send_command aws --no-verify-ssl s3api put-bucket-policy --bucket "$2" --policy "file://$3" 2>&1) || put_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     policy=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setpolicy "$3" "s3://$2" 2>&1) || put_policy_result=$?
