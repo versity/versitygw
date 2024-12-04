@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/util/util_multipart_abort.sh
+
 # recursively delete an AWS bucket
 # param:  client, bucket name
 # fail if error

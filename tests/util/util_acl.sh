@@ -199,3 +199,47 @@ get_check_acl_after_policy() {
     fi
   fi
 }
+
+get_and_check_acl_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_and_check_acl_rest' requires bucket name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/acl.txt" ./tests/rest_scripts/get_bucket_acl.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "get acl returned code '$result' (message: $(cat "$TEST_FILE_FOLDER/acl.txt"))"
+    return 1
+  fi
+  log 5 "acl: $(cat "$TEST_FILE_FOLDER/acl.txt")"
+  if ! access_control_policy=$(xmllint --xpath '//*[local-name()="AccessControlPolicy"]' "$TEST_FILE_FOLDER/acl.txt" 2>&1); then
+    log 2 "error getting access control policy: $access_control_policy"
+    return 1
+  fi
+  if ! owner=$(echo "$access_control_policy" | xmllint --xpath '//*[local-name()="Owner"]' - 2>&1); then
+    log 2 "error getting owner information: $owner"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    if ! display_name=$(echo "$owner" | xmllint --xpath '//*[local-name()="DisplayName"]/text()' - 2>&1); then
+      log 2 "error getting display name: $display_name"
+      return 1
+    fi
+    if [ "$display_name" != "$DIRECT_DISPLAY_NAME" ]; then
+      log 2 "display name mismatch (expected '$DIRECT_DISPLAY_NAME', actual '$display_name')"
+      return 1
+    fi
+  else
+    if ! id=$(echo "$owner" | xmllint --xpath '//*[local-name()="ID"]/text()' - 2>&1); then
+      log 2 "error getting ID: $id"
+      return 1
+    fi
+    if [ "$id" != "$AWS_ACCESS_KEY_ID" ]; then
+      log 2 "ID mismatch"
+      return 1
+    fi
+  fi
+  return 0
+}

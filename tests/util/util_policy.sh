@@ -310,7 +310,6 @@ put_and_check_policy_rest() {
     log 2 "unexpected response code, expected '200' or '204', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
-  log 5 "response: $(cat "$TEST_FILE_FOLDER/result.txt")"
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/policy.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
     log 2 "error attempting to get bucket policy response: $result"
     return 1

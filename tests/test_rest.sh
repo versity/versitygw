@@ -29,6 +29,7 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util.sh
+source ./tests/util/util_acl.sh
 source ./tests/util/util_attributes.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_buckets.sh
@@ -189,7 +190,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_versioning" {
-  skip "https://github.com/versity/versitygw/issues/864"
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -222,7 +222,6 @@ export RUN_USERS=true
 }
 
 @test "versioning - add version, then delete and check for marker" {
-  skip "https://github.com/versity/versitygw/issues/864"
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -441,5 +440,16 @@ export RUN_USERS=true
   assert_success
 
   run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - get ACL" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/971"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_acl_rest "$BUCKET_ONE_NAME"
   assert_success
 }
