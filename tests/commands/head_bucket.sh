@@ -36,14 +36,15 @@ head_bucket() {
   elif [[ $1 == 'mc' ]]; then
     bucket_info=$(send_command mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   else
-    fail "invalid command type $1"
+    log 2 "invalid command type $1"
   fi
   if [ $exit_code -ne 0 ]; then
+    log 2 "error getting bucket info: $bucket_info"
     if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
       return 1
     fi
-    log 2 "error getting bucket info: $bucket_info"
     return 2
   fi
+  echo "$bucket_info"
   return 0
 }

@@ -54,6 +54,7 @@ create_multipart_upload_with_user() {
     return 1
   fi
   upload_id="${upload_id//\"/}"
+  echo "$upload_id"
   return 0
 }
 

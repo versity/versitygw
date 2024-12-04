@@ -42,6 +42,8 @@ source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
 
+export RUN_USERS=true
+
 @test "test_rest_list_objects" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -421,5 +423,23 @@ source ./tests/util/util_versioning.sh
   assert_success
 
   run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - put policy" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  log 5 "username: ${lines[0]}"
+  log 5 "password: ${lines[1]}"
+
+  sleep 5
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success
 }

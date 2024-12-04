@@ -18,6 +18,7 @@ source ./tests/setup.sh
 source ./tests/util/util.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
+source ./tests/util/util_head_bucket.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_users.sh
@@ -101,13 +102,11 @@ export RUN_USERS=true
 }
 
 @test "test_head_bucket_doesnt_exist" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "skip test for static buckets"
+  fi
+  run bucket_info_without_bucket
   assert_success
-
-  head_bucket "s3api" "$BUCKET_ONE_NAME"a || local info_result=$?
-  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
-  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  bucket_cleanup "s3api" "$BUCKET_ONE_NAME"
 }
 
 @test "test_head_bucket_invalid_name" {

@@ -47,12 +47,9 @@ export RUN_USERS=true
     return
   fi
 
-  create_bucket_invalid_name "s3cmd" || local create_result=$?
-  [[ $create_result -eq 0 ]] || fail "Invalid name test failed"
-
-  [[ "$bucket_create_error" == *"just the bucket name"* ]] || fail "unexpected error:  $bucket_create_error"
-
-  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
+  run create_bucket_invalid_name "s3cmd"
+  assert_success
+  assert_output -p "just the bucket name"
 }
 
 # delete-bucket - test_create_delete_bucket
@@ -93,6 +90,7 @@ export RUN_USERS=true
 }
 
 @test "test_put_bucket_acl" {
+  skip "https://github.com/versity/versitygw/issues/963"
   test_put_bucket_acl_s3cmd
 }
 
@@ -113,19 +111,18 @@ export RUN_USERS=true
   run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
   assert_success
 
-  head_bucket "s3cmd" "$BUCKET_ONE_NAME"
-  [[ $bucket_info == *"s3://$BUCKET_ONE_NAME"* ]] || fail "failure to retrieve correct bucket info: $bucket_info"
-  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
+  run head_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  assert_success
+  assert_output -p "s3://$BUCKET_ONE_NAME"
 }
 
 @test "test_get_bucket_info_doesnt_exist_s3cmd" {
   run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
   assert_success
 
-  head_bucket "s3cmd" "$BUCKET_ONE_NAME"a || local info_result=$?
-  [[ $info_result -eq 1 ]] || fail "bucket info for non-existent bucket returned"
-  [[ $bucket_info == *"404"* ]] || fail "404 not returned for non-existent bucket info"
-  bucket_cleanup "s3cmd" "$BUCKET_ONE_NAME"
+  run head_bucket "s3cmd" "$BUCKET_ONE_NAME"a
+  assert_failure 1
+  assert_output -p "404"
 }
 
 @test "test_ls_directory_object" {

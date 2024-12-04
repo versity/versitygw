@@ -119,10 +119,6 @@ test_get_object_attributes_s3api_root() {
 }
 
 test_get_put_object_legal_hold_s3api_root() {
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    skip "https://github.com/versity/versitygw/issues/716"
-  fi
-
   bucket_file="bucket_file"
   username=$USERNAME_ONE
   password=$PASSWORD_ONE
@@ -141,9 +137,8 @@ test_get_put_object_legal_hold_s3api_root() {
 
   echo "fdkljafajkfs" > "$TEST_FILE_FOLDER/$bucket_file"
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
-  assert_failure 1
-  # shellcheck disable=SC2154
-  #[[ $put_object_error == *"Object is WORM protected and cannot be overwritten"* ]] || fail "unexpected error message: $put_object_error"
+  assert_failure
+  assert_output --partial "Object is WORM protected and cannot be overwritten"
 
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
   assert_failure 1
@@ -161,10 +156,6 @@ test_get_put_object_retention_s3api_root() {
   bucket_file="bucket_file"
   username=$USERNAME_ONE
   secret_key=$PASSWORD_ONE
-
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    skip "https://github.com/versity/versitygw/issues/716"
-  fi
 
   run legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
   assert_success
@@ -187,20 +178,17 @@ test_get_put_object_retention_s3api_root() {
 
   echo "fdkljafajkfs" > "$TEST_FILE_FOLDER/$bucket_file"
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
-  assert_failure 1
+  assert_failure
   # shellcheck disable=SC2154
   assert_output --partial "Object is WORM protected and cannot be overwritten"
 
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
-  assert_failure 1
+  assert_failure
   # shellcheck disable=SC2154
   assert_output --partial "Object is WORM protected and cannot be overwritten"
 }
 
 test_retention_bypass_s3api_root() {
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    skip "https://github.com/versity/versitygw/issues/716"
-  fi
   bucket_file="bucket_file"
   username=$USERNAME_ONE
   secret_key=$PASSWORD_ONE

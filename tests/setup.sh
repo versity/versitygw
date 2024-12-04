@@ -27,6 +27,13 @@ source ./tests/versity.sh
 setup() {
   base_setup
 
+  if [ -n "$TEST_LOG_FILE" ]; then
+    if ! error=$(touch "$TEST_LOG_FILE.tmp" 2>&1); then
+      log 2 "error creating log file: $error"
+      exit 1
+    fi
+  fi
+
   log 4 "Running test $BATS_TEST_NAME"
   if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
     start_time=$(date +%s)
@@ -48,19 +55,18 @@ setup() {
   export AWS_PROFILE
 }
 
-# fail a test
-# param:  error message
-#fail() {
-#  log 1 "$1"
-#  exit 1
-#}
+delete_temp_log_if_exists() {
+  if [ -e "$TEST_LOG_FILE.tmp" ]; then
+    if ! error=$(rm "$TEST_LOG_FILE.tmp" 2>&1); then
+      log 2 "error deleting temp log: $error"
+      return 1
+    fi
+  fi
+  return 0
+}
 
 # bats teardown function
 teardown() {
-  if [[ ( "$BATS_TEST_COMPLETED" -ne 1 ) && ( -e "$COMMAND_LOG" ) ]]; then
-    cat "$COMMAND_LOG"
-    echo "**********************************************************************************"
-  fi
   # shellcheck disable=SC2154
   if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
     log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
@@ -68,10 +74,38 @@ teardown() {
   if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"; then
     log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
   fi
+  if user_exists "$USERNAME_ONE" && ! delete_user "$USERNAME_ONE"; then
+    log 3 "error deleting user $USERNAME_ONE"
+  fi
+  if user_exists "$USERNAME_TWO" && ! delete_user "$USERNAME_TWO"; then
+    log 3 "error deleting user $USERNAME_TWO"
+  fi
   if [ "$REMOVE_TEST_FILE_FOLDER" == "true" ]; then
     log 6 "removing test file folder"
     if ! error=$(rm -rf "${TEST_FILE_FOLDER:?}" 2>&1); then
       log 3 "unable to remove test file folder: $error"
+    fi
+  fi
+  if [[ "$BATS_TEST_COMPLETED" -ne 1 ]]; then
+    if [[ -e "$COMMAND_LOG" ]]; then
+      cat "$COMMAND_LOG"
+      echo "**********************************************************************************"
+    fi
+    if [[ -e "$TEST_LOG_FILE.tmp" ]]; then
+      echo "********************************** LOG *******************************************"
+      cat "$TEST_LOG_FILE.tmp"
+      echo "**********************************************************************************"
+    fi
+  fi
+  if ! delete_command_log; then
+    log 3 "error deleting command log"
+  fi
+  if [ -e "$TEST_LOG_FILE.tmp" ]; then
+    if ! error=$(cat "$TEST_LOG_FILE.tmp" >> "$TEST_LOG_FILE" 2>&1); then
+      log 2 "error appending temp log to main log: $error"
+    fi
+    if ! delete_temp_log_if_exists; then
+      log 2 "error deleting temp log"
     fi
   fi
   stop_versity

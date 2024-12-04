@@ -97,30 +97,46 @@ get_bucket_policy_s3cmd() {
   policy_brackets=false
   # NOTE:  versitygw sends policies back in multiple lines here, direct in single line
   while IFS= read -r line; do
-    if [[ $policy_brackets == false ]]; then
-      policy_line=$(echo "$line" | grep 'Policy: ')
-      if [[ $policy_line != "" ]]; then
-        if [[ $policy_line != *'{'* ]]; then
-          break
-        fi
-        if [[ $policy_line == *'}'* ]]; then
-          log 5 "policy on single line"
-          bucket_policy=${policy_line//Policy:/}
-          break
-        else
-          policy_brackets=true
-          bucket_policy+="{"
-        fi
-      fi
-    else
-      bucket_policy+=$line
-      if [[ $line == "" ]]; then
-        break
-      fi
+    if check_and_load_policy_info; then
+      break
     fi
   done <<< "$info"
   log 5 "bucket policy: $bucket_policy"
   return 0
+}
+
+# return 0 for no policy, single-line policy, or loading complete, 1 for still searching or loading
+check_and_load_policy_info() {
+  if [[ $policy_brackets == false ]]; then
+    if search_for_first_policy_line_or_full_policy; then
+      return 0
+    fi
+  else
+    bucket_policy+=$line
+    if [[ $line == "}" ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# return 0 for empty or single-line policy, 1 for other cases
+search_for_first_policy_line_or_full_policy() {
+  policy_line=$(echo "$line" | grep 'Policy: ')
+  if [[ $policy_line != "" ]]; then
+    if [[ $policy_line != *'{'* ]]; then
+      return 0
+    fi
+    if [[ $policy_line == *'}'* ]]; then
+      log 5 "policy on single line"
+      bucket_policy=${policy_line//Policy:/}
+      return 0
+    else
+      policy_brackets=true
+      bucket_policy+="{"
+    fi
+  fi
+  return 1
 }
 
 get_bucket_policy_mc() {

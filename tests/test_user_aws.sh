@@ -44,11 +44,12 @@ export RUN_USERS=true
 }
 
 @test "test_user_get_object" {
-  username="$USERNAME_ONE"
-  password="$USERNAME_ONE"
   test_file="test_file"
 
-  setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run create_test_file "$test_file"
   assert_success
@@ -56,20 +57,26 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
-    fail "able to get object despite not being bucket owner"
-  fi
-  change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_failure
+
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_success
 }
 
 @test "test_userplus_get_object" {
-  username="$USERNAME_ONE"
-  password="$PASSWORD_ONE"
   test_file="test_file"
 
-  setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "userplus" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run create_test_file "$test_file"
   assert_success
@@ -77,20 +84,26 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
-    fail "able to get object despite not being bucket owner"
-  fi
-  change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_failure
+
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_success
 }
 
 @test "test_user_delete_object" {
-  username="$USERNAME_ONE"
-  password="$PASSWORD_ONE"
   test_file="test_file"
 
-  setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run create_test_file "$test_file"
   assert_success
@@ -98,23 +111,29 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  if get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"; then
-    fail "able to get object despite not being bucket owner"
-  fi
-  change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" || fail "failed to add object to bucket"
-  delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "error deleting object"
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  assert_failure
+
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username"
+  assert_success
+
+  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  assert_success
 }
 
 @test "test_admin_put_get_object" {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "https://github.com/versity/versitygw/issues/888"
   fi
-  username="$USERNAME_ONE"
-  password="$PASSWORD_ONE"
   test_file="test_file"
 
-  setup_user "$username" "$password" "admin" || fail "error creating user if nonexistent"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "admin" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run create_test_file "$test_file"
   assert_success
@@ -122,30 +141,30 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password" || fail "failed to add object to bucket"
-  get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password" || fail "error getting object"
-  compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy" || fail "files don't match"
-  list_object_versions "$BUCKET_ONE_NAME"
-  log 5 "versions: $versions"
+  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  assert_success
+
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
+  assert_success
+
+  run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
   assert_success
-  list_object_versions "$BUCKET_ONE_NAME"
-  log 5 "versions: $versions"
-  if get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
-    fail "file not successfully deleted"
-  fi
-  # shellcheck disable=SC2154
-  [[ "$get_object_error" == *"NoSuchKey"* ]] || fail "unexpected error message: $get_object_error"
-  bucket_cleanup "s3api" "$BUCKET_ONE_NAME"
-  delete_test_files "$test_file" "$test_file-copy"
+
+  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_failure
+  assert_output -p "NoSuchKey"
 }
 
 @test "test_user_create_multipart_upload" {
-  username="$USERNAME_ONE"
-  password="$PASSWORD_ONE"
   test_file="test_file"
 
-  setup_user "$username" "$password" "user" || fail "error creating user if nonexistent"
+  run setup_user_versitygw_or_direct "$USERNAME_TWO" "$PASSWORD_TWO" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  username=${lines[0]}
+  password=${lines[1]}
 
   run create_large_file "$test_file"
   assert_success
@@ -153,6 +172,12 @@ export RUN_USERS=true
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username" || fail "error changing bucket ownership"
-  create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password" || fail "unable to create multipart upload"
+  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
+  assert_failure
+
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username"
+  assert_success
+
+  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
+  assert_success
 }
