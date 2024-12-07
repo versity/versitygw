@@ -468,34 +468,24 @@ export RUN_USERS=true
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  AWS_CANONICAL_ID=
-  ACL_AWS_CANONICAL_ID=
-  ACL_AWS_ACCESS_KEY_ID=
-  ACL_AWS_SECRET_ACCESS_KEY=
   run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
   assert_success
   canonical_id=${lines[0]}
   user_canonical_id=${lines[1]}
   username=${lines[2]}
   password=${lines[3]}
-  log 5 "$canonical_id $user_canonical_id $username $password"
 
   run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" ACL_FILE="$TEST_FILE_FOLDER/acl-file.txt" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
-    log 2 "error attempting to put bucket acl: $result"
-    return 1
-  fi
-  log 5 "result: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
+  run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
+  assert_success
+
+  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  assert_success
 
   sleep 5
 
-  if ! result=$(AWS_ACCESS_KEY_ID="$username" AWS_SECRET_ACCESS_KEY="$password" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
-    log 2 "error attempting to list objects: $result"
-    return 1
-  fi
-  log 5 "result: $result (error: $(cat "$TEST_FILE_FOLDER/objects.txt")"
-
-  return 1
+  run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
+  assert_success
 }

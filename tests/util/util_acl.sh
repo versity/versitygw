@@ -309,3 +309,19 @@ create_versitygw_acl_user_or_get_direct_user() {
     echo "$2"
   fi
 }
+
+put_acl_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_acl_rest' requires bucket name, ACL file"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
+    return 1
+  fi
+  return 0
+}
