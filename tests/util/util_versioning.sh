@@ -49,21 +49,33 @@ delete_old_versions() {
   log 5 "version keys: ${version_keys[*]}"
   log 5 "version IDs: ${version_ids[*]}"
   for idx in "${!version_keys[@]}"; do
-    log 5 "idx: $idx"
-    log 5 "version ID: ${version_ids[$idx]}"
-    # shellcheck disable=SC2154
-    if [ "$lock_config_exists" == "true" ]; then
-      if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-        log 2 "error deleting object version"
-        return 1
-      fi
-    else
-      if ! delete_object_version "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-        log 2 "error deleting object version"
-        return 1
-      fi
+    if ! delete_object_version_with_or_without_retention "$1"; then
+      log 2 "error deleting version with or without retention"
+      return 1
     fi
   done
+}
+
+delete_object_version_with_or_without_retention() {
+  if [ $# -ne 1 ]; then
+    log 2 "'delete_object_version_with_or_without_retention' requires bucket name"
+    return 1
+  fi
+  log 5 "idx: $idx"
+  log 5 "version ID: ${version_ids[$idx]}"
+  # shellcheck disable=SC2154
+  if [ "$lock_config_exists" == "true" ]; then
+    if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+      log 2 "error deleting object version"
+      return 1
+    fi
+  else
+    if ! delete_object_version "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+      log 2 "error deleting object version"
+      return 1
+    fi
+  fi
+  return 0
 }
 
 parse_version_data() {

@@ -20,6 +20,7 @@ source ./tests/test_s3api_policy_bucket.sh
 source ./tests/test_s3api_policy_multipart.sh
 source ./tests/test_s3api_policy_object.sh
 source ./tests/util/util_multipart.sh
+source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_tags.sh
