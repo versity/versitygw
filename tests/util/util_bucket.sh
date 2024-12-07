@@ -219,6 +219,10 @@ bucket_cleanup_if_bucket_exists() {
   fi
 
   if bucket_exists "$1" "$2"; then
+    if [ "$DELETE_BUCKETS_AFTER_TEST" == "false" ]; then
+      log 2 "skipping bucket cleanup/deletion"
+      return 0
+    fi
     if ! bucket_cleanup "$1" "$2"; then
       log 2 "error deleting bucket and/or contents"
       return 1

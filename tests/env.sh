@@ -123,6 +123,14 @@ check_universal_vars() {
     log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
     exit 1
   fi
+  if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
+    log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
+    exit 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ] && [ "$DELETE_BUCKETS_AFTER_TEST" == "true" ]; then
+    log 1 "cannot set DELETE_BUCKETS_AFTER_TEST to 'true' if RECREATE_BUCKETS is 'false'"
+    return 1
+  fi
   if [ -z "$TEST_FILE_FOLDER" ]; then
     log 1 "TEST_FILE_FOLDER missing"
     exit 1
