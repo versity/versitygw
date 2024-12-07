@@ -484,7 +484,9 @@ export RUN_USERS=true
   run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
   assert_success
 
-  sleep 5
+  if [ "$DIRECT" == "true" ]; then
+    sleep 5
+  fi
 
   run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
   assert_success
