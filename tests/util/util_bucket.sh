@@ -85,7 +85,7 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+  if [ "$RUN_USERS" == "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
     log 2 "error changing bucket owner back to root"
     return 1
   fi
