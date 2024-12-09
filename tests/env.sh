@@ -123,6 +123,14 @@ check_universal_vars() {
     log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
     exit 1
   fi
+  if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
+    log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
+    exit 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ] && [ "$DELETE_BUCKETS_AFTER_TEST" == "true" ]; then
+    log 1 "cannot set DELETE_BUCKETS_AFTER_TEST to 'true' if RECREATE_BUCKETS is 'false'"
+    return 1
+  fi
   if [ -z "$TEST_FILE_FOLDER" ]; then
     log 1 "TEST_FILE_FOLDER missing"
     exit 1
@@ -135,6 +143,10 @@ check_universal_vars() {
   fi
   # exporting these since they're needed for subshells
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
+  if [ -n "$AWS_CANONICAL_ID" ]; then
+    log 5 "canonical ID: $AWS_CANONICAL_ID"
+    export AWS_CANONICAL_ID
+  fi
 }
 
 delete_command_log() {

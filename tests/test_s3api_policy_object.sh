@@ -323,15 +323,10 @@ test_s3api_policy_put_wildcard() {
   username=${lines[0]}
   password=${lines[1]}
 
-  effect="Allow"
-  principal="$username"
-  action="s3:PutObject"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
-
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "Allow" "$username" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"

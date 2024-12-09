@@ -453,3 +453,41 @@ export RUN_USERS=true
   run get_and_check_acl_rest "$BUCKET_ONE_NAME"
   assert_success
 }
+
+@test "REST - put ACL" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  canonical_id=${lines[0]}
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+
+  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
+  assert_success
+
+  run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
+  assert_success
+
+  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    sleep 5
+  fi
+
+  run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
+  assert_success
+}
