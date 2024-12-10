@@ -461,7 +461,8 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 	r := bytes.NewReader(data)
 	input.Body = r
 
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	// Use longTimeout in case of large object uploads
+	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
 	res, err := client.PutObject(ctx, input)
 	cancel()
 	if err != nil {
@@ -727,7 +728,8 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 		rand.Read(partBuffer)
 		hash.Write(partBuffer)
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		// User longTimeout in case of large object uploads
+		ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
 		pn := int32(partNumber)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
 			Bucket:     &bucket,

@@ -138,6 +138,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_invalid_long_tags(s)
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
+	PutObject_5gib_exceeding_file(s)
 	PutObject_success(s)
 	if !s.versioningEnabled {
 		PutObject_racey_success(s)
@@ -272,6 +273,7 @@ func TestUploadPart(s *S3Conf) {
 	UploadPart_invalid_part_number(s)
 	UploadPart_non_existing_key(s)
 	UploadPart_non_existing_mp_upload(s)
+	UploadPart_5gib_exceeding_file(s)
 	UploadPart_success(s)
 }
 
@@ -678,6 +680,7 @@ func GetIntTests() IntTests {
 		"PutObject_missing_object_lock_retention_config":                      PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                             PutObject_name_too_long,
 		"PutObject_with_object_lock":                                          PutObject_with_object_lock,
+		"PutObject_5gib_exceeding_file":                                       PutObject_5gib_exceeding_file,
 		"PresignedAuth_Put_GetObject_with_data":                               PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                         PresignedAuth_Put_GetObject_with_UTF8_chars,
 		"PresignedAuth_UploadPart":                                            PresignedAuth_UploadPart,
@@ -816,6 +819,7 @@ func GetIntTests() IntTests {
 		"UploadPart_invalid_part_number":                                      UploadPart_invalid_part_number,
 		"UploadPart_non_existing_key":                                         UploadPart_non_existing_key,
 		"UploadPart_non_existing_mp_upload":                                   UploadPart_non_existing_mp_upload,
+		"UploadPart_5gib_exceeding_file":                                      UploadPart_5gib_exceeding_file,
 		"UploadPart_success":                                                  UploadPart_success,
 		"UploadPartCopy_non_existing_bucket":                                  UploadPartCopy_non_existing_bucket,
 		"UploadPartCopy_incorrect_uploadId":                                   UploadPartCopy_incorrect_uploadId,
