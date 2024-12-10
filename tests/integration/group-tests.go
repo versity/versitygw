@@ -447,8 +447,8 @@ func TestGetObjectLegalHold(s *S3Conf) {
 func TestWORMProtection(s *S3Conf) {
 	WORMProtection_bucket_object_lock_configuration_compliance_mode(s)
 	WORMProtection_bucket_object_lock_configuration_governance_mode(s)
-	// WORMProtection_bucket_object_lock_governance_bypass_delete(s)
-	// WORMProtection_bucket_object_lock_governance_bypass_delete_multiple
+	WORMProtection_bucket_object_lock_governance_bypass_delete(s)
+	WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s)
 	WORMProtection_object_lock_retention_compliance_locked(s)
 	WORMProtection_object_lock_retention_governance_locked(s)
 	WORMProtection_object_lock_retention_governance_bypass_overwrite(s)
