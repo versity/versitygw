@@ -15,7 +15,7 @@
 package auth
 
 import (
-	"errors"
+	"github.com/versity/versitygw/s3err"
 )
 
 // IAMServiceSingle manages the single tenant (root-only) IAM service
@@ -23,31 +23,29 @@ type IAMServiceSingle struct{}
 
 var _ IAMService = &IAMServiceSingle{}
 
-var ErrNotSupported = errors.New("method is not supported")
-
 // CreateAccount not valid in single tenant mode
 func (IAMServiceSingle) CreateAccount(account Account) error {
-	return ErrNotSupported
+	return s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
 // GetUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) GetUserAccount(access string) (Account, error) {
-	return Account{}, ErrNoSuchUser
+	return Account{}, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
 // UpdateUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) UpdateUserAccount(access string, props MutableProps) error {
-	return ErrNotSupported
+	return s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
 // DeleteUserAccount no accounts in single tenant mode
 func (IAMServiceSingle) DeleteUserAccount(access string) error {
-	return ErrNotSupported
+	return s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
 // ListUserAccounts no accounts in single tenant mode
 func (IAMServiceSingle) ListUserAccounts() ([]Account, error) {
-	return []Account{}, nil
+	return []Account{}, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
 // Shutdown graceful termination of service

@@ -262,8 +262,8 @@ func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 				result = append(result, acc)
 				continue
 			}
-			if err == ErrNotSupported {
-				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)) {
+				return nil, err
 			}
 			return nil, fmt.Errorf("check user account: %w", err)
 		}
