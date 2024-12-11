@@ -74,23 +74,21 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  #run check_ownership_rule_and_reset_acl "$1"
-  #assert_success "error checking ownership rule and resetting acl"
+  if ! check_ownership_rule_and_reset_acl "$1"; then
+    log 2 "error checking ownership rule and resetting acl"
+    return 1
+  fi
 
   # shellcheck disable=SC2154
   if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
     log 2 "error disabling object lock config"
     return 1
   fi
-  #if ! put_bucket_versioning "s3api" "$1" "Suspended"; then
-  #  log 2 "error suspending bucket versioning"
-  #  return 1
-  #fi
 
-  #if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
-  #  log 2 "error changing bucket owner back to root"
-  #  return 1
-  #fi
+  if [ "$RUN_USERS" == "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+    log 2 "error changing bucket owner back to root"
+    return 1
+  fi
 }
 
 # params:  bucket name
@@ -219,6 +217,10 @@ bucket_cleanup_if_bucket_exists() {
   fi
 
   if bucket_exists "$1" "$2"; then
+    if [ "$DELETE_BUCKETS_AFTER_TEST" == "false" ]; then
+      log 2 "skipping bucket cleanup/deletion"
+      return 0
+    fi
     if ! bucket_cleanup "$1" "$2"; then
       log 2 "error deleting bucket and/or contents"
       return 1

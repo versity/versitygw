@@ -198,3 +198,48 @@ check_object_listing_with_prefixes() {
   fi
   return 0
 }
+
+list_objects_with_user_rest_verify_access_denied() {
+  if [ $# -ne 3 ]; then
+    log 2 "list_objects_with_user_rest_verify_access_denied' requires bucket, username, password"
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to list objects: $result"
+    return 1
+  fi
+  if [ "$result" != "403" ]; then
+    log 2 "expected response code of '403', was '$result'"
+    return 1
+  fi
+  error_message="$(cat "$TEST_FILE_FOLDER/objects.txt")"
+  if [[ "$error_message" != *"Access Denied"* ]]; then
+    log 2 "unexpected error message: $error_message"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_with_user_rest_verify_success() {
+  if [ $# -ne 4 ]; then
+    log 2 "list_objects_with_user_rest_verify_access_denied' requires bucket, username, password, expected object"
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to list objects: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' (error: $(cat "$TEST_FILE_FOLDER/objects.txt"))"
+    return 1
+  fi
+  if ! key=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    log 2 "error getting object key: $key"
+    return 1
+  fi
+  if [ "$key" != "$4" ]; then
+    log 2 "expected '$4', was '$key'"
+    return 1
+  fi
+  return 0
+}

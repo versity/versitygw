@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Copyright 2024 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+source ./tests/util/util_users.sh
+
 get_check_default_acl_s3cmd() {
   if [ $# -ne 1 ]; then
     log 2 "'get_check_acl_s3cmd' requires bucket name"
@@ -240,6 +256,95 @@ get_and_check_acl_rest() {
       log 2 "ID mismatch"
       return 1
     fi
+  fi
+  return 0
+}
+
+setup_acl() {
+  if [ $# -ne 4 ]; then
+    log 2 "'setup_acl' requires acl file, grantee, permission, owner ID"
+    return 1
+  fi
+  cat <<EOF > "$1"
+<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Owner>
+      <ID>$4</ID>
+  </Owner>
+  <AccessControlList>
+      <Grant>
+          <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
+              <ID>$2</ID>
+          </Grantee>
+          <Permission>$3</Permission>
+      </Grant>
+  </AccessControlList>
+</AccessControlPolicy>
+EOF
+}
+
+setup_acl_json() {
+  if [ $# -ne 5 ]; then
+    log 2 "'setup_acl_json' requires acl file, grantee type, grantee ID, permission, owner ID"
+    return 1
+  fi
+  cat <<EOF > "$1"
+{
+  "Grants": [
+    {
+      "Grantee": {
+        "Type": "$2",
+        "ID": "$3"
+      },
+      "Permission": "$4"
+    }
+  ],
+  "Owner": {
+    "ID": "$5"
+  }
+}
+EOF
+}
+
+create_versitygw_acl_user_or_get_direct_user() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create_versitygw_acl_user_or_get_direct_user' requires username, password"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    if [ -z "$AWS_CANONICAL_ID" ] || [ -z "$ACL_AWS_CANONICAL_ID" ] || [ -z "$ACL_AWS_ACCESS_KEY_ID" ] || [ -z "$ACL_AWS_SECRET_ACCESS_KEY" ]; then
+      log 2 "direct ACL calls require the following env vars: ACL_CANONICAL_ID, ACL_AWS_ACCESS_KEY_ID, ACL_AWS_SECRET_ACCESS_KEY"
+      return 1
+    fi
+    echo "$AWS_CANONICAL_ID"
+    echo "$ACL_AWS_CANONICAL_ID"
+    echo "$ACL_AWS_ACCESS_KEY_ID"
+    echo "$ACL_AWS_SECRET_ACCESS_KEY"
+  else
+    echo "$AWS_ACCESS_KEY_ID"
+    if ! create_user_versitygw "$1" "$2" "user"; then
+      log 2 "error creating versitygw user"
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    echo "$1"
+    echo "$1"
+    # shellcheck disable=SC2154
+    echo "$2"
+  fi
+}
+
+put_acl_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_acl_rest' requires bucket name, ACL file"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
+    return 1
   fi
   return 0
 }
