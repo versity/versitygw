@@ -40,6 +40,7 @@ import (
 
 var (
 	shortTimeout  = 10 * time.Second
+	longTimeout   = 40 * time.Second // for large files upload
 	iso8601Format = "20060102T150405Z"
 	nullVersionId = "null"
 )
@@ -3086,6 +3087,23 @@ func PutObject_with_object_lock(s *S3Conf) error {
 
 	passF(testName)
 	return nil
+}
+
+func PutObject_5gib_exceeding_file(s *S3Conf) error {
+	testName := "PutObject_5gib_exceeding_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		_, err := putObjectWithData(5*1024*1024*1024+1, &s3.PutObjectInput{ // more than 5 Gib
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEntityTooLarge)); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func PutObject_racey_success(s *S3Conf) error {
@@ -6172,6 +6190,24 @@ func UploadPart_non_existing_mp_upload(s *S3Conf) error {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchUpload)); err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func UploadPart_5gib_exceeding_file(s *S3Conf) error {
+	testName := "UploadPart_5gib_exceeding_file"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = uploadParts(s3client, 5*1024*1024*1024+10, 1, bucket, obj, *mp.UploadId) // more than 5 Gib
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEntityTooLarge)); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

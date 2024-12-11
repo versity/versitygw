@@ -18,7 +18,10 @@ import (
 	"io"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/s3err"
 )
+
+const streaingSizeLimit = 5 * 1024 * 1024 * 1024 // 5 Gib
 
 func wrapBodyReader(ctx *fiber.Ctx, wr func(io.Reader) io.Reader) {
 	r, ok := ctx.Locals("body-reader").(io.Reader)
@@ -27,5 +30,37 @@ func wrapBodyReader(ctx *fiber.Ctx, wr func(io.Reader) io.Reader) {
 	}
 
 	r = wr(r)
+	r = NewLimitedReader(r, streaingSizeLimit)
 	ctx.Locals("body-reader", r)
+}
+
+// LimitedReader limits the amount of data read from the underlying io.Reader to a specified limit.
+type LimitedReader struct {
+	r     io.Reader
+	limit int64
+	read  int64
+}
+
+func (lr *LimitedReader) Read(data []byte) (n int, err error) {
+	if lr.read > lr.limit {
+		return int(lr.read), s3err.GetAPIError(s3err.ErrEntityTooLarge)
+	}
+
+	n, err = lr.r.Read(data)
+	lr.read += int64(n)
+
+	if lr.read > lr.limit {
+		return n, s3err.GetAPIError(s3err.ErrEntityTooLarge)
+	}
+
+	return n, err
+}
+
+// NewLimitedReader creates a new LimitedReader instance
+// with the specified limit, based on the provided io.Reader
+func NewLimitedReader(r io.Reader, limit int64) io.Reader {
+	return &LimitedReader{
+		r:     r,
+		limit: limit,
+	}
 }
