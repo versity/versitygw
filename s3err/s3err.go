@@ -154,6 +154,7 @@ const (
 	ErrAdminUserExists
 	ErrAdminInvalidUserRole
 	ErrAdminMissingUserAcess
+	ErrAdminMethodNotSupported
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -635,6 +636,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "XAdminInvalidArgument",
 		Description:    "User access key ID is missing.",
 		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrAdminMethodNotSupported: {
+		Code:           "XAdminMethodNotSupported",
+		Description:    "The method is not supported in single root user mode.",
+		HTTPStatusCode: http.StatusNotImplemented,
 	},
 }
 
