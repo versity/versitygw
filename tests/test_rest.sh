@@ -38,6 +38,7 @@ source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
+source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
@@ -244,9 +245,6 @@ export RUN_USERS=true
 }
 
 @test "versioning - retrieve after delete" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/888"
-  fi
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -269,9 +267,6 @@ export RUN_USERS=true
 }
 
 @test "REST - legal hold, get without config" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/883"
-  fi
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -487,6 +482,44 @@ export RUN_USERS=true
   if [ "$DIRECT" == "true" ]; then
     sleep 5
   fi
+
+  run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
+  assert_success
+}
+
+@test "REST - put public-read canned acl" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  canonical_id=${lines[0]}
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+
+  run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
+  assert_success
+
+  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    run allow_public_access "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  assert_success
 
   run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
   assert_success

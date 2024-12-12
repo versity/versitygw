@@ -59,11 +59,11 @@ reset_bucket_acl() {
   fi
   # shellcheck disable=SC2154
   if [ "$DIRECT" != "true" ]; then
-    if ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "ID" "$AWS_ACCESS_KEY_ID" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"; then
+    if ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_ACCESS_KEY_ID" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"; then
       log 2 "error resetting versitygw ACL"
       return 1
     fi
-  elif ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "ID" "$AWS_CANONICAL_ID" "FULL_CONTROL" "$AWS_CANONICAL_ID"; then
+  elif ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_CANONICAL_ID" "FULL_CONTROL" "$AWS_CANONICAL_ID"; then
     log 2 "error resetting direct ACL"
     return 1
   fi

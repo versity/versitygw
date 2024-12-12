@@ -55,7 +55,7 @@ log_mask() {
     return 1
   fi
 
-  log_message "$log_level" "${masked_args[*]}"
+  log_message "$log_level" "$masked_data"
 }
 
 mask_args() {
@@ -63,23 +63,38 @@ mask_args() {
     echo "'mask_args' requires string"
     return 1
   fi
-  IFS=' ' read -r -a array <<< "$1"
+  unmasked_array=()
+  masked_data=""
+  while IFS= read -r line; do
+    unmasked_array+=("$line")
+  done <<< "$1"
 
-  if ! mask_arg_array "${array[@]}"; then
-    echo "error masking arg array"
-    return 1
-  fi
+  # shellcheck disable=SC2068
+  first_line=true
+  for line in "${unmasked_array[@]}"; do
+    if ! mask_arg_array "$line"; then
+      echo "error masking arg array"
+      return 1
+    fi
+    if [ "$first_line" == "true" ]; then
+      masked_data="${masked_args[*]}"
+      first_line="false"
+    else
+      masked_data+=$(printf "\n%s" "${masked_args[*]}")
+    fi
+  done
 }
 
 mask_arg_array() {
-  masked_args=()  # Initialize an array to hold the masked arguments
   if [ $# -eq 0 ]; then
     echo "'mask_arg_array' requires parameters"
     return 1
   fi
   mask_next=false
   is_access=false
-  for arg in "$@"; do
+  masked_args=()  # Initialize an array to hold the masked arguments
+  # shellcheck disable=SC2068
+  for arg in $@; do
     if ! check_arg_for_mask "$arg"; then
       echo "error checking arg for mask"
       return 1
@@ -135,4 +150,5 @@ log_message() {
   if [[ -n "$TEST_LOG_FILE" ]]; then
     echo "$now $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
+  sync
 }
