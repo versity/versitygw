@@ -38,6 +38,7 @@ source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
+source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
@@ -490,4 +491,35 @@ export RUN_USERS=true
 
   run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
   assert_success
+}
+
+@test "REST - put acl, canned and explicit" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  canonical_id=${lines[0]}
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+
+  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    run allow_public_access "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+  log 5 "result: $result"
+  log 5 "access block info: $(cat "$TEST_FILE_FOLDER/response.txt")"
+  cat "$TEST_FILE_FOLDER/response.txt"
+  #if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" ACL_FILE="$TEST_FILE_FOLDER/acl-file.txt" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+  #  log 2 "error attempting to put bucket acl: $result"
+  #fi
+  #log 5 "result: $result, response: $(cat "$TEST_FILE_FOLDER/response.txt")"
+  return 1
 }

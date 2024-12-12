@@ -86,6 +86,18 @@ teardown() {
       log 3 "unable to remove test file folder: $error"
     fi
   fi
+  stop_versity
+  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
+    end_time=$(date +%s)
+    total_time=$((end_time - start_time))
+    log 4 "Total test time: $total_time"
+    if [[ -n "$TIME_LOG" ]]; then
+      echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
+    fi
+  fi
+  if [[ -n "$COVERAGE_DB" ]]; then
+    record_result
+  fi
   if [[ "$BATS_TEST_COMPLETED" -ne 1 ]]; then
     if [[ -e "$COMMAND_LOG" ]]; then
       cat "$COMMAND_LOG"
@@ -107,17 +119,5 @@ teardown() {
     if ! delete_temp_log_if_exists; then
       log 2 "error deleting temp log"
     fi
-  fi
-  stop_versity
-  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
-    end_time=$(date +%s)
-    total_time=$((end_time - start_time))
-    log 4 "Total test time: $total_time"
-    if [[ -n "$TIME_LOG" ]]; then
-      echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
-    fi
-  fi
-  if [[ -n "$COVERAGE_DB" ]]; then
-    record_result
   fi
 }
