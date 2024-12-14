@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +40,7 @@ type Grantee struct {
 }
 
 type GetBucketAclOutput struct {
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AccessControlPolicy"`
 	Owner             *types.Owner
 	AccessControlList AccessControlList
 }
