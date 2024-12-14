@@ -348,3 +348,43 @@ put_acl_rest() {
   fi
   return 0
 }
+
+put_invalid_acl_rest_verify_failure() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_invalid_acl_rest_verify_failure' requires bucket name, ACL file"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  if ! error_code=$(xmllint --xpath '//*[local-name()="Code"]/text()' "$TEST_FILE_FOLDER/response.txt" 2>&1); then
+    log 2 "error getting display name: $error_code"
+    return 1
+  fi
+  if [ "$error_code" != "MalformedACLError" ]; then
+    log 2 "invalid error code, expected 'MalformedACLError', was '$error_code'"
+    return 1
+  fi
+  return 0
+}
+
+put_canned_acl_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_canned_acl_rest' requires bucket name, canned acl"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" CANNED_ACL="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "response code '$result' (message: $(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  return 0
+}
