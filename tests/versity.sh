@@ -21,10 +21,6 @@ start_versity_process() {
     log 1 "start versity process function requires number"
     exit 1
   fi
-  if ! create_test_file_folder; then
-    log 1 "error creating test log folder"
-    exit 1
-  fi
   build_run_and_log_command
   # shellcheck disable=SC2181
   if [[ $? -ne 0 ]]; then

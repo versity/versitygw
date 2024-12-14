@@ -43,38 +43,12 @@ delete_object_tagging_rest() {
     log 2 "'delete_object_tagging' requires bucket, key"
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="DELETE
-/$1/$2
-tagging=
-host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/delete_object_tagging.sh); then
+    log 2 "error sending delete object tagging REST command: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks -w "%{http_code}" -X DELETE "$header://$aws_endpoint_url_address/$1/$2?tagging" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: $payload_hash" \
-    -H "x-amz-date: $current_date_time" \
-    -d "$tagging" -o "$TEST_FILE_FOLDER"/delete_tagging_error.txt 2>&1)
-  log 5 "reply status code: $reply"
-  if [[ "$reply" != "204" ]]; then
-    log 2 "reply error: $reply"
-    log 2 "put object tagging command returned error: $(cat "$TEST_FILE_FOLDER"/delete_tagging_error.txt)"
+  if [ "$result" != "204" ]; then
+    log 2 "delete-object-tagging returned code $result (response: $(cat "$TEST_FILE_FOLDER/response.txt"))"
     return 1
   fi
   return 0
