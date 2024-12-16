@@ -125,9 +125,6 @@ export RUN_USERS=true
 }
 
 @test "test_admin_put_get_object" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/888"
-  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "admin" "$BUCKET_ONE_NAME"

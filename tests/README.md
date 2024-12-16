@@ -1,5 +1,19 @@
 # Command-Line Tests
 
+## Table of Contents
+
+[Instructions - Running Locally](#instructions---running-locally)<br>
+[* Posix Backend](#posix-backend)<br>
+[* Static Bucket Mode](#static-bucket-mode)<br>
+[* S3 Backend](#s3-backend)<br>
+[* Direct Mode](#direct-mode)<br>
+[Instructions - Running With Docker](#instructions---running-with-docker)<br>
+[Instructions - Running With Docker-Compose](#instructions---running-with-docker-compose)<br>
+[Environment Parameters](#environment-parameters)<br>
+[* Secret](#secret)<br>
+[* Non-Secret](#non-secret)<br>
+[REST Scripts](#rest-scripts)<br>
+
 ## Instructions - Running Locally
 
 ### Posix Backend
@@ -85,7 +99,17 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 ## Environment Parameters
 
+### Secret
+
 **AWS_PROFILE**, **AWS_ENDPOINT_URL**, **AWS_REGION**, **AWS_ACCESS_KEY_ID**, **AWS_SECRET_ACCESS_KEY**:  identical to the same parameters in **s3**.
+
+**AWS_CANONICAL_ID**:  for direct mode, the canonical ID for the main user (owner)
+
+**ACL_AWS_CANONICAL_ID**:  for direct mode, the canonical ID for the user to test ACL changes and access by non-owners
+
+**ACL_AWS_ACCESS_KEY_ID**, **ACL_AWS_ACCESS_SECRET_KEY**:  for direct mode, the ID and key for the S3 user in the **ACL_AWS_CANONICAL_ID** account.
+
+### Non-Secret
 
 **VERSITY_EXE**:  location of the versity executable relative to test folder.
 
@@ -134,3 +158,21 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **VERSIONING_DIR**:  where to put gateway file versioning info.
 
 **COMMAND_LOG**:  where to store list of client commands, which if using will be reported during test failures.
+
+**TIME_LOG**:  optional log to show duration of individual tests
+
+**DIRECT_S3_ROOT_ACCOUNT_NAME**:  for direct mode, S3 username
+
+**DELETE_BUCKETS_AFTER_TEST**:  whether or not to delete buckets after individual tests, useful for debugging if the post-test bucket state needs to be checked
+
+## REST Scripts
+
+REST scripts are included for calls to S3's REST API in the `./tests/rest_scripts/` folder.  To call a script, the following parameters are needed:
+* **AWS_ACCESS_KEY_ID**, **AWS_SECRET_ACCESS_KEY**, etc.
+* **AWS_ENDPOINT_URL** (default:  `https://localhost:7070`)
+* **OUTPUT_FILE**:  file where the command's response data is written
+* Any other parameters specified at the top of the script file, such as payloads and variables.  Sometimes, defaults are included.
+
+Upon success, the script will return a response code, and write the data to the **OUTPUT_FILE** location.
+
+Example:  `AWS_ACCESS_KEY_ID={id} AWS_SECRET_ACCESS_KEY={key} AWS_ENDPOINT_URL=https://s3.amazonaws.com OUTPUT_FILE=./output_file.xml ./tests/rest_scripts/list_buckets.sh`
