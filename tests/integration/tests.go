@@ -7327,6 +7327,49 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_small_upload_size(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_small_upload_size"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		// The uploaded parts size is 256 < 5 Mib (the minimum allowed size)
+		parts, _, err := uploadParts(s3client, 1024, 4, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		cParts := []types.CompletedPart{}
+
+		for _, el := range parts {
+			cParts = append(cParts, types.CompletedPart{
+				PartNumber: el.PartNumber,
+				ETag:       el.ETag,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: cParts,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEntityTooSmall)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_success(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -7336,7 +7379,7 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
-		objSize := int64(5 * 1024 * 1024)
+		objSize := int64(25 * 1024 * 1024)
 		parts, csum, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
@@ -7429,7 +7472,7 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 		var mu sync.RWMutex
 		uploads := make([]mpinfo, 10)
 		sums := make([]string, 10)
-		objSize := int64(5 * 1024 * 1024)
+		objSize := int64(25 * 1024 * 1024)
 
 		eg := errgroup.Group{}
 		for i := 0; i < 10; i++ {
@@ -12972,7 +13015,7 @@ func Versioning_Multipart_Upload_success(s *S3Conf) error {
 			return err
 		}
 
-		objSize := int64(5 * 1024 * 1024)
+		objSize := int64(25 * 1024 * 1024)
 		parts, _, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
@@ -13052,7 +13095,7 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 			return err
 		}
 
-		objSize := int64(5 * 1024 * 1024)
+		objSize := int64(25 * 1024 * 1024)
 		parts, _, err := uploadParts(s3client, objSize, 5, bucket, obj, *out.UploadId)
 		if err != nil {
 			return err
