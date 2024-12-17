@@ -320,6 +320,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 	CompletedMultipartUpload_non_existing_bucket(s)
 	CompleteMultipartUpload_invalid_part_number(s)
 	CompleteMultipartUpload_invalid_ETag(s)
+	CompleteMultipartUpload_small_upload_size(s)
 	CompleteMultipartUpload_success(s)
 	if !s.azureTests {
 		CompleteMultipartUpload_racey_success(s)
@@ -849,6 +850,7 @@ func GetIntTests() IntTests {
 		"CompletedMultipartUpload_non_existing_bucket":                        CompletedMultipartUpload_non_existing_bucket,
 		"CompleteMultipartUpload_invalid_part_number":                         CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_invalid_ETag":                                CompleteMultipartUpload_invalid_ETag,
+		"CompleteMultipartUpload_small_upload_size":                           CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_success":                                     CompleteMultipartUpload_success,
 		"CompleteMultipartUpload_racey_success":                               CompleteMultipartUpload_racey_success,
 		"PutBucketAcl_non_existing_bucket":                                    PutBucketAcl_non_existing_bucket,

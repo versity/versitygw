@@ -1201,6 +1201,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		return ptNumber - nextPtNumber
 	})
 
+	last := len(blockList.UncommittedBlocks) - 1
 	for i, block := range blockList.UncommittedBlocks {
 		ptNumber, err := decodeBlockId(*block.Name)
 		if err != nil {
@@ -1212,6 +1213,11 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		}
 		if *input.MultipartUpload.Parts[i].PartNumber != int32(ptNumber) {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		// all parts except the last need to be greater, thena
+		// the minimum allowed size (5 Mib)
+		if i < last && *block.Size < backend.MinPartSize {
+			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
 		blockIds = append(blockIds, *block.Name)
 	}
