@@ -7327,6 +7327,38 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_empty_parts(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_empty_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{}, // empty parts list
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEmptyParts)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_success(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
