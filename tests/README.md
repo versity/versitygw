@@ -75,10 +75,11 @@ To communicate directly with s3, in order to compare the gateway results to dire
 1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
 2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
 3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> -f Dockerfile_test_bats --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" .`.
+4.  To run the entire suite, run `docker run -it <image name>`.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST tests -> `docker run -it <image name> rest`).  Also, multiple specific suites can be run, if separated by comma.
 
 ## Instructions - Running with docker-compose
 
-A file named `docker-compose-bats.yml` is provided in the root folder.  Four configurations are provided:
+A file named `docker-compose-bats.yml` is provided in the root folder.  A few configurations are provided, and you can also create your own provided you have a secrets and config file:
 * insecure (without certificates), with creation/removal of buckets
 * secure, posix backend, with static buckets
 * secure, posix backend, with creation/removal of buckets
