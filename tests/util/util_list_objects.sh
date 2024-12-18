@@ -243,3 +243,19 @@ list_objects_with_user_rest_verify_success() {
   fi
   return 0
 }
+
+list_objects_check_params_get_token() {
+  if [ $# -ne 3 ]; then
+    log 2 "'list_objects_check_params_get_token' requires bucket name, files"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" VERSION_TWO="TRUE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+  if ! continuation_token=$(xmllint --xpath '//*[local-name()="NextContinuationToken"]/text()' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    log 2 "error getting next continuation token: $continuation_token"
+    return 1
+  fi
+}
