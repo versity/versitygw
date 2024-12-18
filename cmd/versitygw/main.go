@@ -74,6 +74,7 @@ var (
 	metricsService                           string
 	statsdServers                            string
 	dogstatsServers                          string
+	ipaHost, ipaUser, ipaPassword            string
 )
 
 var (
@@ -506,6 +507,24 @@ func initFlags() []cli.Flag {
 			Aliases:     []string{"mds"},
 			Destination: &dogstatsServers,
 		},
+		&cli.StringFlag{
+			Name:        "ipa-host",
+			Usage:       "ipa host",
+			EnvVars:     []string{"VGW_IPA_HOST"},
+			Destination: &ipaHost,
+		},
+		&cli.StringFlag{
+			Name:        "ipa-user",
+			Usage:       "ipa user",
+			EnvVars:     []string{"VGW_IPA_USER"},
+			Destination: &ipaUser,
+		},
+		&cli.StringFlag{
+			Name:        "ipa-password",
+			Usage:       "ipa password",
+			EnvVars:     []string{"VGW_IPA_PASSWORD"},
+			Destination: &ipaPassword,
+		},
 	}
 }
 
@@ -623,6 +642,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		CacheDisable:           iamCacheDisable,
 		CacheTTL:               iamCacheTTL,
 		CachePrune:             iamCachePrune,
+		IpaHost:                ipaHost,
+		IpaUser:                ipaUser,
+		IpaPassword:            ipaPassword,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)

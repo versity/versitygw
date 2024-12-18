@@ -124,6 +124,9 @@ type Opts struct {
 	CacheDisable           bool
 	CacheTTL               int
 	CachePrune             int
+	IpaHost                string
+	IpaUser                string
+	IpaPassword            string
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -149,6 +152,9 @@ func New(o *Opts) (IAMService, error) {
 			o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
 			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
 		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
+	case o.IpaHost != "":
+		svc, err = NewIpaIAMService(o.RootAccount, o.IpaHost, o.IpaUser, o.IpaPassword)
+		fmt.Printf("initializing IPA IAM with %q\n", o.IpaHost)
 	default:
 		// if no iam options selected, default to the single user mode
 		fmt.Println("No IAM service configured, enabling single account mode")
