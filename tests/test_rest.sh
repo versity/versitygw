@@ -437,3 +437,41 @@ export RUN_USERS=true
   run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success
 }
+
+@test "REST - list objects v2 - invalid continuation token" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  test_file_two="test_file_2"
+  test_file_three="test_file_3"
+  run create_test_files "$test_file" "$test_file_two" "$test_file_three"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
+  assert_success
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" VERSION_TWO="TRUE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+  if ! continuation_token=$(xmllint --xpath '//*[local-name()="NextContinuationToken"]/text()' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    log 2 "error getting next continuation token: $continuation_token"
+    return 1
+  fi
+  log 5 "token: $continuation_token"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" VERSION_TWO="TRUE" MAX_KEYS=1 CONTINUATION_TOKEN="aWrongToken2" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+
+  return 1
+}
