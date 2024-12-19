@@ -43,6 +43,7 @@ source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
+source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
 
@@ -439,6 +440,9 @@ export RUN_USERS=true
 }
 
 @test "REST - list objects v2 - invalid continuation token" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/993"
+  fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
@@ -457,21 +461,11 @@ export RUN_USERS=true
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" VERSION_TWO="TRUE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
-    log 2 "error attempting to get bucket ACL response: $result"
-    return 1
-  fi
-  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
-  if ! continuation_token=$(xmllint --xpath '//*[local-name()="NextContinuationToken"]/text()' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
-    log 2 "error getting next continuation token: $continuation_token"
-    return 1
-  fi
-  log 5 "token: $continuation_token"
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" VERSION_TWO="TRUE" MAX_KEYS=1 CONTINUATION_TOKEN="aWrongToken2" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
-    log 2 "error attempting to get bucket ACL response: $result"
-    return 1
-  fi
-  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+  run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  assert_success
+  continuation_token=$output
 
-  return 1
+  # interestingly, AWS appears to accept continuation tokens that are a few characters off, so have to remove three chars
+  run list_objects_check_continuation_error "$BUCKET_ONE_NAME" "${continuation_token:0:${#continuation_token}-3}"
+  assert_success
 }
