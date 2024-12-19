@@ -22,6 +22,7 @@ source ./tests/rest_scripts/rest.sh
 bucket_name="$BUCKET_NAME"
 version_two="${VERSION_TWO:-FALSE}"
 max_keys="${MAX_KEYS:-0}"
+# shellcheck disable=SC2153
 if [ "$CONTINUATION_TOKEN" != "" ]; then
   continuation_token=$(jq -rn --arg token "$CONTINUATION_TOKEN" '$token | @uri')
 fi

@@ -10,7 +10,7 @@ check_xml_element() {
     xpath+='*[local-name()="'$tree_val'"]/'
   done
   xpath+='text()'
-  if ! xml_val=$(xmllint --xpath $xpath "$1" 2>&1); then
+  if ! xml_val=$(xmllint --xpath "$xpath" "$1" 2>&1); then
     log 2 "error getting XML value matching $xpath: $xml_val"
     return 1
   fi
