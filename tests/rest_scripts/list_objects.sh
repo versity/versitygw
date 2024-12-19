@@ -51,7 +51,6 @@ x-amz-date:$current_date_time
 
 host;x-amz-content-sha256;x-amz-date
 UNSIGNED-PAYLOAD"
-echo "$canonical_request" > "cr.txt"
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"")
