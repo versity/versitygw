@@ -141,7 +141,11 @@ run_suite() {
       ;;
     rest)
       echo "Running rest tests ..."
-      "$HOME"/bin/bats ./tests/test_rest.sh || exit_code=$?
+      if "$HOME"/bin/bats ./tests/test_rest.sh; then
+        "$HOME"/bin/bats ./tests/test_rest_acl.sh || exit_code=$?
+      else
+        exit_code=1
+      fi
       ;;
     s3api-user)
       echo "Running s3api user tests ..."
