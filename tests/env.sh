@@ -136,7 +136,7 @@ check_universal_vars() {
     exit 1
   fi
   if [ ! -d "$TEST_FILE_FOLDER" ]; then
-    if ! error=$(mkdir -p "$TEST_FILE_FOLDER"); then
+    if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
       log 2 "error creating test folder: $error"
       exit 1
     fi

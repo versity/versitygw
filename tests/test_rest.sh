@@ -43,6 +43,7 @@ source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
+source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
 
@@ -438,89 +439,33 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - get ACL" {
+@test "REST - list objects v2 - invalid continuation token" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/971"
+    skip "https://github.com/versity/versitygw/issues/993"
   fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  run get_and_check_acl_rest "$BUCKET_ONE_NAME"
-  assert_success
-}
-
-@test "REST - put ACL" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
-  assert_success
-
-  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  test_file_two="test_file_2"
+  test_file_three="test_file_3"
+  run create_test_files "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
-  assert_success
-  canonical_id=${lines[0]}
-  user_canonical_id=${lines[1]}
-  username=${lines[2]}
-  password=${lines[3]}
-
-  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
   assert_success
 
-  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
+  continuation_token=$output
 
-  if [ "$DIRECT" == "true" ]; then
-    sleep 5
-  fi
-
-  run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
-  assert_success
-}
-
-@test "REST - put public-read canned acl" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  test_file="test_file"
-  run create_test_files "$test_file"
-  assert_success
-
-  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
-  assert_success
-
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
-  assert_success
-  canonical_id=${lines[0]}
-  user_canonical_id=${lines[1]}
-  username=${lines[2]}
-  password=${lines[3]}
-
-  run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
-  assert_success
-
-  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
-  assert_success
-
-  if [ "$DIRECT" == "true" ]; then
-    run allow_public_access "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
-  assert_success
-
-  run list_objects_with_user_rest_verify_success "$BUCKET_ONE_NAME" "$username" "$password" "$test_file"
+  # interestingly, AWS appears to accept continuation tokens that are a few characters off, so have to remove three chars
+  run list_objects_check_continuation_error "$BUCKET_ONE_NAME" "${continuation_token:0:${#continuation_token}-3}"
   assert_success
 }

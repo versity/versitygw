@@ -110,10 +110,6 @@ put_user_policy_userplus() {
     log 2 "'put user policy userplus' function requires username"
     return 1
   fi
-  if [[ -z "$TEST_FILE_FOLDER" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
-    log 2 "unable to create test file folder"
-    return 1
-  fi
 
   cat <<EOF > "$TEST_FILE_FOLDER"/user_policy_file
 {
@@ -152,10 +148,6 @@ put_user_policy() {
   log 6 "put_user_policy"
   if [[ $# -ne 3 ]]; then
     log 2 "attaching user policy requires user ID, role, bucket name"
-    return 1
-  fi
-  if [[ -z "$TEST_FILE_FOLDER" ]] && [[ -z "$GITHUB_ACTIONS" ]] && ! create_test_file_folder; then
-    log 2 "unable to create test file folder"
     return 1
   fi
 
