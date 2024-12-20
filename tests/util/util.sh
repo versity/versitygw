@@ -54,12 +54,6 @@ add_governance_bypass_policy() {
     log 2 "'add governance bypass policy' command requires bucket name"
     return 1
   fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
-  fi
   cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
 {
   "Version": "2012-10-17",
