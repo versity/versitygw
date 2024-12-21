@@ -34,30 +34,10 @@ list_object_versions_rest() {
     log 2 "'list_object_versions_rest' requires bucket name"
     return 1
   fi
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1
-versions=
-host:${AWS_ENDPOINT_URL#*//}
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  log 5 "list object versions REST"
+  if ! result=$(BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object_versions.txt" ./tests/rest_scripts/list_object_versions.sh); then
+    log 2 "error listing object versions: $result"
     return 1
   fi
-
-  get_signature
-  # shellcheck disable=SC2034,SC2154
-  reply=$(send_command curl -ks "$AWS_ENDPOINT_URL/$1?versions" \
-         -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-         -H "x-amz-content-sha256: $payload_hash" \
-         -H "x-amz-date: $current_date_time" \
-         -o "$TEST_FILE_FOLDER/object_versions.txt" 2>&1)
+  return 0
 }
