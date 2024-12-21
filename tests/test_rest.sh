@@ -441,7 +441,7 @@ export RUN_USERS=true
 
 @test "REST - list objects v2 - invalid continuation token" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/995"
+    skip "https://github.com/versity/versitygw/issues/993"
   fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -471,6 +471,9 @@ export RUN_USERS=true
 }
 
 @test "REST - list objects v1 - initial marker empty" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/995"
+  fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 

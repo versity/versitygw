@@ -40,10 +40,12 @@ multipart_upload_from_bucket() {
 
   parts="["
   for ((i = 1; i <= $4; i++)); do
+    # shellcheck disable=SC2154
     if ! upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i"; then
       log 2 "error uploading part $i"
       return 1
     fi
+    # shellcheck disable=SC2154
     parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
     if [[ $i -ne $4 ]]; then
       parts+=","

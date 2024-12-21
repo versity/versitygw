@@ -349,6 +349,7 @@ multipart_upload_range_too_large() {
     log 2 "multipart upload succeeded despite overly large range"
     return 1
   fi
+  # shellcheck disable=SC2154
   log 5 "error: $upload_part_copy_error"
   if [[ $upload_part_copy_error != *"Range specified is not valid"* ]] && [[ $upload_part_copy_error != *"InvalidRange"* ]]; then
     log 2 "unexpected error: $upload_part_copy_error"
