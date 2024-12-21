@@ -36,6 +36,7 @@ source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_list_objects.sh
 source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
+source ./tests/util/util_multipart_before_completion.sh
 source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_public_access_block.sh
