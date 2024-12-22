@@ -40,7 +40,7 @@ var ErrSkipObj = errors.New("skip this object")
 
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
-func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
+func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string, skipprefix []string) (WalkResults, error) {
 	cpmap := make(map[string]struct{})
 	var objects []s3response.Object
 
@@ -73,6 +73,9 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			return nil
 		}
 		if contains(d.Name(), skipdirs) {
+			return fs.SkipDir
+		}
+		if containsprefix(d.Name(), skipprefix) {
 			return fs.SkipDir
 		}
 
@@ -476,4 +479,13 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		NextMarker:          nextMarker,
 		NextVersionIdMarker: nextVersionIdMarker,
 	}, nil
+}
+
+func containsprefix(a string, strs []string) bool {
+	for _, s := range strs {
+		if strings.HasPrefix(a, s) {
+			return true
+		}
+	}
+	return false
 }

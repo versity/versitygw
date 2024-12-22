@@ -763,7 +763,7 @@ func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		s.fileToObj(bucket), []string{metaTmpDir})
+		s.fileToObj(bucket), []string{metaTmpDir}, []string{})
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -813,7 +813,7 @@ func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, int32(maxkeys),
-		s.fileToObj(bucket), []string{metaTmpDir})
+		s.fileToObj(bucket), []string{metaTmpDir}, []string{})
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
