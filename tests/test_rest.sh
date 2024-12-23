@@ -471,9 +471,9 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - list objects v1 - initial marker empty" {
+@test "REST - list objects v1 - no NextMarker without delimiter" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/995"
+    skip "https://github.com/versity/versitygw/issues/999"
   fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -489,6 +489,6 @@ export RUN_USERS=true
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run list_objects_v1_check_initial_marker_empty "$BUCKET_ONE_NAME"
+  run list_objects_v1_check_nextmarker_empty "$BUCKET_ONE_NAME"
   assert_success
 }

@@ -302,7 +302,7 @@ list_objects_check_continuation_error() {
   fi
 }
 
-list_objects_v1_check_initial_marker_empty() {
+list_objects_v1_check_nextmarker_empty() {
   if [ $# -ne 1 ]; then
     log 2 "'get_next_objects_v1' requires bucket name"
     return 1
@@ -312,13 +312,18 @@ list_objects_v1_check_initial_marker_empty() {
     return 1
   fi
   log 5 "output: $(cat "$TEST_FILE_FOLDER/objects.txt")"
-  if ! marker=$(xmllint --xpath '//*[local-name()="Marker"]' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
-    log 2 "error obtaining marker field: $marker"
-    return 1
+  if ! next_marker=$(xmllint --xpath '//*[local-name()="NextMarker"]' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    if [[ "$next_marker" != *"XPath set is empty"* ]]; then
+      log 2 "unexpected error: $next_marker"
+      return 1
+    fi
+    return 0
   fi
-  marker_text=$(xmllint --xpath 'text()' <(cat "$marker") 2>&1)
+  log 5 "next marker: $next_marker"
+  marker_text=$(xmllint --xpath 'string(/NextMarker)' <(echo "$next_marker") 2>&1)
+  log 5 "marker text: $marker_text"
   if [[ "$marker_text" != *"Document is empty"* ]]; then
-    log 2 "marker text should be empty, but is $marker_text"
+    log 2 "NextMarker text should be empty, but is $marker_text"
     return 1
   fi
   return 0
