@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source ./tests/commands/list_objects_v2.sh
+source ./tests/util/util_xml.sh
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
@@ -239,6 +240,90 @@ list_objects_with_user_rest_verify_success() {
   fi
   if [ "$key" != "$4" ]; then
     log 2 "expected '$4', was '$key'"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_check_params_get_token() {
+  if [ $# -ne 4 ]; then
+    log 2 "'list_objects_check_params_get_token' requires bucket name, files, version two"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="$4" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+  if ! list_bucket_result=$(xmllint --xpath '//*[local-name()="ListBucketResult"]' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    log 2 "error getting list bucket result: $list_bucket_result"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$list_bucket_result") "$2" "Key"; then
+    log 2 "key mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$list_bucket_result") "1" "MaxKeys"; then
+    log 2 "max keys mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$list_bucket_result") "1" "KeyCount"; then
+    log 2 "key count mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$list_bucket_result") "true" "IsTruncated"; then
+    log 2 "key count mismatch"
+    return 1
+  fi
+  if ! continuation_token=$(xmllint --xpath '//*[local-name()="NextContinuationToken"]/text()' <(echo "$list_bucket_result") 2>&1); then
+    log 2 "error getting next continuation token: $continuation_token"
+    return 1
+  fi
+  echo "$continuation_token"
+  return 0
+}
+
+list_objects_check_continuation_error() {
+  if [ $# -ne 2 ]; then
+    log 2 "'list_objects_check_continuation_error' requires bucket name, continuation token"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="TRUE" MAX_KEYS=1 CONTINUATION_TOKEN="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected result code of '400' was '$result'"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/objects.txt" "InvalidArgument" "Error" "Code"; then
+    log 2 "invalid error code"
+    return 1
+  fi
+}
+
+list_objects_v1_check_nextmarker_empty() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_next_objects_v1' requires bucket name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="FALSE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  log 5 "output: $(cat "$TEST_FILE_FOLDER/objects.txt")"
+  if ! next_marker=$(xmllint --xpath '//*[local-name()="NextMarker"]' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
+    if [[ "$next_marker" != *"XPath set is empty"* ]]; then
+      log 2 "unexpected error: $next_marker"
+      return 1
+    fi
+    return 0
+  fi
+  log 5 "next marker: $next_marker"
+  marker_text=$(xmllint --xpath 'string(/NextMarker)' <(echo "$next_marker") 2>&1)
+  log 5 "marker text: $marker_text"
+  if [[ "$marker_text" != *"Document is empty"* ]]; then
+    log 2 "NextMarker text should be empty, but is $marker_text"
     return 1
   fi
   return 0
