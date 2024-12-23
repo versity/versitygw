@@ -7653,6 +7653,7 @@ func PutBucketAcl_invalid_acl_canned_and_grants(s *S3Conf) error {
 							ID:   getPtr("awsID"),
 							Type: types.TypeCanonicalUser,
 						},
+						Permission: types.PermissionFullControl,
 					},
 				},
 				Owner: &types.Owner{
@@ -7683,6 +7684,7 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 							ID:   getPtr("awsID"),
 							Type: types.TypeCanonicalUser,
 						},
+						Permission: types.PermissionFullControl,
 					},
 				},
 				Owner: &types.Owner{
@@ -7728,6 +7730,7 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 							ID:   getPtr(usr.access),
 							Type: types.TypeCanonicalUser,
 						},
+						Permission: types.PermissionRead,
 					},
 				},
 				Owner: &types.Owner{
@@ -7763,6 +7766,124 @@ func PutBucketAcl_invalid_owner_not_in_body(s *S3Conf) error {
 						},
 						Permission: types.PermissionRead,
 					},
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedACL)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func PutBucketAcl_invalid_empty_owner_id_in_body(s *S3Conf) error {
+	testName := "PutBucketAcl_invalid_empty_owner_id_in_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							Type: types.TypeCanonicalUser,
+							ID:   getPtr("grt1"),
+						},
+						Permission: types.PermissionRead,
+					},
+				},
+				// Empty owner ID
+				Owner: &types.Owner{},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedACL)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func PutBucketAcl_invalid_permission_in_body(s *S3Conf) error {
+	testName := "PutBucketAcl_invalid_permission_in_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							Type: types.TypeCanonicalUser,
+							ID:   getPtr("grt1"),
+						},
+						Permission: types.Permission("invalid_permission"),
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedACL)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func PutBucketAcl_invalid_grantee_type_in_body(s *S3Conf) error {
+	testName := "PutBucketAcl_invalid_grantee_type_in_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							Type: types.Type("invalid_type"),
+							ID:   getPtr("grt1"),
+						},
+						Permission: types.PermissionRead,
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
+				},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedACL)); err != nil {
+			return err
+		}
+
+		return nil
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
+func PutBucketAcl_empty_grantee_ID_in_body(s *S3Conf) error {
+	testName := "PutBucketAcl_empty_grantee_ID_in_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			AccessControlPolicy: &types.AccessControlPolicy{
+				Grants: []types.Grant{
+					{
+						Grantee: &types.Grantee{
+							Type: types.TypeCanonicalUser,
+						},
+						Permission: types.PermissionRead,
+					},
+				},
+				Owner: &types.Owner{
+					ID: &s.awsID,
 				},
 			},
 		})

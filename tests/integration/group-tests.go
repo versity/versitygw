@@ -336,6 +336,10 @@ func TestPutBucketAcl(s *S3Conf) {
 	PutBucketAcl_invalid_acl_acp_and_grants(s)
 	PutBucketAcl_invalid_owner(s)
 	PutBucketAcl_invalid_owner_not_in_body(s)
+	PutBucketAcl_invalid_empty_owner_id_in_body(s)
+	PutBucketAcl_invalid_permission_in_body(s)
+	PutBucketAcl_invalid_grantee_type_in_body(s)
+	PutBucketAcl_empty_grantee_ID_in_body(s)
 	PutBucketAcl_success_access_denied(s)
 	PutBucketAcl_success_grants(s)
 	PutBucketAcl_success_canned_acl(s)
@@ -861,6 +865,10 @@ func GetIntTests() IntTests {
 		"PutBucketAcl_invalid_acl_acp_and_grants":                             PutBucketAcl_invalid_acl_acp_and_grants,
 		"PutBucketAcl_invalid_owner":                                          PutBucketAcl_invalid_owner,
 		"PutBucketAcl_invalid_owner_not_in_body":                              PutBucketAcl_invalid_owner_not_in_body,
+		"PutBucketAcl_invalid_empty_owner_id_in_body":                         PutBucketAcl_invalid_empty_owner_id_in_body,
+		"PutBucketAcl_invalid_permission_in_body":                             PutBucketAcl_invalid_permission_in_body,
+		"PutBucketAcl_invalid_grantee_type_in_body":                           PutBucketAcl_invalid_grantee_type_in_body,
+		"PutBucketAcl_empty_grantee_ID_in_body":                               PutBucketAcl_empty_grantee_ID_in_body,
 		"PutBucketAcl_success_access_denied":                                  PutBucketAcl_success_access_denied,
 		"PutBucketAcl_success_grants":                                         PutBucketAcl_success_grants,
 		"PutBucketAcl_success_canned_acl":                                     PutBucketAcl_success_canned_acl,
