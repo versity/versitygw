@@ -37,44 +37,44 @@ import (
 )
 
 var (
-	port, admPort                            string
-	rootUserAccess                           string
-	rootUserSecret                           string
-	region                                   string
-	admCertFile, admKeyFile                  string
-	certFile, keyFile                        string
-	kafkaURL, kafkaTopic, kafkaKey           string
-	natsURL, natsTopic                       string
-	eventWebhookURL                          string
-	eventConfigFilePath                      string
-	logWebhookURL, accessLog                 string
-	adminLogFile                             string
-	healthPath                               string
-	debug                                    bool
-	pprof                                    string
-	quiet                                    bool
-	readonly                                 bool
-	iamDir                                   string
-	ldapURL, ldapBindDN, ldapPassword        string
-	ldapQueryBase, ldapObjClasses            string
-	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
-	ldapUserIdAtr, ldapGroupIdAtr            string
-	vaultEndpointURL, vaultSecretStoragePath string
-	vaultMountPath, vaultRootToken           string
-	vaultRoleId, vaultRoleSecret             string
-	vaultServerCert, vaultClientCert         string
-	vaultClientCertKey                       string
-	s3IamAccess, s3IamSecret                 string
-	s3IamRegion, s3IamBucket                 string
-	s3IamEndpoint                            string
-	s3IamSslNoVerify, s3IamDebug             bool
-	iamCacheDisable                          bool
-	iamCacheTTL                              int
-	iamCachePrune                            int
-	metricsService                           string
-	statsdServers                            string
-	dogstatsServers                          string
-	ipaHost, ipaUser, ipaPassword            string
+	port, admPort                               string
+	rootUserAccess                              string
+	rootUserSecret                              string
+	region                                      string
+	admCertFile, admKeyFile                     string
+	certFile, keyFile                           string
+	kafkaURL, kafkaTopic, kafkaKey              string
+	natsURL, natsTopic                          string
+	eventWebhookURL                             string
+	eventConfigFilePath                         string
+	logWebhookURL, accessLog                    string
+	adminLogFile                                string
+	healthPath                                  string
+	debug                                       bool
+	pprof                                       string
+	quiet                                       bool
+	readonly                                    bool
+	iamDir                                      string
+	ldapURL, ldapBindDN, ldapPassword           string
+	ldapQueryBase, ldapObjClasses               string
+	ldapAccessAtr, ldapSecAtr, ldapRoleAtr      string
+	ldapUserIdAtr, ldapGroupIdAtr               string
+	vaultEndpointURL, vaultSecretStoragePath    string
+	vaultMountPath, vaultRootToken              string
+	vaultRoleId, vaultRoleSecret                string
+	vaultServerCert, vaultClientCert            string
+	vaultClientCertKey                          string
+	s3IamAccess, s3IamSecret                    string
+	s3IamRegion, s3IamBucket                    string
+	s3IamEndpoint                               string
+	s3IamSslNoVerify, s3IamDebug                bool
+	iamCacheDisable                             bool
+	iamCacheTTL                                 int
+	iamCachePrune                               int
+	metricsService                              string
+	statsdServers                               string
+	dogstatsServers                             string
+	ipaHost, ipaVaultName, ipaUser, ipaPassword string
 )
 
 var (
@@ -514,6 +514,12 @@ func initFlags() []cli.Flag {
 			Destination: &ipaHost,
 		},
 		&cli.StringFlag{
+			Name:        "ipa-vault-name",
+			Usage:       "ipa vualt name",
+			EnvVars:     []string{"VGW_IPA_VAULT_NAME"},
+			Destination: &ipaVaultName,
+		},
+		&cli.StringFlag{
 			Name:        "ipa-user",
 			Usage:       "ipa user",
 			EnvVars:     []string{"VGW_IPA_USER"},
@@ -643,6 +649,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		CacheTTL:               iamCacheTTL,
 		CachePrune:             iamCachePrune,
 		IpaHost:                ipaHost,
+		IpaVaultName:           ipaVaultName,
 		IpaUser:                ipaUser,
 		IpaPassword:            ipaPassword,
 	})

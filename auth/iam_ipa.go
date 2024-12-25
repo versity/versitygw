@@ -7,355 +7,376 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	b64 "encoding/base64"
+	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/mitchellh/mapstructure"
 )
 
-type IpaIAMService struct {
-	client   http.Client
-	host     string
-	username string
-	password string
-	rootAcc  Account
+const IpaVersion = "2.254"
+
+type ipaIAMService struct {
+	client          http.Client
+	id              int
+	version         string
+	host            string
+	vaultName       string
+	username        string
+	password        string
+	kraTransportKey *rsa.PublicKey
+	rootAcc         Account
 }
 
-var _ IAMService = &IpaIAMService{}
+//var _ IAMService = &ipaIAMService{}
 
-func (ipa *IpaIAMService) login() error {
+func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string) (IAMService, error) {
+
+	ipa := ipaIAMService{
+		id:        0,
+		version:   IpaVersion,
+		host:      host,
+		vaultName: vaultName,
+		username:  username,
+		password:  password,
+		rootAcc:   rootAcc,
+	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		return err
+		// this should never happen
+		panic(err)
 	}
 
 	mTLSConfig := &tls.Config{InsecureSkipVerify: true}
 	tr := &http.Transport{
 		TLSClientConfig: mTLSConfig,
 	}
-	c := http.Client{Jar: jar, Transport: tr}
+	ipa.client = http.Client{Jar: jar, Transport: tr}
 
-	ipa.client = c
-	path := fmt.Sprintf("https://%s/ipa/session/login_password", ipa.host)
+	err = ipa.login()
+	if err != nil {
+		return nil, err
+	}
+
+	req := ipa.newRequest("vaultconfig_show/1", []string{}, map[string]any{"all": true})
+	vaultConfig := struct {
+		Kra_Server_Server             []string
+		Transport_Cert                Base64EncodedWrapped
+		Wrapping_default_algorithm    string
+		Wrapping_supported_algorithms []string
+	}{}
+	_, err = ipa.rpc(req, &vaultConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := x509.ParseCertificate(vaultConfig.Transport_Cert)
+	if err != nil {
+		return nil, err
+	}
+
+	//fmt.Printf("%v]n", cert.PublicKey.(*rsa.PublicKey))
+	ipa.kraTransportKey = cert.PublicKey.(*rsa.PublicKey)
+
+	isSupported := false
+	for _, algo := range vaultConfig.Wrapping_supported_algorithms {
+		if algo == "aes-128-cbc" {
+			isSupported = true
+			break
+		}
+	}
+
+	if !isSupported {
+		return nil, fmt.Errorf("IPA vault does not support aes-128-cbc. only %v supported", vaultConfig.Wrapping_supported_algorithms)
+	}
+	return &ipa, nil
+}
+
+func (ipa *ipaIAMService) CreateAccount(account Account) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
+	if access == ipa.rootAcc.Access {
+		return ipa.rootAcc, nil
+	}
+
+	req := ipa.newRequest("user_show/1", []string{access}, map[string]any{})
+
+	userResult := struct {
+		Gidnumber []string
+		Uidnumber []string
+	}{}
+	_, err := ipa.rpc(req, &userResult)
+	if err != nil {
+		return Account{}, err
+	}
+
+	uid, _ := strconv.Atoi(userResult.Uidnumber[0])
+	gid, _ := strconv.Atoi(userResult.Gidnumber[0])
+	account := Account{
+		Access:  access,
+		Role:    RoleUser,
+		UserID:  uid,
+		GroupID: gid,
+	}
+
+	session_key := make([]byte, 16)
+	rand.Read(session_key)
+	encrypted_key, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
+	if err != nil {
+		return account, err
+	}
+	req = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
+		map[string]any{"username": access,
+			"session_key":   Base64EncodedWrapped(encrypted_key),
+			"wrapping_algo": "aes-128-cbc"})
+	data := struct {
+		Vault_data Base64EncodedWrapped
+		Nonce      Base64EncodedWrapped
+	}{}
+	_, err = ipa.rpc(req, &data)
+	if err != nil {
+		return account, err
+	}
+
+	aes, _ := aes.NewCipher(session_key)
+	cbc := cipher.NewCBCDecrypter(aes, data.Nonce)
+	cbc.CryptBlocks(data.Vault_data, data.Vault_data)
+	secret_unpadded_json, _ := pkcs7Unpad(data.Vault_data, 16)
+
+	secret := struct {
+		Data Base64Encoded
+	}{}
+	json.Unmarshal(secret_unpadded_json, &secret)
+	account.Secret = string(secret.Data)
+
+	fmt.Printf("%v\n", account)
+	return account, nil
+}
+
+func (ipa *ipaIAMService) UpdateUserAccount(access string, props MutableProps) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (ipa *ipaIAMService) DeleteUserAccount(access string) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (ipa *ipaIAMService) ListUserAccounts() ([]Account, error) {
+	return []Account{}, fmt.Errorf("not implemented")
+}
+
+// Shutdown graceful termination of service
+func (ipa *ipaIAMService) Shutdown() error {
+	return nil
+}
+
+// Utilities
+
+func (ipa *ipaIAMService) login() error {
 	form := url.Values{}
 	form.Set("user", ipa.username)
 	form.Set("password", ipa.password)
 
-	req, err := http.NewRequest("POST", path, strings.NewReader(form.Encode()))
-
+	req, err := http.NewRequest(
+		"POST",
+		fmt.Sprintf("%s/ipa/session/login_password", ipa.host),
+		strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set("referer", fmt.Sprintf("https://%s/ipa", ipa.host))
+	req.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	_, err = c.Do(req)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-type IpaResult struct {
-	Result struct {
-		Json    interface{} `json:"result"`
-		Value   string      `json:"value"`
-		Summary any         `json:"summary"`
-	} `json:"result"`
-	Error     any    `json:"error"`
-	ID        int    `json:"id"`
-	Principal string `json:"principal"`
-	Version   string `json:"version"`
-}
-
-type IpaUser struct {
-	Dn        string
-	Givenname []string
-	Uid       []string
-	Gidnumber []string
-	Uidnumber []string
-}
-
-type IpaVaultData struct {
-	Nonce struct {
-		Base64 string `mapstructure:"__base64__"`
-	} `mapstructure:"nonce"`
-	Vault_data struct {
-		Base64 string `mapstructure:"__base64__"`
-	} `mapstructure:"vault_data"`
-}
-
-func (ipa *IpaIAMService) rpc(input string) (IpaResult, error) {
-	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s/ipa/session/json", ipa.host), strings.NewReader(input))
-	if err != nil {
-		return IpaResult{}, err
-	}
-
-	req.Header.Set("referer", "https://ipa.example.test/ipa")
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := ipa.client.Do(req)
 	if err != nil {
-		return IpaResult{}, err
+		return err
 	}
-	bytes, err := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == 401 {
+		return errors.New("cannot login to FreeIPA: invalid credentials")
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("cannot login to FreeIPA: status code %d", resp.StatusCode)
+	}
+	return nil
+}
+
+type rpcRequest = string
+
+type rpcResponse struct {
+	Result    json.RawMessage
+	Principal string
+	Id        int
+	Version   string
+}
+
+func (p rpcResponse) String() string {
+	return string(p.Result)
+}
+
+var errRpc = errors.New("IPA RPC error")
+
+func (ipa *ipaIAMService) rpc(req rpcRequest, value any) (rpcResponse, error) {
+	res, err := ipa.rpc2(req)
 	if err != nil {
-		return IpaResult{}, err
+		return res, err
+	}
+	err = json.Unmarshal(res.Result, value)
+	return res, err
+}
+
+func (ipa *ipaIAMService) rpc2(req rpcRequest) (rpcResponse, error) {
+
+	httpReq, err := http.NewRequest("POST",
+		fmt.Sprintf("%s/ipa/session/json", ipa.host),
+		strings.NewReader(req))
+	if err != nil {
+		return rpcResponse{}, err
 	}
 
-	data := IpaResult{}
-	json.Unmarshal(bytes, &data)
-	fmt.Println(data)
+	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
+	httpReq.Header.Set("Content-Type", "application/json")
 
-	return data, nil
-
-}
-
-func NewIpaIAMService(rootAcc Account, host, username, password string) (IAMService, error) {
-
-	ipa := IpaIAMService{
-		host:     host,
-		username: username,
-		password: password,
+	httpResp, err := ipa.client.Do(httpReq)
+	if err != nil {
+		return rpcResponse{}, err
 	}
 
-	err := ipa.login()
+	bytes, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return rpcResponse{}, err
+	}
 
-	return &ipa, err
+	result := struct {
+		Result struct {
+			Json    json.RawMessage `json:"result"`
+			Value   string          `json:"value"`
+			Summary any             `json:"summary"`
+		} `json:"result"`
+		Error     json.RawMessage `json:"error"`
+		Id        int             `json:"id"`
+		Principal string          `json:"principal"`
+		Version   string          `json:"version"`
+	}{}
+
+	err = json.Unmarshal(bytes, &result)
+	if err != nil {
+		return rpcResponse{}, err
+	}
+	if string(result.Error) != "null" {
+		log.Println("error during rpc call")
+		log.Println(string(result.Error))
+		return rpcResponse{}, fmt.Errorf("%w: %s", errRpc, string(result.Error))
+	}
+
+	response := rpcResponse{
+		Result:    result.Result.Json,
+		Principal: result.Principal,
+		Id:        result.Id,
+		Version:   result.Version,
+	}
+	return response, nil
 }
 
-func (ipa *IpaIAMService) CreateAccount(account Account) error {
-	return fmt.Errorf("not implemented")
+func (ipa *ipaIAMService) newRequest(method string, args []string, dict map[string]any) rpcRequest {
+
+	id := ipa.id
+	ipa.id++
+
+	dict["version"] = ipa.version
+
+	jmethod, _ := json.Marshal(method)
+	jargs, _ := json.Marshal(args)
+	jdict, _ := json.Marshal(dict)
+
+	return fmt.Sprintf(`{
+		"id": %d,
+		"method": %s,
+		"params": [
+			%s,
+			%s
+		]
+	}
+	`, id, jmethod, jargs, jdict)
 }
-
-// PKCS7 errors.
-var (
-	// ErrInvalidBlockSize indicates hash blocksize <= 0.
-	ErrInvalidBlockSize = errors.New("invalid blocksize")
-
-	// ErrInvalidPKCS7Data indicates bad input to PKCS7 pad or unpad.
-	ErrInvalidPKCS7Data = errors.New("invalid PKCS7 data (empty or not padded)")
-
-	// ErrInvalidPKCS7Padding indicates PKCS7 unpad fails to bad input.
-	ErrInvalidPKCS7Padding = errors.New("invalid padding on input")
-)
 
 // pkcs7Unpad validates and unpads data from the given bytes slice.
 // The returned value will be 1 to n bytes smaller depending on the
 // amount of padding, where n is the block size.
 func pkcs7Unpad(b []byte, blocksize int) ([]byte, error) {
 	if blocksize <= 0 {
-		return nil, ErrInvalidBlockSize
+		return nil, errors.New("invalid blocksize")
 	}
 	if b == nil || len(b) == 0 {
-		return nil, ErrInvalidPKCS7Data
+		return nil, errors.New("invalid PKCS7 data (empty or not padded)")
 	}
 	if len(b)%blocksize != 0 {
-		return nil, ErrInvalidPKCS7Padding
+		return nil, errors.New("invalid padding on input")
 	}
 	c := b[len(b)-1]
 	n := int(c)
 	if n == 0 || n > len(b) {
-		return nil, ErrInvalidPKCS7Padding
+		return nil, errors.New("invalid padding on input")
 	}
 	for i := 0; i < n; i++ {
 		if b[len(b)-n+i] != c {
-			return nil, ErrInvalidPKCS7Padding
+			return nil, errors.New("invalid padding on input")
 		}
 	}
 	return b[:len(b)-n], nil
 }
 
-func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
-	if access == ipa.rootAcc.Access {
-		return ipa.rootAcc, nil
-	}
+/*
+e.g.
 
-	user_request_template := `
-	{
-		"id": 0,
-		"method": "user_show/1",
-		"params": [
-			[
-				"%s"
-			],
-			{
-				"version": "2.253"
-			}
-		]
-	}
-	`
+	"value" {
+		"__base64__": "aGVsbG93b3JsZAo="
+	 }
+*/
+type Base64EncodedWrapped []byte
 
-	user_request := fmt.Sprintf(user_request_template, access)
-
-	out, err := ipa.rpc(user_request)
-	u := IpaUser{}
-	mapstructure.Decode(out.Result.Json, &u)
-	fmt.Println("printing user result")
-	fmt.Println(out.Result.Json)
-	fmt.Println(u)
-
+func (b *Base64EncodedWrapped) UnmarshalJSON(data []byte) error {
+	intermediate := struct {
+		Base64 string `json:"__base64__"`
+	}{}
+	err := json.Unmarshal(data, &intermediate)
 	if err != nil {
-		return Account{}, err
+		return err
 	}
+	*b, err = base64.StdEncoding.DecodeString(intermediate.Base64)
+	return err
+}
 
-	b := make([]byte, 16)
-	rand.Read(b)
+func (b *Base64EncodedWrapped) MarshalJSON() ([]byte, error) {
+	intermediate := struct {
+		Base64 string `json:"__base64__"`
+	}{Base64: base64.StdEncoding.EncodeToString(*b)}
+	return json.Marshal(intermediate)
+}
 
-	ipa_cert := `
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv8l+tmcQ+hvZXTqWz5DX
-2n6m+CJImAocIbPeqJdYrFrNj6IE+T8xswLU7CwLSdagfitO56l1/fTqJ4cmo2NR
-Yws/PgnOD9EbH/uepfKYXM9E4ictLtyHvfTwuP0L7rwAn5IsSNS0+oTkWk4zO2Ft
-sVUzXUEJG+6Cn/ShdLRi/8BSRoHZQ/rQTjxYWZnKJi+qjLv2JoEqIRjtu1XkwBXq
-Tp28UzFmTNs3IWDGtE+0ewjc7Sey288NUWNYTsuvJre6LoCl6LeIClS52+XfmNH/
-m+I7wTGMqtbBhYr4uaOKBj65/7mhmsqo8o1FW97xnVYji7qJu70JMNubzgnmqjYh
-pQIDAQAB
------END PUBLIC KEY-----
-	`
-	block, _ := pem.Decode([]byte(ipa_cert))
-	key, err := x509.ParsePKIXPublicKey(block.Bytes)
-	pubKey, _ := key.(*rsa.PublicKey)
-	println(pubKey)
-	result, _ := rsa.EncryptPKCS1v15(rand.Reader, pubKey, b)
-	println("encoded result " + b64.StdEncoding.EncodeToString(result))
+/*
+e.g.
 
-	secret_request_template := `
-	{
-		"id": 0,
-		"method": "vault_retrieve_internal/1",
-		"params": [
-			[
-				"versity"
-			],
-			{
-				"version": "2.253",
-				"username": "%s",
-				"session_key": {
-					"__base64__": "%s"
-				},
-				"wrapping_algo": "aes-128-cbc"
-			}
-		]
-	}
-	`
+	"value": "aGVsbG93b3JsZAo="
+*/
+type Base64Encoded []byte
 
-	secret_request := fmt.Sprintf(secret_request_template, access, b64.StdEncoding.EncodeToString(result))
-	out, _ = ipa.rpc(secret_request)
-	fmt.Println("printing vault data")
-
-	d := IpaVaultData{}
-	mapstructure.Decode(out.Result.Json, &d)
-	fmt.Println(out.Result.Json)
-	fmt.Println(d)
-	aes, err := aes.NewCipher(b)
-
-	fmt.Println(err)
-	//cbc := aes.CBC{Aes: *eas1, Padding: &PCKS7Padding{}}
-	nonce, _ := b64.StdEncoding.DecodeString(d.Nonce.Base64)
-	cbc := cipher.NewCBCDecrypter(aes, nonce)
-	println(d.Nonce.Base64)
-	println(len(nonce))
-	ctext, _ := b64.StdEncoding.DecodeString(d.Vault_data.Base64)
-	var ptext []byte = make([]byte, len(ctext))
-	cbc.CryptBlocks(ptext, ctext)
+func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
+	var intermediate string
+	err := json.Unmarshal(data, &intermediate)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	fmt.Println(ptext)
-
-	type VaultData struct {
-		Data string `json:"data"`
-	}
-
-	vd := VaultData{}
-
-	ptext_unpadded, err := pkcs7Unpad(ptext, 16)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(json.Unmarshal(ptext_unpadded, &vd))
-	fmt.Println("data part is " + vd.Data)
-
-	secret, _ := b64.StdEncoding.DecodeString(vd.Data)
-
-	uidnumber, _ := strconv.ParseInt(u.Uidnumber[0], 10, 32)
-	gidnumber, _ := strconv.ParseInt(u.Gidnumber[0], 10, 32)
-
-	acc := Account{
-		Access:  access,
-		Secret:  string(secret),
-		Role:    RoleUser,
-		UserID:  int(uidnumber),
-		GroupID: int(gidnumber),
-	}
-
-	fmt.Println(acc)
-	return acc, nil
-}
-
-func (ipa *IpaIAMService) UpdateUserAccount(access string, props MutableProps) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (ipa *IpaIAMService) DeleteUserAccount(access string) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (ipa *IpaIAMService) ListUserAccounts() ([]Account, error) {
-
-	return []Account{}, fmt.Errorf("not implemented")
-
-	/*	user_request := `
-		{
-			"id": 0,
-			"method": "user_find/1",
-			"params": [
-				[
-				],
-				{
-					"version": "2.253"
-				}
-			]
-		}
-		`
-		out, err := ipa.rpc(user_request)
-		if err != nil {
-			return []Account{}, err
-		}
-
-		users := []IpaUser{}
-		mapstructure.Decode(out.Result.Json, &users)
-
-		accs := make([]Account, len(users))
-
-		for i, u := range users {
-			accs[i] = Account{
-				Access:  u.uid,
-				Secret:  "veryimportantsecret",
-				Role:    RoleUser,
-				UserID:  u.uidnumber,
-				GroupID: u.gidnumber,
-			}
-		}
-
-		return accs, nil
-	*/
-}
-
-// Shutdown graceful termination of service
-func (ipa *IpaIAMService) Shutdown() error {
-	return nil
+	*b, err = base64.StdEncoding.DecodeString(intermediate)
+	return err
 }
