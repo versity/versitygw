@@ -173,12 +173,11 @@ func (ipa *ipaIAMService) ListUserAccounts() ([]Account, error) {
 	return []Account{}, fmt.Errorf("not implemented")
 }
 
-// Shutdown graceful termination of service
 func (ipa *ipaIAMService) Shutdown() error {
 	return nil
 }
 
-// Utilities
+// Implementation
 
 func (ipa *ipaIAMService) login() error {
 	form := url.Values{}
@@ -227,7 +226,13 @@ func (p rpcResponse) String() string {
 var errRpc = errors.New("IPA RPC error")
 
 func (ipa *ipaIAMService) rpc(req rpcRequest, value any) (rpcResponse, error) {
-	res, err := ipa.rpc2(req)
+
+	err := ipa.login()
+	if err != nil {
+		return rpcResponse{}, err
+	}
+
+	res, err := ipa.rpcInternal(req)
 	if err != nil {
 		return res, err
 	}
@@ -235,7 +240,7 @@ func (ipa *ipaIAMService) rpc(req rpcRequest, value any) (rpcResponse, error) {
 	return res, err
 }
 
-func (ipa *ipaIAMService) rpc2(req rpcRequest) (rpcResponse, error) {
+func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 
 	httpReq, err := http.NewRequest("POST",
 		fmt.Sprintf("%s/ipa/session/json", ipa.host),
