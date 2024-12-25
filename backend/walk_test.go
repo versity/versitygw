@@ -224,7 +224,7 @@ func TestWalk(t *testing.T) {
 		for _, tc := range tt.cases {
 			res, err := backend.Walk(context.Background(),
 				tt.fsys, tc.prefix, tc.delimiter, tc.marker, tc.maxObjs,
-				tt.getobj, []string{})
+				tt.getobj, []string{}, []string{})
 			if err != nil {
 				t.Errorf("tc.name: walk: %v", err)
 			}
@@ -363,7 +363,7 @@ func TestWalkStop(t *testing.T) {
 		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
 			func(path string, d fs.DirEntry) (s3response.Object, error) {
 				return s3response.Object{}, nil
-			}, []string{})
+			}, []string{}, []string{})
 	}()
 
 	select {
