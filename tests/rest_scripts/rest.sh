@@ -65,3 +65,18 @@ $canonical_request_hash"
   curl_command=()
   add_command_recording_if_enabled
 }
+
+add_parameter() {
+  if [ "$#" -ne 2 ]; then
+    return
+  fi
+  if [ "$first_param_added" != "true" ]; then
+    if [ "$1" == "url" ]; then
+      eval "$1"+='?'
+    fi
+    eval "$1"+="$2"
+    first_param_added="true"
+  else
+    eval "$1"+="'&$2'"
+  fi
+}

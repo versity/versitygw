@@ -25,6 +25,7 @@ check_attributes_after_upload() {
     log 2 "'check_attributes_after_upload' requires file size"
     return 1
   fi
+  log 5 "attributes: $(cat "$TEST_FILE_FOLDER/attributes.txt")"
   if ! object_size=$(xmllint --xpath '//*[local-name()="ObjectSize"]/text()' "$TEST_FILE_FOLDER/attributes.txt" 2>&1); then
     log 2 "error getting checksum: $object_size"
     return 1
@@ -54,10 +55,11 @@ check_attributes_after_upload() {
     log 2 "unexpected parts count, expected 4, was $parts_count"
     return 1
   fi
+  return 1
 }
 
 check_attributes_invalid_param() {
-  if [ "$1" -ne 1 ]; then
+  if [ $# -ne 1 ]; then
     log 2 "'check_attributes_invalid_param' requires test file"
     return 1
   fi
