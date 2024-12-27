@@ -128,6 +128,8 @@ type Opts struct {
 	IpaVaultName           string
 	IpaUser                string
 	IpaPassword            string
+	IpaInsecure            bool
+	IpaDebug               bool
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -154,7 +156,7 @@ func New(o *Opts) (IAMService, error) {
 			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
 		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
 	case o.IpaHost != "":
-		svc, err = NewIpaIAMService(o.RootAccount, o.IpaHost, o.IpaVaultName, o.IpaUser, o.IpaPassword)
+		svc, err = NewIpaIAMService(o.RootAccount, o.IpaHost, o.IpaVaultName, o.IpaUser, o.IpaPassword, o.IpaInsecure, o.IpaDebug)
 		fmt.Printf("initializing IPA IAM with %q\n", o.IpaHost)
 	default:
 		// if no iam options selected, default to the single user mode

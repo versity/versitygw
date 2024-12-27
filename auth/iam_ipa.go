@@ -31,12 +31,13 @@ type ipaIAMService struct {
 	username        string
 	password        string
 	kraTransportKey *rsa.PublicKey
+	debug           bool
 	rootAcc         Account
 }
 
 //var _ IAMService = &ipaIAMService{}
 
-func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string) (IAMService, error) {
+func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure, debug bool) (IAMService, error) {
 
 	ipa := ipaIAMService{
 		id:        0,
@@ -45,6 +46,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		vaultName: vaultName,
 		username:  username,
 		password:  password,
+		debug:     debug,
 		rootAcc:   rootAcc,
 	}
 	jar, err := cookiejar.New(nil)
@@ -53,7 +55,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		panic(err)
 	}
 
-	mTLSConfig := &tls.Config{InsecureSkipVerify: true}
+	mTLSConfig := &tls.Config{InsecureSkipVerify: isInsecure}
 	tr := &http.Transport{
 		TLSClientConfig: mTLSConfig,
 	}
@@ -81,7 +83,6 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		return nil, err
 	}
 
-	//fmt.Printf("%v]n", cert.PublicKey.(*rsa.PublicKey))
 	ipa.kraTransportKey = cert.PublicKey.(*rsa.PublicKey)
 
 	isSupported := false
@@ -93,7 +94,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 	}
 
 	if !isSupported {
-		return nil, fmt.Errorf("IPA vault does not support aes-128-cbc. only %v supported", vaultConfig.Wrapping_supported_algorithms)
+		return nil, fmt.Errorf("IPA vault does not support aes-128-cbc. Only %v supported", vaultConfig.Wrapping_supported_algorithms)
 	}
 	return &ipa, nil
 }
@@ -249,6 +250,7 @@ func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 
+	ipa.log(fmt.Sprintf("%v\n", req))
 	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -258,6 +260,7 @@ func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	}
 
 	bytes, err := io.ReadAll(httpResp.Body)
+	ipa.log(fmt.Sprintf("%v\n", string(bytes)))
 	if err != nil {
 		return rpcResponse{}, err
 	}
@@ -322,7 +325,7 @@ func pkcs7Unpad(b []byte, blocksize int) ([]byte, error) {
 	if blocksize <= 0 {
 		return nil, errors.New("invalid blocksize")
 	}
-	if b == nil || len(b) == 0 {
+	if len(b) == 0 {
 		return nil, errors.New("invalid PKCS7 data (empty or not padded)")
 	}
 	if len(b)%blocksize != 0 {
@@ -384,4 +387,10 @@ func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
 	}
 	*b, err = base64.StdEncoding.DecodeString(intermediate)
 	return err
+}
+
+func (ipa *ipaIAMService) log(msg string) {
+	if ipa.debug {
+		log.Print(msg)
+	}
 }
