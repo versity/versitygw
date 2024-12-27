@@ -282,8 +282,6 @@ func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 	if string(result.Error) != "null" {
-		log.Println("error during rpc call")
-		log.Println(string(result.Error))
 		return rpcResponse{}, fmt.Errorf("%w: %s", errRpc, string(result.Error))
 	}
 
