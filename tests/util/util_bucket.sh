@@ -211,16 +211,12 @@ bucket_cleanup() {
 # return 0 for success, 1 for error
 bucket_cleanup_if_bucket_exists() {
   log 6 "bucket_cleanup_if_bucket_exists"
-  if [ $# -ne 2 ]; then
-    log 2 "'bucket_cleanup_if_bucket_exists' requires client, bucket name"
+  if [ $# -lt 2 ]; then
+    log 2 "'bucket_cleanup_if_bucket_exists' requires client, bucket name, bucket known to exist (optional)"
     return 1
   fi
 
-  if bucket_exists "$1" "$2"; then
-    if [ "$DELETE_BUCKETS_AFTER_TEST" == "false" ]; then
-      log 2 "skipping bucket cleanup/deletion"
-      return 0
-    fi
+  if [ "$3" == "true" ] || bucket_exists "$1" "$2"; then
     if ! bucket_cleanup "$1" "$2"; then
       log 2 "error deleting bucket and/or contents"
       return 1
@@ -256,12 +252,16 @@ setup_bucket() {
     return 1
   fi
 
-  if ! bucket_exists "$1" "$2" && [[ $RECREATE_BUCKETS == "false" ]]; then
-    log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
-    return 1
+  bucket_exists="true"
+  if ! bucket_exists "$1" "$2"; then
+    if [[ $RECREATE_BUCKETS == "false" ]]; then
+      log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
+      return 1
+    fi
+    bucket_exists="false"
   fi
 
-  if ! bucket_cleanup_if_bucket_exists "$1" "$2"; then
+  if ! bucket_cleanup_if_bucket_exists "$1" "$2" "$bucket_exists"; then
     log 2 "error deleting bucket or contents if they exist"
     return 1
   fi

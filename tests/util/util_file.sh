@@ -118,9 +118,7 @@ split_file() {
   fi
 
   local error
-  local split_result
-  error=$(split -a 1 -d -b "$part_size" "$1" "$1"-) || split_result=$?
-  if [[ $split_result -ne 0 ]]; then
+  if ! error=$(split -a 1 -d -b "$part_size" "$1" "$1"- 2>&1); then
     log 2 "error splitting file: $error"
     return 1
   fi
