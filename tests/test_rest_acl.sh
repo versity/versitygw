@@ -14,6 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/commands/put_object.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
@@ -23,9 +26,6 @@ source ./tests/util/util_acl.sh
 export RUN_USERS=true
 
 @test "REST - get ACL" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/971"
-  fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 

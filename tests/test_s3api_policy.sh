@@ -14,6 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/test_s3api_policy_bucket.sh

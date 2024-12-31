@@ -34,7 +34,7 @@ multipart_upload_from_bucket() {
   }
 
   if ! create_multipart_upload "$1" "$2-copy"; then
-    log 2 "error running first multpart upload"
+    log 2 "error running first multipart upload"
     return 1
   fi
 
@@ -57,6 +57,25 @@ multipart_upload_from_bucket() {
     log 2 "Error completing upload: $error"
     return 1
   fi
+  return 0
+}
+
+split_and_put_file() {
+  if [ $# -ne 4 ]; then
+    log 2 "'split_and_put_file' requires bucket, key, copy source, part count"
+    return 1
+  fi
+  if ! split_file "$3" "$4"; then
+    log 2 "error splitting file"
+    return 1
+  fi
+  for ((i=0;i<$4;i++)) {
+    log 5 "key: $2, file info: $(ls -l "$3"-"$i")"
+    if ! put_object "s3api" "$3-$i" "$1" "$2-$i"; then
+      log 2 "error copying object"
+      return 1
+    fi
+  }
   return 0
 }
 
@@ -185,6 +204,93 @@ run_and_verify_multipart_upload_with_valid_range() {
   fi
   if [[ object_size -ne $((range_max*4+4)) ]]; then
     log 2 "object size mismatch ($object_size, $((range_max*4+4)))"
+    return 1
+  fi
+  return 0
+}
+
+create_upload_part_copy_rest() {
+  if [ $# -ne 3 ]; then
+    log 2 "'run_and_verify_multipart_upload_with_valid_range' requires bucket, key, >20MB file"
+    return 1
+  fi
+  if ! split_and_put_file "$1" "$2" "$3" 4; then
+    log 2 "error splitting and putting file"
+    return 1
+  fi
+  if ! create_upload_and_get_id_rest "$1" "$2"; then
+    log 2 "error creating upload and getting ID"
+    return 1
+  fi
+  parts_payload=""
+  for ((i=0; i<=3; i++)); do
+    part_number=$((i+1))
+    if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="$part_number" UPLOAD_ID="$upload_id" PART_LOCATION="$1/$2-$i" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part_copy.sh); then
+      # shellcheck disable=SC2154
+      log 2 "error uploading part $i: $result"
+      return 1
+    fi
+    log 5 "result: $result"
+    if [ "$result" != "200" ]; then
+      log 2 "error uploading part $i: $(cat "$TEST_FILE_FOLDER/response.txt")"
+      return 1
+    fi
+    if ! etag=$(xmllint --xpath '//*[local-name()="ETag"]/text()' "$TEST_FILE_FOLDER/response.txt" 2>&1); then
+      log 2 "error retrieving etag: $etag"
+      return 1
+    fi
+    parts_payload+="<Part><ETag>$etag</ETag><PartNumber>$part_number</PartNumber></Part>"
+  done
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  return 0
+}
+
+create_upload_finish_wrong_etag() {
+  if [ $# -ne 2 ]; then
+    log 2 "'create_upload_finish_wrong_etag' requires bucket, key"
+    return 1
+  fi
+
+  etag="gibberish"
+  part_number=1
+  if ! create_upload_and_get_id_rest "$1" "$2"; then
+    log 2 "error creating upload and getting ID"
+    return 1
+  fi
+  parts_payload="<Part><ETag>$etag</ETag><PartNumber>$part_number</PartNumber></Part>"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  if ! error=$(xmllint --xpath '//*[local-name()="Error"]' "$TEST_FILE_FOLDER/result.txt" 2>&1); then
+    log 2 "error retrieving error info: $error"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$error") "InvalidPart" "Code"; then
+    log 2 "code mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$error") "$upload_id" "UploadId"; then
+    log 2 "upload ID mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$error") "$part_number" "PartNumber"; then
+    log 2 "part number mismatch"
+    return 1
+  fi
+  if ! check_xml_element <(echo "$error") "$etag" "ETag"; then
+    log 2 "etag mismatch"
     return 1
   fi
   return 0
