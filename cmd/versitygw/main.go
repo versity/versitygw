@@ -74,6 +74,9 @@ var (
 	metricsService                           string
 	statsdServers                            string
 	dogstatsServers                          string
+	ipaHost, ipaVaultName                    string
+	ipaUser, ipaPassword                     string
+	ipaInsecure, ipaDebug                    bool
 )
 
 var (
@@ -206,6 +209,7 @@ func initFlags() []cli.Flag {
 		&cli.BoolFlag{
 			Name:        "debug",
 			Usage:       "enable debug output",
+			Value:       false,
 			EnvVars:     []string{"VGW_DEBUG"},
 			Destination: &debug,
 		},
@@ -506,6 +510,42 @@ func initFlags() []cli.Flag {
 			Aliases:     []string{"mds"},
 			Destination: &dogstatsServers,
 		},
+		&cli.StringFlag{
+			Name:        "ipa-host",
+			Usage:       "FreeIPA server url e.g. https://ipa.example.test",
+			EnvVars:     []string{"VGW_IPA_HOST"},
+			Destination: &ipaHost,
+		},
+		&cli.StringFlag{
+			Name:        "ipa-vault-name",
+			Usage:       "A name of the user vault containing their secret",
+			EnvVars:     []string{"VGW_IPA_VAULT_NAME"},
+			Destination: &ipaVaultName,
+		},
+		&cli.StringFlag{
+			Name:        "ipa-user",
+			Usage:       "Username used to connect to FreeIPA. Needs permissions to read user vault contents",
+			EnvVars:     []string{"VGW_IPA_USER"},
+			Destination: &ipaUser,
+		},
+		&cli.StringFlag{
+			Name:        "ipa-password",
+			Usage:       "Password of the user used to connect to FreeIPA.",
+			EnvVars:     []string{"VGW_IPA_PASSWORD"},
+			Destination: &ipaPassword,
+		},
+		&cli.BoolFlag{
+			Name:        "ipa-insecure",
+			Usage:       "Verify TLS certificate of FreeIPA server. Default is 'true'.",
+			EnvVars:     []string{"VGW_IPA_INSECURE"},
+			Destination: &ipaInsecure,
+		},
+		&cli.BoolFlag{
+			Name:        "ipa-debug",
+			Usage:       "FreeIPA IAM debug output",
+			EnvVars:     []string{"VGW_IPA_DEBUG"},
+			Destination: &ipaDebug,
+		},
 	}
 }
 
@@ -623,6 +663,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		CacheDisable:           iamCacheDisable,
 		CacheTTL:               iamCacheTTL,
 		CachePrune:             iamCachePrune,
+		IpaHost:                ipaHost,
+		IpaVaultName:           ipaVaultName,
+		IpaUser:                ipaUser,
+		IpaPassword:            ipaPassword,
+		IpaInsecure:            ipaInsecure,
+		IpaDebug:               ipaDebug,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)
