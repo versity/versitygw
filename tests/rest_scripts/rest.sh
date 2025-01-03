@@ -37,11 +37,13 @@ fi
 
 add_command_recording_if_enabled() {
   if [ -n "$COMMAND_LOG" ]; then
+    echo "add" >> "temp.txt"
     curl_command+=(send_command)
   fi
 }
 
 create_canonical_hash_sts_and_signature() {
+  echo "start" >> "temp.txt"
   # shellcheck disable=SC2154
   canonical_request_hash="$(echo -n "$canonical_request" | openssl dgst -sha256 | awk '{print $2}')"
 
@@ -64,4 +66,20 @@ $canonical_request_hash"
 
   curl_command=()
   add_command_recording_if_enabled
+  echo "end" >> "temp.txt"
+}
+
+add_parameter() {
+  if [ "$#" -ne 2 ]; then
+    return
+  fi
+  if [ "$first_param_added" != "true" ]; then
+    if [ "$1" == "url" ]; then
+      eval "$1"+='?'
+    fi
+    eval "$1"+="$2"
+    first_param_added="true"
+  else
+    eval "$1"+="'&$2'"
+  fi
 }

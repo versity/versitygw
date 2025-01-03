@@ -14,6 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/test_common.sh
 source ./tests/util/util_file.sh
 

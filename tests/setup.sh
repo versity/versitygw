@@ -14,9 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-load ./bats-support/load
-load ./bats-assert/load
-
 source ./tests/env.sh
 source ./tests/report.sh
 source ./tests/setup_mc.sh
@@ -68,11 +65,14 @@ delete_temp_log_if_exists() {
 # bats teardown function
 teardown() {
   # shellcheck disable=SC2154
-  if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
-    log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
-  fi
-  if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"; then
-    log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
+  if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
+    log 5 "deleting or clearing buckets"
+    if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+      log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
+    fi
+    if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"; then
+      log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
+    fi
   fi
   if user_exists "$USERNAME_ONE" && ! delete_user "$USERNAME_ONE"; then
     log 3 "error deleting user $USERNAME_ONE"

@@ -17,6 +17,7 @@
 source ./tests/logger.sh
 
 send_command() {
+  echo "command" >> "temp.txt"
   if [ $# -eq 0 ]; then
     return 1
   fi
@@ -27,6 +28,7 @@ send_command() {
     fi
     # shellcheck disable=SC2154
     echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    echo "${masked_args[*]}" >> "temp.txt"
     "$@"
     return $?
   fi

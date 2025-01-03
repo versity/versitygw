@@ -14,6 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/commands/create_multipart_upload.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_versioning.sh
@@ -36,6 +39,7 @@ source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_list_objects.sh
 source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
+source ./tests/util/util_multipart_before_completion.sh
 source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_public_access_block.sh
@@ -43,6 +47,7 @@ source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
+source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
 
@@ -317,7 +322,7 @@ export RUN_USERS=true
 
 @test "REST - get object attributes" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/916"
+    skip "https://github.com/versity/versitygw/issues/1000"
   fi
   test_file="test_file"
 
@@ -339,7 +344,7 @@ export RUN_USERS=true
 
 @test "REST - attributes - invalid param" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/917"
+    skip "https://github.com/versity/versitygw/issues/1001"
   fi
   test_file="test_file"
 
@@ -358,7 +363,7 @@ export RUN_USERS=true
 
 @test "REST - attributes - checksum" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/928"
+    skip "https://github.com/versity/versitygw/issues/1006"
   fi
   test_file="test_file"
 
@@ -381,9 +386,6 @@ export RUN_USERS=true
 }
 
 @test "REST - bucket tagging - tags" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/932"
-  fi
   test_key="testKey"
   test_value="testValue"
 
@@ -435,5 +437,88 @@ export RUN_USERS=true
   assert_success
 
   run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - list objects v2 - invalid continuation token" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/993"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  test_file_two="test_file_2"
+  test_file_three="test_file_3"
+  run create_test_files "$test_file" "$test_file_two" "$test_file_three"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
+  assert_success
+
+  run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "TRUE"
+  assert_success
+  continuation_token=$output
+
+  # interestingly, AWS appears to accept continuation tokens that are a few characters off, so have to remove three chars
+  run list_objects_check_continuation_error "$BUCKET_ONE_NAME" "${continuation_token:0:${#continuation_token}-3}"
+  assert_success
+}
+
+@test "REST - list objects v1 - no NextMarker without delimiter" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/999"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  test_file_two="test_file_2"
+  run create_test_files "$test_file" "$test_file_two"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run list_objects_v1_check_nextmarker_empty "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - complete upload - invalid part" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1008"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_large_file "$test_file"
+  assert_success
+
+  run create_upload_finish_wrong_etag "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - upload part copy" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_large_file "$test_file"
+  assert_success
+
+  run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
