@@ -232,6 +232,9 @@ func TestS3ApiController_GetActions(t *testing.T) {
 	getObjAttrs := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
 	getObjAttrs.Header.Set("X-Amz-Object-Attributes", "hello")
 
+	invalidChecksumMode := httptest.NewRequest(http.MethodGet, "/my-bucket/key", nil)
+	invalidChecksumMode.Header.Set("x-amz-checksum-mode", "invalid_checksum_mode")
+
 	tests := []struct {
 		name       string
 		app        *fiber.App
@@ -328,6 +331,15 @@ func TestS3ApiController_GetActions(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 200,
+		},
+		{
+			name: "Get-actions-get-object-invalid-checksum-mode",
+			app:  app,
+			args: args{
+				req: invalidChecksumMode,
+			},
+			wantErr:    false,
+			statusCode: 400,
 		},
 		{
 			name: "Get-actions-get-object-success",
@@ -971,14 +983,14 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			PutObjectFunc: func(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
 				return s3response.PutObjectOutput{}, nil
 			},
-			UploadPartFunc: func(context.Context, *s3.UploadPartInput) (string, error) {
-				return "hello", nil
+			UploadPartFunc: func(context.Context, *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+				return &s3.UploadPartOutput{}, nil
 			},
 			PutObjectTaggingFunc: func(_ context.Context, bucket, object string, tags map[string]string) error {
 				return nil
 			},
-			UploadPartCopyFunc: func(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
-				return s3response.CopyObjectResult{}, nil
+			UploadPartCopyFunc: func(context.Context, *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+				return s3response.CopyPartResult{}, nil
 			},
 			PutObjectLegalHoldFunc: func(contextMoqParam context.Context, bucket, object, versionId string, status bool) error {
 				return nil
@@ -1012,6 +1024,11 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	cpySrcReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
 	cpySrcReq.Header.Set("X-Amz-Copy-Source", "srcBucket/srcObject")
 
+	// CopyObject invalid checksum algorithm
+	cpyInvChecksumAlgo := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	cpyInvChecksumAlgo.Header.Set("X-Amz-Copy-Source", "srcBucket/srcObject")
+	cpyInvChecksumAlgo.Header.Set("X-Amz-Checksum-Algorithm", "invalid_checksum_algorithm")
+
 	// PutObjectAcl success
 	aclReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
 	aclReq.Header.Set("X-Amz-Acl", "private")
@@ -1032,6 +1049,40 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	// invalid body & grt case
 	invAclBodyGrtReq := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?acl", strings.NewReader(body))
 	invAclBodyGrtReq.Header.Set("X-Amz-Grant-Read", "hello")
+
+	// PutObject invalid checksum algorithm
+	invChecksumAlgo := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invChecksumAlgo.Header.Set("X-Amz-Checksum-Algorithm", "invalid_checksum_algorithm")
+
+	// PutObject invalid base64 checksum
+	invBase64Checksum := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invBase64Checksum.Header.Set("X-Amz-Checksum-Crc32", "invalid_base64")
+
+	// PutObject invalid crc32
+	invCrc32 := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invCrc32.Header.Set("X-Amz-Checksum-Crc32", "YXNkZmFkc2Zhc2Rm")
+
+	// PutObject invalid crc32c
+	invCrc32c := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invCrc32c.Header.Set("X-Amz-Checksum-Crc32c", "YXNkZmFkc2Zhc2RmYXNkZg==")
+
+	// PutObject invalid sha1
+	invSha1 := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invSha1.Header.Set("X-Amz-Checksum-Sha1", "YXNkZmFkc2Zhc2RmYXNkZnNkYWZkYXNmZGFzZg==")
+
+	// PutObject invalid sha256
+	invSha256 := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	invSha256.Header.Set("X-Amz-Checksum-Sha256", "YXNkZmFkc2Zhc2RmYXNkZnNkYWZkYXNmZGFzZmFkc2Zhc2Rm")
+
+	// PutObject multiple checksum headers
+	mulChecksumHdrs := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	mulChecksumHdrs.Header.Set("X-Amz-Checksum-Sha256", "d1SPCd/kZ2rAzbbLUC0n/bEaOSx70FNbXbIqoIxKuPY=")
+	mulChecksumHdrs.Header.Set("X-Amz-Checksum-Crc32c", "ww2FVQ==")
+
+	// PutObject checksum algorithm and header mismatch
+	checksumHdrMismatch := httptest.NewRequest(http.MethodPut, "/my-bucket/my-key", nil)
+	checksumHdrMismatch.Header.Set("X-Amz-Checksum-Algorithm", "SHA1")
+	checksumHdrMismatch.Header.Set("X-Amz-Checksum-Crc32c", "ww2FVQ==")
 
 	tests := []struct {
 		name       string
@@ -1174,6 +1225,15 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 200,
+		},
+		{
+			name: "Copy-object-invalid-checksum-algorithm",
+			app:  app,
+			args: args{
+				req: cpyInvChecksumAlgo,
+			},
+			wantErr:    false,
+			statusCode: 400,
 		},
 		{
 			name: "Copy-object-success",
@@ -1642,6 +1702,9 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	})
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
 
+	invChecksumMode := httptest.NewRequest(http.MethodHead, "/my-bucket/my-key", nil)
+	invChecksumMode.Header.Set("X-Amz-Checksum-Mode", "invalid_checksum_mode")
+
 	tests := []struct {
 		name       string
 		app        *fiber.App
@@ -1657,6 +1720,15 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 200,
+		},
+		{
+			name: "Head-object-invalid-checksum-mode",
+			app:  app,
+			args: args{
+				req: invChecksumMode,
+			},
+			wantErr:    false,
+			statusCode: 400,
 		},
 		{
 			name: "Head-object-error",
@@ -1722,6 +1794,9 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	})
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)
 
+	invChecksumAlgo := httptest.NewRequest(http.MethodPost, "/my-bucket/my-key", nil)
+	invChecksumAlgo.Header.Set("X-Amz-Checksum-Algorithm", "invalid_checksum_algorithm")
+
 	tests := []struct {
 		name       string
 		app        *fiber.App
@@ -1773,6 +1848,15 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			},
 			wantErr:    false,
 			statusCode: 200,
+		},
+		{
+			name: "Create-multipart-upload-invalid-checksum-algorithm",
+			app:  app,
+			args: args{
+				req: invChecksumAlgo,
+			},
+			wantErr:    false,
+			statusCode: 400,
 		},
 		{
 			name: "Create-multipart-upload-success",

@@ -16,6 +16,7 @@ package utils
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -272,7 +273,9 @@ func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, outp
 	if _, ok := attrs[s3response.ObjectAttributesStorageClass]; !ok {
 		output.StorageClass = ""
 	}
-	fmt.Printf("%+v\n", output)
+	if _, ok := attrs[s3response.ObjectAttributesChecksum]; !ok {
+		output.Checksum = nil
+	}
 
 	return output
 }
@@ -431,4 +434,75 @@ func shouldEscape(c byte) bool {
 	}
 
 	return true
+}
+
+func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.ChecksumAlgorithm]string, error) {
+	sdkAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-sdk-checksum-algorithm"))
+
+	err := IsChecksumAlgorithmValid(sdkAlgorithm)
+	if err != nil {
+		return "", nil, err
+	}
+
+	checksums := map[types.ChecksumAlgorithm]string{
+		types.ChecksumAlgorithmCrc32:  ctx.Get("x-amz-checksum-crc32"),
+		types.ChecksumAlgorithmCrc32c: ctx.Get("x-amz-checksum-crc32c"),
+		types.ChecksumAlgorithmSha1:   ctx.Get("x-amz-checksum-sha1"),
+		types.ChecksumAlgorithmSha256: ctx.Get("x-amz-checksum-sha256"),
+	}
+
+	headerCtr := 0
+
+	for al, val := range checksums {
+		if val != "" && !IsValidChecksum(val, al) {
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+		}
+		// If any other checksum value is provided,
+		// rather than x-amz-sdk-checksum-algorithm
+		if sdkAlgorithm != "" && sdkAlgorithm != al && val != "" {
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+		}
+		if val != "" {
+			headerCtr++
+		}
+
+		if headerCtr > 1 {
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+		}
+	}
+
+	return sdkAlgorithm, checksums, nil
+}
+
+var checksumLengths = map[types.ChecksumAlgorithm]int{
+	types.ChecksumAlgorithmCrc32:  4,
+	types.ChecksumAlgorithmCrc32c: 4,
+	types.ChecksumAlgorithmSha1:   20,
+	types.ChecksumAlgorithmSha256: 32,
+}
+
+func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm) bool {
+	decoded, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil {
+		return false
+	}
+
+	expectedLength, exists := checksumLengths[algorithm]
+	if !exists {
+		return false
+	}
+
+	return len(decoded) == expectedLength
+}
+
+func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
+	if alg != "" &&
+		alg != types.ChecksumAlgorithmCrc32 &&
+		alg != types.ChecksumAlgorithmCrc32c &&
+		alg != types.ChecksumAlgorithmSha1 &&
+		alg != types.ChecksumAlgorithmSha256 {
+		return s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm)
+	}
+
+	return nil
 }

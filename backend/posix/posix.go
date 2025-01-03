@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -39,6 +40,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -87,6 +89,7 @@ const (
 	aclkey              = "acl"
 	ownershipkey        = "ownership"
 	etagkey             = "etag"
+	checksumsKey        = "checksums"
 	policykey           = "policy"
 	bucketLockKey       = "bucket-lock"
 	objectRetentionKey  = "object-retention"
@@ -1271,6 +1274,21 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 		}
 	}
 
+	// Set object checksum algorithm
+	if mpu.ChecksumAlgorithm != "" {
+		err := p.storeChecksums(nil, bucket, filepath.Join(objdir, uploadID), s3response.Checksum{
+			Algorithms: []types.ChecksumAlgorithm{
+				mpu.ChecksumAlgorithm,
+			},
+		})
+		if err != nil {
+			// cleanup object if returning error
+			os.RemoveAll(filepath.Join(tmppath, uploadID))
+			os.Remove(tmppath)
+			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("store mp checksum algorithm: %w", err)
+		}
+	}
+
 	return s3response.InitiateMultipartUploadResult{
 		Bucket:   bucket,
 		Key:      object,
@@ -1336,6 +1354,28 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
+	checksums, err := p.retreiveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("get mp checksums: %w", err)
+	}
+
+	// if len(checksums.Algorithms) != 0 {
+	// 	algorithm := checksums.Algorithms[0]
+
+	// 	if input.ChecksumCRC32 != nil && algorithm != types.ChecksumAlgorithmCrc32 {
+	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32")
+	// 	}
+	// 	if input.ChecksumCRC32C != nil && algorithm != types.ChecksumAlgorithmCrc32c {
+	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32c")
+	// 	}
+	// 	if input.ChecksumSHA1 != nil && algorithm != types.ChecksumAlgorithmSha1 {
+	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-sha1")
+	// 	}
+	// 	if input.ChecksumSHA256 != nil && algorithm != types.ChecksumAlgorithmSha256 {
+	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-sha256")
+	// 	}
+	// }
+
 	// check all parts ok
 	last := len(parts) - 1
 	partsize := int64(0)
@@ -1369,6 +1409,25 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		if parts[i].ETag == nil || etag != *parts[i].ETag {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
+
+		partChecksum, err := p.retreiveChecksums(nil, bucket, partObjPath)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get part checksum: %w", err)
+		}
+
+		// If checksum has been provided on mp initalization
+		err = validatePartChecksum(partChecksum, part)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var hashRdr *utils.HashReader
+	if len(checksums.Algorithms) != 0 {
+		hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksums.Algorithms[0]))))
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
 	}
 
 	f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object,
@@ -1392,7 +1451,14 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		if err != nil {
 			return nil, fmt.Errorf("open part %v: %v", *part.PartNumber, err)
 		}
-		_, err = io.Copy(f.File(), pf)
+
+		var rdr io.Reader = pf
+		if hashRdr != nil {
+			hashRdr.SetReader(rdr)
+			rdr = hashRdr
+		}
+
+		_, err = io.Copy(f.File(), rdr)
 		pf.Close()
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
@@ -1490,6 +1556,53 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 	}
 
+	var crc32 *string
+	var crc32c *string
+	var sha1 *string
+	var sha256 *string
+
+	// set checksum
+	if hashRdr != nil {
+		algo := checksums.Algorithms[0]
+		checksum := s3response.Checksum{
+			Algorithms: []types.ChecksumAlgorithm{
+				algo,
+			},
+		}
+
+		sum := hashRdr.Sum()
+		switch hashRdr.Type() {
+		case utils.HashTypeCRC32:
+			if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 != sum {
+				return nil, s3err.GetChecksumBadDigestErr(algo)
+			}
+			checksum.CRC32 = &sum
+			crc32 = &sum
+		case utils.HashTypeCRC32C:
+			if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C != sum {
+				return nil, s3err.GetChecksumBadDigestErr(algo)
+			}
+			checksum.CRC32C = &sum
+			crc32c = &sum
+		case utils.HashTypeSha1:
+			if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 != sum {
+				return nil, s3err.GetChecksumBadDigestErr(algo)
+			}
+			checksum.SHA1 = &sum
+			sha1 = &sum
+		case utils.HashTypeSha256:
+			if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 != sum {
+				return nil, s3err.GetChecksumBadDigestErr(algo)
+			}
+			checksum.SHA256 = &sum
+			sha256 = &sum
+		}
+		err := p.storeChecksums(f.File(), bucket, object, checksum)
+		if err != nil {
+			return nil, fmt.Errorf("store object checksum: %w", err)
+		}
+	}
+
 	// load and set retention
 	ret, err := p.meta.RetrieveAttribute(nil, bucket, upiddir, objectRetentionKey)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -1522,11 +1635,128 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	os.Remove(filepath.Join(bucket, objdir))
 
 	return &s3.CompleteMultipartUploadOutput{
-		Bucket:    &bucket,
-		ETag:      &s3MD5,
-		Key:       &object,
-		VersionId: &versionID,
+		Bucket:         &bucket,
+		ETag:           &s3MD5,
+		Key:            &object,
+		VersionId:      &versionID,
+		ChecksumCRC32:  crc32,
+		ChecksumCRC32C: crc32c,
+		ChecksumSHA1:   sha1,
+		ChecksumSHA256: sha256,
 	}, nil
+}
+
+func validatePartChecksum(checksum s3response.Checksum, part types.CompletedPart) error {
+	n := numberOfChecksums(part)
+
+	if len(checksum.Algorithms) != 0 {
+		algo := checksum.Algorithms[0]
+		if n == 0 {
+			return s3err.APIError{
+				Code:           "InvalidRequest",
+				Description:    fmt.Sprintf("The upload was created using a %v checksum. The complete request must include the checksum for each part. It was missing for part %v in the request.", strings.ToLower(string(algo)), *part.PartNumber),
+				HTTPStatusCode: http.StatusBadRequest,
+			}
+		}
+		if n > 1 {
+			return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+		}
+
+		if part.ChecksumCRC32 != nil {
+			if ok := utils.IsValidChecksum(*part.ChecksumCRC32, types.ChecksumAlgorithmCrc32); !ok {
+				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+			}
+
+			if *part.ChecksumCRC32 != getString(checksum.CRC32) {
+				if algo == types.ChecksumAlgorithmCrc32 {
+					return s3err.GetAPIError(s3err.ErrInvalidPart)
+				} else {
+					return s3err.APIError{
+						Code:           "BadDigest",
+						Description:    fmt.Sprintf("The crc32 you specified for part %v did not match what we received.", *part.PartNumber),
+						HTTPStatusCode: http.StatusBadRequest,
+					}
+				}
+			}
+		}
+		if part.ChecksumCRC32C != nil {
+			if ok := utils.IsValidChecksum(*part.ChecksumCRC32C, types.ChecksumAlgorithmCrc32c); !ok {
+				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+			}
+
+			if *part.ChecksumCRC32C != getString(checksum.CRC32C) {
+				if algo == types.ChecksumAlgorithmCrc32c {
+					return s3err.GetAPIError(s3err.ErrInvalidPart)
+				} else {
+					return s3err.APIError{
+						Code:           "BadDigest",
+						Description:    fmt.Sprintf("The crc32c you specified for part %v did not match what we received.", *part.PartNumber),
+						HTTPStatusCode: http.StatusBadRequest,
+					}
+				}
+			}
+		}
+		if part.ChecksumSHA1 != nil {
+			if ok := utils.IsValidChecksum(*part.ChecksumSHA1, types.ChecksumAlgorithmSha1); !ok {
+				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+			}
+
+			if *part.ChecksumSHA1 != getString(checksum.SHA1) {
+				if algo == types.ChecksumAlgorithmSha1 {
+					return s3err.GetAPIError(s3err.ErrInvalidPart)
+				} else {
+					return s3err.APIError{
+						Code:           "BadDigest",
+						Description:    fmt.Sprintf("The sha1 you specified for part %v did not match what we received.", *part.PartNumber),
+						HTTPStatusCode: http.StatusBadRequest,
+					}
+				}
+			}
+		}
+		if part.ChecksumSHA256 != nil {
+			if ok := utils.IsValidChecksum(*part.ChecksumSHA256, types.ChecksumAlgorithmSha256); !ok {
+				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+			}
+
+			if *part.ChecksumSHA256 != getString(checksum.SHA256) {
+				if algo == types.ChecksumAlgorithmSha256 {
+					return s3err.GetAPIError(s3err.ErrInvalidPart)
+				} else {
+					return s3err.APIError{
+						Code:           "BadDigest",
+						Description:    fmt.Sprintf("The sha256 you specified for part %v did not match what we received.", *part.PartNumber),
+						HTTPStatusCode: http.StatusBadRequest,
+					}
+				}
+			}
+		}
+
+		return nil
+	}
+
+	if n != 0 {
+		return s3err.GetAPIError(s3err.ErrInvalidPart)
+	}
+
+	return nil
+}
+
+func numberOfChecksums(part types.CompletedPart) int {
+	counter := 0
+	if getString(part.ChecksumCRC32) != "" {
+		counter++
+	}
+	if getString(part.ChecksumCRC32C) != "" {
+		counter++
+	}
+	if getString(part.ChecksumSHA1) != "" {
+		counter++
+	}
+	if getString(part.ChecksumSHA256) != "" {
+		counter++
+	}
+
+	return counter
 }
 
 func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, error) {
@@ -1718,11 +1948,23 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 			if keyMarkerInd == -1 && objectName == keyMarker {
 				keyMarkerInd = len(uploads)
 			}
+
+			checksum, err := p.retreiveChecksums(nil, bucket, filepath.Join(metaTmpMultipartDir, obj.Name(), uploadID))
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return lmu, fmt.Errorf("get mp checksum: %w", err)
+			}
+
+			var algo types.ChecksumAlgorithm
+			if len(checksum.Algorithms) != 0 {
+				algo = checksum.Algorithms[0]
+			}
+
 			uploads = append(uploads, s3response.Upload{
-				Key:          objectName,
-				UploadID:     uploadID,
-				StorageClass: types.StorageClassStandard,
-				Initiated:    fi.ModTime(),
+				Key:               objectName,
+				UploadID:          uploadID,
+				StorageClass:      types.StorageClassStandard,
+				Initiated:         fi.ModTime(),
+				ChecksumAlgorithm: algo,
 			})
 		}
 	}
@@ -1841,6 +2083,16 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		return lpr, fmt.Errorf("readdir upload: %w", err)
 	}
 
+	checksum, err := p.retreiveChecksums(nil, tmpdir, uploadID)
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return lpr, fmt.Errorf("get mp checksum: %w", err)
+	}
+
+	var algo types.ChecksumAlgorithm
+	if len(checksum.Algorithms) != 0 {
+		algo = checksum.Algorithms[0]
+	}
+
 	var parts []s3response.Part
 	for _, e := range ents {
 		pn, err := strconv.Atoi(e.Name())
@@ -1859,16 +2111,25 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 			etag = ""
 		}
 
+		checksum, err := p.retreiveChecksums(nil, bucket, partPath)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			continue
+		}
+
 		fi, err := os.Lstat(filepath.Join(bucket, partPath))
 		if err != nil {
 			continue
 		}
 
 		parts = append(parts, s3response.Part{
-			PartNumber:   pn,
-			ETag:         etag,
-			LastModified: fi.ModTime(),
-			Size:         fi.Size(),
+			PartNumber:     pn,
+			ETag:           etag,
+			LastModified:   fi.ModTime(),
+			Size:           fi.Size(),
+			ChecksumCRC32:  checksum.CRC32,
+			ChecksumCRC32C: checksum.CRC32C,
+			ChecksumSHA1:   checksum.SHA1,
+			ChecksumSHA256: checksum.SHA256,
 		})
 	}
 
@@ -1900,20 +2161,21 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		Parts:                parts,
 		UploadID:             uploadID,
 		StorageClass:         types.StorageClassStandard,
+		ChecksumAlgorithm:    algo,
 	}, nil
 }
 
-func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (string, error) {
+func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}
 
 	if input.Bucket == nil {
-		return "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	if input.Key == nil {
-		return "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	bucket := *input.Bucket
@@ -1928,79 +2190,185 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (stri
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return "", fmt.Errorf("stat bucket: %w", err)
+		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	sum := sha256.Sum256([]byte(object))
 	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
+	mpPath := filepath.Join(objdir, uploadID)
 
-	_, err = os.Stat(filepath.Join(bucket, objdir, uploadID))
+	_, err = os.Stat(filepath.Join(bucket, mpPath))
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if err != nil {
-		return "", fmt.Errorf("stat uploadid: %w", err)
+		return nil, fmt.Errorf("stat uploadid: %w", err)
 	}
 
-	partPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part))
+	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
 		bucket, partPath, length, acct, doFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
-			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
-		return "", fmt.Errorf("open temp file: %w", err)
+		return nil, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
 
 	hash := md5.New()
 	tr := io.TeeReader(r, hash)
+
+	var hashRdr *utils.HashReader
+	if input.ChecksumCRC32 != nil {
+		hashRdr, err = utils.NewHashReader(tr, *input.ChecksumCRC32, utils.HashTypeCRC32)
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
+	if input.ChecksumCRC32C != nil {
+		hashRdr, err = utils.NewHashReader(tr, *input.ChecksumCRC32C, utils.HashTypeCRC32C)
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
+	if input.ChecksumSHA1 != nil {
+		hashRdr, err = utils.NewHashReader(tr, *input.ChecksumSHA1, utils.HashTypeSha1)
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
+	if input.ChecksumSHA256 != nil {
+		hashRdr, err = utils.NewHashReader(tr, *input.ChecksumSHA256, utils.HashTypeSha256)
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
+
+	// If only the checksum algorithm is provided register
+	// a new HashReader to calculate the object checksum
+	if hashRdr == nil && input.ChecksumAlgorithm != "" {
+		hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
+
+	checksums, chErr := p.retreiveChecksums(nil, bucket, mpPath)
+	if chErr != nil && !errors.Is(chErr, meta.ErrNoSuchKey) {
+		return nil, fmt.Errorf("retreive mp checksum: %w", chErr)
+	}
+
+	// If checksum isn't provided for the part,
+	// but it has been provided on mp initalization
+	if hashRdr == nil && chErr == nil && len(checksums.Algorithms) != 0 {
+		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithms[0], "null")
+	}
+
+	// Check if the provided checksum algorithm match
+	// the one specified on mp initialization
+	if hashRdr != nil {
+		algo := types.ChecksumAlgorithm(strings.ToUpper(string(hashRdr.Type())))
+		if chErr != nil {
+			return nil, s3err.GetChecksumTypeMismatchErr("null", algo)
+		}
+
+		if len(checksums.Algorithms) == 0 {
+			return nil, s3err.GetChecksumTypeMismatchErr("null", algo)
+		}
+
+		if checksums.Algorithms[0] != algo {
+			return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithms[0], algo)
+		}
+	}
+
 	_, err = io.Copy(f, tr)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
-			return "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
-		return "", fmt.Errorf("write part data: %w", err)
+		return nil, fmt.Errorf("write part data: %w", err)
 	}
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum)
 	err = p.meta.StoreAttribute(f.File(), bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
-		return "", fmt.Errorf("set etag attr: %w", err)
+		return nil, fmt.Errorf("set etag attr: %w", err)
+	}
+
+	res := &s3.UploadPartOutput{
+		ETag: &etag,
+	}
+
+	// Store the calculated checksum in the object metadata
+	if hashRdr != nil {
+		checksum := s3response.Checksum{
+			Algorithms: []types.ChecksumAlgorithm{input.ChecksumAlgorithm},
+		}
+		sum := hashRdr.Sum()
+		switch hashRdr.Type() {
+		case utils.HashTypeCRC32:
+			checksum.CRC32 = &sum
+			res.ChecksumCRC32 = &sum
+		case utils.HashTypeCRC32C:
+			checksum.CRC32C = &sum
+			res.ChecksumCRC32C = &sum
+		case utils.HashTypeSha1:
+			checksum.SHA1 = &sum
+			res.ChecksumSHA1 = &sum
+		case utils.HashTypeSha256:
+			checksum.SHA256 = &sum
+			res.ChecksumSHA256 = &sum
+		}
+
+		err := p.storeChecksums(f.File(), bucket, partPath, checksum)
+		if err != nil {
+			return nil, fmt.Errorf("store checksum: %w", err)
+		}
 	}
 
 	err = f.link()
 	if err != nil {
-		return "", fmt.Errorf("link object in namespace: %w", err)
+		return nil, fmt.Errorf("link object in namespace: %w", err)
 	}
 
-	return etag, nil
+	return res, nil
 }
 
-func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}
 
 	if upi.Bucket == nil {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	if upi.Key == nil {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	_, err := os.Stat(*upi.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("stat bucket: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	sum := sha256.Sum256([]byte(*upi.Key))
@@ -2008,46 +2376,46 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	_, err = os.Stat(filepath.Join(*upi.Bucket, objdir, *upi.UploadId))
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if errors.Is(err, syscall.ENAMETOOLONG) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("stat uploadid: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("stat uploadid: %w", err)
 	}
 
 	partPath := filepath.Join(objdir, *upi.UploadId, fmt.Sprintf("%v", *upi.PartNumber))
 
 	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(*upi.CopySource)
 	if err != nil {
-		return s3response.CopyObjectResult{}, err
+		return s3response.CopyPartResult{}, err
 	}
 
 	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("stat bucket: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	vStatus, err := p.getBucketVersioningStatus(ctx, srcBucket)
 	if err != nil {
-		return s3response.CopyObjectResult{}, err
+		return s3response.CopyPartResult{}, err
 	}
 	vEnabled := p.isBucketVersioningEnabled(vStatus)
 
 	if srcVersionId != "" {
 		if !p.versioningEnabled() || !vEnabled {
-			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) {
-			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return s3response.CopyObjectResult{}, fmt.Errorf("get src object version id: %w", err)
+			return s3response.CopyPartResult{}, fmt.Errorf("get src object version id: %w", err)
 		}
 
 		if string(vId) != srcVersionId {
@@ -2060,20 +2428,20 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		if p.versioningEnabled() && vEnabled {
-			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchVersion)
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, syscall.ENAMETOOLONG) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("stat object: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("stat object: %w", err)
 	}
 
 	startOffset, length, err := backend.ParseRange(fi.Size(), *upi.CopySourceRange)
 	if err != nil {
-		return s3response.CopyObjectResult{}, err
+		return s3response.CopyPartResult{}, err
 	}
 
 	if length == -1 {
@@ -2081,25 +2449,25 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	if startOffset+length > fi.Size()+1 {
-		return s3response.CopyObjectResult{}, backend.CreateExceedingRangeErr(fi.Size())
+		return s3response.CopyPartResult{}, backend.CreateExceedingRangeErr(fi.Size())
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
 		*upi.Bucket, partPath, length, acct, doFalloc)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
-			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
-		return s3response.CopyObjectResult{}, fmt.Errorf("open temp file: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
 
 	srcf, err := os.Open(objPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("open object: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("open object: %w", err)
 	}
 	defer srcf.Close()
 
@@ -2107,35 +2475,99 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	hash := md5.New()
 	tr := io.TeeReader(rdr, hash)
 
+	mpChecksums, err := p.retreiveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return s3response.CopyPartResult{}, fmt.Errorf("retreive mp checksums: %w", err)
+	}
+
+	checksums, err := p.retreiveChecksums(nil, objPath, "")
+	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+		return s3response.CopyPartResult{}, fmt.Errorf("retreive object part checksums: %w", err)
+	}
+
+	var hashRdr *utils.HashReader
+	if len(mpChecksums.Algorithms) != 0 {
+		if len(checksums.Algorithms) == 0 || (mpChecksums.Algorithms[0] != checksums.Algorithms[0]) {
+			hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(mpChecksums.Algorithms[0]))))
+			if err != nil {
+				return s3response.CopyPartResult{}, fmt.Errorf("initialize hash reader: %w", err)
+			}
+
+			tr = hashRdr
+		}
+	}
+
 	_, err = io.Copy(f, tr)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
-			return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
-		return s3response.CopyObjectResult{}, fmt.Errorf("copy part data: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("copy part data: %w", err)
 	}
+
+	if len(checksums.Algorithms) != 0 {
+		if len(mpChecksums.Algorithms) == 0 {
+			checksums = s3response.Checksum{}
+		} else {
+			if hashRdr == nil {
+				err := p.storeChecksums(f.File(), objPath, "", checksums)
+				if err != nil {
+					return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
+				}
+			}
+		}
+	}
+	if hashRdr != nil {
+		algo := types.ChecksumAlgorithm(strings.ToUpper(string(hashRdr.Type())))
+		checksums = s3response.Checksum{
+			Algorithms: []types.ChecksumAlgorithm{algo},
+		}
+
+		sum := hashRdr.Sum()
+		switch algo {
+		case types.ChecksumAlgorithmCrc32:
+			checksums.CRC32 = &sum
+		case types.ChecksumAlgorithmCrc32c:
+			checksums.CRC32C = &sum
+		case types.ChecksumAlgorithmSha1:
+			checksums.SHA1 = &sum
+		case types.ChecksumAlgorithmSha256:
+			checksums.SHA256 = &sum
+		}
+
+		err := p.storeChecksums(f.File(), objPath, "", checksums)
+		if err != nil {
+			return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
+		}
+	}
+
+	fmt.Printf("%+v\n", checksums)
 
 	dataSum := hash.Sum(nil)
 	etag := hex.EncodeToString(dataSum)
 	err = p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("set etag attr: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
 	err = f.link()
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("link object in namespace: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("link object in namespace: %w", err)
 	}
 
 	fi, err = os.Stat(filepath.Join(*upi.Bucket, partPath))
 	if err != nil {
-		return s3response.CopyObjectResult{}, fmt.Errorf("stat part path: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("stat part path: %w", err)
 	}
 
-	return s3response.CopyObjectResult{
-		ETag:                etag,
+	return s3response.CopyPartResult{
+		ETag:                &etag,
 		LastModified:        fi.ModTime(),
 		CopySourceVersionId: srcVersionId,
+		ChecksumCRC32:       checksums.CRC32,
+		ChecksumCRC32C:      checksums.CRC32C,
+		ChecksumSHA1:        checksums.SHA1,
+		ChecksumSHA256:      checksums.SHA256,
 	}, nil
 }
 
@@ -2273,6 +2705,52 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 
 	hash := md5.New()
 	rdr := io.TeeReader(po.Body, hash)
+
+	var hashRdr *utils.HashReader
+	if po.ChecksumCRC32 != nil {
+		hashRdr, err = utils.NewHashReader(rdr, *po.ChecksumCRC32, utils.HashTypeCRC32)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
+	if po.ChecksumCRC32C != nil {
+		hashRdr, err = utils.NewHashReader(rdr, *po.ChecksumCRC32C, utils.HashTypeCRC32C)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
+	if po.ChecksumSHA1 != nil {
+		hashRdr, err = utils.NewHashReader(rdr, *po.ChecksumSHA1, utils.HashTypeSha1)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
+	if po.ChecksumSHA256 != nil {
+		hashRdr, err = utils.NewHashReader(rdr, *po.ChecksumSHA256, utils.HashTypeSha256)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
+
+	// If only the checksum algorithm is provided register
+	// a new HashReader to calculate the object checksum
+	if hashRdr == nil && po.ChecksumAlgorithm != "" {
+		hashRdr, err = utils.NewHashReader(rdr, "", utils.HashType(strings.ToLower(string(po.ChecksumAlgorithm))))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
+
 	_, err = io.Copy(f, rdr)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
@@ -2314,6 +2792,33 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
+		}
+	}
+
+	// Store the calculated checksum in the object metadata
+	if hashRdr != nil {
+		checksum := s3response.Checksum{
+			Algorithms: []types.ChecksumAlgorithm{po.ChecksumAlgorithm},
+		}
+		sum := hashRdr.Sum()
+		switch hashRdr.Type() {
+		case utils.HashTypeCRC32:
+			checksum.CRC32 = &sum
+			po.ChecksumCRC32 = &sum
+		case utils.HashTypeCRC32C:
+			checksum.CRC32C = &sum
+			po.ChecksumCRC32C = &sum
+		case utils.HashTypeSha1:
+			checksum.SHA1 = &sum
+			po.ChecksumSHA1 = &sum
+		case utils.HashTypeSha256:
+			checksum.SHA256 = &sum
+			po.ChecksumSHA256 = &sum
+		}
+
+		err := p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
 		}
 	}
 
@@ -2397,8 +2902,12 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 	}
 
 	return s3response.PutObjectOutput{
-		ETag:      etag,
-		VersionID: versionID,
+		ETag:           etag,
+		VersionID:      versionID,
+		ChecksumCRC32:  po.ChecksumCRC32,
+		ChecksumCRC32C: po.ChecksumCRC32C,
+		ChecksumSHA1:   po.ChecksumSHA1,
+		ChecksumSHA256: po.ChecksumSHA256,
 	}, nil
 }
 
@@ -2931,6 +3440,14 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, fmt.Errorf("open object: %w", err)
 	}
 
+	var checksums s3response.Checksum
+	if input.ChecksumMode == types.ChecksumModeEnabled {
+		checksums, err = p.retreiveChecksums(f, bucket, object)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get object checksums: %w", err)
+		}
+	}
+
 	// using an os.File allows zero-copy sendfile via io.Copy(os.File, net.Conn)
 	var body io.ReadCloser = f
 	if startOffset != 0 || length != objSize {
@@ -2951,6 +3468,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		StorageClass:    types.StorageClassStandard,
 		VersionId:       &versionId,
 		Body:            body,
+		ChecksumCRC32:   checksums.CRC32,
+		ChecksumCRC32C:  checksums.CRC32C,
+		ChecksumSHA1:    checksums.SHA1,
+		ChecksumSHA256:  checksums.SHA256,
 	}, nil
 }
 
@@ -3124,6 +3645,14 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 	}
 
+	var checksums s3response.Checksum
+	if input.ChecksumMode == types.ChecksumModeEnabled {
+		checksums, err = p.retreiveChecksums(nil, bucket, object)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get object checksums: %w", err)
+		}
+	}
+
 	return &s3.HeadObjectOutput{
 		ContentLength:             &size,
 		ContentType:               &contentType,
@@ -3136,14 +3665,19 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ObjectLockRetainUntilDate: objectLockRetainUntilDate,
 		StorageClass:              types.StorageClassStandard,
 		VersionId:                 &versionId,
+		ChecksumCRC32:             checksums.CRC32,
+		ChecksumCRC32C:            checksums.CRC32C,
+		ChecksumSHA1:              checksums.SHA1,
+		ChecksumSHA256:            checksums.SHA256,
 	}, nil
 }
 
 func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	data, err := p.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket:    input.Bucket,
-		Key:       input.Key,
-		VersionId: input.VersionId,
+		Bucket:       input.Bucket,
+		Key:          input.Key,
+		VersionId:    input.VersionId,
+		ChecksumMode: types.ChecksumModeEnabled,
 	})
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)) && data != nil {
@@ -3163,6 +3697,12 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 		LastModified: data.LastModified,
 		VersionId:    data.VersionId,
 		DeleteMarker: data.DeleteMarker,
+		Checksum: &types.Checksum{
+			ChecksumCRC32:  data.ChecksumCRC32,
+			ChecksumCRC32C: data.ChecksumCRC32C,
+			ChecksumSHA1:   data.ChecksumSHA1,
+			ChecksumSHA256: data.ChecksumSHA256,
+		},
 	}, nil
 }
 
@@ -3259,6 +3799,10 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 
 	var etag string
 	var version *string
+	var crc32 *string
+	var crc32c *string
+	var sha1 *string
+	var sha256 *string
 
 	dstObjdPath := filepath.Join(dstBucket, dstObject)
 	if dstObjdPath == objPath {
@@ -3281,6 +3825,62 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			}
 		}
 
+		checksums, err := p.retreiveChecksums(nil, dstBucket, dstObject)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj checksums: %w", err)
+		}
+
+		if input.ChecksumAlgorithm != "" {
+			var algo types.ChecksumAlgorithm
+			if len(checksums.Algorithms) != 0 {
+				algo = checksums.Algorithms[0]
+			}
+
+			// If a different checksum algorith is specified
+			// first caclculate and store the checksum
+			if algo != input.ChecksumAlgorithm {
+				f, err := os.Open(dstObjdPath)
+				if err != nil {
+					return nil, fmt.Errorf("open obj file: %w", err)
+				}
+				defer f.Close()
+
+				hashReader, err := utils.NewHashReader(f, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
+				if err != nil {
+					return nil, fmt.Errorf("initialize hash reader: %w", err)
+				}
+
+				_, err = hashReader.Read(nil)
+				if err != nil {
+					return nil, fmt.Errorf("read err: %w", err)
+				}
+
+				checksums = s3response.Checksum{
+					Algorithms: []types.ChecksumAlgorithm{input.ChecksumAlgorithm},
+				}
+				sum := hashReader.Sum()
+				switch hashReader.Type() {
+				case utils.HashTypeCRC32:
+					checksums.CRC32 = &sum
+					crc32 = &sum
+				case utils.HashTypeCRC32C:
+					checksums.CRC32C = &sum
+					crc32c = &sum
+				case utils.HashTypeSha1:
+					checksums.SHA1 = &sum
+					sha1 = &sum
+				case utils.HashTypeSha256:
+					checksums.SHA256 = &sum
+					sha256 = &sum
+				}
+
+				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
+				if err != nil {
+					return nil, fmt.Errorf("store checksum: %w", err)
+				}
+			}
+		}
+
 		b, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, etagkey)
 		etag = string(b)
 		vId, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, versionIdKey)
@@ -3290,19 +3890,40 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		version = backend.GetPtrFromString(string(vId))
 	} else {
 		contentLength := fi.Size()
+
+		checksums, err := p.retreiveChecksums(f, srcBucket, srcObject)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj checksum: %w", err)
+		}
+
+		// If any checksum algorithm is provided, replace, otherwise
+		// use the existing one
+		if input.ChecksumAlgorithm != "" {
+			checksums.Algorithms = []types.ChecksumAlgorithm{input.ChecksumAlgorithm}
+		}
+		var chAlgorithm types.ChecksumAlgorithm
+		if len(checksums.Algorithms) != 0 {
+			chAlgorithm = checksums.Algorithms[0]
+		}
+
 		res, err := p.PutObject(ctx,
 			&s3.PutObjectInput{
-				Bucket:        &dstBucket,
-				Key:           &dstObject,
-				Body:          f,
-				ContentLength: &contentLength,
-				Metadata:      input.Metadata,
+				Bucket:            &dstBucket,
+				Key:               &dstObject,
+				Body:              f,
+				ContentLength:     &contentLength,
+				Metadata:          input.Metadata,
+				ChecksumAlgorithm: chAlgorithm,
 			})
 		if err != nil {
 			return nil, err
 		}
 		etag = res.ETag
 		version = &res.VersionID
+		crc32 = res.ChecksumCRC32
+		crc32c = res.ChecksumCRC32C
+		sha1 = res.ChecksumSHA1
+		sha256 = res.ChecksumSHA256
 	}
 
 	fi, err = os.Stat(dstObjdPath)
@@ -3312,8 +3933,12 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 
 	return &s3.CopyObjectOutput{
 		CopyObjectResult: &types.CopyObjectResult{
-			ETag:         &etag,
-			LastModified: backend.GetTimePtr(fi.ModTime()),
+			ETag:           &etag,
+			LastModified:   backend.GetTimePtr(fi.ModTime()),
+			ChecksumCRC32:  crc32,
+			ChecksumCRC32C: crc32c,
+			ChecksumSHA1:   sha1,
+			ChecksumSHA256: sha256,
 		},
 		VersionId:           version,
 		CopySourceVersionId: &srcVersionId,
@@ -3410,6 +4035,12 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
 
+		// Retreive the object checksum algorithm
+		checksums, err := p.retreiveChecksums(nil, bucket, path)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return s3response.Object{}, backend.ErrSkipObj
+		}
+
 		// file object, get object info and fill out object data
 		etagBytes, err := p.meta.RetrieveAttribute(nil, bucket, path, etagkey)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -3435,11 +4066,12 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 		mtime := fi.ModTime()
 
 		return s3response.Object{
-			ETag:         &etag,
-			Key:          &path,
-			LastModified: &mtime,
-			Size:         &size,
-			StorageClass: types.ObjectStorageClassStandard,
+			ETag:              &etag,
+			Key:               &path,
+			LastModified:      &mtime,
+			Size:              &size,
+			StorageClass:      types.ObjectStorageClassStandard,
+			ChecksumAlgorithm: checksums.Algorithms,
 		}, nil
 	}
 }
@@ -4068,6 +4700,25 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	})
 
 	return buckets, nil
+}
+
+func (p *Posix) storeChecksums(f *os.File, bucket, object string, chs s3response.Checksum) error {
+	checksums, err := json.Marshal(chs)
+	if err != nil {
+		return fmt.Errorf("parse checksum: %w", err)
+	}
+
+	return p.meta.StoreAttribute(f, bucket, object, checksumsKey, checksums)
+}
+
+func (p *Posix) retreiveChecksums(f *os.File, bucket, object string) (checksums s3response.Checksum, err error) {
+	checksumsAtr, err := p.meta.RetrieveAttribute(f, bucket, object, checksumsKey)
+	if err != nil {
+		return checksums, err
+	}
+
+	err = json.Unmarshal(checksumsAtr, &checksums)
+	return checksums, err
 }
 
 func getString(str *string) string {
