@@ -388,3 +388,60 @@ put_canned_acl_rest() {
   fi
   return 0
 }
+
+# param: bucket name
+# return 0 for success, 1 for failure
+check_ownership_rule_and_reset_acl() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_ownership_rule_and_reset_acl' requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_ownership_controls "$1"; then
+    log 2 "error getting bucket ownership controls"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! object_ownership_rule=$(echo "$bucket_ownership_controls" | jq -r ".OwnershipControls.Rules[0].ObjectOwnership" 2>&1); then
+    log 2 "error getting object ownership rule: $object_ownership_rule"
+    return 1
+  fi
+  if [[ $object_ownership_rule != "BucketOwnerEnforced" ]] && ! reset_bucket_acl "$1"; then
+    log 2 "error resetting bucket ACL"
+    return 1
+  fi
+}
+
+# param: bucket name
+# return 1 for failure, 0 for success
+get_object_ownership_rule_and_update_acl() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_object_ownership_rule_and_update_acl' requires bucket name"
+    return 1
+  fi
+  if ! get_object_ownership_rule "$1"; then
+    log 2 "error getting object ownership rule"
+    return 1
+  fi
+  log 5 "object ownership rule: $object_ownership_rule"
+  if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$1" "private"; then
+    log 2 "error resetting bucket ACLs"
+    return 1
+  fi
+}
+
+# get object acl
+# param:  object path
+# export acl for success, return 1 for error
+get_object_acl() {
+  if [ $# -ne 2 ]; then
+    log 2 "object ACL command missing object name"
+    return 1
+  fi
+  local exit_code=0
+  acl=$(aws --no-verify-ssl s3api get-object-acl --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
+  if [ $exit_code -ne 0 ]; then
+    log 2 "Error getting object ACLs: $acl"
+    return 1
+  fi
+  export acl
+}

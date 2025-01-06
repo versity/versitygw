@@ -330,3 +330,16 @@ put_and_check_policy_rest() {
   fi
   return 0
 }
+
+log_bucket_policy() {
+  if [ $# -ne 1 ]; then
+    log 2 "'log_bucket_policy' requires bucket name"
+    return
+  fi
+  if ! get_bucket_policy "s3api" "$1"; then
+    log 2 "error getting bucket policy"
+    return
+  fi
+  # shellcheck disable=SC2154
+  log 5 "BUCKET POLICY: $bucket_policy"
+}

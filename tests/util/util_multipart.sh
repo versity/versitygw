@@ -295,3 +295,43 @@ create_upload_finish_wrong_etag() {
   fi
   return 0
 }
+
+setup_multipart_upload_with_params() {
+  if [ $# -ne 2 ]; then
+    log 2 "'setup_multipart_upload_with_params' requires bucket name, file name"
+    return 1
+  fi
+  os_name="$(uname)"
+  if [[ "$os_name" == "Darwin" ]]; then
+    now=$(date -u +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -j -v +15S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+  else
+    now=$(date +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -d "$now 15 seconds" +"%Y-%m-%dT%H:%M:%S")
+  fi
+
+  if ! create_test_files "$2"; then
+    log 2 "error creating test file"
+    return 1
+  fi
+
+  if ! result=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER/$2" bs=5M count=1 2>&1); then
+    log 2 "error creating large file: $result"
+    return 1
+  fi
+
+  if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    log 2 "error cleaning up bucket"
+    return 1
+  fi
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    if ! create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"; then
+      log 2 "error creating bucket with object lock enabled"
+      return 1
+    fi
+  fi
+  log 5 "later in function: $later"
+  echo "$later"
+  return 0
+}

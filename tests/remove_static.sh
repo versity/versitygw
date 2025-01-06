@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util/util.sh
+source ./tests/util/util_object.sh
 
 delete_bucket_if_exists() {
   if [[ $# -ne 2 ]]; then

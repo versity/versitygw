@@ -15,11 +15,11 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util/util.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_bucket_location.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_object.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_presigned_url.sh
 source ./tests/commands/copy_object.sh

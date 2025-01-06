@@ -31,15 +31,16 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_attributes.sh
+source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_list_objects.sh
 source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_multipart_before_completion.sh
+source ./tests/util/util_object.sh
 source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_public_access_block.sh
@@ -520,5 +521,27 @@ export RUN_USERS=true
   assert_success
 
   run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}
+
+@test "REST - head object" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1018"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_etag_rest "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+  expected_etag=$output
+
+  run get_etag_attribute_rest "$BUCKET_ONE_NAME" "$test_file" "$expected_etag"
   assert_success
 }

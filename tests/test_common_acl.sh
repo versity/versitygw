@@ -73,7 +73,6 @@ test_common_put_bucket_acl() {
   assert_success
 
   log 5 "acl: $(cat "$TEST_FILE_FOLDER/$acl_file")"
-
   run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
   assert_success
 

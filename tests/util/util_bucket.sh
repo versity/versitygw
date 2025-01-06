@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
+source ./tests/util/util_acl.sh
 source ./tests/util/util_multipart_abort.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_retention.sh
 
 # recursively delete an AWS bucket
 # param:  client, bucket name

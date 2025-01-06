@@ -20,8 +20,8 @@ load ./bats-assert/load
 source ./tests/commands/put_object.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util.sh
 source ./tests/util/util_acl.sh
+source ./tests/util/util_object.sh
 
 export RUN_USERS=true
 

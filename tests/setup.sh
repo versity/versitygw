@@ -17,7 +17,7 @@
 source ./tests/env.sh
 source ./tests/report.sh
 source ./tests/setup_mc.sh
-source ./tests/util/util.sh
+source ./tests/util/util_object.sh
 source ./tests/versity.sh
 
 # bats setup function
@@ -50,6 +50,7 @@ setup() {
   fi
 
   export AWS_PROFILE
+  log 4 "********** END SETUP **********"
 }
 
 delete_temp_log_if_exists() {
@@ -65,6 +66,7 @@ delete_temp_log_if_exists() {
 # bats teardown function
 teardown() {
   # shellcheck disable=SC2154
+  log 4 "********** BEGIN TEARDOWN **********"
   if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
     log 5 "deleting or clearing buckets"
     if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
