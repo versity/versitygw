@@ -8,10 +8,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/aws/aws-sdk-go-v2 v1.32.7
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.72.0
 	github.com/aws/smithy-go v1.22.1
 	github.com/go-ldap/ldap/v3 v3.4.10
-	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault-client-go v0.4.3
@@ -24,7 +24,7 @@ require (
 	github.com/valyala/fasthttp v1.58.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
 	golang.org/x/sync v0.10.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.29.0
 )
 
 require (
@@ -50,10 +50,10 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.8.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
 )
 
 require (
@@ -61,7 +61,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.7 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.28.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.48
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.44
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.45
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.26 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.26 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.26 // indirect
