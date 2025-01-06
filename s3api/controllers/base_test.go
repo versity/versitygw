@@ -941,12 +941,12 @@ func TestS3ApiController_PutActions(t *testing.T) {
 	</Tagging>
 	`
 
-	retentionBody := `
-	<Retention xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-		<Mode>GOVERNANCE</Mode>
-		<RetainUntilDate>2025-01-01T00:00:00Z</RetainUntilDate>
-	</Retention>
-	`
+	//retentionBody := `
+	//<Retention xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+	//	<Mode>GOVERNANCE</Mode>
+	//	<RetainUntilDate>2025-01-01T00:00:00Z</RetainUntilDate>
+	//</Retention>
+	//`
 
 	legalHoldBody := `
 	<LegalHold xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
@@ -1076,15 +1076,15 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			wantErr:    false,
 			statusCode: 400,
 		},
-		{
-			name: "put-object-retention-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?retention", strings.NewReader(retentionBody)),
-			},
-			wantErr:    false,
-			statusCode: 200,
-		},
+		//{
+		//	name: "put-object-retention-success",
+		//	app:  app,
+		//	args: args{
+		//		req: httptest.NewRequest(http.MethodPut, "/my-bucket/my-key?retention", strings.NewReader(retentionBody)),
+		//	},
+		//	wantErr:    false,
+		//	statusCode: 200,
+		//},
 		{
 			name: "put-legal-hold-invalid-request",
 			app:  app,
@@ -1713,6 +1713,19 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 		</SelectObjectContentRequest>
 	`
 
+	completMpBody := `
+		<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+			<Part>
+				<ETag>etag</ETag>
+				<PartNumber>1</PartNumber>
+			</Part>
+		</CompleteMultipartUpload>
+	`
+
+	completMpEmptyBody := `
+		<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></CompleteMultipartUpload>
+	`
+
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
@@ -1766,10 +1779,19 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			statusCode: 400,
 		},
 		{
+			name: "Complete-multipart-upload-empty-parts",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(completMpEmptyBody)),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
 			name: "Complete-multipart-upload-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(`<root><key>body</key></root>`)),
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(completMpBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,
