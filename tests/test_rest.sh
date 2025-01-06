@@ -43,6 +43,7 @@ source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
+source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
 
@@ -435,5 +436,36 @@ export RUN_USERS=true
   assert_success
 
   run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - list objects v2 - invalid continuation token" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/993"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  test_file_two="test_file_2"
+  test_file_three="test_file_3"
+  run create_test_files "$test_file" "$test_file_two" "$test_file_three"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
+  assert_success
+
+  run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  assert_success
+  continuation_token=$output
+
+  # interestingly, AWS appears to accept continuation tokens that are a few characters off, so have to remove three chars
+  run list_objects_check_continuation_error "$BUCKET_ONE_NAME" "${continuation_token:0:${#continuation_token}-3}"
   assert_success
 }
