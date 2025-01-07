@@ -1785,6 +1785,19 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 		</SelectObjectContentRequest>
 	`
 
+	completMpBody := `
+		<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+			<Part>
+				<ETag>etag</ETag>
+				<PartNumber>1</PartNumber>
+			</Part>
+		</CompleteMultipartUpload>
+	`
+
+	completMpEmptyBody := `
+		<CompleteMultipartUpload xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></CompleteMultipartUpload>
+	`
+
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("account", auth.Account{Access: "valid access"})
 		ctx.Locals("isRoot", true)
@@ -1841,10 +1854,19 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			statusCode: 400,
 		},
 		{
+			name: "Complete-multipart-upload-empty-parts",
+			app:  app,
+			args: args{
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(completMpEmptyBody)),
+			},
+			wantErr:    false,
+			statusCode: 400,
+		},
+		{
 			name: "Complete-multipart-upload-success",
 			app:  app,
 			args: args{
-				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(`<root><key>body</key></root>`)),
+				req: httptest.NewRequest(http.MethodPost, "/my-bucket/my-key?uploadId=23423", strings.NewReader(completMpBody)),
 			},
 			wantErr:    false,
 			statusCode: 200,

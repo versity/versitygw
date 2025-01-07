@@ -86,6 +86,7 @@ func TestListBuckets(s *S3Conf) {
 	ListBuckets_invalid_max_buckets(s)
 	ListBuckets_truncated(s)
 	ListBuckets_success(s)
+	ListBuckets_empty_success(s)
 }
 
 func TestDeleteBucket(s *S3Conf) {
@@ -213,6 +214,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_all_objs_max_keys(s)
 	ListObjectsV2_list_all_objs(s)
 	ListObjectsV2_with_checksum(s)
+	ListObjectsV2_invalid_parent_prefix(s)
 }
 
 // VD stands for Versioning Disabled
@@ -363,6 +365,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 	CompleteMultipartUpload_should_calculate_the_final_checksum(s)
 	CompleteMultipartUpload_should_verify_the_final_checksum(s)
 	CompleteMultipartUpload_should_ignore_the_final_checksum(s)
+	CompleteMultipartUpload_empty_parts(s)
 	CompleteMultipartUpload_success(s)
 	if !s.azureTests {
 		CompleteMultipartUpload_racey_success(s)
@@ -490,8 +493,8 @@ func TestGetObjectLegalHold(s *S3Conf) {
 func TestWORMProtection(s *S3Conf) {
 	WORMProtection_bucket_object_lock_configuration_compliance_mode(s)
 	WORMProtection_bucket_object_lock_configuration_governance_mode(s)
-	// WORMProtection_bucket_object_lock_governance_bypass_delete(s)
-	// WORMProtection_bucket_object_lock_governance_bypass_delete_multiple
+	WORMProtection_bucket_object_lock_governance_bypass_delete(s)
+	WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s)
 	WORMProtection_object_lock_retention_compliance_locked(s)
 	WORMProtection_object_lock_retention_governance_locked(s)
 	WORMProtection_object_lock_retention_governance_bypass_overwrite(s)
@@ -564,6 +567,7 @@ func TestPosix(s *S3Conf) {
 	PutObject_name_too_long(s)
 	HeadObject_name_too_long(s)
 	DeleteObject_name_too_long(s)
+	DeleteObject_directory_not_empty(s)
 	// posix specific versioning tests
 	if !s.versioningEnabled {
 		TestVersioningDisabled(s)
@@ -576,6 +580,7 @@ func TestIAM(s *S3Conf) {
 	IAM_userplus_CreateBucket(s)
 	IAM_admin_ChangeBucketOwner(s)
 	IAM_ChangeBucketOwner_back_to_root(s)
+	IAM_ListBuckets(s)
 }
 
 func TestAccessControl(s *S3Conf) {

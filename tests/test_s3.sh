@@ -15,7 +15,7 @@
 # under the License.
 
 source ./tests/test_common.sh
-source ./tests/util_file.sh
+source ./tests/util/util_file.sh
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {

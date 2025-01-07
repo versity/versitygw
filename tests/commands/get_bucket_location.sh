@@ -17,17 +17,18 @@
 get_bucket_location() {
   record_command "get-bucket-location" "client:$1"
   if [[ $# -ne 2 ]]; then
-    echo "get bucket location command requires command type, bucket name"
+    log 2 "get bucket location command requires command type, bucket name"
     return 1
   fi
-  if [[ $1 == 'aws' ]]; then
+  get_result=0
+  if [[ $1 == 's3api' ]]; then
     get_bucket_location_aws "$2" || get_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_location_s3cmd "$2" || get_result=$?
   elif [[ $1 == 'mc' ]]; then
     get_bucket_location_mc "$2" || get_result=$?
   else
-    echo "command type '$1' not implemented for get_bucket_location"
+    log 2 "command type '$1' not implemented for get_bucket_location"
     return 1
   fi
   if [[ $get_result -ne 0 ]]; then
@@ -39,7 +40,7 @@ get_bucket_location() {
 get_bucket_location_aws() {
   record_command "get-bucket-location" "client:s3api"
   if [[ $# -ne 1 ]]; then
-    echo "get bucket location (aws) requires bucket name"
+    log 2 "get bucket location (aws) requires bucket name"
     return 1
   fi
   location_json=$(send_command aws --no-verify-ssl s3api get-bucket-location --bucket "$1") || location_result=$?
@@ -59,7 +60,7 @@ get_bucket_location_s3cmd() {
   fi
   info=$(send_command s3cmd --no-check-certificate info "s3://$1") || results=$?
   if [[ $results -ne 0 ]]; then
-    echo "error getting s3cmd info: $info"
+    log 2 "error getting bucket location: $location"
     return 1
   fi
   bucket_location=$(echo "$info" | grep -o 'Location:.*' | awk '{print $2}')
@@ -69,12 +70,12 @@ get_bucket_location_s3cmd() {
 get_bucket_location_mc() {
   record_command "get-bucket-location" "client:mc"
   if [[ $# -ne 1 ]]; then
-    echo "get bucket location (mc) requires bucket name"
+    log 2 "get bucket location (mc) requires bucket name"
     return 1
   fi
   info=$(send_command mc --insecure stat "$MC_ALIAS/$1") || results=$?
   if [[ $results -ne 0 ]]; then
-    echo "error getting s3cmd info: $info"
+    log 2 "error getting s3cmd info: $info"
     return 1
   fi
   # shellcheck disable=SC2034

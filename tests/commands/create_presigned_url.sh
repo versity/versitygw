@@ -7,7 +7,7 @@ create_presigned_url() {
   fi
 
   local presign_result=0
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     presigned_url=$(send_command aws s3 presign "s3://$2/$3" --expires-in 900) || presign_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     presigned_url=$(send_command s3cmd --no-check-certificate "${S3CMD_OPTS[@]}" signurl "s3://$2/$3" "$(echo "$(date +%s)" + 900 | bc)") || presign_result=$?

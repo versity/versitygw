@@ -16,13 +16,13 @@
 
 abort_all_multipart_uploads() {
   if [[ $# -ne 1 ]]; then
-    echo "abort all multipart uploads command missing bucket name"
+    log 2 "abort all multipart uploads command missing bucket name"
     return 1
   fi
 
   upload_list=$(aws --no-verify-ssl s3api list-multipart-uploads --bucket "$1" 2>&1) || list_result=$?
   if [[ $list_result -ne 0 ]]; then
-    echo "error listing multipart uploads: $upload_list"
+    log 2 "error listing multipart uploads: $upload_list"
     return 1
   fi
   log 5 "$upload_list"
@@ -46,7 +46,7 @@ abort_all_multipart_uploads() {
   while read -r line; do
     # shellcheck disable=SC2086
     if ! error=$(aws --no-verify-ssl s3api abort-multipart-upload --bucket "$1" $line 2>&1); then
-      echo "error aborting multipart upload: $error"
+      log 2 "error aborting multipart upload: $error"
       return 1
     fi
   done <<< "$lines"

@@ -21,7 +21,7 @@ get_object_tagging() {
     return 1
   fi
   local result
-  if [[ "$1" == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     tags=$(send_command aws --no-verify-ssl s3api get-object-tagging --bucket "$2" --key "$3" 2>&1) || result=$?
   elif [[ "$1" == 'mc' ]]; then
     tags=$(send_command mc --insecure tag list "$MC_ALIAS"/"$2"/"$3" 2>&1) || result=$?

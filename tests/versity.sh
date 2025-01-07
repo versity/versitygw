@@ -14,15 +14,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_file.sh
+source ./tests/util/util_file.sh
 
 start_versity_process() {
   if [[ $# -ne 1 ]]; then
     log 1 "start versity process function requires number"
-    exit 1
-  fi
-  if ! create_test_file_folder; then
-    log 1 "error creating test log folder"
     exit 1
   fi
   build_run_and_log_command

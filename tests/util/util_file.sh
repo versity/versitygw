@@ -25,12 +25,6 @@ create_test_files() {
     log 2 "'create_test_files' requires file names"
     return 1
   fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
-  fi
   for name in "$@"; do
     if ! create_test_file "$name"; then
       log 2 "error creating test file"
@@ -45,12 +39,6 @@ create_test_file() {
   if [[ ( $# -lt 1 ) || ( $# -gt 2 ) ]]; then
     log 2 "'create_test_file' requires filename, size (optional)"
     return 1
-  fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
   fi
   if [[ -e "$TEST_FILE_FOLDER/$1" ]]; then
     if ! error=$(rm "$TEST_FILE_FOLDER/$1" 2>&1); then
@@ -84,12 +72,6 @@ create_test_folder() {
     log 2 "'create_test_folder' requires folder names"
     return 1
   fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
-  fi
   for name in "$@"; do
     if ! error=$(mkdir -p "$TEST_FILE_FOLDER"/"$name" 2>&1); then
       log 2 "error creating folder $name: $error"
@@ -104,17 +86,17 @@ create_test_folder() {
 # return:  0 for success, 1 for error
 delete_test_files() {
   if [ $# -lt 1 ]; then
-    echo "delete test files command missing filenames"
+    log 2 "delete test files command missing filenames"
     return 1
   fi
   if [ -z "$TEST_FILE_FOLDER" ]; then
-    echo "no test file folder defined, not deleting"
+    log 2 "no test file folder defined, not deleting"
     return 1
   fi
   for name in "$@"; do
     rm -rf "${TEST_FILE_FOLDER:?}"/"${name:?}" || rm_result=$?
     if [[ $rm_result -ne 0 ]]; then
-      echo "error deleting file $name"
+      log 2 "error deleting file $name"
     fi
   done
   return 0
@@ -139,7 +121,7 @@ split_file() {
   local split_result
   error=$(split -a 1 -d -b "$part_size" "$1" "$1"-) || split_result=$?
   if [[ $split_result -ne 0 ]]; then
-    echo "error splitting file: $error"
+    log 2 "error splitting file: $error"
     return 1
   fi
   return 0
@@ -150,7 +132,7 @@ split_file() {
 # return 0 for same data, 1 for different data, 2 for error
 compare_files() {
   if [ $# -ne 2 ]; then
-    echo "file comparison requires two files"
+    log 2 "file comparison requires two files"
     return 2
   fi
   os=$(uname)
@@ -167,19 +149,6 @@ compare_files() {
   return 1
 }
 
-# return 0 on success, 1 on error
-create_test_file_folder() {
-  log 6 "create_test_file_folder"
-  if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
-    # shellcheck disable=SC2035
-    if [[ "$error" != *"File exists"* ]]; then
-      log 2 "error making test file folder: $error"
-      return 1
-    fi
-  fi
-  return 0
-}
-
 # generate 160MB file
 # input: filename
 # fail on error
@@ -188,12 +157,6 @@ create_large_file() {
   if [ $# -ne 1 ]; then
     log 2 "'create_large_file' requires file name"
     return 1
-  fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
   fi
 
   filesize=$((160*1024*1024))
@@ -210,12 +173,6 @@ create_test_file_count() {
   if [ $# -ne 1 ]; then
     log 2 "'create_test_file_count' requires number of files"
     return 1
-  fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
   fi
   for ((i=1;i<=$1;i++)) {
     if ! error=$(touch "$TEST_FILE_FOLDER/file_$i" 2>&1); then

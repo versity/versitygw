@@ -1460,7 +1460,10 @@ func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket string, acl []byt
 // The action actually returns the containers owned by the user, who initialized the gateway
 // TODO: Not sure if there's a way to list all the containers and owners?
 func (az *Azure) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
-	pager := az.client.NewListContainersPager(nil)
+	opts := &service.ListContainersOptions{
+		Include: service.ListContainersInclude{Metadata: true},
+	}
+	pager := az.client.NewListContainersPager(opts)
 
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
@@ -1736,9 +1739,11 @@ func (az *Azure) deleteContainerMetaData(ctx context.Context, bucket, key string
 }
 
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
+	var acl auth.ACL
+
 	data, ok := meta[string(key)]
 	if !ok {
-		return nil, s3err.GetAPIError(s3err.ErrInternalError)
+		return &acl, nil
 	}
 
 	value, err := decodeString(*data)
@@ -1746,7 +1751,6 @@ func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 		return nil, err
 	}
 
-	var acl auth.ACL
 	if len(value) == 0 {
 		return &acl, nil
 	}

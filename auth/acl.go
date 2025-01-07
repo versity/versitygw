@@ -17,6 +17,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +40,7 @@ type Grantee struct {
 }
 
 type GetBucketAclOutput struct {
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ AccessControlPolicy"`
 	Owner             *types.Owner
 	AccessControlList AccessControlList
 }
@@ -262,8 +264,8 @@ func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 				result = append(result, acc)
 				continue
 			}
-			if err == ErrNotSupported {
-				return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)) {
+				return nil, err
 			}
 			return nil, fmt.Errorf("check user account: %w", err)
 		}

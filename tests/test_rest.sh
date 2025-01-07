@@ -28,17 +28,23 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util.sh
-source ./tests/util_attributes.sh
-source ./tests/util_legal_hold.sh
-source ./tests/util_list_buckets.sh
-source ./tests/util_list_objects.sh
-source ./tests/util_list_parts.sh
-source ./tests/util_lock_config.sh
-source ./tests/util_rest.sh
-source ./tests/util_tags.sh
-source ./tests/util_time.sh
-source ./tests/util_versioning.sh
+source ./tests/util/util.sh
+source ./tests/util/util_acl.sh
+source ./tests/util/util_attributes.sh
+source ./tests/util/util_legal_hold.sh
+source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_list_objects.sh
+source ./tests/util/util_list_parts.sh
+source ./tests/util/util_lock_config.sh
+source ./tests/util/util_ownership.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_public_access_block.sh
+source ./tests/util/util_rest.sh
+source ./tests/util/util_tags.sh
+source ./tests/util/util_time.sh
+source ./tests/util/util_versioning.sh
+
+export RUN_USERS=true
 
 @test "test_rest_list_objects" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -185,7 +191,6 @@ source ./tests/util_versioning.sh
 }
 
 @test "test_rest_versioning" {
-  skip "https://github.com/versity/versitygw/issues/864"
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -218,7 +223,6 @@ source ./tests/util_versioning.sh
 }
 
 @test "versioning - add version, then delete and check for marker" {
-  skip "https://github.com/versity/versitygw/issues/864"
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -241,9 +245,6 @@ source ./tests/util_versioning.sh
 }
 
 @test "versioning - retrieve after delete" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/888"
-  fi
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -266,9 +267,6 @@ source ./tests/util_versioning.sh
 }
 
 @test "REST - legal hold, get without config" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/883"
-  fi
   test_file="test_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -393,5 +391,49 @@ source ./tests/util_versioning.sh
   assert_success
 
   run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
+  assert_success
+}
+
+@test "REST - get, put bucket ownership controls" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerEnforced"
+  assert_success
+
+  run put_bucket_ownership_controls_rest "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+}
+
+@test "REST - get policy w/o policy" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/959"
+  fi
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - put policy" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  log 5 "username: ${lines[0]}"
+  log 5 "password: ${lines[1]}"
+
+  sleep 5
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success
 }

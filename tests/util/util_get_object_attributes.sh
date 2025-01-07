@@ -42,3 +42,32 @@ get_and_check_object_size() {
   fi
   return 0
 }
+
+get_object_metadata_and_check_keys() {
+  if [ $# -ne 4 ]; then
+    log 2 "'get_object_metadata_and_check_keys' requires bucket, key, expected metadata key, value"
+    return 1
+  fi
+  if ! get_object_metadata "s3api" "$1" "$2"; then
+    log 2 "error getting object metadata"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! key=$(echo "$metadata" | jq -r 'keys[]' 2>&1); then
+    log 2 "error getting key from metadata: $key"
+    return 1
+  fi
+  if ! value=$(echo "$metadata" | jq -r '.[]' 2>&1); then
+    log 2 "error getting value from metadata: $value"
+    return 1
+  fi
+  if [[ $key != "$3" ]]; then
+    log 2 "keys doesn't match (expected '$3', actual '$key')"
+    return 1
+  fi
+  if [[ $value != "$4" ]]; then
+    log 2 "values doesn't match (expected '$4', actual '$value')"
+    return 1
+  fi
+  return 0
+}

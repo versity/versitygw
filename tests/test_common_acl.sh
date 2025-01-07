@@ -15,13 +15,11 @@
 # under the License.
 
 test_put_bucket_acl_s3cmd() {
-  if [[ $DIRECT != "true" ]]; then
-    skip "https://github.com/versity/versitygw/issues/695"
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/963"
   fi
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
-  assert_success
 
-  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
   assert_success
 
   username=$USERNAME_ONE
@@ -46,9 +44,6 @@ test_put_bucket_acl_s3cmd() {
 }
 
 test_common_put_bucket_acl() {
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    skip "https://github.com/versity/versitygw/issues/716"
-  fi
   assert [ $# -eq 1 ]
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
@@ -57,8 +52,7 @@ test_common_put_bucket_acl() {
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
   assert_success
 
-  username=$USERNAME_ONE
-  run setup_user "$username" "HIJKLMN" "user"
+  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
 
   run get_check_acl_id "$1" "$BUCKET_ONE_NAME"
@@ -69,24 +63,14 @@ test_common_put_bucket_acl() {
   assert_success
 
   if [[ $DIRECT == "true" ]]; then
-    grantee="{\"Type\": \"Group\", \"URI\": \"http://acs.amazonaws.com/groups/global/AllUsers\"}"
+    grantee_type="Group"
+    grantee_id="http://acs.amazonaws.com/groups/global/AllUsers"
   else
-    grantee="{\"ID\": \"$username\", \"Type\": \"CanonicalUser\"}"
+    grantee_type="ID"
+    grantee_id="$USERNAME_ONE"
   fi
-
-cat <<EOF > "$TEST_FILE_FOLDER"/"$acl_file"
-  {
-    "Grants": [
-      {
-        "Grantee": $grantee,
-        "Permission": "READ"
-      }
-    ],
-    "Owner": {
-      "ID": "$AWS_ACCESS_KEY_ID"
-    }
-  }
-EOF
+  run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "$grantee_type" "$grantee_id" "READ" "$AWS_ACCESS_KEY_ID"
+  assert_success
 
   run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
   assert_success
@@ -94,22 +78,8 @@ EOF
   run get_check_acl_after_first_put "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-cat <<EOF > "$TEST_FILE_FOLDER"/"$acl_file"
-  {
-    "Grants": [
-      {
-        "Grantee": {
-          "ID": "$username",
-          "Type": "CanonicalUser"
-        },
-        "Permission": "FULL_CONTROL"
-      }
-    ],
-    "Owner": {
-      "ID": "$AWS_ACCESS_KEY_ID"
-    }
-  }
-EOF
+  run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "ID" "$USERNAME_ONE" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"
+  assert_success
 
   run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
   assert_success

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ./tests/util_list_objects.sh
+source ./tests/util/util_list_objects.sh
 source ./tests/commands/command.sh
 
 # Copyright 2024 Versity Software
@@ -29,7 +29,7 @@ list_objects() {
 
   local output
   local result=0
-  if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3' ]]; then
     output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
   elif [[ $1 == 's3api' ]]; then
     list_objects_s3api "$2" || result=$?
@@ -91,7 +91,7 @@ list_objects_s3api() {
 # export objects on success, return 1 for failure
 list_objects_s3api_v1() {
   if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-    echo "list objects command requires bucket, (optional) delimiter"
+    log 2 "list objects command requires bucket, (optional) delimiter"
     return 1
   fi
   if [ "$2" == "" ]; then
@@ -100,7 +100,7 @@ list_objects_s3api_v1() {
     objects=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" --delimiter "$2") || local result=$?
   fi
   if [[ $result -ne 0 ]]; then
-    echo "error listing objects: $objects"
+    log 2 "error listing objects: $objects"
     return 1
   fi
   export objects

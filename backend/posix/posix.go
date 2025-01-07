@@ -3155,6 +3155,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	if errors.Is(err, syscall.ENOTEMPTY) {
+		return nil, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("delete object: %w", err)
 	}

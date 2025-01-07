@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/util/util_multipart_abort.sh
+
 # recursively delete an AWS bucket
 # param:  client, bucket name
 # fail if error
@@ -14,7 +16,7 @@ delete_bucket_recursive() {
   local error
   if [[ $1 == 's3' ]]; then
     error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
-  elif [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     if ! delete_bucket_recursive_s3api "$2"; then
       log 2 "error deleting bucket recursively (s3api)"
       return 1
@@ -72,23 +74,21 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  #run check_ownership_rule_and_reset_acl "$1"
-  #assert_success "error checking ownership rule and resetting acl"
+  if ! check_ownership_rule_and_reset_acl "$1"; then
+    log 2 "error checking ownership rule and resetting acl"
+    return 1
+  fi
 
   # shellcheck disable=SC2154
   if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
     log 2 "error disabling object lock config"
     return 1
   fi
-  #if ! put_bucket_versioning "s3api" "$1" "Suspended"; then
-  #  log 2 "error suspending bucket versioning"
-  #  return 1
-  #fi
 
-  #if ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
-  #  log 2 "error changing bucket owner back to root"
-  #  return 1
-  #fi
+  if [ "$RUN_USERS" == "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+    log 2 "error changing bucket owner back to root"
+    return 1
+  fi
 }
 
 # params:  bucket name
@@ -123,7 +123,7 @@ delete_bucket_contents() {
 
   local exit_code=0
   local error
-  if [[ $1 == "aws" ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     if ! clear_bucket_s3api "$2"; then
       log 2 "error clearing bucket (s3api)"
       return 1
@@ -217,6 +217,10 @@ bucket_cleanup_if_bucket_exists() {
   fi
 
   if bucket_exists "$1" "$2"; then
+    if [ "$DELETE_BUCKETS_AFTER_TEST" == "false" ]; then
+      log 2 "skipping bucket cleanup/deletion"
+      return 0
+    fi
     if ! bucket_cleanup "$1" "$2"; then
       log 2 "error deleting bucket and/or contents"
       return 1
@@ -287,7 +291,7 @@ setup_bucket() {
 # return 0 for yes, 1 for no, 2 for error
 bucket_is_accessible() {
   if [ $# -ne 1 ]; then
-    echo "bucket accessibility check missing bucket name"
+    log 2 "bucket accessibility check missing bucket name"
     return 2
   fi
   local exit_code=0
@@ -299,6 +303,28 @@ bucket_is_accessible() {
   if [[ "$error" == *"500"* ]]; then
     return 1
   fi
-  echo "Error checking bucket accessibility: $error"
+  log 2 "Error checking bucket accessibility: $error"
   return 2
+}
+
+check_for_empty_region() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_for_empty_region' requires bucket name"
+    return 1
+  fi
+  if ! head_bucket "s3api" "$BUCKET_ONE_NAME"; then
+    log 2 "error getting bucket info"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "INFO:  $bucket_info"
+  if ! region=$(echo "$bucket_info" | grep -v "InsecureRequestWarning" | jq -r ".BucketRegion" 2>&1); then
+    log 2 "error getting region: $region"
+    return 1
+  fi
+  if [[ $region == "" ]]; then
+    log 2 "empty bucket region"
+    return 1
+  fi
+  return 0
 }

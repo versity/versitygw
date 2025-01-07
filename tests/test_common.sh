@@ -15,13 +15,13 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util.sh
-source ./tests/util_acl.sh
-source ./tests/util_bucket_location.sh
-source ./tests/util_file.sh
-source ./tests/util_list_buckets.sh
-source ./tests/util_policy.sh
-source ./tests/util_presigned_url.sh
+source ./tests/util/util.sh
+source ./tests/util/util_acl.sh
+source ./tests/util/util_bucket_location.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_presigned_url.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_tagging.sh
 source ./tests/commands/delete_object_tagging.sh
@@ -218,7 +218,7 @@ test_common_list_buckets() {
 
 test_common_list_objects() {
   if [[ $# -ne 1 ]]; then
-    echo "common test function for listing objects requires command type"
+    log 2 "common test function for listing objects requires command type"
     return 1
   fi
 
@@ -294,7 +294,7 @@ test_common_set_get_object_tags() {
 
 test_common_presigned_url_utf8_chars() {
   if [[ $# -ne 1 ]]; then
-    echo "presigned url command missing command type"
+    log 2 "presigned url command missing command type"
     return 1
   fi
 
@@ -382,12 +382,7 @@ test_common_get_put_delete_bucket_policy() {
   assert_success
 
   effect="Allow"
-  #principal="*"
-  if [[ $DIRECT == "true" ]]; then
-    principal="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/s3user\"}"
-  else
-    principal="\"*\""
-  fi
+  principal="*"
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
 

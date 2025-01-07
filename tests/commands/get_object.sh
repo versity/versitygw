@@ -24,7 +24,7 @@ get_object() {
   local exit_code=0
   if [[ $1 == 's3' ]]; then
     get_object_error=$(send_command aws --no-verify-ssl s3 mv "s3://$2/$3" "$4" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
+  elif [[ $1 == 's3api' ]]; then
     get_object_error=$(send_command aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate get "s3://$2/$3" "$4" 2>&1) || exit_code=$?

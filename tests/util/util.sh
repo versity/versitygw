@@ -14,11 +14,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_bucket.sh
-source ./tests/util_create_bucket.sh
-source ./tests/util_mc.sh
-source ./tests/util_multipart.sh
-source ./tests/util_versioning.sh
+source ./tests/util/util_bucket.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_mc.sh
+source ./tests/util/util_multipart.sh
+source ./tests/util/util_versioning.sh
 source ./tests/logger.sh
 source ./tests/commands/abort_multipart_upload.sh
 source ./tests/commands/complete_multipart_upload.sh
@@ -45,7 +45,7 @@ source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
-source ./tests/util_users.sh
+source ./tests/util/util_users.sh
 
 # params:  bucket name
 # return 0 for success, 1 for error
@@ -53,12 +53,6 @@ add_governance_bypass_policy() {
   if [[ $# -ne 1 ]]; then
     log 2 "'add governance bypass policy' command requires bucket name"
     return 1
-  fi
-  if [[ -z "$GITHUB_ACTIONS" ]]; then
-    if ! create_test_file_folder; then
-      log 2 "error creating test file folder"
-      return 1
-    fi
   fi
   cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
 {
@@ -269,21 +263,21 @@ object_exists() {
 
 put_object_with_metadata() {
   if [ $# -ne 6 ]; then
-    echo "put object command requires command type, source, destination, key, metadata key, metadata value"
+    log 2 "put object command requires command type, source, destination, key, metadata key, metadata value"
     return 1
   fi
 
   local exit_code=0
   local error
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     error=$(aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" --metadata "{\"$5\":\"$6\"}") || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   log 5 "put object exit code: $exit_code"
   if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
+    log 2 "error copying object to bucket: $error"
     return 1
   fi
   return 0
@@ -291,19 +285,19 @@ put_object_with_metadata() {
 
 get_object_metadata() {
   if [ $# -ne 3 ]; then
-    echo "get object metadata command requires command type, bucket, key"
+    log 2 "get object metadata command requires command type, bucket, key"
     return 1
   fi
 
   local exit_code=0
-  if [[ $1 == 'aws' ]]; then
+  if [[ $1 == 's3api' ]]; then
     metadata_struct=$(aws --no-verify-ssl s3api head-object --bucket "$2" --key "$3") || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
+    log 2 "error copying object to bucket: $error"
     return 1
   fi
   log 5 "raw metadata: $metadata_struct"
@@ -315,12 +309,12 @@ get_object_metadata() {
 
 put_object_multiple() {
   if [ $# -ne 3 ]; then
-    echo "put object command requires command type, source, destination"
+    log 2 "put object command requires command type, source, destination"
     return 1
   fi
   local exit_code=0
   local error
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3' ]]; then
+  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     # shellcheck disable=SC2086
     error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
@@ -330,11 +324,11 @@ put_object_multiple() {
     # shellcheck disable=SC2086
     error=$(mc --insecure cp $2 "$MC_ALIAS"/"$3" 2>&1) || exit_code=$?
   else
-    echo "invalid command type $1"
+    log 2 "invalid command type $1"
     return 1
   fi
   if [ $exit_code -ne 0 ]; then
-    echo "error copying object to bucket: $error"
+    log 2 "error copying object to bucket: $error"
     return 1
   else
     log 5 "$error"
@@ -347,18 +341,18 @@ put_object_multiple() {
 # return 0 for success or already exists, 1 for failure
 check_and_put_object() {
   if [ $# -ne 3 ]; then
-    echo "check and put object function requires source, bucket, destination"
+    log 2 "check and put object function requires source, bucket, destination"
     return 1
   fi
-  object_exists "aws" "$2" "$3" || local exists_result=$?
+  object_exists "s3api" "$2" "$3" || local exists_result=$?
   if [ "$exists_result" -eq 2 ]; then
-    echo "error checking if object exists"
+    log 2 "error checking if object exists"
     return 1
   fi
   if [ "$exists_result" -eq 1 ]; then
     copy_object "$1" "$2" || local copy_result=$?
     if [ "$copy_result" -ne 0 ]; then
-      echo "error adding object"
+      log 2 "error adding object"
       return 1
     fi
   fi
@@ -367,7 +361,7 @@ check_and_put_object() {
 
 remove_insecure_request_warning() {
   if [[ $# -ne 1 ]]; then
-    echo "remove insecure request warning requires input lines"
+    log 2 "remove insecure request warning requires input lines"
     return 1
   fi
   parsed_output=()
@@ -384,13 +378,13 @@ remove_insecure_request_warning() {
 # return 0 for yes, 1 for no, 2 for error
 object_is_accessible() {
   if [ $# -ne 2 ]; then
-    echo "object accessibility check missing bucket and/or key"
+    log 2 "object accessibility check missing bucket and/or key"
     return 2
   fi
   local exit_code=0
   object_data=$(aws --no-verify-ssl s3api head-object --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
-    echo "Error obtaining object data: $object_data"
+    log 2 "Error obtaining object data: $object_data"
     return 2
   fi
   etag=$(echo "$object_data" | grep -v "InsecureRequestWarning" | jq '.ETag')
@@ -405,13 +399,13 @@ object_is_accessible() {
 # export acl for success, return 1 for error
 get_object_acl() {
   if [ $# -ne 2 ]; then
-    echo "object ACL command missing object name"
+    log 2 "object ACL command missing object name"
     return 1
   fi
   local exit_code=0
   acl=$(aws --no-verify-ssl s3api get-object-acl --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
   if [ $exit_code -ne 0 ]; then
-    echo "Error getting object ACLs: $acl"
+    log 2 "Error getting object ACLs: $acl"
     return 1
   fi
   export acl
@@ -422,14 +416,14 @@ get_object_acl() {
 # return 0 for success, 1 for failure
 copy_file() {
   if [ $# -ne 2 ]; then
-    echo "copy file command requires src and dest"
+    log 2 "copy file command requires src and dest"
     return 1
   fi
 
   local result
   error=$(aws --no-verify-ssl s3 cp "$1" "$2") || result=$?
   if [[ $result -ne 0 ]]; then
-    echo "error copying file: $error"
+    log 2 "error copying file: $error"
     return 1
   fi
   return 0

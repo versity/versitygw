@@ -2160,6 +2160,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 		return nil
 	})
 }
+
 func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 	testName := "ListBuckets_invalid_max_buckets"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2249,6 +2250,24 @@ func ListBuckets_truncated(s *S3Conf) error {
 			if err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+func ListBuckets_empty_success(s *S3Conf) error {
+	testName := "ListBuckets_empty_success"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListBuckets(ctx, &s3.ListBucketsInput{})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.Buckets) > 0 {
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v", []types.Bucket{}, out.Buckets)
 		}
 
 		return nil
@@ -2967,9 +2986,15 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockMode: types.ObjectLockModeCompliance,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// 	return err
+		// }
 
 		retainDate := time.Now().Add(time.Hour * 48)
 
@@ -2980,9 +3005,15 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 			ObjectLockRetainUntilDate: &retainDate,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)); err != nil {
+		// 	return err
+		// }
 
 		return nil
 	})
@@ -3070,7 +3101,13 @@ func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
 			ChecksumCRC32C:    getPtr("m0cB1Q=="),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// FIXME: The error message for PutObject is not properly serialized by the sdk
+		// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
+
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// 	return err
+		// }
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
 
@@ -3091,7 +3128,13 @@ func PutObject_multiple_checksum_headers(s *S3Conf) error {
 			ChecksumCRC32C: getPtr("m0cB1Q=="),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// FIXME: The error message for PutObject is not properly serialized by the sdk
+		// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
+
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// 	return err
+		// }
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
 
@@ -3157,7 +3200,13 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 				ChecksumSHA256: el.sha256,
 			}, s3client)
 
-			if err := checkApiErr(err, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", el.algo))); err != nil {
+			// FIXME: The error message for PutObject is not properly serialized by the sdk
+			// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
+
+			// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+			// 	return err
+			// }
+			if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 				return err
 			}
 		}
@@ -5176,6 +5225,45 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 	})
 }
 
+func ListObjectsV2_invalid_parent_prefix(s *S3Conf) error {
+	testName := "ListObjectsV2_invalid_parent_prefix"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"file"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, maxKeys := "/", int32(100)
+		prefix := "file/file/file"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:    &bucket,
+			Delimiter: &delim,
+			MaxKeys:   &maxKeys,
+			Prefix:    &prefix,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(out.CommonPrefixes) > 0 {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{""}, out.CommonPrefixes)
+		}
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+		}
+		if *out.Delimiter != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		}
+		if len(out.Contents) > 0 {
+			return fmt.Errorf("expected the objects to be %v, instead got %v", []types.Object{}, out.Contents)
+		}
+		return nil
+	})
+}
+
 func ListObjectsV2_with_checksum(s *S3Conf) error {
 	testName := "ListObjectsV2_with_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5314,6 +5402,37 @@ func DeleteObject_directory_object_noslash(s *S3Conf) error {
 		})
 		cancel()
 		return err
+	})
+}
+
+func DeleteObject_directory_not_empty(s *S3Conf) error {
+	testName := "DeleteObject_directory_not_empty"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "dir/my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj = "dir/"
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		// object servers will return no error, but the posix backend returns
+		// a non-standard directory not empty. This test is a posix only test
+		// to validate the specific error response.
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 
@@ -8663,6 +8782,38 @@ func CompleteMultipartUpload_invalid_ETag(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_empty_parts(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_empty_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{}, // empty parts list
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEmptyParts)); err != nil {
 			return err
 		}
 
@@ -12326,9 +12477,15 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 		}
 
 		_, err = putObjects(s3client, []string{object}, bucket)
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -13051,6 +13208,18 @@ func IAM_ChangeBucketOwner_back_to_root(s *S3Conf) error {
 
 		// Change the bucket ownership back to the root user
 		if err := changeBucketsOwner(s, []string{bucket}, s.awsID); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func IAM_ListBuckets(s *S3Conf) error {
+	testName := "IAM_ListBuckets"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := listBuckets(s)
+		if err != nil {
 			return err
 		}
 
@@ -15470,9 +15639,15 @@ func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -15515,9 +15690,15 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -15560,9 +15741,15 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
 			return err
 		}
+		// client sdk regression issue prevents getting full error message,
+		// change back to below once this is fixed:
+		// https://github.com/aws/aws-sdk-go-v2/issues/2921
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+		// 	return err
+		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err

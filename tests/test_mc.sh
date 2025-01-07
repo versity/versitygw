@@ -16,9 +16,9 @@
 
 source ./tests/test_common.sh
 source ./tests/setup.sh
-source ./tests/util_create_bucket.sh
-source ./tests/util_head_bucket.sh
-source ./tests/util_tags.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_head_bucket.sh
+source ./tests/util/util_tags.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh

@@ -3373,6 +3373,20 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		if len(data.Parts) == 0 {
+			if c.debug {
+				log.Println("empty parts provided for complete multipart upload")
+			}
+			return SendXMLResponse(ctx, nil,
+				s3err.GetAPIError(s3err.ErrEmptyParts),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionCompleteMultipartUpload,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
 		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
 				Readonly:      c.readonly,

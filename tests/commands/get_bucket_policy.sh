@@ -21,7 +21,7 @@ get_bucket_policy() {
     return 1
   fi
   local get_bucket_policy_result=0
-  if [[ $1 == 'aws' ]] || [[ $1 == 's3api' ]]; then
+  if [[ $1 == 's3api' ]]; then
     get_bucket_policy_aws "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
@@ -97,41 +97,57 @@ get_bucket_policy_s3cmd() {
   policy_brackets=false
   # NOTE:  versitygw sends policies back in multiple lines here, direct in single line
   while IFS= read -r line; do
-    if [[ $policy_brackets == false ]]; then
-      policy_line=$(echo "$line" | grep 'Policy: ')
-      if [[ $policy_line != "" ]]; then
-        if [[ $policy_line != *'{'* ]]; then
-          break
-        fi
-        if [[ $policy_line == *'}'* ]]; then
-          log 5 "policy on single line"
-          bucket_policy=${policy_line//Policy:/}
-          break
-        else
-          policy_brackets=true
-          bucket_policy+="{"
-        fi
-      fi
-    else
-      bucket_policy+=$line
-      if [[ $line == "" ]]; then
-        break
-      fi
+    if check_and_load_policy_info; then
+      break
     fi
   done <<< "$info"
   log 5 "bucket policy: $bucket_policy"
   return 0
 }
 
+# return 0 for no policy, single-line policy, or loading complete, 1 for still searching or loading
+check_and_load_policy_info() {
+  if [[ $policy_brackets == false ]]; then
+    if search_for_first_policy_line_or_full_policy; then
+      return 0
+    fi
+  else
+    bucket_policy+=$line
+    if [[ $line == "}" ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# return 0 for empty or single-line policy, 1 for other cases
+search_for_first_policy_line_or_full_policy() {
+  policy_line=$(echo "$line" | grep 'Policy: ')
+  if [[ $policy_line != "" ]]; then
+    if [[ $policy_line != *'{'* ]]; then
+      return 0
+    fi
+    if [[ $policy_line == *'}'* ]]; then
+      log 5 "policy on single line"
+      bucket_policy=${policy_line//Policy:/}
+      return 0
+    else
+      policy_brackets=true
+      bucket_policy+="{"
+    fi
+  fi
+  return 1
+}
+
 get_bucket_policy_mc() {
   record_command "get-bucket-policy" "client:mc"
   if [[ $# -ne 1 ]]; then
-    echo "aws 'get bucket policy' command requires bucket"
+    log 2 "aws 'get bucket policy' command requires bucket"
     return 1
   fi
   bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?
   if [[ $get_result -ne 0 ]]; then
-    echo "error getting policy: $bucket_policy"
+    log 2 "error getting policy: $bucket_policy"
     return 1
   fi
   return 0

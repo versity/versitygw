@@ -76,6 +76,7 @@ const (
 	ErrInvalidPartNumberMarker
 	ErrInvalidObjectAttributes
 	ErrInvalidPart
+	ErrEmptyParts
 	ErrInvalidPartNumber
 	ErrInternalError
 	ErrInvalidCopyDest
@@ -151,6 +152,7 @@ const (
 	ErrExistingObjectIsDirectory
 	ErrObjectParentIsFile
 	ErrDirectoryObjectContainsData
+	ErrDirectoryNotEmpty
 	ErrQuotaExceeded
 	ErrVersioningNotConfigured
 
@@ -160,6 +162,7 @@ const (
 	ErrAdminUserExists
 	ErrAdminInvalidUserRole
 	ErrAdminMissingUserAcess
+	ErrAdminMethodNotSupported
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -256,6 +259,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPart: {
 		Code:           "InvalidPart",
 		Description:    "One or more of the specified parts could not be found.  The part may not have been uploaded, or the specified entity tag may not match the part's entity tag.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrEmptyParts: {
+		Code:           "InvalidRequest",
+		Description:    "You must specify at least one part",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPartNumber: {
@@ -615,6 +623,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Directory object contains data payload.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrDirectoryNotEmpty: {
+		Code:           "ErrDirectoryNotEmpty",
+		Description:    "Directory object not empty.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 	ErrQuotaExceeded: {
 		Code:           "QuotaExceeded",
 		Description:    "Your request was denied due to quota exceeded.",
@@ -651,6 +664,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "XAdminInvalidArgument",
 		Description:    "User access key ID is missing.",
 		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrAdminMethodNotSupported: {
+		Code:           "XAdminMethodNotSupported",
+		Description:    "The method is not supported in single root user mode.",
+		HTTPStatusCode: http.StatusNotImplemented,
 	},
 }
 

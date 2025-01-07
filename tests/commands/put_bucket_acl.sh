@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util_file.sh
+source ./tests/util/util_file.sh
 source ./tests/commands/command.sh
 
 put_bucket_acl_s3api() {
@@ -58,22 +58,15 @@ reset_bucket_acl() {
     return 1
   fi
   # shellcheck disable=SC2154
-  cat <<EOF > "$TEST_FILE_FOLDER/$acl_file"
-{
-  "Grants": [
-    {
-      "Grantee": {
-        "ID": "$AWS_ACCESS_KEY_ID",
-        "Type": "CanonicalUser"
-      },
-      "Permission": "FULL_CONTROL"
-    }
-  ],
-  "Owner": {
-    "ID": "$AWS_ACCESS_KEY_ID"
-  }
-}
-EOF
+  if [ "$DIRECT" != "true" ]; then
+    if ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_ACCESS_KEY_ID" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"; then
+      log 2 "error resetting versitygw ACL"
+      return 1
+    fi
+  elif ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_CANONICAL_ID" "FULL_CONTROL" "$AWS_CANONICAL_ID"; then
+    log 2 "error resetting direct ACL"
+    return 1
+  fi
   if ! put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$acl_file"; then
     log 2 "error putting bucket acl (s3api)"
     return 1
