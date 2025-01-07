@@ -70,13 +70,10 @@ add_parameter() {
   if [ "$#" -ne 2 ]; then
     return
   fi
-  if [ "$first_param_added" != "true" ]; then
-    if [ "$1" == "url" ]; then
-      eval "$1"+='?'
-    fi
-    eval "$1"+="$2"
-    first_param_added="true"
-  else
-    eval "$1"+="'&$2'"
+  current_string="$1"
+  if [ "$current_string" != "" ]; then
+    current_string+="&"
   fi
+  current_string+="$2"
+  echo "$current_string"
 }
