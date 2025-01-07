@@ -22,7 +22,7 @@ import (
 
 const IpaVersion = "2.254"
 
-type ipaIAMService struct {
+type IpaIAMService struct {
 	client          http.Client
 	id              int
 	version         string
@@ -35,11 +35,11 @@ type ipaIAMService struct {
 	rootAcc         Account
 }
 
-//var _ IAMService = &ipaIAMService{}
+var _ IAMService = &IpaIAMService{}
 
-func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure, debug bool) (IAMService, error) {
+func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure, debug bool) (*IpaIAMService, error) {
 
-	ipa := ipaIAMService{
+	ipa := IpaIAMService{
 		id:        0,
 		version:   IpaVersion,
 		host:      host,
@@ -52,7 +52,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		// this should never happen
-		panic(err)
+		return nil, fmt.Errorf("cookie jar creation: %w", err)
 	}
 
 	mTLSConfig := &tls.Config{InsecureSkipVerify: isInsecure}
@@ -63,7 +63,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 
 	err = ipa.login()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ipa login failed: %w", err)
 	}
 
 	req := ipa.newRequest("vaultconfig_show/1", []string{}, map[string]any{"all": true})
@@ -73,14 +73,14 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		Wrapping_default_algorithm    string
 		Wrapping_supported_algorithms []string
 	}{}
-	_, err = ipa.rpc(req, &vaultConfig)
+	err = ipa.rpc(req, &vaultConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ipa vault config: %w", err)
 	}
 
 	cert, err := x509.ParseCertificate(vaultConfig.Transport_Cert)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ipa cannot parse vault certificate: %w", err)
 	}
 
 	ipa.kraTransportKey = cert.PublicKey.(*rsa.PublicKey)
@@ -99,11 +99,11 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 	return &ipa, nil
 }
 
-func (ipa *ipaIAMService) CreateAccount(account Account) error {
+func (ipa *IpaIAMService) CreateAccount(account Account) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
+func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	if access == ipa.rootAcc.Access {
 		return ipa.rootAcc, nil
 	}
@@ -114,13 +114,20 @@ func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
 		Gidnumber []string
 		Uidnumber []string
 	}{}
-	_, err := ipa.rpc(req, &userResult)
+	err := ipa.rpc(req, &userResult)
 	if err != nil {
 		return Account{}, err
 	}
 
-	uid, _ := strconv.Atoi(userResult.Uidnumber[0])
-	gid, _ := strconv.Atoi(userResult.Gidnumber[0])
+	uid, err := strconv.Atoi(userResult.Uidnumber[0])
+	if err != nil {
+		return Account{}, fmt.Errorf("ipa uid invalid: %w", err)
+	}
+	gid, err := strconv.Atoi(userResult.Gidnumber[0])
+	if err != nil {
+		return Account{}, fmt.Errorf("ipa gid invalid: %w", err)
+	}
+
 	account := Account{
 		Access:  access,
 		Role:    RoleUser,
@@ -132,7 +139,7 @@ func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
 	rand.Read(session_key)
 	encrypted_key, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
 	if err != nil {
-		return account, err
+		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
 	}
 	req = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
 		map[string]any{"username": access,
@@ -142,15 +149,21 @@ func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
 		Vault_data Base64EncodedWrapped
 		Nonce      Base64EncodedWrapped
 	}{}
-	_, err = ipa.rpc(req, &data)
+	err = ipa.rpc(req, &data)
 	if err != nil {
 		return account, err
 	}
 
-	aes, _ := aes.NewCipher(session_key)
+	aes, err := aes.NewCipher(session_key)
+	if err != nil {
+		return account, fmt.Errorf("ipa cannot create AES cipher: %w", err)
+	}
 	cbc := cipher.NewCBCDecrypter(aes, data.Nonce)
 	cbc.CryptBlocks(data.Vault_data, data.Vault_data)
-	secret_unpadded_json, _ := pkcs7Unpad(data.Vault_data, 16)
+	secret_unpadded_json, err := pkcs7Unpad(data.Vault_data, 16)
+	if err != nil {
+		return account, fmt.Errorf("ipa cannot unpad decrypted result: %w", err)
+	}
 
 	secret := struct {
 		Data Base64Encoded
@@ -162,25 +175,25 @@ func (ipa *ipaIAMService) GetUserAccount(access string) (Account, error) {
 	return account, nil
 }
 
-func (ipa *ipaIAMService) UpdateUserAccount(access string, props MutableProps) error {
+func (ipa *IpaIAMService) UpdateUserAccount(access string, props MutableProps) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (ipa *ipaIAMService) DeleteUserAccount(access string) error {
+func (ipa *IpaIAMService) DeleteUserAccount(access string) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (ipa *ipaIAMService) ListUserAccounts() ([]Account, error) {
+func (ipa *IpaIAMService) ListUserAccounts() ([]Account, error) {
 	return []Account{}, fmt.Errorf("not implemented")
 }
 
-func (ipa *ipaIAMService) Shutdown() error {
+func (ipa *IpaIAMService) Shutdown() error {
 	return nil
 }
 
 // Implementation
 
-func (ipa *ipaIAMService) login() error {
+func (ipa *IpaIAMService) login() error {
 	form := url.Values{}
 	form.Set("user", ipa.username)
 	form.Set("password", ipa.password)
@@ -226,22 +239,22 @@ func (p rpcResponse) String() string {
 
 var errRpc = errors.New("IPA RPC error")
 
-func (ipa *ipaIAMService) rpc(req rpcRequest, value any) (rpcResponse, error) {
+func (ipa *IpaIAMService) rpc(req rpcRequest, value any) error {
 
 	err := ipa.login()
 	if err != nil {
-		return rpcResponse{}, err
+		return err
 	}
 
 	res, err := ipa.rpcInternal(req)
 	if err != nil {
-		return res, err
+		return err
 	}
 	err = json.Unmarshal(res.Result, value)
-	return res, err
+	return err
 }
 
-func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
+func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 
 	httpReq, err := http.NewRequest("POST",
 		fmt.Sprintf("%s/ipa/session/json", ipa.host),
@@ -294,7 +307,7 @@ func (ipa *ipaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	return response, nil
 }
 
-func (ipa *ipaIAMService) newRequest(method string, args []string, dict map[string]any) rpcRequest {
+func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[string]any) rpcRequest {
 
 	id := ipa.id
 	ipa.id++
@@ -387,7 +400,7 @@ func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-func (ipa *ipaIAMService) log(msg string) {
+func (ipa *IpaIAMService) log(msg string) {
 	if ipa.debug {
 		log.Print(msg)
 	}
