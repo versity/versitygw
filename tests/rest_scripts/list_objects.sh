@@ -23,6 +23,8 @@ bucket_name="$BUCKET_NAME"
 version_two="${VERSION_TWO:-FALSE}"
 max_keys="${MAX_KEYS:-0}"
 # shellcheck disable=SC2153
+marker="$MARKER"
+# shellcheck disable=SC2153
 if [ "$CONTINUATION_TOKEN" != "" ]; then
   continuation_token=$(jq -rn --arg token "$CONTINUATION_TOKEN" '$token | @uri')
 fi
@@ -34,6 +36,9 @@ canonical_request="GET
 /$bucket_name
 "
 
+if [ "$MARKER" != "" ]; then
+  add_parameter "canonical_request" "marker=$marker"
+fi
 if [ "$CONTINUATION_TOKEN" != "" ]; then
   add_parameter "canonical_request" "continuation-token=$continuation_token"
 fi
@@ -56,6 +61,9 @@ create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"")
 url="'$AWS_ENDPOINT_URL/$bucket_name"
+if [ "$MARKER" != "" ]; then
+  add_parameter "url" "marker=$marker"
+fi
 if [ "$CONTINUATION_TOKEN" != "" ]; then
   add_parameter "url" "continuation-token=$continuation_token"
 fi

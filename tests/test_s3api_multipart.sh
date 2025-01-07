@@ -19,6 +19,7 @@ source ./tests/test_s3api_root_inner.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
+source ./tests/util/util_multipart_before_completion.sh
 source ./tests/util/util_tags.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
