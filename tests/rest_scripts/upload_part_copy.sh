@@ -25,32 +25,31 @@ part_number="$PART_NUMBER"
 # shellcheck disable=SC2153
 upload_id="$UPLOAD_ID"
 # shellcheck disable=SC2153
-data=$DATA_FILE
+part_location=$PART_LOCATION
 
-payload_hash="$(sha256sum "$data" | awk '{print $1}')"
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  # shellcheck disable=SC2034
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="PUT
+current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
+# shellcheck disable=SC2034
+header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
+# shellcheck disable=SC2154
+canonical_request="PUT
 /$bucket_name/$key
 partNumber=$part_number&uploadId=$upload_id
 host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
+x-amz-content-sha256:UNSIGNED-PAYLOAD
+x-amz-copy-source:$part_location
 x-amz-date:$current_date_time
 
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
+host;x-amz-content-sha256;x-amz-copy-source;x-amz-date
+UNSIGNED-PAYLOAD"
 
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -isk -w "\"%{http_code}\"" "\"$AWS_ENDPOINT_URL/$bucket_name/$key?partNumber=$part_number&uploadId=$upload_id\""
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"x-amz-content-sha256: $payload_hash\""
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "\"$AWS_ENDPOINT_URL/$bucket_name/$key?partNumber=$part_number&uploadId=$upload_id\""
+-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date,Signature=$signature\""
+-H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
+-H "\"x-amz-copy-source: $part_location\""
 -H "\"x-amz-date: $current_date_time\""
--o "\"$OUTPUT_FILE\""
--T "\"$data\"")
+-o "\"$OUTPUT_FILE\"")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0
@@ -21,12 +21,13 @@ if ! base_setup; then
   log 2 "error starting versity to set up static buckets"
   exit 1
 fi
-if ! delete_bucket_recursive "s3" "$BUCKET_ONE_NAME"; then
-  log 2 "error creating static bucket one"
-elif ! delete_bucket_recursive "s3" "$BUCKET_TWO_NAME"; then
-  log 2 "error creating static bucket two"
+if ! delete_bucket_recursive "s3api" "$BUCKET_ONE_NAME"; then
+  log 2 "error deleting static bucket one"
+elif ! delete_bucket_recursive "s3api" "$BUCKET_TWO_NAME"; then
+  log 2 "error deleting static bucket two"
+else
+  log 4 "buckets deleted successfully"
 fi
-log 4 "buckets deleted successfully"
 if ! stop_versity; then
   log 2 "error stopping versity"
 fi

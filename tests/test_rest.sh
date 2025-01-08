@@ -14,6 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+load ./bats-support/load
+load ./bats-assert/load
+
 source ./tests/commands/create_multipart_upload.sh
 source ./tests/commands/delete_object_tagging.sh
 source ./tests/commands/get_bucket_versioning.sh
@@ -383,9 +386,6 @@ export RUN_USERS=true
 }
 
 @test "REST - bucket tagging - tags" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/932"
-  fi
   test_key="testKey"
   test_value="testValue"
 
@@ -490,5 +490,35 @@ export RUN_USERS=true
   assert_success
 
   run list_objects_v1_check_nextmarker_empty "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - complete upload - invalid part" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1008"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_large_file "$test_file"
+  assert_success
+
+  run create_upload_finish_wrong_etag "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - upload part copy" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test_file"
+  run create_large_file "$test_file"
+  assert_success
+
+  run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
