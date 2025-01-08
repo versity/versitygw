@@ -66,7 +66,10 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		return nil, fmt.Errorf("ipa login failed: %w", err)
 	}
 
-	req := ipa.newRequest("vaultconfig_show/1", []string{}, map[string]any{"all": true})
+	req, err := ipa.newRequest("vaultconfig_show/1", []string{}, map[string]any{"all": true})
+	if err != nil {
+		return nil, fmt.Errorf("ipa vaultconfig_show: %w", err)
+	}
 	vaultConfig := struct {
 		Kra_Server_Server             []string
 		Transport_Cert                Base64EncodedWrapped
@@ -108,13 +111,16 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return ipa.rootAcc, nil
 	}
 
-	req := ipa.newRequest("user_show/1", []string{access}, map[string]any{})
+	req, err := ipa.newRequest("user_show/1", []string{access}, map[string]any{})
+	if err != nil {
+		return Account{}, fmt.Errorf("ipa user_show: %w", err)
+	}
 
 	userResult := struct {
 		Gidnumber []string
 		Uidnumber []string
 	}{}
-	err := ipa.rpc(req, &userResult)
+	err = ipa.rpc(req, &userResult)
 	if err != nil {
 		return Account{}, err
 	}
@@ -141,10 +147,13 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	if err != nil {
 		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
 	}
-	req = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
+	req, err = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
 		map[string]any{"username": access,
 			"session_key":   Base64EncodedWrapped(encrypted_key),
 			"wrapping_algo": "aes-128-cbc"})
+	if err != nil {
+		return Account{}, fmt.Errorf("ipa vault_retrieve_internal: %w", err)
+	}
 	data := struct {
 		Vault_data Base64EncodedWrapped
 		Nonce      Base64EncodedWrapped
@@ -307,16 +316,21 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	return response, nil
 }
 
-func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[string]any) rpcRequest {
+func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[string]any) (rpcRequest, error) {
 
 	id := ipa.id
 	ipa.id++
 
 	dict["version"] = ipa.version
 
-	jmethod, _ := json.Marshal(method)
-	jargs, _ := json.Marshal(args)
-	jdict, _ := json.Marshal(dict)
+	jmethod, errMethod := json.Marshal(method)
+	jargs, errArgs := json.Marshal(args)
+	jdict, errDict := json.Marshal(dict)
+
+	err := errors.Join(errMethod, errArgs, errDict)
+	if err != nil {
+		return "", fmt.Errorf("ipa request invalid: %w", err)
+	}
 
 	return fmt.Sprintf(`{
 		"id": %d,
@@ -326,7 +340,7 @@ func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[stri
 			%s
 		]
 	}
-	`, id, jmethod, jargs, jdict)
+	`, id, jmethod, jargs, jdict), nil
 }
 
 // pkcs7Unpad validates and unpads data from the given bytes slice.
