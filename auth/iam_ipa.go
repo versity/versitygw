@@ -1,3 +1,17 @@
+// Copyright 2025 Versity Software
+// This file is licensed under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package auth
 
 import (
@@ -97,7 +111,9 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 	}
 
 	if !isSupported {
-		return nil, fmt.Errorf("IPA vault does not support aes-128-cbc. Only %v supported", vaultConfig.Wrapping_supported_algorithms)
+		return nil,
+			fmt.Errorf("IPA vault does not support aes-128-cbc. Only %v supported",
+				vaultConfig.Wrapping_supported_algorithms)
 	}
 	return &ipa, nil
 }
@@ -120,6 +136,7 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		Gidnumber []string
 		Uidnumber []string
 	}{}
+
 	err = ipa.rpc(req, &userResult)
 	if err != nil {
 		return Account{}, err
@@ -142,22 +159,30 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	}
 
 	session_key := make([]byte, 16)
-	rand.Read(session_key)
-	encrypted_key, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
+
+	_, err = rand.Read(session_key)
+	if err != nil {
+		return account, fmt.Errorf("ipa cannot generate session key: %w", err)
+	}
+
+	encryptedKey, err := rsa.EncryptPKCS1v15(rand.Reader, ipa.kraTransportKey, session_key)
 	if err != nil {
 		return account, fmt.Errorf("ipa vault secret retrieval: %w", err)
 	}
+
 	req, err = ipa.newRequest("vault_retrieve_internal/1", []string{ipa.vaultName},
 		map[string]any{"username": access,
-			"session_key":   Base64EncodedWrapped(encrypted_key),
+			"session_key":   Base64EncodedWrapped(encryptedKey),
 			"wrapping_algo": "aes-128-cbc"})
 	if err != nil {
 		return Account{}, fmt.Errorf("ipa vault_retrieve_internal: %w", err)
 	}
+
 	data := struct {
 		Vault_data Base64EncodedWrapped
 		Nonce      Base64EncodedWrapped
 	}{}
+
 	err = ipa.rpc(req, &data)
 	if err != nil {
 		return account, err
@@ -169,7 +194,7 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	}
 	cbc := cipher.NewCBCDecrypter(aes, data.Nonce)
 	cbc.CryptBlocks(data.Vault_data, data.Vault_data)
-	secret_unpadded_json, err := pkcs7Unpad(data.Vault_data, 16)
+	secretUnpaddedJson, err := pkcs7Unpad(data.Vault_data, 16)
 	if err != nil {
 		return account, fmt.Errorf("ipa cannot unpad decrypted result: %w", err)
 	}
@@ -177,10 +202,9 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	secret := struct {
 		Data Base64Encoded
 	}{}
-	json.Unmarshal(secret_unpadded_json, &secret)
+	json.Unmarshal(secretUnpaddedJson, &secret)
 	account.Secret = string(secret.Data)
 
-	fmt.Printf("%v\n", account)
 	return account, nil
 }
 
@@ -230,6 +254,7 @@ func (ipa *IpaIAMService) login() error {
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("cannot login to FreeIPA: status code %d", resp.StatusCode)
 	}
+
 	return nil
 }
 
@@ -249,7 +274,6 @@ func (p rpcResponse) String() string {
 var errRpc = errors.New("IPA RPC error")
 
 func (ipa *IpaIAMService) rpc(req rpcRequest, value any) error {
-
 	err := ipa.login()
 	if err != nil {
 		return err
@@ -259,12 +283,11 @@ func (ipa *IpaIAMService) rpc(req rpcRequest, value any) error {
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(res.Result, value)
-	return err
+
+	return json.Unmarshal(res.Result, value)
 }
 
 func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
-
 	httpReq, err := http.NewRequest("POST",
 		fmt.Sprintf("%s/ipa/session/json", ipa.host),
 		strings.NewReader(req))
@@ -272,7 +295,7 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 
-	ipa.log(fmt.Sprintf("%v\n", req))
+	ipa.log(fmt.Sprintf("%v", req))
 	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -282,7 +305,7 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	}
 
 	bytes, err := io.ReadAll(httpResp.Body)
-	ipa.log(fmt.Sprintf("%v\n", string(bytes)))
+	ipa.log(string(bytes))
 	if err != nil {
 		return rpcResponse{}, err
 	}
@@ -304,16 +327,15 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 	if string(result.Error) != "null" {
-		return rpcResponse{}, fmt.Errorf("%w: %s", errRpc, string(result.Error))
+		return rpcResponse{}, fmt.Errorf("%s: %w", string(result.Error), errRpc)
 	}
 
-	response := rpcResponse{
+	return rpcResponse{
 		Result:    result.Result.Json,
 		Principal: result.Principal,
 		Id:        result.Id,
 		Version:   result.Version,
-	}
-	return response, nil
+	}, nil
 }
 
 func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[string]any) (rpcRequest, error) {
@@ -416,6 +438,6 @@ func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
 
 func (ipa *IpaIAMService) log(msg string) {
 	if ipa.debug {
-		log.Print(msg)
+		log.Println(msg)
 	}
 }
