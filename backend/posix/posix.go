@@ -107,9 +107,14 @@ type PosixOpts struct {
 	BucketLinks   bool
 	VersioningDir string
 	NewDirPerm    fs.FileMode
+	SideCarDir    string
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
+	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
+		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
+	}
+
 	err := os.Chdir(rootdir)
 	if err != nil {
 		return nil, fmt.Errorf("chdir %v: %w", rootdir, err)
@@ -120,46 +125,36 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		return nil, fmt.Errorf("open %v: %w", rootdir, err)
 	}
 
-	var verioningdirAbs string
+	rootdirAbs, err := filepath.Abs(rootdir)
+	if err != nil {
+		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
+	}
 
+	var verioningdirAbs string
 	// Ensure the versioning directory isn't within the root directory
 	if opts.VersioningDir != "" {
-		rootdirAbs, err := filepath.Abs(rootdir)
+		verioningdirAbs, err = validateSubDir(rootdirAbs, opts.VersioningDir)
 		if err != nil {
-			return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
-		}
-
-		verioningdirAbs, err = filepath.Abs(opts.VersioningDir)
-		if err != nil {
-			return nil, fmt.Errorf("get absolute path of %v: %w", opts.VersioningDir, err)
-		}
-
-		// Ensure the paths end with a separator
-		if !strings.HasSuffix(rootdirAbs, string(filepath.Separator)) {
-			rootdirAbs += string(filepath.Separator)
-		}
-
-		if !strings.HasSuffix(verioningdirAbs, string(filepath.Separator)) {
-			verioningdirAbs += string(filepath.Separator)
-		}
-
-		// Ensure the posix root directory doesn't contain the versioning directory
-		if strings.HasPrefix(verioningdirAbs, rootdirAbs) {
-			return nil, fmt.Errorf("the root directory %v contains the versioning directory %v", rootdir, opts.VersioningDir)
-		}
-
-		vDir, err := os.Stat(verioningdirAbs)
-		if err != nil {
-			return nil, fmt.Errorf("stat versioning dir: %w", err)
-		}
-
-		// Check the versioning path to be a directory
-		if !vDir.IsDir() {
-			return nil, fmt.Errorf("versioning path should be a directory")
+			return nil, err
 		}
 	}
 
-	fmt.Printf("Bucket versioning enabled with directory: %v\n", verioningdirAbs)
+	var sidecardirAbs string
+	// Ensure the sidecar directory isn't within the root directory
+	if opts.SideCarDir != "" {
+		sidecardirAbs, err = validateSubDir(rootdirAbs, opts.SideCarDir)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if verioningdirAbs != "" {
+		fmt.Println("Bucket versioning enabled with directory:", verioningdirAbs)
+	}
+
+	if sidecardirAbs != "" {
+		fmt.Println("Using sidecar directory for metadata:", sidecardirAbs)
+	}
 
 	return &Posix{
 		meta:          meta,
@@ -173,6 +168,48 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		versioningDir: verioningdirAbs,
 		newDirPerm:    opts.NewDirPerm,
 	}, nil
+}
+
+func validateSubDir(root, dir string) (string, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("get absolute path of %v: %w",
+			dir, err)
+	}
+
+	if isDirBelowRoot(root, absDir) {
+		return "", fmt.Errorf("the root directory %v contains the directory %v",
+			root, dir)
+	}
+
+	vDir, err := os.Stat(absDir)
+	if err != nil {
+		return "", fmt.Errorf("stat %q: %w", absDir, err)
+	}
+
+	if !vDir.IsDir() {
+		return "", fmt.Errorf("path %q is not a directory", absDir)
+	}
+
+	return absDir, nil
+}
+
+func isDirBelowRoot(root, dir string) bool {
+	// Ensure the paths ends with a separator
+	if !strings.HasSuffix(root, string(filepath.Separator)) {
+		root += string(filepath.Separator)
+	}
+
+	if !strings.HasSuffix(dir, string(filepath.Separator)) {
+		dir += string(filepath.Separator)
+	}
+
+	// Ensure the root directory doesn't contain the directory
+	if strings.HasPrefix(dir, root) {
+		return true
+	}
+
+	return false
 }
 
 func (p *Posix) Shutdown() {
