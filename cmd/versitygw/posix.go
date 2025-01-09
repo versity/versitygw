@@ -30,6 +30,7 @@ var (
 	versioningDir      string
 	dirPerms           uint
 	sidecar            string
+	nometa             bool
 )
 
 func posixCommand() *cli.Command {
@@ -86,6 +87,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_META_SIDECAR"},
 				Destination: &sidecar,
 			},
+			&cli.BoolFlag{
+				Name:        "nometa",
+				Usage:       "disable metadata storage",
+				EnvVars:     []string{"VGW_META_NONE"},
+				Destination: &nometa,
+			},
 		},
 	}
 }
@@ -99,6 +106,10 @@ func runPosix(ctx *cli.Context) error {
 
 	if dirPerms > math.MaxUint32 {
 		return fmt.Errorf("invalid directory permissions: %d", dirPerms)
+	}
+
+	if nometa && sidecar != "" {
+		return fmt.Errorf("cannot use both nometa and sidecar metadata")
 	}
 
 	opts := posix.PosixOpts{
@@ -118,6 +129,8 @@ func runPosix(ctx *cli.Context) error {
 		}
 		ms = sc
 		opts.SideCarDir = sidecar
+	case nometa:
+		ms = meta.NoMeta{}
 	default:
 		ms = meta.XattrMeta{}
 		err := meta.XattrMeta{}.Test(gwroot)
