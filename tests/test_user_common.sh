@@ -15,9 +15,9 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util/util.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_object.sh
 source ./tests/util/util_users.sh
 source ./tests/commands/list_buckets.sh
 

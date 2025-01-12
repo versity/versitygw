@@ -52,3 +52,17 @@ abort_all_multipart_uploads() {
   done <<< "$lines"
   return 0
 }
+
+remove_insecure_request_warning() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "remove insecure request warning requires input lines"
+    return 1
+  fi
+  parsed_output=()
+  while IFS= read -r line; do
+    if [[ $line != *InsecureRequestWarning* ]]; then
+      parsed_output+=("$line")
+    fi
+  done <<< "$1"
+  export parsed_output
+}

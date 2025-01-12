@@ -113,3 +113,20 @@ add_and_check_checksum() {
     return 1
   fi
 }
+
+get_etag_attribute_rest() {
+  if [ $# -ne 3 ]; then
+    log 2 "'get_etag_attribute_rest' requires bucket name, object key, expected etag"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ATTRIBUTES="ETag" OUTPUT_FILE="$TEST_FILE_FOLDER/attributes.txt" ./tests/rest_scripts/get_object_attributes.sh); then
+    log 2 "error attempting to get object info: $result"
+    return 1
+  fi
+  log 5 "attributes: $(cat "$TEST_FILE_FOLDER/attributes.txt")"
+  if ! check_xml_element "$TEST_FILE_FOLDER/attributes.txt" "$3" "GetObjectAttributesResponse" "ETag"; then
+    log 2 "etag mismatch"
+    return 1
+  fi
+  return 0
+}

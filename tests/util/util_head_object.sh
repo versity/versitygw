@@ -70,3 +70,21 @@ get_and_verify_metadata() {
   fi
   return 0
 }
+
+get_etag_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'get_etag_rest' requires bucket name, object key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/head_object.txt" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error attempting to get object info: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "response code '$result', data: $(cat "$TEST_FILE_FOLDER/head_object.txt")"
+    return 1
+  fi
+  log 5 "head object data: $(cat "$TEST_FILE_FOLDER/head_object.txt")"
+  etag_value=$(grep "E[Tt]ag:" "$TEST_FILE_FOLDER/head_object.txt" | sed -n 's/E[Tt]ag: "\([^"]*\)"/\1/p' | tr -d '\r')
+  echo "$etag_value"
+}

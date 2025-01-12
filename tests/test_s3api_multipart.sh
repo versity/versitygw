@@ -79,28 +79,9 @@ source ./tests/commands/list_multipart_uploads.sh
   local expected_tag_key="TestTag"
   local expected_tag_val="TestTagVal"
 
-  os_name="$(uname)"
-  if [[ "$os_name" == "Darwin" ]]; then
-    now=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -j -v +15S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
-  else
-    now=$(date +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -d "$now 15 seconds" +"%Y-%m-%dT%H:%M:%S")
-  fi
-
-  run create_test_files "$bucket_file"
+  run setup_multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
-
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
-  assert_success
-
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
+  later=${lines[${#lines[@]}-1]}
 
   run multipart_upload_with_params "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4 \
     "$expected_content_type" \
