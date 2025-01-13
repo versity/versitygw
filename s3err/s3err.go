@@ -17,7 +17,11 @@ package s3err
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // APIError structure
@@ -140,6 +144,9 @@ const (
 	ErrInvalidVersionId
 	ErrNoSuchVersion
 	ErrSuspendedVersioningNotAllowed
+	ErrMultipleChecksumHeaders
+	ErrInvalidChecksumAlgorithm
+	ErrInvalidChecksumPart
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -584,6 +591,21 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrMultipleChecksumHeaders: {
+		Code:           "InvalidRequest",
+		Description:    "Expecting a single x-amz-checksum- header. Multiple checksum Types are not allowed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChecksumAlgorithm: {
+		Code:           "InvalidRequest",
+		Description:    "Checksum algorithm provided is unsupported. Please try again with any of the valid types: [CRC32, CRC32C, SHA1, SHA256]",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChecksumPart: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid Base64 or multiple checksums present in request",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 
 	// non aws errors
 	ErrExistingObjectIsDirectory: {
@@ -677,4 +699,31 @@ func encodeResponse(response interface{}) []byte {
 	e := xml.NewEncoder(&bytesBuffer)
 	e.Encode(response)
 	return bytesBuffer.Bytes()
+}
+
+// Returns invalid checksum error with the provided header in the error description
+func GetInvalidChecksumHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for %v header is invalid.", header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch APIError
+func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Checksum Type mismatch occurred, expected checksum Type: %v, actual checksum Type: %v", expected, actual),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Return incorrect checksum APIError
+func GetChecksumBadDigestErr(algo types.ChecksumAlgorithm) APIError {
+	return APIError{
+		Code:           "BadDigest",
+		Description:    fmt.Sprintf("The %v you specified did not match the calculated checksum.", strings.ToLower(string(algo))),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
 }

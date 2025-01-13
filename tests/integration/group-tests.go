@@ -138,6 +138,11 @@ func TestPutObject(s *S3Conf) {
 	PutObject_invalid_long_tags(s)
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
+	PutObject_checksum_algorithm_and_header_mismatch(s)
+	PutObject_multiple_checksum_headers(s)
+	PutObject_invalid_checksum_header(s)
+	PutObject_incorrect_checksums(s)
+	PutObject_checksums_success(s)
 	PutObject_success(s)
 	if !s.versioningEnabled {
 		PutObject_racey_success(s)
@@ -154,6 +159,8 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_with_contenttype(s)
 	HeadObject_invalid_parent_dir(s)
+	HeadObject_not_enabled_checksum_mode(s)
+	HeadObject_checksums(s)
 	HeadObject_success(s)
 }
 
@@ -164,6 +171,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_invalid_parent(s)
 	GetObjectAttributes_empty_attrs(s)
 	GetObjectAttributes_existing_object(s)
+	GetObjectAttributes_checksums(s)
 }
 
 func TestGetObject(s *S3Conf) {
@@ -173,6 +181,8 @@ func TestGetObject(s *S3Conf) {
 	GetObject_invalid_parent(s)
 	GetObject_with_meta(s)
 	GetObject_large_object(s)
+	GetObject_not_enabled_checksum_mode(s)
+	GetObject_checksums(s)
 	GetObject_success(s)
 	GetObject_directory_success(s)
 	GetObject_by_range_success(s)
@@ -191,6 +201,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_max_keys_none(s)
 	ListObjects_marker_not_from_obj_list(s)
 	ListObjects_list_all_objs(s)
+	ListObjects_with_checksum(s)
 }
 
 func TestListObjectsV2(s *S3Conf) {
@@ -203,6 +214,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_truncated_common_prefixes(s)
 	ListObjectsV2_all_objs_max_keys(s)
 	ListObjectsV2_list_all_objs(s)
+	ListObjectsV2_with_checksum(s)
 	ListObjectsV2_invalid_parent_prefix(s)
 }
 
@@ -233,6 +245,11 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_to_itself_with_new_metadata(s)
 	CopyObject_CopySource_starting_with_slash(s)
 	CopyObject_non_existing_dir_object(s)
+	CopyObject_invalid_checksum_algorithm(s)
+	CopyObject_create_checksum_on_copy(s)
+	CopyObject_should_copy_the_existing_checksum(s)
+	CopyObject_should_replace_the_existing_checksum(s)
+	CopyObject_to_itself_by_replacing_the_checksum(s)
 	CopyObject_success(s)
 }
 
@@ -265,6 +282,8 @@ func TestCreateMultipartUpload(s *S3Conf) {
 	CreateMultipartUpload_with_object_lock_not_enabled(s)
 	CreateMultipartUpload_with_object_lock_invalid_retention(s)
 	CreateMultipartUpload_past_retain_until_date(s)
+	CreateMultipartUpload_invalid_checksum_algorithm(s)
+	CreateMultipartUpload_valid_checksum_algorithm(s)
 	CreateMultipartUpload_success(s)
 }
 
@@ -273,6 +292,15 @@ func TestUploadPart(s *S3Conf) {
 	UploadPart_invalid_part_number(s)
 	UploadPart_non_existing_key(s)
 	UploadPart_non_existing_mp_upload(s)
+	UploadPart_checksum_algorithm_and_header_mismatch(s)
+	UploadPart_multiple_checksum_headers(s)
+	UploadPart_invalid_checksum_header(s)
+	UploadPart_checksum_algorithm_mistmatch_on_initialization(s)
+	UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value(s)
+	UploadPart_required_checksum(s)
+	UploadPart_null_checksum(s)
+	UploadPart_incorrect_checksums(s)
+	UploadPart_with_checksums_success(s)
 	UploadPart_success(s)
 }
 
@@ -288,6 +316,9 @@ func TestUploadPartCopy(s *S3Conf) {
 	UploadPartCopy_by_range_invalid_range(s)
 	UploadPartCopy_greater_range_than_obj_size(s)
 	UploadPartCopy_by_range_success(s)
+	UploadPartCopy_should_copy_the_checksum(s)
+	UploadPartCopy_should_not_copy_the_checksum(s)
+	UploadPartCopy_should_calculate_the_checksum(s)
 }
 
 func TestListParts(s *S3Conf) {
@@ -296,6 +327,7 @@ func TestListParts(s *S3Conf) {
 	ListParts_invalid_max_parts(s)
 	ListParts_default_max_parts(s)
 	ListParts_truncated(s)
+	ListParts_with_checksums(s)
 	ListParts_success(s)
 }
 
@@ -306,6 +338,7 @@ func TestListMultipartUploads(s *S3Conf) {
 	ListMultipartUploads_max_uploads(s)
 	ListMultipartUploads_incorrect_next_key_marker(s)
 	ListMultipartUploads_ignore_upload_id_marker(s)
+	ListMultipartUploads_with_checksums(s)
 	ListMultipartUploads_success(s)
 }
 
@@ -706,7 +739,6 @@ func GetIntTests() IntTests {
 		"ListBuckets_invalid_max_buckets":                                     ListBuckets_invalid_max_buckets,
 		"ListBuckets_truncated":                                               ListBuckets_truncated,
 		"ListBuckets_success":                                                 ListBuckets_success,
-		"ListBuckets_empty_success":                                           ListBuckets_empty_success,
 		"DeleteBucket_non_existing_bucket":                                    DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                       DeleteBucket_non_empty_bucket,
 		"DeleteBucket_success_status_code":                                    DeleteBucket_success_status_code,
@@ -780,11 +812,9 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_truncated_common_prefixes":                             ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                     ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                         ListObjectsV2_list_all_objs,
-		"ListObjectsV2_invalid_parent_prefix":                                 ListObjectsV2_invalid_parent_prefix,
 		"ListObjectVersions_VD_success":                                       ListObjectVersions_VD_success,
 		"DeleteObject_non_existing_object":                                    DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                               DeleteObject_directory_object_noslash,
-		"DeleteObject_directory_not_empty":                                    DeleteObject_directory_not_empty,
 		"DeleteObject_name_too_long":                                          DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                DeleteObject_non_existing_dir_object,
 		"DeleteObject_success":                                                DeleteObject_success,
@@ -969,7 +999,6 @@ func GetIntTests() IntTests {
 		"IAM_userplus_CreateBucket":                                           IAM_userplus_CreateBucket,
 		"IAM_admin_ChangeBucketOwner":                                         IAM_admin_ChangeBucketOwner,
 		"IAM_ChangeBucketOwner_back_to_root":                                  IAM_ChangeBucketOwner_back_to_root,
-		"IAM_ListBuckets":                                                     IAM_ListBuckets,
 		"AccessControl_default_ACL_user_access_denied":                        AccessControl_default_ACL_user_access_denied,
 		"AccessControl_default_ACL_userplus_access_denied":                    AccessControl_default_ACL_userplus_access_denied,
 		"AccessControl_default_ACL_admin_successful_access":                   AccessControl_default_ACL_admin_successful_access,

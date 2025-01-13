@@ -905,9 +905,9 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 }
 
 // Each part is translated into an uncommitted block in a newly created blob in staging area
-func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
+func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 	if err := az.checkIfMpExists(ctx, *input.Bucket, *input.Key, *input.UploadId); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// TODO: request streamable version of StageBlock()
@@ -916,32 +916,34 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (eta
 	// the body in memory to create an io.ReadSeekCloser
 	rdr, err := getReadSeekCloser(input.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// block id serves as etag here
-	etag = blockIDInt32ToBase64(*input.PartNumber)
+	etag := blockIDInt32ToBase64(*input.PartNumber)
 	_, err = client.StageBlock(ctx, etag, rdr, nil)
 	if err != nil {
-		return "", parseMpError(err)
+		return nil, parseMpError(err)
 	}
 
-	return etag, nil
+	return &s3.UploadPartOutput{
+		ETag: &etag,
+	}, nil
 }
 
-func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
-		return s3response.CopyObjectResult{}, nil
+		return s3response.CopyPartResult{}, nil
 	}
 
 	if err := az.checkIfMpExists(ctx, *input.Bucket, *input.Key, *input.UploadId); err != nil {
-		return s3response.CopyObjectResult{}, err
+		return s3response.CopyPartResult{}, err
 	}
 
 	eTag := blockIDInt32ToBase64(*input.PartNumber)
@@ -949,10 +951,10 @@ func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInp
 	//TODO: the action returns not implemented on azurite, maybe in production this will work?
 	_, err = client.StageBlockFromURL(ctx, eTag, *input.CopySource, nil)
 	if err != nil {
-		return s3response.CopyObjectResult{}, parseMpError(err)
+		return s3response.CopyPartResult{}, parseMpError(err)
 	}
 
-	return s3response.CopyObjectResult{}, nil
+	return s3response.CopyPartResult{}, nil
 }
 
 // Lists all uncommitted parts from the blob

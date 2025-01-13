@@ -18,11 +18,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"math/big"
 	rnd "math/rand"
@@ -475,11 +479,26 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 	}, nil
 }
 
-func createMp(s3client *s3.Client, bucket, key string) (*s3.CreateMultipartUploadOutput, error) {
+type mpCfg struct {
+	checksumAlgorithm types.ChecksumAlgorithm
+}
+
+type mpOpt func(*mpCfg)
+
+func withChecksum(algo types.ChecksumAlgorithm) mpOpt {
+	return func(mc *mpCfg) { mc.checksumAlgorithm = algo }
+}
+
+func createMp(s3client *s3.Client, bucket, key string, opts ...mpOpt) (*s3.CreateMultipartUploadOutput, error) {
+	cfg := new(mpCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-		Bucket: &bucket,
-		Key:    &key,
+		Bucket:            &bucket,
+		Key:               &key,
+		ChecksumAlgorithm: cfg.checksumAlgorithm,
 	})
 	cancel()
 	return out, err
@@ -513,6 +532,9 @@ func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
 		if item.StorageClass != list2[i].StorageClass {
 			return false
 		}
+		if item.ChecksumAlgorithm != list2[i].ChecksumAlgorithm {
+			return false
+		}
 	}
 
 	return true
@@ -528,6 +550,21 @@ func compareParts(parts1, parts2 []types.Part) bool {
 			return false
 		}
 		if *prt.ETag != *parts2[i].ETag {
+			return false
+		}
+		if *prt.Size != *parts2[i].Size {
+			return false
+		}
+		if getString(prt.ChecksumCRC32) != getString(parts2[i].ChecksumCRC32) {
+			return false
+		}
+		if getString(prt.ChecksumCRC32C) != getString(parts2[i].ChecksumCRC32C) {
+			return false
+		}
+		if getString(prt.ChecksumSHA1) != getString(parts2[i].ChecksumSHA1) {
+			return false
+		}
+		if getString(prt.ChecksumSHA256) != getString(parts2[i].ChecksumSHA256) {
 			return false
 		}
 	}
@@ -647,6 +684,13 @@ func compareObjects(list1, list2 []types.Object) bool {
 				*obj.Key, *list2[i].Key, obj.StorageClass, list2[i].StorageClass)
 			return false
 		}
+		if len(obj.ChecksumAlgorithm) != 0 {
+			if obj.ChecksumAlgorithm[0] != list2[i].ChecksumAlgorithm[0] {
+				fmt.Printf("checksum algorithms are not equal: (%q %q) %v != %v\n",
+					*obj.Key, *list2[i].Key, obj.ChecksumAlgorithm[0], list2[i].ChecksumAlgorithm[0])
+				return false
+			}
+		}
 	}
 
 	return true
@@ -711,10 +755,28 @@ func compareDelObjects(list1, list2 []types.DeletedObject) bool {
 	return true
 }
 
-func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string) (parts []types.Part, csum string, err error) {
+func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string, opts ...mpOpt) (parts []types.Part, csum string, err error) {
 	partSize := size / partCount
 
-	hash := sha256.New()
+	var hash hash.Hash
+
+	cfg := new(mpCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	switch cfg.checksumAlgorithm {
+	case types.ChecksumAlgorithmCrc32:
+		hash = crc32.NewIEEE()
+	case types.ChecksumAlgorithmCrc32c:
+		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case types.ChecksumAlgorithmSha1:
+		hash = sha1.New()
+	case types.ChecksumAlgorithmSha256:
+		hash = sha256.New()
+	default:
+		hash = sha256.New()
+	}
 
 	for partNumber := int64(1); partNumber <= partCount; partNumber++ {
 		partStart := (partNumber - 1) * partSize
@@ -730,11 +792,12 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		pn := int32(partNumber)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:     &bucket,
-			Key:        &key,
-			UploadId:   &uploadId,
-			Body:       bytes.NewReader(partBuffer),
-			PartNumber: &pn,
+			Bucket:            &bucket,
+			Key:               &key,
+			UploadId:          &uploadId,
+			Body:              bytes.NewReader(partBuffer),
+			PartNumber:        &pn,
+			ChecksumAlgorithm: cfg.checksumAlgorithm,
 		})
 		cancel()
 		if err != nil {
@@ -742,14 +805,22 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 		}
 
 		parts = append(parts, types.Part{
-			ETag:       out.ETag,
-			PartNumber: &pn,
-			Size:       &partSize,
+			ETag:           out.ETag,
+			PartNumber:     &pn,
+			Size:           &partSize,
+			ChecksumCRC32:  out.ChecksumCRC32,
+			ChecksumCRC32C: out.ChecksumCRC32C,
+			ChecksumSHA1:   out.ChecksumSHA1,
+			ChecksumSHA256: out.ChecksumSHA256,
 		})
 	}
-
 	sum := hash.Sum(nil)
-	csum = hex.EncodeToString(sum[:])
+
+	if cfg.checksumAlgorithm == "" {
+		csum = hex.EncodeToString(sum[:])
+	} else {
+		csum = base64.StdEncoding.EncodeToString(sum[:])
+	}
 
 	return parts, csum, err
 }
