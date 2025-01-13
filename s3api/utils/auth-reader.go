@@ -56,7 +56,7 @@ func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string, de
 	var hr *HashReader
 	hashPayload := ctx.Get("X-Amz-Content-Sha256")
 	if !IsSpecialPayload(hashPayload) {
-		hr, _ = NewHashReader(r, "", HashTypeSha256)
+		hr, _ = NewHashReader(r, "", HashTypeSha256Hex)
 	} else {
 		hr, _ = NewHashReader(r, "", HashTypeNone)
 	}

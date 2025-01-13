@@ -332,28 +332,24 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 	}, nil
 }
 
-func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (etag string, err error) {
+func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
 	output, err := s.client.UploadPart(ctx, input, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
-	if err != nil {
-		return "", handleError(err)
-	}
-
-	return *output.ETag, nil
+	return output, handleError(err)
 }
 
-func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	output, err := s.client.UploadPartCopy(ctx, input)
 	if err != nil {
-		return s3response.CopyObjectResult{}, handleError(err)
+		return s3response.CopyPartResult{}, handleError(err)
 	}
 
-	return s3response.CopyObjectResult{
+	return s3response.CopyPartResult{
 		LastModified: *output.CopyPartResult.LastModified,
-		ETag:         *output.CopyPartResult.ETag,
+		ETag:         output.CopyPartResult.ETag,
 	}, nil
 }
 
