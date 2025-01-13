@@ -34,7 +34,7 @@ type ACL struct {
 }
 
 type Grantee struct {
-	Permission types.Permission
+	Permission Permission
 	Access     string
 	Type       types.Type
 }
@@ -61,20 +61,124 @@ type AccessControlPolicy struct {
 	Owner             *types.Owner
 }
 
+func (acp *AccessControlPolicy) Validate() error {
+	if !acp.AccessControlList.isValid() {
+		return s3err.GetAPIError(s3err.ErrMalformedACL)
+	}
+
+	// The Owner can't be nil
+	if acp.Owner == nil {
+		return s3err.GetAPIError(s3err.ErrMalformedACL)
+	}
+
+	// The Owner ID can't be empty
+	if acp.Owner.ID == nil || *acp.Owner.ID == "" {
+		return s3err.GetAPIError(s3err.ErrMalformedACL)
+	}
+
+	return nil
+}
+
 type AccessControlList struct {
 	Grants []Grant `xml:"Grant"`
 }
 
+// Validates the AccessControlList
+func (acl *AccessControlList) isValid() bool {
+	for _, el := range acl.Grants {
+		if !el.isValid() {
+			return false
+		}
+	}
+
+	return true
+}
+
+type Permission string
+
+const (
+	PermissionFullControl Permission = "FULL_CONTROL"
+	PermissionWrite       Permission = "WRITE"
+	PermissionWriteAcp    Permission = "WRITE_ACP"
+	PermissionRead        Permission = "READ"
+	PermissionReadAcp     Permission = "READ_ACP"
+)
+
+// Check if the permission is valid
+func (p Permission) isValid() bool {
+	return p == PermissionFullControl ||
+		p == PermissionRead ||
+		p == PermissionReadAcp ||
+		p == PermissionWrite ||
+		p == PermissionWriteAcp
+}
+
 type Grant struct {
-	Grantee    *Grt
-	Permission types.Permission
+	Grantee    *Grt       `xml:"Grantee"`
+	Permission Permission `xml:"Permission"`
+}
+
+// Checks if Grant is valid
+func (g *Grant) isValid() bool {
+	return g.Permission.isValid() && g.Grantee.isValid()
 }
 
 type Grt struct {
-	XMLNS  string     `xml:"xmlns:xsi,attr"`
-	XMLXSI types.Type `xml:"xsi:type,attr"`
-	Type   types.Type `xml:"Type"`
-	ID     string     `xml:"ID"`
+	XMLNS string     `xml:"xmlns:xsi,attr"`
+	Type  types.Type `xml:"xsi:type,attr"`
+	ID    string     `xml:"ID"`
+}
+
+// Custom Unmarshalling for Grt to parse xsi:type properly
+func (g *Grt) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	// Iterate through the XML tokens to process the attributes
+	for _, attr := range start.Attr {
+		// Check if the attribute is xsi:type and belongs to the xsi namespace
+		if attr.Name.Space == "http://www.w3.org/2001/XMLSchema-instance" && attr.Name.Local == "type" {
+			g.Type = types.Type(attr.Value)
+		}
+		// Handle xmlns:xsi
+		if attr.Name.Local == "xmlns:xsi" {
+			g.XMLNS = attr.Value
+		}
+	}
+
+	// Decode the inner XML elements like ID
+	for {
+		t, err := d.Token()
+		if err != nil {
+			return err
+		}
+
+		switch se := t.(type) {
+		case xml.StartElement:
+			if se.Name.Local == "ID" {
+				if err := d.DecodeElement(&g.ID, &se); err != nil {
+					return err
+				}
+			}
+		case xml.EndElement:
+			if se.Name.Local == start.Name.Local {
+				return nil
+			}
+		}
+	}
+}
+
+// Validates Grt
+func (g *Grt) isValid() bool {
+	// Validate the Type
+	// Only these 2 types are supported in the gateway
+	if g.Type != types.TypeCanonicalUser && g.Type != types.TypeGroup {
+		return false
+	}
+
+	// The ID prop shouldn't be empty
+	if g.ID == "" {
+		return false
+	}
+
+	return true
 }
 
 func ParseACL(data []byte) (ACL, error) {
@@ -101,10 +205,9 @@ func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
 		acs := elem.Access
 		grants = append(grants, Grant{
 			Grantee: &Grt{
-				XMLNS:  "http://www.w3.org/2001/XMLSchema-instance",
-				XMLXSI: elem.Type,
-				ID:     acs,
-				Type:   elem.Type,
+				XMLNS: "http://www.w3.org/2001/XMLSchema-instance",
+				ID:    acs,
+				Type:  elem.Type,
 			},
 			Permission: elem.Permission,
 		})
@@ -127,7 +230,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 
 	defaultGrantees := []Grantee{
 		{
-			Permission: types.PermissionFullControl,
+			Permission: PermissionFullControl,
 			Access:     acl.Owner,
 			Type:       types.TypeCanonicalUser,
 		},
@@ -138,19 +241,19 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 		switch input.ACL {
 		case types.BucketCannedACLPublicRead:
 			defaultGrantees = append(defaultGrantees, Grantee{
-				Permission: types.PermissionRead,
+				Permission: PermissionRead,
 				Access:     "all-users",
 				Type:       types.TypeGroup,
 			})
 		case types.BucketCannedACLPublicReadWrite:
 			defaultGrantees = append(defaultGrantees, []Grantee{
 				{
-					Permission: types.PermissionRead,
+					Permission: PermissionRead,
 					Access:     "all-users",
 					Type:       types.TypeGroup,
 				},
 				{
-					Permission: types.PermissionWrite,
+					Permission: PermissionWrite,
 					Access:     "all-users",
 					Type:       types.TypeGroup,
 				},
@@ -167,7 +270,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 				for _, str := range fullControlList {
 					defaultGrantees = append(defaultGrantees, Grantee{
 						Access:     str,
-						Permission: types.PermissionFullControl,
+						Permission: PermissionFullControl,
 						Type:       types.TypeCanonicalUser,
 					})
 				}
@@ -177,7 +280,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 				for _, str := range readList {
 					defaultGrantees = append(defaultGrantees, Grantee{
 						Access:     str,
-						Permission: types.PermissionRead,
+						Permission: PermissionRead,
 						Type:       types.TypeCanonicalUser,
 					})
 				}
@@ -187,7 +290,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 				for _, str := range readACPList {
 					defaultGrantees = append(defaultGrantees, Grantee{
 						Access:     str,
-						Permission: types.PermissionReadAcp,
+						Permission: PermissionReadAcp,
 						Type:       types.TypeCanonicalUser,
 					})
 				}
@@ -197,7 +300,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 				for _, str := range writeList {
 					defaultGrantees = append(defaultGrantees, Grantee{
 						Access:     str,
-						Permission: types.PermissionWrite,
+						Permission: PermissionWrite,
 						Type:       types.TypeCanonicalUser,
 					})
 				}
@@ -207,7 +310,7 @@ func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) 
 				for _, str := range writeACPList {
 					defaultGrantees = append(defaultGrantees, Grantee{
 						Access:     str,
-						Permission: types.PermissionWriteAcp,
+						Permission: PermissionWriteAcp,
 						Type:       types.TypeCanonicalUser,
 					})
 				}
@@ -288,7 +391,7 @@ func splitUnique(s, divider string) []string {
 	return result
 }
 
-func verifyACL(acl ACL, access string, permission types.Permission) error {
+func verifyACL(acl ACL, access string, permission Permission) error {
 	grantee := Grantee{
 		Access:     access,
 		Permission: permission,
@@ -296,7 +399,7 @@ func verifyACL(acl ACL, access string, permission types.Permission) error {
 	}
 	granteeFullCtrl := Grantee{
 		Access:     access,
-		Permission: types.PermissionFullControl,
+		Permission: PermissionFullControl,
 		Type:       types.TypeCanonicalUser,
 	}
 	granteeAllUsers := Grantee{
@@ -355,7 +458,7 @@ func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
 
 type AccessOptions struct {
 	Acl           ACL
-	AclPermission types.Permission
+	AclPermission Permission
 	IsRoot        bool
 	Acc           Account
 	Bucket        string
@@ -366,7 +469,7 @@ type AccessOptions struct {
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
 	if opts.Readonly {
-		if opts.AclPermission == types.PermissionWrite || opts.AclPermission == types.PermissionWriteAcp {
+		if opts.AclPermission == PermissionWrite || opts.AclPermission == PermissionWriteAcp {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
 	}
@@ -424,7 +527,7 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 
 	if err := VerifyAccess(ctx, be, AccessOptions{
 		Acl:           srcBucketAcl,
-		AclPermission: types.PermissionRead,
+		AclPermission: PermissionRead,
 		IsRoot:        opts.IsRoot,
 		Acc:           opts.Acc,
 		Bucket:        srcBucket,
