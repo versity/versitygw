@@ -167,7 +167,7 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 		Owner: owner,
 		Grantees: []auth.Grantee{
 			{
-				Permission: types.PermissionFullControl,
+				Permission: auth.PermissionFullControl,
 				Access:     owner,
 				Type:       types.TypeCanonicalUser,
 			},
