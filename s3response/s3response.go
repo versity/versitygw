@@ -29,16 +29,24 @@ const (
 )
 
 type PutObjectOutput struct {
-	ETag      string
-	VersionID string
+	ETag           string
+	VersionID      string
+	ChecksumCRC32  *string
+	ChecksumCRC32C *string
+	ChecksumSHA1   *string
+	ChecksumSHA256 *string
 }
 
 // Part describes part metadata.
 type Part struct {
-	PartNumber   int
-	LastModified time.Time
-	ETag         string
-	Size         int64
+	PartNumber     int
+	LastModified   time.Time
+	ETag           string
+	Size           int64
+	ChecksumCRC32  *string
+	ChecksumCRC32C *string
+	ChecksumSHA1   *string
+	ChecksumSHA256 *string
 }
 
 func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -59,9 +67,10 @@ func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 type ListPartsResult struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListPartsResult" json:"-"`
 
-	Bucket   string
-	Key      string
-	UploadID string `xml:"UploadId"`
+	Bucket            string
+	Key               string
+	UploadID          string `xml:"UploadId"`
+	ChecksumAlgorithm types.ChecksumAlgorithm
 
 	Initiator Initiator
 	Owner     Owner
@@ -101,6 +110,7 @@ type GetObjectAttributesResponse struct {
 	ObjectSize   *int64
 	StorageClass types.StorageClass `xml:",omitempty"`
 	ObjectParts  *ObjectParts
+	Checksum     *types.Checksum
 
 	// Not included in the response body
 	VersionId    *string
@@ -169,13 +179,14 @@ type ListObjectsV2Result struct {
 }
 
 type Object struct {
-	ETag          *string
-	Key           *string
-	LastModified  *time.Time
-	Owner         *types.Owner
-	RestoreStatus *types.RestoreStatus
-	Size          *int64
-	StorageClass  types.ObjectStorageClass
+	ChecksumAlgorithm []types.ChecksumAlgorithm
+	ETag              *string
+	Key               *string
+	LastModified      *time.Time
+	Owner             *types.Owner
+	RestoreStatus     *types.RestoreStatus
+	Size              *int64
+	StorageClass      types.ObjectStorageClass
 }
 
 func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -197,12 +208,13 @@ func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 // Upload describes in progress multipart upload
 type Upload struct {
-	Key          string
-	UploadID     string `xml:"UploadId"`
-	Initiator    Initiator
-	Owner        Owner
-	StorageClass types.StorageClass
-	Initiated    time.Time
+	Key               string
+	UploadID          string `xml:"UploadId"`
+	Initiator         Initiator
+	Owner             Owner
+	StorageClass      types.StorageClass
+	Initiated         time.Time
+	ChecksumAlgorithm types.ChecksumAlgorithm
 }
 
 func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -329,6 +341,19 @@ type CopyObjectResult struct {
 	XMLName             xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
 	LastModified        time.Time
 	ETag                string
+	CopySourceVersionId string `xml:"-"`
+}
+
+type CopyPartResult struct {
+	XMLName        xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyPartResult" json:"-"`
+	LastModified   time.Time
+	ETag           *string
+	ChecksumCRC32  *string
+	ChecksumCRC32C *string
+	ChecksumSHA1   *string
+	ChecksumSHA256 *string
+
+	// not included in the body
 	CopySourceVersionId string `xml:"-"`
 }
 
@@ -466,4 +491,13 @@ func (AmzDate) ISO8601Parse(date string) (t time.Time, err error) {
 // Admin api response types
 type ListBucketsResult struct {
 	Buckets []Bucket
+}
+
+type Checksum struct {
+	Algorithms []types.ChecksumAlgorithm
+
+	CRC32  *string
+	CRC32C *string
+	SHA1   *string
+	SHA256 *string
 }

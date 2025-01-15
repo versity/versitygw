@@ -45,7 +45,7 @@ func VerifyMD5Body(logger s3log.AuditLogger) fiber.Handler {
 		}
 
 		sum := md5.Sum(ctx.Body())
-		calculatedSum := utils.Md5SumString(sum[:])
+		calculatedSum := utils.Base64SumString(sum[:])
 
 		if incomingSum != calculatedSum {
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest), &controllers.MetaOpts{Logger: logger})

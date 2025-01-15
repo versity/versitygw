@@ -527,3 +527,156 @@ func Test_escapePath(t *testing.T) {
 		})
 	}
 }
+
+func TestIsChecksumAlgorithmValid(t *testing.T) {
+	type args struct {
+		alg types.ChecksumAlgorithm
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "empty",
+			args: args{
+				alg: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "crc32",
+			args: args{
+				alg: types.ChecksumAlgorithmCrc32,
+			},
+			wantErr: false,
+		},
+		{
+			name: "crc32c",
+			args: args{
+				alg: types.ChecksumAlgorithmCrc32c,
+			},
+			wantErr: false,
+		},
+		{
+			name: "sha1",
+			args: args{
+				alg: types.ChecksumAlgorithmSha1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "sha256",
+			args: args{
+				alg: types.ChecksumAlgorithmSha256,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid",
+			args: args{
+				alg: types.ChecksumAlgorithm("invalid_checksum_algorithm"),
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := IsChecksumAlgorithmValid(tt.args.alg); (err != nil) != tt.wantErr {
+				t.Errorf("IsChecksumAlgorithmValid() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIsValidChecksum(t *testing.T) {
+	type args struct {
+		checksum  string
+		algorithm types.ChecksumAlgorithm
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "invalid-base64",
+			args: args{
+				checksum:  "invalid_base64_string",
+				algorithm: types.ChecksumAlgorithmCrc32,
+			},
+			want: false,
+		},
+		{
+			name: "invalid-crc32",
+			args: args{
+				checksum:  "YXNkZmFzZGZhc2Rm",
+				algorithm: types.ChecksumAlgorithmCrc32,
+			},
+			want: false,
+		},
+		{
+			name: "valid-crc32",
+			args: args{
+				checksum:  "ww2FVQ==",
+				algorithm: types.ChecksumAlgorithmCrc32,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-crc32c",
+			args: args{
+				checksum:  "Zmdoa2doZmtnZmhr",
+				algorithm: types.ChecksumAlgorithmCrc32c,
+			},
+			want: false,
+		},
+		{
+			name: "valid-crc32c",
+			args: args{
+				checksum:  "DOsb4w==",
+				algorithm: types.ChecksumAlgorithmCrc32c,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-sha1",
+			args: args{
+				checksum:  "YXNkZmFzZGZhc2RmYXNkZnNhZGZzYWRm",
+				algorithm: types.ChecksumAlgorithmSha1,
+			},
+			want: false,
+		},
+		{
+			name: "valid-sha1",
+			args: args{
+				checksum:  "L4q6V59Zcwn12wyLIytoE2c1ugk=",
+				algorithm: types.ChecksumAlgorithmSha1,
+			},
+			want: true,
+		},
+		{
+			name: "invalid-sha256",
+			args: args{
+				checksum:  "Zmdoa2doZmtnZmhrYXNkZmFzZGZhc2RmZHNmYXNkZg==",
+				algorithm: types.ChecksumAlgorithmSha256,
+			},
+			want: false,
+		},
+		{
+			name: "valid-sha256",
+			args: args{
+				checksum:  "d1SPCd/kZ2rAzbbLUC0n/bEaOSx70FNbXbIqoIxKuPY=",
+				algorithm: types.ChecksumAlgorithmSha256,
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsValidChecksum(tt.args.checksum, tt.args.algorithm); got != tt.want {
+				t.Errorf("IsValidChecksum() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
