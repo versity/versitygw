@@ -1375,7 +1375,6 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	// check all parts ok
 	last := len(parts) - 1
-	partsize := int64(0)
 	var totalsize int64
 	for i, part := range parts {
 		if part.PartNumber == nil || *part.PartNumber < 1 {
@@ -1389,13 +1388,11 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		if i == 0 {
-			partsize = fi.Size()
-		}
 		totalsize += fi.Size()
-		// all parts except the last need to be the same size
-		if i < last && partsize != fi.Size() {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		// all parts except the last need to be greater, thena
+		// the minimum allowed size (5 Mib)
+		if i < last && fi.Size() < backend.MinPartSize {
+			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
 
 		b, err := p.meta.RetrieveAttribute(nil, bucket, partObjPath, etagkey)
