@@ -589,16 +589,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if res.Body != nil {
-		err := utils.StreamResponseBody(ctx, res.Body)
-		if err != nil {
-			SendResponse(ctx, nil,
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionGetObject,
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
+		ctx.Response().SetBodyStream(res.Body, int(getint64(res.ContentLength)))
 	}
 
 	return SendResponse(ctx, nil,

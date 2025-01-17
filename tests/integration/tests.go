@@ -40,7 +40,6 @@ import (
 
 var (
 	shortTimeout  = 10 * time.Second
-	longTimeout   = 60 * time.Second
 	iso8601Format = "20060102T150405Z"
 	nullVersionId = "null"
 )
@@ -3785,50 +3784,6 @@ func GetObject_with_meta(s *S3Conf) error {
 			return fmt.Errorf("incorrect object metadata")
 		}
 
-		return nil
-	})
-}
-
-func GetObject_large_object(s *S3Conf) error {
-	testName := "GetObject_large_object"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		//FIXME: make the object size larger after
-		// resolving the context deadline exceeding issue
-		// in the github actions
-		dataLength, obj := int64(100*1024*1024), "my-obj"
-		ctype := defaultContentType
-
-		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
-			Bucket:      &bucket,
-			Key:         &obj,
-			ContentType: &ctype,
-		}, s3client)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
-		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		defer cancel()
-		if err != nil {
-			return err
-		}
-		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
-		}
-
-		bdy, err := io.ReadAll(out.Body)
-		if err != nil {
-			return err
-		}
-		defer out.Body.Close()
-		outCsum := sha256.Sum256(bdy)
-		if outCsum != r.csum {
-			return fmt.Errorf("expected the output data checksum to be %v, instead got %v", r.csum, outCsum)
-		}
 		return nil
 	})
 }

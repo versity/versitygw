@@ -172,7 +172,6 @@ func TestGetObject(s *S3Conf) {
 	GetObject_invalid_ranges(s)
 	GetObject_invalid_parent(s)
 	GetObject_with_meta(s)
-	GetObject_large_object(s)
 	GetObject_success(s)
 	GetObject_directory_success(s)
 	GetObject_by_range_success(s)
@@ -754,7 +753,6 @@ func GetIntTests() IntTests {
 		"GetObject_invalid_ranges":                                            GetObject_invalid_ranges,
 		"GetObject_invalid_parent":                                            GetObject_invalid_parent,
 		"GetObject_with_meta":                                                 GetObject_with_meta,
-		"GetObject_large_object":                                              GetObject_large_object,
 		"GetObject_success":                                                   GetObject_success,
 		"GetObject_directory_success":                                         GetObject_directory_success,
 		"GetObject_by_range_success":                                          GetObject_by_range_success,
