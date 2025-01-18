@@ -28,26 +28,23 @@ delete_bucket_if_exists() {
     return 1
   fi
   if [[ $exists_result -eq 1 ]]; then
-    log 5 "bucket '$2' doesn't exist, skipping"
+    echo "bucket '$2' doesn't exist, skipping"
     return 0
   fi
   if ! delete_bucket_recursive "$1" "$2"; then
     log 2 "error deleting bucket"
     return 1
   fi
-  log 5 "bucket '$2' successfully deleted"
+  echo "bucket '$2' successfully deleted"
   return 0
 }
 
-if ! setup; then
-  log 2 "error starting versity to set up static buckets"
-  exit 1
-fi
-if ! delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME"; then
+base_setup
+if ! RECREATE_BUCKETS=true delete_bucket_if_exists "s3api" "$BUCKET_ONE_NAME"; then
   log 2 "error deleting static bucket one"
-elif ! delete_bucket_if_exists "s3api" "$BUCKET_TWO_NAME"; then
+elif ! RECREATE_BUCKETS=true delete_bucket_if_exists "s3api" "$BUCKET_TWO_NAME"; then
   log 2 "error deleting static bucket two"
 fi
-if ! teardown; then
+if ! stop_versity; then
   log 2 "error stopping versity"
 fi

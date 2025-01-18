@@ -3,8 +3,9 @@ FROM ubuntu:latest
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SECRETS_FILE=tests/.secrets
 ARG CONFIG_FILE=tests/.env.docker
-ARG GO_LIBRARY=go1.23.1.linux-arm64.tar.gz
-ARG AWS_CLI=awscli-exe-linux-aarch64.zip
+ARG GO_LIBRARY=go1.21.13.linux-arm64.tar.gz
+# see https://github.com/versity/versitygw/issues/1034
+ARG AWS_CLI=awscli-exe-linux-aarch64-2.22.35.zip
 ARG MC_FOLDER=linux-arm64
 
 ENV TZ=Etc/UTC
@@ -85,6 +86,7 @@ RUN openssl genpkey -algorithm RSA -out versitygw-docker.pem -pkeyopt rsa_keygen
 
 ENV WORKSPACE=.
 ENV VERSITYGW_TEST_ENV=$CONFIG_FILE
+#ENV AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
 
 ENTRYPOINT ["tests/run.sh"]
 CMD ["s3api,s3,s3cmd,mc,rest"]
