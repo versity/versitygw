@@ -33,6 +33,7 @@ source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_attributes.sh
+source ./tests/util/util_delete_object.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_buckets.sh
@@ -543,5 +544,55 @@ export RUN_USERS=true
   expected_etag=$output
 
   run get_etag_attribute_rest "$BUCKET_ONE_NAME" "$test_file" "$expected_etag"
+  assert_success
+}
+
+@test "REST - POST call on root endpoint" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1036"
+  fi
+  run delete_object_empty_bucket_check_error
+  assert_success
+}
+
+@test "REST - delete objects - no content-md5 header" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1040"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run delete_objects_no_content_md5_header "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - delete objects command" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file_one="test_file"
+  test_file_two="test_file_two"
+  run create_test_files "$test_file_one" "$test_file_two"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_one"
+  assert_success
+
+  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+
+  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
+  assert_success
+
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_one"
+  assert_success
+
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 }
