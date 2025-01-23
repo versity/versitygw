@@ -303,7 +303,8 @@ test_common_presigned_url_utf8_chars() {
 
   run create_test_file "$bucket_file"
   assert_success
-  dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1 || fail "error creating test file"
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  assert_success
 
   run setup_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
