@@ -67,12 +67,17 @@ $canonical_request_hash"
 }
 
 add_parameter() {
-  if [ "$#" -ne 2 ]; then
+  if [ "$#" -lt 2 ]; then
     return
+  fi
+  if [ "$3" != "" ]; then
+    divider="$3"
+  else
+    divider="&"
   fi
   current_string="$1"
   if [ "$current_string" != "" ]; then
-    current_string+="&"
+    current_string+="$divider"
   fi
   current_string+="$2"
   echo "$current_string"

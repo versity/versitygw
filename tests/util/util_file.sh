@@ -46,7 +46,7 @@ create_test_file() {
       return 1
     fi
   fi
-  if ! error=$(touch "$TEST_FILE_FOLDER/$1"); then
+  if ! error=$(touch "$TEST_FILE_FOLDER/$1" 2>&1); then
     log 2 "error creating new file: $error"
     return 1
   fi

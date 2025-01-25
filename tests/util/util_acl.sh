@@ -400,11 +400,13 @@ check_ownership_rule_and_reset_acl() {
     log 2 "error getting bucket ownership controls"
     return 1
   fi
+  log 5 "ownership controls: $bucket_ownership_controls"
   # shellcheck disable=SC2154
   if ! object_ownership_rule=$(echo "$bucket_ownership_controls" | jq -r ".OwnershipControls.Rules[0].ObjectOwnership" 2>&1); then
     log 2 "error getting object ownership rule: $object_ownership_rule"
     return 1
   fi
+  log 5 "ownership rule: $object_ownership_rule"
   if [[ $object_ownership_rule != "BucketOwnerEnforced" ]] && ! reset_bucket_acl "$1"; then
     log 2 "error resetting bucket ACL"
     return 1
