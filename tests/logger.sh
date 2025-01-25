@@ -16,15 +16,13 @@
 
 # levels:  1 - crit, 2 - err, 3 - warn, 4 - info, 5 - debug, 6 - trace
 
-export LOG_LEVEL_INT=4
-
 log() {
   if [[ $# -ne 2 ]]; then
     echo "log function requires level, message"
     return 1
   fi
   # shellcheck disable=SC2153
-  if [[ $1 -gt $LOG_LEVEL_INT ]]; then
+  if [[ $1 -gt ${LOG_LEVEL_INT:=4} ]]; then
     return 0
   fi
   log_level=""

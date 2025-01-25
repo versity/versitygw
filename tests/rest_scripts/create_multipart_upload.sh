@@ -39,6 +39,7 @@ UNSIGNED-PAYLOAD"
 
 canonical_request_hash="$(echo -n "$canonical_request" | openssl dgst -sha256 | awk '{print $2}')"
 
+# shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X POST "$AWS_ENDPOINT_URL/$bucket_name/$key?uploads="

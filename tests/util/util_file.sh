@@ -46,7 +46,7 @@ create_test_file() {
       return 1
     fi
   fi
-  if ! error=$(touch "$TEST_FILE_FOLDER/$1"); then
+  if ! error=$(touch "$TEST_FILE_FOLDER/$1" 2>&1); then
     log 2 "error creating new file: $error"
     return 1
   fi
@@ -100,6 +100,26 @@ delete_test_files() {
     fi
   done
   return 0
+}
+
+get_file_size() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_file_size' requires file location"
+    return 1
+  fi
+  local file_size=""
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    if ! file_size=$(stat -f %z "$1" 2>&1); then
+      log 2 "error getting file size: $file_size"
+      return 1
+    fi
+  else
+    if ! file_size=$(stat -c %s "$1" 2>&1); then
+      log 2 "error getting file size: $file_size"
+      return 1
+    fi
+  fi
+  echo "$file_size"
 }
 
 # split file into pieces to test multipart upload

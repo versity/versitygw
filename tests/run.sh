@@ -141,9 +141,11 @@ run_suite() {
       ;;
     rest)
       echo "Running rest tests ..."
-      if "$HOME"/bin/bats ./tests/test_rest.sh; then
-        "$HOME"/bin/bats ./tests/test_rest_acl.sh || exit_code=$?
-      else
+      if ! "$HOME"/bin/bats ./tests/test_rest.sh; then
+        exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_acl.sh; then
+        exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_chunked.sh; then
         exit_code=1
       fi
       ;;

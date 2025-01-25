@@ -43,6 +43,7 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-copy-source;x-amz-date
 UNSIGNED-PAYLOAD"
 
+# shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "\"$AWS_ENDPOINT_URL/$bucket_name/$key?partNumber=$part_number&uploadId=$upload_id\""
