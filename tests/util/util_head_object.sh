@@ -88,3 +88,35 @@ get_etag_rest() {
   etag_value=$(grep "E[Tt]ag:" "$TEST_FILE_FOLDER/head_object.txt" | sed -n 's/E[Tt]ag: "\([^"]*\)"/\1/p' | tr -d '\r')
   echo "$etag_value"
 }
+
+verify_object_not_found() {
+  if [ $# -ne 2 ]; then
+    log 2 "'verify_object_not_found' requires bucket name, object key"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" != "404" ]; then
+    log 2 "expected '404', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+verify_object_exists() {
+  if [ $# -ne 2 ]; then
+    log 2 "'verify_object_not_found' requires bucket name, object key"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
