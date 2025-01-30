@@ -260,19 +260,3 @@ func removeSpace(str string) string {
 	}
 	return b.String()
 }
-
-var (
-	specialValues = map[string]bool{
-		"UNSIGNED-PAYLOAD":                                 true,
-		"STREAMING-UNSIGNED-PAYLOAD-TRAILER":               true,
-		"STREAMING-AWS4-HMAC-SHA256-PAYLOAD":               true,
-		"STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER":       true,
-		"STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD":         true,
-		"STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER": true,
-	}
-)
-
-// IsSpecialPayload checks for streaming/unsigned authorization types
-func IsSpecialPayload(str string) bool {
-	return specialValues[str]
-}
