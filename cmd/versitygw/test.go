@@ -38,6 +38,7 @@ var (
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
+	tlsStatus         bool
 )
 
 func testCommand() *cli.Command {
@@ -78,6 +79,12 @@ func initTestFlags() []cli.Flag {
 			Usage:       "enable debug mode",
 			Aliases:     []string{"d"},
 			Destination: &debug,
+		},
+		&cli.BoolFlag{
+			Name:        "allow-insecure",
+			Usage:       "skip tls verification",
+			Aliases:     []string{"ai"},
+			Destination: &tlsStatus,
 		},
 	}
 }
@@ -211,6 +218,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithEndpoint(endpoint),
 					integration.WithConcurrency(concurrency),
 					integration.WithPartSize(partSize),
+					integration.WithTLSStatus(tlsStatus),
 				}
 				if debug {
 					opts = append(opts, integration.WithDebug())
@@ -271,6 +279,7 @@ func initTestCommands() []*cli.Command {
 					integration.WithRegion(region),
 					integration.WithEndpoint(endpoint),
 					integration.WithConcurrency(concurrency),
+					integration.WithTLSStatus(tlsStatus),
 				}
 				if debug {
 					opts = append(opts, integration.WithDebug())
@@ -296,6 +305,7 @@ func getAction(tf testFunc) func(*cli.Context) error {
 			integration.WithSecret(awsSecret),
 			integration.WithRegion(region),
 			integration.WithEndpoint(endpoint),
+			integration.WithTLSStatus(tlsStatus),
 		}
 		if debug {
 			opts = append(opts, integration.WithDebug())
@@ -333,6 +343,7 @@ func extractIntTests() (commands []*cli.Command) {
 					integration.WithSecret(awsSecret),
 					integration.WithRegion(region),
 					integration.WithEndpoint(endpoint),
+					integration.WithTLSStatus(tlsStatus),
 				}
 				if debug {
 					opts = append(opts, integration.WithDebug())

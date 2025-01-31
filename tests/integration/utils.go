@@ -766,7 +766,7 @@ func createUsers(s *S3Conf, users []user) error {
 		if err != nil {
 			return err
 		}
-		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)
+		out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)...)
 		if err != nil {
 			return err
 		}
@@ -778,7 +778,7 @@ func createUsers(s *S3Conf, users []user) error {
 }
 
 func deleteUser(s *S3Conf, access string) error {
-	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", access)
+	out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", access)...)
 	if err != nil {
 		return err
 	}
@@ -791,7 +791,7 @@ func deleteUser(s *S3Conf, access string) error {
 
 func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 	for _, bucket := range buckets {
-		out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "change-bucket-owner", "-b", bucket, "-o", owner)
+		out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "change-bucket-owner", "-b", bucket, "-o", owner)...)
 		if err != nil {
 			return err
 		}
@@ -804,7 +804,7 @@ func changeBucketsOwner(s *S3Conf, buckets []string, owner string) error {
 }
 
 func listBuckets(s *S3Conf) error {
-	out, err := execCommand("admin", "-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "list-buckets")
+	out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "list-buckets")...)
 	if err != nil {
 		return err
 	}

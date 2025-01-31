@@ -56,11 +56,8 @@ func Authentication_empty_auth_header(s *S3Conf) error {
 		date:     time.Now(),
 	}, func(req *http.Request) error {
 		req.Header.Set("Authorization", "")
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -84,11 +81,8 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 		date:     time.Now(),
 	}, func(req *http.Request) error {
 		req.Header.Set("Authorization", "invalid header")
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -115,11 +109,7 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 		authHdr = strings.Replace(authHdr, "AWS4-HMAC-SHA256", "AWS2-HMAC-SHA1", 1)
 		req.Header.Set("Authorization", authHdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -147,11 +137,7 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "Credential-access/32234/us-east-1/s3/aws4_request,")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -179,11 +165,7 @@ func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/32234/us-east-1/s3,")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -211,11 +193,7 @@ func Authentication_credentials_terminated_string(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/32234/us-east-1/s3/aws_request,")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -238,11 +216,8 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 		service:  "ec2",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -271,16 +246,13 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 		apiErr := s3err.APIError{
 			Code:           "SignatureDoesNotMatch",
 			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
 			HTTPStatusCode: http.StatusForbidden,
 		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -308,11 +280,7 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/3223423234/us-east-1/s3/aws4_request,")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -335,11 +303,8 @@ func Authentication_credentials_future_date(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now().Add(time.Duration(5) * 24 * time.Hour),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -376,11 +341,8 @@ func Authentication_credentials_past_date(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now().Add(time.Duration(-5) * 24 * time.Hour),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -422,11 +384,7 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "Credential=a_rarely_existing_access_key_id_a7s86df78as6df89790a8sd7f")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -454,11 +412,7 @@ func Authentication_invalid_signed_headers(s *S3Conf) error {
 		hdr := regExp.ReplaceAllString(authHdr, "SignedHeaders-host;x-amz-content-sha256;x-amz-date,")
 		req.Header.Set("Authorization", hdr)
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -481,12 +435,9 @@ func Authentication_missing_date_header(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 		req.Header.Set("X-Amz-Date", "")
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -509,12 +460,9 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 		req.Header.Set("X-Amz-Date", "03032006")
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -537,12 +485,9 @@ func Authentication_date_mismatch(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 		req.Header.Set("X-Amz-Date", "20220830T095525Z")
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -565,12 +510,9 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 		req.Header.Set("X-Amz-Content-Sha256", "7sa6df576dsa5f675sad67f")
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -593,13 +535,10 @@ func Authentication_incorrect_md5(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
 		req.Header.Set("Content-Md5", "sadfasdf87sad6f87==")
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -624,11 +563,8 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
 
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -651,10 +587,6 @@ func PresignedAuth_missing_algo_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -669,7 +601,7 @@ func PresignedAuth_missing_algo_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -692,10 +624,6 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri := strings.Replace(v4req.URL, "AWS4-HMAC-SHA256", "AWS4-SHA256", 1)
 
 		req, err := http.NewRequest(v4req.Method, uri, nil)
@@ -703,7 +631,7 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -726,10 +654,6 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -744,7 +668,7 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -767,10 +691,6 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -785,7 +705,7 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -808,10 +728,6 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri, err := changeAuthCred(v4req.URL, "aws5_request", credTerminator)
 		if err != nil {
 			return err
@@ -822,7 +738,7 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -845,10 +761,6 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri, err := changeAuthCred(v4req.URL, "sns", credService)
 		if err != nil {
 			return err
@@ -859,7 +771,7 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -890,16 +802,12 @@ func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -926,10 +834,6 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri, err := changeAuthCred(v4req.URL, "32234Z34", credDate)
 		if err != nil {
 			return err
@@ -940,7 +844,7 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -963,10 +867,6 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri, err := changeAuthCred(v4req.URL, "a_rarely_existing_access_key_id890asd6f807as6ydf870say", credAccess)
 		if err != nil {
 			return err
@@ -977,7 +877,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1000,10 +900,6 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1018,7 +914,7 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1041,10 +937,6 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		uri, err := changeAuthCred(v4req.URL, "20060102", credDate)
 		if err != nil {
 			return err
@@ -1055,7 +947,7 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1078,10 +970,6 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1096,7 +984,7 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1119,10 +1007,6 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1137,7 +1021,7 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1160,10 +1044,6 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1178,7 +1058,7 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1201,10 +1081,6 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1219,7 +1095,7 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1242,10 +1118,6 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		urlParsed, err := url.Parse(v4req.URL)
 		if err != nil {
 			return err
@@ -1260,7 +1132,7 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1281,10 +1153,6 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 		cancel()
 		if err != nil {
 			return err
-		}
-
-		httpClient := http.Client{
-			Timeout: shortTimeout,
 		}
 
 		urlParsed, err := url.Parse(v4req.URL)
@@ -1308,7 +1176,7 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1333,16 +1201,12 @@ func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1370,16 +1234,12 @@ func PresignedAuth_PutObject_success(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(http.MethodPut, v4req.URL, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1416,10 +1276,6 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(v4req.Method, v4req.URL, body)
 		if err != nil {
 			return err
@@ -1427,7 +1283,7 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 
 		req.Header = v4req.SignedHeader
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1448,7 +1304,7 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return err
 		}
 
-		resp, err = httpClient.Do(req)
+		resp, err = s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1492,10 +1348,6 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
 		if err != nil {
 			return err
@@ -1503,7 +1355,7 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 
 		req.Header = v4req.SignedHeader
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1524,7 +1376,7 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 			return err
 		}
 
-		resp, err = httpClient.Do(req)
+		resp, err = s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -1565,16 +1417,12 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 			return err
 		}
 
-		httpClient := http.Client{
-			Timeout: shortTimeout,
-		}
-
 		req, err := http.NewRequest(v4req.Method, v4req.URL, nil)
 		if err != nil {
 			return err
 		}
 
-		resp, err := httpClient.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -2395,11 +2243,7 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	client := http.Client{
-		Timeout: shortTimeout,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -2714,11 +2558,7 @@ func PutBucketTagging_success_status(s *S3Conf) error {
 			return fmt.Errorf("err signing the request: %w", err)
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return fmt.Errorf("err sending request: %w", err)
 		}
@@ -2834,11 +2674,7 @@ func DeleteBucketTagging_success_status(s *S3Conf) error {
 			return err
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -4018,11 +3854,7 @@ func GetObject_by_range_resp_status(s *S3Conf) error {
 			return err
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -4961,11 +4793,7 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -5689,11 +5517,7 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 			return err
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -7248,11 +7072,7 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		client := http.Client{
-			Timeout: shortTimeout,
-		}
-
-		resp, err := client.Do(req)
+		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -11125,7 +10945,7 @@ func IAM_user_access_denied(s *S3Conf) error {
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
+	out, err := execCommand(s.getAdminCommand("-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
 	if err == nil {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)
@@ -11156,7 +10976,7 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	out, err := execCommand("admin", "-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")
+	out, err := execCommand(s.getAdminCommand("-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
 	if err == nil {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)

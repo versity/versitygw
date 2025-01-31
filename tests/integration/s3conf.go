@@ -16,6 +16,7 @@ package integration
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"log"
 	"net/http"
@@ -42,6 +43,8 @@ type S3Conf struct {
 	debug             bool
 	versioningEnabled bool
 	azureTests        bool
+	tlsStatus         bool
+	httpClient        *http.Client
 }
 
 func NewS3Conf(opts ...Option) *S3Conf {
@@ -50,6 +53,20 @@ func NewS3Conf(opts ...Option) *S3Conf {
 	for _, opt := range opts {
 		opt(s)
 	}
+
+	customTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: s.tlsStatus,
+		},
+	}
+
+	customHTTPClient := &http.Client{
+		Transport: customTransport,
+		Timeout:   shortTimeout,
+	}
+
+	s.httpClient = customHTTPClient
+
 	return s
 }
 
@@ -88,6 +105,9 @@ func WithVersioningEnabled() Option {
 func WithAzureMode() Option {
 	return func(s *S3Conf) { s.azureTests = true }
 }
+func WithTLSStatus(ts bool) Option {
+	return func(s *S3Conf) { s.tlsStatus = ts }
+}
 
 func (c *S3Conf) getCreds() credentials.StaticCredentialsProvider {
 	// TODO support token/IAM
@@ -117,6 +137,8 @@ func (c *S3Conf) Config() aws.Config {
 		config.WithHTTPClient(client),
 		config.WithRetryMaxAttempts(1),
 	}
+
+	opts = append(opts, config.WithHTTPClient(c.httpClient))
 
 	if c.checksumDisable {
 		opts = append(opts,
@@ -167,4 +189,12 @@ func (c *S3Conf) DownloadData(w io.WriterAt, bucket, object string) (int64, erro
 	}
 
 	return downloader.Download(context.Background(), w, downinfo)
+}
+
+func (c *S3Conf) getAdminCommand(args ...string) []string {
+	if c.tlsStatus {
+		return append([]string{"admin", "--allow-insecure"}, args...)
+	}
+
+	return append([]string{"admin"}, args...)
 }
