@@ -47,7 +47,7 @@ func ProcessChunkedBody(root RootUserConfig, iam auth.IAMService, logger s3log.A
 		if utils.IsBigDataAction(ctx) {
 			var err error
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				var cr *utils.ChunkReader
+				var cr io.Reader
 				cr, err = utils.NewChunkReader(ctx, r, authData, region, acct.Secret, date)
 				return cr
 			})
