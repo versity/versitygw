@@ -47,7 +47,7 @@ func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath,
 		tls.ServerCertificate.FromBytes = []byte(serverCert)
 		if clientCert != "" {
 			if clientCertKey == "" {
-				return nil, fmt.Errorf("client certificate and client certificate should both be specified")
+				return nil, fmt.Errorf("client certificate and client certificate key should both be specified")
 			}
 
 			tls.ClientCertificate.FromBytes = []byte(clientCert)
