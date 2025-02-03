@@ -54,7 +54,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run create_test_files "$bucket_file"
   assert_success
 
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -115,7 +115,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run create_test_file "$bucket_file"
   assert_success
 
-  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
+  run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"

@@ -315,7 +315,7 @@ setup_multipart_upload_with_params() {
     return 1
   fi
 
-  if ! result=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER/$2" bs=5M count=1 2>&1); then
+  if ! result=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER/$2" bs=20M count=1 2>&1); then
     log 2 "error creating large file: $result"
     return 1
   fi

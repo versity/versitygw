@@ -34,6 +34,9 @@ const (
 	// this is the media type for directories in AWS and Nextcloud
 	DirContentType     = "application/x-directory"
 	DefaultContentType = "binary/octet-stream"
+
+	// this is the minimum allowed size for mp parts
+	MinPartSize = 5 * 1024 * 1024
 )
 
 func IsValidBucketName(name string) bool { return true }
