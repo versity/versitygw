@@ -354,15 +354,18 @@ func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[stri
 		return "", fmt.Errorf("ipa request invalid: %w", err)
 	}
 
-	return fmt.Sprintf(`{
-		"id": %d,
-		"method": %s,
-		"params": [
-			%s,
-			%s
-		]
+	request := map[string]interface{}{
+		"id":     id,
+		"method": json.RawMessage(jmethod),
+		"params": []json.RawMessage{json.RawMessage(jargs), json.RawMessage(jdict)},
 	}
-	`, id, jmethod, jargs, jdict), nil
+
+	requestJSON, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	return string(requestJSON), nil
 }
 
 // pkcs7Unpad validates and unpads data from the given bytes slice.
