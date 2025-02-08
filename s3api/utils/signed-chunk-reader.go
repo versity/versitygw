@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"math"
 	"strconv"
 	"time"
 
@@ -79,22 +78,46 @@ func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string,
 func (cr *ChunkReader) Read(p []byte) (int, error) {
 	n, err := cr.r.Read(p)
 	if err != nil && err != io.EOF {
-		return n, err
+		return 0, err
 	}
 
-	if cr.chunkDataLeft < int64(n) {
-		chunkSize := cr.chunkDataLeft
-		if chunkSize > 0 {
-			cr.chunkHash.Write(p[:chunkSize])
+	if n == 0 {
+		return 0, io.EOF
+	}
+
+	return cr.processBuffer(p[:n])
+}
+
+func (cr *ChunkReader) processBuffer(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	if cr.chunkDataLeft > 0 {
+		dataRemaining := cr.chunkDataLeft
+		if int64(len(p)) < cr.chunkDataLeft {
+			dataRemaining = int64(len(p))
 		}
-		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
-		n += int(chunkSize)
-		return n, err
+		cr.chunkDataLeft -= dataRemaining
+		cr.chunkHash.Write(p[:dataRemaining])
+		n, err := cr.processBuffer(p[dataRemaining:])
+		return int(dataRemaining) + n, err
 	}
 
-	cr.chunkDataLeft -= int64(n)
-	cr.chunkHash.Write(p[:n])
-	return n, err
+	shrunk, err := cr.parseAndRemoveChunkInfo(p)
+	if err != nil {
+		return 0, err
+	}
+	p = p[:len(p)-shrunk]
+	dataRemaining := cr.chunkDataLeft
+	if int64(len(p)) < cr.chunkDataLeft {
+		dataRemaining = int64(len(p))
+	}
+	cr.chunkDataLeft -= dataRemaining
+	cr.chunkHash.Write(p[:dataRemaining])
+
+	n, err := cr.processBuffer(p[dataRemaining:])
+	return int(dataRemaining) + n, err
 }
 
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html#sigv4-chunked-body-definition
@@ -149,6 +172,8 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		}
 	}
 
+	dataMoved := 0
+
 	if cr.trailerExpected != 0 {
 		if len(p) < len(chunkHdrDelim) {
 			// This is the special case where we need to consume the
@@ -162,22 +187,24 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		// move data up to remove trailer
 		copy(p, p[cr.trailerExpected:])
 		n -= cr.trailerExpected
+		dataMoved += cr.trailerExpected
 	}
 
 	cr.skipcheck = false
 
 	chunkSize, sig, bufOffset, err := cr.parseChunkHeaderBytes(p[:n])
+	cr.chunkDataLeft = chunkSize
 	cr.currentChunkSize = chunkSize
 	cr.parsedSig = sig
 	if err == errskipHeader {
 		cr.chunkDataLeft = 0
-		return 0, nil
+		return dataMoved, nil
 	}
 	if err != nil {
-		return 0, err
+		return dataMoved, err
 	}
 	if chunkSize == 0 {
-		return 0, io.EOF
+		return dataMoved, io.EOF
 	}
 
 	cr.trailerExpected = len(chunkHdrDelim)
@@ -185,23 +212,9 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 	// move data up to remove chunk header
 	copy(p, p[bufOffset:n])
 	n -= bufOffset
+	dataMoved += bufOffset
 
-	// if remaining buffer larger than chunk data,
-	// parse next header in buffer
-	if int64(n) > chunkSize {
-		cr.chunkDataLeft = 0
-		cr.chunkHash.Write(p[:chunkSize])
-		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
-		if (chunkSize + int64(n)) > math.MaxInt {
-			return 0, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
-		}
-		return n + int(chunkSize), err
-	}
-
-	cr.chunkDataLeft = chunkSize - int64(n)
-	cr.chunkHash.Write(p[:n])
-
-	return n, nil
+	return dataMoved, nil
 }
 
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
