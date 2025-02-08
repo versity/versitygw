@@ -79,7 +79,7 @@ func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string,
 func (cr *ChunkReader) Read(p []byte) (int, error) {
 	n, err := cr.r.Read(p)
 	if err != nil && err != io.EOF {
-		return n, err
+		return 0, err
 	}
 
 	if cr.chunkDataLeft < int64(n) {
