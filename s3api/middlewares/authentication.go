@@ -76,6 +76,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		}
 
 		ctx.Locals("isRoot", authData.Access == root.Access)
+		ctx.Locals("rootAccess", root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {

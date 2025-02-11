@@ -43,6 +43,8 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 		}
 
 		ctx.Locals("isRoot", authData.Access == root.Access)
+		ctx.Locals("rootAccess", root.Access)
+
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
 			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), logger, mm)

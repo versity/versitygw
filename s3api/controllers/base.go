@@ -921,7 +921,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		res, err := auth.ParseACLOutput(data)
+		res, err := auth.ParseACLOutput(data, parsedAcl.Owner)
 		return SendXMLResponse(ctx, res, err,
 			&MetaOpts{
 				Logger:      c.logger,

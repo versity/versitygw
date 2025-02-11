@@ -74,6 +74,11 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
 		}
 
+		// if owner is not set, set default owner to root account
+		if parsedAcl.Owner == "" {
+			parsedAcl.Owner = ctx.Locals("rootAccess").(string)
+		}
+
 		ctx.Locals("parsedAcl", parsedAcl)
 		return ctx.Next()
 	}

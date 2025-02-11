@@ -193,13 +193,24 @@ func ParseACL(data []byte) (ACL, error) {
 	return acl, nil
 }
 
-func ParseACLOutput(data []byte) (GetBucketAclOutput, error) {
+func ParseACLOutput(data []byte, owner string) (GetBucketAclOutput, error) {
+	grants := []Grant{}
+
+	if len(data) == 0 {
+		return GetBucketAclOutput{
+			Owner: &types.Owner{
+				ID: &owner,
+			},
+			AccessControlList: AccessControlList{
+				Grants: grants,
+			},
+		}, nil
+	}
+
 	var acl ACL
 	if err := json.Unmarshal(data, &acl); err != nil {
 		return GetBucketAclOutput{}, fmt.Errorf("parse acl: %w", err)
 	}
-
-	grants := []Grant{}
 
 	for _, elem := range acl.Grantees {
 		acs := elem.Access
