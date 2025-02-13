@@ -37,6 +37,7 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-date
 UNSIGNED-PAYLOAD"
 
+# shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "$AWS_ENDPOINT_URL/$bucket_name/$key?uploadId=$upload_id"

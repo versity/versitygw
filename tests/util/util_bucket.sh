@@ -55,11 +55,8 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if [[ $LOG_LEVEL_INT -ge 5 ]]; then
-    if ! log_bucket_policy "$1"; then
-      log 2 "error logging bucket policy"
-      return 1
-    fi
+  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
+    log 3 "error logging bucket policy"
   fi
 
   if ! check_object_lock_config "$1"; then

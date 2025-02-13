@@ -38,6 +38,7 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-date
 $payload_hash"
 
+# shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name?policy="

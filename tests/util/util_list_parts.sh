@@ -1,5 +1,27 @@
 #!/usr/bin/env bash
 
+check_part_list_rest_etags() {
+  if ! etags=$(xmllint --xpath '//*[local-name()="ETag"]/text()' "$TEST_FILE_FOLDER/parts.txt" | tr '\n' ' ' 2>&1); then
+    log 2 "error retrieving etags: $etags"
+    return 1
+  fi
+  read -ra etags_array <<< "$etags"
+  idx=0
+  if [ $# -ne ${#etags_array[@]} ]; then
+    log 2 "expected tag size of '$#', actual ${#etags_array[@]}"
+    return 1
+  fi
+  while [ $# -gt 0 ]; do
+    if [ "$1" != "${etags_array[$idx]}" ]; then
+      log 2 "etag mismatch (expected '$1', actual ${etags_array[$idx]})"
+      return 1
+    fi
+    ((idx++))
+    shift
+  done
+  return 0
+}
+
 check_part_list_rest() {
   if [ $# -lt 4 ]; then
     log 2 "'check_part_list_rest' requires bucket, file name, upload ID, expected count, etags"
@@ -33,21 +55,10 @@ check_part_list_rest() {
   if [ "$4" == 0 ]; then
     return 0
   fi
-  if ! etags=$(xmllint --xpath '//*[local-name()="ETag"]/text()' "$TEST_FILE_FOLDER/parts.txt" | tr '\n' ' ' 2>&1); then
-    log 2 "error retrieving etags: $etags"
+  if ! check_part_list_rest_etags "${@:5}"; then
+    log 2 "error checking etags"
     return 1
   fi
-  read -ra etags_array <<< "$etags"
-  shift 4
-  idx=0
-  while [ $# -gt 0 ]; do
-    if [ "$1" != "${etags_array[$idx]}" ]; then
-      log 2 "etag mismatch (expected '$1', actual ${etags_array[$idx]})"
-      return 1
-    fi
-    ((idx++))
-    shift
-  done
   return 0
 }
 
