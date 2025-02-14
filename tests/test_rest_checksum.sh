@@ -17,36 +17,21 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_bucket.sh
-source ./tests/util/util_chunked_upload.sh
-source ./tests/util/util_file.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
-@test "REST - chunked upload, no content length" {
+@test "REST - HeadObject returns x-amz-checksum-sha256" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1043"
+    skip "https://github.com/versity/versitygw/issues/1070"
   fi
+  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run attempt_seed_signature_without_content_length "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
-  assert_success
-}
-
-@test "REST - chunked upload, signature error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1056 - gibberish at end"
-  fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run put_object_rest_sha256_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  test_file="test-file"
-  run create_test_file "$test_file" 8192
-  assert_success
-
-  run attempt_chunked_upload_with_bad_first_signature "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run check_checksum_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }

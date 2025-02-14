@@ -22,6 +22,7 @@ source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_object.sh
+source ./tests/util/util_setup.sh
 
 export RUN_USERS=true
 
@@ -34,11 +35,8 @@ export RUN_USERS=true
 }
 
 @test "REST - put ACL" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
@@ -72,11 +70,8 @@ export RUN_USERS=true
 }
 
 @test "REST - put public-read canned acl" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
@@ -135,11 +130,8 @@ export RUN_USERS=true
 }
 
 @test "REST - put public-read-write canned acl" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"

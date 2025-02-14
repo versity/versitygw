@@ -36,13 +36,21 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-date
 UNSIGNED-PAYLOAD"
 
+canonical_request_data=("HEAD" "/$bucket_name/$key" "" "host:$host")
+if [ "$CHECKSUM" == "true" ]; then
+  canonical_request_data+=("x-amz-checksum-mode:ENABLED")
+fi
+canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+if ! build_canonical_request "${canonical_request_data[@]}"; then
+  log_rest 2 "error building request"
+  exit 1
+fi
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ksI -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name/$key"
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
--H "\"x-amz-date: $current_date_time\""
--o "$OUTPUT_FILE")
+-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=("${header_fields[@]}")
+curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

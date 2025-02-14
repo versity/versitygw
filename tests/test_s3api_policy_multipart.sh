@@ -15,15 +15,13 @@
 # under the License.
 
 source ./tests/util/util_multipart_abort.sh
+source ./tests/util/util_setup.sh
 
 test_s3api_policy_abort_multipart_upload() {
   policy_file="policy_file"
   test_file="test_file"
 
-  run create_large_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
@@ -66,7 +64,7 @@ test_s3api_policy_list_multipart_uploads() {
   run create_test_file "$policy_file"
   assert_success
 
-  run create_large_file "$test_file"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   effect="Allow"
@@ -78,9 +76,6 @@ test_s3api_policy_list_multipart_uploads() {
   assert_success
   username=${lines[0]}
   password=${lines[1]}
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
 
   run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
   assert_success
@@ -106,10 +101,7 @@ test_s3api_policy_list_upload_parts() {
   run create_test_files "$policy_file"
   assert_success "error creating test files"
 
-  run create_large_file "$test_file"
-  assert_success "error creating large file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success "error setting up bucket"
 
   run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"

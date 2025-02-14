@@ -151,9 +151,8 @@ test_s3api_policy_put_acl() {
 
   run create_test_file "$policy_file" 0
   assert_success
-  run create_large_file "$test_file"
-  assert_success
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"

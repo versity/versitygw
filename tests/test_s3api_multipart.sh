@@ -23,6 +23,7 @@ source ./tests/util/util_file.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
+source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
@@ -31,9 +32,6 @@ source ./tests/commands/list_multipart_uploads.sh
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
   local bucket_file="bucket-file"
-
-  run create_test_file "$bucket_file"
-  assert_success
   # shellcheck disable=SC2154
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
@@ -51,9 +49,6 @@ source ./tests/commands/list_multipart_uploads.sh
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
   local bucket_file="bucket-file"
-  run create_test_files "$bucket_file"
-  assert_success
-
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
   assert_success
 
@@ -111,10 +106,6 @@ source ./tests/commands/list_multipart_uploads.sh
 
 @test "test-multipart-upload-from-bucket" {
   local bucket_file="bucket-file"
-
-  run create_test_file "$bucket_file"
-  assert_success
-
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=20M count=1
   assert_success
 
@@ -133,10 +124,7 @@ source ./tests/commands/list_multipart_uploads.sh
 
 @test "test_multipart_upload_from_bucket_range_too_large" {
   local bucket_file="bucket-file"
-  run create_large_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run multipart_upload_range_too_large "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file"
@@ -145,10 +133,7 @@ source ./tests/commands/list_multipart_uploads.sh
 
 @test "test_multipart_upload_from_bucket_range_valid" {
   local bucket_file="bucket-file"
-  run create_large_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run run_and_verify_multipart_upload_with_valid_range "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file"
@@ -158,9 +143,6 @@ source ./tests/commands/list_multipart_uploads.sh
 # test multi-part upload list parts command
 @test "test-multipart-upload-list-parts" {
   local bucket_file="bucket-file"
-
-  run create_test_file "$bucket_file" 0
-  assert_success
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
@@ -176,18 +158,14 @@ source ./tests/commands/list_multipart_uploads.sh
 
 # test listing of active uploads
 @test "test-multipart-upload-list-uploads" {
-  local bucket_file_one="bucket-file-one"
-  local bucket_file_two="bucket-file-two"
-
   if [[ $RECREATE_BUCKETS == false ]]; then
     run abort_all_multipart_uploads "$BUCKET_ONE_NAME"
     assert_success
   fi
 
-  run create_test_files "$bucket_file_one" "$bucket_file_two"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  local bucket_file_one="bucket-file-one"
+  local bucket_file_two="bucket-file-two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"
   assert_success
 
   run create_list_check_multipart_uploads "$BUCKET_ONE_NAME" "$bucket_file_one" "$bucket_file_two"

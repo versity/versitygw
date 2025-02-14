@@ -29,6 +29,7 @@ setup() {
       log 2 "error creating log file: $error"
       exit 1
     fi
+    export TEST_LOG_FILE
   fi
 
   log 4 "Running test $BATS_TEST_NAME"
