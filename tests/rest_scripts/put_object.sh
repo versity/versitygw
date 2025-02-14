@@ -57,6 +57,9 @@ fi
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
+build_canonical_request "PUT" "/$bucket_name/$key" "" "host:$host" "x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time" \
+  ""
+
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key")
 if [ "$CHECKSUM" == "true" ]; then
   curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-checksum-sha256,Signature=$signature\"")

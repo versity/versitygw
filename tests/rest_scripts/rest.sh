@@ -100,3 +100,32 @@ log_rest() {
     echo "$2"
   fi
 }
+
+build_canonical_request() {
+  if [ $# -lt 0 ]; then
+    log_rest 2 "'build_canonical_request' requires parameters"
+    return 1
+  fi
+  echo "$BATS_TEST_NAME" >> "request.txt"
+  canonical_request=""
+  local param_list=""
+  local payload=""
+  for line in "$@"; do
+    canonical_request+="$line
+"
+    if [[ "$line" == *":"* ]]; then
+      local key="${line%%:*}"
+      local value="${line#*:}"
+      log 5 "$key, $value"
+      if [ "$key" == "x-amz-content-sha256" ]; then
+        payload="$value"
+      fi
+      if [[ "$value" != "" ]]; then
+        param_list=$(add_parameter "$param_list" "$key" ";")
+      fi
+    fi
+  done
+  canonical_request+="$param_list
+$payload"
+  log 5 "$canonical_request"
+}

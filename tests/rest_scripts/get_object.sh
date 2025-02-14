@@ -22,6 +22,8 @@ source ./tests/rest_scripts/rest.sh
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2154
 key="$OBJECT_KEY"
+# shellcheck disable=SC2154
+checksum_mode="${CHECKSUM_MODE:=false}"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
@@ -30,7 +32,12 @@ canonical_request="GET
 /$bucket_name/$key
 
 host:$host
-x-amz-content-sha256:UNSIGNED-PAYLOAD
+"
+if [ "$checksum_mode" == "true" ]; then
+  canonical_request+="x-amz-checksum-mode:ENABLED
+"
+fi
+canonical_request+="x-amz-content-sha256:UNSIGNED-PAYLOAD
 x-amz-date:$current_date_time
 
 host;x-amz-content-sha256;x-amz-date
