@@ -108,24 +108,25 @@ build_canonical_request() {
   fi
   echo "$BATS_TEST_NAME" >> "request.txt"
   canonical_request=""
-  local param_list=""
+  param_list=""
   local payload=""
+  header_fields=()
   for line in "$@"; do
     canonical_request+="$line
 "
     if [[ "$line" == *":"* ]]; then
       local key="${line%%:*}"
       local value="${line#*:}"
-      log 5 "$key, $value"
       if [ "$key" == "x-amz-content-sha256" ]; then
         payload="$value"
       fi
       if [[ "$value" != "" ]]; then
         param_list=$(add_parameter "$param_list" "$key" ";")
+        header_fields+=(-H "\"$key: $value\"")
       fi
     fi
   done
-  canonical_request+="$param_list
+  canonical_request+="
+$param_list
 $payload"
-  log 5 "$canonical_request"
 }

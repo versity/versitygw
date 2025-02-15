@@ -29,9 +29,18 @@ source ./tests/util/util_file.sh
   run create_test_file "$test_file"
   assert_success
 
-  if ! result=$(DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM="true" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi
+  log 5 "result code: $result"
+  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" CHECKSUM="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  log 5 "result code: $result"
+  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
   return 1
 }
