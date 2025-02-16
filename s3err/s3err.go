@@ -147,6 +147,7 @@ const (
 	ErrMultipleChecksumHeaders
 	ErrInvalidChecksumAlgorithm
 	ErrInvalidChecksumPart
+	ErrChecksumTypeWithAlgo
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -606,6 +607,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Invalid Base64 or multiple checksums present in request",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrChecksumTypeWithAlgo: {
+		Code:           "InvalidRequest",
+		Description:    "The x-amz-checksum-type header can only be used with the x-amz-checksum-algorithm header.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 
 	// non aws errors
 	ErrExistingObjectIsDirectory: {
@@ -719,11 +725,29 @@ func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIErr
 	}
 }
 
-// Return incorrect checksum APIError
+// Returns incorrect checksum APIError
 func GetChecksumBadDigestErr(algo types.ChecksumAlgorithm) APIError {
 	return APIError{
 		Code:           "BadDigest",
 		Description:    fmt.Sprintf("The %v you specified did not match the calculated checksum.", strings.ToLower(string(algo))),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch error with checksum algorithm
+func GetChecksumSchemaMismatchErr(algo types.ChecksumAlgorithm, t types.ChecksumType) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The %v checksum type cannot be used with the %v checksum algorithm.", algo, strings.ToLower(string(t))),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch error for multipart uploads
+func GetChecksumTypeMismatchOnMpErr(t types.ChecksumType) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The upload was created using the %v checksum mode. The complete request must use the same checksum mode.", t),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

@@ -573,6 +573,13 @@ func TestIsChecksumAlgorithmValid(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "crc64nvme",
+			args: args{
+				alg: types.ChecksumAlgorithmCrc64nvme,
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid",
 			args: args{
 				alg: types.ChecksumAlgorithm("invalid_checksum_algorithm"),
@@ -676,6 +683,168 @@ func TestIsValidChecksum(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsValidChecksum(tt.args.checksum, tt.args.algorithm); got != tt.want {
 				t.Errorf("IsValidChecksum() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsChecksumTypeValid(t *testing.T) {
+	type args struct {
+		t types.ChecksumType
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "valid_FULL_OBJECT",
+			args: args{
+				t: types.ChecksumTypeFullObject,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_COMPOSITE",
+			args: args{
+				t: types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid",
+			args: args{
+				t: types.ChecksumType("invalid_checksum_type"),
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := IsChecksumTypeValid(tt.args.t); (err != nil) != tt.wantErr {
+				t.Errorf("IsChecksumTypeValid() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func Test_checkChecksumTypeAndAlgo(t *testing.T) {
+	type args struct {
+		algo types.ChecksumAlgorithm
+		t    types.ChecksumType
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "full_object-crc32",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc32,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: false,
+		},
+		{
+			name: "full_object-crc32c",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc32c,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: false,
+		},
+		{
+			name: "full_object-sha1",
+			args: args{
+				algo: types.ChecksumAlgorithmSha1,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-sha256",
+			args: args{
+				algo: types.ChecksumAlgorithmSha1,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-crc64nvme",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc64nvme,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: false,
+		},
+		{
+			name: "full_object-crc32",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc32,
+				t:    types.ChecksumTypeFullObject,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-crc32",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc32,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-crc32c",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc32c,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-sha1",
+			args: args{
+				algo: types.ChecksumAlgorithmSha1,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-sha256",
+			args: args{
+				algo: types.ChecksumAlgorithmSha256,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite-crc64nvme",
+			args: args{
+				algo: types.ChecksumAlgorithmCrc64nvme,
+				t:    types.ChecksumTypeComposite,
+			},
+			wantErr: true,
+		},
+		{
+			name: "composite-empty",
+			args: args{
+				t: types.ChecksumTypeComposite,
+			},
+			wantErr: true,
+		},
+		{
+			name: "full_object-empty",
+			args: args{
+				t: types.ChecksumTypeFullObject,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := checkChecksumTypeAndAlgo(tt.args.algo, tt.args.t); (err != nil) != tt.wantErr {
+				t.Errorf("checkChecksumTypeAndAlgo() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

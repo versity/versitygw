@@ -256,8 +256,10 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 				ID:          *u.Owner.ID,
 				DisplayName: *u.Owner.DisplayName,
 			},
-			StorageClass: u.StorageClass,
-			Initiated:    *u.Initiated,
+			StorageClass:      u.StorageClass,
+			Initiated:         *u.Initiated,
+			ChecksumAlgorithm: u.ChecksumAlgorithm,
+			ChecksumType:      u.ChecksumType,
 		})
 	}
 
@@ -293,10 +295,15 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 	var parts []s3response.Part
 	for _, p := range output.Parts {
 		parts = append(parts, s3response.Part{
-			PartNumber:   int(*p.PartNumber),
-			LastModified: *p.LastModified,
-			ETag:         *p.ETag,
-			Size:         *p.Size,
+			PartNumber:        int(*p.PartNumber),
+			LastModified:      *p.LastModified,
+			ETag:              *p.ETag,
+			Size:              *p.Size,
+			ChecksumCRC32:     p.ChecksumCRC32,
+			ChecksumCRC32C:    p.ChecksumCRC32C,
+			ChecksumCRC64NVME: p.ChecksumCRC64NVME,
+			ChecksumSHA1:      p.ChecksumSHA1,
+			ChecksumSHA256:    p.ChecksumSHA256,
 		})
 	}
 	pnm, err := strconv.Atoi(*output.PartNumberMarker)
@@ -329,6 +336,8 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 		MaxParts:             int(*output.MaxParts),
 		IsTruncated:          *output.IsTruncated,
 		Parts:                parts,
+		ChecksumAlgorithm:    output.ChecksumAlgorithm,
+		ChecksumType:         output.ChecksumType,
 	}, nil
 }
 
@@ -348,8 +357,13 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 	}
 
 	return s3response.CopyPartResult{
-		LastModified: *output.CopyPartResult.LastModified,
-		ETag:         output.CopyPartResult.ETag,
+		LastModified:      *output.CopyPartResult.LastModified,
+		ETag:              output.CopyPartResult.ETag,
+		ChecksumCRC32:     output.CopyPartResult.ChecksumCRC32,
+		ChecksumCRC32C:    output.CopyPartResult.ChecksumCRC32C,
+		ChecksumCRC64NVME: output.CopyPartResult.ChecksumCRC64NVME,
+		ChecksumSHA1:      output.CopyPartResult.ChecksumSHA1,
+		ChecksumSHA256:    output.CopyPartResult.ChecksumSHA256,
 	}, nil
 }
 
@@ -369,8 +383,13 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3re
 	}
 
 	return s3response.PutObjectOutput{
-		ETag:      *output.ETag,
-		VersionID: versionID,
+		ETag:              *output.ETag,
+		VersionID:         versionID,
+		ChecksumCRC32:     output.ChecksumCRC32,
+		ChecksumCRC32C:    output.ChecksumCRC32C,
+		ChecksumCRC64NVME: output.ChecksumCRC64NVME,
+		ChecksumSHA1:      output.ChecksumSHA1,
+		ChecksumSHA256:    output.ChecksumSHA256,
 	}, nil
 }
 
@@ -421,6 +440,7 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		ObjectSize:   out.ObjectSize,
 		StorageClass: out.StorageClass,
 		ObjectParts:  &parts,
+		Checksum:     out.Checksum,
 	}, handleError(err)
 }
 
@@ -833,13 +853,15 @@ func convertObjects(objs []types.Object) []s3response.Object {
 
 	for _, obj := range objs {
 		result = append(result, s3response.Object{
-			ETag:          obj.ETag,
-			Key:           obj.Key,
-			LastModified:  obj.LastModified,
-			Owner:         obj.Owner,
-			Size:          obj.Size,
-			RestoreStatus: obj.RestoreStatus,
-			StorageClass:  obj.StorageClass,
+			ETag:              obj.ETag,
+			Key:               obj.Key,
+			LastModified:      obj.LastModified,
+			Owner:             obj.Owner,
+			Size:              obj.Size,
+			RestoreStatus:     obj.RestoreStatus,
+			StorageClass:      obj.StorageClass,
+			ChecksumAlgorithm: obj.ChecksumAlgorithm,
+			ChecksumType:      obj.ChecksumType,
 		})
 	}
 

@@ -1314,14 +1314,13 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 	// Set object checksum algorithm
 	if mpu.ChecksumAlgorithm != "" {
 		err := p.storeChecksums(nil, bucket, filepath.Join(objdir, uploadID), s3response.Checksum{
-			Algorithms: []types.ChecksumAlgorithm{
-				mpu.ChecksumAlgorithm,
-			},
+			Algorithm: mpu.ChecksumAlgorithm,
+			Type:      mpu.ChecksumType,
 		})
 		if err != nil {
 			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
+			_ = os.RemoveAll(filepath.Join(tmppath, uploadID))
+			_ = os.Remove(tmppath)
 			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("store mp checksum algorithm: %w", err)
 		}
 	}
@@ -1350,6 +1349,21 @@ func (p *Posix) getChownIDs(acct auth.Account) (int, int, bool) {
 	}
 
 	return uid, gid, needsChown
+}
+
+func getPartChecksum(algo types.ChecksumAlgorithm, part types.CompletedPart) string {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		return backend.GetStringFromPtr(part.ChecksumCRC32)
+	case types.ChecksumAlgorithmCrc32c:
+		return backend.GetStringFromPtr(part.ChecksumCRC32C)
+	case types.ChecksumAlgorithmSha1:
+		return backend.GetStringFromPtr(part.ChecksumSHA1)
+	case types.ChecksumAlgorithmSha256:
+		return backend.GetStringFromPtr(part.ChecksumSHA256)
+	default:
+		return ""
+	}
 }
 
 func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
@@ -1395,23 +1409,20 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get mp checksums: %w", err)
 	}
+	var checksumAlgorithm types.ChecksumAlgorithm
+	if checksums.Algorithm != "" {
+		checksumAlgorithm = checksums.Algorithm
+	}
 
-	// if len(checksums.Algorithms) != 0 {
-	// 	algorithm := checksums.Algorithms[0]
+	// ChecksumType should be the same as specified on CreateMultipartUpload
+	if checksums.Type != input.ChecksumType {
+		checksumType := checksums.Type
+		if checksumType == "" {
+			checksumType = types.ChecksumType("null")
+		}
 
-	// 	if input.ChecksumCRC32 != nil && algorithm != types.ChecksumAlgorithmCrc32 {
-	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32")
-	// 	}
-	// 	if input.ChecksumCRC32C != nil && algorithm != types.ChecksumAlgorithmCrc32c {
-	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32c")
-	// 	}
-	// 	if input.ChecksumSHA1 != nil && algorithm != types.ChecksumAlgorithmSha1 {
-	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-sha1")
-	// 	}
-	// 	if input.ChecksumSHA256 != nil && algorithm != types.ChecksumAlgorithmSha256 {
-	// 		return nil, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-sha256")
-	// 	}
-	// }
+		return nil, s3err.GetChecksumTypeMismatchOnMpErr(checksumType)
+	}
 
 	// check all parts ok
 	last := len(parts) - 1
@@ -1457,10 +1468,17 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	var hashRdr *utils.HashReader
-	if len(checksums.Algorithms) != 0 {
-		hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksums.Algorithms[0]))))
+	var compositeChecksumRdr *utils.CompositeChecksumReader
+	switch checksums.Type {
+	case types.ChecksumTypeFullObject:
+		hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksumAlgorithm))))
 		if err != nil {
 			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+	case types.ChecksumTypeComposite:
+		compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksumAlgorithm))))
+		if err != nil {
+			return nil, fmt.Errorf("initialize composite checksum reader: %w", err)
 		}
 	}
 
@@ -1487,9 +1505,14 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 
 		var rdr io.Reader = pf
-		if hashRdr != nil {
+		if checksums.Type == types.ChecksumTypeFullObject {
 			hashRdr.SetReader(rdr)
 			rdr = hashRdr
+		} else if checksums.Type == types.ChecksumTypeComposite {
+			err := compositeChecksumRdr.Process(getPartChecksum(checksumAlgorithm, part))
+			if err != nil {
+				return nil, fmt.Errorf("process %v part checksum: %w", *part.PartNumber, err)
+			}
 		}
 
 		_, err = io.Copy(f.File(), rdr)
@@ -1594,42 +1617,54 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	var crc32c *string
 	var sha1 *string
 	var sha256 *string
+	var crc64nvme *string
 
-	// set checksum
-	if hashRdr != nil {
-		algo := checksums.Algorithms[0]
+	// Calculate, compare with the provided checksum and store them
+	if checksums.Type != "" {
 		checksum := s3response.Checksum{
-			Algorithms: []types.ChecksumAlgorithm{
-				algo,
-			},
+			Algorithm: checksumAlgorithm,
+			Type:      checksums.Type,
 		}
 
-		sum := hashRdr.Sum()
-		switch hashRdr.Type() {
-		case utils.HashTypeCRC32:
+		var sum string
+		switch checksums.Type {
+		case types.ChecksumTypeComposite:
+			sum = compositeChecksumRdr.Sum()
+		case types.ChecksumTypeFullObject:
+			sum = hashRdr.Sum()
+		}
+
+		switch checksumAlgorithm {
+		case types.ChecksumAlgorithmCrc32:
 			if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 != sum {
-				return nil, s3err.GetChecksumBadDigestErr(algo)
+				return nil, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
 			}
 			checksum.CRC32 = &sum
 			crc32 = &sum
-		case utils.HashTypeCRC32C:
+		case types.ChecksumAlgorithmCrc32c:
 			if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C != sum {
-				return nil, s3err.GetChecksumBadDigestErr(algo)
+				return nil, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
 			}
 			checksum.CRC32C = &sum
 			crc32c = &sum
-		case utils.HashTypeSha1:
+		case types.ChecksumAlgorithmSha1:
 			if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 != sum {
-				return nil, s3err.GetChecksumBadDigestErr(algo)
+				return nil, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
 			}
 			checksum.SHA1 = &sum
 			sha1 = &sum
-		case utils.HashTypeSha256:
+		case types.ChecksumAlgorithmSha256:
 			if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 != sum {
-				return nil, s3err.GetChecksumBadDigestErr(algo)
+				return nil, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
 			}
 			checksum.SHA256 = &sum
 			sha256 = &sum
+		case types.ChecksumAlgorithmCrc64nvme:
+			if input.ChecksumCRC64NVME != nil && *input.ChecksumCRC64NVME != sum {
+				return nil, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
+			}
+			checksum.CRC64NVME = &sum
+			crc64nvme = &sum
 		}
 		err := p.storeChecksums(f.File(), bucket, object, checksum)
 		if err != nil {
@@ -1669,107 +1704,71 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	os.Remove(filepath.Join(bucket, objdir))
 
 	return &s3.CompleteMultipartUploadOutput{
-		Bucket:         &bucket,
-		ETag:           &s3MD5,
-		Key:            &object,
-		VersionId:      &versionID,
-		ChecksumCRC32:  crc32,
-		ChecksumCRC32C: crc32c,
-		ChecksumSHA1:   sha1,
-		ChecksumSHA256: sha256,
+		Bucket:            &bucket,
+		ETag:              &s3MD5,
+		Key:               &object,
+		VersionId:         &versionID,
+		ChecksumCRC32:     crc32,
+		ChecksumCRC32C:    crc32c,
+		ChecksumSHA1:      sha1,
+		ChecksumSHA256:    sha256,
+		ChecksumCRC64NVME: crc64nvme,
+		ChecksumType:      checksums.Type,
 	}, nil
 }
 
 func validatePartChecksum(checksum s3response.Checksum, part types.CompletedPart) error {
 	n := numberOfChecksums(part)
-
-	if len(checksum.Algorithms) != 0 {
-		algo := checksum.Algorithms[0]
-		if n == 0 {
-			return s3err.APIError{
-				Code:           "InvalidRequest",
-				Description:    fmt.Sprintf("The upload was created using a %v checksum. The complete request must include the checksum for each part. It was missing for part %v in the request.", strings.ToLower(string(algo)), *part.PartNumber),
-				HTTPStatusCode: http.StatusBadRequest,
-			}
-		}
-		if n > 1 {
-			return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
-		}
-
-		if part.ChecksumCRC32 != nil {
-			if ok := utils.IsValidChecksum(*part.ChecksumCRC32, types.ChecksumAlgorithmCrc32); !ok {
-				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
-			}
-
-			if *part.ChecksumCRC32 != getString(checksum.CRC32) {
-				if algo == types.ChecksumAlgorithmCrc32 {
-					return s3err.GetAPIError(s3err.ErrInvalidPart)
-				} else {
-					return s3err.APIError{
-						Code:           "BadDigest",
-						Description:    fmt.Sprintf("The crc32 you specified for part %v did not match what we received.", *part.PartNumber),
-						HTTPStatusCode: http.StatusBadRequest,
-					}
-				}
-			}
-		}
-		if part.ChecksumCRC32C != nil {
-			if ok := utils.IsValidChecksum(*part.ChecksumCRC32C, types.ChecksumAlgorithmCrc32c); !ok {
-				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
-			}
-
-			if *part.ChecksumCRC32C != getString(checksum.CRC32C) {
-				if algo == types.ChecksumAlgorithmCrc32c {
-					return s3err.GetAPIError(s3err.ErrInvalidPart)
-				} else {
-					return s3err.APIError{
-						Code:           "BadDigest",
-						Description:    fmt.Sprintf("The crc32c you specified for part %v did not match what we received.", *part.PartNumber),
-						HTTPStatusCode: http.StatusBadRequest,
-					}
-				}
-			}
-		}
-		if part.ChecksumSHA1 != nil {
-			if ok := utils.IsValidChecksum(*part.ChecksumSHA1, types.ChecksumAlgorithmSha1); !ok {
-				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
-			}
-
-			if *part.ChecksumSHA1 != getString(checksum.SHA1) {
-				if algo == types.ChecksumAlgorithmSha1 {
-					return s3err.GetAPIError(s3err.ErrInvalidPart)
-				} else {
-					return s3err.APIError{
-						Code:           "BadDigest",
-						Description:    fmt.Sprintf("The sha1 you specified for part %v did not match what we received.", *part.PartNumber),
-						HTTPStatusCode: http.StatusBadRequest,
-					}
-				}
-			}
-		}
-		if part.ChecksumSHA256 != nil {
-			if ok := utils.IsValidChecksum(*part.ChecksumSHA256, types.ChecksumAlgorithmSha256); !ok {
-				return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
-			}
-
-			if *part.ChecksumSHA256 != getString(checksum.SHA256) {
-				if algo == types.ChecksumAlgorithmSha256 {
-					return s3err.GetAPIError(s3err.ErrInvalidPart)
-				} else {
-					return s3err.APIError{
-						Code:           "BadDigest",
-						Description:    fmt.Sprintf("The sha256 you specified for part %v did not match what we received.", *part.PartNumber),
-						HTTPStatusCode: http.StatusBadRequest,
-					}
-				}
-			}
+	if n > 1 {
+		return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+	}
+	if checksum.Algorithm == "" {
+		if n != 0 {
+			return s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
 		return nil
 	}
 
-	if n != 0 {
-		return s3err.GetAPIError(s3err.ErrInvalidPart)
+	algo := checksum.Algorithm
+	if n == 0 {
+		return s3err.APIError{
+			Code:           "InvalidRequest",
+			Description:    fmt.Sprintf("The upload was created using a %v checksum. The complete request must include the checksum for each part. It was missing for part %v in the request.", strings.ToLower(string(algo)), *part.PartNumber),
+			HTTPStatusCode: http.StatusBadRequest,
+		}
+	}
+
+	for _, cs := range []struct {
+		checksum         *string
+		expectedChecksum string
+		algo             types.ChecksumAlgorithm
+	}{
+		{part.ChecksumCRC32, getString(checksum.CRC32), types.ChecksumAlgorithmCrc32},
+		{part.ChecksumCRC32C, getString(checksum.CRC32C), types.ChecksumAlgorithmCrc32c},
+		{part.ChecksumSHA1, getString(checksum.SHA1), types.ChecksumAlgorithmSha1},
+		{part.ChecksumSHA256, getString(checksum.SHA256), types.ChecksumAlgorithmSha256},
+		{part.ChecksumCRC64NVME, getString(checksum.CRC64NVME), types.ChecksumAlgorithmCrc64nvme},
+	} {
+		if cs.checksum == nil {
+			continue
+		}
+
+		if !utils.IsValidChecksum(*cs.checksum, cs.algo) {
+			return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
+		}
+
+		if *cs.checksum != cs.expectedChecksum {
+			if algo == cs.algo {
+				return s3err.GetAPIError(s3err.ErrInvalidPart)
+			}
+
+			return s3err.APIError{
+				Code:           "BadDigest",
+				Description:    fmt.Sprintf("The %v you specified for part %v did not match what we received.", strings.ToLower(string(cs.algo)), *part.PartNumber),
+				HTTPStatusCode: http.StatusBadRequest,
+			}
+		}
 	}
 
 	return nil
@@ -1787,6 +1786,9 @@ func numberOfChecksums(part types.CompletedPart) int {
 		counter++
 	}
 	if getString(part.ChecksumSHA256) != "" {
+		counter++
+	}
+	if getString(part.ChecksumCRC64NVME) != "" {
 		counter++
 	}
 
@@ -1988,17 +1990,13 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 				return lmu, fmt.Errorf("get mp checksum: %w", err)
 			}
 
-			var algo types.ChecksumAlgorithm
-			if len(checksum.Algorithms) != 0 {
-				algo = checksum.Algorithms[0]
-			}
-
 			uploads = append(uploads, s3response.Upload{
 				Key:               objectName,
 				UploadID:          uploadID,
 				StorageClass:      types.StorageClassStandard,
 				Initiated:         fi.ModTime(),
-				ChecksumAlgorithm: algo,
+				ChecksumAlgorithm: checksum.Algorithm,
+				ChecksumType:      checksum.Type,
 			})
 		}
 	}
@@ -2122,11 +2120,6 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		return lpr, fmt.Errorf("get mp checksum: %w", err)
 	}
 
-	var algo types.ChecksumAlgorithm
-	if len(checksum.Algorithms) != 0 {
-		algo = checksum.Algorithms[0]
-	}
-
 	var parts []s3response.Part
 	for _, e := range ents {
 		pn, err := strconv.Atoi(e.Name())
@@ -2156,14 +2149,15 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		}
 
 		parts = append(parts, s3response.Part{
-			PartNumber:     pn,
-			ETag:           etag,
-			LastModified:   fi.ModTime(),
-			Size:           fi.Size(),
-			ChecksumCRC32:  checksum.CRC32,
-			ChecksumCRC32C: checksum.CRC32C,
-			ChecksumSHA1:   checksum.SHA1,
-			ChecksumSHA256: checksum.SHA256,
+			PartNumber:        pn,
+			ETag:              etag,
+			LastModified:      fi.ModTime(),
+			Size:              fi.Size(),
+			ChecksumCRC32:     checksum.CRC32,
+			ChecksumCRC32C:    checksum.CRC32C,
+			ChecksumSHA1:      checksum.SHA1,
+			ChecksumSHA256:    checksum.SHA256,
+			ChecksumCRC64NVME: checksum.CRC64NVME,
 		})
 	}
 
@@ -2195,7 +2189,8 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		Parts:                parts,
 		UploadID:             uploadID,
 		StorageClass:         types.StorageClassStandard,
-		ChecksumAlgorithm:    algo,
+		ChecksumAlgorithm:    checksum.Algorithm,
+		ChecksumType:         checksum.Type,
 	}, nil
 }
 
@@ -2290,6 +2285,14 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 
 		tr = hashRdr
 	}
+	if input.ChecksumCRC64NVME != nil {
+		hashRdr, err = utils.NewHashReader(tr, *input.ChecksumCRC64NVME, utils.HashTypeCRC64NVME)
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
+	}
 
 	// If only the checksum algorithm is provided register
 	// a new HashReader to calculate the object checksum
@@ -2309,24 +2312,16 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 
 	// If checksum isn't provided for the part,
 	// but it has been provided on mp initalization
-	if hashRdr == nil && chErr == nil && len(checksums.Algorithms) != 0 {
-		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithms[0], "null")
+	if hashRdr == nil && chErr == nil && checksums.Algorithm != "" {
+		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, "null")
 	}
 
 	// Check if the provided checksum algorithm match
 	// the one specified on mp initialization
-	if hashRdr != nil {
+	if hashRdr != nil && chErr == nil && checksums.Type != "" {
 		algo := types.ChecksumAlgorithm(strings.ToUpper(string(hashRdr.Type())))
-		if chErr != nil {
-			return nil, s3err.GetChecksumTypeMismatchErr("null", algo)
-		}
-
-		if len(checksums.Algorithms) == 0 {
-			return nil, s3err.GetChecksumTypeMismatchErr("null", algo)
-		}
-
-		if checksums.Algorithms[0] != algo {
-			return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithms[0], algo)
+		if checksums.Algorithm != algo {
+			return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, algo)
 		}
 	}
 
@@ -2349,11 +2344,12 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		ETag: &etag,
 	}
 
-	// Store the calculated checksum in the object metadata
 	if hashRdr != nil {
 		checksum := s3response.Checksum{
-			Algorithms: []types.ChecksumAlgorithm{input.ChecksumAlgorithm},
+			Algorithm: input.ChecksumAlgorithm,
 		}
+
+		// Validate the provided checksum
 		sum := hashRdr.Sum()
 		switch hashRdr.Type() {
 		case utils.HashTypeCRC32:
@@ -2368,11 +2364,18 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		case utils.HashTypeSha256:
 			checksum.SHA256 = &sum
 			res.ChecksumSHA256 = &sum
+		case utils.HashTypeCRC64NVME:
+			checksum.CRC64NVME = &sum
+			res.ChecksumCRC64NVME = &sum
 		}
 
-		err := p.storeChecksums(f.File(), bucket, partPath, checksum)
-		if err != nil {
-			return nil, fmt.Errorf("store checksum: %w", err)
+		// Store the checksums if the checksum type has been
+		// specified on mp initialization
+		if checksums.Type != "" {
+			err := p.storeChecksums(f.File(), bucket, partPath, checksum)
+			if err != nil {
+				return nil, fmt.Errorf("store checksum: %w", err)
+			}
 		}
 	}
 
@@ -2519,10 +2522,11 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("retreive object part checksums: %w", err)
 	}
 
+	// TODO: Should the checksum be recalculated or just copied ?
 	var hashRdr *utils.HashReader
-	if len(mpChecksums.Algorithms) != 0 {
-		if len(checksums.Algorithms) == 0 || (mpChecksums.Algorithms[0] != checksums.Algorithms[0]) {
-			hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(mpChecksums.Algorithms[0]))))
+	if mpChecksums.Algorithm != "" {
+		if checksums.Algorithm == "" || mpChecksums.Algorithm != checksums.Algorithm {
+			hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(mpChecksums.Algorithm))))
 			if err != nil {
 				return s3response.CopyPartResult{}, fmt.Errorf("initialize hash reader: %w", err)
 			}
@@ -2539,8 +2543,8 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("copy part data: %w", err)
 	}
 
-	if len(checksums.Algorithms) != 0 {
-		if len(mpChecksums.Algorithms) == 0 {
+	if checksums.Algorithm != "" {
+		if mpChecksums.Algorithm == "" {
 			checksums = s3response.Checksum{}
 		} else {
 			if hashRdr == nil {
@@ -2554,7 +2558,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if hashRdr != nil {
 		algo := types.ChecksumAlgorithm(strings.ToUpper(string(hashRdr.Type())))
 		checksums = s3response.Checksum{
-			Algorithms: []types.ChecksumAlgorithm{algo},
+			Algorithm: algo,
 		}
 
 		sum := hashRdr.Sum()
@@ -2567,6 +2571,8 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			checksums.SHA1 = &sum
 		case types.ChecksumAlgorithmSha256:
 			checksums.SHA256 = &sum
+		case types.ChecksumAlgorithmCrc64nvme:
+			checksums.CRC64NVME = &sum
 		}
 
 		err := p.storeChecksums(f.File(), objPath, "", checksums)
@@ -2600,6 +2606,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		ChecksumCRC32C:      checksums.CRC32C,
 		ChecksumSHA1:        checksums.SHA1,
 		ChecksumSHA256:      checksums.SHA256,
+		ChecksumCRC64NVME:   checksums.CRC64NVME,
 	}, nil
 }
 
@@ -2771,6 +2778,14 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 
 		rdr = hashRdr
 	}
+	if po.ChecksumCRC64NVME != nil {
+		hashRdr, err = utils.NewHashReader(rdr, *po.ChecksumCRC64NVME, utils.HashTypeCRC64NVME)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		rdr = hashRdr
+	}
 
 	// If only the checksum algorithm is provided register
 	// a new HashReader to calculate the object checksum
@@ -2827,25 +2842,30 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		}
 	}
 
+	checksum := s3response.Checksum{}
+
 	// Store the calculated checksum in the object metadata
 	if hashRdr != nil {
-		checksum := s3response.Checksum{
-			Algorithms: []types.ChecksumAlgorithm{po.ChecksumAlgorithm},
-		}
+		// The checksum type is always FULL_OBJECT for PutObject
+		checksum.Type = types.ChecksumTypeFullObject
+
 		sum := hashRdr.Sum()
 		switch hashRdr.Type() {
 		case utils.HashTypeCRC32:
 			checksum.CRC32 = &sum
-			po.ChecksumCRC32 = &sum
+			checksum.Algorithm = types.ChecksumAlgorithmCrc32
 		case utils.HashTypeCRC32C:
 			checksum.CRC32C = &sum
-			po.ChecksumCRC32C = &sum
+			checksum.Algorithm = types.ChecksumAlgorithmCrc32c
 		case utils.HashTypeSha1:
 			checksum.SHA1 = &sum
-			po.ChecksumSHA1 = &sum
+			checksum.Algorithm = types.ChecksumAlgorithmSha1
 		case utils.HashTypeSha256:
 			checksum.SHA256 = &sum
-			po.ChecksumSHA256 = &sum
+			checksum.Algorithm = types.ChecksumAlgorithmSha256
+		case utils.HashTypeCRC64NVME:
+			checksum.CRC64NVME = &sum
+			checksum.Algorithm = types.ChecksumAlgorithmCrc64nvme
 		}
 
 		err := p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
@@ -2934,12 +2954,14 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 	}
 
 	return s3response.PutObjectOutput{
-		ETag:           etag,
-		VersionID:      versionID,
-		ChecksumCRC32:  po.ChecksumCRC32,
-		ChecksumCRC32C: po.ChecksumCRC32C,
-		ChecksumSHA1:   po.ChecksumSHA1,
-		ChecksumSHA256: po.ChecksumSHA256,
+		ETag:              etag,
+		VersionID:         versionID,
+		ChecksumCRC32:     checksum.CRC32,
+		ChecksumCRC32C:    checksum.CRC32C,
+		ChecksumSHA1:      checksum.SHA1,
+		ChecksumSHA256:    checksum.SHA256,
+		ChecksumCRC64NVME: checksum.CRC64NVME,
+		ChecksumType:      checksum.Type,
 	}, nil
 }
 
@@ -3476,10 +3498,15 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	var checksums s3response.Checksum
-	if input.ChecksumMode == types.ChecksumModeEnabled {
+	var cType types.ChecksumType
+	// Skip the checksums retreival if object isn't requested fully
+	if input.ChecksumMode == types.ChecksumModeEnabled && length-startOffset == objSize {
 		checksums, err = p.retreiveChecksums(f, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
+		}
+		if checksums.Type != "" {
+			cType = checksums.Type
 		}
 	}
 
@@ -3491,22 +3518,24 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:    &acceptRange,
-		ContentLength:   &length,
-		ContentEncoding: &contentEncoding,
-		ContentType:     &contentType,
-		ETag:            &etag,
-		LastModified:    backend.GetTimePtr(fi.ModTime()),
-		Metadata:        userMetaData,
-		TagCount:        tagCount,
-		ContentRange:    &contentRange,
-		StorageClass:    types.StorageClassStandard,
-		VersionId:       &versionId,
-		Body:            body,
-		ChecksumCRC32:   checksums.CRC32,
-		ChecksumCRC32C:  checksums.CRC32C,
-		ChecksumSHA1:    checksums.SHA1,
-		ChecksumSHA256:  checksums.SHA256,
+		AcceptRanges:      &acceptRange,
+		ContentLength:     &length,
+		ContentEncoding:   &contentEncoding,
+		ContentType:       &contentType,
+		ETag:              &etag,
+		LastModified:      backend.GetTimePtr(fi.ModTime()),
+		Metadata:          userMetaData,
+		TagCount:          tagCount,
+		ContentRange:      &contentRange,
+		StorageClass:      types.StorageClassStandard,
+		VersionId:         &versionId,
+		Body:              body,
+		ChecksumCRC32:     checksums.CRC32,
+		ChecksumCRC32C:    checksums.CRC32C,
+		ChecksumSHA1:      checksums.SHA1,
+		ChecksumSHA256:    checksums.SHA256,
+		ChecksumCRC64NVME: checksums.CRC64NVME,
+		ChecksumType:      cType,
 	}, nil
 }
 
@@ -3681,10 +3710,14 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	var checksums s3response.Checksum
+	var cType types.ChecksumType
 	if input.ChecksumMode == types.ChecksumModeEnabled {
 		checksums, err = p.retreiveChecksums(nil, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
+		}
+		if checksums.Type != "" {
+			cType = checksums.Type
 		}
 	}
 
@@ -3704,6 +3737,8 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ChecksumCRC32C:            checksums.CRC32C,
 		ChecksumSHA1:              checksums.SHA1,
 		ChecksumSHA256:            checksums.SHA256,
+		ChecksumCRC64NVME:         checksums.CRC64NVME,
+		ChecksumType:              cType,
 	}, nil
 }
 
@@ -3733,10 +3768,12 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 		VersionId:    data.VersionId,
 		DeleteMarker: data.DeleteMarker,
 		Checksum: &types.Checksum{
-			ChecksumCRC32:  data.ChecksumCRC32,
-			ChecksumCRC32C: data.ChecksumCRC32C,
-			ChecksumSHA1:   data.ChecksumSHA1,
-			ChecksumSHA256: data.ChecksumSHA256,
+			ChecksumCRC32:     data.ChecksumCRC32,
+			ChecksumCRC32C:    data.ChecksumCRC32C,
+			ChecksumSHA1:      data.ChecksumSHA1,
+			ChecksumSHA256:    data.ChecksumSHA256,
+			ChecksumCRC64NVME: data.ChecksumCRC64NVME,
+			ChecksumType:      data.ChecksumType,
 		},
 	}, nil
 }
@@ -3838,6 +3875,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	var crc32c *string
 	var sha1 *string
 	var sha256 *string
+	var crc64nvme *string
 
 	dstObjdPath := filepath.Join(dstBucket, dstObject)
 	if dstObjdPath == objPath {
@@ -3866,14 +3904,9 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		}
 
 		if input.ChecksumAlgorithm != "" {
-			var algo types.ChecksumAlgorithm
-			if len(checksums.Algorithms) != 0 {
-				algo = checksums.Algorithms[0]
-			}
-
 			// If a different checksum algorith is specified
 			// first caclculate and store the checksum
-			if algo != input.ChecksumAlgorithm {
+			if checksums.Algorithm != input.ChecksumAlgorithm {
 				f, err := os.Open(dstObjdPath)
 				if err != nil {
 					return nil, fmt.Errorf("open obj file: %w", err)
@@ -3890,9 +3923,8 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 					return nil, fmt.Errorf("read err: %w", err)
 				}
 
-				checksums = s3response.Checksum{
-					Algorithms: []types.ChecksumAlgorithm{input.ChecksumAlgorithm},
-				}
+				checksums = s3response.Checksum{}
+
 				sum := hashReader.Sum()
 				switch hashReader.Type() {
 				case utils.HashTypeCRC32:
@@ -3907,6 +3939,9 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 				case utils.HashTypeSha256:
 					checksums.SHA256 = &sum
 					sha256 = &sum
+				case utils.HashTypeCRC64NVME:
+					checksums.CRC64NVME = &sum
+					crc64nvme = &sum
 				}
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
@@ -3934,11 +3969,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		// If any checksum algorithm is provided, replace, otherwise
 		// use the existing one
 		if input.ChecksumAlgorithm != "" {
-			checksums.Algorithms = []types.ChecksumAlgorithm{input.ChecksumAlgorithm}
-		}
-		var chAlgorithm types.ChecksumAlgorithm
-		if len(checksums.Algorithms) != 0 {
-			chAlgorithm = checksums.Algorithms[0]
+			checksums.Algorithm = input.ChecksumAlgorithm
 		}
 
 		res, err := p.PutObject(ctx,
@@ -3948,7 +3979,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 				Body:              f,
 				ContentLength:     &contentLength,
 				Metadata:          input.Metadata,
-				ChecksumAlgorithm: chAlgorithm,
+				ChecksumAlgorithm: checksums.Algorithm,
 			})
 		if err != nil {
 			return nil, err
@@ -3959,6 +3990,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		crc32c = res.ChecksumCRC32C
 		sha1 = res.ChecksumSHA1
 		sha256 = res.ChecksumSHA256
+		crc64nvme = res.ChecksumCRC64NVME
 	}
 
 	fi, err = os.Stat(dstObjdPath)
@@ -3968,12 +4000,13 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 
 	return &s3.CopyObjectOutput{
 		CopyObjectResult: &types.CopyObjectResult{
-			ETag:           &etag,
-			LastModified:   backend.GetTimePtr(fi.ModTime()),
-			ChecksumCRC32:  crc32,
-			ChecksumCRC32C: crc32c,
-			ChecksumSHA1:   sha1,
-			ChecksumSHA256: sha256,
+			ETag:              &etag,
+			LastModified:      backend.GetTimePtr(fi.ModTime()),
+			ChecksumCRC32:     crc32,
+			ChecksumCRC32C:    crc32c,
+			ChecksumSHA1:      sha1,
+			ChecksumSHA256:    sha256,
+			ChecksumCRC64NVME: crc64nvme,
 		},
 		VersionId:           version,
 		CopySourceVersionId: &srcVersionId,
@@ -4106,7 +4139,8 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 			LastModified:      &mtime,
 			Size:              &size,
 			StorageClass:      types.ObjectStorageClassStandard,
-			ChecksumAlgorithm: checksums.Algorithms,
+			ChecksumAlgorithm: []types.ChecksumAlgorithm{checksums.Algorithm},
+			ChecksumType:      checksums.Type,
 		}, nil
 	}
 }

@@ -29,24 +29,27 @@ const (
 )
 
 type PutObjectOutput struct {
-	ETag           string
-	VersionID      string
-	ChecksumCRC32  *string
-	ChecksumCRC32C *string
-	ChecksumSHA1   *string
-	ChecksumSHA256 *string
+	ETag              string
+	VersionID         string
+	ChecksumCRC32     *string
+	ChecksumCRC32C    *string
+	ChecksumSHA1      *string
+	ChecksumSHA256    *string
+	ChecksumCRC64NVME *string
+	ChecksumType      types.ChecksumType
 }
 
 // Part describes part metadata.
 type Part struct {
-	PartNumber     int
-	LastModified   time.Time
-	ETag           string
-	Size           int64
-	ChecksumCRC32  *string
-	ChecksumCRC32C *string
-	ChecksumSHA1   *string
-	ChecksumSHA256 *string
+	PartNumber        int
+	LastModified      time.Time
+	ETag              string
+	Size              int64
+	ChecksumCRC32     *string
+	ChecksumCRC32C    *string
+	ChecksumSHA1      *string
+	ChecksumSHA256    *string
+	ChecksumCRC64NVME *string
 }
 
 func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -71,6 +74,7 @@ type ListPartsResult struct {
 	Key               string
 	UploadID          string `xml:"UploadId"`
 	ChecksumAlgorithm types.ChecksumAlgorithm
+	ChecksumType      types.ChecksumType
 
 	Initiator Initiator
 	Owner     Owner
@@ -180,6 +184,7 @@ type ListObjectsV2Result struct {
 
 type Object struct {
 	ChecksumAlgorithm []types.ChecksumAlgorithm
+	ChecksumType      types.ChecksumType
 	ETag              *string
 	Key               *string
 	LastModified      *time.Time
@@ -215,6 +220,7 @@ type Upload struct {
 	StorageClass      types.StorageClass
 	Initiated         time.Time
 	ChecksumAlgorithm types.ChecksumAlgorithm
+	ChecksumType      types.ChecksumType
 }
 
 func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
@@ -345,13 +351,14 @@ type CopyObjectResult struct {
 }
 
 type CopyPartResult struct {
-	XMLName        xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyPartResult" json:"-"`
-	LastModified   time.Time
-	ETag           *string
-	ChecksumCRC32  *string
-	ChecksumCRC32C *string
-	ChecksumSHA1   *string
-	ChecksumSHA256 *string
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyPartResult" json:"-"`
+	LastModified      time.Time
+	ETag              *string
+	ChecksumCRC32     *string
+	ChecksumCRC32C    *string
+	ChecksumSHA1      *string
+	ChecksumSHA256    *string
+	ChecksumCRC64NVME *string
 
 	// not included in the body
 	CopySourceVersionId string `xml:"-"`
@@ -494,10 +501,12 @@ type ListBucketsResult struct {
 }
 
 type Checksum struct {
-	Algorithms []types.ChecksumAlgorithm
+	Algorithm types.ChecksumAlgorithm
+	Type      types.ChecksumType
 
-	CRC32  *string
-	CRC32C *string
-	SHA1   *string
-	SHA256 *string
+	CRC32     *string
+	CRC32C    *string
+	SHA1      *string
+	SHA256    *string
+	CRC64NVME *string
 }

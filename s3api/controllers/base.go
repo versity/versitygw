@@ -607,6 +607,18 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Value: *res.ChecksumSHA256,
 		})
 	}
+	if res.ChecksumCRC64NVME != nil {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-crc64nvme",
+			Value: *res.ChecksumCRC64NVME,
+		})
+	}
+	if res.ChecksumType != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-type",
+			Value: string(res.ChecksumType),
+		})
+	}
 
 	// Set x-amz-meta-... headers
 	utils.SetMetaHeaders(ctx, res.Metadata)
@@ -2079,6 +2091,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				ChecksumCRC32C:    backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32c]),
 				ChecksumSHA1:      backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha1]),
 				ChecksumSHA256:    backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha256]),
+				ChecksumCRC64NVME: backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc64nvme]),
 			})
 		if err == nil {
 			headers := []utils.CustomHeader{}
@@ -2110,6 +2123,12 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				headers = append(headers, utils.CustomHeader{
 					Key:   "x-amz-checksum-sha256",
 					Value: *res.ChecksumSHA256,
+				})
+			}
+			if res.ChecksumCRC64NVME != nil {
+				headers = append(headers, utils.CustomHeader{
+					Key:   "x-amz-checksum-crc64nvme",
+					Value: *res.ChecksumCRC64NVME,
 				})
 			}
 
@@ -2511,6 +2530,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			ChecksumCRC32C:            backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32c]),
 			ChecksumSHA1:              backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha1]),
 			ChecksumSHA256:            backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha256]),
+			ChecksumCRC64NVME:         backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc64nvme]),
 		})
 	if err != nil {
 		return SendResponse(ctx, err,
@@ -2560,6 +2580,18 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "x-amz-checksum-sha256",
 			Value: getstring(res.ChecksumSHA256),
+		})
+	}
+	if getstring(res.ChecksumCRC64NVME) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-crc64nvme",
+			Value: getstring(res.ChecksumCRC64NVME),
+		})
+	}
+	if res.ChecksumType != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-type",
+			Value: string(res.ChecksumType),
 		})
 	}
 
@@ -3206,6 +3238,18 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: *res.ChecksumSHA256,
 		})
 	}
+	if res.ChecksumCRC64NVME != nil {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-checksum-crc64nvme",
+			Value: *res.ChecksumCRC64NVME,
+		})
+	}
+	if res.ChecksumType != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-checksum-type",
+			Value: string(res.ChecksumType),
+		})
+	}
 
 	contentType := getstring(res.ContentType)
 	if contentType == "" {
@@ -3430,6 +3474,21 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		checksumType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
+		err = utils.IsChecksumTypeValid(checksumType)
+		if err != nil {
+			if c.debug {
+				log.Printf("invalid checksum type: %v", err)
+			}
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionCompleteMultipartUpload,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
 		res, err := c.be.CompleteMultipartUpload(ctx.Context(),
 			&s3.CompleteMultipartUploadInput{
 				Bucket:   &bucket,
@@ -3438,10 +3497,12 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				MultipartUpload: &types.CompletedMultipartUpload{
 					Parts: data.Parts,
 				},
-				ChecksumCRC32:  backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32]),
-				ChecksumCRC32C: backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32c]),
-				ChecksumSHA1:   backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha1]),
-				ChecksumSHA256: backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha256]),
+				ChecksumCRC32:     backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32]),
+				ChecksumCRC32C:    backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32c]),
+				ChecksumSHA1:      backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha1]),
+				ChecksumSHA256:    backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha256]),
+				ChecksumCRC64NVME: backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc64nvme]),
+				ChecksumType:      checksumType,
 			})
 		if err == nil {
 			if getstring(res.VersionId) != "" {
@@ -3507,11 +3568,10 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
-	err = utils.IsChecksumAlgorithmValid(checksumAlgorithm)
+	checksumAlgorithm, checksumType, err := utils.ParseCreateMpChecksumHeaders(ctx)
 	if err != nil {
 		if c.debug {
-			log.Printf("invalid checksum algorithm: %v", checksumAlgorithm)
+			log.Printf("err parsing checksum headers: %v", err)
 		}
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{
@@ -3534,6 +3594,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,
 			Metadata:                  metadata,
 			ChecksumAlgorithm:         checksumAlgorithm,
+			ChecksumType:              checksumType,
 		})
 	if err == nil {
 		if checksumAlgorithm != "" {

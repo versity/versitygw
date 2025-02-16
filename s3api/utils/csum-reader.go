@@ -21,9 +21,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"hash"
 	"hash/crc32"
+	"hash/crc64"
 	"io"
+	"math/bits"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -45,6 +48,8 @@ const (
 	HashTypeCRC32 HashType = "crc32"
 	// HashTypeCRC32C generates CRC32C Base64-Encoded checksum for the data stream
 	HashTypeCRC32C HashType = "crc32c"
+	// HashTypeCRC64NVME generates CRC64NVME Base64-Encoded checksum for the data stream
+	HashTypeCRC64NVME HashType = "crc64nvme"
 	// HashTypeNone is a no-op checksum for the data stream
 	HashTypeNone HashType = "none"
 )
@@ -83,6 +88,8 @@ func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, e
 		hash = crc32.NewIEEE()
 	case HashTypeCRC32C:
 		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case HashTypeCRC64NVME:
+		hash = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
 	case HashTypeNone:
 		hash = noop{}
 	default:
@@ -136,6 +143,11 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 			if sum != hr.sum {
 				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmSha256)
 			}
+		case HashTypeCRC64NVME:
+			sum := hr.Sum()
+			if sum != hr.sum {
+				return n, s3err.GetChecksumBadDigestErr(types.ChecksumAlgorithmCrc64nvme)
+			}
 		default:
 			return n, errInvalidHashType
 		}
@@ -162,6 +174,8 @@ func (hr *HashReader) Sum() string {
 		return Base64SumString(hr.hash.Sum(nil))
 	case HashTypeSha256:
 		return Base64SumString(hr.hash.Sum(nil))
+	case HashTypeCRC64NVME:
+		return Base64SumString(hr.hash.Sum(nil))
 	default:
 		return ""
 	}
@@ -183,3 +197,59 @@ func (n noop) Sum(b []byte) []byte         { return []byte{} }
 func (n noop) Reset()                      {}
 func (n noop) Size() int                   { return 0 }
 func (n noop) BlockSize() int              { return 1 }
+
+// NewCompositeChecksumReader initializes a composite checksum
+// processor, which decodes and validates the provided
+// checksums and returns the final checksum based on
+// the previous processings.
+//
+// The supported checksum types are:
+// - CRC32
+// - CRC32C
+// - SHA1
+// - SHA256
+func NewCompositeChecksumReader(ht HashType) (*CompositeChecksumReader, error) {
+	var hasher hash.Hash
+	switch ht {
+	case HashTypeSha256:
+		hasher = sha256.New()
+	case HashTypeSha1:
+		hasher = sha1.New()
+	case HashTypeCRC32:
+		hasher = crc32.NewIEEE()
+	case HashTypeCRC32C:
+		hasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case HashTypeNone:
+		hasher = noop{}
+	default:
+		return nil, errInvalidHashType
+	}
+
+	return &CompositeChecksumReader{
+		hasher: hasher,
+	}, nil
+}
+
+type CompositeChecksumReader struct {
+	hasher hash.Hash
+}
+
+// Decodes and writes the checksum in the hasher
+func (ccr *CompositeChecksumReader) Process(checksum string) error {
+	data, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil {
+		return fmt.Errorf("base64 decode: %w", err)
+	}
+
+	_, err = ccr.hasher.Write(data)
+	if err != nil {
+		return fmt.Errorf("hash write: %w", err)
+	}
+
+	return nil
+}
+
+// Returns the base64 encoded composite checksum
+func (ccr *CompositeChecksumReader) Sum() string {
+	return Base64SumString(ccr.hasher.Sum(nil))
+}
