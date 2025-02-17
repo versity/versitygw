@@ -6872,19 +6872,26 @@ func UploadPart_non_existing_bucket(s *S3Conf) error {
 
 func UploadPart_invalid_part_number(s *S3Conf) error {
 	testName := "UploadPart_invalid_part_number"
-	partNumber := int32(-10)
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:     &bucket,
-			Key:        getPtr("my-obj"),
-			UploadId:   getPtr("uploadId"),
-			PartNumber: &partNumber,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPart)); err != nil {
+		key := "my-obj"
+		mp, err := createMp(s3client, bucket, key)
+		if err != nil {
 			return err
 		}
+		for _, el := range []int32{0, -1, 10001, 2300000} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:     &bucket,
+				Key:        &key,
+				UploadId:   mp.UploadId,
+				PartNumber: &el,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartNumber)); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 }
