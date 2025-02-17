@@ -16,6 +16,7 @@ package utils
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -296,7 +297,9 @@ func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, outp
 	if _, ok := attrs[s3response.ObjectAttributesStorageClass]; !ok {
 		output.StorageClass = ""
 	}
-	fmt.Printf("%+v\n", output)
+	if _, ok := attrs[s3response.ObjectAttributesChecksum]; !ok {
+		output.Checksum = nil
+	}
 
 	return output
 }
@@ -455,4 +458,171 @@ func shouldEscape(c byte) bool {
 	}
 
 	return true
+}
+
+func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.ChecksumAlgorithm]string, error) {
+	sdkAlgorithm := types.ChecksumAlgorithm(ctx.Get("X-Amz-Sdk-Checksum-Algorithm"))
+
+	err := IsChecksumAlgorithmValid(sdkAlgorithm)
+	if err != nil {
+		return "", nil, err
+	}
+
+	checksums := map[types.ChecksumAlgorithm]string{
+		types.ChecksumAlgorithmCrc32:     ctx.Get("X-Amz-Checksum-Crc32"),
+		types.ChecksumAlgorithmCrc32c:    ctx.Get("X-Amz-Checksum-Crc32c"),
+		types.ChecksumAlgorithmSha1:      ctx.Get("X-Amz-Checksum-Sha1"),
+		types.ChecksumAlgorithmSha256:    ctx.Get("X-Amz-Checksum-Sha256"),
+		types.ChecksumAlgorithmCrc64nvme: ctx.Get("X-Amz-Checksum-Crc64nvme"),
+	}
+
+	headerCtr := 0
+
+	for al, val := range checksums {
+		if val != "" && !IsValidChecksum(val, al) {
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+		}
+		// If any other checksum value is provided,
+		// rather than x-amz-sdk-checksum-algorithm
+		if sdkAlgorithm != "" && sdkAlgorithm != al && val != "" {
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+		}
+		if val != "" {
+			sdkAlgorithm = al
+			headerCtr++
+		}
+
+		if headerCtr > 1 {
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+		}
+	}
+
+	return sdkAlgorithm, checksums, nil
+}
+
+var checksumLengths = map[types.ChecksumAlgorithm]int{
+	types.ChecksumAlgorithmCrc32:     4,
+	types.ChecksumAlgorithmCrc32c:    4,
+	types.ChecksumAlgorithmCrc64nvme: 8,
+	types.ChecksumAlgorithmSha1:      20,
+	types.ChecksumAlgorithmSha256:    32,
+}
+
+func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm) bool {
+	decoded, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil {
+		return false
+	}
+
+	expectedLength, exists := checksumLengths[algorithm]
+	if !exists {
+		return false
+	}
+
+	return len(decoded) == expectedLength
+}
+
+func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
+	if alg != "" &&
+		alg != types.ChecksumAlgorithmCrc32 &&
+		alg != types.ChecksumAlgorithmCrc32c &&
+		alg != types.ChecksumAlgorithmSha1 &&
+		alg != types.ChecksumAlgorithmSha256 &&
+		alg != types.ChecksumAlgorithmCrc64nvme {
+		return s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm)
+	}
+
+	return nil
+}
+
+// Validates the provided checksum type
+func IsChecksumTypeValid(t types.ChecksumType) error {
+	if t != "" &&
+		t != types.ChecksumTypeComposite &&
+		t != types.ChecksumTypeFullObject {
+		return s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-type")
+	}
+	return nil
+}
+
+type checksumTypeSchema map[types.ChecksumType]struct{}
+type checksumSchema map[types.ChecksumAlgorithm]checksumTypeSchema
+
+// A table defining the checksum algorithm/type support
+var checksumMap checksumSchema = checksumSchema{
+	types.ChecksumAlgorithmCrc32: checksumTypeSchema{
+		types.ChecksumTypeComposite:  struct{}{},
+		types.ChecksumTypeFullObject: struct{}{},
+		"":                           struct{}{},
+	},
+	types.ChecksumAlgorithmCrc32c: checksumTypeSchema{
+		types.ChecksumTypeComposite:  struct{}{},
+		types.ChecksumTypeFullObject: struct{}{},
+		"":                           struct{}{},
+	},
+	types.ChecksumAlgorithmSha1: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmSha256: checksumTypeSchema{
+		types.ChecksumTypeComposite: struct{}{},
+		"":                          struct{}{},
+	},
+	types.ChecksumAlgorithmCrc64nvme: checksumTypeSchema{
+		types.ChecksumTypeFullObject: struct{}{},
+		"":                           struct{}{},
+	},
+	// Both could be empty
+	"": checksumTypeSchema{
+		"": struct{}{},
+	},
+}
+
+// Checks if checksum type and algorithm are supported together
+func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType) error {
+	typeSchema := checksumMap[algo]
+	_, ok := typeSchema[t]
+	if !ok {
+		return s3err.GetChecksumSchemaMismatchErr(algo, t)
+	}
+
+	return nil
+}
+
+// Parses and validates the x-amz-checksum-algorithm and x-amz-checksum-type headers
+func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, types.ChecksumType, error) {
+	algo := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
+	if err := IsChecksumAlgorithmValid(algo); err != nil {
+		return "", "", err
+	}
+
+	chType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
+	if err := IsChecksumTypeValid(chType); err != nil {
+		return "", "", err
+	}
+
+	// Verify if checksum algorithm is provided, if
+	// checksum type is specified
+	if chType != "" && algo == "" {
+		return algo, chType, s3err.GetAPIError(s3err.ErrChecksumTypeWithAlgo)
+	}
+
+	// Verify if the checksum type is supported for
+	// the provided checksum algorithm
+	if err := checkChecksumTypeAndAlgo(algo, chType); err != nil {
+		return algo, chType, err
+	}
+
+	// x-amz-checksum-type defaults to COMPOSITE
+	// if x-amz-checksum-algorithm is set except
+	// for the CRC64NVME algorithm: it defaults to FULL_OBJECT
+	if algo != "" && chType == "" {
+		if algo == types.ChecksumAlgorithmCrc64nvme {
+			chType = types.ChecksumTypeFullObject
+		} else {
+			chType = types.ChecksumTypeComposite
+		}
+	}
+
+	return algo, chType, nil
 }

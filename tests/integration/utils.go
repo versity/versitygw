@@ -18,11 +18,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"math/big"
 	rnd "math/rand"
@@ -475,11 +479,31 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 	}, nil
 }
 
-func createMp(s3client *s3.Client, bucket, key string) (*s3.CreateMultipartUploadOutput, error) {
+type mpCfg struct {
+	checksumAlgorithm types.ChecksumAlgorithm
+	checksumType      types.ChecksumType
+}
+
+type mpOpt func(*mpCfg)
+
+func withChecksum(algo types.ChecksumAlgorithm) mpOpt {
+	return func(mc *mpCfg) { mc.checksumAlgorithm = algo }
+}
+func withChecksumType(t types.ChecksumType) mpOpt {
+	return func(mc *mpCfg) { mc.checksumType = t }
+}
+
+func createMp(s3client *s3.Client, bucket, key string, opts ...mpOpt) (*s3.CreateMultipartUploadOutput, error) {
+	cfg := new(mpCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-		Bucket: &bucket,
-		Key:    &key,
+		Bucket:            &bucket,
+		Key:               &key,
+		ChecksumAlgorithm: cfg.checksumAlgorithm,
+		ChecksumType:      cfg.checksumType,
 	})
 	cancel()
 	return out, err
@@ -513,6 +537,12 @@ func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
 		if item.StorageClass != list2[i].StorageClass {
 			return false
 		}
+		if item.ChecksumAlgorithm != list2[i].ChecksumAlgorithm {
+			return false
+		}
+		if item.ChecksumType != list2[i].ChecksumType {
+			return false
+		}
 	}
 
 	return true
@@ -520,15 +550,52 @@ func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
 
 func compareParts(parts1, parts2 []types.Part) bool {
 	if len(parts1) != len(parts2) {
+		fmt.Printf("list length are not equal: %v != %v\n", len(parts1), len(parts2))
 		return false
 	}
 
 	for i, prt := range parts1 {
 		if *prt.PartNumber != *parts2[i].PartNumber {
+			fmt.Printf("partNumbers are not equal, %v != %v\n", *prt.PartNumber, *parts2[i].PartNumber)
 			return false
 		}
 		if *prt.ETag != *parts2[i].ETag {
+			fmt.Printf("etags are not equal, %v != %v\n", *prt.ETag, *parts2[i].ETag)
 			return false
+		}
+		if *prt.Size != *parts2[i].Size {
+			fmt.Printf("sizes are not equal, %v != %v\n", *prt.Size, *parts2[i].Size)
+			return false
+		}
+		if prt.ChecksumCRC32 != nil {
+			if *prt.ChecksumCRC32 != getString(parts2[i].ChecksumCRC32) {
+				fmt.Printf("crc32 checksums are not equal, %v != %v\n", *prt.ChecksumCRC32, getString(parts2[i].ChecksumCRC32))
+				return false
+			}
+		}
+		if prt.ChecksumCRC32C != nil {
+			if *prt.ChecksumCRC32C != getString(parts2[i].ChecksumCRC32C) {
+				fmt.Printf("crc32c checksums are not equal, %v != %v\n", *prt.ChecksumCRC32C, getString(parts2[i].ChecksumCRC32C))
+				return false
+			}
+		}
+		if prt.ChecksumSHA1 != nil {
+			if *prt.ChecksumSHA1 != getString(parts2[i].ChecksumSHA1) {
+				fmt.Printf("sha1 checksums are not equal, %v != %v\n", *prt.ChecksumSHA1, getString(parts2[i].ChecksumSHA1))
+				return false
+			}
+		}
+		if prt.ChecksumSHA256 != nil {
+			if *prt.ChecksumSHA256 != getString(parts2[i].ChecksumSHA256) {
+				fmt.Printf("sha256 checksums are not equal, %v != %v\n", *prt.ChecksumSHA256, getString(parts2[i].ChecksumSHA256))
+				return false
+			}
+		}
+		if prt.ChecksumCRC64NVME != nil {
+			if *prt.ChecksumCRC64NVME != getString(parts2[i].ChecksumCRC64NVME) {
+				fmt.Printf("crc64nvme checksums are not equal, %v != %v\n", *prt.ChecksumCRC64NVME, getString(parts2[i].ChecksumCRC64NVME))
+				return false
+			}
 		}
 	}
 	return true
@@ -647,6 +714,20 @@ func compareObjects(list1, list2 []types.Object) bool {
 				*obj.Key, *list2[i].Key, obj.StorageClass, list2[i].StorageClass)
 			return false
 		}
+		if len(obj.ChecksumAlgorithm) != 0 {
+			if obj.ChecksumAlgorithm[0] != list2[i].ChecksumAlgorithm[0] {
+				fmt.Printf("checksum algorithms are not equal: (%q %q) %v != %v\n",
+					*obj.Key, *list2[i].Key, obj.ChecksumAlgorithm[0], list2[i].ChecksumAlgorithm[0])
+				return false
+			}
+		}
+		if obj.ChecksumType != "" {
+			if obj.ChecksumType[0] != list2[i].ChecksumType[0] {
+				fmt.Printf("checksum types are not equal: (%q %q) %v != %v\n",
+					*obj.Key, *list2[i].Key, obj.ChecksumType[0], list2[i].ChecksumType[0])
+				return false
+			}
+		}
 	}
 
 	return true
@@ -711,10 +792,28 @@ func compareDelObjects(list1, list2 []types.DeletedObject) bool {
 	return true
 }
 
-func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string) (parts []types.Part, csum string, err error) {
+func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId string, opts ...mpOpt) (parts []types.Part, csum string, err error) {
 	partSize := size / partCount
 
-	hash := sha256.New()
+	var hash hash.Hash
+
+	cfg := new(mpCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	switch cfg.checksumAlgorithm {
+	case types.ChecksumAlgorithmCrc32:
+		hash = crc32.NewIEEE()
+	case types.ChecksumAlgorithmCrc32c:
+		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	case types.ChecksumAlgorithmSha1:
+		hash = sha1.New()
+	case types.ChecksumAlgorithmSha256:
+		hash = sha256.New()
+	default:
+		hash = sha256.New()
+	}
 
 	for partNumber := int64(1); partNumber <= partCount; partNumber++ {
 		partStart := (partNumber - 1) * partSize
@@ -730,26 +829,46 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		pn := int32(partNumber)
 		out, err := client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:     &bucket,
-			Key:        &key,
-			UploadId:   &uploadId,
-			Body:       bytes.NewReader(partBuffer),
-			PartNumber: &pn,
+			Bucket:            &bucket,
+			Key:               &key,
+			UploadId:          &uploadId,
+			Body:              bytes.NewReader(partBuffer),
+			PartNumber:        &pn,
+			ChecksumAlgorithm: cfg.checksumAlgorithm,
 		})
 		cancel()
 		if err != nil {
 			return parts, "", err
 		}
 
-		parts = append(parts, types.Part{
+		part := types.Part{
 			ETag:       out.ETag,
 			PartNumber: &pn,
 			Size:       &partSize,
-		})
-	}
+		}
 
+		switch cfg.checksumAlgorithm {
+		case types.ChecksumAlgorithmCrc32:
+			part.ChecksumCRC32 = out.ChecksumCRC32
+		case types.ChecksumAlgorithmCrc32c:
+			part.ChecksumCRC32C = out.ChecksumCRC32C
+		case types.ChecksumAlgorithmSha1:
+			part.ChecksumSHA1 = out.ChecksumSHA1
+		case types.ChecksumAlgorithmSha256:
+			part.ChecksumSHA256 = out.ChecksumSHA256
+		case types.ChecksumAlgorithmCrc64nvme:
+			part.ChecksumCRC64NVME = out.ChecksumCRC64NVME
+		}
+
+		parts = append(parts, part)
+	}
 	sum := hash.Sum(nil)
-	csum = hex.EncodeToString(sum[:])
+
+	if cfg.checksumAlgorithm == "" {
+		csum = hex.EncodeToString(sum[:])
+	} else {
+		csum = base64.StdEncoding.EncodeToString(sum[:])
+	}
 
 	return parts, csum, err
 }
