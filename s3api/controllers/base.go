@@ -2013,7 +2013,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			if c.debug {
 				log.Printf("invalid part number: %d", partNumber)
 			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPart),
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPartNumber),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
