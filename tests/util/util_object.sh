@@ -302,7 +302,7 @@ put_object_rest_sha256_checksum() {
     log 2 "'put_object_rest_sha256_checksum' requires data file, bucket name, key"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM="true" ./tests/rest_scripts/put_object.sh 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="sha256" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi

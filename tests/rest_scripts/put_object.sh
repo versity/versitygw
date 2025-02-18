@@ -25,15 +25,26 @@ bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
 key="$OBJECT_KEY"
 # shellcheck disable=SC2153,SC2154
-checksum="$CHECKSUM"
+checksum_type="$CHECKSUM_TYPE"
+
+# use this parameter to check incorrect checksums
+# shellcheck disable=SC2153,SC2154
+checksum_hash="$CHECKSUM"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 payload_hash="$(sha256sum "$data_file" | awk '{print $1}')"
 
 cr_data=("PUT" "/$bucket_name/$key" "" "host:$host")
-if [ "$checksum" == "true" ]; then
-  checksum_hash="$(echo -n "$payload_hash" | xxd -r -p | base64)"
+if [ "$checksum_type" == "sha256" ]; then
+  if [ -z "$checksum_hash" ]; then
+    checksum_hash="$(sha256sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
+  fi
   cr_data+=("x-amz-checksum-sha256:$checksum_hash")
+elif [ "$checksum_type" == "crc32" ]; then
+  if [ -z "$checksum_hash" ]; then
+    checksum_hash="$(gzip "$data_file" | tail -c8 | head -c4 | od -t x4 -N 4 -An)"
+  fi
+  cr_data+=("x-amz-checksum-crc32:$checksum_hash")
 fi
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
