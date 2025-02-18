@@ -1197,26 +1197,46 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 	}
 
+	uncommittedBlocks := map[int32]*blockblob.Block{}
+	for _, el := range blockList.UncommittedBlocks {
+		ptNumber, err := decodeBlockId(backend.GetStringFromPtr(el.Name))
+		if err != nil {
+			return nil, fmt.Errorf("invalid block name: %w", err)
+		}
+
+		uncommittedBlocks[int32(ptNumber)] = el
+	}
+
 	slices.SortFunc(blockList.UncommittedBlocks, func(a *blockblob.Block, b *blockblob.Block) int {
 		ptNumber, _ := decodeBlockId(*a.Name)
 		nextPtNumber, _ := decodeBlockId(*b.Name)
 		return ptNumber - nextPtNumber
 	})
 
+	// The initialie values is the lower limit of partNumber: 0
+	var partNumber int32
 	last := len(blockList.UncommittedBlocks) - 1
-	for i, block := range blockList.UncommittedBlocks {
-		ptNumber, err := decodeBlockId(*block.Name)
-		if err != nil {
+	for i, part := range input.MultipartUpload.Parts {
+		if part.PartNumber == nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		}
+		if *part.PartNumber < 1 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
+		}
+		if *part.PartNumber <= partNumber {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+		}
+		partNumber = *part.PartNumber
+
+		block, ok := uncommittedBlocks[*part.PartNumber]
+		if !ok {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		if *input.MultipartUpload.Parts[i].ETag != *block.Name {
+		if *part.ETag != *block.Name {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
-		if *input.MultipartUpload.Parts[i].PartNumber != int32(ptNumber) {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
-		}
-		// all parts except the last need to be greater, thena
+		// all parts except the last need to be greater, than
 		// the minimum allowed size (5 Mib)
 		if i < last && *block.Size < backend.MinPartSize {
 			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)

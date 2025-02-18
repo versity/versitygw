@@ -78,6 +78,8 @@ const (
 	ErrInvalidPart
 	ErrEmptyParts
 	ErrInvalidPartNumber
+	ErrInvalidPartOrder
+	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
 	ErrInvalidCopyDest
 	ErrInvalidCopySource
@@ -270,6 +272,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPartNumber: {
 		Code:           "InvalidArgument",
 		Description:    "Part number must be an integer between 1 and 10000, inclusive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidPartOrder: {
+		Code:           "InvalidPartOrder",
+		Description:    "The list of parts was not in ascending order. Parts must be ordered by part number.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCompleteMpPartNumber: {
+		Code:           "InvalidArgument",
+		Description:    "PartNumber must be >= 1",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidCopyDest: {
