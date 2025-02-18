@@ -96,7 +96,7 @@ check_no_object_lock_config_rest() {
   fi
   log 5 "object lock config: $(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
   # shellcheck disable=SC2154
-  if [[ "$reply" != "404" ]]; then
+  if [[ "$result" != "404" ]]; then
     log 2 "incorrect response code: $reply"
     return 1
   fi
