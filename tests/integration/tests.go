@@ -8547,8 +8547,8 @@ func CompletedMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
-func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
-	testName := "CompleteMultipartUpload_invalid_part_number"
+func CompleteMultipartUpload_incorrect_part_number(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_incorrect_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		out, err := createMp(s3client, bucket, obj)
@@ -9465,6 +9465,90 @@ func CompleteMultipartUpload_empty_parts(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrEmptyParts)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_incorrect_parts_order"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		compParts[0], compParts[1] = compParts[1], compParts[0]
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidPartOrder)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_invalid_part_number"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *out.UploadId)
+		if err != nil {
+			return err
+		}
+
+		invPartNumber := int32(-4)
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: &invPartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: out.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)); err != nil {
 			return err
 		}
 
