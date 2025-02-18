@@ -22,16 +22,52 @@ source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1070"
-  fi
   test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object_rest_sha256_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha256"
   assert_success
 
-  run check_checksum_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run check_checksum_rest_sha256 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
+
+@test "REST - PutObject rejects invalid sha256 checksum" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_sha256_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObject rejects incorrect sha256 checksum" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_sha256_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - crc32 checksum - success" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32"
+  assert_success
+}
+
+@test "REST - crc32 checksum - correct" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32"
+  assert_success
+
+  run check_checksum_rest_crc32 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }

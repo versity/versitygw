@@ -328,3 +328,31 @@ list_objects_v1_check_nextmarker_empty() {
   fi
   return 0
 }
+
+get_delete_marker_and_verify_405() {
+  if [ $# -ne 2 ]; then
+    log 2 "'get_delete_marker_and_verify_405' requires bucket name, file name"
+    return 1
+  fi
+  if ! list_object_versions_rest "$1"; then
+    log 2 "error listing REST object versions"
+    return 1
+  fi
+  log 5 "versions: $(cat "$TEST_FILE_FOLDER/object_versions.txt")"
+
+  if ! version_id=$(xmllint --xpath "//*[local-name()=\"DeleteMarker\"]/*[local-name()=\"VersionId\"]/text()" "$TEST_FILE_FOLDER/object_versions.txt" 2>&1); then
+    log 2 "error getting XML value: $version_id"
+    return 1
+  fi
+  log 5 "xml val: $version_id"
+
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$2" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" != "405" ]; then
+    log 2 "expected '405', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
