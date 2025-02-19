@@ -1405,7 +1405,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 
 	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
-	checksums, err := p.retreiveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
+	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("get mp checksums: %w", err)
 	}
@@ -1466,7 +1466,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
-		partChecksum, err := p.retreiveChecksums(nil, bucket, partObjPath)
+		partChecksum, err := p.retrieveChecksums(nil, bucket, partObjPath)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get part checksum: %w", err)
 		}
@@ -1992,7 +1992,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 				keyMarkerInd = len(uploads)
 			}
 
-			checksum, err := p.retreiveChecksums(nil, bucket, filepath.Join(metaTmpMultipartDir, obj.Name(), uploadID))
+			checksum, err := p.retrieveChecksums(nil, bucket, filepath.Join(metaTmpMultipartDir, obj.Name(), uploadID))
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return lmu, fmt.Errorf("get mp checksum: %w", err)
 			}
@@ -2122,7 +2122,7 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		return lpr, fmt.Errorf("readdir upload: %w", err)
 	}
 
-	checksum, err := p.retreiveChecksums(nil, tmpdir, uploadID)
+	checksum, err := p.retrieveChecksums(nil, tmpdir, uploadID)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return lpr, fmt.Errorf("get mp checksum: %w", err)
 	}
@@ -2145,7 +2145,7 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 			etag = ""
 		}
 
-		checksum, err := p.retreiveChecksums(nil, bucket, partPath)
+		checksum, err := p.retrieveChecksums(nil, bucket, partPath)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			continue
 		}
@@ -2312,7 +2312,7 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		tr = hashRdr
 	}
 
-	checksums, chErr := p.retreiveChecksums(nil, bucket, mpPath)
+	checksums, chErr := p.retrieveChecksums(nil, bucket, mpPath)
 	if chErr != nil && !errors.Is(chErr, meta.ErrNoSuchKey) {
 		return nil, fmt.Errorf("retreive mp checksum: %w", chErr)
 	}
@@ -2519,12 +2519,12 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	hash := md5.New()
 	tr := io.TeeReader(rdr, hash)
 
-	mpChecksums, err := p.retreiveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
+	mpChecksums, err := p.retrieveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return s3response.CopyPartResult{}, fmt.Errorf("retreive mp checksums: %w", err)
 	}
 
-	checksums, err := p.retreiveChecksums(nil, objPath, "")
+	checksums, err := p.retrieveChecksums(nil, objPath, "")
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return s3response.CopyPartResult{}, fmt.Errorf("retreive object part checksums: %w", err)
 	}
@@ -3508,7 +3508,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	var cType types.ChecksumType
 	// Skip the checksums retreival if object isn't requested fully
 	if input.ChecksumMode == types.ChecksumModeEnabled && length-startOffset == objSize {
-		checksums, err = p.retreiveChecksums(f, bucket, object)
+		checksums, err = p.retrieveChecksums(f, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
 		}
@@ -3719,7 +3719,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	var checksums s3response.Checksum
 	var cType types.ChecksumType
 	if input.ChecksumMode == types.ChecksumModeEnabled {
-		checksums, err = p.retreiveChecksums(nil, bucket, object)
+		checksums, err = p.retrieveChecksums(nil, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
 		}
@@ -3905,7 +3905,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			}
 		}
 
-		checksums, err := p.retreiveChecksums(nil, dstBucket, dstObject)
+		checksums, err := p.retrieveChecksums(nil, dstBucket, dstObject)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get obj checksums: %w", err)
 		}
@@ -3968,7 +3968,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	} else {
 		contentLength := fi.Size()
 
-		checksums, err := p.retreiveChecksums(f, srcBucket, srcObject)
+		checksums, err := p.retrieveChecksums(f, srcBucket, srcObject)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get obj checksum: %w", err)
 		}
@@ -4111,7 +4111,7 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 		}
 
 		// Retreive the object checksum algorithm
-		checksums, err := p.retreiveChecksums(nil, bucket, path)
+		checksums, err := p.retrieveChecksums(nil, bucket, path)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
@@ -4787,7 +4787,7 @@ func (p *Posix) storeChecksums(f *os.File, bucket, object string, chs s3response
 	return p.meta.StoreAttribute(f, bucket, object, checksumsKey, checksums)
 }
 
-func (p *Posix) retreiveChecksums(f *os.File, bucket, object string) (checksums s3response.Checksum, err error) {
+func (p *Posix) retrieveChecksums(f *os.File, bucket, object string) (checksums s3response.Checksum, err error) {
 	checksumsAtr, err := p.meta.RetrieveAttribute(f, bucket, object, checksumsKey)
 	if err != nil {
 		return checksums, err
