@@ -2101,34 +2101,31 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 					Value: *res.ETag,
 				})
 			}
-			if res.ChecksumCRC32 != nil {
+			switch {
+			case res.ChecksumCRC32 != nil:
 				headers = append(headers, utils.CustomHeader{
 					Key:   "x-amz-checksum-crc32",
 					Value: *res.ChecksumCRC32,
 				})
-			}
-			if res.ChecksumCRC32C != nil {
+			case res.ChecksumCRC32C != nil:
 				headers = append(headers, utils.CustomHeader{
 					Key:   "x-amz-checksum-crc32c",
 					Value: *res.ChecksumCRC32C,
 				})
-			}
-			if res.ChecksumSHA1 != nil {
+			case res.ChecksumCRC64NVME != nil:
+				headers = append(headers, utils.CustomHeader{
+					Key:   "x-amz-checksum-crc64nvme",
+					Value: *res.ChecksumCRC64NVME,
+				})
+			case res.ChecksumSHA1 != nil:
 				headers = append(headers, utils.CustomHeader{
 					Key:   "x-amz-checksum-sha1",
 					Value: *res.ChecksumSHA1,
 				})
-			}
-			if res.ChecksumSHA256 != nil {
+			case res.ChecksumSHA256 != nil:
 				headers = append(headers, utils.CustomHeader{
 					Key:   "x-amz-checksum-sha256",
 					Value: *res.ChecksumSHA256,
-				})
-			}
-			if res.ChecksumCRC64NVME != nil {
-				headers = append(headers, utils.CustomHeader{
-					Key:   "x-amz-checksum-crc64nvme",
-					Value: *res.ChecksumCRC64NVME,
 				})
 			}
 
@@ -2558,34 +2555,31 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			Value: res.VersionID,
 		})
 	}
-	if getstring(res.ChecksumCRC32) != "" {
+	switch {
+	case res.ChecksumCRC32 != nil:
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "x-amz-checksum-crc32",
-			Value: getstring(res.ChecksumCRC32),
+			Value: *res.ChecksumCRC32,
 		})
-	}
-	if getstring(res.ChecksumCRC32C) != "" {
+	case res.ChecksumCRC32C != nil:
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "x-amz-checksum-crc32c",
-			Value: getstring(res.ChecksumCRC32C),
+			Value: *res.ChecksumCRC32C,
 		})
-	}
-	if getstring(res.ChecksumSHA1) != "" {
-		hdrs = append(hdrs, utils.CustomHeader{
-			Key:   "x-amz-checksum-sha1",
-			Value: getstring(res.ChecksumSHA1),
-		})
-	}
-	if getstring(res.ChecksumSHA256) != "" {
-		hdrs = append(hdrs, utils.CustomHeader{
-			Key:   "x-amz-checksum-sha256",
-			Value: getstring(res.ChecksumSHA256),
-		})
-	}
-	if getstring(res.ChecksumCRC64NVME) != "" {
+	case res.ChecksumCRC64NVME != nil:
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "x-amz-checksum-crc64nvme",
-			Value: getstring(res.ChecksumCRC64NVME),
+			Value: *res.ChecksumCRC64NVME,
+		})
+	case res.ChecksumSHA1 != nil:
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-sha1",
+			Value: *res.ChecksumSHA1,
+		})
+	case res.ChecksumSHA256 != nil:
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "x-amz-checksum-sha256",
+			Value: *res.ChecksumSHA256,
 		})
 	}
 	if res.ChecksumType != "" {
@@ -3214,34 +3208,31 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: string(res.StorageClass),
 		})
 	}
-	if res.ChecksumCRC32 != nil {
+	switch {
+	case res.ChecksumCRC32 != nil:
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-checksum-crc32",
 			Value: *res.ChecksumCRC32,
 		})
-	}
-	if res.ChecksumCRC32C != nil {
+	case res.ChecksumCRC32C != nil:
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-checksum-crc32c",
 			Value: *res.ChecksumCRC32C,
 		})
-	}
-	if res.ChecksumSHA1 != nil {
+	case res.ChecksumCRC64NVME != nil:
+		headers = append(headers, utils.CustomHeader{
+			Key:   "x-amz-checksum-crc64nvme",
+			Value: *res.ChecksumCRC64NVME,
+		})
+	case res.ChecksumSHA1 != nil:
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-checksum-sha1",
 			Value: *res.ChecksumSHA1,
 		})
-	}
-	if res.ChecksumSHA256 != nil {
+	case res.ChecksumSHA256 != nil:
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-checksum-sha256",
 			Value: *res.ChecksumSHA256,
-		})
-	}
-	if res.ChecksumCRC64NVME != nil {
-		headers = append(headers, utils.CustomHeader{
-			Key:   "x-amz-checksum-crc64nvme",
-			Value: *res.ChecksumCRC64NVME,
 		})
 	}
 	if res.ChecksumType != "" {
