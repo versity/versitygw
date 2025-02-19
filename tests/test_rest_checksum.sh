@@ -41,13 +41,6 @@ source ./tests/util/util_setup.sh
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="sha256" CHECKSUM="dummy" ./tests/rest_scripts/put_object.sh 2>&1); then
-    log 2 "error: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected response code of '200', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt")"
-    return 1
-  fi
-  return 1
+  run put_object_rest_sha256_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
 }
