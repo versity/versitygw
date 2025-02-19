@@ -46,6 +46,7 @@ source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
+source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
@@ -54,11 +55,8 @@ source ./tests/util/util_xml.sh
 export RUN_USERS=true
 
 @test "test_rest_list_objects" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -77,11 +75,8 @@ export RUN_USERS=true
 }
 
 @test "test_rest_delete_object" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -105,10 +100,7 @@ export RUN_USERS=true
   test_key="TestKey"
   test_value="TestValue"
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_files "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -199,15 +191,7 @@ export RUN_USERS=true
 
 @test "test_rest_versioning" {
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  if [ "$DIRECT" == "true" ]; then
-    sleep 10
-  fi
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -231,11 +215,7 @@ export RUN_USERS=true
 
 @test "versioning - add version, then delete and check for marker" {
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -253,11 +233,7 @@ export RUN_USERS=true
 
 @test "versioning - retrieve after delete" {
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -275,11 +251,7 @@ export RUN_USERS=true
 
 @test "REST - legal hold, get without config" {
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -301,14 +273,10 @@ export RUN_USERS=true
 
 @test "REST - multipart upload create, list parts" {
   test_file="test_file"
-
-  run create_large_file "$test_file"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   run upload_check_parts "$BUCKET_ONE_NAME" "$test_file" \
@@ -327,11 +295,7 @@ export RUN_USERS=true
     skip "https://github.com/versity/versitygw/issues/1000"
   fi
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_large_file "$test_file"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   # shellcheck disable=SC2034
@@ -349,11 +313,7 @@ export RUN_USERS=true
     skip "https://github.com/versity/versitygw/issues/1001"
   fi
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -368,11 +328,7 @@ export RUN_USERS=true
     skip "https://github.com/versity/versitygw/issues/1006"
   fi
   test_file="test_file"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
@@ -446,13 +402,10 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/993"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
   test_file_two="test_file_2"
   test_file_three="test_file_3"
-  run create_test_files "$test_file" "$test_file_two" "$test_file_three"
+  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -477,12 +430,9 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
   test_file_two="test_file_2"
-  run create_test_files "$test_file" "$test_file_two"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -499,11 +449,8 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1008"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_large_file "$test_file"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run create_upload_finish_wrong_etag "$BUCKET_ONE_NAME" "$test_file"
@@ -511,11 +458,8 @@ export RUN_USERS=true
 }
 
 @test "REST - upload part copy" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_large_file "$test_file"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
@@ -529,11 +473,8 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1018"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file="test_file"
-  run create_test_file "$test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -567,12 +508,9 @@ export RUN_USERS=true
 }
 
 @test "REST - delete objects command" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
   test_file_one="test_file"
   test_file_two="test_file_two"
-  run create_test_files "$test_file_one" "$test_file_two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one"

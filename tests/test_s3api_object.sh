@@ -22,6 +22,7 @@ source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
+source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_users.sh
 source ./tests/test_s3api_root_inner.sh
@@ -111,10 +112,7 @@ export RUN_USERS=true
   run create_test_folder "$folder_name"
   assert_success
 
-  run create_test_file "$folder_name"/"$object_name"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$folder_name/$object_name"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$folder_name/$object_name" "$BUCKET_ONE_NAME" "$folder_name/$object_name"
@@ -167,14 +165,11 @@ export RUN_USERS=true
 }
 
 @test "test_put_object_metadata" {
-  object_one="object-one"
   test_key="x-test-data"
   test_value="test-value"
 
-  run create_test_files "$object_one"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  object_one="object-one"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$object_one"
   assert_success
 
   object="$TEST_FILE_FOLDER"/"$object_one"
@@ -242,10 +237,7 @@ export RUN_USERS=true
   fi
   test_file="a"
 
-  run create_test_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file/"

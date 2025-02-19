@@ -22,6 +22,7 @@ source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_presigned_url.sh
+source ./tests/util/util_setup.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_tagging.sh
 source ./tests/commands/delete_object_tagging.sh
@@ -43,10 +44,7 @@ test_common_multipart_upload() {
   assert [ $# -eq 1 ]
 
   bucket_file="largefile"
-  run create_large_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   if [ "$1" == 's3' ]; then
@@ -181,10 +179,7 @@ test_common_put_get_object() {
   fi
 
   local object_name="test-object"
-  run create_test_files "$object_name"
-  assert_success
-
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$object_name"
   assert_success
 
   if [[ $1 == 's3' ]]; then
@@ -224,11 +219,7 @@ test_common_list_objects() {
 
   object_one="test-file-one"
   object_two="test-file-two"
-
-  run create_test_files $object_one $object_two
-  assert_success
-
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$object_one" "$object_two"
   assert_success
 
   run put_object "$1" "$TEST_FILE_FOLDER"/$object_one "$BUCKET_ONE_NAME" "$object_one"
@@ -273,10 +264,7 @@ test_common_set_get_object_tags() {
   local key="test_key"
   local value="test_value"
 
-  run create_test_files "$bucket_file"
-  assert_success
-
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -342,10 +330,7 @@ test_common_delete_object_tagging() {
   tag_key="key"
   tag_value="value"
 
-  run create_test_files "$bucket_file"
-  assert_success
-
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"

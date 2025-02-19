@@ -147,6 +147,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_chunked.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_checksum.sh; then
+        exit_code=1
       fi
       ;;
     s3api-user)

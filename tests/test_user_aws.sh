@@ -18,6 +18,7 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/test_user_common.sh
+source ./tests/util/util_setup.sh
 source ./tests/util/util_users.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
@@ -54,10 +55,7 @@ export RUN_USERS=true
   username=${lines[0]}
   password=${lines[1]}
 
-  run create_test_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
@@ -81,10 +79,7 @@ export RUN_USERS=true
   username=${lines[0]}
   password=${lines[1]}
 
-  run create_test_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
@@ -108,10 +103,7 @@ export RUN_USERS=true
   username=${lines[0]}
   password=${lines[1]}
 
-  run create_test_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -135,10 +127,7 @@ export RUN_USERS=true
   username=${lines[0]}
   password=${lines[1]}
 
-  run create_test_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
@@ -166,10 +155,7 @@ export RUN_USERS=true
   username=${lines[0]}
   password=${lines[1]}
 
-  run create_large_file "$test_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"

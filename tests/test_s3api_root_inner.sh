@@ -23,15 +23,12 @@ source ./tests/util/util_get_object_retention.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_objects.sh
+source ./tests/util/util_setup.sh
 
 test_delete_objects_s3api_root() {
   local object_one="test-file-one"
   local object_two="test-file-two"
-
-  run create_test_files "$object_one" "$object_two"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$object_one" "$object_two"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER"/"$object_one" "$BUCKET_ONE_NAME" "$object_one"
@@ -52,9 +49,6 @@ test_delete_objects_s3api_root() {
 
 test_get_object_full_range_s3api_root() {
   bucket_file="bucket_file"
-
-  run create_test_files "$bucket_file" 0
-  assert_success
   echo -n "0123456789" > "$TEST_FILE_FOLDER/$bucket_file"
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -71,10 +65,7 @@ test_get_object_full_range_s3api_root() {
 
 test_get_object_invalid_range_s3api_root() {
   bucket_file="bucket_file"
-  run create_test_files "$bucket_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -105,10 +96,7 @@ test_put_object_s3api_root() {
 
 test_get_object_attributes_s3api_root() {
   bucket_file="bucket_file"
-  run create_test_file "$bucket_file"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -252,11 +240,7 @@ legal_hold_retention_setup() {
 test_s3api_list_objects_v1_s3api_root() {
   local object_one="test-file-one"
   local object_two="test-file-two"
-
-  run create_test_files "$object_one" "$object_two"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$object_one" "$object_two"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER"/"$object_one" "$BUCKET_ONE_NAME" "$object_one"
@@ -272,11 +256,7 @@ test_s3api_list_objects_v1_s3api_root() {
 test_s3api_list_objects_v2_s3api_root() {
   local object_one="test-file-one"
   local object_two="test-file-two"
-
-  run create_test_files "$object_one" "$object_two"
-  assert_success
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$object_one" "$object_two"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER"/"$object_one" "$BUCKET_ONE_NAME" "$object_one"
