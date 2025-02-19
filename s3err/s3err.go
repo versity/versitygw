@@ -763,3 +763,19 @@ func GetChecksumTypeMismatchOnMpErr(t types.ChecksumType) APIError {
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
+
+func GetIncorrectMpObjectSizeErr(expected, actual int64) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The provided 'x-amz-mp-object-size' header value %v does not match what was computed: %v", expected, actual),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidMpObjectSizeErr(val int64) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is less than zero: '%v'", val),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}

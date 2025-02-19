@@ -394,6 +394,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 	CompleteMultipartUpload_small_upload_size(s)
 	CompleteMultipartUpload_empty_parts(s)
 	CompleteMultipartUpload_incorrect_parts_order(s)
+	CompleteMultipartUpload_mpu_object_size(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		CompleteMultipartUpload_invalid_checksum_type(s)
@@ -976,6 +977,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_small_upload_size":                               CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                     CompleteMultipartUpload_empty_parts,
 		"CompleteMultipartUpload_incorrect_parts_order":                           CompleteMultipartUpload_incorrect_parts_order,
+		"CompleteMultipartUpload_mpu_object_size":                                 CompleteMultipartUpload_mpu_object_size,
 		"CompleteMultipartUpload_invalid_checksum_type":                           CompleteMultipartUpload_invalid_checksum_type,
 		"CompleteMultipartUpload_invalid_checksum_part":                           CompleteMultipartUpload_invalid_checksum_part,
 		"CompleteMultipartUpload_multiple_checksum_part":                          CompleteMultipartUpload_multiple_checksum_part,
