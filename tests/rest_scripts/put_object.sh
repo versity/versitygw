@@ -42,13 +42,14 @@ if [ "$checksum_type" == "sha256" ]; then
   cr_data+=("x-amz-checksum-sha256:$checksum_hash")
 elif [ "$checksum_type" == "crc32" ]; then
   if [ -z "$checksum_hash" ]; then
-    checksum_hash="$(gzip "$data_file" | tail -c8 | head -c4 | od -t x4 -N 4 -An)"
+    checksum_hash="$(gzip -c -1 "$data_file" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
   fi
   cr_data+=("x-amz-checksum-crc32:$checksum_hash")
 fi
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
 
+echo "$canonical_request" > "cr.txt"
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 

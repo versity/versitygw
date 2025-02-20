@@ -22,9 +22,6 @@ source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1070"
-  fi
   test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -36,11 +33,37 @@ source ./tests/util/util_setup.sh
   assert_success
 }
 
-@test "REST - PutObject rejects incorrect sha256 checksum" {
+@test "REST - PutObject rejects invalid sha256 checksum" {
   test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object_rest_sha256_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
+}
+
+@test "REST - PutObject rejects incorrect sha256 checksum" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_sha256_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - crc32 checksum" {
+  test_file="test_file"
+  run setup_bucket s3api "$BUCKET_ONE_NAME"
+  assert_success
+
+  echo -n "aaaaaaaaaa" > "$TEST_FILE_FOLDER/$test_file"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="crc32" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
 }

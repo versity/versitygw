@@ -297,6 +297,26 @@ list_and_check_directory_obj() {
   return 0
 }
 
+check_sha256_invalid_or_incorrect() {
+  if [ $# -ne 5 ]; then
+    log 2 "'check_sha256_invalid_or_incorrect' requires data file, bucket name, key, checksum, expected error"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="sha256" CHECKSUM="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected response code of '400', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "$5" "Error" "Message"; then
+    log 2 "xml error message mismatch"
+    return 1
+  fi
+  return 0
+}
+
 put_object_rest_sha256_checksum() {
   if [ $# -ne 3 ]; then
     log 2 "'put_object_rest_sha256_checksum' requires data file, bucket name, key"
@@ -319,16 +339,26 @@ put_object_rest_sha256_invalid() {
     log 2 "'put_object_rest_sha256_invalid' requires data file, bucket name, key"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="sha256" CHECKSUM="$(echo -n "dummy" | sha256sum | awk '{print $1}' | xxd -r -p | base64)" ./tests/rest_scripts/put_object.sh 2>&1); then
-    log 2 "error: $result"
+  if ! check_sha256_invalid_or_incorrect "$1" "$2" "$3" "dummy" "Value for x-amz-checksum-sha256 header is invalid."; then
+    log 2 "error checking checksum"
     return 1
   fi
-  if [ "$result" != "400" ]; then
-    log 2 "expected response code of '400', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  return 0
+}
+
+put_object_rest_sha256_incorrect() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object_rest_sha256_invalid' requires data file, bucket name, key"
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "Value for x-amz-checksum-sha256 header is invalid." "Error" "Message"; then
-    log 2 "xml error message mismatch"
+  if [ "$DIRECT" == "true" ]; then
+    error_message="The SHA256 you specified did not match the calculated checksum."
+  else
+    error_message="The sha256 you specified did not match the calculated checksum."
+  fi
+  incorrect_checksum="$(echo -n "dummy" | sha256sum | awk '{print $1}' | xxd -r -p | base64)"
+  if ! check_sha256_invalid_or_incorrect "$1" "$2" "$3" "$incorrect_checksum" "$error_message"; then
+    log 2 "error checking checksum"
     return 1
   fi
   return 0
