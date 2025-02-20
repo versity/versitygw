@@ -2012,10 +2012,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		}
 	}
 
-	maxUploads := 0
-	if mpu.MaxUploads != nil {
-		maxUploads = int(*mpu.MaxUploads)
-	}
+	maxUploads := int(*mpu.MaxUploads)
 	if (uploadIDMarker != "" && !uploadIdMarkerFound) || (keyMarker != "" && keyMarkerInd == -1) {
 		return s3response.ListMultipartUploadsResult{
 			Bucket:         bucket,
@@ -2068,7 +2065,7 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	}, nil
 }
 
-func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	var lpr s3response.ListPartsResult
 
 	if input.Bucket == nil {
@@ -2088,10 +2085,8 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 	if input.PartNumberMarker != nil {
 		stringMarker = *input.PartNumberMarker
 	}
-	maxParts := 0
-	if input.MaxParts != nil {
-		maxParts = int(*input.MaxParts)
-	}
+
+	maxParts := int(*input.MaxParts)
 
 	var partNumberMarker int
 	if stringMarker != "" {
@@ -2131,8 +2126,15 @@ func (p *Posix) ListParts(_ context.Context, input *s3.ListPartsInput) (s3respon
 		return lpr, fmt.Errorf("get mp checksum: %w", err)
 	}
 
-	var parts []s3response.Part
-	for _, e := range ents {
+	parts := make([]s3response.Part, 0, len(ents))
+	for i, e := range ents {
+		if i%128 == 0 {
+			select {
+			case <-ctx.Done():
+				return s3response.ListPartsResult{}, ctx.Err()
+			default:
+			}
+		}
 		pn, err := strconv.Atoi(e.Name())
 		if err != nil {
 			// file is not a valid part file

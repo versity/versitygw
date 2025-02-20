@@ -209,6 +209,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_paginated(s)
 	ListObjects_invalid_max_keys(s)
 	ListObjects_max_keys_0(s)
+	ListObjects_exceeding_max_keys(s)
 	ListObjects_delimiter(s)
 	ListObjects_max_keys_none(s)
 	ListObjects_marker_not_from_obj_list(s)
@@ -228,6 +229,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_single_dir_object_with_delim_and_prefix(s)
 	ListObjectsV2_truncated_common_prefixes(s)
 	ListObjectsV2_all_objs_max_keys(s)
+	ListObjectsV2_exceeding_max_keys(s)
 	ListObjectsV2_list_all_objs(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
@@ -356,6 +358,7 @@ func TestListParts(s *S3Conf) {
 	ListParts_incorrect_object_key(s)
 	ListParts_invalid_max_parts(s)
 	ListParts_default_max_parts(s)
+	ListParts_exceeding_max_parts(s)
 	ListParts_truncated(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
@@ -369,6 +372,7 @@ func TestListMultipartUploads(s *S3Conf) {
 	ListMultipartUploads_empty_result(s)
 	ListMultipartUploads_invalid_max_uploads(s)
 	ListMultipartUploads_max_uploads(s)
+	ListMultipartUploads_exceeding_max_uploads(s)
 	ListMultipartUploads_incorrect_next_key_marker(s)
 	ListMultipartUploads_ignore_upload_id_marker(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -962,6 +966,7 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_empty_result":                                       ListMultipartUploads_empty_result,
 		"ListMultipartUploads_invalid_max_uploads":                                ListMultipartUploads_invalid_max_uploads,
 		"ListMultipartUploads_max_uploads":                                        ListMultipartUploads_max_uploads,
+		"ListMultipartUploads_exceeding_max_uploads":                              ListMultipartUploads_exceeding_max_uploads,
 		"ListMultipartUploads_incorrect_next_key_marker":                          ListMultipartUploads_incorrect_next_key_marker,
 		"ListMultipartUploads_ignore_upload_id_marker":                            ListMultipartUploads_ignore_upload_id_marker,
 		"ListMultipartUploads_with_checksums":                                     ListMultipartUploads_with_checksums,
