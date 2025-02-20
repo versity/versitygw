@@ -268,6 +268,14 @@ func TestParseUint(t *testing.T) {
 			want:    23,
 			wantErr: false,
 		},
+		{
+			name: "Parse-uint-greater-than-1000",
+			args: args{
+				str: "25000000",
+			},
+			want:    1000,
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -74,24 +74,28 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 	maxBucketsStr := ctx.Query("max-buckets")
 	acct := ctx.Locals("account").(auth.Account)
 
-	maxBuckets, err := utils.ParseUint(maxBucketsStr)
-	if err != nil || maxBuckets > 10000 {
-		if c.debug {
-			log.Printf("error parsing max-buckets %q: %v\n", maxBucketsStr, err)
+	var maxBuckets int32 = 10000
+	if maxBucketsStr != "" {
+		maxBucketsParsed, err := strconv.ParseInt(maxBucketsStr, 10, 32)
+		if err != nil || maxBucketsParsed < 0 || maxBucketsParsed > 10000 {
+			if c.debug {
+				log.Printf("error parsing max-buckets %q: %v\n", maxBucketsStr, err)
+			}
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				&MetaOpts{
+					Logger:     c.logger,
+					MetricsMng: c.mm,
+					Action:     metrics.ActionListAllMyBuckets,
+				})
 		}
-		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
-			&MetaOpts{
-				Logger:     c.logger,
-				MetricsMng: c.mm,
-				Action:     metrics.ActionListAllMyBuckets,
-			})
+		maxBuckets = int32(maxBucketsParsed)
 	}
 
 	res, err := c.be.ListBuckets(ctx.Context(),
 		s3response.ListBucketsInput{
 			Owner:             acct.Access,
 			IsAdmin:           acct.Role == auth.RoleAdmin,
-			MaxBuckets:        maxBuckets,
+			MaxBuckets:        int32(maxBuckets),
 			ContinuationToken: cToken,
 			Prefix:            prefix,
 		})

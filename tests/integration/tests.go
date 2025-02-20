@@ -4540,6 +4540,31 @@ func ListObjects_max_keys_0(s *S3Conf) error {
 	})
 }
 
+func ListObjects_exceeding_max_keys(s *S3Conf) error {
+	testName := "ListObjects_exceeding_max_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		maxKeys := int32(233333333)
+		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:  &bucket,
+			MaxKeys: &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if out.MaxKeys == nil {
+			return fmt.Errorf("unexpected nil max-keys")
+		}
+		if *out.MaxKeys != 1000 {
+			return fmt.Errorf("expected the max-keys to be %v, instaed got %v", 1000, *out.MaxKeys)
+		}
+
+		return nil
+	})
+}
+
 func ListObjects_delimiter(s *S3Conf) error {
 	testName := "ListObjects_delimiter"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5036,6 +5061,31 @@ func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
 
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, out.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_exceeding_max_keys(s *S3Conf) error {
+	testName := "ListObjectsV2_exceeding_max_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		maxKeys := int32(233453333)
+		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:  &bucket,
+			MaxKeys: &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if out.MaxKeys == nil {
+			return fmt.Errorf("unexpected nil max-keys")
+		}
+		if *out.MaxKeys != 1000 {
+			return fmt.Errorf("expected the max-keys to be %v, instaed got %v", 1000, *out.MaxKeys)
 		}
 
 		return nil
@@ -7981,6 +8031,36 @@ func ListParts_default_max_parts(s *S3Conf) error {
 	})
 }
 
+func ListParts_exceeding_max_parts(s *S3Conf) error {
+	testName := "ListParts_exceeding_max_parts"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			UploadId: mp.UploadId,
+			Key:      &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.MaxParts == nil {
+			return fmt.Errorf("unexpected nil max-parts")
+		}
+		if *res.MaxParts != 1000 {
+			return fmt.Errorf("expected max-parts to be %v, instead got %v", 1000, *res.MaxParts)
+		}
+
+		return nil
+	})
+}
+
 func ListParts_truncated(s *S3Conf) error {
 	testName := "ListParts_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -8229,6 +8309,31 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 		}
 		if ok := compareMultipartUploads(out.Uploads, uploads[2:]); !ok {
 			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads[2:], out.Uploads)
+		}
+
+		return nil
+	})
+}
+
+func ListMultipartUploads_exceeding_max_uploads(s *S3Conf) error {
+	testName := "ListMultipartUploads_exceeding_max_uploads"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		maxUploads := int32(1343235)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+			Bucket:     &bucket,
+			MaxUploads: &maxUploads,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.MaxUploads == nil {
+			return fmt.Errorf("unexpected nil max-uploads")
+		}
+		if *res.MaxUploads != 1000 {
+			return fmt.Errorf("expected max-uploads to be %v, instaed got %v", 1000, *res.MaxUploads)
 		}
 
 		return nil

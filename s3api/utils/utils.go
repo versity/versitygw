@@ -179,9 +179,15 @@ func ParseUint(str string) (int32, error) {
 	if str == "" {
 		return 1000, nil
 	}
-	num, err := strconv.ParseUint(str, 10, 16)
+	num, err := strconv.ParseInt(str, 10, 32)
 	if err != nil {
-		return 1000, fmt.Errorf("invalid uint: %w", err)
+		return 1000, fmt.Errorf("invalid int: %w", err)
+	}
+	if num < 0 {
+		return 1000, fmt.Errorf("negative uint: %v", num)
+	}
+	if num > 1000 {
+		num = 1000
 	}
 	return int32(num), nil
 }
