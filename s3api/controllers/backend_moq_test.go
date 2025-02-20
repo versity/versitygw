@@ -170,10 +170,10 @@ var _ backend.Backend = &BackendMock{}
 //			StringFunc: func() string {
 //				panic("mock out the String method")
 //			},
-//			UploadPartFunc: func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error) {
+//			UploadPartFunc: func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 //				panic("mock out the UploadPart method")
 //			},
-//			UploadPartCopyFunc: func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+//			UploadPartCopyFunc: func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 //				panic("mock out the UploadPartCopy method")
 //			},
 //		}
@@ -331,10 +331,10 @@ type BackendMock struct {
 	StringFunc func() string
 
 	// UploadPartFunc mocks the UploadPart method.
-	UploadPartFunc func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error)
+	UploadPartFunc func(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (*s3.UploadPartOutput, error)
 
 	// UploadPartCopyFunc mocks the UploadPartCopy method.
-	UploadPartCopyFunc func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
+	UploadPartCopyFunc func(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
@@ -2620,7 +2620,7 @@ func (mock *BackendMock) StringCalls() []struct {
 }
 
 // UploadPart calls UploadPartFunc.
-func (mock *BackendMock) UploadPart(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (string, error) {
+func (mock *BackendMock) UploadPart(contextMoqParam context.Context, uploadPartInput *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
 	if mock.UploadPartFunc == nil {
 		panic("BackendMock.UploadPartFunc: method is nil but Backend.UploadPart was just called")
 	}
@@ -2656,7 +2656,7 @@ func (mock *BackendMock) UploadPartCalls() []struct {
 }
 
 // UploadPartCopy calls UploadPartCopyFunc.
-func (mock *BackendMock) UploadPartCopy(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
+func (mock *BackendMock) UploadPartCopy(contextMoqParam context.Context, uploadPartCopyInput *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	if mock.UploadPartCopyFunc == nil {
 		panic("BackendMock.UploadPartCopyFunc: method is nil but Backend.UploadPartCopy was just called")
 	}

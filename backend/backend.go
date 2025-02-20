@@ -53,8 +53,8 @@ type Backend interface {
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
 	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
 	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error)
-	UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error)
-	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error)
+	UploadPart(context.Context, *s3.UploadPartInput) (*s3.UploadPartOutput, error)
+	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyPartResult, error)
 
 	// standard object operations
 	PutObject(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error)
@@ -166,11 +166,11 @@ func (BackendUnsupported) ListMultipartUploads(context.Context, *s3.ListMultipar
 func (BackendUnsupported) ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error) {
 	return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) UploadPart(context.Context, *s3.UploadPartInput) (etag string, err error) {
-	return "", s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) UploadPart(context.Context, *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyObjectResult, error) {
-	return s3response.CopyObjectResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+	return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (BackendUnsupported) PutObject(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error) {

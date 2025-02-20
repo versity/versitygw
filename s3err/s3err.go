@@ -17,7 +17,11 @@ package s3err
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // APIError structure
@@ -74,6 +78,8 @@ const (
 	ErrInvalidPart
 	ErrEmptyParts
 	ErrInvalidPartNumber
+	ErrInvalidPartOrder
+	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
 	ErrInvalidCopyDest
 	ErrInvalidCopySource
@@ -140,6 +146,10 @@ const (
 	ErrInvalidVersionId
 	ErrNoSuchVersion
 	ErrSuspendedVersioningNotAllowed
+	ErrMultipleChecksumHeaders
+	ErrInvalidChecksumAlgorithm
+	ErrInvalidChecksumPart
+	ErrChecksumTypeWithAlgo
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -262,6 +272,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPartNumber: {
 		Code:           "InvalidArgument",
 		Description:    "Part number must be an integer between 1 and 10000, inclusive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidPartOrder: {
+		Code:           "InvalidPartOrder",
+		Description:    "The list of parts was not in ascending order. Parts must be ordered by part number.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCompleteMpPartNumber: {
+		Code:           "InvalidArgument",
+		Description:    "PartNumber must be >= 1",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidCopyDest: {
@@ -584,6 +604,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrMultipleChecksumHeaders: {
+		Code:           "InvalidRequest",
+		Description:    "Expecting a single x-amz-checksum- header. Multiple checksum Types are not allowed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChecksumAlgorithm: {
+		Code:           "InvalidRequest",
+		Description:    "Checksum algorithm provided is unsupported. Please try again with any of the valid types: [CRC32, CRC32C, SHA1, SHA256]",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChecksumPart: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid Base64 or multiple checksums present in request",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrChecksumTypeWithAlgo: {
+		Code:           "InvalidRequest",
+		Description:    "The x-amz-checksum-type header can only be used with the x-amz-checksum-algorithm header.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 
 	// non aws errors
 	ErrExistingObjectIsDirectory: {
@@ -677,4 +717,49 @@ func encodeResponse(response interface{}) []byte {
 	e := xml.NewEncoder(&bytesBuffer)
 	e.Encode(response)
 	return bytesBuffer.Bytes()
+}
+
+// Returns invalid checksum error with the provided header in the error description
+func GetInvalidChecksumHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for %v header is invalid.", header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch APIError
+func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Checksum Type mismatch occurred, expected checksum Type: %v, actual checksum Type: %v", expected, actual),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns incorrect checksum APIError
+func GetChecksumBadDigestErr(algo types.ChecksumAlgorithm) APIError {
+	return APIError{
+		Code:           "BadDigest",
+		Description:    fmt.Sprintf("The %v you specified did not match the calculated checksum.", strings.ToLower(string(algo))),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch error with checksum algorithm
+func GetChecksumSchemaMismatchErr(algo types.ChecksumAlgorithm, t types.ChecksumType) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The %v checksum type cannot be used with the %v checksum algorithm.", algo, strings.ToLower(string(t))),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+// Returns checksum type mismatch error for multipart uploads
+func GetChecksumTypeMismatchOnMpErr(t types.ChecksumType) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("The upload was created using the %v checksum mode. The complete request must use the same checksum mode.", t),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
 }
