@@ -27,7 +27,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1207,13 +1206,8 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		uncommittedBlocks[int32(ptNumber)] = el
 	}
 
-	slices.SortFunc(blockList.UncommittedBlocks, func(a *blockblob.Block, b *blockblob.Block) int {
-		ptNumber, _ := decodeBlockId(*a.Name)
-		nextPtNumber, _ := decodeBlockId(*b.Name)
-		return ptNumber - nextPtNumber
-	})
-
 	// The initialie values is the lower limit of partNumber: 0
+	var totalSize int64
 	var partNumber int32
 	last := len(blockList.UncommittedBlocks) - 1
 	for i, part := range input.MultipartUpload.Parts {
@@ -1241,7 +1235,12 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		if i < last && *block.Size < backend.MinPartSize {
 			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
+		totalSize += *block.Size
 		blockIds = append(blockIds, *block.Name)
+	}
+
+	if input.MpuObjectSize != nil && totalSize != *input.MpuObjectSize {
+		return nil, s3err.GetIncorrectMpObjectSizeErr(totalSize, *input.MpuObjectSize)
 	}
 
 	opts := &blockblob.CommitBlockListOptions{

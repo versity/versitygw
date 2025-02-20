@@ -3430,6 +3430,36 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		var mpuObjectSize *int64
+		mpuObjSizeHdr := ctx.Get("X-Amz-Mp-Object-Size")
+		if mpuObjSizeHdr != "" {
+			val, err := strconv.ParseInt(mpuObjSizeHdr, 10, 64)
+			//TODO: Not sure if invalid request should be returned
+			if err != nil {
+				return SendXMLResponse(ctx, nil,
+					s3err.GetAPIError(s3err.ErrInvalidRequest),
+					&MetaOpts{
+						Logger:      c.logger,
+						MetricsMng:  c.mm,
+						Action:      metrics.ActionCompleteMultipartUpload,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
+
+			if val < 0 {
+				return SendXMLResponse(ctx, nil,
+					s3err.GetInvalidMpObjectSizeErr(val),
+					&MetaOpts{
+						Logger:      c.logger,
+						MetricsMng:  c.mm,
+						Action:      metrics.ActionCompleteMultipartUpload,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
+
+			mpuObjectSize = &val
+		}
+
 		err = auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
 				Readonly:      c.readonly,
@@ -3488,6 +3518,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				MultipartUpload: &types.CompletedMultipartUpload{
 					Parts: data.Parts,
 				},
+				MpuObjectSize:     mpuObjectSize,
 				ChecksumCRC32:     backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32]),
 				ChecksumCRC32C:    backend.GetPtrFromString(checksums[types.ChecksumAlgorithmCrc32c]),
 				ChecksumSHA1:      backend.GetPtrFromString(checksums[types.ChecksumAlgorithmSha1]),

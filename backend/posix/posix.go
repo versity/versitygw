@@ -1478,6 +1478,10 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 	}
 
+	if input.MpuObjectSize != nil && totalsize != *input.MpuObjectSize {
+		return nil, s3err.GetIncorrectMpObjectSizeErr(totalsize, *input.MpuObjectSize)
+	}
+
 	var hashRdr *utils.HashReader
 	var compositeChecksumRdr *utils.CompositeChecksumReader
 	switch checksums.Type {

@@ -9521,6 +9521,89 @@ func CompleteMultipartUpload_incorrect_parts_order(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_mpu_object_size(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_mpu_object_size"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		mpuSize := int64(23 * 1024 * 1024) // 23 mib
+		parts, _, err := uploadParts(s3client, mpuSize, 4, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		invMpuSize := int64(-1) // invalid MpuObjectSize
+		// Initially provide invalid MpuObjectSize: -3
+		input := &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+			MpuObjectSize: &invMpuSize,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, input)
+		cancel()
+		if err := checkApiErr(err, s3err.GetInvalidMpObjectSizeErr(invMpuSize)); err != nil {
+			return err
+		}
+
+		incorMpuSize := int64(213123) // incorrect object size
+		input.MpuObjectSize = &incorMpuSize
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, input)
+		cancel()
+		if err := checkApiErr(err, s3err.GetIncorrectMpObjectSizeErr(mpuSize, incorMpuSize)); err != nil {
+			return err
+		}
+
+		// Correct value for MpuObjectSize
+		input.MpuObjectSize = &mpuSize
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, input)
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Make sure the object has been uploaded with proper size
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ContentLength == nil {
+			return fmt.Errorf("expected non nil Content-Length")
+		}
+		if *res.ContentLength != mpuSize {
+			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", mpuSize, *res.ContentLength)
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_part_number"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
