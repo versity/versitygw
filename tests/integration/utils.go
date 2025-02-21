@@ -27,8 +27,10 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"hash/crc64"
 	"io"
 	"math/big"
+	"math/bits"
 	rnd "math/rand"
 	"net/http"
 	"net/url"
@@ -811,6 +813,8 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 		hash = sha1.New()
 	case types.ChecksumAlgorithmSha256:
 		hash = sha256.New()
+	case types.ChecksumAlgorithmCrc64nvme:
+		hash = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
 	default:
 		hash = sha256.New()
 	}

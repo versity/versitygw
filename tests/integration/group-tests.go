@@ -179,7 +179,6 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_existing_object(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
-
 		GetObjectAttributes_checksums(s)
 	}
 }
