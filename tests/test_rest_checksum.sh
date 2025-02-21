@@ -26,10 +26,10 @@ source ./tests/util/util_setup.sh
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object_rest_sha256_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha256"
   assert_success
 
-  run check_checksum_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run check_checksum_rest_sha256 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
 
@@ -51,14 +51,21 @@ source ./tests/util/util_setup.sh
   assert_success
 }
 
-@test "REST - crc32 checksum" {
+@test "REST - crc32 checksum - success" {
   test_file="test_file"
-  run setup_bucket s3api "$BUCKET_ONE_NAME"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  echo -n "aaaaaaaaaa" > "$TEST_FILE_FOLDER/$test_file"
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32"
+  assert_success
+}
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="crc32" ./tests/rest_scripts/put_object.sh 2>&1); then
+@test "REST - crc32 checksum - wrong" {
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$TEST_FILE_FOLDER/$test_file" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="crc32" CHECKSUM="abcdef==" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi
