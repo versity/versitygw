@@ -14904,6 +14904,51 @@ func Versioning_Delete_null_versionId_object(s *S3Conf) error {
 	})
 }
 
+func Versioning_DeleteObject_nested_dir_object(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_nested_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "foo/bar/baz"
+		out, err := putObjectWithData(1000, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.VersionId) != getString(out.res.VersionId) {
+			return fmt.Errorf("expected the versionId to be %v, instead got %v", getString(out.res.VersionId), getString(res.VersionId))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Then create the bucket back to not get error on teardown
+		if err := setup(s, bucket); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
 func Versioning_DeleteObject_suspended(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_suspended"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

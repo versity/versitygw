@@ -3044,7 +3044,6 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				// if the specified VersionId is the same as in the latest version,
 				// remove the latest version, find the latest version from the versioning
 				// directory and move to the place of the deleted object, to make it the latest
-
 				isDelMarker, err := p.isObjDeleteMarker(bucket, object)
 				if err != nil {
 					return nil, err
@@ -3056,6 +3055,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 				ents, err := os.ReadDir(versionPath)
 				if errors.Is(err, fs.ErrNotExist) {
+					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
 						VersionId:    input.VersionId,
@@ -3066,6 +3066,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}
 
 				if len(ents) == 0 {
+					p.removeParents(bucket, object)
 					return &s3.DeleteObjectOutput{
 						DeleteMarker: &isDelMarker,
 						VersionId:    input.VersionId,
