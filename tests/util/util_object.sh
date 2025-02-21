@@ -363,3 +363,19 @@ put_object_rest_sha256_incorrect() {
   fi
   return 0
 }
+
+put_object_rest_chunked_payload_type_without_content_length() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object_rest_diff_payload_type' requires data file, bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" PAYLOAD="STREAMING-AWS4-HMAC-SHA256-PAYLOAD" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "411" ]; then
+    log 2 "expected response code of '411', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}

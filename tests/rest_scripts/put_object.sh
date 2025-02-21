@@ -26,14 +26,19 @@ bucket_name="$BUCKET_NAME"
 key="$OBJECT_KEY"
 # shellcheck disable=SC2153,SC2154
 checksum_type="$CHECKSUM_TYPE"
+# shellcheck disable=SC2153
+payload="$PAYLOAD"
 
 # use this parameter to check incorrect checksums
 # shellcheck disable=SC2153,SC2154
 checksum_hash="$CHECKSUM"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-#payload_hash="$(sha256sum "$data_file" | awk '{print $1}')"
-payload_hash="STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+if [ "$payload" == "" ]; then
+  payload_hash="$(sha256sum "$data_file" | awk '{print $1}')"
+else
+  payload_hash="$payload"
+fi
 
 cr_data=("PUT" "/$bucket_name/$key" "" "host:$host")
 if [ "$checksum_type" == "sha256" ]; then
