@@ -122,8 +122,8 @@ verify_object_exists() {
 }
 
 check_checksum_rest() {
-  if [ $# -ne 5 ]; then
-    log 2 "'check_checksum_rest' requires bucket, file, local file, expected checksum, header key"
+  if [ $# -ne 4 ]; then
+    log 2 "'check_checksum_rest' requires bucket, file, expected checksum, header key"
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" CHECKSUM="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_object.sh 2>&1); then
@@ -134,8 +134,8 @@ check_checksum_rest() {
     log 2 "expected response code '200', was '$result'"
     return 1
   fi
-  head_checksum=$(grep -i "$5" "$TEST_FILE_FOLDER/result.txt" | awk '{print $2}' | sed 's/\r$//')
-  if [ "$4" != "$head_checksum" ]; then
+  head_checksum=$(grep -i "$4" "$TEST_FILE_FOLDER/result.txt" | awk '{print $2}' | sed 's/\r$//')
+  if [ "$3" != "$head_checksum" ]; then
     log 2 "'checksum mismatch (head '$head_checksum', local '$file_checksum')"
     return 1
   fi
@@ -148,6 +148,19 @@ check_checksum_rest_sha256() {
   fi
   file_checksum="$(sha256sum "$3" | awk '{print $1}' | xxd -r -p | base64)"
   if ! check_checksum_rest "$1" "$2" "$3" "$file_checksum" "x-amz-checksum-sha256"; then
+    log 2 "error checking checksum"
+    return 1
+  fi
+  return 0
+}
+
+check_checksum_rest_crc32() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_checksum_rest_crc32' requires bucket, file, local file"
+    return 1
+  fi
+  file_checksum="$(gzip -c -1 "$3" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
+  if ! check_checksum_rest "$1" "$2" "$file_checksum" "x-amz-checksum-crc32"; then
     log 2 "error checking checksum"
     return 1
   fi
