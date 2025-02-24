@@ -14461,6 +14461,16 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 			return err
 		}
 
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "NotFound"); err != nil {
+			return err
+		}
+
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
