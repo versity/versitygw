@@ -109,6 +109,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			return sendResponse(ctx, err, logger, mm)
 		}
 
+		hashPayload := ctx.Get("X-Amz-Content-Sha256")
 		if utils.IsBigDataAction(ctx) {
 			// for streaming PUT actions, authorization is deferred
 			// until end of stream due to need to get length and
@@ -116,10 +117,24 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 				return utils.NewAuthReader(ctx, r, authData, account.Secret, debug)
 			})
+
+			// wrap the io.Reader with ChunkReader if x-amz-content-sha256
+			// provide chunk encoding value
+			if utils.IsStreamingPayload(hashPayload) {
+				var err error
+				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+					var cr io.Reader
+					cr, err = utils.NewChunkReader(ctx, r, authData, region, account.Secret, tdate)
+					return cr
+				})
+				if err != nil {
+					return sendResponse(ctx, err, logger, mm)
+				}
+			}
+
 			return ctx.Next()
 		}
 
-		hashPayload := ctx.Get("X-Amz-Content-Sha256")
 		if !utils.IsSpecialPayload(hashPayload) {
 			// Calculate the hash of the request payload
 			hashedPayload := sha256.Sum256(ctx.Body())

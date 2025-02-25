@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/s3err"
 )
 
 type payloadType string
@@ -71,12 +72,24 @@ func (c checksumType) isValid() bool {
 		c == checksumTypeCrc64nvme
 }
 
-// IsSpecialPayload checks for streaming/unsigned authorization types
+// IsSpecialPayload checks for special authorization types
 func IsSpecialPayload(str string) bool {
 	return specialValues[payloadType(str)]
 }
 
+// IsChunkEncoding checks for streaming/unsigned authorization types
+func IsStreamingPayload(str string) bool {
+	pt := payloadType(str)
+	return pt == payloadTypeStreamingUnsignedTrailer ||
+		pt == payloadTypeStreamingSigned ||
+		pt == payloadTypeStreamingSignedTrailer
+}
+
 func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
+	decContLength := ctx.Get("X-Amz-Decoded-Content-Length")
+	if decContLength == "" {
+		return nil, s3err.GetAPIError(s3err.ErrMissingDecodedContentLength)
+	}
 	contentSha256 := payloadType(ctx.Get("X-Amz-Content-Sha256"))
 	if !contentSha256.isValid() {
 		//TODO: Add proper APIError
