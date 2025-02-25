@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -518,6 +519,14 @@ func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput)
 		Bucket: input.Bucket,
 	})
 	if err != nil {
+		var ae smithy.APIError
+		if errors.As(err, &ae) {
+			// sdk issue workaround for missing NoSuchTagSet error type
+			// https://github.com/aws/aws-sdk-go-v2/issues/2878
+			if strings.Contains(ae.ErrorCode(), "NoSuchTagSet") {
+				return []byte{}, nil
+			}
+		}
 		return nil, handleError(err)
 	}
 
