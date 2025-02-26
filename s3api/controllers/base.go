@@ -644,16 +644,12 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	}
 
 	if res.Body != nil {
-		err := utils.StreamResponseBody(ctx, res.Body)
-		if err != nil {
-			SendResponse(ctx, nil,
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionGetObject,
-					BucketOwner: parsedAcl.Owner,
-				})
+		// -1 will stream response body until EOF if content length not set
+		contentLen := -1
+		if res.ContentLength != nil {
+			contentLen = int(*res.ContentLength)
 		}
+		utils.StreamResponseBody(ctx, res.Body, contentLen)
 	}
 
 	return SendResponse(ctx, nil,

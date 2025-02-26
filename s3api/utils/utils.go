@@ -204,27 +204,10 @@ func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
 }
 
 // Streams the response body by chunks
-func StreamResponseBody(ctx *fiber.Ctx, rdr io.ReadCloser) error {
-	buf := make([]byte, 4096) // 4KB chunks
-	defer rdr.Close()
-	for {
-		n, err := rdr.Read(buf)
-		if n > 0 {
-			_, writeErr := ctx.Write(buf[:n])
-			if writeErr != nil {
-				return fmt.Errorf("write chunk: %w", writeErr)
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return fmt.Errorf("read chunk: %w", err)
-		}
-	}
-
-	return nil
+func StreamResponseBody(ctx *fiber.Ctx, rdr io.ReadCloser, bodysize int) {
+	// SetBodyStream will call Close() on the reader when the stream is done
+	// since rdr is a ReadCloser
+	ctx.Context().SetBodyStream(rdr, bodysize)
 }
 
 func IsValidBucketName(bucket string) bool {
