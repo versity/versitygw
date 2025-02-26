@@ -898,7 +898,7 @@ func base64Decode(encoded string) ([]byte, error) {
 }
 
 func convertObjects(objs []types.Object) []s3response.Object {
-	result := make([]s3response.Object, len(objs))
+	result := make([]s3response.Object, 0, len(objs))
 
 	for _, obj := range objs {
 		result = append(result, s3response.Object{
