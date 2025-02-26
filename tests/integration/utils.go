@@ -1112,7 +1112,22 @@ func pfxStrings(pfxs []types.CommonPrefix) []string {
 	return pfxStrs
 }
 
-func createObjVersions(client *s3.Client, bucket, object string, count int) ([]types.ObjectVersion, error) {
+type versCfg struct {
+	checksumAlgorithm types.ChecksumAlgorithm
+}
+
+type versOpt func(*versCfg)
+
+func withChecksumAlgo(algo types.ChecksumAlgorithm) versOpt {
+	return func(vc *versCfg) { vc.checksumAlgorithm = algo }
+}
+
+func createObjVersions(client *s3.Client, bucket, object string, count int, opts ...versOpt) ([]types.ObjectVersion, error) {
+	cfg := new(versCfg)
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	versions := []types.ObjectVersion{}
 	for i := 0; i < count; i++ {
 		rNumber, err := rand.Int(rand.Reader, big.NewInt(100000))
@@ -1130,15 +1145,40 @@ func createObjVersions(client *s3.Client, bucket, object string, count int) ([]t
 		}
 
 		isLatest := i == count-1
-
-		versions = append(versions, types.ObjectVersion{
+		version := types.ObjectVersion{
 			ETag:         r.res.ETag,
 			IsLatest:     &isLatest,
 			Key:          &object,
 			Size:         &dataLength,
 			VersionId:    r.res.VersionId,
 			StorageClass: types.ObjectVersionStorageClassStandard,
-		})
+			ChecksumType: r.res.ChecksumType,
+		}
+
+		switch {
+		case r.res.ChecksumCRC32 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmCrc32,
+			}
+		case r.res.ChecksumCRC32C != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmCrc32c,
+			}
+		case r.res.ChecksumCRC64NVME != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmCrc64nvme,
+			}
+		case r.res.ChecksumSHA1 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmSha1,
+			}
+		case r.res.ChecksumSHA256 != nil:
+			version.ChecksumAlgorithm = []types.ChecksumAlgorithm{
+				types.ChecksumAlgorithmSha256,
+			}
+		}
+
+		versions = append(versions, version)
 	}
 
 	versions = reverseSlice(versions)
@@ -1197,6 +1237,19 @@ func compareVersions(v1, v2 []types.ObjectVersion) bool {
 
 		if version.StorageClass != v2[i].StorageClass {
 			return false
+		}
+		if version.ChecksumType != "" {
+			if version.ChecksumType != v2[i].ChecksumType {
+				return false
+			}
+		}
+		if len(version.ChecksumAlgorithm) != 0 {
+			if len(v2[i].ChecksumAlgorithm) == 0 {
+				return false
+			}
+			if version.ChecksumAlgorithm[0] != v2[i].ChecksumAlgorithm[0] {
+				return false
+			}
 		}
 	}
 

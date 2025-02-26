@@ -5281,7 +5281,7 @@ func ListObjectVersions_VD_success(s *S3Conf) error {
 			return err
 		}
 
-		if !compareVersions(res.Versions, versions) {
+		if !compareVersions(versions, res.Versions) {
 			return fmt.Errorf("expected object versions output to be %v, instead got %v", versions, res.Versions)
 		}
 		return nil
@@ -14041,6 +14041,7 @@ func Versioning_PutObject_overwrite_null_versionId_obj(s *S3Conf) error {
 				Size:         &lgth,
 				VersionId:    &nullVersionId,
 				StorageClass: types.ObjectVersionStorageClassStandard,
+				ChecksumType: out.res.ChecksumType,
 			},
 		}, versions...)
 
@@ -14134,6 +14135,7 @@ func Versioning_CopyObject_success(s *S3Conf) error {
 				Size:         &srcObjLen,
 				VersionId:    out.VersionId,
 				StorageClass: types.ObjectVersionStorageClassStandard,
+				ChecksumType: out.CopyObjectResult.ChecksumType,
 			},
 		}, dstObjVersions...)
 
@@ -15055,7 +15057,7 @@ func Versioning_DeleteObject_suspended(s *S3Conf) error {
 			},
 		}
 
-		if !compareVersions(res.Versions, versions) {
+		if !compareVersions(versions, res.Versions) {
 			return fmt.Errorf("expected the versions to be %v, instead got %v", versions, res.Versions)
 		}
 		if !compareDelMarkers(res.DeleteMarkers, delMarkers) {
@@ -15298,7 +15300,7 @@ func ListObjectVersions_list_single_object_versions(s *S3Conf) error {
 			return err
 		}
 
-		if !compareVersions(out.Versions, versions) {
+		if !compareVersions(versions, out.Versions) {
 			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, out.Versions)
 		}
 
@@ -15335,7 +15337,7 @@ func ListObjectVersions_list_multiple_object_versions(s *S3Conf) error {
 			return err
 		}
 
-		if !compareVersions(out.Versions, versions) {
+		if !compareVersions(versions, out.Versions) {
 			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, out.Versions)
 		}
 
@@ -15390,7 +15392,7 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected the NextVersionIdMarker to be %v, instead got %v", *versions[maxKeys].VersionId, *out.NextVersionIdMarker)
 		}
 
-		if !compareVersions(out.Versions, versions[:maxKeys]) {
+		if !compareVersions(versions[:maxKeys], out.Versions) {
 			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v", versions[:maxKeys], out.Versions)
 		}
 
@@ -15418,7 +15420,7 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected the VersionIdMarker to be %v, instead got %v", *versions[maxKeys].VersionId, *out.VersionIdMarker)
 		}
 
-		if !compareVersions(out.Versions, versions[maxKeys:]) {
+		if !compareVersions(versions[maxKeys:], out.Versions) {
 			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v", versions[maxKeys:], out.Versions)
 		}
 
@@ -15463,7 +15465,7 @@ func ListObjectVersions_with_delete_markers(s *S3Conf) error {
 			return err
 		}
 
-		if !compareVersions(res.Versions, versions) {
+		if !compareVersions(versions, res.Versions) {
 			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, res.Versions)
 		}
 		if !compareDelMarkers(res.DeleteMarkers, delMarkers) {
@@ -15535,7 +15537,7 @@ func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
 			return err
 		}
 
-		if !compareVersions(res.Versions, versions) {
+		if !compareVersions(versions, res.Versions) {
 			return fmt.Errorf("expected the listed object versions to be %v, instead got %v", versions, res.Versions)
 		}
 
@@ -15600,12 +15602,42 @@ func ListObjectVersions_single_null_versionId_object(s *S3Conf) error {
 		if !compareDelMarkers(resp.DeleteMarkers, delMarkers) {
 			return fmt.Errorf("expected the delete markers list to be %v, instaed got %v", delMarkers, resp.DeleteMarkers)
 		}
-		if !compareVersions(resp.Versions, versions) {
+		if !compareVersions(versions, resp.Versions) {
 			return fmt.Errorf("expected the object versions list to be %v, instead got %v", versions, resp.Versions)
 		}
 
 		return nil
 	})
+}
+
+func ListObjectVersions_checksum(s *S3Conf) error {
+	testName := "ListObjectVersions_checksum"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		versions := []types.ObjectVersion{}
+		for i, algo := range types.ChecksumAlgorithmCrc32.Values() {
+			vers, err := createObjVersions(s3client, bucket, fmt.Sprintf("obj-%v", i), 1, withChecksumAlgo(algo))
+			if err != nil {
+				return err
+			}
+
+			versions = append(versions, vers...)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(versions, res.Versions) {
+			return fmt.Errorf("expected the versions to be %+v, instead got %+v", versions, res.Versions)
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func Versioning_Multipart_Upload_success(s *S3Conf) error {
@@ -15761,7 +15793,7 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 			},
 		}, objVersions...)
 
-		if !compareVersions(resp.Versions, versions) {
+		if !compareVersions(versions, resp.Versions) {
 			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, resp.Versions)
 		}
 

@@ -915,14 +915,22 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Key:          &path,
 				})
 			} else {
+				// Retreive checksum
+				checksum, err := p.retrieveChecksums(nil, bucket, path)
+				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+					return nil, fmt.Errorf("get checksum: %w", err)
+				}
+
 				objects = append(objects, types.ObjectVersion{
-					ETag:         &etag,
-					Key:          &path,
-					LastModified: backend.GetTimePtr(fi.ModTime()),
-					Size:         &size,
-					VersionId:    &versionId,
-					IsLatest:     getBoolPtr(true),
-					StorageClass: types.ObjectVersionStorageClassStandard,
+					ETag:              &etag,
+					Key:               &path,
+					LastModified:      backend.GetTimePtr(fi.ModTime()),
+					Size:              &size,
+					VersionId:         &versionId,
+					IsLatest:          getBoolPtr(true),
+					StorageClass:      types.ObjectVersionStorageClassStandard,
+					ChecksumAlgorithm: []types.ChecksumAlgorithm{checksum.Algorithm},
+					ChecksumType:      checksum.Type,
 				})
 			}
 
@@ -998,6 +1006,12 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				// so this will just set etag to "" if its not already set
 				etag := string(etagBytes)
 				size := nf.Size()
+				// Retreive checksum
+				checksum, err := p.retrieveChecksums(nil, versionPath, nullVersionId)
+				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+					return nil, fmt.Errorf("get checksum: %w", err)
+				}
+
 				nullVersionIdObj = &types.ObjectVersion{
 					ETag:         &etag,
 					Key:          &path,
@@ -1006,6 +1020,10 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					VersionId:    backend.GetPtrFromString("null"),
 					IsLatest:     getBoolPtr(false),
 					StorageClass: types.ObjectVersionStorageClassStandard,
+					ChecksumAlgorithm: []types.ChecksumAlgorithm{
+						checksum.Algorithm,
+					},
+					ChecksumType: checksum.Type,
 				}
 			}
 		}
@@ -1110,14 +1128,21 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					IsLatest:     getBoolPtr(false),
 				})
 			} else {
+				// Retreive checksum
+				checksum, err := p.retrieveChecksums(nil, versionPath, versionId)
+				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+					return nil, fmt.Errorf("get checksum: %w", err)
+				}
 				objects = append(objects, types.ObjectVersion{
-					ETag:         &etag,
-					Key:          &path,
-					LastModified: backend.GetTimePtr(f.ModTime()),
-					Size:         &size,
-					VersionId:    &versionId,
-					IsLatest:     getBoolPtr(false),
-					StorageClass: types.ObjectVersionStorageClassStandard,
+					ETag:              &etag,
+					Key:               &path,
+					LastModified:      backend.GetTimePtr(f.ModTime()),
+					Size:              &size,
+					VersionId:         &versionId,
+					IsLatest:          getBoolPtr(false),
+					StorageClass:      types.ObjectVersionStorageClassStandard,
+					ChecksumAlgorithm: []types.ChecksumAlgorithm{checksum.Algorithm},
+					ChecksumType:      checksum.Type,
 				})
 			}
 
@@ -3855,6 +3880,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	var sha1 *string
 	var sha256 *string
 	var crc64nvme *string
+	var chType types.ChecksumType
 
 	dstObjdPath := filepath.Join(dstBucket, dstObject)
 	if dstObjdPath == objPath {
@@ -3881,6 +3907,8 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get obj checksums: %w", err)
 		}
+
+		chType = checksums.Type
 
 		if input.ChecksumAlgorithm != "" {
 			// If a different checksum algorith is specified
@@ -3922,6 +3950,10 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 					checksums.CRC64NVME = &sum
 					crc64nvme = &sum
 				}
+
+				// If a new checksum is calculated, the checksum type
+				// should be FULL_OBJECT
+				chType = types.ChecksumTypeFullObject
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
 				if err != nil {
@@ -3970,6 +4002,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		sha1 = res.ChecksumSHA1
 		sha256 = res.ChecksumSHA256
 		crc64nvme = res.ChecksumCRC64NVME
+		chType = res.ChecksumType
 	}
 
 	fi, err = os.Stat(dstObjdPath)
@@ -3986,6 +4019,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			ChecksumSHA1:      sha1,
 			ChecksumSHA256:    sha256,
 			ChecksumCRC64NVME: crc64nvme,
+			ChecksumType:      chType,
 		},
 		VersionId:           version,
 		CopySourceVersionId: &srcVersionId,

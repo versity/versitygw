@@ -703,6 +703,7 @@ func TestVersioning(s *S3Conf) {
 	ListObjectVersions_with_delete_markers(s)
 	ListObjectVersions_containing_null_versionId_obj(s)
 	ListObjectVersions_single_null_versionId_object(s)
+	ListObjectVersions_checksum(s)
 	// Multipart upload
 	Versioning_Multipart_Upload_success(s)
 	Versioning_Multipart_Upload_overwrite_an_object(s)
@@ -1162,6 +1163,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_with_delete_markers":                                  ListObjectVersions_with_delete_markers,
 		"ListObjectVersions_containing_null_versionId_obj":                        ListObjectVersions_containing_null_versionId_obj,
 		"ListObjectVersions_single_null_versionId_object":                         ListObjectVersions_single_null_versionId_object,
+		"ListObjectVersions_checksum":                                             ListObjectVersions_checksum,
 		"Versioning_Multipart_Upload_success":                                     Versioning_Multipart_Upload_success,
 		"Versioning_Multipart_Upload_overwrite_an_object":                         Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_non_existing_versionId":                        Versioning_UploadPartCopy_non_existing_versionId,
