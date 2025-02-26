@@ -138,35 +138,19 @@ list_objects_rest() {
     log 2 "'list_objects_rest' requires bucket name"
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1
-
-host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  log 5 "canonical request: $canonical_request"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  log 5 "bucket name: $1"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
+    log 2 "error listing objects: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks "$header://$aws_endpoint_url_address/$1" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: $payload_hash" \
-    -H "x-amz-date: $current_date_time" 2>&1)
-  log 5 "reply: $reply"
-  parse_objects_list_rest
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/objects.txt"))"
+    return 1
+  fi
+  # shellcheck disable=SC2034
+  reply=$(cat "$TEST_FILE_FOLDER/objects.txt")
+  if ! parse_objects_list_rest; then
+    log 2 "error parsing list objects"
+    return 1
+  fi
 }
