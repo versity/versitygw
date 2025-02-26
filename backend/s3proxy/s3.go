@@ -193,6 +193,10 @@ func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3res
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
+	if input.VersionIdMarker != nil && *input.VersionIdMarker == "" {
+		input.VersionIdMarker = nil
+	}
+
 	out, err := s.client.ListObjectVersions(ctx, input)
 	if err != nil {
 		return s3response.ListVersionsResult{}, handleError(err)
@@ -395,11 +399,19 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3re
 }
 
 func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if input.VersionId != nil && *input.VersionId == "" {
+		input.VersionId = nil
+	}
+
 	out, err := s.client.HeadObject(ctx, input)
 	return out, handleError(err)
 }
 
 func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if input.VersionId != nil && *input.VersionId == "" {
+		input.VersionId = nil
+	}
+
 	output, err := s.client.GetObject(ctx, input)
 	if err != nil {
 		return nil, handleError(err)
@@ -409,6 +421,10 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+	if input.VersionId != nil && *input.VersionId == "" {
+		input.VersionId = nil
+	}
+
 	out, err := s.client.GetObjectAttributes(ctx, input)
 
 	parts := s3response.ObjectParts{}
@@ -451,6 +467,16 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s
 }
 
 func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	if input.Marker != nil && *input.Marker == "" {
+		input.Marker = nil
+	}
+	if input.Delimiter != nil && *input.Delimiter == "" {
+		input.Delimiter = nil
+	}
+	if input.Prefix != nil && *input.Prefix == "" {
+		input.Prefix = nil
+	}
+
 	out, err := s.client.ListObjects(ctx, input)
 	if err != nil {
 		return s3response.ListObjectsResult{}, handleError(err)
@@ -472,6 +498,16 @@ func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 }
 
 func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+	if input.ContinuationToken != nil && *input.ContinuationToken == "" {
+		input.ContinuationToken = nil
+	}
+	if input.Delimiter != nil && *input.Delimiter == "" {
+		input.Delimiter = nil
+	}
+	if input.Prefix != nil && *input.Prefix == "" {
+		input.Prefix = nil
+	}
+
 	out, err := s.client.ListObjectsV2(ctx, input)
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, handleError(err)
@@ -494,6 +530,10 @@ func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 }
 
 func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	if input.VersionId != nil && *input.VersionId == "" {
+		input.VersionId = nil
+	}
+
 	res, err := s.client.DeleteObject(ctx, input)
 	return res, handleError(err)
 }
@@ -858,7 +898,7 @@ func base64Decode(encoded string) ([]byte, error) {
 }
 
 func convertObjects(objs []types.Object) []s3response.Object {
-	result := make([]s3response.Object, len(objs))
+	result := make([]s3response.Object, 0, len(objs))
 
 	for _, obj := range objs {
 		result = append(result, s3response.Object{
