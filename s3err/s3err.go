@@ -112,6 +112,7 @@ const (
 	ErrSignatureTerminationStr
 	ErrSignatureIncorrService
 	ErrContentSHA256Mismatch
+	ErrMissingDecodedContentLength
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
 	ErrMissingDateHeader
@@ -443,6 +444,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "XAmzContentSHA256Mismatch",
 		Description:    "The provided 'x-amz-content-sha256' header does not match what was computed.",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMissingDecodedContentLength: {
+		Code:           "MissingContentLength",
+		Description:    "You must provide the Content-Length HTTP header.",
+		HTTPStatusCode: http.StatusLengthRequired,
 	},
 	ErrMissingDateHeader: {
 		Code:           "AccessDenied",
