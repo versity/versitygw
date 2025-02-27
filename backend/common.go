@@ -152,8 +152,8 @@ func GetMultipartMD5(parts []types.CompletedPart) string {
 	for _, part := range parts {
 		partsEtagBytes = append(partsEtagBytes, getEtagBytes(*part.ETag)...)
 	}
-	s3MD5 := fmt.Sprintf("%s-%d", md5String(partsEtagBytes), len(parts))
-	return s3MD5
+
+	return fmt.Sprintf("\"%s-%d\"", md5String(partsEtagBytes), len(parts))
 }
 
 func getEtagBytes(etag string) []byte {
