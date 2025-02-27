@@ -368,10 +368,9 @@ func putObjects(client *s3.Client, objs []string, bucket string) ([]types.Object
 			return nil, err
 		}
 		k := key
-		etag := strings.Trim(*res.ETag, `"`)
 		contents = append(contents, types.Object{
 			Key:          &k,
-			ETag:         &etag,
+			ETag:         res.ETag,
 			StorageClass: types.ObjectStorageClassStandard,
 			Size:         &size,
 		})

@@ -563,7 +563,7 @@ Pager:
 				break Pager
 			}
 			objects = append(objects, s3response.Object{
-				ETag:         (*string)(v.Properties.ETag),
+				ETag:         backend.GetPtrFromString(fmt.Sprintf("%q", *v.Properties.ETag)),
 				Key:          v.Name,
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
@@ -645,7 +645,7 @@ Pager:
 				break Pager
 			}
 			objects = append(objects, s3response.Object{
-				ETag:         (*string)(v.Properties.ETag),
+				ETag:         backend.GetPtrFromString(fmt.Sprintf("%q", *v.Properties.ETag)),
 				Key:          v.Name,
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,

@@ -2814,7 +2814,7 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 	}
 
 	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum[:])
+	etag := fmt.Sprintf("\"%v\"", hex.EncodeToString(dataSum[:]))
 
 	// if the versioning is enabled, generate a new versionID for the object
 	var versionID string
