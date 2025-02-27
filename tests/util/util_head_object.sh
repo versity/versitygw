@@ -166,3 +166,13 @@ check_checksum_rest_crc32() {
   fi
   return 0
 }
+
+crc64_file() {
+  source ./env/bin/activate
+  python3 -m pip install awscrt
+  if ! checksum=$(python3 -c "import sys;from awscrt import checksums;crc64nvme_value = checksums.crc64nvme(sys.argv[1]);print(crc64nvme_value)" "$1"); then
+    return 1
+  fi
+  log 5 "checksum: $checksum"
+  deactivate
+}
