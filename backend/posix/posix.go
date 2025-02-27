@@ -249,35 +249,15 @@ func (p *Posix) doesBucketAndObjectExist(bucket, object string) error {
 }
 
 func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
-	entries, err := os.ReadDir(".")
+	fis, err := listBucketFileInfos(p.bucketlinks)
 	if err != nil {
-		return s3response.ListAllMyBucketsResult{},
-			fmt.Errorf("readdir buckets: %w", err)
+		return s3response.ListAllMyBucketsResult{}, fmt.Errorf("listBucketFileInfos : %w", err)
 	}
 
 	var cToken string
 
 	var buckets []s3response.ListAllMyBucketsEntry
-	for _, entry := range entries {
-		fi, err := entry.Info()
-		if err != nil {
-			// skip entries returning errors
-			continue
-		}
-
-		if p.bucketlinks && entry.Type() == fs.ModeSymlink {
-			fi, err = os.Stat(entry.Name())
-			if err != nil {
-				// skip entries returning errors
-				continue
-			}
-		}
-
-		if !fi.IsDir() {
-			// buckets must be a directory
-			continue
-		}
-
+	for _, fi := range fis {
 		if !strings.HasPrefix(fi.Name(), input.Prefix) {
 			continue
 		}
@@ -294,13 +274,13 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 		// return all the buckets for admin users
 		if input.IsAdmin {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         entry.Name(),
+				Name:         fi.Name(),
 				CreationDate: fi.ModTime(),
 			})
 			continue
 		}
 
-		aclTag, err := p.meta.RetrieveAttribute(nil, entry.Name(), "", aclkey)
+		aclTag, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			// skip buckets without acl tag
 			continue
@@ -317,7 +297,7 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 
 		if acl.Owner == input.Owner {
 			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name:         entry.Name(),
+				Name:         fi.Name(),
 				CreationDate: fi.ModTime(),
 			})
 		}
@@ -4742,23 +4722,47 @@ func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte
 	return p.PutBucketAcl(ctx, bucket, acl)
 }
 
-func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
+func listBucketFileInfos(bucketlinks bool) ([]fs.FileInfo, error) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
-		return buckets, fmt.Errorf("readdir buckets: %w", err)
+		return nil, fmt.Errorf("readdir buckets: %w", err)
 	}
 
+	var fis []fs.FileInfo
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
 		fi, err := entry.Info()
 		if err != nil {
 			continue
 		}
 
-		aclTag, err := p.meta.RetrieveAttribute(nil, entry.Name(), "", aclkey)
+		if bucketlinks && entry.Type() == fs.ModeSymlink {
+			fi, err = os.Stat(entry.Name())
+			if err != nil {
+				// skip entries returning errors
+				continue
+			}
+		}
+
+		if !fi.IsDir() {
+			// buckets must be a directory
+			continue
+		}
+
+		fis = append(fis, fi)
+	}
+	return fis, nil
+
+}
+
+func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.Bucket, err error) {
+	fis, err := listBucketFileInfos(p.bucketlinks)
+	if err != nil {
+		return buckets, fmt.Errorf("listBucketFileInfos: %w", err)
+	}
+
+	for _, fi := range fis {
+
+		aclTag, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return buckets, fmt.Errorf("get acl tag: %w", err)
 		}
