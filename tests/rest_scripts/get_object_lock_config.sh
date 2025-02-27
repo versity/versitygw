@@ -28,7 +28,6 @@ if ! build_canonical_request "${canonical_request_data[@]}"; then
   log_rest 2 "error building request"
   exit 1
 fi
-echo "$canonical_request" > "cr.txt"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature

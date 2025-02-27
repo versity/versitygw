@@ -23,6 +23,8 @@ source ./tests/commands/put_object.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_setup.sh
 
+test_file="test_file"
+
 @test "REST - check, enable, suspend versioning" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -46,7 +48,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "test_rest_versioning" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -70,7 +71,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "versioning - add version, then delete and check for marker" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -88,7 +88,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "versioning - retrieve after delete" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 

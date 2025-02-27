@@ -21,8 +21,9 @@ source ./tests/setup.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
+test_file="test_file"
+
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -34,7 +35,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - PutObject rejects invalid sha256 checksum" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -43,7 +43,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - PutObject rejects incorrect sha256 checksum" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -51,17 +50,7 @@ source ./tests/util/util_setup.sh
   assert_success
 }
 
-@test "REST - crc32 checksum - success" {
-  test_file="test_file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32"
-  assert_success
-}
-
 @test "REST - crc32 checksum - correct" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -69,5 +58,29 @@ source ./tests/util/util_setup.sh
   assert_success
 
   run check_checksum_rest_crc32 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
+
+@test "REST - crc32 checksum - incorrect" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_crc32_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - crc64nvme checksum - correct" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc64nvme"
+  assert_success
+}
+
+@test "REST - crc64nvme checksum - incorrect" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_crc64nvme_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }

@@ -51,6 +51,14 @@ elif [ "$checksum_type" == "crc32" ]; then
     checksum_hash="$(gzip -c -1 "$data_file" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
   fi
   cr_data+=("x-amz-checksum-crc32:$checksum_hash")
+elif [ "$checksum_type" == "crc64nvme" ]; then
+  if [ -z "$checksum_hash" ]; then
+    if ! checksum_hash=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+      log_rest 2 "error calculating crc64nvme checksum: $checksum_hash"
+      exit 1
+    fi
+  fi
+  cr_data+=("x-amz-checksum-crc64nvme:$checksum_hash")
 fi
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"

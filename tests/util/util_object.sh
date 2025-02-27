@@ -297,12 +297,12 @@ list_and_check_directory_obj() {
   return 0
 }
 
-check_sha256_invalid_or_incorrect() {
-  if [ $# -ne 5 ]; then
-    log 2 "'check_sha256_invalid_or_incorrect' requires data file, bucket name, key, checksum, expected error"
+check_checksum_invalid_or_incorrect() {
+  if [ $# -ne 6 ]; then
+    log 2 "'check_sha256_invalid_or_incorrect' requires data file, bucket name, key, checksum type, checksum, expected error"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="sha256" CHECKSUM="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="$4" CHECKSUM="$5" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi
@@ -310,7 +310,7 @@ check_sha256_invalid_or_incorrect() {
     log 2 "expected response code of '400', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt")"
     return 1
   fi
-  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "$5" "Error" "Message"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "$6" "Error" "Message"; then
     log 2 "xml error message mismatch"
     return 1
   fi
@@ -322,12 +322,13 @@ put_object_rest_checksum() {
     log 2 "'put_object_rest_sha256_checksum' requires data file, bucket name, key, checksum type"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
+  # shellcheck disable=SC2097,SC2098
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="$4" ./tests/rest_scripts/put_object.sh 2>&1); then
     log 2 "error: $result"
     return 1
   fi
   if [ "$result" != "200" ]; then
-    log 2 "expected response code of '200', was '$result'"
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
@@ -339,7 +340,7 @@ put_object_rest_sha256_invalid() {
     log 2 "'put_object_rest_sha256_invalid' requires data file, bucket name, key"
     return 1
   fi
-  if ! check_sha256_invalid_or_incorrect "$1" "$2" "$3" "dummy" "Value for x-amz-checksum-sha256 header is invalid."; then
+  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "sha256" "dummy" "Value for x-amz-checksum-sha256 header is invalid."; then
     log 2 "error checking checksum"
     return 1
   fi
@@ -357,7 +358,7 @@ put_object_rest_sha256_incorrect() {
     error_message="The sha256 you specified did not match the calculated checksum."
   fi
   incorrect_checksum="$(echo -n "dummy" | sha256sum | awk '{print $1}' | xxd -r -p | base64)"
-  if ! check_sha256_invalid_or_incorrect "$1" "$2" "$3" "$incorrect_checksum" "$error_message"; then
+  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "sha256" "$incorrect_checksum" "$error_message"; then
     log 2 "error checking checksum"
     return 1
   fi
@@ -375,6 +376,45 @@ put_object_rest_chunked_payload_type_without_content_length() {
   fi
   if [ "$result" != "411" ]; then
     log 2 "expected response code of '411', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_crc32_incorrect() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object_rest_crc32_incorrect' requires data file, bucket name, key"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    error_message="The CRC32 you specified did not match the calculated checksum."
+  else
+    error_message="The crc32 you specified did not match the calculated checksum."
+  fi
+  incorrect_checksum="$(echo -n "dummy" | gzip -c -1 | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
+  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "crc32" "$incorrect_checksum" "$error_message"; then
+    log 2 "error checking checksum"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_crc64nvme_incorrect() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object_rest_crc64nvme_incorrect' requires data file, bucket name, key"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    error_message="The CRC64NVME you specified did not match the calculated checksum."
+  else
+    error_message="The crc64nvme you specified did not match the calculated checksum."
+  fi
+  if ! incorrect_checksum=$(DATA_FILE=<(echo -n "dummy") TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+    log 2 "error calculating checksum: $incorrect_checksum"
+    return 1
+  fi
+  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "crc64nvme" "$incorrect_checksum" "$error_message"; then
+    log 2 "error checking checksum"
     return 1
   fi
   return 0

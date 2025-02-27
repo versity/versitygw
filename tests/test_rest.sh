@@ -53,9 +53,9 @@ source ./tests/util/util_versioning.sh
 source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
+test_file="test_file"
 
 @test "test_rest_list_objects" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -75,7 +75,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_delete_object" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -96,7 +95,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_tagging" {
-  test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
@@ -120,7 +118,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_retention" {
-  test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
@@ -168,7 +165,6 @@ export RUN_USERS=true
 }
 
 @test "REST - legal hold, get without config" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -180,8 +176,6 @@ export RUN_USERS=true
 }
 
 @test "REST - multipart upload create then abort" {
-  test_file="test_file"
-
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
@@ -190,7 +184,6 @@ export RUN_USERS=true
 }
 
 @test "REST - multipart upload create, list parts" {
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -212,7 +205,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1000"
   fi
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -230,7 +222,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -245,7 +236,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1006"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -320,7 +310,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/993"
   fi
-  test_file="test_file"
   test_file_two="test_file_2"
   test_file_three="test_file_3"
   run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
@@ -348,7 +337,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"
   fi
-  test_file="test_file"
   test_file_two="test_file_2"
   run setup_bucket "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
@@ -367,7 +355,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1008"
   fi
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -376,7 +363,6 @@ export RUN_USERS=true
 }
 
 @test "REST - upload part copy" {
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -391,7 +377,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1018"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -426,27 +411,26 @@ export RUN_USERS=true
 }
 
 @test "REST - delete objects command" {
-  test_file_one="test_file"
   test_file_two="test_file_two"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one"
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_one"
+  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
+  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_one"
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_two"
@@ -457,7 +441,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1043"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -481,7 +464,6 @@ export RUN_USERS=true
     assert_success
   fi
 
-  test_file="test_file"
   run create_test_files "$test_file"
   assert_success
 
@@ -508,7 +490,6 @@ export RUN_USERS=true
     assert_success
   fi
 
-  test_file="test_file"
   run create_test_files "$test_file"
   assert_success
 

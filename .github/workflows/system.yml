@@ -172,6 +172,7 @@ jobs:
           VERSIONING_DIR: ${{ github.workspace }}/versioning
           COMMAND_LOG: command.log
           TIME_LOG: time.log
+          PYTHON_ENV_FOLDER: ${{ github.workspace }}/env
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
