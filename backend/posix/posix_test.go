@@ -17,15 +17,19 @@ func TestListBucketsAndOwnersBucketLinks(t *testing.T) {
 		to   string
 	}
 	testCases := []struct {
-		name  string
-		dirs  []string
-		links []link
+		name     string
+		dirs     []string
+		files    []string
+		links    []link
+		expected []string
 	}{
-		{"empty", []string{}, nil},
-		{"single", []string{"abucket"}, nil},
-		{"basic three", []string{"ccc", "bbb", "aaa"}, nil},
-		{"case sensitive", []string{"Ccc", "bBb", "aaA"}, nil},
-		{"link single", []string{"frombucket"}, []link{{"frombucket", "tobucket"}}},
+		{"empty", []string{}, []string{}, nil, []string{}},
+		{"single", []string{"abucket"}, []string{}, nil, []string{"abucket"}},
+		{"basic three", []string{"ccc", "bbb", "aaa"}, []string{}, nil, []string{"aaa", "bbb", "ccc"}},
+		{"case sensitive", []string{"Ccc", "bBb", "aaA"}, []string{}, nil, []string{"Ccc", "aaA", "bBb"}},
+		{"link to single dir", []string{"frombucket"}, []string{}, []link{{"frombucket", "tobucket"}}, []string{"frombucket", "tobucket"}},
+		{"link to single file", []string{}, []string{"fromfile"}, []link{{"fromfile", "tofile"}}, []string{}},
+		{"link to non-existent", []string{}, []string{}, []link{{"doesnotexist", "tofile"}}, []string{}},
 	}
 
 	ctx := context.Background()
@@ -34,8 +38,6 @@ func TestListBucketsAndOwnersBucketLinks(t *testing.T) {
 	for _, tc := range testCases {
 		gwDir := t.TempDir()
 
-		var expected []string
-
 		t.Logf("%s: working in gw dir [%s]", tc.name, gwDir)
 		os.Chdir(gwDir)
 		for _, dir := range tc.dirs {
@@ -43,14 +45,19 @@ func TestListBucketsAndOwnersBucketLinks(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to setup test: Mkdir err %s", err)
 			}
-			expected = append(expected, dir)
+		}
+		for _, file := range tc.files {
+			f, err := os.Create(file)
+			if err != nil {
+				t.Fatalf("Failed to setup test: Mkdir err %s", err)
+			}
+			f.Close()
 		}
 		for _, link := range tc.links {
 			err = os.Symlink(link.from, link.to)
 			if err != nil {
 				t.Fatalf("Failed to setup test: Link err %s", err)
 			}
-			expected = append(expected, link.to)
 		}
 
 		meta := meta.XattrMeta{}
@@ -66,12 +73,11 @@ func TestListBucketsAndOwnersBucketLinks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListBucketsAndOwners failed: %s", err)
 		}
-		var got []string
+		got := make([]string, 0)
 		for _, bucket := range resp {
 			got = append(got, bucket.Name)
 		}
 		sort.Strings(got)
-		sort.Strings(expected)
-		a.Equal(got, expected)
+		a.Equal(tc.expected, got)
 	}
 }
