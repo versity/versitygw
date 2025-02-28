@@ -1260,95 +1260,28 @@ func (s *S3Proxy) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 }
 
 func (s *S3Proxy) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
-	cfg, err := auth.ParseBucketLockConfigurationOutput(config)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-		Bucket:                  &bucket,
-		ObjectLockConfiguration: cfg,
-	})
-
-	return handleError(err)
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (s *S3Proxy) GetObjectLockConfiguration(ctx context.Context, bucket string) ([]byte, error) {
-	resp, err := s.client.GetObjectLockConfiguration(ctx, &s3.GetObjectLockConfigurationInput{
-		Bucket: &bucket,
-	})
-	if err != nil {
-		return nil, handleError(err)
-	}
-
-	config := auth.BucketLockConfig{
-		Enabled:          resp.ObjectLockConfiguration.ObjectLockEnabled == types.ObjectLockEnabledEnabled,
-		DefaultRetention: resp.ObjectLockConfiguration.Rule.DefaultRetention,
-	}
-
-	return json.Marshal(config)
+	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 }
 
 func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
-	ret, err := auth.ParseObjectLockRetentionOutput(retention)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-		Bucket:                    &bucket,
-		Key:                       &object,
-		VersionId:                 &versionId,
-		Retention:                 ret,
-		BypassGovernanceRetention: &bypass,
-	})
-	return handleError(err)
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (s *S3Proxy) GetObjectRetention(ctx context.Context, bucket, object, versionId string) ([]byte, error) {
-	resp, err := s.client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
-		Bucket:    &bucket,
-		Key:       &object,
-		VersionId: &versionId,
-	})
-	if err != nil {
-		return nil, handleError(err)
-	}
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 
-	return json.Marshal(resp.Retention)
 }
 
 func (s *S3Proxy) PutObjectLegalHold(ctx context.Context, bucket, object, versionId string, status bool) error {
-	var st types.ObjectLockLegalHoldStatus
-	if status {
-		st = types.ObjectLockLegalHoldStatusOn
-	} else {
-		st = types.ObjectLockLegalHoldStatusOff
-	}
-
-	_, err := s.client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
-		Bucket:    &bucket,
-		Key:       &object,
-		VersionId: &versionId,
-		LegalHold: &types.ObjectLockLegalHold{
-			Status: st,
-		},
-	})
-	return handleError(err)
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versionId string) (*bool, error) {
-	resp, err := s.client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
-		Bucket:    &bucket,
-		Key:       &object,
-		VersionId: &versionId,
-	})
-	if err != nil {
-		return nil, handleError(err)
-	}
-
-	status := resp.LegalHold.Status == types.ObjectLockLegalHoldStatusOn
-	return &status, nil
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
 func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
