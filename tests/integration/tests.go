@@ -11196,6 +11196,91 @@ func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_explicit_deny(s *S3Conf) error {
+	testName := "PutBucketPolicy_object_action_on_bucket_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		user2 := user{"grt2", "grt2secret", "user"}
+		err := createUsers(s, []user{
+			{"grt1", "grt1secret", "user"},
+			user2,
+		})
+		if err != nil {
+			return err
+		}
+
+		resource := fmt.Sprintf("arn:aws:s3:::%v", bucket)
+		resourceWildCard := fmt.Sprintf("%v/*", resource)
+		resourcePrefix := fmt.Sprintf("%v/someprefix/*", resource)
+
+		policy := fmt.Sprintf(`
+			{
+				"Statement": [
+					{
+						"Action": [
+							"s3:*"
+						],
+						"Effect": "Allow",
+						"Principal": [
+							"grt1"
+						],
+						"Resource": [
+							"%v",
+							"%v"
+						]
+					},
+					{
+						"Action": [
+							"s3:*"
+						],
+						"Effect": "Allow",
+						"Principal": [
+							"grt2"
+						],
+						"Resource": [
+							"%v",
+							"%v"
+						]
+					},
+					{
+						"Action": [
+							"s3:*"
+						],
+						"Effect": "Deny",
+						"Principal": [
+							"grt2"
+						],
+						"Resource": "%v"
+					}
+				]
+			}
+		`, resourcePrefix, resource, resourceWildCard, resource, resourcePrefix)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(user2, s)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("someprefix/hello"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func PutBucketPolicy_success(s *S3Conf) error {
 	testName := "PutBucketPolicy_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

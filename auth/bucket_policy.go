@@ -48,18 +48,19 @@ func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
 }
 
 func (bp *BucketPolicy) isAllowed(principal string, action Action, resource string) bool {
+	var isAllowed bool
 	for _, statement := range bp.Statement {
 		if statement.findMatch(principal, action, resource) {
 			switch statement.Effect {
 			case BucketPolicyAccessTypeAllow:
-				return true
+				isAllowed = true
 			case BucketPolicyAccessTypeDeny:
 				return false
 			}
 		}
 	}
 
-	return false
+	return isAllowed
 }
 
 type BucketPolicyItem struct {
