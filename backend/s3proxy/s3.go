@@ -107,11 +107,29 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 }
 
 func (s *S3Proxy) HeadBucket(ctx context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
 	out, err := s.client.HeadBucket(ctx, input)
 	return out, handleError(err)
 }
 
 func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
+	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
+		input.GrantFullControl = nil
+	}
+	if input.GrantRead != nil && *input.GrantRead == "" {
+		input.GrantRead = nil
+	}
+	if input.GrantReadACP != nil && *input.GrantReadACP == "" {
+		input.GrantReadACP = nil
+	}
+	if input.GrantWrite != nil && *input.GrantWrite == "" {
+		input.GrantWrite = nil
+	}
+	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
+		input.GrantWriteACP = nil
+	}
 	_, err := s.client.CreateBucket(ctx, input)
 	if err != nil {
 		return handleError(err)
@@ -193,8 +211,23 @@ func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3res
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
+	if input.Delimiter != nil && *input.Delimiter == "" {
+		input.Delimiter = nil
+	}
+	if input.Prefix != nil && *input.Prefix == "" {
+		input.Prefix = nil
+	}
+	if input.KeyMarker != nil && *input.KeyMarker == "" {
+		input.KeyMarker = nil
+	}
 	if input.VersionIdMarker != nil && *input.VersionIdMarker == "" {
 		input.VersionIdMarker = nil
+	}
+	if input.MaxKeys != nil && *input.MaxKeys == 0 {
+		input.MaxKeys = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
 	}
 
 	out, err := s.client.ListObjectVersions(ctx, input)
@@ -219,7 +252,67 @@ func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVe
 	}, nil
 }
 
+var defTime = time.Time{}
+
 func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	if input.CacheControl != nil && *input.CacheControl == "" {
+		input.CacheControl = nil
+	}
+	if input.ContentDisposition != nil && *input.ContentDisposition == "" {
+		input.ContentDisposition = nil
+	}
+	if input.ContentEncoding != nil && *input.ContentEncoding == "" {
+		input.ContentEncoding = nil
+	}
+	if input.ContentLanguage != nil && *input.ContentLanguage == "" {
+		input.ContentLanguage = nil
+	}
+	if input.ContentType != nil && *input.ContentType == "" {
+		input.ContentType = nil
+	}
+	if input.Expires != nil && *input.Expires == defTime {
+		input.Expires = nil
+	}
+	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
+		input.GrantFullControl = nil
+	}
+	if input.GrantRead != nil && *input.GrantRead == "" {
+		input.GrantRead = nil
+	}
+	if input.GrantReadACP != nil && *input.GrantReadACP == "" {
+		input.GrantReadACP = nil
+	}
+	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
+		input.GrantWriteACP = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.ObjectLockRetainUntilDate != nil && *input.ObjectLockRetainUntilDate == defTime {
+		input.ObjectLockRetainUntilDate = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+	if input.SSEKMSKeyId != nil && *input.SSEKMSKeyId == "" {
+		input.SSEKMSKeyId = nil
+	}
+	if input.SSEKMSEncryptionContext != nil && *input.SSEKMSEncryptionContext == "" {
+		input.SSEKMSEncryptionContext = nil
+	}
+	if input.Tagging != nil && *input.Tagging == "" {
+		input.Tagging = nil
+	}
+	if input.WebsiteRedirectLocation != nil && *input.WebsiteRedirectLocation == "" {
+		input.WebsiteRedirectLocation = nil
+	}
+
 	out, err := s.client.CreateMultipartUpload(ctx, input)
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, handleError(err)
@@ -233,16 +326,78 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMul
 }
 
 func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
+		input.ChecksumCRC32 = nil
+	}
+	if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C == "" {
+		input.ChecksumCRC32C = nil
+	}
+	if input.ChecksumCRC64NVME != nil && *input.ChecksumCRC64NVME == "" {
+		input.ChecksumCRC64NVME = nil
+	}
+	if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 == "" {
+		input.ChecksumSHA1 = nil
+	}
+	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
+		input.ChecksumSHA256 = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
+		input.IfNoneMatch = nil
+	}
+	if input.MpuObjectSize != nil && *input.MpuObjectSize == 0 {
+		input.MpuObjectSize = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+
 	out, err := s.client.CompleteMultipartUpload(ctx, input)
 	return out, handleError(err)
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.IfMatchInitiatedTime != nil && *input.IfMatchInitiatedTime == defTime {
+		input.IfMatchInitiatedTime = nil
+	}
 	_, err := s.client.AbortMultipartUpload(ctx, input)
 	return handleError(err)
 }
 
 func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	if input.Delimiter != nil && *input.Delimiter == "" {
+		input.Delimiter = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.KeyMarker != nil && *input.KeyMarker == "" {
+		input.KeyMarker = nil
+	}
+	if input.MaxUploads != nil && *input.MaxUploads == 0 {
+		input.MaxUploads = nil
+	}
+	if input.Prefix != nil && *input.Prefix == "" {
+		input.Prefix = nil
+	}
+	if input.UploadIdMarker != nil && *input.UploadIdMarker == "" {
+		input.UploadIdMarker = nil
+	}
+
 	output, err := s.client.ListMultipartUploads(ctx, input)
 	if err != nil {
 		return s3response.ListMultipartUploadsResult{}, handleError(err)
@@ -292,6 +447,25 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 }
 
 func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.MaxParts != nil && *input.MaxParts == 0 {
+		input.MaxParts = nil
+	}
+	if input.PartNumberMarker != nil && *input.PartNumberMarker == "" {
+		input.PartNumberMarker = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+
 	output, err := s.client.ListParts(ctx, input)
 	if err != nil {
 		return s3response.ListPartsResult{}, handleError(err)
@@ -347,6 +521,37 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 }
 
 func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
+		input.ChecksumCRC32 = nil
+	}
+	if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C == "" {
+		input.ChecksumCRC32C = nil
+	}
+	if input.ChecksumCRC64NVME != nil && *input.ChecksumCRC64NVME == "" {
+		input.ChecksumCRC64NVME = nil
+	}
+	if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 == "" {
+		input.ChecksumSHA1 = nil
+	}
+	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
+		input.ChecksumSHA256 = nil
+	}
+	if input.ContentMD5 != nil && *input.ContentMD5 == "" {
+		input.ContentMD5 = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
 	output, err := s.client.UploadPart(ctx, input, s3.WithAPIOptions(
@@ -356,6 +561,46 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 }
 
 func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+	if input.CopySourceIfMatch != nil && *input.CopySourceIfMatch == "" {
+		input.CopySourceIfMatch = nil
+	}
+	if input.CopySourceIfModifiedSince != nil && *input.CopySourceIfModifiedSince == defTime {
+		input.CopySourceIfModifiedSince = nil
+	}
+	if input.CopySourceIfNoneMatch != nil && *input.CopySourceIfNoneMatch == "" {
+		input.CopySourceIfNoneMatch = nil
+	}
+	if input.CopySourceIfUnmodifiedSince != nil && *input.CopySourceIfUnmodifiedSince == defTime {
+		input.CopySourceIfUnmodifiedSince = nil
+	}
+	if input.CopySourceRange != nil && *input.CopySourceRange == "" {
+		input.CopySourceRange = nil
+	}
+	if input.CopySourceSSECustomerAlgorithm != nil && *input.CopySourceSSECustomerAlgorithm == "" {
+		input.CopySourceSSECustomerAlgorithm = nil
+	}
+	if input.CopySourceSSECustomerKey != nil && *input.CopySourceSSECustomerKey == "" {
+		input.CopySourceSSECustomerKey = nil
+	}
+	if input.CopySourceSSECustomerKeyMD5 != nil && *input.CopySourceSSECustomerKeyMD5 == "" {
+		input.CopySourceSSECustomerKeyMD5 = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner == "" {
+		input.ExpectedSourceBucketOwner = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+
 	output, err := s.client.UploadPartCopy(ctx, input)
 	if err != nil {
 		return s3response.CopyPartResult{}, handleError(err)
@@ -373,6 +618,90 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 }
 
 func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+	if input.CacheControl != nil && *input.CacheControl == "" {
+		input.CacheControl = nil
+	}
+	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
+		input.ChecksumCRC32 = nil
+	}
+	if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C == "" {
+		input.ChecksumCRC32C = nil
+	}
+	if input.ChecksumCRC64NVME != nil && *input.ChecksumCRC64NVME == "" {
+		input.ChecksumCRC64NVME = nil
+	}
+	if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 == "" {
+		input.ChecksumSHA1 = nil
+	}
+	if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 == "" {
+		input.ChecksumSHA256 = nil
+	}
+	if input.ContentDisposition != nil && *input.ContentDisposition == "" {
+		input.ContentDisposition = nil
+	}
+	if input.ContentEncoding != nil && *input.ContentEncoding == "" {
+		input.ContentEncoding = nil
+	}
+	if input.ContentLanguage != nil && *input.ContentLanguage == "" {
+		input.ContentLanguage = nil
+	}
+	if input.ContentMD5 != nil && *input.ContentMD5 == "" {
+		input.ContentMD5 = nil
+	}
+	if input.ContentType != nil && *input.ContentType == "" {
+		input.ContentType = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.Expires != nil && *input.Expires == defTime {
+		input.Expires = nil
+	}
+	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
+		input.GrantFullControl = nil
+	}
+	if input.GrantRead != nil && *input.GrantRead == "" {
+		input.GrantRead = nil
+	}
+	if input.GrantReadACP != nil && *input.GrantReadACP == "" {
+		input.GrantReadACP = nil
+	}
+	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
+		input.GrantWriteACP = nil
+	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
+		input.IfNoneMatch = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+	if input.SSEKMSEncryptionContext != nil && *input.SSEKMSEncryptionContext == "" {
+		input.SSEKMSEncryptionContext = nil
+	}
+	if input.SSEKMSKeyId != nil && *input.SSEKMSKeyId == "" {
+		input.SSEKMSKeyId = nil
+	}
+	if input.Tagging != nil && *input.Tagging == "" {
+		input.Tagging = nil
+	}
+	if input.WebsiteRedirectLocation != nil && *input.WebsiteRedirectLocation == "" {
+		input.WebsiteRedirectLocation = nil
+	}
+
+	// no object lock for backend
+	input.ObjectLockRetainUntilDate = nil
+	input.ObjectLockMode = ""
+	input.ObjectLockLegalHoldStatus = ""
+
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
 	output, err := s.client.PutObject(ctx, input, s3.WithAPIOptions(
@@ -399,6 +728,54 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3re
 }
 
 func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfModifiedSince != nil && *input.IfModifiedSince == defTime {
+		input.IfModifiedSince = nil
+	}
+	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
+		input.IfNoneMatch = nil
+	}
+	if input.IfUnmodifiedSince != nil && *input.IfUnmodifiedSince == defTime {
+		input.IfUnmodifiedSince = nil
+	}
+	if input.PartNumber != nil && *input.PartNumber == 0 {
+		input.PartNumber = nil
+	}
+	if input.Range != nil && *input.Range == "" {
+		input.Range = nil
+	}
+	if input.ResponseCacheControl != nil && *input.ResponseCacheControl == "" {
+		input.ResponseCacheControl = nil
+	}
+	if input.ResponseContentDisposition != nil && *input.ResponseContentDisposition == "" {
+		input.ResponseContentDisposition = nil
+	}
+	if input.ResponseContentEncoding != nil && *input.ResponseContentEncoding == "" {
+		input.ResponseContentEncoding = nil
+	}
+	if input.ResponseContentLanguage != nil && *input.ResponseContentLanguage == "" {
+		input.ResponseContentLanguage = nil
+	}
+	if input.ResponseContentType != nil && *input.ResponseContentType == "" {
+		input.ResponseContentType = nil
+	}
+	if input.ResponseExpires != nil && *input.ResponseExpires == defTime {
+		input.ResponseExpires = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
 	if input.VersionId != nil && *input.VersionId == "" {
 		input.VersionId = nil
 	}
@@ -408,6 +785,54 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 }
 
 func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfModifiedSince != nil && *input.IfModifiedSince == defTime {
+		input.IfModifiedSince = nil
+	}
+	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
+		input.IfNoneMatch = nil
+	}
+	if input.IfUnmodifiedSince != nil && *input.IfUnmodifiedSince == defTime {
+		input.IfUnmodifiedSince = nil
+	}
+	if input.PartNumber != nil && *input.PartNumber == 0 {
+		input.PartNumber = nil
+	}
+	if input.Range != nil && *input.Range == "" {
+		input.Range = nil
+	}
+	if input.ResponseCacheControl != nil && *input.ResponseCacheControl == "" {
+		input.ResponseCacheControl = nil
+	}
+	if input.ResponseContentDisposition != nil && *input.ResponseContentDisposition == "" {
+		input.ResponseContentDisposition = nil
+	}
+	if input.ResponseContentEncoding != nil && *input.ResponseContentEncoding == "" {
+		input.ResponseContentEncoding = nil
+	}
+	if input.ResponseContentLanguage != nil && *input.ResponseContentLanguage == "" {
+		input.ResponseContentLanguage = nil
+	}
+	if input.ResponseContentType != nil && *input.ResponseContentType == "" {
+		input.ResponseContentType = nil
+	}
+	if input.ResponseExpires != nil && *input.ResponseExpires == defTime {
+		input.ResponseExpires = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
 	if input.VersionId != nil && *input.VersionId == "" {
 		input.VersionId = nil
 	}
@@ -421,6 +846,24 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.MaxParts != nil && *input.MaxParts == 0 {
+		input.MaxParts = nil
+	}
+	if input.PartNumberMarker != nil && *input.PartNumberMarker == "" {
+		input.PartNumberMarker = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
 	if input.VersionId != nil && *input.VersionId == "" {
 		input.VersionId = nil
 	}
@@ -462,16 +905,104 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 }
 
 func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	if input.CacheControl != nil && *input.CacheControl == "" {
+		input.CacheControl = nil
+	}
+	if input.ContentDisposition != nil && *input.ContentDisposition == "" {
+		input.ContentDisposition = nil
+	}
+	if input.ContentEncoding != nil && *input.ContentEncoding == "" {
+		input.ContentEncoding = nil
+	}
+	if input.ContentLanguage != nil && *input.ContentLanguage == "" {
+		input.ContentLanguage = nil
+	}
+	if input.ContentType != nil && *input.ContentType == "" {
+		input.ContentType = nil
+	}
+	if input.CopySourceIfMatch != nil && *input.CopySourceIfMatch == "" {
+		input.CopySourceIfMatch = nil
+	}
+	if input.CopySourceIfModifiedSince != nil && *input.CopySourceIfModifiedSince == defTime {
+		input.CopySourceIfModifiedSince = nil
+	}
+	if input.CopySourceIfNoneMatch != nil && *input.CopySourceIfNoneMatch == "" {
+		input.CopySourceIfNoneMatch = nil
+	}
+	if input.CopySourceIfUnmodifiedSince != nil && *input.CopySourceIfUnmodifiedSince == defTime {
+		input.CopySourceIfUnmodifiedSince = nil
+	}
+	if input.CopySourceSSECustomerAlgorithm != nil && *input.CopySourceSSECustomerAlgorithm == "" {
+		input.CopySourceSSECustomerAlgorithm = nil
+	}
+	if input.CopySourceSSECustomerKey != nil && *input.CopySourceSSECustomerKey == "" {
+		input.CopySourceSSECustomerKey = nil
+	}
+	if input.CopySourceSSECustomerKeyMD5 != nil && *input.CopySourceSSECustomerKeyMD5 == "" {
+		input.CopySourceSSECustomerKeyMD5 = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner == "" {
+		input.ExpectedSourceBucketOwner = nil
+	}
+	if input.Expires != nil && *input.Expires == defTime {
+		input.Expires = nil
+	}
+	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
+		input.GrantFullControl = nil
+	}
+	if input.GrantRead != nil && *input.GrantRead == "" {
+		input.GrantRead = nil
+	}
+	if input.GrantReadACP != nil && *input.GrantReadACP == "" {
+		input.GrantReadACP = nil
+	}
+	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
+		input.GrantWriteACP = nil
+	}
+	if input.ObjectLockRetainUntilDate != nil && *input.ObjectLockRetainUntilDate == defTime {
+		input.ObjectLockRetainUntilDate = nil
+	}
+	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
+		input.SSECustomerAlgorithm = nil
+	}
+	if input.SSECustomerKey != nil && *input.SSECustomerKey == "" {
+		input.SSECustomerKey = nil
+	}
+	if input.SSECustomerKeyMD5 != nil && *input.SSECustomerKeyMD5 == "" {
+		input.SSECustomerKeyMD5 = nil
+	}
+	if input.SSEKMSEncryptionContext != nil && *input.SSEKMSEncryptionContext == "" {
+		input.SSEKMSEncryptionContext = nil
+	}
+	if input.SSEKMSKeyId != nil && *input.SSEKMSKeyId == "" {
+		input.SSEKMSKeyId = nil
+	}
+	if input.Tagging != nil && *input.Tagging == "" {
+		input.Tagging = nil
+	}
+	if input.WebsiteRedirectLocation != nil && *input.WebsiteRedirectLocation == "" {
+		input.WebsiteRedirectLocation = nil
+	}
+
 	out, err := s.client.CopyObject(ctx, input)
 	return out, handleError(err)
 }
 
 func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	if input.Delimiter != nil && *input.Delimiter == "" {
+		input.Delimiter = nil
+	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
 	if input.Marker != nil && *input.Marker == "" {
 		input.Marker = nil
 	}
-	if input.Delimiter != nil && *input.Delimiter == "" {
-		input.Delimiter = nil
+	if input.MaxKeys != nil && *input.MaxKeys == 0 {
+		input.MaxKeys = nil
 	}
 	if input.Prefix != nil && *input.Prefix == "" {
 		input.Prefix = nil
@@ -504,8 +1035,17 @@ func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 	if input.Delimiter != nil && *input.Delimiter == "" {
 		input.Delimiter = nil
 	}
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.MaxKeys != nil && *input.MaxKeys == 0 {
+		input.MaxKeys = nil
+	}
 	if input.Prefix != nil && *input.Prefix == "" {
 		input.Prefix = nil
+	}
+	if input.StartAfter != nil && *input.StartAfter == "" {
+		input.StartAfter = nil
 	}
 
 	out, err := s.client.ListObjectsV2(ctx, input)
@@ -530,6 +1070,21 @@ func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 }
 
 func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.IfMatch != nil && *input.IfMatch == "" {
+		input.IfMatch = nil
+	}
+	if input.IfMatchLastModifiedTime != nil && *input.IfMatchLastModifiedTime == defTime {
+		input.IfMatchLastModifiedTime = nil
+	}
+	if input.IfMatchSize != nil && *input.IfMatchSize == 0 {
+		input.IfMatchSize = nil
+	}
+	if input.MFA != nil && *input.MFA == "" {
+		input.MFA = nil
+	}
 	if input.VersionId != nil && *input.VersionId == "" {
 		input.VersionId = nil
 	}
@@ -539,6 +1094,13 @@ func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput)
 }
 
 func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+	if input.MFA != nil && *input.MFA == "" {
+		input.MFA = nil
+	}
+
 	if len(input.Delete.Objects) == 0 {
 		input.Delete.Objects = []types.ObjectIdentifier{}
 	}
@@ -555,6 +1117,10 @@ func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInpu
 }
 
 func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
+		input.ExpectedBucketOwner = nil
+	}
+
 	tagout, err := s.client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 		Bucket: input.Bucket,
 	})
