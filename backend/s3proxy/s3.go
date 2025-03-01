@@ -1132,6 +1132,9 @@ func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput)
 			if strings.Contains(ae.ErrorCode(), "NoSuchTagSet") {
 				return []byte{}, nil
 			}
+			if strings.Contains(ae.ErrorCode(), "NotImplemented") {
+				return []byte{}, nil
+			}
 		}
 		return nil, handleError(err)
 	}
