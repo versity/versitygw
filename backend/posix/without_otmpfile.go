@@ -24,9 +24,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
 )
 
 type tmpfile struct {
@@ -43,11 +45,17 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	var err error
 	err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
 		return nil, fmt.Errorf("make temp dir: %w", err)
 	}
 	f, err := os.CreateTemp(dir,
 		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
 		return nil, fmt.Errorf("create temp file: %w", err)
 	}
 

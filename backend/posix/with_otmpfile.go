@@ -29,6 +29,7 @@ import (
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sys/unix"
 )
 
@@ -62,6 +63,10 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 	// this is not supported.
 	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
 	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
+
 		// O_TMPFILE not supported, try fallback
 		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
