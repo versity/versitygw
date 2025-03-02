@@ -100,7 +100,7 @@ create_user_if_nonexistent() {
     log 5 "user $1 already exists"
     return 0
   fi
-  create_user "$1" "$2" "$3"
+  setup_user_versitygw_or_direct "$1" "$2" "$3" "$BUCKET_ONE_NAME"
   return $?
 }
 

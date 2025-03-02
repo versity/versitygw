@@ -21,7 +21,8 @@ attempt_chunked_upload_with_bad_first_signature() {
     log 2 "'attempt_chunked_upload_with_bad_first_signature' requires data file, bucket name, key"
     return 1
   fi
-  if ! result=$(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
+         AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
          AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
          AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
          DATA_FILE="$1" \
