@@ -322,6 +322,15 @@ fi
   command+="$chunks"
   command="${command//$'\n'/$'\r\n'}"
   echo -n "$command" > "$COMMAND_FILE"
+  if [ -n "$COMMAND_LOG" ]; then
+    while IFS= read -r line; do
+      if ! mask_arg_array "$line"; then
+        return 1
+      fi
+      # shellcheck disable=SC2154
+      echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    done <<< "$command"
+  fi
 }
 
 load_parameters

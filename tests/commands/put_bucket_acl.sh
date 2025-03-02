@@ -24,7 +24,7 @@ put_bucket_acl_s3api() {
     log 2 "put bucket acl command requires bucket name, acl file"
     return 1
   fi
-  log 5 "bucket name: $1, acls: $2"
+  log 5 "bucket name: $1, acls: $(cat "$2")"
   if ! error=$(send_command aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --access-control-policy "file://$2" 2>&1); then
     log 2 "error putting bucket acl: $error"
     return 1

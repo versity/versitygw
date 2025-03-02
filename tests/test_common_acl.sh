@@ -46,13 +46,12 @@ test_put_bucket_acl_s3cmd() {
 test_common_put_bucket_acl() {
   assert [ $# -eq 1 ]
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
+  # shellcheck disable=SC2154
+  username="${lines[${#lines[@]}-2]}"
 
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
-  assert_success
-
-  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
 
   run get_check_acl_id "$1" "$BUCKET_ONE_NAME"
@@ -67,7 +66,7 @@ test_common_put_bucket_acl() {
     grantee_id="http://acs.amazonaws.com/groups/global/AllUsers"
   else
     grantee_type="CanonicalUser"
-    grantee_id="$USERNAME_ONE"
+    grantee_id="$username"
   fi
   run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "$grantee_type" "$grantee_id" "READ" "$AWS_ACCESS_KEY_ID"
   assert_success
@@ -79,7 +78,7 @@ test_common_put_bucket_acl() {
   run get_check_acl_after_first_put "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$USERNAME_ONE" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"
+  run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$username" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"
   assert_success
 
   run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
