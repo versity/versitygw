@@ -58,29 +58,7 @@ source_config_file() {
   fi
 }
 
-check_universal_vars() {
-  if [[ $BYPASS_ENV_FILE != "true" ]]; then
-    source_config_file
-  fi
-  if [ -n "$COMMAND_LOG" ]; then
-    init_command_log
-  fi
-
-  if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
-    # shellcheck source=./tests/.secrets
-    source "$SECRETS_FILE"
-  else
-    log 3 "Warning: no secrets file found"
-  fi
-
-  if [[ -n "$LOG_LEVEL" ]]; then
-    if [[ $LOG_LEVEL -lt 2 ]]; then
-      log 1 "log level must be 2 or greater"
-      exit 1
-    fi
-    export LOG_LEVEL_INT=$LOG_LEVEL
-  fi
-
+check_aws_vars() {
   if [ -z "$AWS_ACCESS_KEY_ID" ]; then
     log 1 "AWS_ACCESS_KEY_ID missing"
     exit 1
@@ -103,10 +81,14 @@ check_universal_vars() {
       exit 1
     fi
   fi
-  if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" != "false" ]; then
-    fail "RUN_VERSITYGW must be 'true' or 'false'"
+  # exporting these since they're needed for subshells
+  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
+  if [ -n "$AWS_CANONICAL_ID" ]; then
+    export AWS_CANONICAL_ID
   fi
+}
 
+check_bucket_vars() {
   if [ -z "$BUCKET_ONE_NAME" ]; then
     log 1 "BUCKET_ONE_NAME missing"
     exit 1
@@ -129,23 +111,49 @@ check_universal_vars() {
   fi
   if [ "$RECREATE_BUCKETS" == "false" ] && [ "$DELETE_BUCKETS_AFTER_TEST" == "true" ]; then
     log 1 "cannot set DELETE_BUCKETS_AFTER_TEST to 'true' if RECREATE_BUCKETS is 'false'"
-    return 1
+    exit 1
   fi
+}
+
+check_universal_vars() {
+  if [[ $BYPASS_ENV_FILE != "true" ]]; then
+    source_config_file
+  fi
+  if [ -n "$COMMAND_LOG" ]; then
+    init_command_log
+  fi
+  if [ "$GITHUB_ACTIONS" != "true" ] && [ -r "$SECRETS_FILE" ]; then
+    # shellcheck source=./tests/.secrets
+    source "$SECRETS_FILE"
+  else
+    log 3 "Warning: no secrets file found"
+  fi
+  if [[ -n "$LOG_LEVEL" ]]; then
+    if [[ $LOG_LEVEL -lt 2 ]]; then
+      log 1 "log level must be 2 or greater"
+      exit 1
+    fi
+    export LOG_LEVEL_INT=$LOG_LEVEL
+  fi
+
+  check_aws_vars
+
+  if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" != "false" ]; then
+    log 1 "RUN_VERSITYGW must be 'true' or 'false'"
+    exit 1
+  fi
+
+  check_bucket_vars
+
   if [ -z "$TEST_FILE_FOLDER" ]; then
     log 1 "TEST_FILE_FOLDER missing"
     exit 1
   fi
   if [ ! -d "$TEST_FILE_FOLDER" ]; then
     if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
-      log 2 "error creating test folder: $error"
+      log 1 "error creating test folder: $error"
       exit 1
     fi
-  fi
-  # exporting these since they're needed for subshells
-  export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
-  if [ -n "$AWS_CANONICAL_ID" ]; then
-    log 5 "canonical ID: $AWS_CANONICAL_ID"
-    export AWS_CANONICAL_ID
   fi
 }
 

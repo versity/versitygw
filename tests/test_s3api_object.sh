@@ -72,9 +72,6 @@ export RUN_USERS=true
 
 # delete-objects
 @test "test_delete_objects" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/1029"
-  fi
   test_delete_objects_s3api_root
 }
 
@@ -128,16 +125,10 @@ export RUN_USERS=true
 
 # test adding and removing an object on versitygw
 @test "test_put_object_with_data" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/1029"
-  fi
   test_common_put_object_with_data "s3api"
 }
 
 @test "test_put_object_no_data" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "https://github.com/versity/versitygw/issues/1029"
-  fi
   test_common_put_object_no_data "s3api"
 }
 

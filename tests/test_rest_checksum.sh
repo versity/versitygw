@@ -23,6 +23,32 @@ source ./tests/util/util_setup.sh
 
 test_file="test_file"
 
+@test "REST - invalid checksum type" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1104"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_invalid_checksum_type "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - sha256 checksum - invalid" {
+  run check_checksum_rest_invalid "sha256"
+  assert_success
+}
+
+@test "REST - sha256 checksum - incorrect" {
+  run check_checksum_rest_incorrect "sha256"
+  assert_success
+}
+
+@test "REST - sha256 checksum - correct" {
+  run add_correct_checksum "sha256"
+  assert_success
+}
+
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -34,23 +60,22 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - PutObject rejects invalid sha256 checksum" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_sha256_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+@test "REST - crc32 checksum - invalid" {
+  run check_checksum_rest_invalid "crc32c"
   assert_success
 }
 
-@test "REST - PutObject rejects incorrect sha256 checksum" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_sha256_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+@test "REST - crc32 checksum - incorrect" {
+  run check_checksum_rest_incorrect "crc32"
   assert_success
 }
 
 @test "REST - crc32 checksum - correct" {
+  run add_correct_checksum "crc32"
+  assert_success
+}
+
+@test "REST - crc32 checksum - HeadObject" {
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -61,26 +86,47 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - crc32 checksum - incorrect" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_crc32_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - crc64nvme checksum - correct" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc64nvme"
+@test "REST - crc64nvme checksum - invalid" {
+  run check_checksum_rest_invalid "crc64nvme"
   assert_success
 }
 
 @test "REST - crc64nvme checksum - incorrect" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run check_checksum_rest_incorrect "crc64nvme"
   assert_success
+}
 
-  run put_object_rest_crc64nvme_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+@test "REST - crc64nvme checksum - correct" {
+  run add_correct_checksum "sha256"
+  assert_success
+}
+
+@test "REST - crc32c checksum - invalid" {
+  run check_checksum_rest_invalid "crc32c"
+  assert_success
+}
+
+@test "REST - crc32c checksum - incorrect" {
+  run check_checksum_rest_incorrect "crc32c"
+  assert_success
+}
+
+@test "REST - crc32c checksum - correct" {
+  run add_correct_checksum "crc32c"
+  assert_success
+}
+
+@test "REST - sha1 checksum - invalid" {
+  run check_checksum_rest_invalid "sha1"
+  assert_success
+}
+
+@test "REST - sha1 checksum - incorrect" {
+  run check_checksum_rest_incorrect "sha1"
+  assert_success
+}
+
+@test "REST - sha1 checksum - correct" {
+  run add_correct_checksum "sha1"
   assert_success
 }
