@@ -413,6 +413,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 		CompleteMultipartUpload_should_verify_the_final_checksum(s)
 		CompleteMultipartUpload_checksum_type_mismatch(s)
 		CompleteMultipartUpload_should_ignore_the_final_checksum(s)
+		CompleteMultipartUpload_should_succeed_without_final_checksum_type(s)
 	}
 	CompleteMultipartUpload_success(s)
 	if !s.azureTests {
@@ -1000,6 +1001,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_should_verify_the_final_checksum":                CompleteMultipartUpload_should_verify_the_final_checksum,
 		"CompleteMultipartUpload_checksum_type_mismatch":                          CompleteMultipartUpload_checksum_type_mismatch,
 		"CompleteMultipartUpload_should_ignore_the_final_checksum":                CompleteMultipartUpload_should_ignore_the_final_checksum,
+		"CompleteMultipartUpload_should_succeed_without_final_checksum_type":      CompleteMultipartUpload_should_succeed_without_final_checksum_type,
 		"CompleteMultipartUpload_success":                                         CompleteMultipartUpload_success,
 		"CompleteMultipartUpload_racey_success":                                   CompleteMultipartUpload_racey_success,
 		"PutBucketAcl_non_existing_bucket":                                        PutBucketAcl_non_existing_bucket,
