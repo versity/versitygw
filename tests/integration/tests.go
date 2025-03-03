@@ -9554,6 +9554,54 @@ func CompleteMultipartUpload_should_ignore_the_final_checksum(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_should_succeed_without_final_checksum_type(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_should_succeed_without_final_checksum_type"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc64nvme), withChecksumType(types.ChecksumTypeFullObject))
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc64nvme))
+		if err != nil {
+			return err
+		}
+
+		cParts := []types.CompletedPart{}
+		for _, el := range parts {
+			cParts = append(cParts, types.CompletedPart{
+				ETag:              el.ETag,
+				PartNumber:        el.PartNumber,
+				ChecksumCRC64NVME: el.ChecksumCRC64NVME,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: cParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the final checksum type to be %v, instead got %v", types.ChecksumTypeFullObject, res.ChecksumType)
+		}
+		if getString(res.ChecksumCRC64NVME) == "" {
+			return fmt.Errorf("expected non empty crc64nvme checksum")
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_small_upload_size(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_small_upload_size"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

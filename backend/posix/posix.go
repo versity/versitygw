@@ -1420,7 +1420,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	// ChecksumType should be the same as specified on CreateMultipartUpload
-	if checksums.Type != input.ChecksumType {
+	if input.ChecksumType != "" && checksums.Type != input.ChecksumType {
 		checksumType := checksums.Type
 		if checksumType == "" {
 			checksumType = types.ChecksumType("null")
