@@ -472,6 +472,8 @@ func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_object_action_on_bucket_resource(s)
 	PutBucketPolicy_bucket_action_on_object_resource(s)
 	PutBucketPolicy_explicit_deny(s)
+	PutBucketPolicy_multi_wildcard_resource(s)
+	PutBucketPolicy_any_char_match(s)
 	PutBucketPolicy_success(s)
 }
 
@@ -1045,6 +1047,8 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_object_action_on_bucket_resource":                        PutBucketPolicy_object_action_on_bucket_resource,
 		"PutBucketPolicy_explicit_deny":                                           PutBucketPolicy_explicit_deny,
 		"PutBucketPolicy_bucket_action_on_object_resource":                        PutBucketPolicy_bucket_action_on_object_resource,
+		"PutBucketPolicy_multi_wildcard_resource":                                 PutBucketPolicy_multi_wildcard_resource,
+		"PutBucketPolicy_any_char_match":                                          PutBucketPolicy_any_char_match,
 		"PutBucketPolicy_success":                                                 PutBucketPolicy_success,
 		"GetBucketPolicy_non_existing_bucket":                                     GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                 GetBucketPolicy_not_set,
