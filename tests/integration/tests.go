@@ -11195,7 +11195,6 @@ func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
 		return nil
 	})
 }
-
 func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 	testName := "PutBucketPolicy_object_action_on_bucket_resource"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -11274,6 +11273,80 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketPolicy_multi_wildcard_resource(s *S3Conf) error {
+	testName := "PutBucketPolicy_multi_wildcard_resource"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{"grt1", "grt1secret", "user"}
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		resource := fmt.Sprintf(`["arn:aws:s3:::%v/*/*", "arn:aws:s3:::%v"]`, bucket, bucket)
+		principal := fmt.Sprintf("\"%v\"", usr.access)
+		doc := genPolicyDoc("Allow", principal, `"s3:*"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+		_, err = putObjects(userClient, []string{"foo"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		_, err = putObjects(userClient, []string{"bar/quxx", "foo/bar/baz", "foo/bar/xyz/quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketPolicy_any_char_match(s *S3Conf) error {
+	testName := "PutBucketPolicy_any_char_match"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		usr := user{"grt1", "grt1secret", "user"}
+		if err := createUsers(s, []user{usr}); err != nil {
+			return err
+		}
+
+		resource := fmt.Sprintf(`["arn:aws:s3:::%v/m?-obj/*"]`, bucket)
+		principal := fmt.Sprintf("\"%v\"", usr.access)
+		doc := genPolicyDoc("Allow", principal, `"s3:*"`, resource)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := getUserS3Client(usr, s)
+		_, err = putObjects(userClient, []string{"myy-obj/hello", "rand/foo", "my-objj/bar"}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		_, err = putObjects(userClient, []string{"my-obj/hello", "mk-obj/foo", "m--obj/bar"}, bucket)
+		if err != nil {
 			return err
 		}
 

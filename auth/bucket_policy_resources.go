@@ -102,19 +102,43 @@ func (r Resources) Validate(bucket string) error {
 
 func (r Resources) FindMatch(resource string) bool {
 	for res := range r {
-		if strings.HasSuffix(res, "*") {
-			pattern := strings.TrimSuffix(res, "*")
-			if strings.HasPrefix(resource, pattern) {
-				return true
-			}
-		} else {
-			if res == resource {
-				return true
-			}
+		if r.Match(res, resource) {
+			return true
 		}
 	}
 
 	return false
+}
+
+// Match checks if the input string matches the given pattern with wildcards (`*`, `?`).
+// - `?` matches exactly one occurrence of any character.
+// - `*` matches arbitrary many (including zero) occurrences of any character.
+func (r Resources) Match(pattern, input string) bool {
+	pIdx, sIdx := 0, 0
+	starIdx, matchIdx := -1, 0
+
+	for sIdx < len(input) {
+		if pIdx < len(pattern) && (pattern[pIdx] == '?' || pattern[pIdx] == input[sIdx]) {
+			sIdx++
+			pIdx++
+		} else if pIdx < len(pattern) && pattern[pIdx] == '*' {
+			starIdx = pIdx
+			matchIdx = sIdx
+			pIdx++
+		} else if starIdx != -1 {
+			pIdx = starIdx + 1
+			matchIdx++
+			sIdx = matchIdx
+		} else {
+			return false
+		}
+	}
+
+	for pIdx < len(pattern) && pattern[pIdx] == '*' {
+		pIdx++
+	}
+
+	return pIdx == len(pattern)
 }
 
 // Checks the resource to have arn prefix and not starting with /
