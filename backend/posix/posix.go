@@ -3212,7 +3212,10 @@ func (p *Posix) removeParents(bucket, object string) {
 	// this with a special attribute to indicate these. stop
 	// at either the bucket or the first parent we encounter
 	// with the attribute, whichever comes first.
-	objPath := object
+
+	// Remove the last path separator for the directory objects
+	// to correctly detect the parent in the loop
+	objPath := strings.TrimSuffix(object, "/")
 	for {
 		parent := filepath.Dir(objPath)
 		if parent == string(filepath.Separator) || parent == "." {

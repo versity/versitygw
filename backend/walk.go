@@ -88,6 +88,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		// so we can skip a directory without an early return
 		var skipflag error
 		if d.IsDir() {
+			fmt.Println("path: ", path)
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
 			// match this prefix. Make sure to append the / at the end of
@@ -108,13 +109,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 				strings.Contains(strings.TrimPrefix(path+"/", prefix), delimiter) {
 				skipflag = fs.SkipDir
 			} else {
-				// TODO: can we do better here rather than a second readdir
-				// per directory?
-				ents, err := fs.ReadDir(fileSystem, path)
-				if err != nil {
-					return fmt.Errorf("readdir %q: %w", path, err)
-				}
-				if len(ents) == 0 && delimiter == "" {
+				if delimiter == "" {
 					dirobj, err := getObj(path+"/", d)
 					if err == ErrSkipObj {
 						return skipflag
@@ -125,6 +120,13 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 					objects = append(objects, dirobj)
 
 					return skipflag
+				}
+
+				// TODO: can we do better here rather than a second readdir
+				// per directory?
+				ents, err := fs.ReadDir(fileSystem, path)
+				if err != nil {
+					return fmt.Errorf("readdir %q: %w", path, err)
 				}
 
 				if len(ents) != 0 {

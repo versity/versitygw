@@ -4771,6 +4771,44 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 	})
 }
 
+func ListObjects_nested_dir_file_objs(s *S3Conf) error {
+	testName := "ListObjects_nested_dir_file_objs"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		contents, err := putObjects(s3client, []string{"foo/bar/", "foo/bar/baz", "foo/bar/quxx"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareObjects(contents, res.Contents) {
+			return fmt.Errorf("expected the objects list to be %+v, instead got %+v", contents, res.Contents)
+		}
+
+		// Clean up the nested objects to avoid `ErrDirectoryNotEmpty` error on teardown
+		for _, obj := range []string{"foo/bar/baz", "foo/bar/quxx"} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 func ListObjectsV2_start_after(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -5381,6 +5419,25 @@ func DeleteObject_non_existing_dir_object(s *S3Conf) error {
 		}
 
 		obj = "my-obj/"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		return err
+	})
+}
+
+func DeleteObject_directory_object(s *S3Conf) error {
+	testName := "DeleteObject_directory_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "foo/bar/"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &bucket,
