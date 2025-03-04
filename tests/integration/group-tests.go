@@ -213,6 +213,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_max_keys_none(s)
 	ListObjects_marker_not_from_obj_list(s)
 	ListObjects_list_all_objs(s)
+	ListObjects_nested_dir_file_objs(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		ListObjects_with_checksum(s)
@@ -246,6 +247,7 @@ func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_object(s)
 	DeleteObject_directory_object_noslash(s)
 	DeleteObject_non_existing_dir_object(s)
+	DeleteObject_directory_object(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
 }
@@ -876,6 +878,7 @@ func GetIntTests() IntTests {
 		"ListObjects_max_keys_none":                                               ListObjects_max_keys_none,
 		"ListObjects_marker_not_from_obj_list":                                    ListObjects_marker_not_from_obj_list,
 		"ListObjects_list_all_objs":                                               ListObjects_list_all_objs,
+		"ListObjects_nested_dir_file_objs":                                        ListObjects_nested_dir_file_objs,
 		"ListObjects_with_checksum":                                               ListObjects_with_checksum,
 		"ListObjectsV2_start_after":                                               ListObjectsV2_start_after,
 		"ListObjectsV2_both_start_after_and_continuation_token":                   ListObjectsV2_both_start_after_and_continuation_token,
@@ -892,6 +895,7 @@ func GetIntTests() IntTests {
 		"DeleteObject_directory_object_noslash":                                   DeleteObject_directory_object_noslash,
 		"DeleteObject_name_too_long":                                              DeleteObject_name_too_long,
 		"DeleteObject_non_existing_dir_object":                                    DeleteObject_non_existing_dir_object,
+		"DeleteObject_directory_object":                                           DeleteObject_directory_object,
 		"DeleteObject_success":                                                    DeleteObject_success,
 		"DeleteObject_success_status_code":                                        DeleteObject_success_status_code,
 		"DeleteObjects_empty_input":                                               DeleteObjects_empty_input,
