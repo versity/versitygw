@@ -3751,7 +3751,7 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}
 
 	return s3response.GetObjectAttributesResponse{
-		ETag:         data.ETag,
+		ETag:         backend.TrimEtag(data.ETag),
 		ObjectSize:   data.ContentLength,
 		StorageClass: data.StorageClass,
 		LastModified: data.LastModified,

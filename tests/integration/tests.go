@@ -3795,8 +3795,8 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 		if resp.ETag == nil || out.ETag == nil {
 			return fmt.Errorf("nil ETag output")
 		}
-		if *resp.ETag != *out.ETag {
-			return fmt.Errorf("expected ETag to be %v, instead got %v", *resp.ETag, *out.ETag)
+		if strings.Trim(*resp.ETag, "\"") != *out.ETag {
+			return fmt.Errorf("expected ETag to be %v, instead got %v", strings.Trim(*resp.ETag, "\""), *out.ETag)
 		}
 		if out.ObjectSize == nil {
 			return fmt.Errorf("nil object size output")
@@ -14999,8 +14999,8 @@ func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
 			return err
 		}
 
-		if getString(res.ETag) != *version.ETag {
-			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", *version.ETag, getString(res.ETag))
+		if getString(res.ETag) != strings.Trim(*version.ETag, "\"") {
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", strings.Trim(*version.ETag, "\""), getString(res.ETag))
 		}
 		if getString(res.VersionId) != *version.VersionId {
 			return fmt.Errorf("expected the uploaded versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))
@@ -15012,8 +15012,8 @@ func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
 			return err
 		}
 
-		if getString(res.ETag) != *version.ETag {
-			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", *version.ETag, getString(res.ETag))
+		if getString(res.ETag) != strings.Trim(*version.ETag, "\"") {
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", strings.Trim(*version.ETag, "\""), getString(res.ETag))
 		}
 		if getString(res.VersionId) != *version.VersionId {
 			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))

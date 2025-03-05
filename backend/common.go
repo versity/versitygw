@@ -71,6 +71,14 @@ func GetTimePtr(t time.Time) *time.Time {
 	return &t
 }
 
+func TrimEtag(etag *string) *string {
+	if etag == nil {
+		return nil
+	}
+
+	return GetPtrFromString(strings.Trim(*etag, "\""))
+}
+
 var (
 	errInvalidRange = s3err.GetAPIError(s3err.ErrInvalidRange)
 )
