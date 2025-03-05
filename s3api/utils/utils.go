@@ -450,23 +450,38 @@ func shouldEscape(c byte) bool {
 }
 
 func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.ChecksumAlgorithm]string, error) {
-	sdkAlgorithm := types.ChecksumAlgorithm(ctx.Get("X-Amz-Sdk-Checksum-Algorithm"))
+	sdkAlgorithm := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("X-Amz-Sdk-Checksum-Algorithm")))
 
 	err := IsChecksumAlgorithmValid(sdkAlgorithm)
 	if err != nil {
 		return "", nil, err
 	}
 
-	checksums := map[types.ChecksumAlgorithm]string{
-		types.ChecksumAlgorithmCrc32:     ctx.Get("X-Amz-Checksum-Crc32"),
-		types.ChecksumAlgorithmCrc32c:    ctx.Get("X-Amz-Checksum-Crc32c"),
-		types.ChecksumAlgorithmSha1:      ctx.Get("X-Amz-Checksum-Sha1"),
-		types.ChecksumAlgorithmSha256:    ctx.Get("X-Amz-Checksum-Sha256"),
-		types.ChecksumAlgorithmCrc64nvme: ctx.Get("X-Amz-Checksum-Crc64nvme"),
+	checksums := map[types.ChecksumAlgorithm]string{}
+
+	var hdrErr error
+	// Parse and validate checksum headers
+	ctx.Request().Header.VisitAll(func(key, value []byte) {
+		// Skip `X-Amz-Checksum-Type` as it's a special header
+		if hdrErr != nil || !strings.HasPrefix(string(key), "X-Amz-Checksum-") || string(key) == "X-Amz-Checksum-Type" {
+			return
+		}
+
+		algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(string(key), "X-Amz-Checksum-")))
+		err := IsChecksumAlgorithmValid(algo)
+		if err != nil {
+			hdrErr = s3err.GetAPIError(s3err.ErrInvalidChecksumHeader)
+			return
+		}
+
+		checksums[algo] = string(value)
+	})
+
+	if hdrErr != nil {
+		return sdkAlgorithm, nil, hdrErr
 	}
 
 	headerCtr := 0
-
 	for al, val := range checksums {
 		if val != "" && !IsValidChecksum(val, al) {
 			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
@@ -512,6 +527,7 @@ func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm) bool {
 }
 
 func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
+	alg = types.ChecksumAlgorithm(strings.ToUpper(string(alg)))
 	if alg != "" &&
 		alg != types.ChecksumAlgorithmCrc32 &&
 		alg != types.ChecksumAlgorithmCrc32c &&

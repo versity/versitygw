@@ -151,6 +151,7 @@ const (
 	ErrInvalidChecksumAlgorithm
 	ErrInvalidChecksumPart
 	ErrChecksumTypeWithAlgo
+	ErrInvalidChecksumHeader
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -628,6 +629,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrChecksumTypeWithAlgo: {
 		Code:           "InvalidRequest",
 		Description:    "The x-amz-checksum-type header can only be used with the x-amz-checksum-algorithm header.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChecksumHeader: {
+		Code:           "InvalidRequest",
+		Description:    "The algorithm type you specified in x-amz-checksum- header is invalid.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 
