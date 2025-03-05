@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/xattr"
+	"github.com/versity/versitygw/s3err"
 )
 
 const (
@@ -56,10 +57,18 @@ func (x XattrMeta) RetrieveAttribute(f *os.File, bucket, object, attribute strin
 // StoreAttribute stores the value of a specific attribute for an object in a bucket.
 func (x XattrMeta) StoreAttribute(f *os.File, bucket, object, attribute string, value []byte) error {
 	if f != nil {
-		return xattr.FSet(f, xattrPrefix+attribute, value)
+		err := xattr.FSet(f, xattrPrefix+attribute, value)
+		if errors.Is(err, syscall.EROFS) {
+			return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
+		return err
 	}
 
-	return xattr.Set(filepath.Join(bucket, object), xattrPrefix+attribute, value)
+	err := xattr.Set(filepath.Join(bucket, object), xattrPrefix+attribute, value)
+	if errors.Is(err, syscall.EROFS) {
+		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+	}
+	return err
 }
 
 // DeleteAttribute removes the value of a specific attribute for an object in a bucket.
@@ -67,6 +76,9 @@ func (x XattrMeta) DeleteAttribute(bucket, object, attribute string) error {
 	err := xattr.Remove(filepath.Join(bucket, object), xattrPrefix+attribute)
 	if errors.Is(err, xattr.ENOATTR) {
 		return ErrNoSuchKey
+	}
+	if errors.Is(err, syscall.EROFS) {
+		return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
 	}
 	return err
 }

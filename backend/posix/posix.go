@@ -362,6 +362,9 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
 	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
 		return fmt.Errorf("mkdir bucket: %w", err)
 	}
 
