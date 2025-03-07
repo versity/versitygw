@@ -83,6 +83,7 @@ const (
 	ErrInternalError
 	ErrInvalidCopyDest
 	ErrInvalidCopySource
+	ErrInvalidCopySourceRange
 	ErrInvalidTag
 	ErrAuthHeaderEmpty
 	ErrSignatureVersionNotSupported
@@ -294,6 +295,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidCopySource: {
 		Code:           "InvalidArgument",
 		Description:    "Copy Source must mention the source bucket and key: sourcebucket/sourcekey.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCopySourceRange: {
+		Code:           "InvalidArgument",
+		Description:    "The x-amz-copy-source-range value must be of the form bytes=first-last where first and last are the zero-based offsets of the first and last bytes to copy",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidTag: {
@@ -788,6 +794,14 @@ func GetInvalidMpObjectSizeErr(val int64) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is less than zero: '%v'", val),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func CreateExceedingRangeErr(objSize int64) APIError {
+	return APIError{
+		Code:           "InvalidArgument",
+		Description:    fmt.Sprintf("Range specified is not valid for source object of size: %d", objSize),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

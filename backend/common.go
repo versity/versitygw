@@ -19,7 +19,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -80,44 +79,109 @@ func TrimEtag(etag *string) *string {
 }
 
 var (
-	errInvalidRange = s3err.GetAPIError(s3err.ErrInvalidRange)
+	errInvalidRange           = s3err.GetAPIError(s3err.ErrInvalidRange)
+	errInvalidCopySourceRange = s3err.GetAPIError(s3err.ErrInvalidCopySourceRange)
 )
 
-// ParseRange parses input range header and returns startoffset, length, and
-// error. If no endoffset specified, then length is set to -1.
-func ParseRange(size int64, acceptRange string) (int64, int64, error) {
+// ParseGetObjectRange parses input range header and returns startoffset, length, isValid
+// and error. If no endoffset specified, then length is set to the object size
+// for invalid inputs, it returns no error, but isValid=false
+// `InvalidRange` error is returnd, only if startoffset is greater than the object size
+func ParseGetObjectRange(size int64, acceptRange string) (int64, int64, bool, error) {
+	if acceptRange == "" {
+		return 0, size, false, nil
+	}
+
+	rangeKv := strings.Split(acceptRange, "=")
+
+	if len(rangeKv) != 2 {
+		return 0, size, false, nil
+	}
+
+	if rangeKv[0] != "bytes" {
+		return 0, size, false, nil
+	}
+
+	bRange := strings.Split(rangeKv[1], "-")
+	if len(bRange) != 2 {
+		return 0, size, false, nil
+	}
+
+	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
+	if err != nil {
+		return 0, size, false, nil
+	}
+
+	if startOffset >= size {
+		return 0, 0, false, errInvalidRange
+	}
+
+	if bRange[1] == "" {
+		return startOffset, size - startOffset, true, nil
+	}
+
+	endOffset, err := strconv.ParseInt(bRange[1], 10, 64)
+	if err != nil {
+		return 0, size, false, nil
+	}
+
+	if endOffset < startOffset {
+		return 0, size, false, nil
+	}
+
+	if endOffset >= size {
+		return startOffset, size - startOffset, true, nil
+	}
+
+	return startOffset, endOffset - startOffset + 1, true, nil
+}
+
+// ParseCopySourceRange parses input range header and returns startoffset, length
+// and error. If no endoffset specified, then length is set to the object size
+func ParseCopySourceRange(size int64, acceptRange string) (int64, int64, error) {
 	if acceptRange == "" {
 		return 0, size, nil
 	}
 
 	rangeKv := strings.Split(acceptRange, "=")
 
-	if len(rangeKv) < 2 {
-		return 0, 0, errInvalidRange
+	if len(rangeKv) != 2 {
+		return 0, 0, errInvalidCopySourceRange
+	}
+
+	if rangeKv[0] != "bytes" {
+		return 0, 0, errInvalidCopySourceRange
 	}
 
 	bRange := strings.Split(rangeKv[1], "-")
-	if len(bRange) < 1 || len(bRange) > 2 {
-		return 0, 0, errInvalidRange
+	if len(bRange) != 2 {
+		return 0, 0, errInvalidCopySourceRange
 	}
 
 	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
 	if err != nil {
-		return 0, 0, errInvalidRange
+		return 0, 0, errInvalidCopySourceRange
 	}
 
-	endOffset := int64(-1)
-	if len(bRange) == 1 || bRange[1] == "" {
-		return startOffset, endOffset, nil
+	if startOffset >= size {
+		return 0, 0, s3err.CreateExceedingRangeErr(size)
 	}
 
-	endOffset, err = strconv.ParseInt(bRange[1], 10, 64)
+	if bRange[1] == "" {
+		return startOffset, size - startOffset + 1, nil
+	}
+
+	endOffset, err := strconv.ParseInt(bRange[1], 10, 64)
 	if err != nil {
-		return 0, 0, errInvalidRange
+		return 0, 0, errInvalidCopySourceRange
 	}
 
 	if endOffset < startOffset {
-		return 0, 0, errInvalidRange
+		return 0, 0, errInvalidCopySourceRange
+	}
+
+	if endOffset >= size {
+		return 0, 0, s3err.CreateExceedingRangeErr(size)
 	}
 
 	return startOffset, endOffset - startOffset + 1, nil
@@ -145,14 +209,6 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 	}
 
 	return srcBucket, srcObject, versionId, nil
-}
-
-func CreateExceedingRangeErr(objSize int64) s3err.APIError {
-	return s3err.APIError{
-		Code:           "InvalidArgument",
-		Description:    fmt.Sprintf("Range specified is not valid for source object of size: %d", objSize),
-		HTTPStatusCode: http.StatusBadRequest,
-	}
 }
 
 func GetMultipartMD5(parts []types.CompletedPart) string {

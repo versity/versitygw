@@ -33,7 +33,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sync/errgroup"
 )
@@ -1333,7 +1332,7 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 }
 
 func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
-	testName := "PresignedAuth_Put_GetObject_with_data"
+	testName := "PresignedAuth_Put_GetObject_with_UTF8_chars"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
 		bucket, obj := getBucketName(), "my-$%^&*;"
 		err := setup(s, bucket)
@@ -3942,8 +3941,51 @@ func GetObject_directory_object_noslash(s *S3Conf) error {
 	})
 }
 
-func GetObject_invalid_ranges(s *S3Conf) error {
-	testName := "GetObject_invalid_ranges"
+func GetObject_invalid_range(s *S3Conf) error {
+	testName := "GetObject_invalid_range"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(2500), "my-obj"
+
+		_, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		getobj := func(acceptRange string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Range:  &acceptRange,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		for _, rg := range []string{
+			"bytes=2500-3000",
+			"bytes=2501-4000",
+			"bytes=5000-",
+		} {
+			err := getobj(rg)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObject_should_succeed_for_invalid_ranges(s *S3Conf) error {
+	testName := "GetObject_should_succeed_for_invalid_ranges"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
 
@@ -3955,42 +3997,92 @@ func GetObject_invalid_ranges(s *S3Conf) error {
 			return err
 		}
 
+		getObj := func(acceptRange string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Range:  &acceptRange,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if *res.ContentLength != dataLength {
+				return fmt.Errorf("expected Content-Length to be %v, instead got %v", dataLength, *res.ContentLength)
+			}
+			if getString(res.ContentRange) != "" {
+				return fmt.Errorf("expected empty Content-Range, instead got %v", *res.ContentRange)
+			}
+			if getString(res.AcceptRanges) != "bytes" {
+				return fmt.Errorf("expected the accept ranges to be 'bytes', instead got %v", getString(res.AcceptRanges))
+			}
+
+			return nil
+		}
+
+		for _, rg := range []string{
+			"bytes=invalid-range",
+			"bytes=33-10",
+			"bytes-12-34",
+			"bytes=-2-5",
+			"byte=100-200",
+			"bytes=inv-300",
+		} {
+			err := getObj(rg)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObject_content_ranges(s *S3Conf) error {
+	testName := "GetObject_should_adjust_range_upper_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dataLength, obj := int64(1024), "my-obj"
+
+		_, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+		res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
-			Range:  getPtr("bytes=invalid-range"),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Range:  getPtr("bytes=33-10"),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		resp, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Range:  getPtr("bytes=1500-999999999999"),
+			Range:  getPtr("bytes=100-"),
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
-		if *resp.ContentLength != dataLength-1500 {
-			return fmt.Errorf("expected content-length to be %v, instead got %v", dataLength-1500, *resp.ContentLength)
+		expectedRange := "bytes 100-1023/1024"
+		if getString(res.ContentRange) != expectedRange {
+			return fmt.Errorf("expected the accept ranges to be %v, instead got %v", expectedRange, getString(res.ContentRange))
 		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Range:  getPtr("bytes=100-99999999"),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if getString(res.ContentRange) != expectedRange {
+			return fmt.Errorf("expected the accept ranges to be %v, instead got %v", expectedRange, getString(res.ContentRange))
+		}
+
 		return nil
 	})
 }
@@ -4271,58 +4363,45 @@ func GetObject_by_range_success(s *S3Conf) error {
 			return err
 		}
 
-		rangeString := "bytes=100-200"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Range:  &rangeString,
-		})
-		defer cancel()
-		if err != nil {
-			return err
-		}
-		defer out.Body.Close()
+		for _, el := range []struct {
+			acceptRange  string
+			contentRange string
+			startOffset  int64
+			endOffset    int64
+		}{
+			{"bytes=100-200", fmt.Sprintf("bytes 100-200/%v", dataLength), 100, 201},
+			{"bytes=100-", fmt.Sprintf("bytes 100-1234566/%v", dataLength), 100, dataLength},
+			{"bytes=100-1234567", fmt.Sprintf("bytes 100-1234566/%v", dataLength), 100, dataLength},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Range:  &el.acceptRange,
+			})
+			defer cancel()
+			if err != nil {
+				return err
+			}
+			defer out.Body.Close()
 
-		if getString(out.ContentRange) != fmt.Sprintf("bytes 100-200/%v", dataLength) {
-			return fmt.Errorf("expected content range: %v, instead got: %v", fmt.Sprintf("bytes 100-200/%v", dataLength), getString(out.ContentRange))
-		}
-		if getString(out.AcceptRanges) != rangeString {
-			return fmt.Errorf("expected accept range: %v, instead got: %v", rangeString, getString(out.AcceptRanges))
-		}
-		b, err := io.ReadAll(out.Body)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
-		}
+			if getString(out.ContentRange) != el.contentRange {
+				return fmt.Errorf("expected content range: %v, instead got: %v", el.contentRange, getString(out.ContentRange))
+			}
+			if getString(out.AcceptRanges) != "bytes" {
+				return fmt.Errorf("expected accept range: bytes, instead got: %v", getString(out.AcceptRanges))
+			}
+			b, err := io.ReadAll(out.Body)
+			if err != nil && !errors.Is(err, io.EOF) {
+				return err
+			}
 
-		// bytes range is inclusive, go range for second value is not
-		if !isEqual(b, r.data[100:201]) {
-			return fmt.Errorf("data mismatch of range")
-		}
-
-		rangeString = "bytes=100-"
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		out, err = s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-			Range:  &rangeString,
-		})
-		defer cancel()
-		if err != nil {
-			return err
-		}
-		defer out.Body.Close()
-
-		b, err = io.ReadAll(out.Body)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return err
+			// bytes range is inclusive, go range for second value is not
+			if !isEqual(b, r.data[el.startOffset:el.endOffset]) {
+				return fmt.Errorf("data mismatch of range")
+			}
 		}
 
-		// bytes range is inclusive, go range for second value is not
-		if !isEqual(b, r.data[100:]) {
-			return fmt.Errorf("data mismatch of range")
-		}
 		return nil
 	})
 }
@@ -7716,16 +7795,16 @@ func UploadPartCopy_success(s *S3Conf) error {
 	})
 }
 
-func UploadPartCopy_by_range_invalid_range(s *S3Conf) error {
-	testName := "UploadPartCopy_by_range_invalid_range"
+func UploadPartCopy_by_range_invalid_ranges(s *S3Conf) error {
+	testName := "UploadPartCopy_by_range_invalid_ranges"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
 		err := setup(s, srcBucket)
 		if err != nil {
 			return err
 		}
-		objSize := 5 * 1024 * 1024
-		_, err = putObjectWithData(int64(objSize), &s3.PutObjectInput{
+		objSize := int64(5 * 1024 * 1024)
+		_, err = putObjectWithData(objSize, &s3.PutObjectInput{
 			Bucket: &srcBucket,
 			Key:    &srcObj,
 		}, s3client)
@@ -7738,19 +7817,93 @@ func UploadPartCopy_by_range_invalid_range(s *S3Conf) error {
 			return err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		partNumber := int32(1)
-		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
-			Bucket:          &bucket,
-			CopySource:      getPtr(srcBucket + "/" + srcObj),
-			UploadId:        out.UploadId,
-			Key:             &obj,
-			PartNumber:      &partNumber,
-			CopySourceRange: getPtr("invalid-range"),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRange)); err != nil {
+		uploadPartCopy := func(csRange string, ptNumber int32) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:          &bucket,
+				CopySource:      getPtr(srcBucket + "/" + srcObj),
+				UploadId:        out.UploadId,
+				Key:             &obj,
+				PartNumber:      &ptNumber,
+				CopySourceRange: &csRange,
+			})
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCopySourceRange)); err != nil {
+				return err
+			}
+
+			return nil
+		}
+
+		for i, rg := range []string{
+			"byte=100-200",
+			"bytes=invalid-range",
+			"bytes=200-100",
+			"bytes=-2-300",
+			"bytes=aa-12",
+			"bytes=12-aa",
+			"bytes=bb-",
+		} {
+			err := uploadPartCopy(rg, int32(i+1))
+			if err != nil {
+				return err
+			}
+		}
+
+		err = teardown(s, srcBucket)
+		if err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+func UploadPartCopy_exceeding_copy_source_range(s *S3Conf) error {
+	testName := "UploadPartCopy_exceeding_copy_source_range"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, srcBucket, srcObj := "my-obj", getBucketName(), "src-obj"
+		err := setup(s, srcBucket)
+		if err != nil {
+			return err
+		}
+		objSize := int64(1000)
+		_, err = putObjectWithData(objSize, &s3.PutObjectInput{
+			Bucket: &srcBucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		uploadPartCopy := func(csRange string, ptNumber int32) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:          &bucket,
+				CopySource:      getPtr(srcBucket + "/" + srcObj),
+				UploadId:        out.UploadId,
+				Key:             &obj,
+				PartNumber:      &ptNumber,
+				CopySourceRange: &csRange,
+			})
+			cancel()
+			return checkApiErr(err, s3err.CreateExceedingRangeErr(objSize))
+		}
+
+		for i, rg := range []string{
+			"bytes=100-1005",
+			"bytes=1250-3000",
+			"bytes=100-1000",
+		} {
+			err := uploadPartCopy(rg, int32(i+1))
+			if err != nil {
+				return err
+			}
 		}
 
 		err = teardown(s, srcBucket)
@@ -7795,7 +7948,7 @@ func UploadPartCopy_greater_range_than_obj_size(s *S3Conf) error {
 			PartNumber:      &partNumber,
 		})
 		cancel()
-		if err := checkApiErr(err, backend.CreateExceedingRangeErr(int64(srcObjSize))); err != nil {
+		if err := checkApiErr(err, s3err.CreateExceedingRangeErr(int64(srcObjSize))); err != nil {
 			return err
 		}
 

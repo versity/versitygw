@@ -2480,17 +2480,9 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("stat object: %w", err)
 	}
 
-	startOffset, length, err := backend.ParseRange(fi.Size(), *upi.CopySourceRange)
+	startOffset, length, err := backend.ParseCopySourceRange(fi.Size(), *upi.CopySourceRange)
 	if err != nil {
 		return s3response.CopyPartResult{}, err
-	}
-
-	if length == -1 {
-		length = fi.Size() - startOffset + 1
-	}
-
-	if startOffset+length > fi.Size()+1 {
-		return s3response.CopyPartResult{}, backend.CreateExceedingRangeErr(fi.Size())
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
@@ -3379,29 +3371,20 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		}
 	}
 
-	acceptRange := *input.Range
-	startOffset, length, err := backend.ParseRange(fi.Size(), acceptRange)
+	objSize := fi.Size()
+	startOffset, length, isValid, err := backend.ParseGetObjectRange(objSize, *input.Range)
 	if err != nil {
 		return nil, err
 	}
 
-	objSize := fi.Size()
 	if fi.IsDir() {
 		// directory objects are always 0 len
 		objSize = 0
 		length = 0
 	}
 
-	if length == -1 {
-		length = objSize - startOffset
-	}
-
-	if startOffset+length > objSize {
-		length = objSize - startOffset
-	}
-
 	var contentRange string
-	if acceptRange != "" {
+	if isValid {
 		contentRange = fmt.Sprintf("bytes %v-%v/%v",
 			startOffset, startOffset+length-1, objSize)
 	}
@@ -3429,7 +3412,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		}
 
 		return &s3.GetObjectOutput{
-			AcceptRanges:    &acceptRange,
+			AcceptRanges:    backend.GetPtrFromString("bytes"),
 			ContentLength:   &length,
 			ContentEncoding: &contentEncoding,
 			ContentType:     &contentType,
@@ -3504,7 +3487,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:      &acceptRange,
+		AcceptRanges:      backend.GetPtrFromString("bytes"),
 		ContentLength:     &length,
 		ContentEncoding:   &contentEncoding,
 		ContentType:       &contentType,

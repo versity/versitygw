@@ -628,28 +628,20 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.Ge
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
-	startOffset, length, err := backend.ParseRange(fi.Size(), acceptRange)
+	objSize := fi.Size()
+	startOffset, length, isValid, err := backend.ParseGetObjectRange(objSize, acceptRange)
 	if err != nil {
 		return nil, err
 	}
 
-	objSize := fi.Size()
 	if fi.IsDir() {
 		// directory objects are always 0 len
 		objSize = 0
 		length = 0
 	}
 
-	if length == -1 {
-		length = fi.Size() - startOffset + 1
-	}
-
-	if startOffset+length > fi.Size() {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
-	}
-
 	var contentRange string
-	if acceptRange != "" {
+	if isValid {
 		contentRange = fmt.Sprintf("bytes %v-%v/%v", startOffset, startOffset+length-1, objSize)
 	}
 
@@ -696,7 +688,7 @@ func (s *ScoutFS) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.Ge
 	tagCount := int32(len(tags))
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:    &acceptRange,
+		AcceptRanges:    backend.GetPtrFromString("bytes"),
 		ContentLength:   &length,
 		ContentEncoding: &contentEncoding,
 		ContentType:     &contentType,
