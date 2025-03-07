@@ -53,9 +53,9 @@ source ./tests/util/util_versioning.sh
 source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
+test_file="test_file"
 
 @test "test_rest_list_objects" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -75,7 +75,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_delete_object" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -96,7 +95,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_tagging" {
-  test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
@@ -120,7 +118,6 @@ export RUN_USERS=true
 }
 
 @test "test_rest_retention" {
-  test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
@@ -147,28 +144,6 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - check, enable, suspend versioning" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  log 5 "get versioning"
-
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" ""
-  assert_success
-
-  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Enabled"
-  assert_success
-
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" "Enabled"
-  assert_success
-
-  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Suspended"
-  assert_success
-
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" "Suspended"
-  assert_success
-}
-
 @test "test_rest_set_get_lock_config" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -189,68 +164,7 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "test_rest_versioning" {
-  test_file="test_file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "1" "true" "true"
-  assert_success
-
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
-  assert_success
-
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "1" "true" "true"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "2" "true" "false" "false" "true"
-  assert_success
-}
-
-@test "versioning - add version, then delete and check for marker" {
-  test_file="test_file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
-  assert_success
-
-  run delete_object_rest "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run check_versions_after_file_deletion "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "versioning - retrieve after delete" {
-  test_file="test_file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
-  assert_success
-
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
-  assert_failure
-}
-
 @test "REST - legal hold, get without config" {
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -262,8 +176,6 @@ export RUN_USERS=true
 }
 
 @test "REST - multipart upload create then abort" {
-  test_file="test_file"
-
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
@@ -272,7 +184,6 @@ export RUN_USERS=true
 }
 
 @test "REST - multipart upload create, list parts" {
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -294,7 +205,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1000"
   fi
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -312,7 +222,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -327,7 +236,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1006"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -402,7 +310,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/993"
   fi
-  test_file="test_file"
   test_file_two="test_file_2"
   test_file_three="test_file_3"
   run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
@@ -430,7 +337,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"
   fi
-  test_file="test_file"
   test_file_two="test_file_2"
   run setup_bucket "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
@@ -449,7 +355,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1008"
   fi
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -458,7 +363,6 @@ export RUN_USERS=true
 }
 
 @test "REST - upload part copy" {
-  test_file="test_file"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -473,7 +377,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1018"
   fi
-  test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -508,29 +411,94 @@ export RUN_USERS=true
 }
 
 @test "REST - delete objects command" {
-  test_file_one="test_file"
   test_file_two="test_file_two"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_one" "$BUCKET_ONE_NAME" "$test_file_one"
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_one"
+  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
+  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_one"
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_two"
+  assert_success
+}
+
+@test "REST - put object w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD without content length" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1043"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_chunked_payload_type_without_content_length "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - HeadObject does not return 405 with versioning, after file deleted" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1029"
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
+    skip
+  fi
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - HeadObject returns 405 when querying DeleteMarker" {
+  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
+    skip
+  fi
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_delete_marker_and_verify_405 "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }

@@ -216,6 +216,17 @@ get_check_acl_after_policy() {
   fi
 }
 
+check_direct_display_name() {
+  if ! display_name=$(echo "$owner" | xmllint --xpath '//*[local-name()="DisplayName"]/text()' - 2>&1); then
+    log 2 "error getting display name: $display_name"
+    return 1
+  fi
+  if [ "$display_name" != "$DIRECT_DISPLAY_NAME" ]; then
+    log 2 "display name mismatch (expected '$DIRECT_DISPLAY_NAME', actual '$display_name')"
+    return 1
+  fi
+}
+
 get_and_check_acl_rest() {
   if [ $# -ne 1 ]; then
     log 2 "'get_and_check_acl_rest' requires bucket name"
@@ -239,12 +250,8 @@ get_and_check_acl_rest() {
     return 1
   fi
   if [ "$DIRECT" == "true" ]; then
-    if ! display_name=$(echo "$owner" | xmllint --xpath '//*[local-name()="DisplayName"]/text()' - 2>&1); then
-      log 2 "error getting display name: $display_name"
-      return 1
-    fi
-    if [ "$display_name" != "$DIRECT_DISPLAY_NAME" ]; then
-      log 2 "display name mismatch (expected '$DIRECT_DISPLAY_NAME', actual '$display_name')"
+    if ! check_direct_display_name; then
+      log 2 "error checking direct display name"
       return 1
     fi
   else

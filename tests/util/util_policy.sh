@@ -42,6 +42,14 @@ check_for_empty_policy() {
   return 0
 }
 
+add_direct_user_to_principal() {
+  if [ "${principals[$idx]}" == "*" ]; then
+    modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$DIRECT_S3_ROOT_ACCOUNT_NAME\"}"
+  else
+    modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/${principals[$idx]}\"}"
+  fi
+}
+
 get_modified_principal() {
   log 6 "get_modified_principal"
   if [ $# -ne 1 ]; then
@@ -55,11 +63,7 @@ get_modified_principal() {
   fi
   for ((idx=0; idx<${#principals[@]}; idx++)); do
     if [ "$DIRECT" == "true" ]; then
-      if [ "${principals[$idx]}" == "*" ]; then
-        modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$DIRECT_S3_ROOT_ACCOUNT_NAME\"}"
-      else
-        modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/${principals[$idx]}\"}"
-      fi
+      add_direct_user_to_principal
     else
       # shellcheck disable=SC2089
       modified_principal+="\"${principals[$idx]}\""
