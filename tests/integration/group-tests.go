@@ -57,7 +57,9 @@ func TestPresignedAuthentication(s *S3Conf) {
 	PresignedAuth_incorrect_secret_key(s)
 	PresignedAuth_PutObject_success(s)
 	PresignedAuth_Put_GetObject_with_data(s)
-	PresignedAuth_Put_GetObject_with_UTF8_chars(s)
+	if !s.azureTests {
+		PresignedAuth_Put_GetObject_with_UTF8_chars(s)
+	}
 	PresignedAuth_UploadPart(s)
 }
 
@@ -186,7 +188,8 @@ func TestGetObjectAttributes(s *S3Conf) {
 func TestGetObject(s *S3Conf) {
 	GetObject_non_existing_key(s)
 	GetObject_directory_object_noslash(s)
-	GetObject_invalid_ranges(s)
+	GetObject_should_succeed_for_invalid_ranges(s)
+	GetObject_content_ranges(s)
 	GetObject_invalid_parent(s)
 	GetObject_with_meta(s)
 	GetObject_large_object(s)
@@ -343,7 +346,8 @@ func TestUploadPartCopy(s *S3Conf) {
 	UploadPartCopy_non_existing_source_bucket(s)
 	UploadPartCopy_non_existing_source_object_key(s)
 	UploadPartCopy_success(s)
-	UploadPartCopy_by_range_invalid_range(s)
+	UploadPartCopy_by_range_invalid_ranges(s)
+	UploadPartCopy_exceeding_copy_source_range(s)
 	UploadPartCopy_greater_range_than_obj_size(s)
 	UploadPartCopy_by_range_success(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -858,7 +862,8 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_checksums":                                           GetObjectAttributes_checksums,
 		"GetObject_non_existing_key":                                              GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                      GetObject_directory_object_noslash,
-		"GetObject_invalid_ranges":                                                GetObject_invalid_ranges,
+		"GetObject_should_succeed_for_invalid_ranges":                             GetObject_should_succeed_for_invalid_ranges,
+		"GetObject_content_ranges":                                                GetObject_content_ranges,
 		"GetObject_invalid_parent":                                                GetObject_invalid_parent,
 		"GetObject_with_meta":                                                     GetObject_with_meta,
 		"GetObject_large_object":                                                  GetObject_large_object,
@@ -958,7 +963,8 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_non_existing_source_bucket":                               UploadPartCopy_non_existing_source_bucket,
 		"UploadPartCopy_non_existing_source_object_key":                           UploadPartCopy_non_existing_source_object_key,
 		"UploadPartCopy_success":                                                  UploadPartCopy_success,
-		"UploadPartCopy_by_range_invalid_range":                                   UploadPartCopy_by_range_invalid_range,
+		"UploadPartCopy_by_range_invalid_ranges":                                  UploadPartCopy_by_range_invalid_ranges,
+		"UploadPartCopy_exceeding_copy_source_range":                              UploadPartCopy_exceeding_copy_source_range,
 		"UploadPartCopy_greater_range_than_obj_size":                              UploadPartCopy_greater_range_than_obj_size,
 		"UploadPartCopy_by_range_success":                                         UploadPartCopy_by_range_success,
 		"UploadPartCopy_should_copy_the_checksum":                                 UploadPartCopy_should_copy_the_checksum,

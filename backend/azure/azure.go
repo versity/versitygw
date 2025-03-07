@@ -389,17 +389,29 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	client, err := az.getBlobClient(*input.Bucket, *input.Key)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetProperties(ctx, nil)
+	if err != nil {
+		return nil, azureErrToS3Err(err)
+	}
+
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
-		offset, count, err := backend.ParseRange(0, *input.Range)
+		offset, count, isValid, err := backend.ParseGetObjectRange(*resp.ContentLength, *input.Range)
 		if err != nil {
 			return nil, err
 		}
-		opts = &azblob.DownloadStreamOptions{
-			Range: blob.HTTPRange{
-				Count:  count,
-				Offset: offset,
-			},
+		if isValid {
+			opts = &azblob.DownloadStreamOptions{
+				Range: blob.HTTPRange{
+					Count:  count,
+					Offset: offset,
+				},
+			}
 		}
 	}
 	blobDownloadResponse, err := az.client.DownloadStream(ctx, *input.Bucket, *input.Key, opts)
@@ -418,7 +430,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:    input.Range,
+		AcceptRanges:    backend.GetPtrFromString("bytes"),
 		ContentLength:   blobDownloadResponse.ContentLength,
 		ContentEncoding: blobDownloadResponse.ContentEncoding,
 		ContentType:     contentType,
