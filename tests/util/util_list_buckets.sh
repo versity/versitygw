@@ -80,3 +80,28 @@ list_and_check_buckets() {
   fi
   return 0
 }
+
+list_and_check_buckets_omit_without_permission() {
+  if [ $# -ne 4 ]; then
+    log 2 "'list_and_check_buckets_with_user' requires username, password, non-visible bucket, visible bucket"
+    return 1
+  fi
+  if ! list_buckets_with_user "s3api" "$1" "$2"; then
+    log 2 "error listing buckets with user '$1'"
+    return 1
+  fi
+  bucket_found=false
+  for bucket in "${bucket_array[@]}"; do
+    if [ "$bucket" == "$3" ]; then
+      log 2 "bucket '$3' shouldn't show up in user '$1' bucket list"
+      return 1
+    elif [ "$bucket" == "$4" ]; then
+      bucket_found=true
+    fi
+  done
+  if [ $bucket_found == false ]; then
+    log 2 "user-owned bucket '$4' not found in user list"
+    return 1
+  fi
+  return 0
+}

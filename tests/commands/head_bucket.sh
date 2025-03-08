@@ -39,12 +39,13 @@ head_bucket() {
     log 2 "invalid command type $1"
   fi
   if [ $exit_code -ne 0 ]; then
-    log 2 "error getting bucket info: $bucket_info"
     if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
       return 1
     fi
+    log 2 "error getting bucket info: $bucket_info"
     return 2
   fi
+  bucket_info="$(echo -n "$bucket_info" | grep -v "InsecureRequestWarning")"
   echo "$bucket_info"
   return 0
 }

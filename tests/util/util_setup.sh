@@ -43,3 +43,20 @@ setup_bucket_and_large_file() {
   fi
   return 0
 }
+
+setup_bucket_and_user() {
+  if [ $# -ne 4 ]; then
+    log 2 "'setup_bucket_and_user' requires bucket name, username, password, user type"
+    return 1
+  fi
+  if ! setup_bucket "s3api" "$1"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  if ! result=$(setup_user_versitygw_or_direct "$2" "$3" "$4" "$1"); then
+    log 2 "error setting up user"
+    return 1
+  fi
+  echo "$result"
+  return 0
+}

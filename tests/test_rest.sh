@@ -375,7 +375,7 @@ test_file="test_file"
 
 @test "REST - head object" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1018"
+    skip "https://github.com/versity/versitygw/issues/1114"
   fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -449,9 +449,6 @@ test_file="test_file"
 }
 
 @test "REST - HeadObject does not return 405 with versioning, after file deleted" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1029"
-  fi
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip
   fi

@@ -18,6 +18,7 @@ source ./tests/setup.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh
+source ./tests/util/util_setup.sh
 source ./tests/util/util_users.sh
 source ./tests/commands/list_buckets.sh
 
@@ -59,30 +60,26 @@ test_admin_user() {
 
   run change_bucket_owner "$admin_username" "$admin_password" "$BUCKET_TWO_NAME" "$user_username"
   assert_success
-
-  delete_user "$user_username"
-  delete_user "$admin_username"
 }
 
 test_create_user_already_exists() {
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  run setup_user "$username" "123456" "admin"
-  assert_success "error setting up user"
+  run setup_user "$username" "$password" "admin"
+  assert_success
 
-  if create_user "$username" "123456" "admin"; then
-    fail "'user already exists' error not returned"
-  fi
-
-  delete_user "$username"
+  run create_user_versitygw "$username" "$password" "admin"
+  assert_failure
 }
 
 test_user_user() {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip
+  fi
+
   if [[ $# -ne 1 ]]; then
     fail "test admin user command requires command type"
   fi
@@ -90,41 +87,31 @@ test_user_user() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  setup_user "$username" "$password" "user" || fail "error setting up user"
-  bucket_cleanup_if_bucket_exists "s3api" "versity-gwtest-user-bucket"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$username" "$password" "user"
   assert_success
 
-  if create_bucket_with_user "s3api" "versity-gwtest-user-bucket" "$username" "$password"; then
-    fail "creating bucket with 'user' account failed to return error"
-  fi
-  # shellcheck disable=SC2154
-  [[ $error == *"Access Denied"* ]] || fail "error message '$error' doesn't contain 'Access Denied'"
-
-  create_bucket "s3api" "versity-gwtest-user-bucket" || fail "error creating bucket"
-
-  change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "versity-gwtest-user-bucket" "$username" || fail "error changing bucket owner"
-  if change_bucket_owner "$username" "$password" "versity-gwtest-user-bucket" "admin"; then
-    fail "user shouldn't be able to change bucket owner"
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"
+    assert_success
+    run create_bucket "s3api" "$BUCKET_TWO_NAME"
+    assert_success
+  else
+    run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$AWS_ACCESS_KEY_ID"
+    assert_success
   fi
 
-  list_buckets_with_user "s3api" "$username" "$password" || fail "error listing buckets with user '$username'"
-  bucket_found=false
-  for bucket in "${bucket_array[@]}"; do
-    if [ "$bucket" == "$BUCKET_ONE_NAME" ]; then
-      fail "$BUCKET_ONE_NAME shouldn't show up in 'user' bucket list"
-    elif [ "$bucket" == "versity-gwtest-user-bucket" ]; then
-      bucket_found=true
-    fi
-  done
-  if [ $bucket_found == false ]; then
-    fail "user-owned bucket not found in user list"
-  fi
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$username"
+  assert_success
+
+  run change_bucket_owner "$username" "$password" "$BUCKET_TWO_NAME" "admin"
+  assert_failure
+  assert_output -p "AccessDenied"
+
+  run list_and_check_buckets_omit_without_permission "$username" "$password" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
 
   run delete_bucket "s3api" "versity-gwtest-user-bucket"
   assert_success "failed to delete bucket"
-  delete_user "$username"
 }
 
 test_userplus_operation() {
@@ -135,32 +122,22 @@ test_userplus_operation() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  bucket_cleanup_if_bucket_exists "s3api" "versity-gwtest-userplus-bucket"
-  setup_user "$username" "$password" "userplus" || fail "error creating user '$username'"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$username" "$password" "userplus"
   assert_success
 
-  create_bucket_with_user "s3api" "versity-gwtest-userplus-bucket" "$username" "$password" || fail "error creating bucket with user '$username'"
-
-  list_buckets_with_user "s3api" "$username" "$password" || fail "error listing buckets with user '$username'"
-  bucket_found=false
-  for bucket in "${bucket_array[@]}"; do
-    if [ "$bucket" == "$BUCKET_ONE_NAME" ]; then
-      fail "$BUCKET_ONE_NAME shouldn't show up in 'userplus' bucket list"
-    elif [ "$bucket" == "versity-gwtest-userplus-bucket" ]; then
-      bucket_found=true
-    fi
-  done
-  if [ $bucket_found == false ]; then
-    fail "userplus-owned bucket not found in user list"
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"
+    assert_success
+    run create_bucket_with_user "s3api" "$BUCKET_TWO_NAME" "$username" "$password"
+    assert_success
+  else
+    run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$username"
+    assert_success
   fi
 
-  if change_bucket_owner "$username" "$password" "versity-gwtest-userplus-bucket" "admin"; then
-    fail "userplus shouldn't be able to change bucket owner"
-  fi
+  run list_and_check_buckets_omit_without_permission "$username" "$password" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
 
-  run delete_bucket "s3api" "versity-gwtest-admin-bucket"
-  assert_success "failed to delete bucket"
-  delete_user "$username"
+  run change_bucket_owner "$username" "$password" "$BUCKET_TWO_NAME" "admin"
+  assert_failure
 }
