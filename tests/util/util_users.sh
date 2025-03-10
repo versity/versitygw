@@ -144,6 +144,37 @@ EOF
   return 0
 }
 
+put_user_policy_admin() {
+  log 6 "put_user_policy_admin"
+  if [[ $# -ne 2 ]]; then
+    log 2 "'put user policy admin' function requires username, bucket name"
+    return 1
+  fi
+
+  cat <<EOF > "$TEST_FILE_FOLDER"/user_policy_file
+{
+  "Version": "2012-10-17",
+  "Statement": [
+      {
+          "Effect": "Allow",
+          "Action": "s3:*",
+          "Resource": [
+            "arn:aws:s3:::$1-*",
+            "arn:aws:s3:::$1-*/*",
+            "arn:aws:s3:::$2",
+            "arn:aws:s3:::$2/*"
+          ]
+      }
+  ]
+}
+EOF
+  if ! error=$(send_command aws --endpoint-url=https://iam.amazonaws.com iam put-user-policy --user-name "$1" --policy-name "UserPolicy" --policy-document "file://$TEST_FILE_FOLDER/user_policy_file" 2>&1); then
+    log 2 "error putting user policy: $error"
+    return 1
+  fi
+  return 0
+}
+
 put_user_policy() {
   log 6 "put_user_policy"
   if [[ $# -ne 3 ]]; then
@@ -159,6 +190,16 @@ put_user_policy() {
       log 2 "error adding userplus policy"
       return 1
     fi
+    ;;
+  "admin")
+    if ! put_user_policy_admin "$1" "$3"; then
+      log 2 "error adding userplus policy"
+      return 1
+    fi
+    ;;
+  *)
+    log 2 "unrecognized user type '$2' for putting policy"
+    return 1
     ;;
   esac
   return 0
@@ -188,7 +229,7 @@ create_user_direct() {
   export secret_key
 
   # propagation delay occurs when user is added to IAM, so wait a few seconds
-  sleep 5
+  sleep 10
 
   return 0
 }

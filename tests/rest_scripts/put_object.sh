@@ -34,6 +34,8 @@ expires="$EXPIRES"
 # use this parameter to check incorrect checksums
 # shellcheck disable=SC2153,SC2154
 checksum_hash="$CHECKSUM"
+# shellcheck disable=SC2153,SC2154
+fake_signature="$SIGNATURE"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 if [ "$payload" == "" ]; then
@@ -82,6 +84,10 @@ build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
+
+if [ "$fake_signature" != "" ]; then
+  signature="$fake_signature"
+fi
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key")
 curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
