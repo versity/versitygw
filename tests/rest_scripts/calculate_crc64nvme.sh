@@ -25,7 +25,7 @@ import sys
 from awscrt import checksums
 
 with open(sys.argv[1], 'rb') as f:
-  print(checksums.crc64nvme(f.read()))" "$DATA_FILE" 2>&1); then
+  print(checksums.${CHECKSUM_TYPE}(f.read()))" "$DATA_FILE" 2>&1); then
   log_rest 2 "error calculating checksum: $checksum_decimal"
   exit 1
 fi
@@ -34,5 +34,11 @@ if ! deactivate 1>/dev/null; then
   log_rest 2 "error deactivating virtual environment"
   exit 1
 fi
-checksum_hash=$(printf "%016x" "$checksum_decimal" | xxd -r -p | base64)
+if [ "$CHECKSUM_TYPE" == "crc64nvme" ]; then
+  hex_format="%016x"
+else
+  hex_format="%08x"
+fi
+# shellcheck disable=SC2059
+checksum_hash=$(printf "$hex_format" "$checksum_decimal" | xxd -r -p | base64)
 echo "$checksum_hash"

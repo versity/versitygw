@@ -307,7 +307,7 @@ check_checksum_invalid_or_incorrect() {
     return 1
   fi
   if [ "$result" != "400" ]; then
-    log 2 "expected response code of '400', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    log 2 "expected response code of '400', was '$result' (response: $(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "$6" "Error" "Message"; then
@@ -331,37 +331,84 @@ put_object_rest_checksum() {
     log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
-  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
   return 0
 }
 
-put_object_rest_sha256_invalid() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest_sha256_invalid' requires data file, bucket name, key"
+check_checksum_rest_invalid() {
+  if [ $# -ne 1 ]; then
+    log 2 "'put_object_rest_sha256_invalid' requires checksum type"
     return 1
   fi
-  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "sha256" "dummy" "Value for x-amz-checksum-sha256 header is invalid."; then
+  test_file="test_file"
+  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1" "dummy" "Value for x-amz-checksum-$1 header is invalid."; then
     log 2 "error checking checksum"
     return 1
   fi
   return 0
 }
 
-put_object_rest_sha256_incorrect() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest_sha256_invalid' requires data file, bucket name, key"
+check_checksum_rest_incorrect() {
+  if [ $# -ne 1 ]; then
+    log 2 "'check_checksum_rest_incorrect' requires checksum type"
+    return 1
+  fi
+  test_file="test_file"
+  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+    log 2 "error setting up bucket and file"
     return 1
   fi
   if [ "$DIRECT" == "true" ]; then
-    error_message="The SHA256 you specified did not match the calculated checksum."
+    error_cs_str="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
   else
-    error_message="The sha256 you specified did not match the calculated checksum."
+    error_cs_str="$1"
   fi
-  incorrect_checksum="$(echo -n "dummy" | sha256sum | awk '{print $1}' | xxd -r -p | base64)"
-  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "sha256" "$incorrect_checksum" "$error_message"; then
+  error_message="The $error_cs_str you specified did not match the calculated checksum."
+  if ! calculate_incorrect_checksum "$1" "$(cat "$TEST_FILE_FOLDER/$test_file")"; then
+    log 2 "error calculating incorrect checksum"
+    return 1
+  fi
+  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1" "$incorrect_checksum" "$error_message"; then
     log 2 "error checking checksum"
     return 1
   fi
+  return 0
+}
+
+calculate_incorrect_checksum() {
+  if [ $# -ne 2 ]; then
+    log 2 "'calculate_incorrect_checksum' requires checksum type, data"
+    return 1
+  fi
+  case "$1" in
+  "sha1")
+    incorrect_checksum="$(echo -n "$2"a | sha1sum | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  "sha256")
+    incorrect_checksum="$(echo -n "$2"a | sha256sum | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  "crc32")
+    incorrect_checksum="$(echo -n "$2"a | gzip -c -1 | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  "crc32c")
+    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+      log 2 "error calculating checksum: $incorrect_checksum"
+      return 1
+    fi
+    ;;
+  "crc64nvme")
+    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+      log 2 "error calculating checksum: $incorrect_checksum"
+      return 1
+    fi
+    ;;
+  *)
+    log 2 "invalid checksum type: $1"
+    return 1
+  esac
   return 0
 }
 
@@ -381,41 +428,32 @@ put_object_rest_chunked_payload_type_without_content_length() {
   return 0
 }
 
-put_object_rest_crc32_incorrect() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest_crc32_incorrect' requires data file, bucket name, key"
+add_correct_checksum() {
+  if [ $# -ne 1 ]; then
+    log 2 "'add_correct_checksum' requires checksum type"
     return 1
   fi
-  if [ "$DIRECT" == "true" ]; then
-    error_message="The CRC32 you specified did not match the calculated checksum."
-  else
-    error_message="The crc32 you specified did not match the calculated checksum."
+  test_file="test_file"
+  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+    log 2 "error setting up bucket and file"
+    return 1
   fi
-  incorrect_checksum="$(echo -n "dummy" | gzip -c -1 | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
-  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "crc32" "$incorrect_checksum" "$error_message"; then
-    log 2 "error checking checksum"
+
+  if ! put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1"; then
+    log 2 "error adding file with checksum to s3"
     return 1
   fi
   return 0
 }
 
-put_object_rest_crc64nvme_incorrect() {
+check_invalid_checksum_type() {
   if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest_crc64nvme_incorrect' requires data file, bucket name, key"
+    log 2 "'check_invalid_checksum_type' requires data file, bucket name, file"
     return 1
   fi
-  if [ "$DIRECT" == "true" ]; then
-    error_message="The CRC64NVME you specified did not match the calculated checksum."
-  else
-    error_message="The crc64nvme you specified did not match the calculated checksum."
-  fi
-  if ! incorrect_checksum=$(DATA_FILE=<(echo -n "dummy") TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
-    log 2 "error calculating checksum: $incorrect_checksum"
-    return 1
-  fi
-  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "crc64nvme" "$incorrect_checksum" "$error_message"; then
+  error_message='The algorithm type you specified in x-amz-checksum- header is invalid.'
+  if ! check_checksum_invalid_or_incorrect "$1" "$2" "$3" "sha256a" "dummy" "$error_message"; then
     log 2 "error checking checksum"
     return 1
   fi
-  return 0
 }

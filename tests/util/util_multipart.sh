@@ -14,6 +14,33 @@
 # specific language governing permissions and limitations
 # under the License.
 
+multipart_upload_s3api_complete_from_bucket() {
+  if [ $# -ne 3 ]; then
+    log 2 "'multipart_upload_s3api_complete_from_bucket' requires bucket, copy source, part count"
+    return 1
+  fi
+  parts="["
+  for ((i = 1; i <= $3; i++)); do
+    # shellcheck disable=SC2154
+    if ! upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i"; then
+      log 2 "error uploading part $i"
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
+    if [[ $i -ne $3 ]]; then
+      parts+=","
+    fi
+  done
+  parts+="]"
+
+  if ! error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}' 2>&1); then
+    log 2 "Error completing upload: $error"
+    return 1
+  fi
+  return 0
+}
+
 multipart_upload_from_bucket() {
   if [ $# -ne 4 ]; then
     log 2 "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
@@ -38,23 +65,8 @@ multipart_upload_from_bucket() {
     return 1
   fi
 
-  parts="["
-  for ((i = 1; i <= $4; i++)); do
-    # shellcheck disable=SC2154
-    if ! upload_part_copy "$1" "$2-copy" "$upload_id" "$2" "$i"; then
-      log 2 "error uploading part $i"
-      return 1
-    fi
-    # shellcheck disable=SC2154
-    parts+="{\"ETag\": $etag, \"PartNumber\": $i}"
-    if [[ $i -ne $4 ]]; then
-      parts+=","
-    fi
-  done
-  parts+="]"
-
-  if ! error=$(aws --no-verify-ssl s3api complete-multipart-upload --bucket "$1" --key "$2-copy" --upload-id "$upload_id" --multipart-upload '{"Parts": '"$parts"'}' 2>&1); then
-    log 2 "Error completing upload: $error"
+  if ! multipart_upload_s3api_complete_from_bucket "$1" "$2" "$4"; then
+    log 2 " error completing multipart upload from bucket"
     return 1
   fi
   return 0
@@ -180,8 +192,6 @@ multipart_upload_with_params() {
   fi
   return 0
 }
-
-
 
 run_and_verify_multipart_upload_with_valid_range() {
   if [ $# -ne 3 ]; then
