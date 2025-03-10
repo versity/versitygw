@@ -24,7 +24,8 @@ import (
 )
 
 var (
-	glacier bool
+	glacier          bool
+	disableNoArchive bool
 )
 
 func scoutfsCommand() *cli.Command {
@@ -79,6 +80,12 @@ move interfaces as well as support for tiered filesystems.`,
 				DefaultText: "0755",
 				Value:       0755,
 			},
+			&cli.BoolFlag{
+				Name:        "disable-noarchive",
+				Usage:       "disable setting noarchive for multipart part uploads",
+				EnvVars:     []string{"VGW_DISABLE_NOARCHIVE"},
+				Destination: &disableNoArchive,
+			},
 		},
 	}
 }
@@ -98,6 +105,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.ChownGID = chowngid
 	opts.BucketLinks = bucketlinks
 	opts.NewDirPerm = fs.FileMode(dirPerms)
+	opts.DisableNoArchive = disableNoArchive
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {

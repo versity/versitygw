@@ -40,11 +40,12 @@ import (
 )
 
 type ScoutfsOpts struct {
-	ChownUID    bool
-	ChownGID    bool
-	GlacierMode bool
-	BucketLinks bool
-	NewDirPerm  fs.FileMode
+	ChownUID         bool
+	ChownGID         bool
+	GlacierMode      bool
+	BucketLinks      bool
+	NewDirPerm       fs.FileMode
+	DisableNoArchive bool
 }
 
 type ScoutFS struct {
@@ -78,6 +79,11 @@ type ScoutFS struct {
 
 	// newDirPerm is the permissions to use when creating new directories
 	newDirPerm fs.FileMode
+
+	// disableNoArchive is used to disable setting scoutam noarchive flag
+	// on mutlipart parts. This is enabled by default to prevent archive
+	// copies of temporary multipart parts.
+	disableNoArchive bool
 }
 
 var _ backend.Backend = &ScoutFS{}
@@ -154,6 +160,31 @@ func (s *ScoutFS) getChownIDs(acct auth.Account) (int, int, bool) {
 	}
 
 	return uid, gid, needsChown
+}
+
+func (s *ScoutFS) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	out, err := s.Posix.UploadPart(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	if !s.disableNoArchive {
+		sum := sha256.Sum256([]byte(*input.Key))
+		partPath := filepath.Join(
+			*input.Bucket,                        // bucket
+			metaTmpMultipartDir,                  // temp multipart dir
+			fmt.Sprintf("%x", sum),               // hashed objname
+			*input.UploadId,                      // upload id
+			fmt.Sprintf("%v", *input.PartNumber), // part number
+		)
+
+		err = setNoArchive(partPath)
+		if err != nil {
+			return nil, fmt.Errorf("set noarchive: %w", err)
+		}
+	}
+
+	return out, err
 }
 
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
@@ -932,30 +963,6 @@ func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput)
 	return nil
 }
 
-func setStaging(objname string) error {
-	b, err := xattr.Get(objname, flagskey)
-	if err != nil && !isNoAttr(err) {
-		return err
-	}
-
-	var oldflags uint64
-	if !isNoAttr(err) {
-		err = json.Unmarshal(b, &oldflags)
-		if err != nil {
-			return err
-		}
-	}
-
-	newflags := oldflags | Staging
-
-	if newflags == oldflags {
-		// no flags change, just return
-		return nil
-	}
-
-	return fSetNewGlobalFlags(objname, newflags)
-}
-
 func isStaging(objname string) (bool, error) {
 	b, err := xattr.Get(objname, flagskey)
 	if err != nil && !isNoAttr(err) {
@@ -973,13 +980,41 @@ func isStaging(objname string) (bool, error) {
 	return flags&Staging == Staging, nil
 }
 
-func fSetNewGlobalFlags(objname string, flags uint64) error {
-	b, err := json.Marshal(&flags)
+func setFlag(objname string, flag uint64) error {
+	b, err := xattr.Get(objname, flagskey)
+	if err != nil && !isNoAttr(err) {
+		return err
+	}
+
+	var oldflags uint64
+	if !isNoAttr(err) {
+		err = json.Unmarshal(b, &oldflags)
+		if err != nil {
+			return err
+		}
+	}
+
+	newflags := oldflags | flag
+
+	if newflags == oldflags {
+		// no flags change, just return
+		return nil
+	}
+
+	b, err = json.Marshal(&newflags)
 	if err != nil {
 		return err
 	}
 
 	return xattr.Set(objname, flagskey, b)
+}
+
+func setStaging(objname string) error {
+	return setFlag(objname, Staging)
+}
+
+func setNoArchive(objname string) error {
+	return setFlag(objname, NoArchive)
 }
 
 func isNoAttr(err error) bool {

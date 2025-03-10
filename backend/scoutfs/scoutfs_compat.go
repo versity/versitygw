@@ -52,14 +52,15 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	}
 
 	return &ScoutFS{
-		Posix:       p,
-		rootfd:      f,
-		rootdir:     rootdir,
-		meta:        metastore,
-		chownuid:    opts.ChownUID,
-		chowngid:    opts.ChownGID,
-		glaciermode: opts.GlacierMode,
-		newDirPerm:  opts.NewDirPerm,
+		Posix:            p,
+		rootfd:           f,
+		rootdir:          rootdir,
+		meta:             metastore,
+		chownuid:         opts.ChownUID,
+		chowngid:         opts.ChownGID,
+		glaciermode:      opts.GlacierMode,
+		newDirPerm:       opts.NewDirPerm,
+		disableNoArchive: opts.DisableNoArchive,
 	}, nil
 }
 
