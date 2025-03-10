@@ -352,10 +352,10 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	}
 
 	// cleanup tmp dirs
-	os.RemoveAll(upiddir)
+	os.RemoveAll(filepath.Join(bucket, upiddir))
 	// use Remove for objdir in case there are still other uploads
 	// for same object name outstanding
-	os.Remove(objdir)
+	os.Remove(filepath.Join(bucket, objdir))
 
 	return &s3.CompleteMultipartUploadOutput{
 		Bucket: &bucket,
