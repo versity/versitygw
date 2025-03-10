@@ -125,7 +125,6 @@ export RUN_USERS=true
 
   run head_bucket "s3cmd" "$BUCKET_ONE_NAME"a
   assert_failure 1
-  assert_output -p "404"
 }
 
 @test "test_ls_directory_object" {

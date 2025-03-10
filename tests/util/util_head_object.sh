@@ -166,3 +166,29 @@ check_checksum_rest_crc32() {
   fi
   return 0
 }
+
+head_object_without_and_with_checksum() {
+  if [ $# -ne 2 ]; then
+    log 2 "'head_object_without_checksum' requires bucket, file"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  head_checksum=$(grep -i "x-amz-checksum-sha256" "$TEST_FILE_FOLDER/result.txt" | awk '{print $2}' | sed 's/\r$//')
+  if [ "$head_checksum" != "" ]; then
+    log 2 "head checksum shouldn't be returned, is $head_checksum"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" CHECKSUM="true" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  head_checksum=$(grep -i "x-amz-checksum-sha256" "$TEST_FILE_FOLDER/result.txt" | awk '{print $2}' | sed 's/\r$//')
+  if [ "$head_checksum" == "" ]; then
+    log 2 "head checksum should be returned"
+    return 1
+  fi
+  return 0
+}

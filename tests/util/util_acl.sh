@@ -102,6 +102,8 @@ get_check_acl_id() {
       log 2 "error getting canonical ID: $canonical_id"
       return 1
     fi
+    canonical_id="$(echo -n "$canonical_id" | grep -v "InsecureRequestWarning" | sed "s/\"//g")"
+    log 5 "canonical ID: $canonical_id"
     if [[ $id != "$canonical_id" ]]; then
       log 2 "acl ID doesn't match AWS key or canonical ID"
       return 1

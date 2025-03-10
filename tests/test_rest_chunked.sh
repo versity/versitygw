@@ -38,7 +38,7 @@ source ./tests/util/util_setup.sh
 
 @test "REST - chunked upload, signature error" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1056 - gibberish at end"
+    skip "https://github.com/versity/versitygw/issues/1123"
   fi
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success

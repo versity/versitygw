@@ -130,3 +130,14 @@ test_file="test_file"
   run add_correct_checksum "sha1"
   assert_success
 }
+
+@test "REST - attempt to get checksum without checksum mode" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run add_correct_checksum "sha256"
+  assert_success
+
+  run head_object_without_and_with_checksum "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
