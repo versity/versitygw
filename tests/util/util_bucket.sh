@@ -152,7 +152,7 @@ bucket_exists() {
   local exists=0
   head_bucket "$1" "$2" || exists=$?
   # shellcheck disable=SC2181
-  if [ $exists -ne 0 ] && [ $exists -ne 1 ]; then
+  if [ $exists -eq 2 ]; then
     log 2 "unexpected error checking if bucket exists"
     return 2
   fi

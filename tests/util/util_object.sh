@@ -457,3 +457,33 @@ check_invalid_checksum_type() {
     return 1
   fi
 }
+
+put_object_rest_check_expires_header() {
+  if [ $# -ne 3 ]; then
+    log 2 "'put_object-put_object_rest_check_expires_header' requires data file, bucket, key"
+    return 1
+  fi
+  expiry_date="Tue, 11 Mar 2025 16:00:00 GMT"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" EXPIRES="$expiry_date" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected response code of '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  returned_expiry_date="$(grep "Expires" "$TEST_FILE_FOLDER/result.txt" | cut -d' ' -f2- | tr -d '\r')"
+  if [ "$returned_expiry_date" != "$expiry_date" ]; then
+    log 2 "expected expiry date '$expiry_date', actual '$returned_expiry_date'"
+    return 1
+  fi
+  return 0
+}

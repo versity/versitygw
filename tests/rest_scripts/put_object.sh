@@ -28,6 +28,8 @@ key="$OBJECT_KEY"
 checksum_type="$CHECKSUM_TYPE"
 # shellcheck disable=SC2153
 payload="$PAYLOAD"
+# shellcheck disable=SC2153
+expires="$EXPIRES"
 
 # use this parameter to check incorrect checksums
 # shellcheck disable=SC2153,SC2154
@@ -40,7 +42,11 @@ else
   payload_hash="$payload"
 fi
 
-cr_data=("PUT" "/$bucket_name/$key" "" "host:$host")
+cr_data=("PUT" "/$bucket_name/$key" "")
+if [ -n "$expires" ]; then
+  cr_data+=("expires:$expires")
+fi
+cr_data+=("host:$host")
 if [ "$checksum_type" == "sha256" ]; then
   if [ -z "$checksum_hash" ]; then
     checksum_hash="$(sha256sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
