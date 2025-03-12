@@ -304,7 +304,6 @@ func TestCreateMultipartUpload(s *S3Conf) {
 	CreateMultipartUpload_with_metadata(s)
 	CreateMultipartUpload_with_invalid_tagging(s)
 	CreateMultipartUpload_with_tagging(s)
-	CreateMultipartUpload_with_content_type(s)
 	CreateMultipartUpload_with_object_lock(s)
 	CreateMultipartUpload_with_object_lock_not_enabled(s)
 	CreateMultipartUpload_with_object_lock_invalid_retention(s)
@@ -933,7 +932,6 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_with_metadata":                                     CreateMultipartUpload_with_metadata,
 		"CreateMultipartUpload_with_invalid_tagging":                              CreateMultipartUpload_with_invalid_tagging,
 		"CreateMultipartUpload_with_tagging":                                      CreateMultipartUpload_with_tagging,
-		"CreateMultipartUpload_with_content_type":                                 CreateMultipartUpload_with_content_type,
 		"CreateMultipartUpload_with_object_lock":                                  CreateMultipartUpload_with_object_lock,
 		"CreateMultipartUpload_with_object_lock_not_enabled":                      CreateMultipartUpload_with_object_lock_not_enabled,
 		"CreateMultipartUpload_with_object_lock_invalid_retention":                CreateMultipartUpload_with_object_lock_invalid_retention,

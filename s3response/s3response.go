@@ -16,6 +16,7 @@ package s3response
 
 import (
 	"encoding/xml"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -445,6 +446,82 @@ type PutObjectRetentionInput struct {
 	XMLName         xml.Name `xml:"Retention"`
 	Mode            types.ObjectLockRetentionMode
 	RetainUntilDate AmzDate
+}
+
+type PutObjectInput struct {
+	ContentLength             *int64
+	ObjectLockRetainUntilDate *time.Time
+
+	Bucket                  *string
+	Key                     *string
+	ContentType             *string
+	ContentEncoding         *string
+	ContentDisposition      *string
+	ContentLanguage         *string
+	CacheControl            *string
+	Expires                 *string
+	Tagging                 *string
+	ChecksumCRC32           *string
+	ChecksumCRC32C          *string
+	ChecksumSHA1            *string
+	ChecksumSHA256          *string
+	ChecksumCRC64NVME       *string
+	ContentMD5              *string
+	ExpectedBucketOwner     *string
+	GrantFullControl        *string
+	GrantRead               *string
+	GrantReadACP            *string
+	GrantWriteACP           *string
+	IfMatch                 *string
+	IfNoneMatch             *string
+	SSECustomerAlgorithm    *string
+	SSECustomerKey          *string
+	SSECustomerKeyMD5       *string
+	SSEKMSEncryptionContext *string
+	SSEKMSKeyId             *string
+	WebsiteRedirectLocation *string
+
+	ObjectLockMode            types.ObjectLockMode
+	ObjectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
+	ChecksumAlgorithm         types.ChecksumAlgorithm
+
+	Metadata map[string]string
+	Body     io.Reader
+}
+
+type CreateMultipartUploadInput struct {
+	Bucket                    *string
+	Key                       *string
+	ExpectedBucketOwner       *string
+	CacheControl              *string
+	ContentDisposition        *string
+	ContentEncoding           *string
+	ContentLanguage           *string
+	ContentType               *string
+	Expires                   *string
+	SSECustomerAlgorithm      *string
+	SSECustomerKey            *string
+	SSECustomerKeyMD5         *string
+	SSEKMSEncryptionContext   *string
+	SSEKMSKeyId               *string
+	GrantFullControl          *string
+	GrantRead                 *string
+	GrantReadACP              *string
+	GrantWriteACP             *string
+	Tagging                   *string
+	WebsiteRedirectLocation   *string
+	BucketKeyEnabled          *bool
+	ObjectLockRetainUntilDate *time.Time
+	Metadata                  map[string]string
+
+	ACL                       types.ObjectCannedACL
+	ChecksumAlgorithm         types.ChecksumAlgorithm
+	ChecksumType              types.ChecksumType
+	ObjectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
+	ObjectLockMode            types.ObjectLockMode
+	RequestPayer              types.RequestPayer
+	ServerSideEncryption      types.ServerSideEncryption
+	StorageClass              types.StorageClass
 }
 
 type AmzDate struct {

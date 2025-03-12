@@ -41,6 +41,7 @@ var (
 	shortTimeout  = 10 * time.Second
 	longTimeout   = 60 * time.Second
 	iso8601Format = "20060102T150405Z"
+	timefmt       = "Mon, 02 Jan 2006 15:04:05 GMT"
 	nullVersionId = "null"
 )
 
@@ -3594,13 +3595,19 @@ func HeadObject_success(s *S3Conf) error {
 			"key1": "val1",
 			"key2": "val2",
 		}
-		ctype := defaultContentType
+		ctype, cDisp, cEnc, cLang := defaultContentType, "cont-desp", "json", "eng"
+		cacheControl, expires := "cache-ctrl", time.Now().Add(time.Hour*2)
 
 		_, err := putObjectWithData(dataLen, &s3.PutObjectInput{
-			Bucket:      &bucket,
-			Key:         &obj,
-			Metadata:    meta,
-			ContentType: &ctype,
+			Bucket:             &bucket,
+			Key:                &obj,
+			Metadata:           meta,
+			ContentType:        &ctype,
+			ContentDisposition: &cDisp,
+			ContentEncoding:    &cEnc,
+			ContentLanguage:    &cLang,
+			CacheControl:       &cacheControl,
+			Expires:            &expires,
 		}, s3client)
 		if err != nil {
 			return err
@@ -3627,7 +3634,22 @@ func HeadObject_success(s *S3Conf) error {
 			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
 		}
 		if *out.ContentType != defaultContentType {
-			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
+			return fmt.Errorf("expected Content-Type %v, instead got %v", defaultContentType, *out.ContentType)
+		}
+		if getString(out.ContentDisposition) != cDisp {
+			return fmt.Errorf("expected Content-Disposition %v, instead got %v", cDisp, getString(out.ContentDisposition))
+		}
+		if getString(out.ContentEncoding) != cEnc {
+			return fmt.Errorf("expected Content-Encoding %v, instead got %v", cEnc, getString(out.ContentEncoding))
+		}
+		if getString(out.ContentLanguage) != cLang {
+			return fmt.Errorf("expected Content-Language %v, instead got %v", cLang, getString(out.ContentLanguage))
+		}
+		if getString(out.ExpiresString) != expires.UTC().Format(timefmt) {
+			return fmt.Errorf("expected Expiress %v, instead got %v", expires.UTC().Format(timefmt), getString(out.ExpiresString))
+		}
+		if getString(out.CacheControl) != cacheControl {
+			return fmt.Errorf("expected Cache-Control %v, instead got %v", cacheControl, getString(out.CacheControl))
 		}
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
@@ -4268,12 +4290,18 @@ func GetObject_success(s *S3Conf) error {
 	testName := "GetObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "my-obj"
-		ctype := defaultContentType
+		ctype, cDisp, cEnc, cLang := defaultContentType, "cont-desp", "json", "eng"
+		cacheControl, expires := "cache-ctrl", time.Now().Add(time.Hour*2)
 
 		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
-			Bucket:      &bucket,
-			Key:         &obj,
-			ContentType: &ctype,
+			Bucket:             &bucket,
+			Key:                &obj,
+			ContentType:        &ctype,
+			ContentDisposition: &cDisp,
+			ContentEncoding:    &cEnc,
+			ContentLanguage:    &cLang,
+			Expires:            &expires,
+			CacheControl:       &cacheControl,
 		}, s3client)
 		if err != nil {
 			return err
@@ -4291,8 +4319,23 @@ func GetObject_success(s *S3Conf) error {
 		if *out.ContentLength != dataLength {
 			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
 		}
-		if *out.ContentType != defaultContentType {
-			return fmt.Errorf("expected content type %v, instead got %v", defaultContentType, *out.ContentType)
+		if getString(out.ContentType) != defaultContentType {
+			return fmt.Errorf("expected Content-Type %v, instead got %v", defaultContentType, getString(out.ContentType))
+		}
+		if getString(out.ContentDisposition) != cDisp {
+			return fmt.Errorf("expected Content-Disposition %v, instead got %v", cDisp, getString(out.ContentDisposition))
+		}
+		if getString(out.ContentEncoding) != cEnc {
+			return fmt.Errorf("expected Content-Encoding %v, instead got %v", cEnc, getString(out.ContentEncoding))
+		}
+		if getString(out.ContentLanguage) != cLang {
+			return fmt.Errorf("expected Content-Language %v, instead got %v", cLang, getString(out.ContentLanguage))
+		}
+		if getString(out.ExpiresString) != expires.UTC().Format(timefmt) {
+			return fmt.Errorf("expected Expiress %v, instead got %v", expires.UTC().Format(timefmt), getString(out.ExpiresString))
+		}
+		if getString(out.CacheControl) != cacheControl {
+			return fmt.Errorf("expected Cache-Control %v, instead got %v", cacheControl, getString(out.CacheControl))
 		}
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
@@ -6610,16 +6653,20 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 			"prop1": "val1",
 			"prop2": "val2",
 		}
-		contentType := "application/text"
-		contentEncoding := "testenc"
+		cType, cEnc, cDesp, cLang := "application/text", "testenc", "testdesp", "sp"
+		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*5)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:          &bucket,
-			Key:             &obj,
-			Metadata:        meta,
-			ContentType:     &contentType,
-			ContentEncoding: &contentEncoding,
+			Bucket:             &bucket,
+			Key:                &obj,
+			Metadata:           meta,
+			ContentType:        &cType,
+			ContentEncoding:    &cEnc,
+			ContentDisposition: &cDesp,
+			ContentLanguage:    &cLang,
+			CacheControl:       &cacheControl,
+			Expires:            &expires,
 		})
 		cancel()
 		if err != nil {
@@ -6667,78 +6714,23 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
 		}
 
-		if resp.ContentType == nil {
-			return fmt.Errorf("expected uploaded object content-type to be %v, instead got nil", contentType)
+		if getString(resp.ContentType) != cType {
+			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", cType, getString(resp.ContentType))
 		}
-		if *resp.ContentType != contentType {
-			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", contentType, *resp.ContentType)
+		if getString(resp.ContentEncoding) != cEnc {
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", cEnc, getString(resp.ContentEncoding))
 		}
-		if resp.ContentEncoding == nil {
-			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got nil", contentEncoding)
+		if getString(resp.ContentLanguage) != cLang {
+			return fmt.Errorf("expected uploaded object content-language to be %v, instead got %v", cLang, getString(resp.ContentLanguage))
 		}
-		if *resp.ContentEncoding != contentEncoding {
-			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", contentEncoding, *resp.ContentEncoding)
+		if getString(resp.ContentDisposition) != cDesp {
+			return fmt.Errorf("expected uploaded object content-disposition to be %v, instead got %v", cDesp, getString(resp.ContentDisposition))
 		}
-
-		return nil
-	})
-}
-
-func CreateMultipartUpload_with_content_type(s *S3Conf) error {
-	testName := "CreateMultipartUpload_with_content_type"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		cType := "application/octet-stream"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:      &bucket,
-			Key:         &obj,
-			ContentType: &cType,
-		})
-		cancel()
-		if err != nil {
-			return err
+		if getString(resp.CacheControl) != cacheControl {
+			return fmt.Errorf("expected uploaded object cache-control to be %v, instead got %v", cacheControl, getString(resp.CacheControl))
 		}
-
-		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
-		if err != nil {
-			return err
-		}
-
-		compParts := []types.CompletedPart{}
-		for _, el := range parts {
-			compParts = append(compParts, types.CompletedPart{
-				ETag:       el.ETag,
-				PartNumber: el.PartNumber,
-			})
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
-			Bucket:   &bucket,
-			Key:      &obj,
-			UploadId: out.UploadId,
-			MultipartUpload: &types.CompletedMultipartUpload{
-				Parts: compParts,
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		if *resp.ContentType != cType {
-			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", cType, *resp.ContentType)
+		if getString(resp.ExpiresString) != expires.UTC().Format(timefmt) {
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", expires.UTC().Format(timefmt), getString(resp.ExpiresString))
 		}
 
 		return nil

@@ -254,7 +254,7 @@ func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVe
 
 var defTime = time.Time{}
 
-func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -270,7 +270,7 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMul
 	if input.ContentType != nil && *input.ContentType == "" {
 		input.ContentType = nil
 	}
-	if input.Expires != nil && *input.Expires == defTime {
+	if input.Expires != nil && *input.Expires == "" {
 		input.Expires = nil
 	}
 	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
@@ -313,7 +313,47 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input *s3.CreateMul
 		input.WebsiteRedirectLocation = nil
 	}
 
-	out, err := s.client.CreateMultipartUpload(ctx, input)
+	var expires *time.Time
+	if input.Expires != nil {
+		exp, err := time.Parse(time.RFC1123, *input.Expires)
+		if err == nil {
+			expires = &exp
+		}
+	}
+
+	out, err := s.client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket:                    input.Bucket,
+		Key:                       input.Key,
+		ExpectedBucketOwner:       input.ExpectedBucketOwner,
+		CacheControl:              input.CacheControl,
+		ContentDisposition:        input.ContentDisposition,
+		ContentEncoding:           input.ContentEncoding,
+		ContentLanguage:           input.ContentLanguage,
+		ContentType:               input.ContentType,
+		Expires:                   expires,
+		SSECustomerAlgorithm:      input.SSECustomerAlgorithm,
+		SSECustomerKey:            input.SSECustomerKey,
+		SSECustomerKeyMD5:         input.SSECustomerKeyMD5,
+		SSEKMSEncryptionContext:   input.SSEKMSEncryptionContext,
+		SSEKMSKeyId:               input.SSEKMSKeyId,
+		GrantFullControl:          input.GrantFullControl,
+		GrantRead:                 input.GrantRead,
+		GrantReadACP:              input.GrantReadACP,
+		GrantWriteACP:             input.GrantWriteACP,
+		Tagging:                   input.Tagging,
+		WebsiteRedirectLocation:   input.WebsiteRedirectLocation,
+		BucketKeyEnabled:          input.BucketKeyEnabled,
+		ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
+		Metadata:                  input.Metadata,
+		ACL:                       input.ACL,
+		ChecksumAlgorithm:         input.ChecksumAlgorithm,
+		ChecksumType:              input.ChecksumType,
+		ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+		ObjectLockMode:            input.ObjectLockMode,
+		RequestPayer:              input.RequestPayer,
+		ServerSideEncryption:      input.ServerSideEncryption,
+		StorageClass:              input.StorageClass,
+	})
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, handleError(err)
 	}
@@ -617,7 +657,7 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 	}, nil
 }
 
-func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -654,7 +694,7 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3re
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
-	if input.Expires != nil && *input.Expires == defTime {
+	if input.Expires != nil && *input.Expires == "" {
 		input.Expires = nil
 	}
 	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
@@ -702,9 +742,53 @@ func (s *S3Proxy) PutObject(ctx context.Context, input *s3.PutObjectInput) (s3re
 	input.ObjectLockMode = ""
 	input.ObjectLockLegalHoldStatus = ""
 
+	var expire *time.Time
+	if input.Expires != nil {
+		exp, err := time.Parse(time.RFC1123, *input.Expires)
+		if err == nil {
+			expire = &exp
+		}
+	}
+
 	// streaming backend is not seekable,
 	// use unsigned payload for streaming ops
-	output, err := s.client.PutObject(ctx, input, s3.WithAPIOptions(
+	output, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:                    input.Bucket,
+		Key:                       input.Key,
+		ContentLength:             input.ContentLength,
+		ContentType:               input.ContentType,
+		ContentEncoding:           input.ContentEncoding,
+		ContentDisposition:        input.ContentDisposition,
+		ContentLanguage:           input.ContentLanguage,
+		CacheControl:              input.CacheControl,
+		Expires:                   expire,
+		Metadata:                  input.Metadata,
+		Body:                      input.Body,
+		Tagging:                   input.Tagging,
+		ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
+		ObjectLockMode:            input.ObjectLockMode,
+		ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+		ChecksumAlgorithm:         input.ChecksumAlgorithm,
+		ChecksumCRC32:             input.ChecksumCRC32,
+		ChecksumCRC32C:            input.ChecksumCRC32C,
+		ChecksumSHA1:              input.ChecksumSHA1,
+		ChecksumSHA256:            input.ChecksumSHA256,
+		ChecksumCRC64NVME:         input.ChecksumCRC64NVME,
+		ContentMD5:                input.ContentMD5,
+		ExpectedBucketOwner:       input.ExpectedBucketOwner,
+		GrantFullControl:          input.GrantFullControl,
+		GrantRead:                 input.GrantRead,
+		GrantReadACP:              input.GrantReadACP,
+		GrantWriteACP:             input.GrantWriteACP,
+		IfMatch:                   input.IfMatch,
+		IfNoneMatch:               input.IfNoneMatch,
+		SSECustomerAlgorithm:      input.SSECustomerAlgorithm,
+		SSECustomerKey:            input.SSECustomerKey,
+		SSECustomerKeyMD5:         input.SSECustomerKeyMD5,
+		SSEKMSEncryptionContext:   input.SSEKMSEncryptionContext,
+		SSEKMSKeyId:               input.SSEKMSKeyId,
+		WebsiteRedirectLocation:   input.WebsiteRedirectLocation,
+	}, s3.WithAPIOptions(
 		v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware,
 	))
 	if err != nil {

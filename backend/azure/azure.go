@@ -63,6 +63,7 @@ const (
 	keyBucketLock          key = "Bucketlock"
 	keyObjRetention        key = "Objectretention"
 	keyObjLegalHold        key = "Objectlegalhold"
+	keyExpires             key = "Vgwexpires"
 	onameAttr              key = "Objname"
 	onameAttrLower         key = "objname"
 	metaTmpMultipartPrefix key = ".sgwtmp" + "/multipart"
@@ -76,6 +77,7 @@ func (key) Table() map[string]struct{} {
 		"policy":            {},
 		"bucketlock":        {},
 		"objectretention":   {},
+		"vgwexpires":        {},
 		"objectlegalhold":   {},
 		"objname":           {},
 		".sgwtmp/multipart": {},
@@ -292,14 +294,27 @@ func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket strin
 	return az.deleteContainerMetaData(ctx, bucket, string(keyOwnership))
 }
 
-func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	tags, err := parseTags(po.Tagging)
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
 
+	metadata := parseMetadata(po.Metadata)
+
+	// Store the "Expires" property in the object metadata
+	if getString(po.Expires) != "" {
+		if metadata == nil {
+			metadata = map[string]*string{
+				string(keyExpires): po.Expires,
+			}
+		} else {
+			metadata[string(keyExpires)] = po.Expires
+		}
+	}
+
 	opts := &blockblob.UploadStreamOptions{
-		Metadata: parseMetadata(po.Metadata),
+		Metadata: metadata,
 		Tags:     tags,
 	}
 
@@ -307,6 +322,8 @@ func (az *Azure) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respon
 	opts.HTTPHeaders.BlobContentEncoding = po.ContentEncoding
 	opts.HTTPHeaders.BlobContentLanguage = po.ContentLanguage
 	opts.HTTPHeaders.BlobContentDisposition = po.ContentDisposition
+	opts.HTTPHeaders.BlobContentLanguage = po.ContentLanguage
+	opts.HTTPHeaders.BlobCacheControl = po.CacheControl
 	if strings.HasSuffix(*po.Key, "/") {
 		// Hardcode "application/x-directory" for direcoty objects
 		opts.HTTPHeaders.BlobContentType = backend.GetPtrFromString(backend.DirContentType)
@@ -430,17 +447,21 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:    backend.GetPtrFromString("bytes"),
-		ContentLength:   blobDownloadResponse.ContentLength,
-		ContentEncoding: blobDownloadResponse.ContentEncoding,
-		ContentType:     contentType,
-		ETag:            (*string)(blobDownloadResponse.ETag),
-		LastModified:    blobDownloadResponse.LastModified,
-		Metadata:        parseAzMetadata(blobDownloadResponse.Metadata),
-		TagCount:        &tagcount,
-		ContentRange:    blobDownloadResponse.ContentRange,
-		Body:            blobDownloadResponse.Body,
-		StorageClass:    types.StorageClassStandard,
+		AcceptRanges:       backend.GetPtrFromString("bytes"),
+		ContentLength:      blobDownloadResponse.ContentLength,
+		ContentEncoding:    blobDownloadResponse.ContentEncoding,
+		ContentType:        contentType,
+		ContentDisposition: blobDownloadResponse.ContentDisposition,
+		ContentLanguage:    blobDownloadResponse.ContentLanguage,
+		CacheControl:       blobDownloadResponse.CacheControl,
+		ExpiresString:      blobDownloadResponse.Metadata[string(keyExpires)],
+		ETag:               (*string)(blobDownloadResponse.ETag),
+		LastModified:       blobDownloadResponse.LastModified,
+		Metadata:           parseAzMetadata(blobDownloadResponse.Metadata),
+		TagCount:           &tagcount,
+		ContentRange:       blobDownloadResponse.ContentRange,
+		Body:               blobDownloadResponse.Body,
+		StorageClass:       types.StorageClassStandard,
 	}, nil
 }
 
@@ -494,10 +515,11 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		ContentEncoding:    resp.ContentEncoding,
 		ContentLanguage:    resp.ContentLanguage,
 		ContentDisposition: resp.ContentDisposition,
+		CacheControl:       resp.CacheControl,
+		ExpiresString:      resp.Metadata[string(keyExpires)],
 		ETag:               (*string)(resp.ETag),
 		LastModified:       resp.LastModified,
 		Metadata:           parseAzMetadata(resp.Metadata),
-		Expires:            resp.ExpiresOn,
 		StorageClass:       types.StorageClassStandard,
 	}
 
@@ -826,7 +848,7 @@ func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string)
 	return nil
 }
 
-func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if input.ObjectLockLegalHoldStatus != "" || input.ObjectLockMode != "" {
 		bucketLock, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyBucketLock))
 		if err != nil {
@@ -849,6 +871,10 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 
 	meta := parseMetadata(input.Metadata)
 	meta[string(onameAttr)] = input.Key
+
+	if getString(input.Expires) != "" {
+		meta[string(keyExpires)] = input.Expires
+	}
 
 	// parse object tags
 	tagsStr := getString(input.Tagging)
@@ -892,12 +918,13 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input *s3.CreateMult
 	opts := &blockblob.UploadBufferOptions{
 		Metadata: meta,
 		Tags:     tags,
-	}
-	if getString(input.ContentType) != "" {
-		opts.HTTPHeaders = &blob.HTTPHeaders{
-			BlobContentType:     input.ContentType,
-			BlobContentEncoding: input.ContentEncoding,
-		}
+		HTTPHeaders: &blob.HTTPHeaders{
+			BlobContentType:        input.ContentType,
+			BlobContentEncoding:    input.ContentEncoding,
+			BlobCacheControl:       input.CacheControl,
+			BlobContentDisposition: input.ContentDisposition,
+			BlobContentLanguage:    input.ContentLanguage,
+		},
 	}
 
 	// Create and empty blob in .sgwtmp/multipart/<uploadId>/<object hash>
@@ -1260,8 +1287,11 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 		Tags:     parseAzTags(tags.BlobTagSet),
 	}
 	opts.HTTPHeaders = &blob.HTTPHeaders{
-		BlobContentType:     props.ContentType,
-		BlobContentEncoding: props.ContentEncoding,
+		BlobContentType:        props.ContentType,
+		BlobContentEncoding:    props.ContentEncoding,
+		BlobContentDisposition: props.ContentDisposition,
+		BlobContentLanguage:    props.ContentLanguage,
+		BlobCacheControl:       props.CacheControl,
 	}
 
 	resp, err := client.CommitBlockList(ctx, blockIds, opts)

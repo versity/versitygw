@@ -38,7 +38,7 @@ var _ backend.Backend = &BackendMock{}
 //			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
 //				panic("mock out the CreateBucket method")
 //			},
-//			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+//			CreateMultipartUploadFunc: func(contextMoqParam context.Context, createMultipartUploadInput s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 //				panic("mock out the CreateMultipartUpload method")
 //			},
 //			DeleteBucketFunc: func(contextMoqParam context.Context, bucket string) error {
@@ -140,7 +140,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutBucketVersioningFunc: func(contextMoqParam context.Context, bucket string, status types.BucketVersioningStatus) error {
 //				panic("mock out the PutBucketVersioning method")
 //			},
-//			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+//			PutObjectFunc: func(contextMoqParam context.Context, putObjectInput s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 //				panic("mock out the PutObject method")
 //			},
 //			PutObjectAclFunc: func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error {
@@ -199,7 +199,7 @@ type BackendMock struct {
 	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error
 
 	// CreateMultipartUploadFunc mocks the CreateMultipartUpload method.
-	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
+	CreateMultipartUploadFunc func(contextMoqParam context.Context, createMultipartUploadInput s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
 
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, bucket string) error
@@ -301,7 +301,7 @@ type BackendMock struct {
 	PutBucketVersioningFunc func(contextMoqParam context.Context, bucket string, status types.BucketVersioningStatus) error
 
 	// PutObjectFunc mocks the PutObject method.
-	PutObjectFunc func(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (s3response.PutObjectOutput, error)
+	PutObjectFunc func(contextMoqParam context.Context, putObjectInput s3response.PutObjectInput) (s3response.PutObjectOutput, error)
 
 	// PutObjectAclFunc mocks the PutObjectAcl method.
 	PutObjectAclFunc func(contextMoqParam context.Context, putObjectAclInput *s3.PutObjectAclInput) error
@@ -382,7 +382,7 @@ type BackendMock struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
 			// CreateMultipartUploadInput is the createMultipartUploadInput argument value.
-			CreateMultipartUploadInput *s3.CreateMultipartUploadInput
+			CreateMultipartUploadInput s3response.CreateMultipartUploadInput
 		}
 		// DeleteBucket holds details about calls to the DeleteBucket method.
 		DeleteBucket []struct {
@@ -640,7 +640,7 @@ type BackendMock struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
 			// PutObjectInput is the putObjectInput argument value.
-			PutObjectInput *s3.PutObjectInput
+			PutObjectInput s3response.PutObjectInput
 		}
 		// PutObjectAcl holds details about calls to the PutObjectAcl method.
 		PutObjectAcl []struct {
@@ -974,13 +974,13 @@ func (mock *BackendMock) CreateBucketCalls() []struct {
 }
 
 // CreateMultipartUpload calls CreateMultipartUploadFunc.
-func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, createMultipartUploadInput *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, createMultipartUploadInput s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if mock.CreateMultipartUploadFunc == nil {
 		panic("BackendMock.CreateMultipartUploadFunc: method is nil but Backend.CreateMultipartUpload was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam            context.Context
-		CreateMultipartUploadInput *s3.CreateMultipartUploadInput
+		CreateMultipartUploadInput s3response.CreateMultipartUploadInput
 	}{
 		ContextMoqParam:            contextMoqParam,
 		CreateMultipartUploadInput: createMultipartUploadInput,
@@ -997,11 +997,11 @@ func (mock *BackendMock) CreateMultipartUpload(contextMoqParam context.Context, 
 //	len(mockedBackend.CreateMultipartUploadCalls())
 func (mock *BackendMock) CreateMultipartUploadCalls() []struct {
 	ContextMoqParam            context.Context
-	CreateMultipartUploadInput *s3.CreateMultipartUploadInput
+	CreateMultipartUploadInput s3response.CreateMultipartUploadInput
 } {
 	var calls []struct {
 		ContextMoqParam            context.Context
-		CreateMultipartUploadInput *s3.CreateMultipartUploadInput
+		CreateMultipartUploadInput s3response.CreateMultipartUploadInput
 	}
 	mock.lockCreateMultipartUpload.RLock()
 	calls = mock.calls.CreateMultipartUpload
@@ -2238,13 +2238,13 @@ func (mock *BackendMock) PutBucketVersioningCalls() []struct {
 }
 
 // PutObject calls PutObjectFunc.
-func (mock *BackendMock) PutObject(contextMoqParam context.Context, putObjectInput *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+func (mock *BackendMock) PutObject(contextMoqParam context.Context, putObjectInput s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	if mock.PutObjectFunc == nil {
 		panic("BackendMock.PutObjectFunc: method is nil but Backend.PutObject was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
-		PutObjectInput  *s3.PutObjectInput
+		PutObjectInput  s3response.PutObjectInput
 	}{
 		ContextMoqParam: contextMoqParam,
 		PutObjectInput:  putObjectInput,
@@ -2261,11 +2261,11 @@ func (mock *BackendMock) PutObject(contextMoqParam context.Context, putObjectInp
 //	len(mockedBackend.PutObjectCalls())
 func (mock *BackendMock) PutObjectCalls() []struct {
 	ContextMoqParam context.Context
-	PutObjectInput  *s3.PutObjectInput
+	PutObjectInput  s3response.PutObjectInput
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
-		PutObjectInput  *s3.PutObjectInput
+		PutObjectInput  s3response.PutObjectInput
 	}
 	mock.lockPutObject.RLock()
 	calls = mock.calls.PutObject
