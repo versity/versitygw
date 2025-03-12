@@ -85,6 +85,10 @@ const (
 	metaHdr             = "X-Amz-Meta"
 	contentTypeHdr      = "content-type"
 	contentEncHdr       = "content-encoding"
+	contentLangHdr      = "content-language"
+	contentDispHdr      = "content-disposition"
+	cacheCtrlHdr        = "cache-control"
+	expiresHdr          = "expires"
 	emptyMD5            = "d41d8cd98f00b204e9800998ecf8427e"
 	aclkey              = "acl"
 	ownershipkey        = "ownership"
@@ -1168,7 +1172,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 	}
 }
 
-func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	if mpu.Bucket == nil {
 		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -1260,30 +1264,19 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu *s3.CreateMultipa
 		}
 	}
 
-	// set content-type
-	ctype := getString(mpu.ContentType)
-	if ctype != "" {
-		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID),
-			contentTypeHdr, []byte(*mpu.ContentType))
-		if err != nil {
-			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set content-type: %w", err)
-		}
-	}
-
-	// set content-encoding
-	cenc := getString(mpu.ContentEncoding)
-	if cenc != "" {
-		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID), contentEncHdr,
-			[]byte(*mpu.ContentEncoding))
-		if err != nil {
-			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set content-encoding: %w", err)
-		}
+	err = p.storeObjectMetadata(nil, bucket, filepath.Join(objdir, uploadID), ObjectMetadata{
+		ContentType:        mpu.ContentType,
+		ContentEncoding:    mpu.ContentEncoding,
+		ContentDisposition: mpu.ContentDisposition,
+		ContentLanguage:    mpu.ContentLanguage,
+		CacheControl:       mpu.CacheControl,
+		Expires:            mpu.Expires,
+	})
+	if err != nil {
+		// cleanup object if returning error
+		os.RemoveAll(filepath.Join(tmppath, uploadID))
+		os.Remove(tmppath)
+		return s3response.InitiateMultipartUploadResult{}, err
 	}
 
 	// set object legal hold
@@ -1544,9 +1537,14 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 	}
 
-	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	cType, cEnc := p.loadUserMetaData(bucket, upiddir, userMetaData)
+
+	userMetaData := make(map[string]string)
+	objMeta := p.loadObjectMetaData(bucket, upiddir, userMetaData)
+	err = p.storeObjectMetadata(f.File(), bucket, object, objMeta)
+	if err != nil {
+		return nil, err
+	}
 
 	objname := filepath.Join(bucket, object)
 	dir := filepath.Dir(objname)
@@ -1601,22 +1599,6 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		err := p.meta.StoreAttribute(f.File(), bucket, object, tagHdr, tagging)
 		if err != nil {
 			return nil, fmt.Errorf("set object tagging: %w", err)
-		}
-	}
-
-	// set content-type
-	if cType != "" {
-		err := p.meta.StoreAttribute(f.File(), bucket, object, contentTypeHdr, []byte(cType))
-		if err != nil {
-			return nil, fmt.Errorf("set object content type: %w", err)
-		}
-	}
-
-	// set content-encoding
-	if cEnc != "" {
-		err := p.meta.StoreAttribute(f.File(), bucket, object, contentEncHdr, []byte(cEnc))
-		if err != nil {
-			return nil, fmt.Errorf("set object content encoding: %w", err)
 		}
 	}
 
@@ -1840,46 +1822,118 @@ func (p *Posix) retrieveUploadId(bucket, object string) (string, [32]byte, error
 	return entries[0].Name(), sum, nil
 }
 
-// fll out the user metadata map with the metadata for the object
-// and return the content type and encoding
-func (p *Posix) loadUserMetaData(bucket, object string, m map[string]string) (string, string) {
+type ObjectMetadata struct {
+	ContentType        *string
+	ContentEncoding    *string
+	ContentDisposition *string
+	ContentLanguage    *string
+	CacheControl       *string
+	Expires            *string
+}
+
+// fill out the user metadata map with the metadata for the object
+// and return object meta properties as `ObjectMetadata`
+func (p *Posix) loadObjectMetaData(bucket, object string, m map[string]string) ObjectMetadata {
 	ents, err := p.meta.ListAttributes(bucket, object)
 	if err != nil || len(ents) == 0 {
-		return "", ""
+		return ObjectMetadata{}
 	}
-	for _, e := range ents {
-		if !isValidMeta(e) {
-			continue
+
+	if m != nil {
+		for _, e := range ents {
+			if !isValidMeta(e) {
+				continue
+			}
+			b, err := p.meta.RetrieveAttribute(nil, bucket, object, e)
+			if err != nil {
+				continue
+			}
+			if b == nil {
+				m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = ""
+				continue
+			}
+			m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = string(b)
 		}
-		b, err := p.meta.RetrieveAttribute(nil, bucket, object, e)
+	}
+
+	var result ObjectMetadata
+
+	b, err := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
+	if err == nil {
+		result.ContentType = backend.GetPtrFromString(string(b))
+	}
+
+	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
+	if err == nil {
+		result.ContentEncoding = backend.GetPtrFromString(string(b))
+	}
+
+	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentDispHdr)
+	if err == nil {
+		result.ContentDisposition = backend.GetPtrFromString(string(b))
+	}
+
+	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentLangHdr)
+	if err == nil {
+		result.ContentLanguage = backend.GetPtrFromString(string(b))
+	}
+
+	b, err = p.meta.RetrieveAttribute(nil, bucket, object, cacheCtrlHdr)
+	if err == nil {
+		result.CacheControl = backend.GetPtrFromString(string(b))
+	}
+
+	b, err = p.meta.RetrieveAttribute(nil, bucket, object, expiresHdr)
+	if err == nil {
+		result.Expires = backend.GetPtrFromString(string(b))
+	}
+
+	return result
+}
+
+func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m ObjectMetadata) error {
+	if getString(m.ContentType) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, contentTypeHdr, []byte(*m.ContentType))
 		if err != nil {
-			continue
+			return fmt.Errorf("set content-type: %w", err)
 		}
-		if b == nil {
-			m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = ""
-			continue
+	}
+	if getString(m.ContentEncoding) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, contentEncHdr, []byte(*m.ContentEncoding))
+		if err != nil {
+			return fmt.Errorf("set content-encoding: %w", err)
 		}
-		m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = string(b)
+	}
+	if getString(m.ContentDisposition) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, contentDispHdr, []byte(*m.ContentDisposition))
+		if err != nil {
+			return fmt.Errorf("set content-disposition: %w", err)
+		}
+	}
+	if getString(m.ContentLanguage) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, contentLangHdr, []byte(*m.ContentLanguage))
+		if err != nil {
+			return fmt.Errorf("set content-language: %w", err)
+		}
+	}
+	if getString(m.CacheControl) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, cacheCtrlHdr, []byte(*m.CacheControl))
+		if err != nil {
+			return fmt.Errorf("set cache-control: %w", err)
+		}
+	}
+	if getString(m.Expires) != "" {
+		err := p.meta.StoreAttribute(f, bucket, object, expiresHdr, []byte(*m.Expires))
+		if err != nil {
+			return fmt.Errorf("set cache-control: %w", err)
+		}
 	}
 
-	var contentType, contentEncoding string
-	b, _ := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
-	contentType = string(b)
-
-	b, _ = p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
-	contentEncoding = string(b)
-
-	return contentType, contentEncoding
+	return nil
 }
 
 func isValidMeta(val string) bool {
-	if strings.HasPrefix(val, metaHdr) {
-		return true
-	}
-	if strings.EqualFold(val, "Expires") {
-		return true
-	}
-	return false
+	return strings.HasPrefix(val, metaHdr)
 }
 
 func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUploadInput) error {
@@ -2198,7 +2252,7 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	p.loadUserMetaData(bucket, upiddir, userMetaData)
+	p.loadObjectMetaData(bucket, upiddir, userMetaData)
 
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
@@ -2606,7 +2660,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}, nil
 }
 
-func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -2681,6 +2735,13 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 			[]byte(emptyMD5))
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
+		}
+
+		// set "application/x-directory" content-type
+		err = p.meta.StoreAttribute(nil, *po.Bucket, *po.Key, contentTypeHdr,
+			[]byte(backend.DirContentType))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
 		}
 
 		// for directory object no version is created
@@ -2853,22 +2914,16 @@ func (p *Posix) PutObject(ctx context.Context, po *s3.PutObjectInput) (s3respons
 		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
-	ctype := getString(po.ContentType)
-	if ctype != "" {
-		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, contentTypeHdr,
-			[]byte(*po.ContentType))
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
-		}
-	}
-
-	cenc := getString(po.ContentEncoding)
-	if cenc != "" {
-		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, contentEncHdr,
-			[]byte(*po.ContentEncoding))
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set content-encoding attr: %w", err)
-		}
+	err = p.storeObjectMetadata(f.File(), *po.Bucket, *po.Key, ObjectMetadata{
+		ContentType:        po.ContentType,
+		ContentEncoding:    po.ContentEncoding,
+		ContentLanguage:    po.ContentLanguage,
+		ContentDisposition: po.ContentDisposition,
+		CacheControl:       po.CacheControl,
+		Expires:            po.Expires,
+	})
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 
 	if versionID != "" && versionID != nullVersionId {
@@ -3392,9 +3447,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if fi.IsDir() {
 		userMetaData := make(map[string]string)
 
-		_, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
-		contentType := backend.DirContentType
-
+		objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 		etag := string(b)
 		if err != nil {
@@ -3412,17 +3465,21 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		}
 
 		return &s3.GetObjectOutput{
-			AcceptRanges:    backend.GetPtrFromString("bytes"),
-			ContentLength:   &length,
-			ContentEncoding: &contentEncoding,
-			ContentType:     &contentType,
-			ETag:            &etag,
-			LastModified:    backend.GetTimePtr(fi.ModTime()),
-			Metadata:        userMetaData,
-			TagCount:        tagCount,
-			ContentRange:    &contentRange,
-			StorageClass:    types.StorageClassStandard,
-			VersionId:       &versionId,
+			AcceptRanges:       backend.GetPtrFromString("bytes"),
+			ContentLength:      &length,
+			ContentEncoding:    objMeta.ContentEncoding,
+			ContentType:        objMeta.ContentType,
+			ContentLanguage:    objMeta.ContentLanguage,
+			ContentDisposition: objMeta.ContentDisposition,
+			CacheControl:       objMeta.CacheControl,
+			ExpiresString:      objMeta.Expires,
+			ETag:               &etag,
+			LastModified:       backend.GetTimePtr(fi.ModTime()),
+			Metadata:           userMetaData,
+			TagCount:           tagCount,
+			ContentRange:       &contentRange,
+			StorageClass:       types.StorageClassStandard,
+			VersionId:          &versionId,
 		}, nil
 	}
 
@@ -3440,7 +3497,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	userMetaData := make(map[string]string)
 
-	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
+	objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -3487,24 +3544,28 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	return &s3.GetObjectOutput{
-		AcceptRanges:      backend.GetPtrFromString("bytes"),
-		ContentLength:     &length,
-		ContentEncoding:   &contentEncoding,
-		ContentType:       &contentType,
-		ETag:              &etag,
-		LastModified:      backend.GetTimePtr(fi.ModTime()),
-		Metadata:          userMetaData,
-		TagCount:          tagCount,
-		ContentRange:      &contentRange,
-		StorageClass:      types.StorageClassStandard,
-		VersionId:         &versionId,
-		Body:              body,
-		ChecksumCRC32:     checksums.CRC32,
-		ChecksumCRC32C:    checksums.CRC32C,
-		ChecksumSHA1:      checksums.SHA1,
-		ChecksumSHA256:    checksums.SHA256,
-		ChecksumCRC64NVME: checksums.CRC64NVME,
-		ChecksumType:      cType,
+		AcceptRanges:       backend.GetPtrFromString("bytes"),
+		ContentLength:      &length,
+		ContentEncoding:    objMeta.ContentEncoding,
+		ContentType:        objMeta.ContentType,
+		ContentDisposition: objMeta.ContentDisposition,
+		ContentLanguage:    objMeta.ContentLanguage,
+		CacheControl:       objMeta.CacheControl,
+		ExpiresString:      objMeta.Expires,
+		ETag:               &etag,
+		LastModified:       backend.GetTimePtr(fi.ModTime()),
+		Metadata:           userMetaData,
+		TagCount:           tagCount,
+		ContentRange:       &contentRange,
+		StorageClass:       types.StorageClassStandard,
+		VersionId:          &versionId,
+		Body:               body,
+		ChecksumCRC32:      checksums.CRC32,
+		ChecksumCRC32C:     checksums.CRC32C,
+		ChecksumSHA1:       checksums.SHA1,
+		ChecksumSHA256:     checksums.SHA256,
+		ChecksumCRC64NVME:  checksums.CRC64NVME,
+		ChecksumType:       cType,
 	}, nil
 }
 
@@ -3647,11 +3708,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	userMetaData := make(map[string]string)
-	contentType, contentEncoding := p.loadUserMetaData(bucket, object, userMetaData)
-
-	if fi.IsDir() {
-		contentType = backend.DirContentType
-	}
+	objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -3696,8 +3753,12 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	return &s3.HeadObjectOutput{
 		ContentLength:             &size,
-		ContentType:               &contentType,
-		ContentEncoding:           &contentEncoding,
+		ContentType:               objMeta.ContentType,
+		ContentEncoding:           objMeta.ContentEncoding,
+		ContentDisposition:        objMeta.ContentDisposition,
+		ContentLanguage:           objMeta.ContentLanguage,
+		CacheControl:              objMeta.CacheControl,
+		ExpiresString:             objMeta.Expires,
 		ETag:                      &etag,
 		LastModified:              backend.GetTimePtr(fi.ModTime()),
 		Metadata:                  userMetaData,
@@ -3840,7 +3901,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 
 	mdmap := make(map[string]string)
-	p.loadUserMetaData(srcBucket, srcObject, mdmap)
+	p.loadObjectMetaData(srcBucket, srcObject, mdmap)
 
 	var etag string
 	var version *string
@@ -3953,7 +4014,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 		}
 
 		res, err := p.PutObject(ctx,
-			&s3.PutObjectInput{
+			s3response.PutObjectInput{
 				Bucket:            &dstBucket,
 				Key:               &dstObject,
 				Body:              f,

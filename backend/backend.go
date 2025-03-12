@@ -48,7 +48,7 @@ type Backend interface {
 	DeleteBucketOwnershipControls(_ context.Context, bucket string) error
 
 	// multipart operations
-	CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
+	CreateMultipartUpload(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
 	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
 	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
@@ -57,7 +57,7 @@ type Backend interface {
 	UploadPartCopy(context.Context, *s3.UploadPartCopyInput) (s3response.CopyPartResult, error)
 
 	// standard object operations
-	PutObject(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error)
+	PutObject(context.Context, s3response.PutObjectInput) (s3response.PutObjectOutput, error)
 	HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error)
 	GetObject(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 	GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
@@ -151,7 +151,7 @@ func (BackendUnsupported) DeleteBucketOwnershipControls(_ context.Context, bucke
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) CreateMultipartUpload(context.Context, *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+func (BackendUnsupported) CreateMultipartUpload(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
@@ -173,7 +173,7 @@ func (BackendUnsupported) UploadPartCopy(context.Context, *s3.UploadPartCopyInpu
 	return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) PutObject(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+func (BackendUnsupported) PutObject(context.Context, s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) HeadObject(context.Context, *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {

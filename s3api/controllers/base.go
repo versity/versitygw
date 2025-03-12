@@ -556,7 +556,36 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			Value: acceptRanges,
 		},
 	}
-
+	if getstring(res.ContentDisposition) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Content-Disposition",
+			Value: getstring(res.ContentDisposition),
+		})
+	}
+	if getstring(res.ContentEncoding) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Content-Encoding",
+			Value: getstring(res.ContentEncoding),
+		})
+	}
+	if getstring(res.ContentLanguage) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Content-Language",
+			Value: getstring(res.ContentLanguage),
+		})
+	}
+	if getstring(res.CacheControl) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Cache-Control",
+			Value: getstring(res.CacheControl),
+		})
+	}
+	if getstring(res.ExpiresString) != "" {
+		hdrs = append(hdrs, utils.CustomHeader{
+			Key:   "Expires",
+			Value: getstring(res.ExpiresString),
+		})
+	}
 	if getstring(res.ContentRange) != "" {
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "Content-Range",
@@ -567,12 +596,6 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "Last-Modified",
 			Value: res.LastModified.Format(timefmt),
-		})
-	}
-	if getstring(res.ContentEncoding) != "" {
-		hdrs = append(hdrs, utils.CustomHeader{
-			Key:   "Content-Encoding",
-			Value: getstring(res.ContentEncoding),
 		})
 	}
 	if res.TagCount != nil {
@@ -1705,6 +1728,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	contentType := ctx.Get("Content-Type")
 	contentEncoding := ctx.Get("Content-Encoding")
+	contentDisposition := ctx.Get("Content-Disposition")
+	contentLanguage := ctx.Get("Content-Language")
+	cacheControl := ctx.Get("Cache-Control")
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	tagging := ctx.Get("x-amz-tagging")
 
@@ -2500,6 +2526,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	expires := ctx.Get("Expires")
+
 	var body io.Reader
 	bodyi := ctx.Locals("body-reader")
 	if bodyi != nil {
@@ -2510,12 +2538,16 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	ctx.Locals("logReqBody", false)
 	res, err := c.be.PutObject(ctx.Context(),
-		&s3.PutObjectInput{
+		s3response.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &keyStart,
 			ContentLength:             &contentLength,
 			ContentType:               &contentType,
 			ContentEncoding:           &contentEncoding,
+			ContentDisposition:        &contentDisposition,
+			ContentLanguage:           &contentLanguage,
+			CacheControl:              &cacheControl,
+			Expires:                   &expires,
 			Metadata:                  metadata,
 			Body:                      body,
 			Tagging:                   &tagging,
@@ -3164,6 +3196,36 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Value: getstring(res.Restore),
 		},
 	}
+	if getstring(res.ContentDisposition) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Disposition",
+			Value: getstring(res.ContentDisposition),
+		})
+	}
+	if getstring(res.ContentEncoding) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Encoding",
+			Value: getstring(res.ContentEncoding),
+		})
+	}
+	if getstring(res.ContentLanguage) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Language",
+			Value: getstring(res.ContentLanguage),
+		})
+	}
+	if getstring(res.CacheControl) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Cache-Control",
+			Value: getstring(res.CacheControl),
+		})
+	}
+	if getstring(res.ExpiresString) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Expires",
+			Value: getstring(res.ExpiresString),
+		})
+	}
 	if res.ObjectLockMode != "" {
 		headers = append(headers, utils.CustomHeader{
 			Key:   "x-amz-object-lock-mode",
@@ -3194,12 +3256,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		headers = append(headers, utils.CustomHeader{
 			Key:   "Last-Modified",
 			Value: lastmod,
-		})
-	}
-	if res.ContentEncoding != nil {
-		headers = append(headers, utils.CustomHeader{
-			Key:   "Content-Encoding",
-			Value: getstring(res.ContentEncoding),
 		})
 	}
 	if res.StorageClass != "" {
@@ -3278,6 +3334,9 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	isRoot := ctx.Locals("isRoot").(bool)
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	contentType := ctx.Get("Content-Type")
+	contentDisposition := ctx.Get("Content-Disposition")
+	contentLanguage := ctx.Get("Content-Language")
+	cacheControl := ctx.Get("Cache-Control")
 	contentEncoding := ctx.Get("Content-Encoding")
 	tagging := ctx.Get("X-Amz-Tagging")
 
@@ -3604,13 +3663,19 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	expires := ctx.Get("Expires")
+
 	res, err := c.be.CreateMultipartUpload(ctx.Context(),
-		&s3.CreateMultipartUploadInput{
+		s3response.CreateMultipartUploadInput{
 			Bucket:                    &bucket,
 			Key:                       &key,
 			Tagging:                   &tagging,
 			ContentType:               &contentType,
 			ContentEncoding:           &contentEncoding,
+			ContentDisposition:        &contentDisposition,
+			ContentLanguage:           &contentLanguage,
+			CacheControl:              &cacheControl,
+			Expires:                   &expires,
 			ObjectLockRetainUntilDate: &objLockState.RetainUntilDate,
 			ObjectLockMode:            objLockState.ObjectLockMode,
 			ObjectLockLegalHoldStatus: objLockState.LegalHoldStatus,

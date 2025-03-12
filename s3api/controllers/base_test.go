@@ -980,7 +980,7 @@ func TestS3ApiController_PutActions(t *testing.T) {
 					CopyObjectResult: &types.CopyObjectResult{},
 				}, nil
 			},
-			PutObjectFunc: func(context.Context, *s3.PutObjectInput) (s3response.PutObjectOutput, error) {
+			PutObjectFunc: func(context.Context, s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 				return s3response.PutObjectOutput{}, nil
 			},
 			UploadPartFunc: func(context.Context, *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
@@ -1769,7 +1769,7 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			CompleteMultipartUploadFunc: func(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 				return &s3.CompleteMultipartUploadOutput{}, nil
 			},
-			CreateMultipartUploadFunc: func(context.Context, *s3.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+			CreateMultipartUploadFunc: func(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 				return s3response.InitiateMultipartUploadResult{}, nil
 			},
 			SelectObjectContentFunc: func(context.Context, *s3.SelectObjectContentInput) func(w *bufio.Writer) {
