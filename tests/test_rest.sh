@@ -124,7 +124,7 @@ test_file="test_file"
   run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
   assert_success
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -155,7 +155,7 @@ test_file="test_file"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -456,7 +456,7 @@ test_file="test_file"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -482,7 +482,7 @@ test_file="test_file"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -498,4 +498,25 @@ test_file="test_file"
 
   run get_delete_marker_and_verify_405 "$BUCKET_ONE_NAME" "$test_file"
   assert_success
+}
+
+@test "REST - invalid 'Expires' parameter" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_check_expires_header "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - HeadBucket" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run head_bucket_rest "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - HeadBucket - doesn't exist" {
+  run head_bucket_rest "$BUCKET_ONE_NAME"
+  assert_failure 1
 }
