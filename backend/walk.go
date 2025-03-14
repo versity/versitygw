@@ -88,7 +88,6 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		// so we can skip a directory without an early return
 		var skipflag error
 		if d.IsDir() {
-			fmt.Println("path: ", path)
 			// If prefix is defined and the directory does not match prefix,
 			// do not descend into the directory because nothing will
 			// match this prefix. Make sure to append the / at the end of
