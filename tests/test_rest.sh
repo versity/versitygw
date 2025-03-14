@@ -59,7 +59,7 @@ test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run list_check_objects_rest "$BUCKET_ONE_NAME"
@@ -168,7 +168,7 @@ test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file"
@@ -194,7 +194,7 @@ test_file="test_file"
     "$TEST_FILE_FOLDER/$test_file-0" "$TEST_FILE_FOLDER/$test_file-1" "$TEST_FILE_FOLDER/$test_file-2" "$TEST_FILE_FOLDER/$test_file-3"
   assert_success
 
-  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run get_object "rest" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 
   run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
@@ -225,7 +225,7 @@ test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run check_attributes_invalid_param "$test_file"
@@ -315,13 +315,13 @@ test_file="test_file"
   run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
   assert_success
 
   run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "TRUE"
@@ -341,10 +341,10 @@ test_file="test_file"
   run setup_bucket "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
   run list_objects_v1_check_nextmarker_empty "$BUCKET_ONE_NAME"
@@ -369,7 +369,7 @@ test_file="test_file"
   run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 
-  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -380,7 +380,7 @@ test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run get_etag_rest "$BUCKET_ONE_NAME" "$test_file"
@@ -415,10 +415,10 @@ test_file="test_file"
   run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
   assert_success
 
   run verify_object_exists "$BUCKET_ONE_NAME" "$test_file"
@@ -464,7 +464,7 @@ test_file="test_file"
   run create_test_files "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
@@ -490,7 +490,7 @@ test_file="test_file"
   run create_test_files "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
@@ -519,4 +519,35 @@ test_file="test_file"
 @test "REST - HeadBucket - doesn't exist" {
   run head_bucket_rest "$BUCKET_ONE_NAME"
   assert_failure 1
+}
+
+@test "REST - PutObject with user permission - admin user" {
+  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
+  assert_success
+  username="${lines[${#lines[@]}-2]}"
+  password="${lines[${#lines[@]}-1]}"
+  log 5 "username: $username, password: $password"
+
+  run put_object_rest_with_user "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObject with no permission - 'user' user" {
+  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  assert_success
+  username="${lines[${#lines[@]}-2]}"
+  password="${lines[${#lines[@]}-1]}"
+
+  run put_object_rest_with_user_and_code "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "403"
+  assert_success
+}
+
+@test "REST - PutObject - user permission, bad signature" {
+  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
+  assert_success
+  username="${lines[${#lines[@]}-2]}"
+  password="${lines[${#lines[@]}-1]}"
+
+  run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
 }

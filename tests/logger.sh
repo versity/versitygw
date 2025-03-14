@@ -146,7 +146,7 @@ log_message() {
     echo "$now $1 $2" >&2
   fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$now $1 $2" >> "$TEST_LOG_FILE.tmp"
+    echo "$now ${BASH_SOURCE[2]}:${BASH_LINENO[1]} $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
   sync
 }

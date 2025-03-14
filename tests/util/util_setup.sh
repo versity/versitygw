@@ -60,3 +60,20 @@ setup_bucket_and_user() {
   echo "$result"
   return 0
 }
+
+setup_bucket_file_and_user() {
+  if [ $# -ne 5 ]; then
+    log 2 "'setup_bucket_file_and_user' requires bucket name, file, username, password, user type"
+    return 1
+  fi
+  if ! setup_bucket_and_files "$1" "$2"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+  if ! result=$(setup_user_versitygw_or_direct "$3" "$4" "$5" "$1"); then
+    log 2 "error setting up user"
+    return 1
+  fi
+  echo "$result"
+  return 0
+}
