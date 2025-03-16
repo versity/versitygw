@@ -97,6 +97,17 @@ export RUN_USERS=true
   test_put_bucket_acl_s3cmd
 }
 
+@test 's3cmd - can enable public ACLs for bucket' {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1154"
+  fi
+  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME"
+  assert_success
+}
+
 # test listing buckets on versitygw
 @test "test_list_buckets_s3cmd" {
   test_common_list_buckets "s3cmd"
