@@ -524,6 +524,53 @@ type CreateMultipartUploadInput struct {
 	StorageClass              types.StorageClass
 }
 
+type CopyObjectInput struct {
+	Metadata                       map[string]string
+	Bucket                         *string
+	CopySource                     *string
+	Key                            *string
+	CacheControl                   *string
+	ContentDisposition             *string
+	ContentEncoding                *string
+	ContentLanguage                *string
+	ContentType                    *string
+	CopySourceIfMatch              *string
+	CopySourceIfNoneMatch          *string
+	CopySourceSSECustomerAlgorithm *string
+	CopySourceSSECustomerKey       *string
+	CopySourceSSECustomerKeyMD5    *string
+	ExpectedBucketOwner            *string
+	ExpectedSourceBucketOwner      *string
+	Expires                        *string
+	GrantFullControl               *string
+	GrantRead                      *string
+	GrantReadACP                   *string
+	GrantWriteACP                  *string
+	SSECustomerAlgorithm           *string
+	SSECustomerKey                 *string
+	SSECustomerKeyMD5              *string
+	SSEKMSEncryptionContext        *string
+	SSEKMSKeyId                    *string
+	Tagging                        *string
+	WebsiteRedirectLocation        *string
+
+	CopySourceIfModifiedSince   *time.Time
+	CopySourceIfUnmodifiedSince *time.Time
+	ObjectLockRetainUntilDate   *time.Time
+
+	BucketKeyEnabled *bool
+
+	ACL                       types.ObjectCannedACL
+	ChecksumAlgorithm         types.ChecksumAlgorithm
+	MetadataDirective         types.MetadataDirective
+	ObjectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
+	ObjectLockMode            types.ObjectLockMode
+	RequestPayer              types.RequestPayer
+	ServerSideEncryption      types.ServerSideEncryption
+	StorageClass              types.StorageClass
+	TaggingDirective          types.TaggingDirective
+}
+
 type AmzDate struct {
 	time.Time
 }

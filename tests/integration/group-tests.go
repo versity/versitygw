@@ -266,9 +266,15 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_not_owned_source_bucket(s)
 	CopyObject_copy_to_itself(s)
 	CopyObject_copy_to_itself_invalid_directive(s)
+	CopyObject_should_copy_tagging(s)
+	CopyObject_invalid_tagging_directive(s)
 	CopyObject_to_itself_with_new_metadata(s)
 	CopyObject_CopySource_starting_with_slash(s)
 	CopyObject_non_existing_dir_object(s)
+	CopyObject_should_copy_meta_props(s)
+	CopyObject_should_replace_meta_props(s)
+	CopyObject_with_legal_hold(s)
+	CopyObject_with_retention_lock(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		CopyObject_invalid_checksum_algorithm(s)
@@ -909,9 +915,15 @@ func GetIntTests() IntTests {
 		"CopyObject_not_owned_source_bucket":                                      CopyObject_not_owned_source_bucket,
 		"CopyObject_copy_to_itself":                                               CopyObject_copy_to_itself,
 		"CopyObject_copy_to_itself_invalid_directive":                             CopyObject_copy_to_itself_invalid_directive,
+		"CopyObject_should_copy_tagging":                                          CopyObject_should_copy_tagging,
+		"CopyObject_invalid_tagging_directive":                                    CopyObject_invalid_tagging_directive,
 		"CopyObject_to_itself_with_new_metadata":                                  CopyObject_to_itself_with_new_metadata,
 		"CopyObject_CopySource_starting_with_slash":                               CopyObject_CopySource_starting_with_slash,
 		"CopyObject_non_existing_dir_object":                                      CopyObject_non_existing_dir_object,
+		"CopyObject_should_copy_meta_props":                                       CopyObject_should_copy_meta_props,
+		"CopyObject_should_replace_meta_props":                                    CopyObject_should_replace_meta_props,
+		"CopyObject_with_legal_hold":                                              CopyObject_with_legal_hold,
+		"CopyObject_with_retention_lock":                                          CopyObject_with_retention_lock,
 		"CopyObject_invalid_checksum_algorithm":                                   CopyObject_invalid_checksum_algorithm,
 		"CopyObject_create_checksum_on_copy":                                      CopyObject_create_checksum_on_copy,
 		"CopyObject_should_copy_the_existing_checksum":                            CopyObject_should_copy_the_existing_checksum,

@@ -1731,6 +1731,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	contentDisposition := ctx.Get("Content-Disposition")
 	contentLanguage := ctx.Get("Content-Language")
 	cacheControl := ctx.Get("Cache-Control")
+	expires := ctx.Get("Expires")
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	tagging := ctx.Get("x-amz-tagging")
 
@@ -2387,6 +2388,23 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			metaDirective = types.MetadataDirectiveReplace
 		}
 
+		tDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive"))
+		if tDirective != "" && tDirective != types.TaggingDirectiveCopy && tDirective != types.TaggingDirectiveReplace {
+			return SendXMLResponse(ctx, nil,
+				s3err.GetAPIError(s3err.ErrInvalidTaggingDirective),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionCopyObject,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		taggingDirective := types.TaggingDirectiveCopy
+		if tDirective == types.TaggingDirectiveReplace {
+			taggingDirective = types.TaggingDirectiveReplace
+		}
+
 		checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
 		err = utils.IsChecksumAlgorithmValid(checksumAlgorithm)
 		if err != nil {
@@ -2402,10 +2420,29 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		objLock, err := utils.ParsObjectLockHdrs(ctx)
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutObject,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
 		res, err := c.be.CopyObject(ctx.Context(),
-			&s3.CopyObjectInput{
+			s3response.CopyObjectInput{
 				Bucket:                      &bucket,
 				Key:                         &keyStart,
+				ContentType:                 &contentType,
+				ContentDisposition:          &contentDisposition,
+				ContentEncoding:             &contentEncoding,
+				ContentLanguage:             &contentLanguage,
+				CacheControl:                &cacheControl,
+				Expires:                     &expires,
+				Tagging:                     &tagging,
+				TaggingDirective:            taggingDirective,
 				CopySource:                  &copySource,
 				CopySourceIfMatch:           &copySrcIfMatch,
 				CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
@@ -2416,6 +2453,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				MetadataDirective:           metaDirective,
 				StorageClass:                types.StorageClass(storageClass),
 				ChecksumAlgorithm:           checksumAlgorithm,
+				ObjectLockRetainUntilDate:   &objLock.RetainUntilDate,
+				ObjectLockLegalHoldStatus:   objLock.LegalHoldStatus,
+				ObjectLockMode:              objLock.ObjectLockMode,
 			})
 		if err == nil {
 			hdrs := []utils.CustomHeader{}
@@ -2525,8 +2565,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				BucketOwner: parsedAcl.Owner,
 			})
 	}
-
-	expires := ctx.Get("Expires")
 
 	var body io.Reader
 	bodyi := ctx.Locals("body-reader")

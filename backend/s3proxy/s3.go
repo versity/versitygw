@@ -988,7 +988,7 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 	}, handleError(err)
 }
 
-func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -1031,7 +1031,7 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s
 	if input.ExpectedSourceBucketOwner != nil && *input.ExpectedSourceBucketOwner == "" {
 		input.ExpectedSourceBucketOwner = nil
 	}
-	if input.Expires != nil && *input.Expires == defTime {
+	if input.Expires != nil && *input.Expires == "" {
 		input.Expires = nil
 	}
 	if input.GrantFullControl != nil && *input.GrantFullControl == "" {
@@ -1071,7 +1071,58 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s
 		input.WebsiteRedirectLocation = nil
 	}
 
-	out, err := s.client.CopyObject(ctx, input)
+	var expires *time.Time
+	if input.Expires != nil {
+		exp, err := time.Parse(time.RFC1123, *input.Expires)
+		if err == nil {
+			expires = &exp
+		}
+	}
+
+	out, err := s.client.CopyObject(ctx,
+		&s3.CopyObjectInput{
+			Metadata:                       input.Metadata,
+			Bucket:                         input.Bucket,
+			CopySource:                     input.CopySource,
+			Key:                            input.Key,
+			CacheControl:                   input.CacheControl,
+			ContentDisposition:             input.ContentDisposition,
+			ContentEncoding:                input.ContentEncoding,
+			ContentLanguage:                input.ContentLanguage,
+			ContentType:                    input.ContentType,
+			CopySourceIfMatch:              input.CopySourceIfMatch,
+			CopySourceIfNoneMatch:          input.CopySourceIfNoneMatch,
+			CopySourceSSECustomerAlgorithm: input.CopySourceSSECustomerAlgorithm,
+			CopySourceSSECustomerKey:       input.CopySourceSSECustomerKey,
+			CopySourceSSECustomerKeyMD5:    input.CopySourceSSECustomerKeyMD5,
+			ExpectedBucketOwner:            input.ExpectedBucketOwner,
+			ExpectedSourceBucketOwner:      input.ExpectedSourceBucketOwner,
+			Expires:                        expires,
+			GrantFullControl:               input.GrantFullControl,
+			GrantRead:                      input.GrantRead,
+			GrantReadACP:                   input.GrantReadACP,
+			GrantWriteACP:                  input.GrantWriteACP,
+			SSECustomerAlgorithm:           input.SSECustomerAlgorithm,
+			SSECustomerKey:                 input.SSECustomerKey,
+			SSECustomerKeyMD5:              input.SSECustomerKeyMD5,
+			SSEKMSEncryptionContext:        input.SSEKMSEncryptionContext,
+			SSEKMSKeyId:                    input.SSEKMSKeyId,
+			Tagging:                        input.Tagging,
+			WebsiteRedirectLocation:        input.WebsiteRedirectLocation,
+			CopySourceIfModifiedSince:      input.CopySourceIfModifiedSince,
+			CopySourceIfUnmodifiedSince:    input.CopySourceIfUnmodifiedSince,
+			ObjectLockRetainUntilDate:      input.ObjectLockRetainUntilDate,
+			BucketKeyEnabled:               input.BucketKeyEnabled,
+			ACL:                            input.ACL,
+			ChecksumAlgorithm:              input.ChecksumAlgorithm,
+			MetadataDirective:              input.MetadataDirective,
+			ObjectLockLegalHoldStatus:      input.ObjectLockLegalHoldStatus,
+			ObjectLockMode:                 input.ObjectLockMode,
+			RequestPayer:                   input.RequestPayer,
+			ServerSideEncryption:           input.ServerSideEncryption,
+			StorageClass:                   input.StorageClass,
+			TaggingDirective:               input.TaggingDirective,
+		})
 	return out, handleError(err)
 }
 

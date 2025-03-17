@@ -5880,6 +5880,131 @@ func CopyObject_copy_to_itself_invalid_directive(s *S3Conf) error {
 	})
 }
 
+func CopyObject_invalid_tagging_directive(s *S3Conf) error {
+	testName := "CopyObject_invalid_tagging_directive"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:           &bucket,
+			Key:              &obj,
+			CopySource:       getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+			TaggingDirective: types.TaggingDirective("invalid"),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTaggingDirective)); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func CopyObject_should_copy_tagging(s *S3Conf) error {
+	testName := "CopyObject_should_copy_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		tagging := "foo=bar&baz=quxx"
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket:  &bucket,
+			Key:     &srcObj,
+			Tagging: &tagging,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagSet := []types.Tag{
+			{Key: getPtr("foo"), Value: getPtr("bar")},
+			{Key: getPtr("baz"), Value: getPtr("quxx")},
+		}
+
+		if !areTagsSame(res.TagSet, expectedTagSet) {
+			return fmt.Errorf("expected the tag set to be %v, instead got %v", expectedTagSet, res.TagSet)
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_should_reaplace_tagging(s *S3Conf) error {
+	testName := "CopyObject_should_reaplace_tagging"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		tagging := "foo=bar&baz=quxx"
+
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket:  &bucket,
+			Key:     &srcObj,
+			Tagging: &tagging,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		copyTagging := "key1=val1&key2=val2"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:           &bucket,
+			Key:              &dstObj,
+			CopySource:       getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			TaggingDirective: types.TaggingDirectiveReplace,
+			Tagging:          &copyTagging,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedTagSet := []types.Tag{
+			{Key: getPtr("key1"), Value: getPtr("val1")},
+			{Key: getPtr("key2"), Value: getPtr("val2")},
+		}
+
+		if !areTagsSame(res.TagSet, expectedTagSet) {
+			return fmt.Errorf("expected the tag set to be %v, instead got %v", expectedTagSet, res.TagSet)
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	testName := "CopyObject_to_itself_with_new_metadata"
 
@@ -6053,6 +6178,220 @@ func CopyObject_non_existing_dir_object(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func CopyObject_should_copy_meta_props(s *S3Conf) error {
+	testName := "CopyObject_should_copy_meta_props"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+
+		cType, cEnc, cDesp, cLang, cLength := "application/json", "base64", "test-desp", "us", int64(100)
+		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*10)
+		meta := map[string]string{
+			"foo": "bar",
+			"baz": "quxx",
+		}
+
+		_, err := putObjectWithData(cLength, &s3.PutObjectInput{
+			Bucket:             &bucket,
+			Key:                &srcObj,
+			ContentDisposition: &cDesp,
+			ContentEncoding:    &cEnc,
+			ContentLanguage:    &cLang,
+			ContentType:        &cType,
+			CacheControl:       &cacheControl,
+			Expires:            &expires,
+			Metadata:           meta,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(bucket + "/" + srcObj),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return checkObjectMetaProps(s3client, bucket, dstObj, ObjectMetaProps{
+			ContentLength:      cLength,
+			ContentType:        cType,
+			ContentEncoding:    cEnc,
+			ContentDisposition: cDesp,
+			ContentLanguage:    cLang,
+			CacheControl:       cacheControl,
+			ExpiresString:      expires.UTC().Format(timefmt),
+			Metadata:           meta,
+		})
+	})
+}
+
+func CopyObject_should_replace_meta_props(s *S3Conf) error {
+	testName := "CopyObject_should_replace_meta_props"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dest-object"
+		expire := time.Now().Add(time.Minute * 10)
+		contentLength := int64(200)
+
+		_, err := putObjectWithData(contentLength, &s3.PutObjectInput{
+			Bucket:             &bucket,
+			Key:                &srcObj,
+			ContentDisposition: getPtr("test"),
+			ContentEncoding:    getPtr("test"),
+			ContentLanguage:    getPtr("test"),
+			ContentType:        getPtr("test"),
+			CacheControl:       getPtr("test"),
+			Expires:            &expire,
+			Metadata: map[string]string{
+				"key": "val",
+			},
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		cType, cEnc, cDesp, cLang := "application/binary", "hex", "desp", "mex"
+		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*10)
+		meta := map[string]string{
+			"foo": "bar",
+			"baz": "quxx",
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:             &bucket,
+			Key:                &dstObj,
+			CopySource:         getPtr(bucket + "/" + srcObj),
+			MetadataDirective:  types.MetadataDirectiveReplace,
+			ContentDisposition: &cDesp,
+			ContentEncoding:    &cEnc,
+			ContentLanguage:    &cLang,
+			ContentType:        &cType,
+			CacheControl:       &cacheControl,
+			Expires:            &expires,
+			Metadata:           meta,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return checkObjectMetaProps(s3client, bucket, dstObj, ObjectMetaProps{
+			ContentLength:      contentLength,
+			ContentType:        cType,
+			ContentEncoding:    cEnc,
+			ContentDisposition: cDesp,
+			ContentLanguage:    cLang,
+			CacheControl:       cacheControl,
+			ExpiresString:      expires.UTC().Format(timefmt),
+			Metadata:           meta,
+		})
+	})
+}
+
+func CopyObject_with_legal_hold(s *S3Conf) error {
+	testName := "CopyObject_with_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dst-object"
+		_, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &dstObj,
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected the copied object legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
+		}
+
+		err = changeBucketObjectLockStatus(s3client, bucket, false)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
+func CopyObject_with_retention_lock(s *S3Conf) error {
+	testName := "CopyObject_with_retention_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dst-object"
+		_, err := putObjectWithData(200, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		retDate := time.Now().Add(time.Hour * 7)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &dstObj,
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &retDate,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.Retention.Mode != types.ObjectLockRetentionModeGovernance {
+			return fmt.Errorf("expected the copied object retention mode to be %v, instead got %v", types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
+		}
+		if res.Retention.RetainUntilDate.UTC().Unix() != retDate.UTC().Unix() {
+			return fmt.Errorf("expected the retention date to be %v, instead got %v", retDate.Format(time.RFC1123), res.Retention.RetainUntilDate.Format(time.RFC1123))
+		}
+
+		err = changeBucketObjectLockStatus(s3client, bucket, false)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
 }
 
 func CopyObject_invalid_checksum_algorithm(s *S3Conf) error {

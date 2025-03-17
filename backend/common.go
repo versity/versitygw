@@ -211,6 +211,30 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 	return srcBucket, srcObject, versionId, nil
 }
 
+// ParseObjectTags parses the url encoded input string into
+// map[string]string key-value tag set
+func ParseObjectTags(t string) (map[string]string, error) {
+	tagging := make(map[string]string)
+
+	if t == "" {
+		return tagging, nil
+	}
+
+	tagParts := strings.Split(t, "&")
+	for _, prt := range tagParts {
+		p := strings.Split(prt, "=")
+		if len(p) != 2 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+		}
+		if len(p[0]) > 128 || len(p[1]) > 256 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+		}
+		tagging[p[0]] = p[1]
+	}
+
+	return tagging, nil
+}
+
 func GetMultipartMD5(parts []types.CompletedPart) string {
 	var partsEtagBytes []byte
 	for _, part := range parts {
