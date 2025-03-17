@@ -1264,7 +1264,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 	}
 
-	err = p.storeObjectMetadata(nil, bucket, filepath.Join(objdir, uploadID), ObjectMetadata{
+	err = p.storeObjectMetadata(nil, bucket, filepath.Join(objdir, uploadID), objectMetadata{
 		ContentType:        mpu.ContentType,
 		ContentEncoding:    mpu.ContentEncoding,
 		ContentDisposition: mpu.ContentDisposition,
@@ -1540,7 +1540,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	upiddir := filepath.Join(objdir, uploadID)
 
 	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(bucket, upiddir, userMetaData)
+	objMeta := p.loadObjectMetaData(bucket, upiddir, nil, userMetaData)
 	err = p.storeObjectMetadata(f.File(), bucket, object, objMeta)
 	if err != nil {
 		return nil, err
@@ -1822,7 +1822,7 @@ func (p *Posix) retrieveUploadId(bucket, object string) (string, [32]byte, error
 	return entries[0].Name(), sum, nil
 }
 
-type ObjectMetadata struct {
+type objectMetadata struct {
 	ContentType        *string
 	ContentEncoding    *string
 	ContentDisposition *string
@@ -1833,10 +1833,10 @@ type ObjectMetadata struct {
 
 // fill out the user metadata map with the metadata for the object
 // and return object meta properties as `ObjectMetadata`
-func (p *Posix) loadObjectMetaData(bucket, object string, m map[string]string) ObjectMetadata {
+func (p *Posix) loadObjectMetaData(bucket, object string, fi *os.FileInfo, m map[string]string) objectMetadata {
 	ents, err := p.meta.ListAttributes(bucket, object)
 	if err != nil || len(ents) == 0 {
-		return ObjectMetadata{}
+		return objectMetadata{}
 	}
 
 	if m != nil {
@@ -1856,11 +1856,18 @@ func (p *Posix) loadObjectMetaData(bucket, object string, m map[string]string) O
 		}
 	}
 
-	var result ObjectMetadata
+	var result objectMetadata
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
 	if err == nil {
 		result.ContentType = backend.GetPtrFromString(string(b))
+	}
+
+	if (result.ContentType == nil || *result.ContentType == "") && fi != nil {
+		if (*fi).IsDir() {
+			// this is the media type for directories in AWS and Nextcloud
+			result.ContentType = backend.GetPtrFromString("application/x-directory")
+		}
 	}
 
 	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
@@ -1891,7 +1898,7 @@ func (p *Posix) loadObjectMetaData(bucket, object string, m map[string]string) O
 	return result
 }
 
-func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m ObjectMetadata) error {
+func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m objectMetadata) error {
 	if getString(m.ContentType) != "" {
 		err := p.meta.StoreAttribute(f, bucket, object, contentTypeHdr, []byte(*m.ContentType))
 		if err != nil {
@@ -2252,7 +2259,7 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	p.loadObjectMetaData(bucket, upiddir, userMetaData)
+	p.loadObjectMetaData(bucket, upiddir, nil, userMetaData)
 
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
@@ -2914,7 +2921,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
-	err = p.storeObjectMetadata(f.File(), *po.Bucket, *po.Key, ObjectMetadata{
+	err = p.storeObjectMetadata(f.File(), *po.Bucket, *po.Key, objectMetadata{
 		ContentType:        po.ContentType,
 		ContentEncoding:    po.ContentEncoding,
 		ContentLanguage:    po.ContentLanguage,
@@ -3447,7 +3454,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if fi.IsDir() {
 		userMetaData := make(map[string]string)
 
-		objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
+		objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 		etag := string(b)
 		if err != nil {
@@ -3497,7 +3504,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	userMetaData := make(map[string]string)
 
-	objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
+	objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -3708,7 +3715,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(bucket, object, userMetaData)
+	objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -3901,7 +3908,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 	}
 
 	mdmap := make(map[string]string)
-	p.loadObjectMetaData(srcBucket, srcObject, mdmap)
+	p.loadObjectMetaData(srcBucket, srcObject, &fi, mdmap)
 
 	var etag string
 	var version *string
