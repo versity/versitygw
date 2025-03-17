@@ -144,6 +144,7 @@ const (
 	ErrUnexpectedContent
 	ErrMissingSecurityHeader
 	ErrInvalidMetadataDirective
+	ErrInvalidTaggingDirective
 	ErrKeyTooLong
 	ErrInvalidVersionId
 	ErrNoSuchVersion
@@ -595,6 +596,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidMetadataDirective: {
 		Code:           "InvalidArgument",
 		Description:    "Unknown metadata directive.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidTaggingDirective: {
+		Code:           "InvalidArgument",
+		Description:    "Unknown tagging directive.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidVersionId: {

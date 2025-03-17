@@ -3819,7 +3819,7 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	if input.Bucket == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -3925,6 +3925,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
 
+		// Delete the object metadata
 		for k := range mdmap {
 			err := p.meta.DeleteAttribute(dstBucket, dstObject,
 				fmt.Sprintf("%v.%v", metaHdr, k))
@@ -3932,6 +3933,7 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 				return nil, fmt.Errorf("delete user metadata: %w", err)
 			}
 		}
+		// Store the new metadata
 		for k, v := range input.Metadata {
 			err := p.meta.StoreAttribute(nil, dstBucket, dstObject,
 				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
@@ -4006,6 +4008,32 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		version = backend.GetPtrFromString(string(vId))
+
+		// Store the provided object meta properties
+		err = p.storeObjectMetadata(nil, dstBucket, dstObject,
+			objectMetadata{
+				ContentType:        input.ContentType,
+				ContentEncoding:    input.ContentEncoding,
+				ContentLanguage:    input.ContentLanguage,
+				ContentDisposition: input.ContentDisposition,
+				CacheControl:       input.CacheControl,
+				Expires:            input.Expires,
+			})
+		if err != nil {
+			return nil, err
+		}
+
+		if input.TaggingDirective == types.TaggingDirectiveReplace {
+			tags, err := backend.ParseObjectTags(getString(input.Tagging))
+			if err != nil {
+				return nil, err
+			}
+
+			err = p.PutObjectTagging(ctx, dstBucket, dstObject, tags)
+			if err != nil {
+				return nil, err
+			}
+		}
 	} else {
 		contentLength := fi.Size()
 
@@ -4020,18 +4048,61 @@ func (p *Posix) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.
 			checksums.Algorithm = input.ChecksumAlgorithm
 		}
 
-		res, err := p.PutObject(ctx,
-			s3response.PutObjectInput{
-				Bucket:            &dstBucket,
-				Key:               &dstObject,
-				Body:              f,
-				ContentLength:     &contentLength,
-				Metadata:          input.Metadata,
-				ChecksumAlgorithm: checksums.Algorithm,
-			})
+		putObjectInput := s3response.PutObjectInput{
+			Bucket:                    &dstBucket,
+			Key:                       &dstObject,
+			Body:                      f,
+			ContentLength:             &contentLength,
+			ChecksumAlgorithm:         checksums.Algorithm,
+			ContentType:               input.ContentType,
+			ContentEncoding:           input.ContentEncoding,
+			ContentDisposition:        input.ContentDisposition,
+			ContentLanguage:           input.ContentLanguage,
+			CacheControl:              input.CacheControl,
+			Expires:                   input.Expires,
+			Metadata:                  input.Metadata,
+			ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
+			ObjectLockMode:            input.ObjectLockMode,
+			ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+		}
+
+		// load and pass the source object meta properties, if metadata directive is "COPY"
+		if input.MetadataDirective != types.MetadataDirectiveReplace {
+			metaProps := p.loadObjectMetaData(srcBucket, srcObject, &fi, nil)
+			putObjectInput.ContentEncoding = metaProps.ContentEncoding
+			putObjectInput.ContentDisposition = metaProps.ContentDisposition
+			putObjectInput.ContentLanguage = metaProps.ContentLanguage
+			putObjectInput.ContentType = metaProps.ContentType
+			putObjectInput.CacheControl = metaProps.CacheControl
+			putObjectInput.Expires = metaProps.Expires
+			putObjectInput.Metadata = mdmap
+		}
+
+		// pass the input tagging to PutObject, if tagging directive is "REPLACE"
+		if input.TaggingDirective == types.TaggingDirectiveReplace {
+			putObjectInput.Tagging = input.Tagging
+		}
+
+		res, err := p.PutObject(ctx, putObjectInput)
 		if err != nil {
 			return nil, err
 		}
+
+		// copy the source object tagging after the destination object
+		// creation, if tagging directive is "COPY"
+		if input.TaggingDirective == types.TaggingDirectiveCopy {
+			tagging, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, tagHdr)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return nil, fmt.Errorf("get source object tagging: %w", err)
+			}
+			if err == nil {
+				err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, tagging)
+				if err != nil {
+					return nil, fmt.Errorf("set destination object tagging: %w", err)
+				}
+			}
+		}
+
 		etag = res.ETag
 		version = &res.VersionID
 		crc32 = res.ChecksumCRC32

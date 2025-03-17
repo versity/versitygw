@@ -32,7 +32,7 @@ var _ backend.Backend = &BackendMock{}
 //			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
-//			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+//			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 //				panic("mock out the CopyObject method")
 //			},
 //			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
@@ -193,7 +193,7 @@ type BackendMock struct {
 	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
 
 	// CopyObjectFunc mocks the CopyObject method.
-	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error)
+	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error)
 
 	// CreateBucketFunc mocks the CreateBucket method.
 	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error
@@ -366,7 +366,7 @@ type BackendMock struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
 			// CopyObjectInput is the copyObjectInput argument value.
-			CopyObjectInput *s3.CopyObjectInput
+			CopyObjectInput s3response.CopyObjectInput
 		}
 		// CreateBucket holds details about calls to the CreateBucket method.
 		CreateBucket []struct {
@@ -898,13 +898,13 @@ func (mock *BackendMock) CompleteMultipartUploadCalls() []struct {
 }
 
 // CopyObject calls CopyObjectFunc.
-func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectInput *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
 	if mock.CopyObjectFunc == nil {
 		panic("BackendMock.CopyObjectFunc: method is nil but Backend.CopyObject was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
-		CopyObjectInput *s3.CopyObjectInput
+		CopyObjectInput s3response.CopyObjectInput
 	}{
 		ContextMoqParam: contextMoqParam,
 		CopyObjectInput: copyObjectInput,
@@ -921,11 +921,11 @@ func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectI
 //	len(mockedBackend.CopyObjectCalls())
 func (mock *BackendMock) CopyObjectCalls() []struct {
 	ContextMoqParam context.Context
-	CopyObjectInput *s3.CopyObjectInput
+	CopyObjectInput s3response.CopyObjectInput
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
-		CopyObjectInput *s3.CopyObjectInput
+		CopyObjectInput s3response.CopyObjectInput
 	}
 	mock.lockCopyObject.RLock()
 	calls = mock.calls.CopyObject

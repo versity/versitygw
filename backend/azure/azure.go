@@ -457,7 +457,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		ExpiresString:      blobDownloadResponse.Metadata[string(keyExpires)],
 		ETag:               (*string)(blobDownloadResponse.ETag),
 		LastModified:       blobDownloadResponse.LastModified,
-		Metadata:           parseAzMetadata(blobDownloadResponse.Metadata),
+		Metadata:           parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
 		TagCount:           &tagcount,
 		ContentRange:       blobDownloadResponse.ContentRange,
 		Body:               blobDownloadResponse.Body,
@@ -519,7 +519,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		ExpiresString:      resp.Metadata[string(keyExpires)],
 		ETag:               (*string)(resp.ETag),
 		LastModified:       resp.LastModified,
-		Metadata:           parseAzMetadata(resp.Metadata),
+		Metadata:           parseAndFilterAzMetadata(resp.Metadata),
 		StorageClass:       types.StorageClassStandard,
 	}
 
@@ -767,41 +767,158 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 	}, nil
 }
 
-func (az *Azure) CopyObject(ctx context.Context, input *s3.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	bclient, err := az.getBlobClient(*input.Bucket, *input.Key)
+func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	dstClient, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
 	}
-
 	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource {
-		props, err := bclient.GetProperties(ctx, nil)
+		if input.MetadataDirective != types.MetadataDirectiveReplace {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+		}
+
+		// Set object meta http headers
+		res, err := dstClient.SetHTTPHeaders(ctx, blob.HTTPHeaders{
+			BlobCacheControl:       input.CacheControl,
+			BlobContentDisposition: input.ContentDisposition,
+			BlobContentEncoding:    input.ContentEncoding,
+			BlobContentLanguage:    input.ContentLanguage,
+			BlobContentType:        input.ContentType,
+		}, nil)
 		if err != nil {
 			return nil, azureErrToS3Err(err)
 		}
 
-		mdmap := props.Metadata
-		if isMetaSame(mdmap, input.Metadata) {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+		meta := input.Metadata
+		if meta == nil {
+			meta = make(map[string]string)
 		}
+
+		// Embed "Expires" in object metadata
+		if getString(input.Expires) != "" {
+			meta[string(keyExpires)] = *input.Expires
+		}
+		// Set object metadata
+		_, err = dstClient.SetMetadata(ctx, parseMetadata(meta), nil)
+		if err != nil {
+			return nil, azureErrToS3Err(err)
+		}
+
+		// Set object legal hold
+		if input.ObjectLockLegalHoldStatus != "" {
+			err = az.PutObjectLegalHold(ctx, *input.Bucket, *input.Key, "", input.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn)
+			if err != nil {
+				return nil, azureErrToS3Err(err)
+			}
+		}
+		// Set object retention
+		if input.ObjectLockMode != "" && input.ObjectLockRetainUntilDate != nil {
+			retention := s3response.PutObjectRetentionInput{
+				Mode: types.ObjectLockRetentionMode(input.ObjectLockMode),
+				RetainUntilDate: s3response.AmzDate{
+					Time: *input.ObjectLockRetainUntilDate,
+				},
+			}
+
+			retParsed, err := json.Marshal(retention)
+			if err != nil {
+				return nil, fmt.Errorf("parse object retention: %w", err)
+			}
+			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", true, retParsed)
+			if err != nil {
+				return nil, azureErrToS3Err(err)
+			}
+		}
+
+		// Set object Tagging, if tagging directive is "REPLACE"
+		if input.TaggingDirective == types.TaggingDirectiveReplace {
+			tags, err := parseTags(input.Tagging)
+			if err != nil {
+				return nil, err
+			}
+			_, err = dstClient.SetTags(ctx, tags, nil)
+			if err != nil {
+				return nil, azureErrToS3Err(err)
+			}
+		}
+
+		return &s3.CopyObjectOutput{
+			CopyObjectResult: &types.CopyObjectResult{
+				LastModified: res.LastModified,
+				ETag:         (*string)(res.ETag),
+			},
+		}, nil
 	}
 
-	tags, err := parseTags(input.Tagging)
+	srcBucket, srcObj, _, err := backend.ParseCopySource(*input.CopySource)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := bclient.CopyFromURL(ctx, az.serviceURL+"/"+*input.CopySource, &blob.CopyFromURLOptions{
-		BlobTags: tags,
-		Metadata: parseMetadata(input.Metadata),
-	})
+	// Get the source object
+	downloadResp, err := az.client.DownloadStream(ctx, srcBucket, srcObj, nil)
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
 
+	pInput := s3response.PutObjectInput{
+		Body:                      downloadResp.Body,
+		Bucket:                    input.Bucket,
+		Key:                       input.Key,
+		ContentLength:             downloadResp.ContentLength,
+		ContentType:               input.ContentType,
+		ContentEncoding:           input.ContentEncoding,
+		ContentDisposition:        input.ContentDisposition,
+		ContentLanguage:           input.ContentLanguage,
+		CacheControl:              input.CacheControl,
+		Expires:                   input.Expires,
+		Metadata:                  input.Metadata,
+		ObjectLockRetainUntilDate: input.ObjectLockRetainUntilDate,
+		ObjectLockMode:            input.ObjectLockMode,
+		ObjectLockLegalHoldStatus: input.ObjectLockLegalHoldStatus,
+	}
+
+	if input.MetadataDirective == types.MetadataDirectiveCopy {
+		// Expires is in downloadResp.Metadata
+		pInput.Expires = nil
+		pInput.CacheControl = downloadResp.CacheControl
+		pInput.ContentDisposition = downloadResp.ContentDisposition
+		pInput.ContentEncoding = downloadResp.ContentEncoding
+		pInput.ContentLanguage = downloadResp.ContentLanguage
+		pInput.ContentType = downloadResp.ContentType
+		pInput.Metadata = parseAzMetadata(downloadResp.Metadata)
+	}
+
+	if input.TaggingDirective == types.TaggingDirectiveReplace {
+		pInput.Tagging = input.Tagging
+	}
+
+	// Create the destination object
+	resp, err := az.PutObject(ctx, pInput)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy the object tagging, if tagging directive is "COPY"
+	if input.TaggingDirective == types.TaggingDirectiveCopy {
+		srcClient, err := az.getBlobClient(srcBucket, srcObj)
+		if err != nil {
+			return nil, err
+		}
+		res, err := srcClient.GetTags(ctx, nil)
+		if err != nil {
+			return nil, azureErrToS3Err(err)
+		}
+
+		_, err = dstClient.SetTags(ctx, parseAzTags(res.BlobTagSet), nil)
+		if err != nil {
+			return nil, azureErrToS3Err(err)
+		}
+	}
+
 	return &s3.CopyObjectOutput{
 		CopyObjectResult: &types.CopyObjectResult{
-			ETag:         (*string)(resp.ETag),
-			LastModified: resp.LastModified,
+			ETag: &resp.ETag,
 		},
 	}, nil
 }
@@ -1629,7 +1746,7 @@ func parseMetadata(m map[string]string) map[string]*string {
 	return meta
 }
 
-func parseAzMetadata(m map[string]*string) map[string]string {
+func parseAndFilterAzMetadata(m map[string]*string) map[string]string {
 	if m == nil {
 		return nil
 	}
@@ -1643,6 +1760,19 @@ func parseAzMetadata(m map[string]*string) map[string]string {
 		if ok {
 			continue
 		}
+		meta[k] = *v
+	}
+	return meta
+}
+
+func parseAzMetadata(m map[string]*string) map[string]string {
+	if m == nil {
+		return nil
+	}
+
+	meta := make(map[string]string)
+
+	for k, v := range m {
 		meta[k] = *v
 	}
 	return meta
@@ -1828,24 +1958,6 @@ func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 	}
 
 	return &acl, nil
-}
-
-func isMetaSame(azMeta map[string]*string, awsMeta map[string]string) bool {
-	if len(azMeta) != len(awsMeta) {
-		return false
-	}
-
-	for key, val := range azMeta {
-		if key == string(keyAclCapital) || key == string(keyAclLower) {
-			continue
-		}
-		awsVal, ok := awsMeta[key]
-		if !ok || awsVal != *val {
-			return false
-		}
-	}
-
-	return true
 }
 
 func createMetaTmpPath(obj, uploadId string) string {

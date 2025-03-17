@@ -1286,6 +1286,64 @@ func compareDelMarkers(d1, d2 []types.DeleteMarkerEntry) bool {
 	return true
 }
 
+type ObjectMetaProps struct {
+	ContentLength      int64
+	ContentType        string
+	ContentEncoding    string
+	ContentDisposition string
+	ContentLanguage    string
+	CacheControl       string
+	ExpiresString      string
+	Metadata           map[string]string
+}
+
+func checkObjectMetaProps(client *s3.Client, bucket, object string, o ObjectMetaProps) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	out, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &object,
+	})
+	cancel()
+	if err != nil {
+		return err
+	}
+
+	if o.Metadata != nil {
+		if !areMapsSame(out.Metadata, o.Metadata) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", o.Metadata, out.Metadata)
+		}
+	}
+	if out.ContentLength == nil {
+		return fmt.Errorf("expected Content-Length %v, instead got nil", o.ContentLength)
+	}
+	if *out.ContentLength != o.ContentLength {
+		return fmt.Errorf("expected Content-Length %v, instead got %v", o.ContentLength, *out.ContentLength)
+	}
+	if o.ContentType != "" && getString(out.ContentType) != o.ContentType {
+		return fmt.Errorf("expected Content-Type %v, instead got %v", o.ContentType, getString(out.ContentType))
+	}
+	if o.ContentDisposition != "" && getString(out.ContentDisposition) != o.ContentDisposition {
+		return fmt.Errorf("expected Content-Disposition %v, instead got %v", o.ContentDisposition, getString(out.ContentDisposition))
+	}
+	if o.ContentEncoding != "" && getString(out.ContentEncoding) != o.ContentEncoding {
+		return fmt.Errorf("expected Content-Encoding %v, instead got %v", o.ContentEncoding, getString(out.ContentEncoding))
+	}
+	if o.ContentLanguage != "" && getString(out.ContentLanguage) != o.ContentLanguage {
+		return fmt.Errorf("expected Content-Language %v, instead got %v", o.ContentLanguage, getString(out.ContentLanguage))
+	}
+	if o.CacheControl != "" && getString(out.CacheControl) != o.CacheControl {
+		return fmt.Errorf("expected Cache-Control %v, instead got %v", o.CacheControl, getString(out.CacheControl))
+	}
+	if o.ExpiresString != "" && getString(out.ExpiresString) != o.ExpiresString {
+		return fmt.Errorf("expected Expires %v, instead got %v", o.ExpiresString, getString(out.ExpiresString))
+	}
+	if out.StorageClass != types.StorageClassStandard {
+		return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+	}
+
+	return nil
+}
+
 func getBoolPtr(b bool) *bool {
 	return &b
 }
