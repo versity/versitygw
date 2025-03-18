@@ -74,12 +74,69 @@ put_object_rest() {
     log 2 "'put_object_rest' requires local file, bucket name, key"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
+  if ! put_object_rest_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
+    log 2 "error putting object with REST with root user"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_with_user() {
+  if [ $# -ne 5 ]; then
+    log 2 "'put_object_rest_with_user' requires username, password, local file, bucket name, key"
+    return 1
+  fi
+  if ! put_object_rest_with_user_and_code "$1" "$2" "$3" "$4" "$5" "200"; then
+    log 2 "error putting object with user '$1'"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_with_user_and_code() {
+  if [ $# -ne 6 ]; then
+    log 2 "'put_object_rest_with_user' requires username, password, local file, bucket name, key, expected response code"
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$3" BUCKET_NAME="$4" OBJECT_KEY="$5" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
     log 2 "error sending object file: $result"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected response code of '200', was '$result' (output: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  if [ "$result" != "$6" ]; then
+    log 2 "expected response code of '$6', was '$result' (output: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_with_user_code_error() {
+  if [ $# -ne 7 ]; then
+    log 2 "'put_object_rest_with_user_code_error' requires username, password, lcoal file, bucket name, key, expected code, expected error"
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$3" BUCKET_NAME="$4" OBJECT_KEY="$5" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
+    log 2 "error sending object file: $result"
+    return 1
+  fi
+  if [ "$result" != "$6" ]; then
+    log 2 "expected response code of '$6', was '$result' (output: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "$7" "Error" "Code"; then
+    log 2 "error checking for error code '$7'"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_user_bad_signature() {
+  if [ $# -ne 5 ]; then
+    log 2 "'put_object_rest_user_bad_signature' requires username, password, local file, bucket name, key"
+    return 1
+  fi
+  export SIGNATURE="abcdefg"
+  if ! put_object_rest_with_user_code_error "$1" "$2" "$3" "$4" "$5" "403" "SignatureDoesNotMatch"; then
+    log 2 "error checking REST user bad signature error"
     return 1
   fi
   return 0

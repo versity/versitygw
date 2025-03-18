@@ -73,6 +73,8 @@ get_object_with_user() {
   elif [[ $1 == "mc" ]]; then
     log 5 "save location: $4"
     get_object_error=$(send_command mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
+  elif [[ $1 == "rest" ]]; then
+    get_object_rest_with_user "$5" "$6" "$2" "$3" "$4" || exit_code=$?
   else
     log 2 "'get_object_with_user' not implemented for client '$1'"
     return 1
@@ -91,37 +93,24 @@ get_object_rest() {
     log 2 "'get_object_rest' requires bucket name, object name, output file"
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1/$2
-
-host:$aws_endpoint_url_address
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! get_object_rest_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
+    log 2 "error getting REST object with root user"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -w "%{http_code}" -ks "$header://$aws_endpoint_url_address/$1/$2" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-    -H "x-amz-date: $current_date_time" \
-    -o "$3" 2>&1)
-  log 5 "reply: $reply"
-  if [[ "$reply" != "200" ]]; then
-    log 2 "get object command returned error: $(cat "$3")"
+  return 0
+}
+
+get_object_rest_with_user() {
+  if [ $# -ne 5 ]; then
+    log 2 "'get_object_rest_with_user' requires username, password, bucket name, object name, output file"
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$3" OBJECT_KEY="$4" OUTPUT_FILE="$5" ./tests/rest_scripts/get_object.sh 2>&1); then
+    log 2 "error getting object: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$3"))"
     return 1
   fi
   return 0
