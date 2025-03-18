@@ -164,7 +164,6 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_mp_success(s)
 	HeadObject_directory_object_noslash(s)
 	HeadObject_non_existing_dir_object(s)
-	HeadObject_with_contenttype(s)
 	HeadObject_invalid_parent_dir(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
@@ -193,7 +192,6 @@ func TestGetObject(s *S3Conf) {
 	GetObject_should_succeed_for_invalid_ranges(s)
 	GetObject_content_ranges(s)
 	GetObject_invalid_parent(s)
-	GetObject_with_meta(s)
 	GetObject_large_object(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
@@ -861,7 +859,6 @@ func GetIntTests() IntTests {
 		"HeadObject_directory_object_noslash":                                     HeadObject_directory_object_noslash,
 		"HeadObject_non_existing_dir_object":                                      HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                                HeadObject_name_too_long,
-		"HeadObject_with_contenttype":                                             HeadObject_with_contenttype,
 		"HeadObject_invalid_parent_dir":                                           HeadObject_invalid_parent_dir,
 		"HeadObject_not_enabled_checksum_mode":                                    HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                    HeadObject_checksums,
@@ -878,7 +875,6 @@ func GetIntTests() IntTests {
 		"GetObject_should_succeed_for_invalid_ranges":                             GetObject_should_succeed_for_invalid_ranges,
 		"GetObject_content_ranges":                                                GetObject_content_ranges,
 		"GetObject_invalid_parent":                                                GetObject_invalid_parent,
-		"GetObject_with_meta":                                                     GetObject_with_meta,
 		"GetObject_large_object":                                                  GetObject_large_object,
 		"GetObject_checksums":                                                     GetObject_checksums,
 		"GetObject_success":                                                       GetObject_success,

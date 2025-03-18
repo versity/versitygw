@@ -3415,60 +3415,6 @@ func HeadObject_directory_object_noslash(s *S3Conf) error {
 
 const defaultContentType = "binary/octet-stream"
 
-func HeadObject_with_contenttype(s *S3Conf) error {
-	testName := "HeadObject_with_contenttype"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj, dataLen := "my-obj", int64(1234567)
-		contentType := "text/plain"
-		contentEncoding := "gzip"
-
-		_, err := putObjectWithData(dataLen, &s3.PutObjectInput{
-			Bucket:          &bucket,
-			Key:             &obj,
-			ContentType:     &contentType,
-			ContentEncoding: &contentEncoding,
-		}, s3client)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		defer cancel()
-		if err != nil {
-			return err
-		}
-
-		contentLength := int64(0)
-		if out.ContentLength != nil {
-			contentLength = *out.ContentLength
-		}
-		if contentLength != dataLen {
-			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
-		}
-		if out.ContentType == nil {
-			return fmt.Errorf("expected content type %v, instead got nil", contentType)
-		}
-		if *out.ContentType != contentType {
-			return fmt.Errorf("expected content type %v, instead got %v", contentType, *out.ContentType)
-		}
-		if out.ContentEncoding == nil {
-			return fmt.Errorf("expected content encoding %v, instead got nil", contentEncoding)
-		}
-		if *out.ContentEncoding != contentEncoding {
-			return fmt.Errorf("expected content encoding %v, instead got %v", contentEncoding, *out.ContentEncoding)
-		}
-		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
-		}
-
-		return nil
-	})
-}
-
 func HeadObject_not_enabled_checksum_mode(s *S3Conf) error {
 	testName := "HeadObject_not_enabled_checksum_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4161,38 +4107,6 @@ func GetObject_invalid_parent(s *S3Conf) error {
 	})
 }
 
-func GetObject_with_meta(s *S3Conf) error {
-	testName := "GetObject_with_meta"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		meta := map[string]string{
-			"key1": "val1",
-			"key2": "val2",
-		}
-
-		_, err := putObjectWithData(0, &s3.PutObjectInput{Bucket: &bucket, Key: &obj, Metadata: meta}, s3client)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		defer cancel()
-		if err != nil {
-			return err
-		}
-
-		if !areMapsSame(out.Metadata, meta) {
-			return fmt.Errorf("incorrect object metadata")
-		}
-
-		return nil
-	})
-}
-
 func GetObject_checksums(s *S3Conf) error {
 	testName := "GetObject_checksums"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4317,6 +4231,10 @@ func GetObject_success(s *S3Conf) error {
 		dataLength, obj := int64(1234567), "my-obj"
 		ctype, cDisp, cEnc, cLang := defaultContentType, "cont-desp", "json", "eng"
 		cacheControl, expires := "cache-ctrl", time.Now().Add(time.Hour*2)
+		meta := map[string]string{
+			"foo": "bar",
+			"baz": "quxx",
+		}
 
 		r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
 			Bucket:             &bucket,
@@ -4327,6 +4245,7 @@ func GetObject_success(s *S3Conf) error {
 			ContentLanguage:    &cLang,
 			Expires:            &expires,
 			CacheControl:       &cacheControl,
+			Metadata:           meta,
 		}, s3client)
 		if err != nil {
 			return err
@@ -4364,6 +4283,9 @@ func GetObject_success(s *S3Conf) error {
 		}
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+		}
+		if !areMapsSame(out.Metadata, meta) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", meta, out.Metadata)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
