@@ -214,11 +214,11 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 // ParseObjectTags parses the url encoded input string into
 // map[string]string key-value tag set
 func ParseObjectTags(t string) (map[string]string, error) {
-	tagging := make(map[string]string)
-
 	if t == "" {
-		return tagging, nil
+		return nil, nil
 	}
+
+	tagging := make(map[string]string)
 
 	tagParts := strings.Split(t, "&")
 	for _, prt := range tagParts {

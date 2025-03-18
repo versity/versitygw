@@ -1198,20 +1198,9 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	}
 
 	// parse object tags
-	tagsStr := getString(mpu.Tagging)
-	tags := make(map[string]string)
-	if tagsStr != "" {
-		tagParts := strings.Split(tagsStr, "&")
-		for _, prt := range tagParts {
-			p := strings.Split(prt, "=")
-			if len(p) != 2 {
-				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTag)
-			}
-			if len(p[0]) > 128 || len(p[1]) > 256 {
-				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTag)
-			}
-			tags[p[0]] = p[1]
-		}
+	tags, err := backend.ParseObjectTags(getString(mpu.Tagging))
+	if err != nil {
+		return s3response.InitiateMultipartUploadResult{}, err
 	}
 
 	// generate random uuid for upload id
@@ -1254,7 +1243,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	}
 
 	// set object tagging
-	if tagsStr != "" {
+	if tags != nil {
 		err := p.PutObjectTagging(ctx, bucket, filepath.Join(objdir, uploadID), tags)
 		if err != nil {
 			// cleanup object if returning error
@@ -2679,9 +2668,6 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	if po.Key == nil {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-
-	tagsStr := getString(po.Tagging)
-	tags := make(map[string]string)
 	_, err := os.Stat(*po.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -2690,18 +2676,9 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		return s3response.PutObjectOutput{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	if tagsStr != "" {
-		tagParts := strings.Split(tagsStr, "&")
-		for _, prt := range tagParts {
-			p := strings.Split(prt, "=")
-			if len(p) != 2 {
-				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidTag)
-			}
-			if len(p[0]) > 128 || len(p[1]) > 256 {
-				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidTag)
-			}
-			tags[p[0]] = p[1]
-		}
+	tags, err := backend.ParseObjectTags(getString(po.Tagging))
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
 	}
 
 	name := filepath.Join(*po.Bucket, *po.Key)
@@ -2952,7 +2929,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	}
 
 	// Set object tagging
-	if tagsStr != "" {
+	if tags != nil {
 		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, tags)
 		if errors.Is(err, fs.ErrNotExist) {
 			return s3response.PutObjectOutput{
