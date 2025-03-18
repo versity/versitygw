@@ -349,13 +349,13 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 	if objLockMode != "" &&
 		objLockMode != types.ObjectLockModeCompliance &&
 		objLockMode != types.ObjectLockModeGovernance {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode)
 	}
 
 	legalHold := types.ObjectLockLegalHoldStatus(legalHoldHdr)
 
 	if legalHold != "" && legalHold != types.ObjectLockLegalHoldStatusOff && legalHold != types.ObjectLockLegalHoldStatusOn {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus)
 	}
 
 	return &objLockCfg{

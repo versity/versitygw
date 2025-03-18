@@ -2924,6 +2924,31 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	return nil
 }
 
+func PutObject_invalid_legal_hold(s *S3Conf) error {
+	testName := "PutObject_invalid_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("foo"),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
+		}, s3client)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+	}, withLock())
+}
+func PutObject_invalid_object_lock_mode(s *S3Conf) error {
+	testName := "PutObject_invalid_object_lock_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rDate := time.Now().Add(time.Hour * 10)
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("foo"),
+			ObjectLockRetainUntilDate: &rDate,
+			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
+		}, s3client)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+	}, withLock())
+}
+
 func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
 	testName := "PutObject_checksum_algorithm_and_header_mismatch"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6294,6 +6319,55 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 	})
 }
 
+func CopyObject_invalid_legal_hold(s *S3Conf) error {
+	testName := "CopyObject_invalid_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dst-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &dstObj,
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+	}, withLock())
+}
+func CopyObject_invalid_object_lock_mode(s *S3Conf) error {
+	testName := "CopyObject_invalid_object_lock_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "dst-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		rDate := time.Now().Add(time.Hour * 20)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &dstObj,
+			CopySource:                getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
+			ObjectLockRetainUntilDate: &rDate,
+			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+	}, withLock())
+}
+
 func CopyObject_with_legal_hold(s *S3Conf) error {
 	testName := "CopyObject_with_legal_hold"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -7215,6 +7289,36 @@ func CreateMultipartUpload_past_retain_until_date(s *S3Conf) error {
 
 		return nil
 	})
+}
+
+func CreateMultipartUpload_invalid_legal_hold(s *S3Conf) error {
+	testName := "CreateMultipartUpload_invalid_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("foo"),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatus("invalid_status"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
+	}, withLock())
+}
+
+func CreateMultipartUpload_invalid_object_lock_mode(s *S3Conf) error {
+	testName := "CreateMultipartUpload_invalid_object_lock_mode"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rDate := time.Now().Add(time.Hour * 10)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("foo"),
+			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
+			ObjectLockRetainUntilDate: &rDate,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+	}, withLock())
 }
 
 func CreateMultipartUpload_invalid_checksum_algorithm(s *S3Conf) error {

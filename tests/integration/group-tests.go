@@ -140,6 +140,8 @@ func TestPutObject(s *S3Conf) {
 	PutObject_invalid_long_tags(s)
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
+	PutObject_invalid_legal_hold(s)
+	PutObject_invalid_object_lock_mode(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		PutObject_checksum_algorithm_and_header_mismatch(s)
@@ -273,6 +275,8 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_non_existing_dir_object(s)
 	CopyObject_should_copy_meta_props(s)
 	CopyObject_should_replace_meta_props(s)
+	CopyObject_invalid_legal_hold(s)
+	CopyObject_invalid_object_lock_mode(s)
 	CopyObject_with_legal_hold(s)
 	CopyObject_with_retention_lock(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -314,6 +318,8 @@ func TestCreateMultipartUpload(s *S3Conf) {
 	CreateMultipartUpload_with_object_lock_not_enabled(s)
 	CreateMultipartUpload_with_object_lock_invalid_retention(s)
 	CreateMultipartUpload_past_retain_until_date(s)
+	CreateMultipartUpload_invalid_legal_hold(s)
+	CreateMultipartUpload_invalid_object_lock_mode(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		CreateMultipartUpload_invalid_checksum_algorithm(s)
@@ -793,6 +799,8 @@ func GetIntTests() IntTests {
 		"PutObject_missing_object_lock_retention_config":                          PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                                 PutObject_name_too_long,
 		"PutObject_with_object_lock":                                              PutObject_with_object_lock,
+		"PutObject_invalid_legal_hold":                                            PutObject_invalid_legal_hold,
+		"PutObject_invalid_object_lock_mode":                                      PutObject_invalid_object_lock_mode,
 		"PutObject_checksum_algorithm_and_header_mismatch":                        PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
 		"PutObject_invalid_checksum_header":                                       PutObject_invalid_checksum_header,
@@ -922,6 +930,8 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dir_object":                                      CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                       CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                    CopyObject_should_replace_meta_props,
+		"CopyObject_invalid_legal_hold":                                           CopyObject_invalid_legal_hold,
+		"CopyObject_invalid_object_lock_mode":                                     CopyObject_invalid_object_lock_mode,
 		"CopyObject_with_legal_hold":                                              CopyObject_with_legal_hold,
 		"CopyObject_with_retention_lock":                                          CopyObject_with_retention_lock,
 		"CopyObject_invalid_checksum_algorithm":                                   CopyObject_invalid_checksum_algorithm,
@@ -948,6 +958,8 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_with_object_lock_not_enabled":                      CreateMultipartUpload_with_object_lock_not_enabled,
 		"CreateMultipartUpload_with_object_lock_invalid_retention":                CreateMultipartUpload_with_object_lock_invalid_retention,
 		"CreateMultipartUpload_past_retain_until_date":                            CreateMultipartUpload_past_retain_until_date,
+		"CreateMultipartUpload_invalid_legal_hold":                                CreateMultipartUpload_invalid_legal_hold,
+		"CreateMultipartUpload_invalid_object_lock_mode":                          CreateMultipartUpload_invalid_object_lock_mode,
 		"CreateMultipartUpload_invalid_checksum_algorithm":                        CreateMultipartUpload_invalid_checksum_algorithm,
 		"CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type":       CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type,
 		"CreateMultipartUpload_invalid_checksum_type":                             CreateMultipartUpload_invalid_checksum_type,

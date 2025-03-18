@@ -131,6 +131,8 @@ const (
 	ErrObjectLocked
 	ErrPastObjectLockRetainDate
 	ErrObjectLockInvalidRetentionPeriod
+	ErrInvalidLegalHoldStatus
+	ErrInvalidObjectLockMode
 	ErrNoSuchBucketPolicy
 	ErrBucketTaggingNotFound
 	ErrObjectLockInvalidHeaders
@@ -531,6 +533,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrObjectLockInvalidRetentionPeriod: {
 		Code:           "InvalidRetentionPeriod",
 		Description:    "the retention days/years must be positive integer.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidLegalHoldStatus: {
+		Code:           "InvalidArgument",
+		Description:    "Legal Hold must be either of 'ON' or 'OFF'",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidObjectLockMode: {
+		Code:           "InvalidArgument",
+		Description:    "Unknown wormMode directive.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchBucketPolicy: {
