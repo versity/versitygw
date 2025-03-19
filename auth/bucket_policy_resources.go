@@ -29,7 +29,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 	var err error
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
-			return errInvalidResource
+			return policyErrInvalidResource
 		}
 		*r = make(Resources)
 		for _, s := range ss {
@@ -42,7 +42,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 		var s string
 		if err = json.Unmarshal(data, &s); err == nil {
 			if s == "" {
-				return errInvalidResource
+				return policyErrInvalidResource
 			}
 			*r = make(Resources)
 			err = r.Add(s)
@@ -59,7 +59,7 @@ func (r *Resources) UnmarshalJSON(data []byte) error {
 func (r Resources) Add(rc string) error {
 	ok, pattern := isValidResource(rc)
 	if !ok {
-		return errInvalidResource
+		return policyErrInvalidResource
 	}
 
 	r[pattern] = struct{}{}
@@ -93,7 +93,7 @@ func (r Resources) ContainsBucketPattern() bool {
 func (r Resources) Validate(bucket string) error {
 	for resource := range r {
 		if !strings.HasPrefix(resource, bucket) {
-			return errInvalidResource
+			return policyErrInvalidResource
 		}
 	}
 

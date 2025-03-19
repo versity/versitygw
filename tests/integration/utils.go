@@ -973,8 +973,7 @@ func changeAuthCred(uri, newVal string, index int) (string, error) {
 }
 
 func genPolicyDoc(effect, principal, action, resource string) string {
-	jsonTemplate := `
-	{
+	jsonTemplate := `{
 		"Statement": [
 			{
 				"Effect":  "%s",

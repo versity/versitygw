@@ -11402,14 +11402,50 @@ func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_invalid_json(s *S3Conf) error {
+	testName := "PutBucketPolicy_invalid_json"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, doc := range []string{
+			"{true}",
+			"{asdfsdaf",
+			`{"Principal": "*" `,
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+			if err := checkApiErr(err, getMalformedPolicyError("This policy contains invalid Json")); err != nil {
+				return err
+			}
+		}
+
+		for _, doc := range []string{
+			"false",
+			"invalid_json",
+			"bucketPolicy",
+			`"Statement": []}`,
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &doc,
+			})
+			cancel()
+			if err := checkApiErr(err, getMalformedPolicyError("Policies must be valid JSON and the first byte must be '{'")); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutBucketPolicy_empty_statement(s *S3Conf) error {
 	testName := "PutBucketPolicy_empty_statement"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		doc := `
-		{
-			"Statement": []
-		}
-		`
+		doc := `{"Statement": []}`
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
@@ -11783,16 +11819,16 @@ func PutBucketPolicy_object_action_on_bucket_resource(s *S3Conf) error {
 			Policy: &doc,
 		})
 		cancel()
-
 		if err := checkApiErr(err, getMalformedPolicyError("Action does not apply to any resource(s) in statement")); err != nil {
 			return err
 		}
+
 		return nil
 	})
 }
 
 func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
-	testName := "PutBucketPolicy_object_action_on_bucket_resource"
+	testName := "PutBucketPolicy_bucket_action_on_object_resource"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		resource := fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)
 		doc := genPolicyDoc("Allow", `["*"]`, `"s3:DeleteBucket"`, resource)
@@ -11811,7 +11847,7 @@ func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
 	})
 }
 func PutBucketPolicy_explicit_deny(s *S3Conf) error {
-	testName := "PutBucketPolicy_object_action_on_bucket_resource"
+	testName := "PutBucketPolicy_explicit_deny"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		user2 := user{"grt2", "grt2secret", "user"}
 		err := createUsers(s, []user{
@@ -11826,8 +11862,7 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 		resourceWildCard := fmt.Sprintf("%v/*", resource)
 		resourcePrefix := fmt.Sprintf("%v/someprefix/*", resource)
 
-		policy := fmt.Sprintf(`
-			{
+		policy := fmt.Sprintf(`{
 				"Statement": [
 					{
 						"Action": [
@@ -11866,8 +11901,7 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 						"Resource": "%v"
 					}
 				]
-			}
-		`, resourcePrefix, resource, resourceWildCard, resource, resourcePrefix)
+			}`, resourcePrefix, resource, resourceWildCard, resource, resourcePrefix)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
@@ -14032,8 +14066,7 @@ func AccessControl_single_object_resource_actions(s *S3Conf) error {
 func AccessControl_multi_statement_policy(s *S3Conf) error {
 	testName := "AccessControl_multi_statement_policy"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		policy := fmt.Sprintf(`
-		{
+		policy := fmt.Sprintf(`{
 			"Statement": [
 				{
 					"Effect": "Deny",
@@ -14048,8 +14081,7 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 					"Resource": ["arn:aws:s3:::%s", "arn:aws:s3:::%s/*"]
 				}
 			]
-		}	
-		`, bucket, bucket, bucket)
+		}`, bucket, bucket, bucket)
 
 		usr := user{
 			access: "grt1",
