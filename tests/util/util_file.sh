@@ -65,6 +65,28 @@ create_test_file() {
   return 0
 }
 
+create_file_single_char() {
+  if [ "$#" -ne 3 ]; then
+    log 2 "'create_file_single_char' requires filename, size, char"
+    return 1
+  fi
+  if [[ -e "$TEST_FILE_FOLDER/$1" ]]; then
+    if ! error=$(rm "$TEST_FILE_FOLDER/$1" 2>&1); then
+      log 2 "error removing existing file: $error"
+      return 1
+    fi
+  fi
+  if ! error=$(touch "$TEST_FILE_FOLDER/$1" 2>&1); then
+    log 2 "error creating new file: $error"
+    return 1
+  fi
+  if ! error=$(dd if=/dev/zero bs=1 count="$2" | tr '\0' "$3" > "$TEST_FILE_FOLDER/$1" 2>&1); then
+    log 2 "error adding data to file: $error"
+    return 1
+  fi
+  return 0
+}
+
 # params:  folder name
 # fail if error
 create_test_folder() {

@@ -260,16 +260,12 @@ get_and_check_no_policy_error() {
     log 2 "'get_and_check_no_policy_error' requires bucket name"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
-    log 2 "error attempting to get bucket policy response: $result"
+  if ! get_bucket_policy_rest_expect_code "$1" "404"; then
+    log 2 "GetBucketPolicy returned unexpected response code"
     return 1
   fi
-  if [ "$result" != "404" ]; then
-    log 2 "GetBucketOwnershipControls returned unexpected response code: $result, reply:  $(cat "$TEST_FILE_FOLDER/response.txt")"
-    return 1
-  fi
-  log 5 "response: $(cat "$TEST_FILE_FOLDER/response.txt")"
-  if ! bucket_name=$(xmllint --xpath '//*[local-name()="BucketName"]/text()' "$TEST_FILE_FOLDER/response.txt" 2>&1); then
+  log 5 "response: $bucket_policy"
+  if ! bucket_name=$(xmllint --xpath '//*[local-name()="BucketName"]/text()' <(echo -n "$bucket_policy") 2>&1); then
     log 2 "error getting bucket name: $bucket_name"
     return 1
   fi
@@ -314,21 +310,16 @@ put_and_check_policy_rest() {
     log 2 "unexpected response code, expected '200' or '204', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/policy.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
+  if ! get_bucket_policy_rest "$1"; then
     log 2 "error attempting to get bucket policy response: $result"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "unexpected response code, expected '200', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/policy.txt"))"
-    return 1
-  fi
-  log 5 "policy: $(cat "$TEST_FILE_FOLDER/policy.txt")"
   if [ "$DIRECT" == "true" ]; then
     principal="arn:aws:iam::$DIRECT_AWS_USER_ID:user/$4"
   else
     principal="$4"
   fi
-  if ! check_policy "$(cat "$TEST_FILE_FOLDER/policy.txt")" "$3" "$principal" "$5" "$6"; then
+  if ! check_policy "$bucket_policy" "$3" "$principal" "$5" "$6"; then
     log 2 "policies not equal"
     return 1
   fi

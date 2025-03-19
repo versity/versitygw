@@ -50,3 +50,74 @@ source ./tests/util/util_setup.sh
   run attempt_chunked_upload_with_bad_first_signature "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
+
+@test "REST - chunked upload, final signature error" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1147"
+  fi
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test-file"
+  run create_test_file "$test_file" 0
+  assert_success
+
+  run attempt_chunked_upload_with_bad_final_signature "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - chunked upload, success (file with just a's)" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  sleep 10
+
+  test_file="test-file"
+  run create_file_single_char "$test_file" 8192 'a'
+  assert_success
+
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - chunked upload, success (null bytes)" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  sleep 10
+
+  test_file="test-file"
+  run create_file_single_char "$test_file" 8192 '\0'
+  assert_success
+
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - chunked upload, success (random bytes)" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  sleep 10
+
+  test_file="test-file"
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - chunked upload, success (zero-byte file)" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  sleep 10
+
+  test_file="test-file"
+  run create_test_file "$test_file" 0
+  assert_success
+
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}

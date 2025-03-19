@@ -48,6 +48,8 @@ load_parameters() {
     # shellcheck disable=SC2153
     data_file="$DATA_FILE"
     chunk_size="${CHUNK_SIZE:=65536}"
+    # shellcheck disable=SC2153
+    final_signature="$FINAL_SIGNATURE"
   fi
 
   readonly initial_sts_data="AWS4-HMAC-SHA256-PAYLOAD
@@ -203,8 +205,8 @@ $1
 $signature_no_data
 "
   if [ "$4" -ne 0 ]; then
-    if ! data=$(dd if="$2" of="$2.tmp" bs=1 skip="$3" count="$4" 2>&1); then
-      log_rest 2 "error retrieving data: $data"
+    if ! error=$(dd if="$2" of="$2.tmp" bs=1 skip="$3" count="$4" 2>&1); then
+      log_rest 2 "error retrieving data: $error"
       return 1
     fi
     payload_hash="$(sha256sum "$2.tmp" | awk '{print $1}')"
@@ -213,26 +215,31 @@ $signature_no_data
   fi
   chunk_sts_data+="$payload_hash"
   create_canonical_hash_sts_and_signature "$chunk_sts_data"
-  chunk="$(printf "%x" "$4");chunk-signature=$signature"
-  if [ "$4" -gt 0 ]; then
-    chunk+="
-$(cat "$2.tmp")"
+  if [ -n "$final_signature" ] && [ $((idx+1)) -eq ${#chunk_sizes[@]} ]; then
+    signature="$final_signature"
   fi
+  chunk="$(printf "%x" "$4");chunk-signature=$signature"
+  echo -e "$chunk\r" >> "$COMMAND_FILE"
+  if [ "$4" -gt 0 ]; then
+    dd if="$2.tmp" bs="$4" count=1 >> "$COMMAND_FILE"
+    echo -e "\r" >> "$COMMAND_FILE"
+  fi
+  return 0
 }
 
 build_chunks() {
   if [ $# -ne 1 ]; then
-    log_rest 2 "'add_chunks' requires first signature"
+    log_rest 2 "'build_chunks' requires first signature"
     return 1
   fi
 
   last_signature="$1"
   idx=0
   offset=0
-  chunks=""
+  log_rest 5 "chunk sizes: ${chunk_sizes[*]}"
   for chunk_size in "${chunk_sizes[@]}"; do
     if ! build_chunk; then
-      log 2 "error building chunk"
+      log_rest 2 "error building chunk"
       return 1
     fi
     if [ "$test_mode" == "true" ]; then
@@ -240,6 +247,7 @@ build_chunks() {
     fi
     ((idx++))
   done
+  return 0
 }
 
 build_chunk() {
@@ -256,8 +264,6 @@ build_chunk() {
     offset=$((offset+chunk_size))
     last_signature="$signature"
   fi
-  chunks+="$chunk
-"
 }
 
 check_chunks_and_signatures_in_test_mode() {
@@ -299,62 +305,70 @@ check_chunks_and_signatures_in_test_mode() {
   esac
 }
 
-build_command() {
-  command="PUT /$bucket_name/$key HTTP/1.1
-Host: $host
-x-amz-date: $current_date_time
-x-amz-storage-class: REDUCED_REDUNDANCY
-Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=$first_signature
-x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD
-Content-Encoding: aws-chunked
-x-amz-decoded-content-length: $file_size
-Content-Length: $content_length
+record_command_lines() {
+  while IFS= read -r line; do
+    if ! mask_arg_array "$line"; then
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+  done <<< "$command"
+}
 
-"
+build_initial_command() {
+  command="PUT /$bucket_name/$key HTTP/1.1\r
+Host: $host\r
+x-amz-date: $current_date_time\r
+x-amz-storage-class: REDUCED_REDUNDANCY\r
+Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=$first_signature\r
+x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD\r
+Content-Encoding: aws-chunked\r
+x-amz-decoded-content-length: $file_size\r
+Content-Length: $content_length\r
+\r\n"
 
 if [ "$test_mode" == "true" ] && [ "$command" != "$expected_command" ]; then
   log_rest 2 "command mismatch ($command)"
   return 1
 fi
+  echo -en "$command" > "$COMMAND_FILE"
+}
 
-  chunks+="
-"
-  command+="$chunks"
-  command="${command//$'\n'/$'\r\n'}"
-  echo -n "$command" > "$COMMAND_FILE"
+complete_command() {
+  echo -e "\r" >> "$COMMAND_FILE"
   if [ -n "$COMMAND_LOG" ]; then
-    while IFS= read -r line; do
-      if ! mask_arg_array "$line"; then
-        return 1
-      fi
-      # shellcheck disable=SC2154
-      echo "${masked_args[*]}" >> "$COMMAND_LOG"
-    done <<< "$command"
+    if ! record_command_lines; then
+      return 1
+    fi
   fi
 }
 
 load_parameters
 
 if ! get_file_size_and_content_length; then
-  log 2 "error getting file size and content length"
+  log_rest 2 "error getting file size and content length"
   exit 1
 fi
 
 if ! get_first_signature; then
-  log 2 "error getting first signature"
+  log_rest 2 "error getting first signature"
   exit 1
 fi
 
+if ! build_initial_command; then
+  log_rest 2 "error building command"
+  exit 1
+fi
 if ! build_chunks "$first_signature"; then
-  log 2 "error building chunks"
+  log_rest 2 "error building chunks"
+  exit 1
+fi
+if ! complete_command; then
+  log_rest 2 "error adding chunks"
   exit 1
 fi
 
-if ! build_command; then
-  log 2 "error building command"
-  exit 1
-fi
 if [ "$test_mode" == "true" ]; then
-  echo "TEST PASS"
+  log_rest 4 "TEST PASS"
 fi
 exit 0

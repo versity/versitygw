@@ -105,6 +105,34 @@ get_bucket_policy_s3cmd() {
   return 0
 }
 
+get_bucket_policy_rest() {
+  if [[ $# -ne 1 ]]; then
+    log 2 "s3cmd 'get bucket policy' command requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_policy_rest_expect_code "$1" "200"; then
+    log 2 "error getting REST bucket policy"
+    return 1
+  fi
+  return 0
+}
+
+get_bucket_policy_rest_expect_code() {
+  if [[ $# -ne 2 ]]; then
+    log 2 "s3cmd 'get bucket policy' command requires bucket name, expected code"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/policy.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
+    log 2 "error attempting to get bucket policy response: $result"
+    return 1
+  fi
+  if [ "$result" != "$2" ]; then
+    log 2 "unexpected response code, expected '$2', actual '$result' (reply: $(cat "$TEST_FILE_FOLDER/policy.txt"))"
+    return 1
+  fi
+  bucket_policy="$(cat "$TEST_FILE_FOLDER/policy.txt")"
+}
+
 # return 0 for no policy, single-line policy, or loading complete, 1 for still searching or loading
 check_and_load_policy_info() {
   if [[ $policy_brackets == false ]]; then
