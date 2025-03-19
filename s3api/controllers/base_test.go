@@ -634,8 +634,7 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	</VersioningConfiguration>
 	`
 
-	policyBody := `
-	{
+	policyBody := `{
 		"Statement": [
 			{
 				"Effect": "Allow",

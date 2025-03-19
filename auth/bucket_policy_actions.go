@@ -125,7 +125,7 @@ var supportedObjectActionList = map[Action]struct{}{
 // Validates Action: it should either wildcard match with supported actions list or be in it
 func (a Action) IsValid() error {
 	if !strings.HasPrefix(string(a), "s3:") {
-		return errInvalidAction
+		return policyErrInvalidAction
 	}
 
 	if a == AllActions {
@@ -140,12 +140,12 @@ func (a Action) IsValid() error {
 			}
 		}
 
-		return errInvalidAction
+		return policyErrInvalidAction
 	}
 
 	_, found := supportedActionList[a]
 	if !found {
-		return errInvalidAction
+		return policyErrInvalidAction
 	}
 	return nil
 }
@@ -191,7 +191,7 @@ func (a *Actions) UnmarshalJSON(data []byte) error {
 	var err error
 	if err = json.Unmarshal(data, &ss); err == nil {
 		if len(ss) == 0 {
-			return errInvalidAction
+			return policyErrInvalidAction
 		}
 		*a = make(Actions)
 		for _, s := range ss {
@@ -204,7 +204,7 @@ func (a *Actions) UnmarshalJSON(data []byte) error {
 		var s string
 		if err = json.Unmarshal(data, &s); err == nil {
 			if s == "" {
-				return errInvalidAction
+				return policyErrInvalidAction
 			}
 			*a = make(Actions)
 			err = a.Add(s)

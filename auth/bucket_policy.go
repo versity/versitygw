@@ -22,14 +22,20 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-var (
-	errResourceMismatch = errors.New("Action does not apply to any resource(s) in statement")
-	//lint:ignore ST1005 Reason: This error message is intended for end-user clarity and follows their expectations
-	errInvalidResource = errors.New("Policy has invalid resource")
-	//lint:ignore ST1005 Reason: This error message is intended for end-user clarity and follows their expectations
-	errInvalidPrincipal = errors.New("Invalid principal in policy")
-	//lint:ignore ST1005 Reason: This error message is intended for end-user clarity and follows their expectations
-	errInvalidAction = errors.New("Policy has invalid action")
+type policyErr string
+
+func (p policyErr) Error() string {
+	return string(p)
+}
+
+const (
+	policyErrResourceMismatch = policyErr("Action does not apply to any resource(s) in statement")
+	policyErrInvalidResource  = policyErr("Policy has invalid resource")
+	policyErrInvalidPrincipal = policyErr("Invalid principal in policy")
+	policyErrInvalidAction    = policyErr("Policy has invalid action")
+	policyErrInvalidPolicy    = policyErr("This policy contains invalid Json")
+	policyErrInvalidFirstChar = policyErr("Policies must be valid JSON and the first byte must be '{'")
+	policyErrEmptyStatement   = policyErr("Could not parse the policy: Statement is empty!")
 )
 
 type BucketPolicy struct {
@@ -90,10 +96,10 @@ func (bpi *BucketPolicyItem) Validate(bucket string, iam IAMService) error {
 			break
 		}
 		if *isObjectAction && !containsObjectAction {
-			return errResourceMismatch
+			return policyErrResourceMismatch
 		}
 		if !*isObjectAction && !containsBucketAction {
-			return errResourceMismatch
+			return policyErrResourceMismatch
 		}
 	}
 
@@ -117,14 +123,20 @@ func getMalformedPolicyError(err error) error {
 }
 
 func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) error {
+	if len(policyBin) == 0 || policyBin[0] != '{' {
+		return getMalformedPolicyError(policyErrInvalidFirstChar)
+	}
 	var policy BucketPolicy
 	if err := json.Unmarshal(policyBin, &policy); err != nil {
-		return getMalformedPolicyError(err)
+		var pe policyErr
+		if errors.As(err, &pe) {
+			return getMalformedPolicyError(err)
+		}
+		return getMalformedPolicyError(policyErrInvalidPolicy)
 	}
 
 	if len(policy.Statement) == 0 {
-		//lint:ignore ST1005 Reason: This error message is intended for end-user clarity and follows their expectations
-		return getMalformedPolicyError(errors.New("Could not parse the policy: Statement is empty!"))
+		return getMalformedPolicyError(policyErrEmptyStatement)
 	}
 
 	if err := policy.Validate(bucket, iam); err != nil {
