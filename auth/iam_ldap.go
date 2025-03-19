@@ -111,11 +111,13 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	entry := result.Entries[0]
 	groupId, err := strconv.Atoi(entry.GetAttributeValue(ld.groupIdAtr))
 	if err != nil {
-		return Account{}, fmt.Errorf("invalid entry value for group-id: %v", entry.GetAttributeValue(ld.groupIdAtr))
+		return Account{}, fmt.Errorf("invalid entry value for group-id %q: %w",
+			entry.GetAttributeValue(ld.groupIdAtr), err)
 	}
 	userId, err := strconv.Atoi(entry.GetAttributeValue(ld.userIdAtr))
 	if err != nil {
-		return Account{}, fmt.Errorf("invalid entry value for group-id: %v", entry.GetAttributeValue(ld.userIdAtr))
+		return Account{}, fmt.Errorf("invalid entry value for user-id %q: %w",
+			entry.GetAttributeValue(ld.userIdAtr), err)
 	}
 	return Account{
 		Access:  entry.GetAttributeValue(ld.accessAtr),
@@ -183,11 +185,13 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 	for _, el := range resp.Entries {
 		groupId, err := strconv.Atoi(el.GetAttributeValue(ld.groupIdAtr))
 		if err != nil {
-			return nil, fmt.Errorf("invalid entry value for group-id: %v", el.GetAttributeValue(ld.groupIdAtr))
+			return nil, fmt.Errorf("invalid entry value for group-id %q: %w",
+				el.GetAttributeValue(ld.groupIdAtr), err)
 		}
 		userId, err := strconv.Atoi(el.GetAttributeValue(ld.userIdAtr))
 		if err != nil {
-			return nil, fmt.Errorf("invalid entry value for group-id: %v", el.GetAttributeValue(ld.userIdAtr))
+			return nil, fmt.Errorf("invalid entry value for user-id %q: %w",
+				el.GetAttributeValue(ld.userIdAtr), err)
 		}
 		result = append(result, Account{
 			Access:  el.GetAttributeValue(ld.accessAtr),
