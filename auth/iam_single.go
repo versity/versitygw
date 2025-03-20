@@ -19,18 +19,30 @@ import (
 )
 
 // IAMServiceSingle manages the single tenant (root-only) IAM service
-type IAMServiceSingle struct{}
+type IAMServiceSingle struct {
+	root Account
+}
 
 var _ IAMService = &IAMServiceSingle{}
+
+func NewIAMServiceSingle(r Account) IAMService {
+	return &IAMServiceSingle{
+		root: r,
+	}
+}
 
 // CreateAccount not valid in single tenant mode
 func (IAMServiceSingle) CreateAccount(account Account) error {
 	return s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
 }
 
-// GetUserAccount no accounts in single tenant mode
-func (IAMServiceSingle) GetUserAccount(access string) (Account, error) {
-	return Account{}, s3err.GetAPIError(s3err.ErrAdminMethodNotSupported)
+// GetUserAccount returns root account, if the root access key
+// is provided and "ErrAdminUserNotFound" otherwise
+func (s IAMServiceSingle) GetUserAccount(access string) (Account, error) {
+	if access == s.root.Access {
+		return s.root, nil
+	}
+	return Account{}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 }
 
 // UpdateUserAccount no accounts in single tenant mode
