@@ -161,7 +161,7 @@ func New(o *Opts) (IAMService, error) {
 	default:
 		// if no iam options selected, default to the single user mode
 		fmt.Println("No IAM service configured, enabling single account mode")
-		return IAMServiceSingle{}, nil
+		return NewIAMServiceSingle(o.RootAccount), nil
 	}
 
 	if err != nil {
