@@ -176,7 +176,19 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// If we hit the final chunk, calculate and validate the final
+	// chunk signature and finish reading
 	if chunkSize == 0 {
+		cr.chunkHash.Reset()
+		chunkhash := cr.chunkHash.Sum(nil)
+
+		sigstr := getChunkStringToSign(cr.strToSignPrefix, cr.prevSig, chunkhash)
+		cr.prevSig = hex.EncodeToString(hmac256(cr.signingKey, []byte(sigstr)))
+
+		if cr.prevSig != cr.parsedSig {
+			return 0, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)
+		}
+
 		return 0, io.EOF
 	}
 
