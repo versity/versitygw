@@ -102,17 +102,16 @@ x-amz-storage-class:REDUCED_REDUNDANCY
 content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class
 STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
 
-  readonly expected_command="PUT /examplebucket/chunkObject.txt HTTP/1.1
-Host: s3.amazonaws.com
-x-amz-date: 20130524T000000Z
-x-amz-storage-class: REDUCED_REDUNDANCY
-Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9
-x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD
-Content-Encoding: aws-chunked
-x-amz-decoded-content-length: 66560
-Content-Length: 66824
-
-"
+  readonly expected_command="PUT /examplebucket/chunkObject.txt HTTP/1.1\r
+Host: s3.amazonaws.com\r
+x-amz-date: 20130524T000000Z\r
+x-amz-storage-class: REDUCED_REDUNDANCY\r
+Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9\r
+x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD\r
+Content-Encoding: aws-chunked\r
+x-amz-decoded-content-length: 66560\r
+Content-Length: 66824\r
+\r\n"
 }
 
 get_file_size_and_content_length() {

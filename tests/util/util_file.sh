@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/logger.sh
+source ./tests/commands/get_object.sh
 
 # create a test file and export folder.  do so in temp folder
 # params:  filenames
