@@ -39,6 +39,7 @@ load_parameters() {
     dd if=/dev/zero bs=1 count=66560 | tr '\0' 'a' > "as.txt"
     data_file="as.txt"
     chunk_size=65536
+    trailer="x-amz-checksum-crc32c"
   else
     current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
     year_month_day=$(echo "$current_date_time" | cut -c1-8)
@@ -50,9 +51,15 @@ load_parameters() {
     chunk_size="${CHUNK_SIZE:=65536}"
     # shellcheck disable=SC2153
     final_signature="$FINAL_SIGNATURE"
+    # shellcheck disable=SC2153
+    trailer="$TRAILER"
   fi
 
   readonly initial_sts_data="AWS4-HMAC-SHA256-PAYLOAD
+$current_date_time
+$year_month_day/$aws_region/s3/aws4_request"
+
+  readonly initial_trailer_sts_data="AWS4-HMAC-SHA256-TRAILER
 $current_date_time
 $year_month_day/$aws_region/s3/aws4_request"
 
@@ -65,51 +72,58 @@ declare_test_expected_vals() {
   readonly expected_sts_data="AWS4-HMAC-SHA256
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
-cee3fed04b70f867d036f722359b0b1f2f0e5dc0efadbc082b76c4c60e316455"
+44d48b8c2f70eae815a0198cc73d7a546a73a93359c070abbaa5e6c7de112559"
 
   readonly expected_sts_chunk_one="AWS4-HMAC-SHA256-PAYLOAD
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
-4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9
+106e2a8a18243abcf37539882f36619c00e2dfc72633413f02d3b74544bfeb8e
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 bf718b6f653bebc184e1479f1935b8da974d701b893afcf49e701f3e2f9f9c5a"
 
   readonly expected_sts_chunk_two="AWS4-HMAC-SHA256-PAYLOAD
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
-ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648
+b474d8862b1487a5145d686f57f013e54db672cee1c953b3010fb58501ef5aa2
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 2edc986847e209b4016e141a6dc8716d3207350f416969382d431539bf292e4a"
 
   readonly expected_sts_chunk_three="AWS4-HMAC-SHA256-PAYLOAD
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
-0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497
+1c1344b170168f8e65b41376b44b20fe354e373826ccbbe2c1d40a8cae51e5c7
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+  readonly expected_sts_chunk_final="AWS4-HMAC-SHA256-PAYLOAD
+20130524T000000Z
+20130524/us-east-1/s3/aws4_request
+2ca2aba2005185cf7159c6277faf83795951dd77a3a99e6e65d5c9f85863f992
+1e376db7e1a34a8ef1c4bcee131a2d60a1cb62503747488624e10995f448d774"
 
   readonly expected_canonical_request="PUT
 /examplebucket/chunkObject.txt
 
 content-encoding:aws-chunked
-content-length:66824
 host:s3.amazonaws.com
-x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER
 x-amz-date:20130524T000000Z
 x-amz-decoded-content-length:66560
 x-amz-storage-class:REDUCED_REDUNDANCY
+x-amz-trailer:x-amz-checksum-crc32c
 
-content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class
-STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+content-encoding;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class;x-amz-trailer
+STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
 
   readonly expected_command="PUT /examplebucket/chunkObject.txt HTTP/1.1\r
 Host: s3.amazonaws.com\r
 x-amz-date: 20130524T000000Z\r
 x-amz-storage-class: REDUCED_REDUNDANCY\r
-Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9\r
-x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD\r
+Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=content-encoding;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class;x-amz-trailer,Signature=106e2a8a18243abcf37539882f36619c00e2dfc72633413f02d3b74544bfeb8e\r
+x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER\r
 Content-Encoding: aws-chunked\r
 x-amz-decoded-content-length: 66560\r
+x-amz-trailer: x-amz-checksum-crc32c\r
 Content-Length: 66824\r
 \r\n"
 }
@@ -125,11 +139,44 @@ get_file_size_and_content_length() {
   fi
 
   get_chunk_sizes
-  content_length=$((length+file_size))
+  log_rest 5 "signature string length: ${#signature_string}"
+  content_length=$((length+file_size+${#signature_string}+92))
   if [ "$test_mode" == "true" ] && [ "$content_length" != 66824 ]; then
     log_rest 2 "content length mismatch ($content_length)"
     return 1
   fi
+}
+
+calculate_checksum() {
+  case "$TRAILER" in
+  "x-amz-checksum-crc32c")
+    if ! checksum=$(DATA_FILE=$data_file TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+      log_rest 2 "error getting checksum: $checksum"
+      return 1
+    fi
+    ;;
+  "x-amz-checksum-crc64nvme")
+    if ! checksum=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+      log 2 "error calculating checksum: $checksum"
+      return 1
+    fi
+    ;;
+  "x-amz-checksum-sha256")
+    checksum="$(sha256sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  "x-amz-checksum-sha1")
+    checksum="$(sha1sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  "x-amz-checksum-crc32")
+    checksum="$(gzip -c -1 "$data_file" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  *)
+    log_rest 2 "invalid trailer type: '$TRAILER'"
+    return 1
+    ;;
+  esac
+  signature_string="$TRAILER:$checksum"
+  trailer_payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
 }
 
 get_chunk_sizes() {
@@ -159,15 +206,15 @@ get_first_signature() {
 /$bucket_name/$key
 
 content-encoding:aws-chunked
-content-length:$content_length
 host:$host
-x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD
+x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER
 x-amz-date:$current_date_time
 x-amz-decoded-content-length:$file_size
 x-amz-storage-class:REDUCED_REDUNDANCY
+x-amz-trailer:$trailer
 
-content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class
-STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+content-encoding;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class;x-amz-trailer
+STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
 
   if [ "$test_mode" == "true" ]; then
     if [ "$expected_canonical_request" != "$canonical_request" ]; then
@@ -187,7 +234,7 @@ STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
       log_rest 2 "first STS data mismatch ($sts_data)"
       return 1
     fi
-    if [ "$first_signature" != "4f232c4386841ef735655705268965c44a0e4690baa4adea153f7db9fa80a0a9" ]; then
+    if [ "$first_signature" != "106e2a8a18243abcf37539882f36619c00e2dfc72633413f02d3b74544bfeb8e" ]; then
       log_rest 2 "Mismatched first signature ($first_signature)"
       return 1
     fi
@@ -242,7 +289,10 @@ build_chunks() {
       return 1
     fi
     if [ "$test_mode" == "true" ]; then
-      check_chunks_and_signatures_in_test_mode $idx
+      if ! check_chunks_and_signatures_in_test_mode $idx; then
+        log_rest 2 "error checking test mode signatures"
+        return 1
+      fi
     fi
     ((idx++))
   done
@@ -265,6 +315,20 @@ build_chunk() {
   fi
 }
 
+build_trailer() {
+  log_rest 5 "payload hash: $payload_hash"
+  final_sts_data="$initial_trailer_sts_data
+$signature
+$trailer_payload_hash"
+  log_rest 5 "$final_sts_data"
+  create_canonical_hash_sts_and_signature "$final_sts_data"
+  log_rest 5 "final signature: $signature"
+  final_chunk="$signature_string\r
+x-amz-trailer-signature:$signature\r
+"
+  echo -en "$final_chunk" >> "$COMMAND_FILE"
+}
+
 check_chunks_and_signatures_in_test_mode() {
   if [ $# -ne 1 ]; then
     log_rest 2 "'check_chunks_and_signatures_in_test_mode' requires chunk number"
@@ -276,7 +340,7 @@ check_chunks_and_signatures_in_test_mode() {
         log_rest 2 "first chunk STS mismatch ($chunk_sts_data)"
         return 1
       fi
-      if [ "$signature" != "ad80c730a21e5b8d04586a2213dd63b9a0e99e0e2307b0ade35a65485a288648" ]; then
+      if [ "$signature" != "b474d8862b1487a5145d686f57f013e54db672cee1c953b3010fb58501ef5aa2" ]; then
         log_rest 2 "first chunk signature mismatch ($signature)"
         return 1
       fi
@@ -286,22 +350,33 @@ check_chunks_and_signatures_in_test_mode() {
         log_rest 2 "second chunk STS mismatch ($chunk_sts_data)"
         return 1
       fi
-      if [ "$signature" != "0055627c9e194cb4542bae2aa5492e3c1575bbb81b612b7d234b86a503ef5497" ]; then
+      if [ "$signature" != "1c1344b170168f8e65b41376b44b20fe354e373826ccbbe2c1d40a8cae51e5c7" ]; then
         log_rest 2 "second chunk signature mismatch ($signature)"
         return 1
       fi
       ;;
     2)
       if [ "$chunk_sts_data" != "$expected_sts_chunk_three" ]; then
-        log_rest 2 "final chunk STS mismatch ($chunk_sts_data)"
+        log_rest 2 "third chunk STS mismatch ($chunk_sts_data)"
         return 1
       fi
-      if [ "$signature" != "b6c6ea8a5354eaf15b3cb7646744f4275b71ea724fed81ceb9323e279d449df9" ]; then
-        log_rest 2 "final chunk signature mismatch ($signature)"
+      if [ "$signature" != "2ca2aba2005185cf7159c6277faf83795951dd77a3a99e6e65d5c9f85863f992" ]; then
+        log_rest 2 "third chunk signature mismatch ($signature)"
         return 1
       fi
       ;;
   esac
+}
+
+check_final_signature() {
+  if [ "$final_sts_data" != "$expected_sts_chunk_final" ]; then
+    log_rest 2 "final chunk STS mismatch ($final_sts_data)"
+    return 1
+  fi
+  if [ "$signature" != "63bddb248ad2590c92712055f51b8e78ab024eead08276b24f010b0efd74843f" ]; then
+    log_rest 2 "final chunk signature mismatch ($signature)"
+    return 1
+  fi
 }
 
 record_command_lines() {
@@ -319,10 +394,11 @@ build_initial_command() {
 Host: $host\r
 x-amz-date: $current_date_time\r
 x-amz-storage-class: REDUCED_REDUNDANCY\r
-Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=$first_signature\r
-x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD\r
+Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-encoding;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class;x-amz-trailer,Signature=$first_signature\r
+x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER\r
 Content-Encoding: aws-chunked\r
 x-amz-decoded-content-length: $file_size\r
+x-amz-trailer: $trailer\r
 Content-Length: $content_length\r
 \r\n"
 
@@ -344,6 +420,10 @@ complete_command() {
 
 load_parameters
 
+if ! calculate_checksum; then
+  log_rest 2 "error calculating trailer checksum"
+  return 1
+fi
 if ! get_file_size_and_content_length; then
   log_rest 2 "error getting file size and content length"
   exit 1
@@ -362,12 +442,19 @@ if ! build_chunks "$first_signature"; then
   log_rest 2 "error building chunks"
   exit 1
 fi
+if ! build_trailer; then
+  log_rest 2 "error building trailer"
+  exit 1
+fi
+if [ "$test_mode" == "true" ]; then
+  if ! check_final_signature; then
+    log_rest 2 "error checking final chunks"
+    exit 1
+  fi
+  log_rest 4 "TEST PASS"
+fi
 if ! complete_command; then
   log_rest 2 "error adding chunks"
   exit 1
-fi
-
-if [ "$test_mode" == "true" ]; then
-  log_rest 4 "TEST PASS"
 fi
 exit 0

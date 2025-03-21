@@ -276,6 +276,11 @@ setup_bucket() {
     log 5 "skipping bucket re-creation"
   fi
 
+  # bucket creation and resets take longer to propagate in direct mode
+  if [ "$DIRECT" == "true" ]; then
+    sleep 10
+  fi
+
   if [[ $1 == "s3cmd" ]]; then
     log 5 "putting bucket ownership controls"
     if bucket_exists "s3cmd" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then

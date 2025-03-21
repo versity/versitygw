@@ -65,13 +65,13 @@ elif [ "$checksum_type" == "crc32" ]; then
   fi
   cr_data+=("x-amz-checksum-crc32:$checksum_hash")
 elif [ "$checksum_type" == "crc64nvme" ]; then
-  if [ -z "$checksum_hash" ] && ! checksum_hash=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+  if [ -z "$checksum_hash" ] && ! checksum_hash=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
     log_rest 2 "error calculating crc64nvme checksum: $checksum_hash"
     exit 1
   fi
   cr_data+=("x-amz-checksum-crc64nvme:$checksum_hash")
 elif [ "$checksum_type" == "crc32c" ]; then
-  if [ -z "$checksum_hash" ] && ! checksum_hash=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+  if [ -z "$checksum_hash" ] && ! checksum_hash=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
     log_rest 2 "error calculating crc32c checksum: $checksum_hash"
     exit 1
   fi
