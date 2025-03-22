@@ -131,35 +131,27 @@ source ./tests/util/util_setup.sh
   assert_success
 
   test_file="test-file"
-  run create_test_file "$test_file" 0
+  run create_test_file "$test_file" 10000
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
-         AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-         AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-         AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
-         DATA_FILE="$TEST_FILE_FOLDER/$test_file" \
-         BUCKET_NAME="$BUCKET_ONE_NAME" \
-         OBJECT_KEY="$test_file" CHUNK_SIZE=8192 TEST_MODE=false TRAILER="x-amz-checksum-crc32c" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
-    log 2 "error creating command: $result"
-    return 1
-  fi
+  run put_object_chunked_trailer_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32c"
+  assert_success
 
-  host="${AWS_ENDPOINT_URL#http*://}"
-  if [ "$host" == "s3.amazonaws.com" ]; then
-    host+=":443"
-  fi
-  if ! result=$(openssl s_client -connect "$host" -ign_eof < "$TEST_FILE_FOLDER/command.txt" 2>&1); then
-    log 2 "error sending openssl command: $result"
-    return 1
-  fi
-  log 5 "result: $result"
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  if [ "$response_code" != "200" ]; then
-    log 2 "expected response '200', was '$response_code'"
-    return 1
-  fi
   run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
-  return 0
+}
+
+@test "test - REST chunked upload - sha1 - success" {
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test-file"
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run put_object_chunked_trailer_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha10"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
 }

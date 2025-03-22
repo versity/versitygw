@@ -138,11 +138,32 @@ get_file_size_and_content_length() {
   fi
 
   get_chunk_sizes
-  content_length=$((length+file_size+122))
+  log_rest 5 "signature string length: ${#signature_string}"
+  content_length=$((length+file_size+${#signature_string}+92))
   if [ "$test_mode" == "true" ] && [ "$content_length" != 66824 ]; then
     log_rest 2 "content length mismatch ($content_length)"
     return 1
   fi
+}
+
+calculate_checksum() {
+  case "$TRAILER" in
+  "x-amz-checksum-crc32c")
+    if ! checksum=$(DATA_FILE=$data_file TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+      log_rest 2 "error getting checksum: $checksum"
+      return 1
+    fi
+    ;;
+  "x-amz-checksum-sha1")
+    checksum="$(sha1sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
+    ;;
+  *)
+    log_rest 2 "invalid trailer type: '$TRAILER'"
+    return 1
+    ;;
+  esac
+  signature_string="$TRAILER:$checksum"
+  trailer_payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
 }
 
 get_chunk_sizes() {
@@ -282,17 +303,10 @@ build_chunk() {
 }
 
 build_trailer() {
-  if ! checksum=$(DATA_FILE=$data_file TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
-    log_rest 2 "error getting checksum: $checksum"
-    return 1
-  fi
-  signature_string="$trailer:$checksum"
-  log_rest 5 "signature string: $signature_string"
-  payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
   log_rest 5 "payload hash: $payload_hash"
   final_sts_data="$initial_trailer_sts_data
 $signature
-$payload_hash"
+$trailer_payload_hash"
   log_rest 5 "$final_sts_data"
   create_canonical_hash_sts_and_signature "$final_sts_data"
   log_rest 5 "final signature: $signature"
@@ -394,6 +408,10 @@ complete_command() {
 
 load_parameters
 
+if ! calculate_checksum; then
+  log_rest 2 "error calculating trailer checksum"
+  return 1
+fi
 if ! get_file_size_and_content_length; then
   log_rest 2 "error getting file size and content length"
   exit 1
