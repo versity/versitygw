@@ -16,29 +16,59 @@
 
 source ./tests/rest_scripts/rest.sh
 
-if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh; then
-  log_rest 2 "error initializing python environment"
-  exit 1
-fi
-if ! checksum_decimal=$(python3 -c "
-import sys
-from awscrt import checksums
+calculate_checksum_python() {
+  if [ "$#" -ne 2 ]; then
+    log 2 "'calculate_checksum_python' requires checksum type, data file"
+    return 1
+  fi
+  if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh; then
+    log_rest 2 "error initializing python environment"
+    return 1
+  fi
+  if ! checksum_decimal=$(python3 ./tests/rest_scripts/calculate_checksum.py "$1" "$2" 2>&1); then
+    log_rest 2 "error calculating checksum: $checksum_decimal"
+    return 1
+  fi
+  log 5 "decimal checksum: $checksum_decimal"
+  if ! deactivate 1>/dev/null; then
+    log_rest 2 "error deactivating virtual environment"
+    return 1
+  fi
+  if [ "$CHECKSUM_TYPE" == "crc64nvme" ]; then
+    hex_format="%016x"
+  else
+    hex_format="%08x"
+  fi
+  # shellcheck disable=SC2059
+  checksum=$(printf "$hex_format" "$checksum_decimal" | xxd -r -p | base64)
+  echo "$checksum"
+}
 
-with open(sys.argv[1], 'rb') as f:
-  print(checksums.${CHECKSUM_TYPE}(f.read()))" "$DATA_FILE" 2>&1); then
-  log_rest 2 "error calculating checksum: $checksum_decimal"
+case "$CHECKSUM_TYPE" in
+"crc32c")
+  if ! checksum=$(calculate_checksum_python "crc32c" "$DATA_FILE" 2>&1); then
+    log_rest 2 "error getting checksum: $checksum"
+    exit 1
+  fi
+  ;;
+"crc64nvme")
+  if ! checksum=$(calculate_checksum_python "crc64nvme" "$DATA_FILE" 2>&1); then
+    log 2 "error calculating checksum: $checksum"
+    exit 1
+  fi
+  ;;
+"sha256")
+  checksum="$(sha256sum "$DATA_FILE" | awk '{print $1}' | xxd -r -p | base64)"
+  ;;
+"sha1")
+  checksum="$(sha1sum "$DATA_FILE" | awk '{print $1}' | xxd -r -p | base64)"
+  ;;
+"crc32")
+  checksum="$(gzip -c -1 "$DATA_FILE" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
+  ;;
+*)
+  log_rest 2 "invalid checksum type: '$CHECKSUM_TYPE'"
   exit 1
-fi
-log 5 "decimal checksum: $checksum_decimal"
-if ! deactivate 1>/dev/null; then
-  log_rest 2 "error deactivating virtual environment"
-  exit 1
-fi
-if [ "$CHECKSUM_TYPE" == "crc64nvme" ]; then
-  hex_format="%016x"
-else
-  hex_format="%08x"
-fi
-# shellcheck disable=SC2059
-checksum_hash=$(printf "$hex_format" "$checksum_decimal" | xxd -r -p | base64)
-echo "$checksum_hash"
+  ;;
+esac
+echo "$checksum"
