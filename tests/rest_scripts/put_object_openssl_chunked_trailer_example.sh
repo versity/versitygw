@@ -53,6 +53,8 @@ load_parameters() {
     final_signature="$FINAL_SIGNATURE"
     # shellcheck disable=SC2153
     trailer="$TRAILER"
+    # shellcheck disable=SC2153
+    checksum="$CHECKSUM"
   fi
 
   readonly initial_sts_data="AWS4-HMAC-SHA256-PAYLOAD
@@ -148,35 +150,19 @@ get_file_size_and_content_length() {
 }
 
 calculate_checksum() {
-  case "$TRAILER" in
-  "x-amz-checksum-crc32c")
-    if ! checksum=$(DATA_FILE=$data_file TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+  checksum_type="${TRAILER/x-amz-checksum-/}"
+  log_rest 5 "checksum type: $checksum_type"
+  if [ "$CHECKSUM" == "" ]; then
+    if ! checksum=$(DATA_FILE="$data_file" CHECKSUM_TYPE="$checksum_type" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log_rest 2 "error getting checksum: $checksum"
       return 1
     fi
-    ;;
-  "x-amz-checksum-crc64nvme")
-    if ! checksum=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-      log 2 "error calculating checksum: $checksum"
-      return 1
-    fi
-    ;;
-  "x-amz-checksum-sha256")
-    checksum="$(sha256sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "x-amz-checksum-sha1")
-    checksum="$(sha1sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "x-amz-checksum-crc32")
-    checksum="$(gzip -c -1 "$data_file" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  *)
-    log_rest 2 "invalid trailer type: '$TRAILER'"
-    return 1
-    ;;
-  esac
+  else
+    checksum="$CHECKSUM"
+  fi
   signature_string="$TRAILER:$checksum"
   trailer_payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
+  return 0
 }
 
 get_chunk_sizes() {
