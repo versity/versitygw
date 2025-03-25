@@ -278,7 +278,7 @@ setup_bucket() {
 
   # bucket creation and resets take longer to propagate in direct mode
   if [ "$DIRECT" == "true" ]; then
-    sleep 10
+    sleep 15
   fi
 
   if [[ $1 == "s3cmd" ]]; then
