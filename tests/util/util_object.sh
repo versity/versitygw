@@ -319,7 +319,7 @@ check_checksum_invalid_or_incorrect() {
 
 put_object_rest_checksum() {
   if [ $# -ne 4 ]; then
-    log 2 "'put_object_rest_sha256_checksum' requires data file, bucket name, key, checksum type"
+    log 2 "'put_object_rest_checksum' requires data file, bucket name, key, checksum type"
     return 1
   fi
   # shellcheck disable=SC2097,SC2098
@@ -394,13 +394,13 @@ calculate_incorrect_checksum() {
     incorrect_checksum="$(echo -n "$2"a | gzip -c -1 | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
     ;;
   "crc32c")
-    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log 2 "error calculating checksum: $incorrect_checksum"
       return 1
     fi
     ;;
   "crc64nvme")
-    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_crc64nvme.sh 2>&1); then
+    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log 2 "error calculating checksum: $incorrect_checksum"
       return 1
     fi

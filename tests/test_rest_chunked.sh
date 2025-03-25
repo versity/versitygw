@@ -70,13 +70,14 @@ source ./tests/util/util_setup.sh
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  sleep 10
-
   test_file="test-file"
   run create_file_single_char "$test_file" 8192 'a'
   assert_success
 
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -84,13 +85,14 @@ source ./tests/util/util_setup.sh
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  sleep 10
-
   test_file="test-file"
   run create_file_single_char "$test_file" 8192 '\0'
   assert_success
 
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -98,13 +100,14 @@ source ./tests/util/util_setup.sh
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  sleep 10
-
   test_file="test-file"
   run create_test_file "$test_file" 10000
   assert_success
 
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -112,12 +115,50 @@ source ./tests/util/util_setup.sh
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  sleep 10
-
   test_file="test-file"
   run create_test_file "$test_file" 0
   assert_success
 
   run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}
+
+@test "REST - chunked upload - crc32c trailer - success" {
+  run chunked_upload_trailer_success "crc32c"
+  assert_success
+}
+
+@test "test - REST chunked upload - sha1 trailer - success" {
+  run chunked_upload_trailer_success "sha1"
+  assert_success
+}
+
+@test "test - REST chunked upload - sha256 trailer - success" {
+  run chunked_upload_trailer_success "sha256"
+  assert_success
+}
+
+@test "test - REST chunked upload - crc64nvme trailer - success" {
+  run chunked_upload_trailer_success "crc64nvme"
+  assert_success
+}
+
+@test "test - REST chunked upload - crc32 trailer - success" {
+  run chunked_upload_trailer_success "crc32"
+  assert_success
+}
+
+@test "test - REST chunked upload - invalid trailer" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1161"
+  fi
+  test_file="test-file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_chunked_upload_trailer_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
