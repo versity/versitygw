@@ -23,10 +23,6 @@ source ./tests/util/util_users.sh
 source ./tests/commands/list_buckets.sh
 
 test_admin_user() {
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
-
   admin_username="$USERNAME_ONE"
   admin_password="$PASSWORD_ONE"
   user_username="$USERNAME_TWO"
@@ -63,8 +59,6 @@ test_admin_user() {
 }
 
 test_create_user_already_exists() {
-  assert [ $# -eq 1 ]
-
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
@@ -78,10 +72,6 @@ test_create_user_already_exists() {
 test_user_user() {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip
-  fi
-
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
   fi
 
   username="$USERNAME_ONE"
@@ -115,10 +105,6 @@ test_user_user() {
 }
 
 test_userplus_operation() {
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
-
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 

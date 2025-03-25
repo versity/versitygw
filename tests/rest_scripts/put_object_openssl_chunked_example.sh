@@ -23,6 +23,7 @@ load_parameters() {
   test_mode=${TEST_MODE:=true}
   # shellcheck disable=SC2034
   command_file="${COMMAND_FILE:=command.txt}"
+  no_content_length="${NO_CONTENT_LENGTH:=false}"
 
   readonly signature_no_data="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
@@ -163,8 +164,15 @@ content-length:$content_length
 host:$host
 x-amz-content-sha256:STREAMING-AWS4-HMAC-SHA256-PAYLOAD
 x-amz-date:$current_date_time
-x-amz-decoded-content-length:$file_size
-x-amz-storage-class:REDUCED_REDUNDANCY
+"
+if [ "$no_content_length" == "false" ]; then
+  canonical_request+="x-amz-decoded-content-length:$file_size
+"
+else
+  canonical_request+="x-amz-decoded-content-length:
+"
+fi
+canonical_request+="x-amz-storage-class:REDUCED_REDUNDANCY
 
 content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class
 STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
@@ -322,8 +330,12 @@ x-amz-storage-class: REDUCED_REDUNDANCY\r
 Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-encoding;content-length;host;x-amz-content-sha256;x-amz-date;x-amz-decoded-content-length;x-amz-storage-class,Signature=$first_signature\r
 x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD\r
 Content-Encoding: aws-chunked\r
-x-amz-decoded-content-length: $file_size\r
-Content-Length: $content_length\r
+"
+if [ "$no_content_length" == "false" ]; then
+  command+="x-amz-decoded-content-length: $file_size\r
+"
+fi
+command+="Content-Length: $content_length\r
 \r\n"
 
 if [ "$test_mode" == "true" ] && [ "$command" != "$expected_command" ]; then

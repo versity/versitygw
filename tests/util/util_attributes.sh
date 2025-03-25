@@ -87,7 +87,7 @@ add_and_check_checksum() {
     log 2 "'add_and_check_checksum' requires data file, key"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$2" CHECKSUM="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$2" CHECKSUM_TYPE="sha256" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
     log 2 "error sending object file: $result"
     return 1
   fi

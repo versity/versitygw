@@ -53,13 +53,15 @@ load_parameters() {
     final_signature="$FINAL_SIGNATURE"
     # shellcheck disable=SC2153
     trailer="$TRAILER"
+    # shellcheck disable=SC2153
+    checksum="$CHECKSUM"
   fi
 
   readonly initial_sts_data="AWS4-HMAC-SHA256-PAYLOAD
 $current_date_time
 $year_month_day/$aws_region/s3/aws4_request"
 
-  readonly initial_trailer_sts_data="AWS4-HMAC-SHA256-TRAILER
+  readonly trailer_sts_data="AWS4-HMAC-SHA256-TRAILER
 $current_date_time
 $year_month_day/$aws_region/s3/aws4_request"
 
@@ -95,7 +97,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-  readonly expected_sts_chunk_final="AWS4-HMAC-SHA256-PAYLOAD
+  readonly expected_sts_chunk_final="AWS4-HMAC-SHA256-TRAILER
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
 2ca2aba2005185cf7159c6277faf83795951dd77a3a99e6e65d5c9f85863f992
@@ -124,7 +126,7 @@ x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER\r
 Content-Encoding: aws-chunked\r
 x-amz-decoded-content-length: 66560\r
 x-amz-trailer: x-amz-checksum-crc32c\r
-Content-Length: 66824\r
+Content-Length: 66946\r
 \r\n"
 }
 
@@ -141,42 +143,26 @@ get_file_size_and_content_length() {
   get_chunk_sizes
   log_rest 5 "signature string length: ${#signature_string}"
   content_length=$((length+file_size+${#signature_string}+92))
-  if [ "$test_mode" == "true" ] && [ "$content_length" != 66824 ]; then
+  if [ "$test_mode" == "true" ] && [ "$content_length" != 66946 ]; then
     log_rest 2 "content length mismatch ($content_length)"
     return 1
   fi
 }
 
 calculate_checksum() {
-  case "$TRAILER" in
-  "x-amz-checksum-crc32c")
-    if ! checksum=$(DATA_FILE=$data_file TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+  checksum_type="${trailer/x-amz-checksum-/}"
+  log_rest 5 "checksum type: $checksum_type"
+  if [ "$CHECKSUM" == "" ]; then
+    if ! checksum=$(DATA_FILE="$data_file" CHECKSUM_TYPE="$checksum_type" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log_rest 2 "error getting checksum: $checksum"
       return 1
     fi
-    ;;
-  "x-amz-checksum-crc64nvme")
-    if ! checksum=$(DATA_FILE="$data_file" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-      log 2 "error calculating checksum: $checksum"
-      return 1
-    fi
-    ;;
-  "x-amz-checksum-sha256")
-    checksum="$(sha256sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "x-amz-checksum-sha1")
-    checksum="$(sha1sum "$data_file" | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "x-amz-checksum-crc32")
-    checksum="$(gzip -c -1 "$data_file" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  *)
-    log_rest 2 "invalid trailer type: '$TRAILER'"
-    return 1
-    ;;
-  esac
-  signature_string="$TRAILER:$checksum"
+  else
+    checksum="$CHECKSUM"
+  fi
+  signature_string="$trailer:$checksum"
   trailer_payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
+  return 0
 }
 
 get_chunk_sizes() {
@@ -317,7 +303,7 @@ build_chunk() {
 
 build_trailer() {
   log_rest 5 "payload hash: $payload_hash"
-  final_sts_data="$initial_trailer_sts_data
+  final_sts_data="$trailer_sts_data
 $signature
 $trailer_payload_hash"
   log_rest 5 "$final_sts_data"
@@ -422,7 +408,7 @@ load_parameters
 
 if ! calculate_checksum; then
   log_rest 2 "error calculating trailer checksum"
-  return 1
+  exit 1
 fi
 if ! get_file_size_and_content_length; then
   log_rest 2 "error getting file size and content length"

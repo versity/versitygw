@@ -65,8 +65,14 @@ delete_object_version_with_or_without_retention() {
   log 5 "version ID: ${version_ids[$idx]}"
   # shellcheck disable=SC2154
   if [ "$lock_config_exists" == "true" ]; then
+    if ! check_remove_legal_hold_versions "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+      log 2 "error checking, removing legal hold versions"
+    fi
+    if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
+      log 2 "error turning off object legal hold"
+    fi
     if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-      log 2 "error deleting object version"
+      log 2 "error deleting object version, bypassing retention"
       return 1
     fi
   else

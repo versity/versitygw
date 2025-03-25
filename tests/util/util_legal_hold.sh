@@ -57,3 +57,73 @@ check_legal_hold_without_lock_enabled() {
   fi
   return 0
 }
+
+check_remove_legal_hold_versions() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
+    return 1
+  fi
+  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3"); then
+    if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
+      log 2 "error getting object legal hold status with version id"
+      return 1
+    fi
+    return 0
+  fi
+  log 5 "legal hold: $legal_hold"
+  if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
+    log 2 "error getting legal hold status: $status"
+    return 1
+  fi
+  if [ "$status" == "ON" ]; then
+    if ! put_object_legal_hold_version_id "$1" "$2" "$3" "OFF"; then
+      log 2 "error removing legal hold of version ID"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+check_legal_hold_without_payload() {
+  if [ $# -ne 2 ]; then
+    log 2 "'check_legal_hold_without_payload' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OMIT_PAYLOAD="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
+    log 2 "error checking xml error, message"
+    return 1
+  fi
+  return 0
+}
+
+rest_check_legal_hold() {
+  if [ $# -ne 2 ]; then
+    log 2 "'rest_check_legal_hold' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" STATUS="ON" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/get_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "ON" "LegalHold" "Status"; then
+    log 2 "error checking legal hold status"
+    return 1
+  fi
+  return 0
+}

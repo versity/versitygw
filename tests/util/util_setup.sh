@@ -77,3 +77,23 @@ setup_bucket_file_and_user() {
   echo "$result"
   return 0
 }
+
+setup_bucket_object_lock_enabled() {
+  if [ $# -ne 1 ]; then
+    log 2 "'setup_bucket_object_lock_enabled' requires bucket name"
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists "s3api" "$1"; then
+    log 2 "error cleaning up bucket"
+    return 1
+  fi
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "rest" "$1"; then
+    if ! create_bucket_object_lock_enabled "$1"; then
+      log 2 "error creating bucket with object lock enabled"
+      return 1
+    fi
+  fi
+  return 0
+}
