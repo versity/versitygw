@@ -17,6 +17,8 @@ package utils
 import (
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -33,6 +35,14 @@ const (
 	payloadTypeStreamingEcdsa           payloadType = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD"
 	payloadTypeStreamingEcdsaTrailer    payloadType = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER"
 )
+
+func getPayloadTypeNotSupportedErr(p payloadType) error {
+	return s3err.APIError{
+		HTTPStatusCode: http.StatusNotImplemented,
+		Code:           "NotImplemented",
+		Description:    fmt.Sprintf("The chunk encoding algorithm %v is not supported.", p),
+	}
+}
 
 var (
 	specialValues = map[payloadType]bool{
@@ -96,17 +106,22 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 		return nil, fmt.Errorf("invalid x-amz-content-sha256: %v", string(contentSha256))
 	}
 
-	checksumType := checksumType(ctx.Get("X-Amz-Trailer"))
-	if checksumType != "" && !checksumType.isValid() {
-		//TODO: Add proper APIError
-		return nil, fmt.Errorf("invalid X-Amz-Trailer: %v", checksumType)
+	checksumType := checksumType(strings.ToLower(ctx.Get("X-Amz-Trailer")))
+	if contentSha256 != payloadTypeStreamingSigned && !checksumType.isValid() {
+		return nil, s3err.GetAPIError(s3err.ErrTrailerHeaderNotSupported)
 	}
 
 	switch contentSha256 {
 	case payloadTypeStreamingUnsignedTrailer:
 		return NewUnsignedChunkReader(r, checksumType)
-		//TODO: Add other chunk readers
+	case payloadTypeStreamingSignedTrailer:
+		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType)
+	case payloadTypeStreamingSigned:
+		return NewSignedChunkReader(r, authdata, region, secret, date, "")
+	// return not supported for:
+	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD
+	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER
+	default:
+		return nil, getPayloadTypeNotSupportedErr(contentSha256)
 	}
-
-	return NewSignedChunkReader(r, authdata, region, secret, date)
 }
