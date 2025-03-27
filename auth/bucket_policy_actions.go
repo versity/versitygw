@@ -58,6 +58,8 @@ const (
 	BypassGovernanceRetentionAction        Action = "s3:BypassGovernanceRetention"
 	PutBucketOwnershipControlsAction       Action = "s3:PutBucketOwnershipControls"
 	GetBucketOwnershipControlsAction       Action = "s3:GetBucketOwnershipControls"
+	PutBucketCorsAction                    Action = "s3:PutBucketCORS"
+	GetBucketCorsAction                    Action = "s3:GetBucketCORS"
 	AllActions                             Action = "s3:*"
 )
 
@@ -97,6 +99,8 @@ var supportedActionList = map[Action]struct{}{
 	BypassGovernanceRetentionAction:        {},
 	PutBucketOwnershipControlsAction:       {},
 	GetBucketOwnershipControlsAction:       {},
+	PutBucketCorsAction:                    {},
+	GetBucketCorsAction:                    {},
 	AllActions:                             {},
 }
 

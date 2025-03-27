@@ -44,6 +44,9 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteBucketFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucket method")
 //			},
+//			DeleteBucketCorsFunc: func(contextMoqParam context.Context, bucket string) error {
+//				panic("mock out the DeleteBucketCors method")
+//			},
 //			DeleteBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) error {
 //				panic("mock out the DeleteBucketOwnershipControls method")
 //			},
@@ -64,6 +67,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			GetBucketAclFunc: func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error) {
 //				panic("mock out the GetBucketAcl method")
+//			},
+//			GetBucketCorsFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+//				panic("mock out the GetBucketCors method")
 //			},
 //			GetBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
 //				panic("mock out the GetBucketOwnershipControls method")
@@ -127,6 +133,9 @@ var _ backend.Backend = &BackendMock{}
 //			},
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
+//			},
+//			PutBucketCorsFunc: func(contextMoqParam context.Context, bytes []byte) error {
+//				panic("mock out the PutBucketCors method")
 //			},
 //			PutBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error {
 //				panic("mock out the PutBucketOwnershipControls method")
@@ -204,6 +213,9 @@ type BackendMock struct {
 	// DeleteBucketFunc mocks the DeleteBucket method.
 	DeleteBucketFunc func(contextMoqParam context.Context, bucket string) error
 
+	// DeleteBucketCorsFunc mocks the DeleteBucketCors method.
+	DeleteBucketCorsFunc func(contextMoqParam context.Context, bucket string) error
+
 	// DeleteBucketOwnershipControlsFunc mocks the DeleteBucketOwnershipControls method.
 	DeleteBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string) error
 
@@ -224,6 +236,9 @@ type BackendMock struct {
 
 	// GetBucketAclFunc mocks the GetBucketAcl method.
 	GetBucketAclFunc func(contextMoqParam context.Context, getBucketAclInput *s3.GetBucketAclInput) ([]byte, error)
+
+	// GetBucketCorsFunc mocks the GetBucketCors method.
+	GetBucketCorsFunc func(contextMoqParam context.Context, bucket string) ([]byte, error)
 
 	// GetBucketOwnershipControlsFunc mocks the GetBucketOwnershipControls method.
 	GetBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error)
@@ -287,6 +302,9 @@ type BackendMock struct {
 
 	// PutBucketAclFunc mocks the PutBucketAcl method.
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
+
+	// PutBucketCorsFunc mocks the PutBucketCors method.
+	PutBucketCorsFunc func(contextMoqParam context.Context, bytes []byte) error
 
 	// PutBucketOwnershipControlsFunc mocks the PutBucketOwnershipControls method.
 	PutBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error
@@ -391,6 +409,13 @@ type BackendMock struct {
 			// Bucket is the bucket argument value.
 			Bucket string
 		}
+		// DeleteBucketCors holds details about calls to the DeleteBucketCors method.
+		DeleteBucketCors []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
+		}
 		// DeleteBucketOwnershipControls holds details about calls to the DeleteBucketOwnershipControls method.
 		DeleteBucketOwnershipControls []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -441,6 +466,13 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// GetBucketAclInput is the getBucketAclInput argument value.
 			GetBucketAclInput *s3.GetBucketAclInput
+		}
+		// GetBucketCors holds details about calls to the GetBucketCors method.
+		GetBucketCors []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bucket is the bucket argument value.
+			Bucket string
 		}
 		// GetBucketOwnershipControls holds details about calls to the GetBucketOwnershipControls method.
 		GetBucketOwnershipControls []struct {
@@ -599,6 +631,13 @@ type BackendMock struct {
 			// Data is the data argument value.
 			Data []byte
 		}
+		// PutBucketCors holds details about calls to the PutBucketCors method.
+		PutBucketCors []struct {
+			// ContextMoqParam is the contextMoqParam argument value.
+			ContextMoqParam context.Context
+			// Bytes is the bytes argument value.
+			Bytes []byte
+		}
 		// PutBucketOwnershipControls holds details about calls to the PutBucketOwnershipControls method.
 		PutBucketOwnershipControls []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
@@ -739,6 +778,7 @@ type BackendMock struct {
 	lockCreateBucket                  sync.RWMutex
 	lockCreateMultipartUpload         sync.RWMutex
 	lockDeleteBucket                  sync.RWMutex
+	lockDeleteBucketCors              sync.RWMutex
 	lockDeleteBucketOwnershipControls sync.RWMutex
 	lockDeleteBucketPolicy            sync.RWMutex
 	lockDeleteBucketTagging           sync.RWMutex
@@ -746,6 +786,7 @@ type BackendMock struct {
 	lockDeleteObjectTagging           sync.RWMutex
 	lockDeleteObjects                 sync.RWMutex
 	lockGetBucketAcl                  sync.RWMutex
+	lockGetBucketCors                 sync.RWMutex
 	lockGetBucketOwnershipControls    sync.RWMutex
 	lockGetBucketPolicy               sync.RWMutex
 	lockGetBucketTagging              sync.RWMutex
@@ -767,6 +808,7 @@ type BackendMock struct {
 	lockListObjectsV2                 sync.RWMutex
 	lockListParts                     sync.RWMutex
 	lockPutBucketAcl                  sync.RWMutex
+	lockPutBucketCors                 sync.RWMutex
 	lockPutBucketOwnershipControls    sync.RWMutex
 	lockPutBucketPolicy               sync.RWMutex
 	lockPutBucketTagging              sync.RWMutex
@@ -1045,6 +1087,42 @@ func (mock *BackendMock) DeleteBucketCalls() []struct {
 	return calls
 }
 
+// DeleteBucketCors calls DeleteBucketCorsFunc.
+func (mock *BackendMock) DeleteBucketCors(contextMoqParam context.Context, bucket string) error {
+	if mock.DeleteBucketCorsFunc == nil {
+		panic("BackendMock.DeleteBucketCorsFunc: method is nil but Backend.DeleteBucketCors was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockDeleteBucketCors.Lock()
+	mock.calls.DeleteBucketCors = append(mock.calls.DeleteBucketCors, callInfo)
+	mock.lockDeleteBucketCors.Unlock()
+	return mock.DeleteBucketCorsFunc(contextMoqParam, bucket)
+}
+
+// DeleteBucketCorsCalls gets all the calls that were made to DeleteBucketCors.
+// Check the length with:
+//
+//	len(mockedBackend.DeleteBucketCorsCalls())
+func (mock *BackendMock) DeleteBucketCorsCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockDeleteBucketCors.RLock()
+	calls = mock.calls.DeleteBucketCors
+	mock.lockDeleteBucketCors.RUnlock()
+	return calls
+}
+
 // DeleteBucketOwnershipControls calls DeleteBucketOwnershipControlsFunc.
 func (mock *BackendMock) DeleteBucketOwnershipControls(contextMoqParam context.Context, bucket string) error {
 	if mock.DeleteBucketOwnershipControlsFunc == nil {
@@ -1298,6 +1376,42 @@ func (mock *BackendMock) GetBucketAclCalls() []struct {
 	mock.lockGetBucketAcl.RLock()
 	calls = mock.calls.GetBucketAcl
 	mock.lockGetBucketAcl.RUnlock()
+	return calls
+}
+
+// GetBucketCors calls GetBucketCorsFunc.
+func (mock *BackendMock) GetBucketCors(contextMoqParam context.Context, bucket string) ([]byte, error) {
+	if mock.GetBucketCorsFunc == nil {
+		panic("BackendMock.GetBucketCorsFunc: method is nil but Backend.GetBucketCors was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bucket:          bucket,
+	}
+	mock.lockGetBucketCors.Lock()
+	mock.calls.GetBucketCors = append(mock.calls.GetBucketCors, callInfo)
+	mock.lockGetBucketCors.Unlock()
+	return mock.GetBucketCorsFunc(contextMoqParam, bucket)
+}
+
+// GetBucketCorsCalls gets all the calls that were made to GetBucketCors.
+// Check the length with:
+//
+//	len(mockedBackend.GetBucketCorsCalls())
+func (mock *BackendMock) GetBucketCorsCalls() []struct {
+	ContextMoqParam context.Context
+	Bucket          string
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bucket          string
+	}
+	mock.lockGetBucketCors.RLock()
+	calls = mock.calls.GetBucketCors
+	mock.lockGetBucketCors.RUnlock()
 	return calls
 }
 
@@ -2074,6 +2188,42 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 	mock.lockPutBucketAcl.RLock()
 	calls = mock.calls.PutBucketAcl
 	mock.lockPutBucketAcl.RUnlock()
+	return calls
+}
+
+// PutBucketCors calls PutBucketCorsFunc.
+func (mock *BackendMock) PutBucketCors(contextMoqParam context.Context, bytes []byte) error {
+	if mock.PutBucketCorsFunc == nil {
+		panic("BackendMock.PutBucketCorsFunc: method is nil but Backend.PutBucketCors was just called")
+	}
+	callInfo := struct {
+		ContextMoqParam context.Context
+		Bytes           []byte
+	}{
+		ContextMoqParam: contextMoqParam,
+		Bytes:           bytes,
+	}
+	mock.lockPutBucketCors.Lock()
+	mock.calls.PutBucketCors = append(mock.calls.PutBucketCors, callInfo)
+	mock.lockPutBucketCors.Unlock()
+	return mock.PutBucketCorsFunc(contextMoqParam, bytes)
+}
+
+// PutBucketCorsCalls gets all the calls that were made to PutBucketCors.
+// Check the length with:
+//
+//	len(mockedBackend.PutBucketCorsCalls())
+func (mock *BackendMock) PutBucketCorsCalls() []struct {
+	ContextMoqParam context.Context
+	Bytes           []byte
+} {
+	var calls []struct {
+		ContextMoqParam context.Context
+		Bytes           []byte
+	}
+	mock.lockPutBucketCors.RLock()
+	calls = mock.calls.PutBucketCors
+	mock.lockPutBucketCors.RUnlock()
 	return calls
 }
 
