@@ -46,6 +46,9 @@ type Backend interface {
 	PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error
 	GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error)
 	DeleteBucketOwnershipControls(_ context.Context, bucket string) error
+	PutBucketCors(context.Context, []byte) error
+	GetBucketCors(_ context.Context, bucket string) ([]byte, error)
+	DeleteBucketCors(_ context.Context, bucket string) error
 
 	// multipart operations
 	CreateMultipartUpload(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
@@ -148,6 +151,15 @@ func (BackendUnsupported) GetBucketOwnershipControls(_ context.Context, bucket s
 	return types.ObjectOwnershipBucketOwnerEnforced, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) DeleteBucketOwnershipControls(_ context.Context, bucket string) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) PutBucketCors(context.Context, []byte) error {
+	return s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) GetBucketCors(_ context.Context, bucket string) ([]byte, error) {
+	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+}
+func (BackendUnsupported) DeleteBucketCors(_ context.Context, bucket string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 

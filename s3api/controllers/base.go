@@ -871,6 +871,36 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("cors") {
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
+			Acl:           parsedAcl,
+			AclPermission: auth.PermissionRead,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.GetBucketCorsAction,
+		})
+		if err != nil {
+			return SendXMLResponse(ctx, nil, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionGetBucketCors,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		data, err := c.be.GetBucketCors(ctx.Context(), bucket)
+		return SendXMLResponse(ctx, data, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionGetBucketCors,
+				BucketOwner: parsedAcl.Owner,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("versions") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Readonly:      c.readonly,
@@ -1391,6 +1421,39 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			})
 	}
 
+	if ctx.Request().URI().QueryArgs().Has("cors") {
+		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
+		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+			Readonly:      c.readonly,
+			Acl:           parsedAcl,
+			AclPermission: auth.PermissionWrite,
+			IsRoot:        isRoot,
+			Acc:           acct,
+			Bucket:        bucket,
+			Action:        auth.PutBucketCorsAction,
+		})
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketCors,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.PutBucketCors(ctx.Context(), []byte{})
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketCors,
+					BucketOwner: parsedAcl.Owner,
+				},
+			)
+		}
+	}
 	if ctx.Request().URI().QueryArgs().Has("policy") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
@@ -2774,6 +2837,37 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) error {
 				Action:      metrics.ActionDeleteBucketPolicy,
 				BucketOwner: parsedAcl.Owner,
 				Status:      http.StatusNoContent,
+			})
+	}
+
+	if ctx.Request().URI().QueryArgs().Has("cors") {
+		err := auth.VerifyAccess(ctx.Context(), c.be,
+			auth.AccessOptions{
+				Readonly:      c.readonly,
+				Acl:           parsedAcl,
+				AclPermission: auth.PermissionWrite,
+				IsRoot:        isRoot,
+				Acc:           acct,
+				Bucket:        bucket,
+				Action:        auth.PutBucketCorsAction,
+			})
+		if err != nil {
+			return SendResponse(ctx, err,
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionDeleteBucketCors,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		err = c.be.DeleteBucketCors(ctx.Context(), bucket)
+		return SendResponse(ctx, err,
+			&MetaOpts{
+				Logger:      c.logger,
+				MetricsMng:  c.mm,
+				Action:      metrics.ActionDeleteBucketCors,
+				BucketOwner: parsedAcl.Owner,
 			})
 	}
 

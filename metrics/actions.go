@@ -72,6 +72,9 @@ var (
 	ActionPutBucketOwnershipControls    = "s3_PutBucketOwnershipControls"
 	ActionGetBucketOwnershipControls    = "s3_GetBucketOwnershipControls"
 	ActionDeleteBucketOwnershipControls = "s3_DeleteBucketOwnershipControls"
+	ActionPutBucketCors                 = "s3_PutBucketCors"
+	ActionGetBucketCors                 = "s3_GetBucketCors"
+	ActionDeleteBucketCors              = "s3_DeleteBucketCors"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -264,6 +267,18 @@ func init() {
 	}
 	ActionMap[ActionUploadPartCopy] = Action{
 		Name:    "UploadPartCopy",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketCors] = Action{
+		Name:    "PutBucketCors",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketCors] = Action{
+		Name:    "GetBucketCors",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketCors] = Action{
+		Name:    "DeleteBucketCors",
 		Service: "s3",
 	}
 }
