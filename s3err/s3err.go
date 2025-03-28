@@ -770,6 +770,14 @@ func GetInvalidChecksumHeaderErr(header string) APIError {
 	}
 }
 
+func GetInvalidTrailingChecksumHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for %v trailing header is invalid.", header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 // Returns checksum type mismatch APIError
 func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIError {
 	return APIError{
@@ -783,7 +791,7 @@ func GetChecksumTypeMismatchErr(expected, actual types.ChecksumAlgorithm) APIErr
 func GetChecksumBadDigestErr(algo types.ChecksumAlgorithm) APIError {
 	return APIError{
 		Code:           "BadDigest",
-		Description:    fmt.Sprintf("The %v you specified did not match the calculated checksum.", strings.ToLower(string(algo))),
+		Description:    fmt.Sprintf("The %v you specified did not match the calculated checksum.", algo),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
