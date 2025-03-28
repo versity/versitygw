@@ -3723,6 +3723,27 @@ func GetObjectAttributes_invalid_parent(s *S3Conf) error {
 	})
 }
 
+func GetObjectAttributes_invalid_single_attribute(s *S3Conf) error {
+	testName := "GetObjectAttributes_invalid_single_attribute"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributes("invalid_attr"),
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func GetObjectAttributes_empty_attrs(s *S3Conf) error {
 	testName := "GetObjectAttributes_empty_attrs"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
