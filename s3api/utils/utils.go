@@ -298,6 +298,9 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 	var err error
 	ctx.Request().Header.VisitAll(func(key, value []byte) {
 		if string(key) == "X-Amz-Object-Attributes" {
+			if len(value) == 0 {
+				return
+			}
 			oattrs := strings.Split(string(value), ",")
 			for _, a := range oattrs {
 				attr := s3response.ObjectAttributes(a)
@@ -310,11 +313,15 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 		}
 	})
 
+	if err != nil {
+		return nil, err
+	}
+
 	if len(attrs) == 0 {
 		return nil, s3err.GetAPIError(s3err.ErrObjectAttributesInvalidHeader)
 	}
 
-	return attrs, err
+	return attrs, nil
 }
 
 type objLockCfg struct {

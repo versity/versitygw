@@ -178,6 +178,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 	GetObjectAttributes_non_existing_object(s)
 	GetObjectAttributes_invalid_attrs(s)
 	GetObjectAttributes_invalid_parent(s)
+	GetObjectAttributes_invalid_single_attribute(s)
 	GetObjectAttributes_empty_attrs(s)
 	GetObjectAttributes_existing_object(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -868,6 +869,7 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_non_existing_object":                                 GetObjectAttributes_non_existing_object,
 		"GetObjectAttributes_invalid_attrs":                                       GetObjectAttributes_invalid_attrs,
 		"GetObjectAttributes_invalid_parent":                                      GetObjectAttributes_invalid_parent,
+		"GetObjectAttributes_invalid_single_attribute":                            GetObjectAttributes_invalid_single_attribute,
 		"GetObjectAttributes_empty_attrs":                                         GetObjectAttributes_empty_attrs,
 		"GetObjectAttributes_existing_object":                                     GetObjectAttributes_existing_object,
 		"GetObjectAttributes_checksums":                                           GetObjectAttributes_checksums,
