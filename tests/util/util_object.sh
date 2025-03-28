@@ -361,11 +361,7 @@ check_checksum_rest_incorrect() {
     log 2 "error setting up bucket and file"
     return 1
   fi
-  if [ "$DIRECT" == "true" ]; then
-    error_cs_str="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
-  else
-    error_cs_str="$1"
-  fi
+  error_cs_str="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
   error_message="The $error_cs_str you specified did not match the calculated checksum."
   if ! calculate_incorrect_checksum "$1" "$(cat "$TEST_FILE_FOLDER/$test_file")"; then
     log 2 "error calculating incorrect checksum"

@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -190,7 +191,8 @@ func (cr *ChunkReader) verifyChecksum() error {
 	checksumHash := cr.checksumHash.Sum(nil)
 	checksum := base64.StdEncoding.EncodeToString(checksumHash)
 	if checksum != cr.parsedChecksum {
-		return fmt.Errorf("actual checksum: %v, expected checksum: %v", checksum, cr.parsedChecksum)
+		algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(string(cr.trailer), "x-amz-checksum-")))
+		return s3err.GetChecksumBadDigestErr(algo)
 	}
 
 	return nil
@@ -380,10 +382,16 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte, l *int) (int64, stri
 				return 0, "", 0, errInvalidChunkFormat
 			}
 
+			algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(trailer, "x-amz-checksum-")))
+
 			// parse the checksum
 			checksum, err := readAndTrim(rdr, '\r')
 			if err != nil {
 				return cr.handleRdrErr(err, header)
+			}
+
+			if !IsValidChecksum(checksum, algo) {
+				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
 			}
 
 			err = readAndSkip(rdr, '\n')
