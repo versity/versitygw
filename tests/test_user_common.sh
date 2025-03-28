@@ -23,9 +23,7 @@ source ./tests/util/util_users.sh
 source ./tests/commands/list_buckets.sh
 
 test_admin_user() {
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   admin_username="$USERNAME_ONE"
   admin_password="$PASSWORD_ONE"
@@ -80,9 +78,7 @@ test_user_user() {
     skip
   fi
 
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
@@ -115,9 +111,7 @@ test_user_user() {
 }
 
 test_userplus_operation() {
-  if [[ $# -ne 1 ]]; then
-    fail "test admin user command requires command type"
-  fi
+  assert [ $# -eq 1 ]
 
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
