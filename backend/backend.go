@@ -100,6 +100,10 @@ type Backend interface {
 	ListBucketsAndOwners(context.Context) ([]s3response.Bucket, error)
 }
 
+// InterfaceVersion tracks changes to the Backend interface for plugins.
+// Increment this when the Backend interface changes.
+const InterfaceVersion = 1
+
 type BackendUnsupported struct{}
 
 var _ Backend = &BackendUnsupported{}
