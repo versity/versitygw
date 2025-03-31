@@ -11463,6 +11463,24 @@ func PutBucketPolicy_invalid_json(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_statement_not_provided(s *S3Conf) error {
+	testName := "PutBucketPolicy_statement_not_provided"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		doc := `{}`
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err := checkApiErr(err, getMalformedPolicyError("Missing required field Statement")); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 func PutBucketPolicy_empty_statement(s *S3Conf) error {
 	testName := "PutBucketPolicy_empty_statement"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -29,17 +29,37 @@ func (p policyErr) Error() string {
 }
 
 const (
-	policyErrResourceMismatch = policyErr("Action does not apply to any resource(s) in statement")
-	policyErrInvalidResource  = policyErr("Policy has invalid resource")
-	policyErrInvalidPrincipal = policyErr("Invalid principal in policy")
-	policyErrInvalidAction    = policyErr("Policy has invalid action")
-	policyErrInvalidPolicy    = policyErr("This policy contains invalid Json")
-	policyErrInvalidFirstChar = policyErr("Policies must be valid JSON and the first byte must be '{'")
-	policyErrEmptyStatement   = policyErr("Could not parse the policy: Statement is empty!")
+	policyErrResourceMismatch     = policyErr("Action does not apply to any resource(s) in statement")
+	policyErrInvalidResource      = policyErr("Policy has invalid resource")
+	policyErrInvalidPrincipal     = policyErr("Invalid principal in policy")
+	policyErrInvalidAction        = policyErr("Policy has invalid action")
+	policyErrInvalidPolicy        = policyErr("This policy contains invalid Json")
+	policyErrInvalidFirstChar     = policyErr("Policies must be valid JSON and the first byte must be '{'")
+	policyErrEmptyStatement       = policyErr("Could not parse the policy: Statement is empty!")
+	policyErrMissingStatmentField = policyErr("Missing required field Statement")
 )
 
 type BucketPolicy struct {
 	Statement []BucketPolicyItem `json:"Statement"`
+}
+
+func (bp *BucketPolicy) UnmarshalJSON(data []byte) error {
+	var tmp struct {
+		Statement *[]BucketPolicyItem `json:"Statement"`
+	}
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	// If Statement is nil (not present in JSON), return an error
+	if tmp.Statement == nil {
+		return policyErrMissingStatmentField
+	}
+
+	// Assign the parsed value to the actual struct
+	bp.Statement = *tmp.Statement
+	return nil
 }
 
 func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
