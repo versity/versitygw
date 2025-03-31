@@ -205,9 +205,6 @@ test_file="test_file"
 }
 
 @test "REST - attributes - checksum" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1006"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 

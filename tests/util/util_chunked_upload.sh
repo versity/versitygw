@@ -15,14 +15,8 @@ attempt_seed_signature_without_content_length() {
     log 2 "error creating command: $result"
     return 1
   fi
-
-  if ! result=$(send_via_openssl "$TEST_FILE_FOLDER/command.txt"); then
-    log 2 "error sending command via openssl"
-    return 1
-  fi
-  response_code="$(echo "$result" | grep "HTTP/" | awk '{print $2}')"
-  if [ "$response_code" != 411 ]; then
-    log 2 "expected '411', actual '$response_code' ($(echo -n "$result"))"
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 411; then
+    log 2 "error in sending or checking response code"
     return 1
   fi
   return 0
@@ -82,13 +76,8 @@ chunked_upload_success() {
     return 1
   fi
 
-  if ! result=$(send_via_openssl "$TEST_FILE_FOLDER/command.txt"); then
-    log 2 "error sending command via openssl"
-    return 1
-  fi
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  if [ "$response_code" != "200" ]; then
-    log 2 "expected response '200', was '$response_code'"
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 200; then
+    log 2 "error sending command via openssl or checking response code"
     return 1
   fi
   return 0
@@ -150,14 +139,8 @@ put_object_chunked_trailer_success() {
     return 1
   fi
 
-  if ! result=$(send_via_openssl "$TEST_FILE_FOLDER/command.txt"); then
-    log 2 "error sending command via openssl"
-    return 1
-  fi
-  log 5 "result: $result"
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  if [ "$response_code" != "200" ]; then
-    log 2 "expected response '200', was '$response_code'"
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 200; then
+    log 2 "error sending command via openssl or checking response code"
     return 1
   fi
   return 0
@@ -248,19 +231,8 @@ chunked_upload_trailer_invalid_checksum() {
     log 2 "error creating command: $result"
     return 1
   fi
-  if ! result=$(send_via_openssl "$TEST_FILE_FOLDER/command.txt"); then
-    log 2 "error sending command via openssl"
-    return 1
-  fi
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  if [ "$response_code" != "400" ]; then
-    log 2 "expected response '400', was '$response_code'"
-    return 1
-  fi
-  error_data="$(echo "$result" | grep "<Error>")"
-  echo -n "$error_data" > "$TEST_FILE_FOLDER/error-data.txt"
-  if ! check_xml_error_contains "$TEST_FILE_FOLDER/error-data.txt" "InvalidRequest" "Value for x-amz-checksum-$1 trailing header is invalid."; then
-    log 2 "error checking xml error, message"
+  if ! send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/command.txt" "400" "InvalidRequest" "Value for x-amz-checksum-$1 trailing header is invalid."; then
+    log 2 "error sending openssl and checking response"
     return 1
   fi
   return 0
@@ -280,4 +252,39 @@ send_via_openssl() {
     return 1
   fi
   echo "$result"
+}
+
+send_via_openssl_and_check_code() {
+  if [ "$#" -ne 2 ]; then
+    log 2 "'send_via_openssl_and_check_code' requires command file, expected code"
+    return 1
+  fi
+  if ! result=$(send_via_openssl "$1"); then
+    log 2 "error sending command via openssl"
+    return 1
+  fi
+  response_code="$(echo "$result" | grep "HTTP/" | awk '{print $2}')"
+  if [ "$response_code" != "$2" ]; then
+    log 2 "expected '$2', actual '$response_code'"
+    return 1
+  fi
+  echo "$result"
+}
+
+send_via_openssl_check_code_error_contains() {
+  if [ "$#" -ne 4 ]; then
+    log 2 "'send_via_openssl_check_code_error_contains' requires command file, expected code, error, message"
+    return 1
+  fi
+  if ! result=$(send_via_openssl_and_check_code "$1" "$2"); then
+    log 2 "error sending and checking code"
+    return 1
+  fi
+  error_data="$(echo "$result" | grep "<Error>")"
+  echo -n "$error_data" > "$TEST_FILE_FOLDER/error-data.txt"
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/error-data.txt" "$3" "$4"; then
+    log 2 "error checking xml error, message"
+    return 1
+  fi
+  return 0
 }
