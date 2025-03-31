@@ -520,7 +520,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 				},
 				{
 					Key:   "Last-Modified",
-					Value: res.LastModified.Format(timefmt),
+					Value: res.LastModified.UTC().Format(timefmt),
 				},
 			})
 		}
@@ -595,7 +595,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	if res.LastModified != nil {
 		hdrs = append(hdrs, utils.CustomHeader{
 			Key:   "Last-Modified",
-			Value: res.LastModified.Format(timefmt),
+			Value: res.LastModified.UTC().Format(timefmt),
 		})
 	}
 	if res.TagCount != nil {
@@ -3300,7 +3300,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 				},
 				{
 					Key:   "Last-Modified",
-					Value: res.LastModified.Format(timefmt),
+					Value: res.LastModified.UTC().Format(timefmt),
 				},
 			})
 		}
@@ -3384,7 +3384,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 		})
 	}
 	if res.LastModified != nil {
-		lastmod := res.LastModified.Format(timefmt)
+		lastmod := res.LastModified.UTC().Format(timefmt)
 		headers = append(headers, utils.CustomHeader{
 			Key:   "Last-Modified",
 			Value: lastmod,
