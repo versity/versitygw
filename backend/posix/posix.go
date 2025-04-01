@@ -3844,8 +3844,8 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		}
 
 		if string(vId) != srcVersionId {
-			srcBucket = filepath.Join(p.versioningDir, srcBucket)
-			srcObject = filepath.Join(genObjVersionKey(srcObject), srcVersionId)
+			srcBucket = joinPathWithTrailer(p.versioningDir, srcBucket)
+			srcObject = joinPathWithTrailer(genObjVersionKey(srcObject), srcVersionId)
 		}
 	}
 
@@ -3857,7 +3857,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	objPath := filepath.Join(srcBucket, srcObject)
+	objPath := joinPathWithTrailer(srcBucket, srcObject)
 	f, err := os.Open(objPath)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if p.versioningEnabled() && vEnabled {
@@ -3896,7 +3896,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	var crc64nvme *string
 	var chType types.ChecksumType
 
-	dstObjdPath := filepath.Join(dstBucket, dstObject)
+	dstObjdPath := joinPathWithTrailer(dstBucket, dstObject)
 	if dstObjdPath == objPath {
 		if input.MetadataDirective == types.MetadataDirectiveCopy {
 			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
@@ -4916,4 +4916,12 @@ func getString(str *string) string {
 		return ""
 	}
 	return *str
+}
+
+func joinPathWithTrailer(paths ...string) string {
+	joined := filepath.Join(paths...)
+	if strings.HasSuffix(paths[len(paths)-1], "/") {
+		joined += "/"
+	}
+	return joined
 }

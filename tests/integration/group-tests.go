@@ -641,6 +641,8 @@ func TestPosix(s *S3Conf) {
 	PutObject_name_too_long(s)
 	HeadObject_name_too_long(s)
 	DeleteObject_name_too_long(s)
+	CopyObject_overwrite_same_dir_object(s)
+	CopyObject_overwrite_same_file_object(s)
 	DeleteObject_directory_not_empty(s)
 	// posix specific versioning tests
 	if !s.versioningEnabled {
@@ -912,6 +914,8 @@ func GetIntTests() IntTests {
 		"DeleteObject_non_existing_object":                                        DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                                   DeleteObject_directory_object_noslash,
 		"DeleteObject_name_too_long":                                              DeleteObject_name_too_long,
+		"CopyObject_overwrite_same_dir_object":                                    CopyObject_overwrite_same_dir_object,
+		"CopyObject_overwrite_same_file_object":                                   CopyObject_overwrite_same_file_object,
 		"DeleteObject_non_existing_dir_object":                                    DeleteObject_non_existing_dir_object,
 		"DeleteObject_directory_object":                                           DeleteObject_directory_object,
 		"DeleteObject_success":                                                    DeleteObject_success,
