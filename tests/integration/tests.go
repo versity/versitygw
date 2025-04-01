@@ -14635,6 +14635,52 @@ func DeleteObject_name_too_long(s *S3Conf) error {
 	})
 }
 
+func CopyObject_overwrite_same_dir_object(s *S3Conf) error {
+	testName := "CopyObject_overwrite_same_dir_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"foo/"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("foo"),
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, "foo/")),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_overwrite_same_file_object(s *S3Conf) error {
+	testName := "CopyObject_overwrite_same_file_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"foo"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        getPtr("foo/"),
+			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, "foo")),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectParentIsFile)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // Versioning tests
 func PutBucketVersioning_non_existing_bucket(s *S3Conf) error {
 	testName := "PutBucketVersioning_non_existing_bucket"
