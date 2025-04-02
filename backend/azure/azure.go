@@ -584,6 +584,18 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s
 		maxKeys = *input.MaxKeys
 	}
 
+	// Retrieve the bucket acl to get the bucket owner
+	// All the objects in the bucket are owner by the bucket owner
+	aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+	if err != nil {
+		return s3response.ListObjectsResult{}, azureErrToS3Err(err)
+	}
+
+	var acl auth.ACL
+	if err := json.Unmarshal(aclBytes, &acl); err != nil {
+		return s3response.ListObjectsResult{}, fmt.Errorf("unmarshal acl: %w", err)
+	}
+
 Pager:
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
@@ -602,6 +614,9 @@ Pager:
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClassStandard,
+				Owner: &types.Owner{
+					ID: &acl.Owner,
+				},
 			})
 		}
 		for _, v := range resp.Segment.BlobPrefixes {
@@ -661,9 +676,27 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 	var nextMarker *string
 	var isTruncated bool
 	var maxKeys int32 = math.MaxInt32
+	var fetchOwner bool
 
 	if input.MaxKeys != nil {
 		maxKeys = *input.MaxKeys
+	}
+	if input.FetchOwner != nil {
+		fetchOwner = *input.FetchOwner
+	}
+
+	// Retrieve the bucket acl to get the bucket owner, if "fetchOwner" is true
+	// All the objects in the bucket are owner by the bucket owner
+	var acl auth.ACL
+	if fetchOwner {
+		aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
+		if err != nil {
+			return s3response.ListObjectsV2Result{}, azureErrToS3Err(err)
+		}
+
+		if err := json.Unmarshal(aclBytes, &acl); err != nil {
+			return s3response.ListObjectsV2Result{}, fmt.Errorf("unmarshal acl: %w", err)
+		}
 	}
 
 Pager:
@@ -678,13 +711,20 @@ Pager:
 				isTruncated = true
 				break Pager
 			}
-			objects = append(objects, s3response.Object{
+
+			obj := s3response.Object{
 				ETag:         backend.GetPtrFromString(fmt.Sprintf("%q", *v.Properties.ETag)),
 				Key:          v.Name,
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
 				StorageClass: types.ObjectStorageClassStandard,
-			})
+			}
+			if fetchOwner {
+				obj.Owner = &types.Owner{
+					ID: &acl.Owner,
+				}
+			}
+			objects = append(objects, obj)
 		}
 		for _, v := range resp.Segment.BlobPrefixes {
 			if *v.Name <= marker {

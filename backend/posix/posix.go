@@ -4143,7 +4143,7 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket), []string{metaTmpDir})
+		p.fileToObj(bucket, true), []string{metaTmpDir})
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -4161,8 +4161,25 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 	}, nil
 }
 
-func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
+func (p *Posix) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
+		var owner *types.Owner
+		// Retreive the object owner data from bucket ACL, if fetchOwner is true
+		// All the objects in the bucket are owned by the bucket owner
+		if fetchOwner {
+			aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
+			if err != nil {
+				return s3response.Object{}, fmt.Errorf("get bucket acl: %w", err)
+			}
+			var acl auth.ACL
+			if err := json.Unmarshal(aclJSON, &acl); err != nil {
+				return s3response.Object{}, fmt.Errorf("unmarshal acl: %w", err)
+			}
+
+			owner = &types.Owner{
+				ID: &acl.Owner,
+			}
+		}
 		if d.IsDir() {
 			// directory object only happens if directory empty
 			// check to see if this is a directory object by checking etag
@@ -4192,6 +4209,7 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 				LastModified: &mtime,
 				Size:         &size,
 				StorageClass: types.ObjectStorageClassStandard,
+				Owner:        owner,
 			}, nil
 		}
 
@@ -4239,6 +4257,7 @@ func (p *Posix) fileToObj(bucket string) backend.GetObjFunc {
 			StorageClass:      types.ObjectStorageClassStandard,
 			ChecksumAlgorithm: []types.ChecksumAlgorithm{checksums.Algorithm},
 			ChecksumType:      checksums.Type,
+			Owner:             owner,
 		}, nil
 	}
 }
@@ -4272,6 +4291,10 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 	if input.MaxKeys != nil {
 		maxkeys = *input.MaxKeys
 	}
+	var fetchOwner bool
+	if input.FetchOwner != nil {
+		fetchOwner = *input.FetchOwner
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -4283,7 +4306,7 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket), []string{metaTmpDir})
+		p.fileToObj(bucket, fetchOwner), []string{metaTmpDir})
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
