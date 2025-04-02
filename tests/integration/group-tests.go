@@ -252,6 +252,7 @@ func TestDeleteObject(s *S3Conf) {
 	DeleteObject_directory_object_noslash(s)
 	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_directory_object(s)
+	DeleteObject_non_empty_dir_obj(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
 }
@@ -913,6 +914,7 @@ func GetIntTests() IntTests {
 		"ListObjectVersions_VD_success":                                           ListObjectVersions_VD_success,
 		"DeleteObject_non_existing_object":                                        DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                                   DeleteObject_directory_object_noslash,
+		"DeleteObject_non_empty_dir_obj":                                          DeleteObject_non_empty_dir_obj,
 		"DeleteObject_name_too_long":                                              DeleteObject_name_too_long,
 		"CopyObject_overwrite_same_dir_object":                                    CopyObject_overwrite_same_dir_object,
 		"CopyObject_overwrite_same_file_object":                                   CopyObject_overwrite_same_file_object,
