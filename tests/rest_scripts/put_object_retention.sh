@@ -26,12 +26,16 @@ key="$OBJECT_KEY"
 mode="$RETENTION_MODE"
 # shellcheck disable=SC2153
 retain_until_date="$RETAIN_UNTIL_DATE"
+# shellcheck disable=SC2153
+omit_payload="${OMIT_PAYLOAD:=false}"
 
-payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<Retention xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
-  <Mode>$mode</Mode>
-  <RetainUntilDate>$retain_until_date</RetainUntilDate>
-</Retention>"
+if [ "$omit_payload" == "false" ]; then
+  payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+  <Retention xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
+    <Mode>$mode</Mode>
+    <RetainUntilDate>$retain_until_date</RetainUntilDate>
+  </Retention>"
+fi
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
 content_md5=$(echo -n "$payload" | openssl dgst -binary -md5 | openssl base64)
@@ -55,8 +59,10 @@ curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
 -H "\"Content-MD5: $content_md5\""
 -H "\"x-amz-content-sha256: $payload_hash\""
--H "\"x-amz-date: $current_date_time\""
--d "\"${payload//\"/\\\"}\""
--o "$OUTPUT_FILE")
+-H "\"x-amz-date: $current_date_time\"")
+if [ "$omit_payload" == "false" ]; then
+  curl_command+=(-d "\"${payload//\"/\\\"}\"")
+fi
+curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

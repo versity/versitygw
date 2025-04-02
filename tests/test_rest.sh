@@ -484,5 +484,24 @@ test_file="test_file"
 }
 
 @test "REST - PutObjectRetention - w/o request body" {
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  assert_success
 
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OMIT_PAYLOAD="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_retention.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  log 5 "result: $result ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  return 1
 }
