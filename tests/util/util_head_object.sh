@@ -192,3 +192,30 @@ head_object_without_and_with_checksum() {
   fi
   return 0
 }
+
+check_default_checksum() {
+  if [ $# -ne 3 ]; then
+    log 2 "'head_object_without_checksum' requires bucket, file, local file"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" CHECKSUM="true" ./tests/rest_scripts/head_object.sh); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  head_checksum=$(grep -i "x-amz-checksum-crc64nvme" "$TEST_FILE_FOLDER/result.txt" | awk '{print $2}' | sed 's/\r$//')
+  log 5 "checksum: $head_checksum"
+  if ! checksum=$(CHECKSUM_TYPE="crc64nvme" DATA_FILE="$3" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh); then
+    log 2 "error calculating local checksum: $checksum"
+    return 1
+  fi
+  if [ "$head_checksum" != "$checksum" ]; then
+    log 2 "checksum mismatch (returned:  '$head_checksum', local:  '$checksum')"
+    return 1
+  fi
+  return 0
+}

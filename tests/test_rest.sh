@@ -324,6 +324,17 @@ test_file="test_file"
   assert_success
 }
 
+@test "REST - HeadObject - default crc64nvme checksum" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_default_checksum "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
+
 @test "REST - POST call on root endpoint" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1036"
@@ -470,4 +481,8 @@ test_file="test_file"
 
   run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
+}
+
+@test "REST - PutObjectRetention - w/o request body" {
+
 }

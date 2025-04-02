@@ -197,3 +197,28 @@ source ./tests/util/util_setup.sh
   run chunked_upload_trailer_invalid_checksum "crc64nvme"
   assert_success
 }
+
+@test "test - REST chunked upload - sha1 trailer - incorrect" {
+  run chunked_upload_trailer_incorrect_checksum "sha1"
+  assert_success
+}
+
+@test "test - REST chunked upload - sha256 trailer - incorrect" {
+  run chunked_upload_trailer_incorrect_checksum "sha256"
+  assert_success
+}
+
+@test "test - REST chunked upload - crc32 trailer - incorrect" {
+  run chunked_upload_trailer_incorrect_checksum "crc32"
+  assert_success
+}
+
+@test "test - REST chunked upload - crc32c trailer - incorrect" {
+  run chunked_upload_trailer_incorrect_checksum "crc32c"
+  assert_success
+}
+
+@test "test - REST chunked upload - crc64nvme trailer - incorrect" {
+  run chunked_upload_trailer_incorrect_checksum "crc64nvme"
+  assert_success
+}

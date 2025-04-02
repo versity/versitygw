@@ -238,6 +238,43 @@ chunked_upload_trailer_invalid_checksum() {
   return 0
 }
 
+chunked_upload_trailer_incorrect_checksum() {
+  if [ "$#" -ne 1 ]; then
+    log 2 "'chunked_upload_trailer_invalid_checksum' requires checksum"
+    return 1
+  fi
+  if ! setup_bucket "s3api" "$BUCKET_ONE_NAME"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  test_file="test-file"
+  if ! create_test_file "$test_file" 10000; then
+    log 2 "error creating test file"
+    return 1
+  fi
+  if ! checksum=$(calculate_incorrect_checksum "$1" "$test_file"); then
+    log 2 "error calculating incorrect checksum"
+    return 1
+  fi
+  # shellcheck disable=SC2097,SC2098
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
+         AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+         AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+         AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
+         DATA_FILE="$TEST_FILE_FOLDER/$test_file" \
+         BUCKET_NAME="$BUCKET_ONE_NAME" \
+         OBJECT_KEY="$test_file" CHUNK_SIZE=8192 TEST_MODE=false TRAILER="x-amz-checksum-$1" CHECKSUM="$checksum" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
+    log 2 "error creating command: $result"
+    return 1
+  fi
+  uppercase_type="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
+  if ! send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/command.txt" "400" "BadDigest" "The $uppercase_type you specified did not match the calculated checksum."; then
+    log 2 "error sending openssl and checking response"
+    return 1
+  fi
+  return 0
+}
+
 send_via_openssl() {
   if [ "$#" -ne 1 ]; then
     log 2 "'send_via_openssl' requires command file"
@@ -265,7 +302,7 @@ send_via_openssl_and_check_code() {
   fi
   response_code="$(echo "$result" | grep "HTTP/" | awk '{print $2}')"
   if [ "$response_code" != "$2" ]; then
-    log 2 "expected '$2', actual '$response_code'"
+    log 2 "expected '$2', actual '$response_code' (error response:  '$result')"
     return 1
   fi
   echo "$result"
@@ -280,7 +317,7 @@ send_via_openssl_check_code_error_contains() {
     log 2 "error sending and checking code"
     return 1
   fi
-  error_data="$(echo "$result" | grep "<Error>")"
+  error_data="$(echo "$result" | grep "<Error>" | sed 's/---//')"
   echo -n "$error_data" > "$TEST_FILE_FOLDER/error-data.txt"
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/error-data.txt" "$3" "$4"; then
     log 2 "error checking xml error, message"

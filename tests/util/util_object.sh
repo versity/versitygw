@@ -405,6 +405,7 @@ calculate_incorrect_checksum() {
     log 2 "invalid checksum type: $1"
     return 1
   esac
+  echo "$incorrect_checksum"
   return 0
 }
 
