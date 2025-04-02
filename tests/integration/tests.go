@@ -5532,6 +5532,46 @@ func DeleteObject_directory_object_noslash(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_non_empty_dir_obj(s *S3Conf) error {
+	testName := "DeleteObject_non_empty_dir_obj"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objToDel := "foo/"
+		nestedObj := objToDel + "bar"
+		_, err := putObjects(s3client, []string{nestedObj, objToDel}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &objToDel,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Contents) != 1 {
+			return fmt.Errorf("expected the object list length to be 1, instead got %v", len(res.Contents))
+		}
+		if *res.Contents[0].Key != nestedObj {
+			return fmt.Errorf("expected the object key to be %v, instead got %v", nestedObj, *res.Contents[0].Key)
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_directory_not_empty(s *S3Conf) error {
 	testName := "DeleteObject_directory_not_empty"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

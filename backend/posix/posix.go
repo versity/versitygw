@@ -3224,7 +3224,22 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, syscall.ENOTEMPTY) {
-		return nil, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)
+		// If the directory object has been uploaded explicitly
+		// remove the directory object (remove the ETag)
+		_, err = p.meta.RetrieveAttribute(nil, objpath, "", etagkey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get object etag: %w", err)
+		}
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, s3err.GetAPIError(s3err.ErrDirectoryNotEmpty)
+		}
+
+		err = p.meta.DeleteAttribute(objpath, "", etagkey)
+		if err != nil {
+			return nil, fmt.Errorf("delete object etag: %w", err)
+		}
+
+		return &s3.DeleteObjectOutput{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("delete object: %w", err)
