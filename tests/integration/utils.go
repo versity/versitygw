@@ -725,8 +725,14 @@ func compareObjects(list1, list2 []types.Object) bool {
 		if obj.ChecksumType != "" {
 			if obj.ChecksumType[0] != list2[i].ChecksumType[0] {
 				fmt.Printf("checksum types are not equal: (%q %q) %v != %v\n",
-					*obj.Key, *list2[i].Key, obj.ChecksumType[0], list2[i].ChecksumType[0])
+					*obj.Key, *list2[i].Key, obj.ChecksumType, list2[i].ChecksumType)
 				return false
+			}
+		}
+		if obj.Owner != nil {
+			if *obj.Owner.ID != *list2[i].Owner.ID {
+				fmt.Printf("object owner IDs not equal: (%q %q) %v != %v\n",
+					*obj.Key, *list2[i].Key, *obj.Owner.ID, *list2[i].Owner.ID)
 			}
 		}
 	}

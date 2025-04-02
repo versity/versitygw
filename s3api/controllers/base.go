@@ -1119,6 +1119,8 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
+
+		fetchOwner := strings.EqualFold(ctx.Query("fetch-owner"), "true")
 		res, err := c.be.ListObjectsV2(ctx.Context(),
 			&s3.ListObjectsV2Input{
 				Bucket:            &bucket,
@@ -1127,6 +1129,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				Delimiter:         &delimiter,
 				MaxKeys:           &maxkeys,
 				StartAfter:        &sAfter,
+				FetchOwner:        &fetchOwner,
 			})
 		return SendXMLResponse(ctx, res, err,
 			&MetaOpts{

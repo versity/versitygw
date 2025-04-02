@@ -218,6 +218,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_marker_not_from_obj_list(s)
 	ListObjects_list_all_objs(s)
 	ListObjects_nested_dir_file_objs(s)
+	ListObjects_check_owner(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		ListObjects_with_checksum(s)
@@ -235,6 +236,7 @@ func TestListObjectsV2(s *S3Conf) {
 	ListObjectsV2_all_objs_max_keys(s)
 	ListObjectsV2_exceeding_max_keys(s)
 	ListObjectsV2_list_all_objs(s)
+	ListObjectsV2_with_owner(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		ListObjectsV2_with_checksum(s)
@@ -899,6 +901,7 @@ func GetIntTests() IntTests {
 		"ListObjects_marker_not_from_obj_list":                                    ListObjects_marker_not_from_obj_list,
 		"ListObjects_list_all_objs":                                               ListObjects_list_all_objs,
 		"ListObjects_nested_dir_file_objs":                                        ListObjects_nested_dir_file_objs,
+		"ListObjects_check_owner":                                                 ListObjects_check_owner,
 		"ListObjects_with_checksum":                                               ListObjects_with_checksum,
 		"ListObjectsV2_start_after":                                               ListObjectsV2_start_after,
 		"ListObjectsV2_both_start_after_and_continuation_token":                   ListObjectsV2_both_start_after_and_continuation_token,
@@ -909,6 +912,7 @@ func GetIntTests() IntTests {
 		"ListObjectsV2_truncated_common_prefixes":                                 ListObjectsV2_truncated_common_prefixes,
 		"ListObjectsV2_all_objs_max_keys":                                         ListObjectsV2_all_objs_max_keys,
 		"ListObjectsV2_list_all_objs":                                             ListObjectsV2_list_all_objs,
+		"ListObjectsV2_with_owner":                                                ListObjectsV2_with_owner,
 		"ListObjectsV2_with_checksum":                                             ListObjectsV2_with_checksum,
 		"ListObjectVersions_VD_success":                                           ListObjectVersions_VD_success,
 		"DeleteObject_non_existing_object":                                        DeleteObject_non_existing_object,

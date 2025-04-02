@@ -4815,7 +4815,7 @@ func ListObjects_with_checksum(s *S3Conf) error {
 			return err
 		}
 
-		if !compareObjects(res.Contents, contents) {
+		if !compareObjects(contents, res.Contents) {
 			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, res.Contents)
 		}
 
@@ -4896,6 +4896,38 @@ func ListObjects_nested_dir_file_objs(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func ListObjects_check_owner(s *S3Conf) error {
+	testName := "ListObjects_check_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{"foo", "bar/baz", "quxx/xyz/eee", "abc/", "bcc"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for i := range res.Contents {
+			res.Contents[i].Owner = &types.Owner{
+				ID: &s.awsID,
+			}
+		}
+
+		if !compareObjects(objs, res.Contents) {
+			return fmt.Errorf("expected the contents to be %v, instead got %v", objs, res.Contents)
+		}
+
+		return nil
+
 	})
 }
 
@@ -5284,6 +5316,38 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the contents to be %v, instead got %v", contents, out.Contents)
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_with_owner(s *S3Conf) error {
+	testName := "ListObjectsV2_with_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{"foo", "bar/baz", "quxx/xyz/eee", "abc/", "bcc"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			FetchOwner: getBoolPtr(true),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		for i := range res.Contents {
+			res.Contents[i].Owner = &types.Owner{
+				ID: &s.awsID,
+			}
+		}
+
+		if !compareObjects(objs, res.Contents) {
+			return fmt.Errorf("expected the contents to be %v, instead got %v", objs, res.Contents)
 		}
 
 		return nil
