@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -3133,6 +3134,46 @@ func PutObject_incorrect_checksums(s *S3Conf) error {
 			if err := checkApiErr(err, s3err.GetChecksumBadDigestErr(el.algo)); err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+func PutObject_default_checksum(s *S3Conf) error {
+	testName := "PutObject_default_checksum"
+	return actionHandler(s, testName, func(_ *s3.Client, bucket string) error {
+		customClient := s3.NewFromConfig(s.Config(), func(o *s3.Options) {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
+		})
+
+		obj := "my-obj"
+
+		out, err := putObjectWithData(100, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, customClient)
+		if err != nil {
+			return err
+		}
+
+		if out.res.ChecksumCRC64NVME == nil {
+			return fmt.Errorf("expected non nil default crc64nvme checksum")
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := customClient.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &obj,
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ChecksumCRC64NVME) != getString(out.res.ChecksumCRC64NVME) {
+			return fmt.Errorf("expected the object crc64nvme checksum to be %v, instead got %v", getString(res.ChecksumCRC64NVME), getString(out.res.ChecksumCRC64NVME))
 		}
 
 		return nil

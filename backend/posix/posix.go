@@ -2668,6 +2668,10 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	if po.Key == nil {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
+	// Override the checksum algorithm with default: CRC64NVME
+	if po.ChecksumAlgorithm == "" {
+		po.ChecksumAlgorithm = types.ChecksumAlgorithmCrc64nvme
+	}
 	_, err := os.Stat(*po.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)

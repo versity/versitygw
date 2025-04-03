@@ -148,6 +148,7 @@ func TestPutObject(s *S3Conf) {
 		PutObject_multiple_checksum_headers(s)
 		PutObject_invalid_checksum_header(s)
 		PutObject_incorrect_checksums(s)
+		PutObject_default_checksum(s)
 		PutObject_checksums_success(s)
 	}
 	PutObject_success(s)
@@ -811,6 +812,7 @@ func GetIntTests() IntTests {
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
 		"PutObject_invalid_checksum_header":                                       PutObject_invalid_checksum_header,
 		"PutObject_incorrect_checksums":                                           PutObject_incorrect_checksums,
+		"PutObject_default_checksum":                                              PutObject_default_checksum,
 		"PutObject_checksums_success":                                             PutObject_checksums_success,
 		"PresignedAuth_Put_GetObject_with_data":                                   PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                             PresignedAuth_Put_GetObject_with_UTF8_chars,
