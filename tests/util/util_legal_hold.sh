@@ -63,7 +63,7 @@ check_remove_legal_hold_versions() {
     log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
     return 1
   fi
-  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3" 2>&1); then
+  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3"); then
     if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
       log 2 "error getting object legal hold status with version id"
       return 1
@@ -75,5 +75,31 @@ check_remove_legal_hold_versions() {
     log 2 "error getting legal hold status: $status"
     return 1
   fi
-  log 5 "hold status: $status"
+  if [ "$status" == "ON" ]; then
+    if ! put_object_legal_hold_version_id "$1" "$2" "$3" "OFF"; then
+      log 2 "error removing legal hold of version ID"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+check_legal_hold_without_payload() {
+  if [ $# -ne 2 ]; then
+    log 2 "'check_legal_hold_without_payload' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OMIT_PAYLOAD="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
+    log 2 "error checking xml error, message"
+    return 1
+  fi
+  return 0
 }

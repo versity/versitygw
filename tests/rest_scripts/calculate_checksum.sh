@@ -21,11 +21,11 @@ calculate_checksum_python() {
     log 2 "'calculate_checksum_python' requires checksum type, data file"
     return 1
   fi
-  if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh 1>/dev/null; then
+  if ! DEACTIVATE=false source ./tests/rest_scripts/init_python_env.sh; then
     log_rest 2 "error initializing python environment"
     return 1
   fi
-  if ! checksum_decimal=$(python3 ./test/rest_scripts/calculate_checksum.py "$1" "$2" 2>&1); then
+  if ! checksum_decimal=$(python3 ./tests/rest_scripts/calculate_checksum.py "$1" "$2" 2>&1); then
     log_rest 2 "error calculating checksum: $checksum_decimal"
     return 1
   fi

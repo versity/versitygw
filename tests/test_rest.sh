@@ -504,16 +504,11 @@ test_file="test_file"
   run create_test_file "$test_file"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OMIT_PAYLOAD="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
-    log 2 "error: $result"
-    return 1
-  fi
-  if [ "$result" != "400" ]; then
-    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
-    return 1
-  fi
-  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
-  return 1
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_payload "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
 }
 
 @test "REST - PutObjectLegalHold - success" {
@@ -530,10 +525,18 @@ test_file="test_file"
     log 2 "error: $result"
     return 1
   fi
-  if [ "$result" != "400" ]; then
-    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
-  log 5 "result: $(cat "$TEST_FILE_FOLDER/result.txt")"
-  return 1
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/get_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  log 5 "legal hold: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  if ! check_xml_element "$TEST_FILE_FOLDER/result.txt" "ON" "LegalHold" "Status"; then
+    log 2 "error checking legal hold status"
+    return 1
+  fi
+  return 0
 }

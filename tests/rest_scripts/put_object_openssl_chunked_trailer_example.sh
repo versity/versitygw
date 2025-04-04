@@ -61,7 +61,7 @@ load_parameters() {
 $current_date_time
 $year_month_day/$aws_region/s3/aws4_request"
 
-  readonly initial_trailer_sts_data="AWS4-HMAC-SHA256-TRAILER
+  readonly trailer_sts_data="AWS4-HMAC-SHA256-TRAILER
 $current_date_time
 $year_month_day/$aws_region/s3/aws4_request"
 
@@ -97,7 +97,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-  readonly expected_sts_chunk_final="AWS4-HMAC-SHA256-PAYLOAD
+  readonly expected_sts_chunk_final="AWS4-HMAC-SHA256-TRAILER
 20130524T000000Z
 20130524/us-east-1/s3/aws4_request
 2ca2aba2005185cf7159c6277faf83795951dd77a3a99e6e65d5c9f85863f992
@@ -126,7 +126,7 @@ x-amz-content-sha256: STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER\r
 Content-Encoding: aws-chunked\r
 x-amz-decoded-content-length: 66560\r
 x-amz-trailer: x-amz-checksum-crc32c\r
-Content-Length: 66824\r
+Content-Length: 66946\r
 \r\n"
 }
 
@@ -143,7 +143,7 @@ get_file_size_and_content_length() {
   get_chunk_sizes
   log_rest 5 "signature string length: ${#signature_string}"
   content_length=$((length+file_size+${#signature_string}+92))
-  if [ "$test_mode" == "true" ] && [ "$content_length" != 66824 ]; then
+  if [ "$test_mode" == "true" ] && [ "$content_length" != 66946 ]; then
     log_rest 2 "content length mismatch ($content_length)"
     return 1
   fi
@@ -160,7 +160,7 @@ calculate_checksum() {
   else
     checksum="$CHECKSUM"
   fi
-  signature_string="$TRAILER:$checksum"
+  signature_string="$trailer:$checksum"
   trailer_payload_hash="$(echo "$signature_string" | sha256sum | awk '{print $1}')"
   return 0
 }
@@ -303,7 +303,7 @@ build_chunk() {
 
 build_trailer() {
   log_rest 5 "payload hash: $payload_hash"
-  final_sts_data="$initial_trailer_sts_data
+  final_sts_data="$trailer_sts_data
 $signature
 $trailer_payload_hash"
   log_rest 5 "$final_sts_data"
