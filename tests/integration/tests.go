@@ -2981,14 +2981,29 @@ func PutObject_multiple_checksum_headers(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
 			Bucket:         &bucket,
 			Key:            &obj,
 			ChecksumSHA1:   getPtr("Kq5sNclPz7QV2+lfQIuc6R7oRu0="),
 			ChecksumCRC32C: getPtr("m0cB1Q=="),
-		})
-		cancel()
+		}, s3client)
+		// FIXME: The error message for PutObject is not properly serialized by the sdk
+		// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
+
+		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// 	return err
+		// }
+		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+			return err
+		}
+
+		// Empty checksums case
+		_, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:         &bucket,
+			Key:            &obj,
+			ChecksumSHA1:   getPtr(""),
+			ChecksumCRC32C: getPtr(""),
+		}, s3client)
 		// FIXME: The error message for PutObject is not properly serialized by the sdk
 		// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
 
@@ -3019,6 +3034,10 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 			// CRC32 tests
 			{
 				algo:  "crc32",
+				crc32: getPtr(""),
+			},
+			{
+				algo:  "crc32",
 				crc32: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -3026,6 +3045,10 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 				crc32: getPtr("YXNrZGpoZ2tqYXNo"), // valid base64 but not crc32
 			},
 			// CRC32C tests
+			{
+				algo:   "crc32c",
+				crc32c: getPtr(""),
+			},
 			{
 				algo:   "crc32c",
 				crc32c: getPtr("invalid_base64!"), // invalid base64
@@ -3037,6 +3060,10 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 			// SHA1 tests
 			{
 				algo: "sha1",
+				sha1: getPtr(""),
+			},
+			{
+				algo: "sha1",
 				sha1: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -3046,6 +3073,10 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 			// SHA256 tests
 			{
 				algo:   "sha256",
+				sha256: getPtr(""),
+			},
+			{
+				algo:   "sha256",
 				sha256: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -3053,6 +3084,10 @@ func PutObject_invalid_checksum_header(s *S3Conf) error {
 				sha256: getPtr("ZGZnbmRmZ2hoZmRoZmdkaA=="), // valid base64 but not sha56
 			},
 			// CRC64Nvme tests
+			{
+				algo:   "crc64nvme",
+				sha256: getPtr(""),
+			},
 			{
 				algo:   "crc64nvme",
 				sha256: getPtr("invalid_base64!"), // invalid base64
@@ -7667,6 +7702,21 @@ func UploadPart_multiple_checksum_headers(s *S3Conf) error {
 			return err
 		}
 
+		// multiple empty checksums
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:         &bucket,
+			Key:            &obj,
+			ChecksumSHA1:   getPtr(""),
+			ChecksumCRC32C: getPtr(""),
+			UploadId:       mp.UploadId,
+			PartNumber:     &partNumber,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }
@@ -7694,6 +7744,10 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 			// CRC32 tests
 			{
 				algo:  "crc32",
+				crc32: getPtr(""),
+			},
+			{
+				algo:  "crc32",
 				crc32: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -7701,6 +7755,10 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 				crc32: getPtr("YXNrZGpoZ2tqYXNo"), // valid base64 but not crc32
 			},
 			// CRC32C tests
+			{
+				algo:   "crc32c",
+				crc32c: getPtr(""),
+			},
 			{
 				algo:   "crc32c",
 				crc32c: getPtr("invalid_base64!"), // invalid base64
@@ -7712,6 +7770,10 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 			// SHA1 tests
 			{
 				algo: "sha1",
+				sha1: getPtr(""),
+			},
+			{
+				algo: "sha1",
 				sha1: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -7721,6 +7783,10 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 			// SHA256 tests
 			{
 				algo:   "sha256",
+				sha256: getPtr(""),
+			},
+			{
+				algo:   "sha256",
 				sha256: getPtr("invalid_base64!"), // invalid base64
 			},
 			{
@@ -7728,6 +7794,10 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 				sha256: getPtr("ZGZnbmRmZ2hoZmRoZmdkaA=="), // valid base64 but not sha56
 			},
 			// CRC64NVME tests
+			{
+				algo:      "crc64nvme",
+				crc64nvme: getPtr(""),
+			},
 			{
 				algo:      "crc64nvme",
 				crc64nvme: getPtr("invalid_base64!"), // invalid base64
