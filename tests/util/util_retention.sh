@@ -92,3 +92,24 @@ log_worm_protection() {
   # shellcheck disable=SC2154
   log 5 "RETENTION: $retention"
 }
+
+retention_rest_without_request_body() {
+  if [ $# -ne 2 ]; then
+    log 2 "'retention_rest_without_request_body' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OMIT_PAYLOAD="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_retention.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result'"
+    return 1
+  fi
+  log 5 "result: $result ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
+    log 2 "error checking xml reply"
+    return 1
+  fi
+  return 0
+}

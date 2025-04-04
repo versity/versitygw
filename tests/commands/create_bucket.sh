@@ -85,5 +85,8 @@ create_bucket_object_lock_enabled() {
     log 2 "error creating bucket: $error"
     return 1
   fi
+  if [ "$DIRECT" == "true" ]; then
+    sleep 15
+  fi
   return 0
 }

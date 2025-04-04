@@ -57,3 +57,23 @@ check_legal_hold_without_lock_enabled() {
   fi
   return 0
 }
+
+check_remove_legal_hold_versions() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
+    return 1
+  fi
+  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3" 2>&1); then
+    if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
+      log 2 "error getting object legal hold status with version id"
+      return 1
+    fi
+    return 0
+  fi
+  log 5 "legal hold: $legal_hold"
+  if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
+    log 2 "error getting legal hold status: $status"
+    return 1
+  fi
+  log 5 "hold status: $status"
+}

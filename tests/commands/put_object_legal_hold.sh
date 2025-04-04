@@ -20,10 +20,22 @@ put_object_legal_hold() {
     log 2 "'put object legal hold' command requires bucket, key, hold status ('ON' or 'OFF')"
     return 1
   fi
-  local error=""
-  error=$(send_command aws --no-verify-ssl s3api put-object-legal-hold --bucket "$1" --key "$2" --legal-hold "{\"Status\": \"$3\"}" 2>&1) || local put_hold_result=$?
-  if [[ $put_hold_result -ne 0 ]]; then
+  if ! error=$(send_command aws --no-verify-ssl s3api put-object-legal-hold --bucket "$1" --key "$2" --legal-hold "{\"Status\": \"$3\"}" 2>&1); then
     log 2 "error putting object legal hold: $error"
+    return 1
+  fi
+  return 0
+}
+
+put_object_legal_hold_version_id() {
+  record_command "put-object-legal-hold" "client:s3api"
+  if [[ $# -ne 4 ]]; then
+    log 2 "'put_object_legal_hold_version_id' command requires bucket, key, version ID, hold status ('ON' or 'OFF')"
+    return 1
+  fi
+  local error=""
+  if ! error=$(send_command aws --no-verify-ssl s3api put-object-legal-hold --bucket "$1" --key "$2" --version-id "$3" --legal-hold "{\"Status\": \"$4\"}" 2>&1); then
+    log 2 "error putting object legal hold w/version ID: $error"
     return 1
   fi
   return 0

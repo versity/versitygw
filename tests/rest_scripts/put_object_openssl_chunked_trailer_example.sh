@@ -150,7 +150,7 @@ get_file_size_and_content_length() {
 }
 
 calculate_checksum() {
-  checksum_type="${TRAILER/x-amz-checksum-/}"
+  checksum_type="${trailer/x-amz-checksum-/}"
   log_rest 5 "checksum type: $checksum_type"
   if [ "$CHECKSUM" == "" ]; then
     if ! checksum=$(DATA_FILE="$data_file" CHECKSUM_TYPE="$checksum_type" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
@@ -408,7 +408,7 @@ load_parameters
 
 if ! calculate_checksum; then
   log_rest 2 "error calculating trailer checksum"
-  return 1
+  exit 1
 fi
 if ! get_file_size_and_content_length; then
   log_rest 2 "error getting file size and content length"
