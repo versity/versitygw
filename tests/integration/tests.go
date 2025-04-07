@@ -81,7 +81,7 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		req.Header.Set("Authorization", "invalid header")
+		req.Header.Set("Authorization", "invalid_header")
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {

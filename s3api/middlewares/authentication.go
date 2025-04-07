@@ -63,10 +63,6 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			return sendResponse(ctx, err, logger, mm)
 		}
 
-		if authData.Algorithm != "AWS4-HMAC-SHA256" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported), logger, mm)
-		}
-
 		if authData.Region != region {
 			return sendResponse(ctx, s3err.APIError{
 				Code:           "SignatureDoesNotMatch",
