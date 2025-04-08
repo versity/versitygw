@@ -39,7 +39,7 @@ import (
 )
 
 var (
-	shortTimeout  = 10 * time.Second
+	shortTimeout  = 30 * time.Second
 	longTimeout   = 60 * time.Second
 	iso8601Format = "20060102T150405Z"
 	timefmt       = "Mon, 02 Jan 2006 15:04:05 GMT"
