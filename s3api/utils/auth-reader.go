@@ -190,6 +190,10 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 
 	algo := authParts[0]
 
+	if algo != "AWS4-HMAC-SHA256" {
+		return a, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)
+	}
+
 	kvData := authParts[1]
 	kvPairs := strings.Split(kvData, ",")
 	// we are expecting at least Credential, SignedHeaders, and Signature
