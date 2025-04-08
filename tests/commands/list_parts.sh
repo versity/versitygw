@@ -19,11 +19,11 @@ list_parts() {
     log 2 "'list-parts' command requires bucket, key, upload ID"
     return 1
   fi
-  record_command "list-parts" "client:s3api"
-  if ! listed_parts=$(send_command aws --no-verify-ssl s3api list-parts --bucket "$1" --key "$2" --upload-id "$3" 2>&1); then
-    log 2 "Error listing multipart upload parts: $listed_parts"
+  if ! list_parts_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
+    log 2 "error listing parts with user"
     return 1
   fi
+  return 0
 }
 
 list_parts_with_user() {
@@ -36,4 +36,7 @@ list_parts_with_user() {
     log 2 "Error listing multipart upload parts: $listed_parts"
     return 1
   fi
+  listed_parts="$(echo -n "$listed_parts" | grep -v "InsecureRequestWarning")"
+  log 5 "listed parts: $listed_parts"
+  return 0
 }

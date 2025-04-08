@@ -321,7 +321,7 @@ create_versitygw_acl_user_or_get_direct_user() {
   fi
   if [ "$DIRECT" == "true" ]; then
     if [ -z "$AWS_CANONICAL_ID" ] || [ -z "$ACL_AWS_CANONICAL_ID" ] || [ -z "$ACL_AWS_ACCESS_KEY_ID" ] || [ -z "$ACL_AWS_SECRET_ACCESS_KEY" ]; then
-      log 2 "direct ACL calls require the following env vars: ACL_CANONICAL_ID, ACL_AWS_ACCESS_KEY_ID, ACL_AWS_SECRET_ACCESS_KEY"
+      log 2 "direct ACL calls require the following env vars: AWS_CANONICAL_ID, ACL_AWS_CANONICAL_ID, ACL_AWS_ACCESS_KEY_ID, ACL_AWS_SECRET_ACCESS_KEY"
       return 1
     fi
     echo "$AWS_CANONICAL_ID"

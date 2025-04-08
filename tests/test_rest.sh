@@ -230,8 +230,8 @@ test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
   assert_success
-  log 5 "username: ${lines[0]}"
-  log 5 "password: ${lines[1]}"
+  log 5 "username: ${lines[1]}"
+  log 5 "password: ${lines[2]}"
 
   sleep 5
 

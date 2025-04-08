@@ -24,15 +24,16 @@ test_s3api_policy_abort_multipart_upload() {
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
   # shellcheck disable=SC2154
-  username=${lines[0]}
-  password=${lines[1]}
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" \
-    "Allow" "$USERNAME_ONE" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*" \
-    "Deny" "$USERNAME_ONE" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    "Allow" "$user_id" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*" \
+    "Deny" "$user_id" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
   assert_success
   # shellcheck disable=SC2154
 
@@ -47,7 +48,7 @@ test_s3api_policy_abort_multipart_upload() {
   run check_abort_access_denied "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "$username" "$password"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:AbortMultipartUpload" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -67,17 +68,18 @@ test_s3api_policy_list_multipart_uploads() {
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
   effect="Allow"
-  principal="$USERNAME_ONE"
+  principal="$user_id"
   action="s3:ListBucketMultipartUploads"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
-  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
-  assert_success
-  username=${lines[0]}
-  password=${lines[1]}
-
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run create_multipart_upload "$BUCKET_ONE_NAME" "$test_file"
@@ -85,7 +87,7 @@ test_s3api_policy_list_multipart_uploads() {
 
   run list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"
   assert_failure
-  assert_output -p "Access Denied"
+  assert_output -p "AccessDenied"
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
@@ -95,6 +97,9 @@ test_s3api_policy_list_multipart_uploads() {
 }
 
 test_s3api_policy_list_upload_parts() {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1202"
+  fi
   policy_file="policy_file"
   test_file="test_file"
 
@@ -102,17 +107,20 @@ test_s3api_policy_list_upload_parts() {
   assert_success "error creating test files"
 
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success "error setting up bucket"
+  assert_success "error setting up bucket and/or large file"
 
-  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
-  assert_success "error creating user '$USERNAME_ONE'"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
   assert_success "error setting up policy"
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success "error putting policy"
 
-  run create_upload_and_test_parts_listing "$test_file" "$policy_file"
+  run create_upload_and_test_parts_listing "$test_file" "$TEST_FILE_FOLDER/$policy_file" "$user_id" "$username" "$password"
   assert_success "error creating upload and testing parts listing"
 }

@@ -173,6 +173,8 @@ jobs:
           COMMAND_LOG: command.log
           TIME_LOG: time.log
           PYTHON_ENV_FOLDER: ${{ github.workspace }}/env
+          AUTOCREATE_USERS: true
+          USER_AUTOCREATION_PREFIX: github-actions-test-
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST

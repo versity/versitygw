@@ -110,6 +110,11 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **ACL_AWS_ACCESS_KEY_ID**, **ACL_AWS_ACCESS_SECRET_KEY**:  for direct mode, the ID and key for the S3 user in the **ACL_AWS_CANONICAL_ID** account.
 
+**USER_ID_{role}_{id}**, **USERNAME_{role}_{id}**, **PASSWORD_{role}_{id}**:  for setup_user_v2 non-autocreated users, the format for the user.
+* example:  USER_ID_USER_1={name}:  user ID corresponding to the first user with **user** permissions in the test.
+
+#### 
+
 ### Non-Secret
 
 **VERSITY_EXE**:  location of the versity executable relative to test folder.
@@ -150,7 +155,7 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **COVERAGE_DB**:  database to store client command coverage info and usage counts, if using.
 
-**USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  credentials for users created and tested for non-root user **versitygw** operations.
+**USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  credentials for users created and tested for non-root user **versitygw** operations (non-setup_user_v2).
 
 **TEST_FILE_FOLDER**:  where to put temporary test files.
 
@@ -165,6 +170,10 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **DIRECT_S3_ROOT_ACCOUNT_NAME**:  for direct mode, S3 username
 
 **DELETE_BUCKETS_AFTER_TEST**:  whether or not to delete buckets after individual tests, useful for debugging if the post-test bucket state needs to be checked
+
+**AUTOCREATE_USERS**:  setup_user_v2, whether or not to autocreate users for tests.  If set to **false**, users must be pre-created (see `Secret` section above).
+
+**USER_AUTOCREATION_PREFIX**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **true**, the prefix for the autocreated username. 
 
 ## REST Scripts
 

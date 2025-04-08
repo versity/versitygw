@@ -74,10 +74,14 @@ test_user_user() {
     skip
   fi
 
-  username="$USERNAME_ONE"
-  password="$PASSWORD_ONE"
+  run setup_user_v2 "user" "1" "$BUCKET_ONE_NAME"
+  assert_success
+  # shellcheck disable=SC2154
+  username="${lines[1]}"
+  password="${lines[2]}"
+  log 5 "username: $username, password: $password"
 
-  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$username" "$password" "user"
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
   if [ "$RECREATE_BUCKETS" == "true" ]; then
@@ -93,15 +97,12 @@ test_user_user() {
   run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$username"
   assert_success
 
-  run change_bucket_owner "$username" "$password" "$BUCKET_TWO_NAME" "admin"
+  run change_bucket_owner "$username" "$password" "$BUCKET_TWO_NAME" "$AWS_ACCESS_KEY_ID"
   assert_failure
   assert_output -p "AccessDenied"
 
   run list_and_check_buckets_omit_without_permission "$username" "$password" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
-
-  run delete_bucket "s3api" "versity-gwtest-user-bucket"
-  assert_success "failed to delete bucket"
 }
 
 test_userplus_operation() {
