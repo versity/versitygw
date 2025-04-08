@@ -5,40 +5,40 @@ go 1.23.0
 toolchain go1.24.1
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.1
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.2
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/aws/aws-sdk-go-v2 v1.36.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.1
 	github.com/aws/smithy-go v1.22.3
 	github.com/go-ldap/ldap/v3 v3.4.10
 	github.com/gofiber/fiber/v2 v2.52.6
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/vault-client-go v0.4.3
-	github.com/nats-io/nats.go v1.40.1
+	github.com/nats-io/nats.go v1.41.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pkg/xattr v0.4.10
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/smira/go-statsd v1.3.4
 	github.com/urfave/cli/v2 v2.27.6
-	github.com/valyala/fasthttp v1.59.0
+	github.com/valyala/fasthttp v1.60.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
-	golang.org/x/sync v0.12.0
-	golang.org/x/sys v0.31.0
+	golang.org/x/sync v0.13.0
+	golang.org/x/sys v0.32.0
 )
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.0 // indirect
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.25.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.25.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.33.18 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.7 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -52,18 +52,18 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 )
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.29.12
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.65
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.70
+	github.com/aws/aws-sdk-go-v2/config v1.29.13
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.66
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.71
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.34 // indirect
