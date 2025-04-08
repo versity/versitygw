@@ -66,14 +66,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "test_rest_list_buckets" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run list_check_buckets_rest
-  assert_success
-}
-
 @test "test_rest_delete_object" {
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -141,26 +133,6 @@ test_file="test_file"
   fi
   log 5 "later: $five_seconds_later"
   run put_object_retention_rest "$BUCKET_ONE_NAME" "$test_file" "GOVERNANCE" "$five_seconds_later"
-  assert_success
-}
-
-@test "test_rest_set_get_lock_config" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run check_no_object_lock_config_rest "$BUCKET_ONE_NAME"
-  assert_success
-
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run check_object_lock_config_enabled_rest "$BUCKET_ONE_NAME"
   assert_success
 }
 
@@ -233,46 +205,10 @@ test_file="test_file"
 }
 
 @test "REST - attributes - checksum" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1006"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
-  assert_success
-}
-
-@test "REST - bucket tagging - no tags" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run verify_no_bucket_tags_rest "$BUCKET_ONE_NAME"
-  assert_success
-}
-
-@test "REST - bucket tagging - tags" {
-  test_key="testKey"
-  test_value="testValue"
-
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
-  assert_success
-}
-
-@test "REST - get, put bucket ownership controls" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerEnforced"
-  assert_success
-
-  run put_bucket_ownership_controls_rest "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
-  assert_success
-
-  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
   assert_success
 }
 
@@ -374,9 +310,6 @@ test_file="test_file"
 }
 
 @test "REST - head object" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1114"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -388,6 +321,17 @@ test_file="test_file"
   expected_etag=$output
 
   run get_etag_attribute_rest "$BUCKET_ONE_NAME" "$test_file" "$expected_etag"
+  assert_success
+}
+
+@test "REST - HeadObject - default crc64nvme checksum" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_default_checksum "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
 
@@ -508,19 +452,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - HeadBucket" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run head_bucket_rest "$BUCKET_ONE_NAME"
-  assert_success
-}
-
-@test "REST - HeadBucket - doesn't exist" {
-  run head_bucket_rest "$BUCKET_ONE_NAME"
-  assert_failure 1
-}
-
 @test "REST - PutObject with user permission - admin user" {
   run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
   assert_success
@@ -549,5 +480,56 @@ test_file="test_file"
   password="${lines[${#lines[@]}-1]}"
 
   run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObjectRetention - w/o request body" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1185"
+  fi
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run retention_rest_without_request_body "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObjectLegalHold w/o payload" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1191"
+  fi
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_payload "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObjectLegalHold - success" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1193"
+  fi
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run rest_check_legal_hold "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }

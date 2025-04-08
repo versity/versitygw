@@ -336,7 +336,7 @@ put_object_rest_checksum() {
 
 check_checksum_rest_invalid() {
   if [ $# -ne 1 ]; then
-    log 2 "'put_object_rest_sha256_invalid' requires checksum type"
+    log 2 "'check_checksum_rest_invalid' requires checksum type"
     return 1
   fi
   test_file="test_file"
@@ -405,6 +405,7 @@ calculate_incorrect_checksum() {
     log 2 "invalid checksum type: $1"
     return 1
   esac
+  echo "$incorrect_checksum"
   return 0
 }
 

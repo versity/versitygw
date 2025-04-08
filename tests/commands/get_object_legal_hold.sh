@@ -43,3 +43,17 @@ get_object_legal_hold_rest() {
   fi
   return 0
 }
+
+get_object_legal_hold_version_id() {
+  if [[ $# -ne 3 ]]; then
+    log 2 "'get_object_legal_hold_version_id' command requires bucket, key, version id"
+    return 1
+  fi
+  record_command "get-object-legal-hold" "client:s3api"
+  if ! legal_hold=$(send_command aws --no-verify-ssl s3api get-object-legal-hold --bucket "$1" --key "$2" --version-id "$3" 2>&1); then
+    log 2 "error getting object legal hold w/version id: $legal_hold"
+    return 1
+  fi
+  echo "$legal_hold"
+  return 0
+}
