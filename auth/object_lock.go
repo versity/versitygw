@@ -120,18 +120,18 @@ func ParseObjectLockRetentionOutput(input []byte) (*types.ObjectLockRetention, e
 	return &retention, nil
 }
 
-func ParseObjectLegalHoldOutput(status *bool) *types.ObjectLockLegalHold {
+func ParseObjectLegalHoldOutput(status *bool) *s3response.GetObjectLegalHoldResult {
 	if status == nil {
 		return nil
 	}
 
 	if *status {
-		return &types.ObjectLockLegalHold{
+		return &s3response.GetObjectLegalHoldResult{
 			Status: types.ObjectLockLegalHoldStatusOn,
 		}
 	}
 
-	return &types.ObjectLockLegalHold{
+	return &s3response.GetObjectLegalHoldResult{
 		Status: types.ObjectLockLegalHoldStatusOff,
 	}
 }

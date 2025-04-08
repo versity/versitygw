@@ -571,6 +571,11 @@ type CopyObjectInput struct {
 	TaggingDirective          types.TaggingDirective
 }
 
+type GetObjectLegalHoldResult struct {
+	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LegalHold"`
+	Status  types.ObjectLockLegalHoldStatus
+}
+
 type AmzDate struct {
 	time.Time
 }
