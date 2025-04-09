@@ -1969,7 +1969,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("legal-hold") {
 		var legalHold types.ObjectLockLegalHold
 		if err := xml.Unmarshal(ctx.Body(), &legalHold); err != nil {
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,

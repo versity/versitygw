@@ -95,7 +95,7 @@ func ParseBucketLockConfigurationOutput(input []byte) (*types.ObjectLockConfigur
 func ParseObjectLockRetentionInput(input []byte) ([]byte, error) {
 	var retention s3response.PutObjectRetentionInput
 	if err := xml.Unmarshal(input, &retention); err != nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	if retention.RetainUntilDate.Before(time.Now()) {

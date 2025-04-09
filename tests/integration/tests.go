@@ -13243,7 +13243,7 @@ func PutObjectLegalHold_invalid_body(s *S3Conf) error {
 			Key:    getPtr("my-obj"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidRequest)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
 			return err
 		}
 
