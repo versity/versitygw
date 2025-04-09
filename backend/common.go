@@ -17,11 +17,14 @@ package backend
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -268,4 +271,55 @@ func (f *FileSectionReadCloser) Read(p []byte) (int, error) {
 
 func (f *FileSectionReadCloser) Close() error {
 	return f.F.Close()
+}
+
+// MoveFile moves a file from source to destination.
+func MoveFile(source, destination string, perm os.FileMode) error {
+	// We use Rename as the atomic operation for object puts. The upload is
+	// written to a temp file to not conflict with any other simultaneous
+	// uploads. The final operation is to move the temp file into place for
+	// the object. This ensures the object semantics of last upload completed
+	// wins and is not some combination of writes from simultaneous uploads.
+	err := os.Rename(source, destination)
+	if err == nil || !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+
+	// Rename can fail if the source and destination are not on the same
+	// filesystem. The fallback is to copy the file and then remove the source.
+	// We need to be careful that the desination does not exist before copying
+	// to prevent any other simultaneous writes to the file.
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer sourceFile.Close()
+
+	var destFile *os.File
+	for {
+		destFile, err = os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+		if err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				if removeErr := os.Remove(destination); removeErr != nil {
+					return fmt.Errorf("remove existing destination: %w", removeErr)
+				}
+				continue
+			}
+			return fmt.Errorf("create destination: %w", err)
+		}
+		break
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("copy data: %w", err)
+	}
+
+	err = os.Remove(source)
+	if err != nil {
+		return fmt.Errorf("remove source: %w", err)
+	}
+
+	return nil
 }

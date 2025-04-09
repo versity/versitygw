@@ -73,6 +73,11 @@ type Posix struct {
 
 	// newDirPerm is the permission to set on newly created directories
 	newDirPerm fs.FileMode
+
+	// forceNoTmpFile is a flag to disable the use of O_TMPFILE even
+	// if the filesystem supports it. This is needed for cases where
+	// there are different filesystems mounted below the bucket level.
+	forceNoTmpFile bool
 }
 
 var _ backend.Backend = &Posix{}
@@ -108,13 +113,23 @@ const (
 	skipFalloc = false
 )
 
+// PosixOpts are the options for the Posix backend
 type PosixOpts struct {
-	ChownUID      bool
-	ChownGID      bool
-	BucketLinks   bool
+	// ChownUID sets the UID of the object to the UID of the user on PUT
+	ChownUID bool
+	// ChownGID sets the GID of the object to the GID of the user on PUT
+	ChownGID bool
+	// BucketLinks enables symlinks to directories to be treated as buckets
+	BucketLinks bool
+	//VersioningDir sets the version directory to enable object versioning
 	VersioningDir string
-	NewDirPerm    fs.FileMode
-	SideCarDir    string
+	// NewDirPerm specifies the permission to set on newly created directories
+	NewDirPerm fs.FileMode
+	// SideCarDir sets the directory to store sidecar metadata
+	SideCarDir string
+	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
+	// supports it
+	ForceNoTmpFile bool
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -164,16 +179,17 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 	}
 
 	return &Posix{
-		meta:          meta,
-		rootfd:        f,
-		rootdir:       rootdir,
-		euid:          os.Geteuid(),
-		egid:          os.Getegid(),
-		chownuid:      opts.ChownUID,
-		chowngid:      opts.ChownGID,
-		bucketlinks:   opts.BucketLinks,
-		versioningDir: verioningdirAbs,
-		newDirPerm:    opts.NewDirPerm,
+		meta:           meta,
+		rootfd:         f,
+		rootdir:        rootdir,
+		euid:           os.Geteuid(),
+		egid:           os.Getegid(),
+		chownuid:       opts.ChownUID,
+		chowngid:       opts.ChownGID,
+		bucketlinks:    opts.BucketLinks,
+		versioningDir:  verioningdirAbs,
+		newDirPerm:     opts.NewDirPerm,
+		forceNoTmpFile: opts.ForceNoTmpFile,
 	}, nil
 }
 
@@ -691,7 +707,8 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 	versionBucketPath := filepath.Join(p.versioningDir, bucket)
 	versioningKey := filepath.Join(genObjVersionKey(key), versionId)
 	versionTmpPath := filepath.Join(versionBucketPath, metaTmpDir)
-	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey, size, acc, doFalloc)
+	f, err := p.openTmpFile(versionTmpPath, versionBucketPath, versioningKey,
+		size, acc, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		return versionPath, err
 	}
@@ -1488,7 +1505,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 
 	f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object,
-		totalsize, acct, skipFalloc)
+		totalsize, acct, skipFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -2316,7 +2333,7 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 	partPath := filepath.Join(mpPath, fmt.Sprintf("%v", *part))
 
 	f, err := p.openTmpFile(filepath.Join(bucket, objdir),
-		bucket, partPath, length, acct, doFalloc)
+		bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -2536,7 +2553,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
-		*upi.Bucket, partPath, length, acct, doFalloc)
+		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -2778,7 +2795,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	}
 
 	f, err := p.openTmpFile(filepath.Join(*po.Bucket, metaTmpDir),
-		*po.Bucket, *po.Key, contentLength, acct, doFalloc)
+		*po.Bucket, *po.Key, contentLength, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
@@ -3131,7 +3148,9 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 					acct = auth.Account{}
 				}
 
-				f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, srcObjVersion.Size(), acct, doFalloc)
+				f, err := p.openTmpFile(filepath.Join(bucket, metaTmpDir),
+					bucket, object, srcObjVersion.Size(), acct, doFalloc,
+					p.forceNoTmpFile)
 				if err != nil {
 					return nil, fmt.Errorf("open tmp file: %w", err)
 				}

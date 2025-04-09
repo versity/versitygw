@@ -524,19 +524,19 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "ipa-user",
-			Usage:       "Username used to connect to FreeIPA. Needs permissions to read user vault contents",
+			Usage:       "Username used to connect to FreeIPA (requires permissions to read user vault contents)",
 			EnvVars:     []string{"VGW_IPA_USER"},
 			Destination: &ipaUser,
 		},
 		&cli.StringFlag{
 			Name:        "ipa-password",
-			Usage:       "Password of the user used to connect to FreeIPA.",
+			Usage:       "Password of the user used to connect to FreeIPA",
 			EnvVars:     []string{"VGW_IPA_PASSWORD"},
 			Destination: &ipaPassword,
 		},
 		&cli.BoolFlag{
 			Name:        "ipa-insecure",
-			Usage:       "Verify TLS certificate of FreeIPA server. Default is 'true'.",
+			Usage:       "Disable verify TLS certificate of FreeIPA server",
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},

@@ -31,6 +31,7 @@ var (
 	dirPerms           uint
 	sidecar            string
 	nometa             bool
+	forceNoTmpFile     bool
 )
 
 func posixCommand() *cli.Command {
@@ -93,6 +94,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_META_NONE"},
 				Destination: &nometa,
 			},
+			&cli.BoolFlag{
+				Name:        "disableotmp",
+				Usage:       "disable O_TMPFILE support for new objects",
+				EnvVars:     []string{"VGW_DISABLE_OTMP"},
+				Destination: &forceNoTmpFile,
+			},
 		},
 	}
 }
@@ -113,11 +120,12 @@ func runPosix(ctx *cli.Context) error {
 	}
 
 	opts := posix.PosixOpts{
-		ChownUID:      chownuid,
-		ChownGID:      chowngid,
-		BucketLinks:   bucketlinks,
-		VersioningDir: versioningDir,
-		NewDirPerm:    fs.FileMode(dirPerms),
+		ChownUID:       chownuid,
+		ChownGID:       chowngid,
+		BucketLinks:    bucketlinks,
+		VersioningDir:  versioningDir,
+		NewDirPerm:     fs.FileMode(dirPerms),
+		ForceNoTmpFile: forceNoTmpFile,
 	}
 
 	var ms meta.MetadataStorer

@@ -52,8 +52,12 @@ var (
 	defaultFilePerm uint32 = 0644
 )
 
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, dofalloc bool, forceNoTmpFile bool) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
+
+	if forceNoTmpFile {
+		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown)
+	}
 
 	// O_TMPFILE allows for a file handle to an unnamed file in the filesystem.
 	// This can help reduce contention within the namespace (parent directories),
@@ -68,43 +72,7 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		}
 
 		// O_TMPFILE not supported, try fallback
-		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
-		if err != nil {
-			if errors.Is(err, syscall.EROFS) {
-				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			}
-			return nil, fmt.Errorf("make temp dir: %w", err)
-		}
-		f, err := os.CreateTemp(dir,
-			fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
-		if err != nil {
-			if errors.Is(err, syscall.EROFS) {
-				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			}
-			return nil, err
-		}
-		tmp := &tmpfile{
-			f:          f,
-			bucket:     bucket,
-			objname:    obj,
-			size:       size,
-			needsChown: doChown,
-			uid:        uid,
-			gid:        gid,
-		}
-		// falloc is best effort, its fine if this fails
-		if size > 0 && dofalloc {
-			tmp.falloc()
-		}
-
-		if doChown {
-			err := f.Chown(uid, gid)
-			if err != nil {
-				return nil, fmt.Errorf("set temp file ownership: %w", err)
-			}
-		}
-
-		return tmp, nil
+		return p.openMkTemp(dir, bucket, obj, size, dofalloc, uid, gid, doChown)
 	}
 
 	// for O_TMPFILE, filename is /proc/self/fd/<fd> to be used
@@ -123,6 +91,46 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		newDirPerm: p.newDirPerm,
 	}
 
+	// falloc is best effort, its fine if this fails
+	if size > 0 && dofalloc {
+		tmp.falloc()
+	}
+
+	if doChown {
+		err := f.Chown(uid, gid)
+		if err != nil {
+			return nil, fmt.Errorf("set temp file ownership: %w", err)
+		}
+	}
+
+	return tmp, nil
+}
+
+func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, uid, gid int, doChown bool) (*tmpfile, error) {
+	err := backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
+	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
+		return nil, fmt.Errorf("make temp dir: %w", err)
+	}
+	f, err := os.CreateTemp(dir,
+		fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
+	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
+		return nil, err
+	}
+	tmp := &tmpfile{
+		f:          f,
+		bucket:     bucket,
+		objname:    obj,
+		size:       size,
+		needsChown: doChown,
+		uid:        uid,
+		gid:        gid,
+	}
 	// falloc is best effort, its fine if this fails
 	if size > 0 && dofalloc {
 		tmp.falloc()
@@ -228,7 +236,9 @@ func (tmp *tmpfile) fallbackLink() error {
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
 	err = os.Rename(tempname, objPath)
 	if err != nil {
-		return fmt.Errorf("rename tmpfile: %w", err)
+		// rename only works for files within the same filesystem
+		// if this fails fallback to copy
+		return backend.MoveFile(tempname, objPath, fs.FileMode(defaultFilePerm))
 	}
 
 	return nil
