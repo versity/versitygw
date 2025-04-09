@@ -5007,6 +5007,58 @@ func ListObjects_check_owner(s *S3Conf) error {
 	})
 }
 
+func ListObjects_non_truncated_common_prefixes(s *S3Conf) error {
+	testName := "ListObjects_non_truncated_common_prefixes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"asdf", "boo/bar", "boo/baz/xyzzy", "cquux/thud", "cquux/bla"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, marker, maxKeys := "/", "boo/", int32(1)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket:    &bucket,
+			Marker:    &marker,
+			Delimiter: &delim,
+			MaxKeys:   &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.IsTruncated == nil {
+			return fmt.Errorf("expected non-nil istruncated")
+		}
+		if *res.IsTruncated {
+			return fmt.Errorf("expected non-truncated result")
+		}
+		if res.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
+		}
+		if *res.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, *res.MaxKeys)
+		}
+		if getString(res.Delimiter) != delim {
+			return fmt.Errorf("expected delimiter to be %v, instead got %v", delim, getString(res.Delimiter))
+		}
+		if getString(res.Marker) != marker {
+			return fmt.Errorf("expected marker to be %v, instead got %v", getString(res.Marker), marker)
+		}
+		if len(res.Contents) != 0 {
+			return fmt.Errorf("expected empty contents, instead got %+v", res.Contents)
+		}
+		cPrefs := []string{"cquux/"}
+		if !comparePrefixes(cPrefs, res.CommonPrefixes) {
+			return fmt.Errorf("expected common prefixes to be %v, instead got %+v", cPrefs, res.CommonPrefixes)
+		}
+
+		return nil
+	})
+}
+
 func ListObjectsV2_start_after(s *S3Conf) error {
 	testName := "ListObjectsV2_start_after"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

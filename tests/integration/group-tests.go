@@ -220,6 +220,7 @@ func TestListObjects(s *S3Conf) {
 	ListObjects_list_all_objs(s)
 	ListObjects_nested_dir_file_objs(s)
 	ListObjects_check_owner(s)
+	ListObjects_non_truncated_common_prefixes(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		ListObjects_with_checksum(s)
@@ -905,6 +906,7 @@ func GetIntTests() IntTests {
 		"ListObjects_list_all_objs":                                               ListObjects_list_all_objs,
 		"ListObjects_nested_dir_file_objs":                                        ListObjects_nested_dir_file_objs,
 		"ListObjects_check_owner":                                                 ListObjects_check_owner,
+		"ListObjects_non_truncated_common_prefixes":                               ListObjects_non_truncated_common_prefixes,
 		"ListObjects_with_checksum":                                               ListObjects_with_checksum,
 		"ListObjectsV2_start_after":                                               ListObjectsV2_start_after,
 		"ListObjectsV2_both_start_after_and_continuation_token":                   ListObjectsV2_both_start_after_and_continuation_token,
