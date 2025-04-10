@@ -44,12 +44,19 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 	cpmap := make(map[string]struct{})
 	var objects []s3response.Object
 
+	// if max is 0, it should return empty non-truncated result
+	if max == 0 {
+		return WalkResults{
+			Truncated: false,
+		}, nil
+	}
+
 	var pastMarker bool
 	if marker == "" {
 		pastMarker = true
 	}
 
-	pastMax := max == 0
+	var pastMax bool
 	var newMarker string
 	var truncated bool
 
@@ -74,14 +81,6 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		}
 		if contains(d.Name(), skipdirs) {
 			return fs.SkipDir
-		}
-
-		if pastMax {
-			if len(objects) != 0 {
-				newMarker = *objects[len(objects)-1].Key
-				truncated = true
-			}
-			return fs.SkipAll
 		}
 
 		// After this point, return skipflag instead of nil
@@ -116,7 +115,15 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 					if err != nil {
 						return fmt.Errorf("directory to object %q: %w", path, err)
 					}
+					if pastMax {
+						truncated = true
+						return fs.SkipAll
+					}
 					objects = append(objects, dirobj)
+					if (len(objects) + len(cpmap)) == int(max) {
+						newMarker = path
+						pastMax = true
+					}
 
 					return skipflag
 				}
@@ -160,9 +167,15 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			if err != nil {
 				return fmt.Errorf("file to object %q: %w", path, err)
 			}
+			if pastMax {
+				truncated = true
+				return fs.SkipAll
+			}
+
 			objects = append(objects, obj)
 
-			if max > 0 && (len(objects)+len(cpmap)) == int(max) {
+			if (len(objects) + len(cpmap)) == int(max) {
+				newMarker = path
 				pastMax = true
 			}
 
@@ -200,8 +213,13 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			if err != nil {
 				return fmt.Errorf("file to object %q: %w", path, err)
 			}
+			if pastMax {
+				truncated = true
+				return fs.SkipAll
+			}
 			objects = append(objects, obj)
 			if (len(objects) + len(cpmap)) == int(max) {
+				newMarker = path
 				pastMax = true
 			}
 			return skipflag
@@ -222,11 +240,14 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			return skipflag
 		}
 
+		if pastMax {
+			truncated = true
+			return fs.SkipAll
+		}
 		cpmap[cpref] = struct{}{}
 		if (len(objects) + len(cpmap)) == int(max) {
 			newMarker = cpref
-			truncated = true
-			return fs.SkipAll
+			pastMax = true
 		}
 
 		return skipflag
@@ -250,6 +271,10 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		commonPrefixes = append(commonPrefixes, types.CommonPrefix{
 			Prefix: &pfx,
 		})
+	}
+
+	if !truncated {
+		newMarker = ""
 	}
 
 	return WalkResults{
