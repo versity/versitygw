@@ -2519,6 +2519,30 @@ func PutBucketTagging_long_tags(s *S3Conf) error {
 	})
 }
 
+func PutBucketTagging_tag_count_limit(s *S3Conf) error {
+	testName := "PutBucketTagging_tag_count_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagSet := []types.Tag{}
+
+		for i := 0; i < 51; i++ {
+			tagSet = append(tagSet, types.Tag{
+				Key:   getPtr(fmt.Sprintf("key-%v", i)),
+				Value: getPtr(genRandString(10)),
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket: &bucket,
+			Tagging: &types.Tagging{
+				TagSet: tagSet,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingLimited))
+	})
+}
+
 func PutBucketTagging_success(s *S3Conf) error {
 	testName := "PutBucketTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -6984,6 +7008,39 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PutObjectTagging_tag_count_limit(s *S3Conf) error {
+	testName := "PutObjectTagging_tag_count_limit"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		tagSet := []types.Tag{}
+		for i := 0; i < 11; i++ {
+			tagSet = append(tagSet, types.Tag{
+				Key:   getPtr(fmt.Sprintf("key-%v", i)),
+				Value: getPtr(genRandString(15)),
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Tagging: &types.Tagging{
+				TagSet: tagSet,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectTaggingLimited))
 	})
 }
 

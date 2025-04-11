@@ -85,6 +85,8 @@ const (
 	ErrInvalidCopySource
 	ErrInvalidCopySourceRange
 	ErrInvalidTag
+	ErrBucketTaggingLimited
+	ErrObjectTaggingLimited
 	ErrAuthHeaderEmpty
 	ErrSignatureVersionNotSupported
 	ErrMalformedPOSTRequest
@@ -309,6 +311,16 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidTag: {
 		Code:           "InvalidArgument",
 		Description:    "The Tag value you have provided is invalid",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrBucketTaggingLimited: {
+		Code:           "BadRequest",
+		Description:    "Bucket tag count cannot be greater than 50",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrObjectTaggingLimited: {
+		Code:           "BadRequest",
+		Description:    "Object tags cannot be greater than 10",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMalformedXML: {

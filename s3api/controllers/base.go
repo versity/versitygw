@@ -1225,6 +1225,19 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
+		if len(bucketTagging.TagSet.Tags) > 50 {
+			if c.debug {
+				log.Printf("bucket tagging length exceeds 50: %v\n", len(bucketTagging.TagSet.Tags))
+			}
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrBucketTaggingLimited),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutBucketTagging,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
 		tags := make(map[string]string, len(bucketTagging.TagSet.Tags))
 
 		for _, tag := range bucketTagging.TagSet.Tags {
@@ -1855,6 +1868,19 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				log.Printf("error unmarshalling object tagging: %v", err)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+				&MetaOpts{
+					Logger:      c.logger,
+					MetricsMng:  c.mm,
+					Action:      metrics.ActionPutObjectTagging,
+					BucketOwner: parsedAcl.Owner,
+				})
+		}
+
+		if len(objTagging.TagSet.Tags) > 10 {
+			if c.debug {
+				log.Printf("bucket tagging length exceeds 10: %v\n", len(objTagging.TagSet.Tags))
+			}
+			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
