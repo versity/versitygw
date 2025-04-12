@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
+	"github.com/versity/versitygw/s3err"
 )
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
@@ -90,6 +92,9 @@ func (s *ScoutFS) openTmpFile(dir, bucket, obj string, size int64, acct auth.Acc
 	// file descriptor into the namespace.
 	fd, err := unix.Open(dir, unix.O_RDWR|unix.O_TMPFILE|unix.O_CLOEXEC, defaultFilePerm)
 	if err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+		}
 		return nil, err
 	}
 
