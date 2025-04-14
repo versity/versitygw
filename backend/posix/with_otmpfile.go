@@ -70,11 +70,17 @@ func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Accou
 		// O_TMPFILE not supported, try fallback
 		err = backend.MkdirAll(dir, uid, gid, doChown, p.newDirPerm)
 		if err != nil {
+			if errors.Is(err, syscall.EROFS) {
+				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}
 			return nil, fmt.Errorf("make temp dir: %w", err)
 		}
 		f, err := os.CreateTemp(dir,
 			fmt.Sprintf("%x.", sha256.Sum256([]byte(obj))))
 		if err != nil {
+			if errors.Is(err, syscall.EROFS) {
+				return nil, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+			}
 			return nil, err
 		}
 		tmp := &tmpfile{
