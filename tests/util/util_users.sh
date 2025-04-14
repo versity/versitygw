@@ -47,7 +47,7 @@ setup_user_direct() {
     fi
   fi
   if ! create_user_direct "$1" "$2" "$3"; then
-    log 2 "error creating user"
+    log 2 "error creating direct user"
     return 1
   fi
   return 0
@@ -65,12 +65,14 @@ setup_user_versitygw_or_direct() {
       return 1
     fi
     echo "$1"
+    echo "$1"
     echo "$2"
   else
     if ! setup_user_direct "$1" "$3" "$4"; then
       log 2 "error setting up direct user"
       return 1
     fi
+    echo "$1"
     echo "$key_id"
     echo "$secret_key"
   fi
@@ -84,7 +86,7 @@ create_user_versitygw() {
     return 1
   fi
   if ! create_user_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
-    log 2 "error creating user"
+    log 2 "error creating versitygw user"
     return 1
   fi
   return 0
@@ -471,6 +473,80 @@ verify_user_cant_get_object() {
   if [[ "$get_object_error" != *"Access Denied"* ]]; then
     log 2 "invalid get object error: $get_object_error"
     return 1
+  fi
+  return 0
+}
+
+get_username_and_password() {
+  if [ $# -ne 3 ]; then
+    log 2 "'get_username_and_password' requires role, number, bucket name"
+    return 1
+  fi
+  if [ "$AUTOCREATE_USERS" == "true" ]; then
+    # NOTE:  for direct users, username and password will be replaced by key ID, secret key
+    user_id="${USER_AUTOCREATION_PREFIX}$2"
+    username="$user_id"
+    password="abc123-${1}-${2}"
+  else
+    uppercase_role=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    user_id_var="USER_ID_${uppercase_role}_${2}"
+    user_id=${!user_id_var}
+    if [ "$user_id" == "" ]; then
+      log 2 "test requires env param $user_id_var"
+      return 1
+    fi
+    username_var="USERNAME_${uppercase_role}_${2}"
+    username=${!username_var}
+    if [ "$username" == "" ]; then
+      log 2 "test requires env param $username_var"
+      return 1
+    fi
+    password_var="PASSWORD_${uppercase_role}_${2}"
+    password=${!password_var}
+    if [ "$password" == "" ]; then
+      log 2 "test requires env param $password_var"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+delete_autocreated_users() {
+  if [ "$USER_AUTOCREATION_PREFIX" == "" ]; then
+    log 5 "USER_AUTOCREATION_PREFIX must be defined to delete autocreated users"
+    return 0
+  fi
+  list_users
+  for user in "${parsed_users[@]}"; do
+    if [[ "$user" == "$USER_AUTOCREATION_PREFIX"* ]]; then
+      log 5 "matched user: $user"
+      if ! delete_user "$user"; then
+        log 2 "error deleting autocreated user"
+        return 1
+      fi
+      log 5 "user deletion success"
+    fi
+  done
+}
+
+setup_user_v2() {
+  if [ $# -ne 3 ]; then
+    log 2 "'setup_user_v2' requires role, number, bucket name"
+    return 1
+  fi
+  if ! get_username_and_password "$1" "$2" "$3"; then
+    log 2 "error getting username and password"
+    return 1
+  fi
+  if [ "$AUTOCREATE_USERS" == "true" ]; then
+    if ! setup_user_versitygw_or_direct "$username" "$password" "$1" "$3"; then
+      log 2 "error setting up user"
+      return 1
+    fi
+  else
+    echo "$user_id"
+    echo "$username"
+    echo "$password"
   fi
   return 0
 }

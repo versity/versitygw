@@ -301,8 +301,8 @@ test_s3api_policy_put_wildcard() {
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
   assert_success
   # shellcheck disable=SC2154
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_folder/$test_file"
   assert_success

@@ -15,33 +15,34 @@
 # under the License.
 
 create_upload_and_test_parts_listing() {
-  if [ $# -ne 2 ]; then
-    log 2 "'create_upload_and_test_parts_listing' requires test file, policy_file"
+  if [ $# -ne 5 ]; then
+    log 2 "'create_upload_and_test_parts_listing' requires test file, policy_file, user id, username, password"
     return 1
   fi
-  if ! create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$1" "$USERNAME_ONE" "$PASSWORD_ONE"; then
+  if ! multipart_upload_before_completion_with_user "$BUCKET_ONE_NAME" "$1" "$TEST_FILE_FOLDER/$1" 4 "$4" "$5"; then
     log 2 "error creating multipart upload with user"
     return 1
   fi
 
   # shellcheck disable=SC2154
-  if list_parts_with_user "$USERNAME_ONE" "$PASSWORD_ONE" "$BUCKET_ONE_NAME" "$1" "$upload_id"; then
-    log 2 "list parts with user succeeded despite lack of policy permissions"
+  if ! list_parts_with_user "$4" "$5" "$BUCKET_ONE_NAME" "$1" "$upload_id"; then
+    log 2 "list parts with user failed despite initiator request"
     return 1
   fi
-
-  if ! setup_policy_with_single_statement "$TEST_FILE_FOLDER/$2" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:ListMultipartUploadParts" "arn:aws:s3:::$BUCKET_ONE_NAME/*"; then
-    log 2 "error setting up policy"
+  if ! initiator=$(echo -n "$listed_parts" | jq -r '.Initiator.DisplayName' 2>&1); then
+    log 2 "error getting initiator: $initiator"
     return 1
   fi
-
-  if ! put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$2"; then
-    log 2 "error putting policy"
+  if [ "$initiator" != "$3" ]; then
+    log 2 "expected initator of '$3', was '$initiator'"
     return 1
   fi
-
-  if ! list_parts_with_user "$USERNAME_ONE" "$PASSWORD_ONE" "$BUCKET_ONE_NAME" "$1" "$upload_id"; then
-    log 2 "error listing parts after policy add"
+  if ! part_count=$(echo -n "$listed_parts" | jq -r '.Parts | length' 2>&1); then
+    log 2 "error getting part count: $part_count"
+    return 1
+  fi
+  if [ "$part_count" != "4" ]; then
+    log 2 "expected returned part count of '4', was '$part_count'"
     return 1
   fi
   return 0
@@ -216,12 +217,24 @@ create_and_list_multipart_uploads() {
   return 0
 }
 
+multipart_upload_before_completion() {
+  if [ $# -ne 4 ]; then
+    log 2 "multipart upload pre-completion requires bucket, key, file, part count"
+    return 1
+  fi
+  if ! multipart_upload_before_completion_with_user "$1" "$2" "$3" "$4" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    log 2 "error uploading multipart before completion"
+    return 1
+  fi
+  return 0
+}
+
 # perform all parts of a multipart upload before completion command
 # params:  bucket, key, file to split and upload, number of file parts to upload
 # return:  0 for success, 1 for failure
-multipart_upload_before_completion() {
-  if [ $# -ne 4 ]; then
-    log 2 "multipart upload pre-completion command missing bucket, key, file, and/or part count"
+multipart_upload_before_completion_with_user() {
+  if [ $# -ne 6 ]; then
+    log 2 "multipart upload pre-completion command missing bucket, key, file, part count, username, password"
     return 1
   fi
 
@@ -230,7 +243,7 @@ multipart_upload_before_completion() {
     return 1
   fi
 
-  if ! create_multipart_upload "$1" "$2"; then
+  if ! create_multipart_upload_with_user "$1" "$2" "$5" "$6"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -238,7 +251,7 @@ multipart_upload_before_completion() {
   parts="["
   for ((i = 1; i <= $4; i++)); do
     # shellcheck disable=SC2154
-    if ! upload_part "$1" "$2" "$upload_id" "$3" "$i"; then
+    if ! upload_part_with_user "$1" "$2" "$upload_id" "$3" "$i" "$5" "$6"; then
       log 2 "error uploading part $i"
       return 1
     fi

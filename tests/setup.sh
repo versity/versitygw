@@ -83,6 +83,9 @@ teardown() {
   if user_exists "$USERNAME_TWO" && ! delete_user "$USERNAME_TWO"; then
     log 3 "error deleting user $USERNAME_TWO"
   fi
+  if [ "$AUTOCREATE_USERS" == "true" ] && ! delete_autocreated_users; then
+    log 3 "error deleting autocreated users"
+  fi
   if [ "$REMOVE_TEST_FILE_FOLDER" == "true" ]; then
     log 6 "removing test file folder"
     if ! error=$(rm -rf "${TEST_FILE_FOLDER:?}" 2>&1); then

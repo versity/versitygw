@@ -52,8 +52,8 @@ export RUN_USERS=true
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
   assert_success
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -76,8 +76,8 @@ export RUN_USERS=true
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "userplus" "$BUCKET_ONE_NAME"
   assert_success
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -100,8 +100,8 @@ export RUN_USERS=true
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
   assert_success
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -124,8 +124,8 @@ export RUN_USERS=true
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "admin" "$BUCKET_ONE_NAME"
   assert_success
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -152,8 +152,8 @@ export RUN_USERS=true
 
   run setup_user_versitygw_or_direct "$USERNAME_TWO" "$PASSWORD_TWO" "user" "$BUCKET_ONE_NAME"
   assert_success
-  username=${lines[0]}
-  password=${lines[1]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
