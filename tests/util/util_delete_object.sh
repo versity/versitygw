@@ -10,7 +10,7 @@ block_delete_object_without_permission() {
     return 1
   fi
   # shellcheck disable=SC2154
-  if [[ "$delete_object_error" != *"Access Denied"* ]]; then
+  if [[ "$delete_object_error" != *"AccessDenied"* ]]; then
     log 2 "invalid delete object error: $delete_object_error"
     return 1
   fi

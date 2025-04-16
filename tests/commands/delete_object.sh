@@ -92,7 +92,7 @@ delete_object_with_user() {
   if [[ $1 == 's3' ]]; then
     delete_object_error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3 rm "s3://$2/$3" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]] || [[ $1 == 'aws' ]]; then
-    delete_object_error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3api delete-object --bucket "$2" --key "$3" --bypass-governance-retention 2>&1) || exit_code=$?
+    delete_object_error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3api delete-object --bucket "$2" --key "$3" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     delete_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rm --access_key="$4" --secret_key="$5" "s3://$2/$3" 2>&1) || exit_code=$?
   else

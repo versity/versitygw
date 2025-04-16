@@ -44,9 +44,9 @@ check_for_empty_policy() {
 
 add_direct_user_to_principal() {
   if [ "${principals[$idx]}" == "*" ]; then
-    modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$DIRECT_S3_ROOT_ACCOUNT_NAME\"}"
+    modified_principal+="\"arn:aws:iam::$DIRECT_AWS_USER_ID:user/$DIRECT_S3_ROOT_ACCOUNT_NAME\""
   else
-    modified_principal+="{\"AWS\": \"arn:aws:iam::$DIRECT_AWS_USER_ID:user/${principals[$idx]}\"}"
+    modified_principal+="\"arn:aws:iam::$DIRECT_AWS_USER_ID:user/${principals[$idx]}\""
   fi
 }
 
@@ -57,9 +57,13 @@ get_modified_principal() {
     return 1
   fi
   IFS=',' read -r -a principals <<< "$1"
-  modified_principal=""
+  if [ "$DIRECT" == "true" ]; then
+    modified_principal="{\"AWS\": "
+  else
+    modified_principal=""
+  fi
   if [ "${#principals[@]}" -gt 1 ]; then
-    modified_principal="["
+    modified_principal+="["
   fi
   for ((idx=0; idx<${#principals[@]}; idx++)); do
     if [ "$DIRECT" == "true" ]; then
@@ -74,6 +78,9 @@ get_modified_principal() {
   done
   if [ "${#principals[@]}" -gt 1 ]; then
     modified_principal+="]"
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    modified_principal+="}"
   fi
   log 5 "modified principal: $modified_principal"
 }
