@@ -95,7 +95,7 @@ func IsStreamingPayload(str string) bool {
 		pt == payloadTypeStreamingSignedTrailer
 }
 
-func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
+func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time, debug bool) (io.Reader, error) {
 	decContLength := ctx.Get("X-Amz-Decoded-Content-Length")
 	if decContLength == "" {
 		return nil, s3err.GetAPIError(s3err.ErrMissingDecodedContentLength)
@@ -113,11 +113,11 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 
 	switch contentSha256 {
 	case payloadTypeStreamingUnsignedTrailer:
-		return NewUnsignedChunkReader(r, checksumType)
+		return NewUnsignedChunkReader(r, checksumType, debug)
 	case payloadTypeStreamingSignedTrailer:
-		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType)
+		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType, debug)
 	case payloadTypeStreamingSigned:
-		return NewSignedChunkReader(r, authdata, region, secret, date, "")
+		return NewSignedChunkReader(r, authdata, region, secret, date, "", debug)
 	// return not supported for:
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER
