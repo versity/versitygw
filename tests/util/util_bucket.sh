@@ -162,6 +162,23 @@ bucket_exists() {
   return 1
 }
 
+direct_wait_for_bucket() {
+  if [ $# -ne 1 ]; then
+    log 2 "'direct_wait_for_bucket' requires bucket name"
+    return 1
+  fi
+  bucket_verification_start_time=$(date +%s)
+  while ! bucket_exists "s3api" "$1"; do
+    bucket_verification_end_time=$(date +%s)
+    if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
+      log 2 "bucket existence check timeout"
+      return 1
+    fi
+    sleep 5
+  done
+  return 0
+}
+
 # params:  client, bucket name
 # return 0 for success, 1 for error
 bucket_cleanup() {
@@ -277,8 +294,8 @@ setup_bucket() {
   fi
 
   # bucket creation and resets take longer to propagate in direct mode
-  if [ "$DIRECT" == "true" ]; then
-    sleep 15
+  if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$2"; then
+    return 1
   fi
 
   if [[ $1 == "s3cmd" ]]; then

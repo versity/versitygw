@@ -20,21 +20,23 @@ source ./tests/util/util_setup.sh
 test_s3api_policy_allow_deny() {
   policy_file="policy_file"
   test_file="test_file"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_files "$policy_file"
   assert_success
 
-  run setup_user "$username" "$password" "user"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  # shellcheck disable=SC2154
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" \
-    "Deny" "$username" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file" \
-    "Allow" "$username" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
+  run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" \
+    "Deny" "$user_id" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file" \
+    "Allow" "$user_id" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -51,24 +53,25 @@ test_s3api_policy_delete() {
   policy_file="policy_file"
   test_file_one="test_file_one"
   test_file_two="test_file_two"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_files "$policy_file"
   assert_success
 
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
   effect="Allow"
-  principal="$username"
+  principal="$user_id"
   action="s3:DeleteObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two"
-
-  run setup_user "$username" "$password" "user"
-  assert_success
 
   run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   log 5 "Policy: $(cat "$TEST_FILE_FOLDER/$policy_file")"
@@ -92,21 +95,22 @@ test_s3api_policy_deny() {
   policy_file="policy_file"
   test_file_one="test_file_one"
   test_file_two="test_file_two"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_files "$policy_file"
   assert_success
 
-  run setup_user "$username" "$password" "user"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file_one" "$test_file_two"
   assert_success
 
-  run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" \
-    "Deny" "$username" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two" \
-    "Allow" "$username" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  run setup_policy_with_double_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" \
+    "Deny" "$user_id" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_file_two" \
+    "Allow" "$user_id" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
   assert_success
 
   log 5 "Policy: $(cat "$TEST_FILE_FOLDER/$policy_file")"
@@ -129,21 +133,22 @@ test_s3api_policy_get_object_file_wildcard() {
   policy_file="policy_file_one"
   policy_file_two="policy_file_two"
   policy_file_three="policy_fil"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
-
-  effect="Allow"
-  principal="$username"
-  action="s3:GetObject"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME/policy_file*"
-
-  run setup_user "$username" "$password" "user"
-  assert_success
 
   run setup_bucket_and_files "$BUCKET_ONE_NAME" "$policy_file_two" "$policy_file_three"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/policy_file*"
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
@@ -169,24 +174,25 @@ test_s3api_policy_get_object_folder_wildcard() {
   policy_file="policy_file"
   test_folder="test_folder"
   test_file="test_file"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_folder "$test_folder"
-  assert_success
-
-  effect="Allow"
-  principal="$username"
-  action="s3:GetObject"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
-
-  run setup_user "$username" "$password" "user"
   assert_success
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_folder/$test_file"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:GetObject"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -203,21 +209,22 @@ test_s3api_policy_get_object_specific_file() {
   policy_file="policy_file"
   test_file="test_file"
   test_file_two="test_file_two"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
-  run setup_user "$username" "$password" "user"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
   effect="Allow"
-  principal="$username"
+  principal="$user_id"
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/test_file"
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -237,9 +244,6 @@ test_s3api_policy_get_object_specific_file() {
 }
 
 test_s3api_policy_get_object_with_user() {
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
-
   test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -247,15 +251,18 @@ test_s3api_policy_get_object_with_user() {
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run setup_user "$username" "$password" "user"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
   run verify_user_cant_get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" "$username" "$password"
   assert_success
 
   policy_file="policy_file"
   effect="Allow"
-  principal="$username"
+  principal="$user_id"
   action="s3:GetObject"
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/$test_file"
 
@@ -277,7 +284,7 @@ test_s3api_policy_invalid_action() {
   resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
 
   # shellcheck disable=SC2154
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
@@ -298,16 +305,17 @@ test_s3api_policy_put_wildcard() {
   run create_test_folder "$test_folder"
   assert_success
 
-  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
   # shellcheck disable=SC2154
+  user_id=${lines[0]}
   username=${lines[1]}
   password=${lines[2]}
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_folder/$test_file"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "Allow" "$username" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:PutObject" "arn:aws:s3:::$BUCKET_ONE_NAME/$test_folder/*"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -316,7 +324,7 @@ test_s3api_policy_put_wildcard() {
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
   assert_failure
   # shellcheck disable=SC2154
-  assert_output -p "Access Denied"
+  assert_output -p "AccessDenied"
 
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_folder/$test_file" "$BUCKET_ONE_NAME" "$test_folder/$test_file" "$username" "$password"
   assert_success
@@ -334,26 +342,33 @@ test_s3api_policy_two_principals() {
 
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
-  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
-  run setup_user "$USERNAME_TWO" "$PASSWORD_TWO" "user"
+  user_id_one=${lines[0]}
+  username_one=${lines[1]}
+  password_one=${lines[2]}
+
+  run setup_user_v2 "user" 2 "$BUCKET_ONE_NAME"
   assert_success
+  user_id_two=${lines[0]}
+  username_two=${lines[1]}
+  password_two=${lines[2]}
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
-  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_one" "$USERNAME_ONE" "$PASSWORD_ONE"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_one" "$username_one" "$password_one"
+  assert_failure
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_two" "$username_two" "$password_two"
   assert_failure
 
-  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_two" "$USERNAME_TWO" "$PASSWORD_TWO"
-  assert_failure
-
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "Allow" "$USERNAME_ONE,$USERNAME_TWO" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id_one,$user_id_two" "s3:GetObject" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
-  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_one" "$USERNAME_ONE" "$PASSWORD_ONE"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_one" "$username_one" "$password_one"
   assert_success
-  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_two" "$USERNAME_TWO" "$PASSWORD_TWO"
+  run get_object_with_user "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/copy_two" "$username_two" "$password_two"
   assert_success
 }
