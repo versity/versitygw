@@ -38,7 +38,7 @@ type tmpfile struct {
 	size    int64
 }
 
-func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool) (*tmpfile, error) {
+func (p *Posix) openTmpFile(dir, bucket, obj string, size int64, acct auth.Account, _ bool, _ bool) (*tmpfile, error) {
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	// Create a temp file for upload while in progress (see link comments below).
@@ -80,31 +80,17 @@ func (tmp *tmpfile) link() error {
 	// this will no longer exist
 	defer os.Remove(tempname)
 
-	// We use Rename as the atomic operation for object puts. The upload is
-	// written to a temp file to not conflict with any other simultaneous
-	// uploads. The final operation is to move the temp file into place for
-	// the object. This ensures the object semantics of last upload completed
-	// wins and is not some combination of writes from simultaneous uploads.
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
-	err := os.Remove(objPath)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove stale path: %w", err)
-	}
 
 	// reset default file mode because CreateTemp uses 0600
 	tmp.f.Chmod(defaultFilePerm)
 
-	err = tmp.f.Close()
+	err := tmp.f.Close()
 	if err != nil {
 		return fmt.Errorf("close tmpfile: %w", err)
 	}
 
-	err = os.Rename(tempname, objPath)
-	if err != nil {
-		return fmt.Errorf("rename tmpfile: %w", err)
-	}
-
-	return nil
+	return backend.MoveFile(tempname, objPath, defaultFilePerm)
 }
 
 func (tmp *tmpfile) Write(b []byte) (int, error) {
