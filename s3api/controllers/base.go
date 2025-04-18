@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,6 +32,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
+	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
@@ -79,7 +79,7 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) error {
 		maxBucketsParsed, err := strconv.ParseInt(maxBucketsStr, 10, 32)
 		if err != nil || maxBucketsParsed < 0 || maxBucketsParsed > 10000 {
 			if c.debug {
-				log.Printf("error parsing max-buckets %q: %v\n", maxBucketsStr, err)
+				debuglogger.Logf("error parsing max-buckets %q: %v", maxBucketsStr, err)
 			}
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
 				&MetaOpts{
@@ -253,7 +253,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			n, err := strconv.Atoi(partNumberMarker)
 			if err != nil || n < 0 {
 				if err != nil && c.debug {
-					log.Printf("error parsing part number marker %q: %v",
+					debuglogger.Logf("error parsing part number marker %q: %v",
 						partNumberMarker, err)
 				}
 				return SendResponse(ctx,
@@ -267,10 +267,10 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			}
 		}
 		mxParts := ctx.Query("max-parts")
-		maxParts, err := utils.ParseUint(mxParts)
+		maxParts, err := utils.ParseUint(mxParts, c.debug)
 		if err != nil {
 			if c.debug {
-				log.Printf("error parsing max parts %q: %v",
+				debuglogger.Logf("error parsing max parts %q: %v",
 					mxParts, err)
 			}
 			return SendResponse(ctx,
@@ -374,8 +374,12 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 		maxParts := ctx.Get("X-Amz-Max-Parts")
 		partNumberMarker := ctx.Get("X-Amz-Part-Number-Marker")
-		maxPartsParsed, err := utils.ParseUint(maxParts)
+		maxPartsParsed, err := utils.ParseUint(maxParts, c.debug)
 		if err != nil {
+			if c.debug {
+				debuglogger.Logf("error parsing max parts %q: %v",
+					maxParts, err)
+			}
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxParts),
 				&MetaOpts{
 					Logger:      c.logger,
@@ -384,11 +388,8 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		attrs, err := utils.ParseObjectAttributes(ctx)
+		attrs, err := utils.ParseObjectAttributes(ctx, c.debug)
 		if err != nil {
-			if c.debug {
-				log.Printf("error parsing object attributes: %v", err)
-			}
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -492,7 +493,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
 	if checksumMode != "" && checksumMode != types.ChecksumModeEnabled {
 		if c.debug {
-			log.Printf("invalid x-amz-checksum-mode header value: %v\n", checksumMode)
+			debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
 		}
 		return SendResponse(ctx, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-mode"),
 			&MetaOpts{
@@ -503,7 +504,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	ctx.Locals("logResBody", false)
+	ctx.Locals("skip-res-body-log", true)
 	res, err := c.be.GetObject(ctx.Context(), &s3.GetObjectInput{
 		Bucket:       &bucket,
 		Key:          &key,
@@ -921,10 +922,10 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		maxkeys, err := utils.ParseUint(maxkeysStr)
+		maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
 		if err != nil {
 			if c.debug {
-				log.Printf("error parsing max keys %q: %v",
+				debuglogger.Logf("error parsing max keys %q: %v",
 					maxkeysStr, err)
 			}
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
@@ -1054,10 +1055,10 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		maxUploads, err := utils.ParseUint(maxUploadsStr)
+		maxUploads, err := utils.ParseUint(maxUploadsStr, c.debug)
 		if err != nil {
 			if c.debug {
-				log.Printf("error parsing max uploads %q: %v",
+				debuglogger.Logf("error parsing max uploads %q: %v",
 					maxUploadsStr, err)
 			}
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxUploads),
@@ -1105,10 +1106,10 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		maxkeys, err := utils.ParseUint(maxkeysStr)
+		maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
 		if err != nil {
 			if c.debug {
-				log.Printf("error parsing max keys %q: %v",
+				debuglogger.Logf("error parsing max keys %q: %v",
 					maxkeysStr, err)
 			}
 			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
@@ -1159,10 +1160,10 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	maxkeys, err := utils.ParseUint(maxkeysStr)
+	maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
 	if err != nil {
 		if c.debug {
-			log.Printf("error parsing max keys %q: %v",
+			debuglogger.Logf("error parsing max keys %q: %v",
 				maxkeysStr, err)
 		}
 		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidMaxKeys),
@@ -1214,7 +1215,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		err := xml.Unmarshal(ctx.Body(), &bucketTagging)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unmarshalling bucket tagging: %v", err)
+				debuglogger.Logf("error unmarshalling bucket tagging: %v", err)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
 				&MetaOpts{
@@ -1227,7 +1228,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 		if len(bucketTagging.TagSet.Tags) > 50 {
 			if c.debug {
-				log.Printf("bucket tagging length exceeds 50: %v\n", len(bucketTagging.TagSet.Tags))
+				debuglogger.Logf("bucket tagging length exceeds 50: %v", len(bucketTagging.TagSet.Tags))
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrBucketTaggingLimited),
 				&MetaOpts{
@@ -1242,6 +1243,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 		for _, tag := range bucketTagging.TagSet.Tags {
 			if len(tag.Key) > 128 || len(tag.Value) > 256 {
+				if c.debug {
+					debuglogger.Logf("invalid long bucket tagging key/value")
+				}
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag),
 					&MetaOpts{
 						Logger:      c.logger,
@@ -1287,6 +1291,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 		var ownershipControls s3response.OwnershipControls
 		if err := xml.Unmarshal(ctx.Body(), &ownershipControls); err != nil {
+			if c.debug {
+				debuglogger.Logf("failed to unmarshal request body: %v", err)
+			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
 					Logger:      c.logger,
@@ -1296,7 +1303,12 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		if len(ownershipControls.Rules) != 1 || !utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership) {
+		rulesCount := len(ownershipControls.Rules)
+		isValidOwnership := utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership, c.debug)
+		if rulesCount != 1 || !isValidOwnership {
+			if c.debug && rulesCount != 1 {
+				debuglogger.Logf("ownership control rules should be 1, got %v", rulesCount)
+			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
 					Logger:      c.logger,
@@ -1359,7 +1371,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		err = xml.Unmarshal(ctx.Body(), &versioningConf)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unmarshalling versioning configuration: %v",
+				debuglogger.Logf("error unmarshalling versioning configuration: %v",
 					err)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -1374,7 +1386,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		if versioningConf.Status != types.BucketVersioningStatusEnabled &&
 			versioningConf.Status != types.BucketVersioningStatusSuspended {
 			if c.debug {
-				log.Printf("invalid versioning configuration status: %v\n", versioningConf.Status)
+				debuglogger.Logf("invalid versioning configuration status: %v", versioningConf.Status)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
@@ -1531,7 +1543,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		}
 		if ownership == types.ObjectOwnershipBucketOwnerEnforced {
 			if c.debug {
-				log.Println("bucket acls are disabled")
+				debuglogger.Logf("bucket acls are disabled")
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAclNotSupported),
 				&MetaOpts{
@@ -1567,7 +1579,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
 			if err != nil {
 				if c.debug {
-					log.Printf("error unmarshalling access control policy: %v", err)
+					debuglogger.Logf("error unmarshalling access control policy: %v", err)
 				}
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedACL),
 					&MetaOpts{
@@ -1580,7 +1592,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			err = accessControlPolicy.Validate()
 			if err != nil {
 				if c.debug {
-					log.Printf("invalid access control policy: %v\n", err)
+					debuglogger.Logf("invalid access control policy: %v", err)
 				}
 				return SendResponse(ctx, err,
 					&MetaOpts{
@@ -1592,7 +1604,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 			if *accessControlPolicy.Owner.ID != parsedAcl.Owner {
 				if c.debug {
-					log.Printf("invalid access control policy owner id: %v, expected %v", *accessControlPolicy.Owner.ID, parsedAcl.Owner)
+					debuglogger.Logf("invalid access control policy owner id: %v, expected %v", *accessControlPolicy.Owner.ID, parsedAcl.Owner)
 				}
 				return SendResponse(ctx, s3err.APIError{
 					Code:           "InvalidArgument",
@@ -1608,7 +1620,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 			if grants+acl != "" {
 				if c.debug {
-					log.Printf("invalid request: %q (grants) %q (acl)",
+					debuglogger.Logf("invalid request: %q (grants) %q (acl)",
 						grants, acl)
 				}
 				return SendResponse(ctx,
@@ -1628,7 +1640,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		} else if acl != "" {
 			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
 				if c.debug {
-					log.Printf("invalid acl: %q", acl)
+					debuglogger.Logf("invalid acl: %q", acl)
 				}
 				return SendResponse(ctx,
 					s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -1641,7 +1653,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			}
 			if grants != "" {
 				if c.debug {
-					log.Printf("invalid request: %q (grants) %q (acl)",
+					debuglogger.Logf("invalid request: %q (grants) %q (acl)",
 						grants, acl)
 				}
 				return SendResponse(ctx,
@@ -1669,7 +1681,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			}
 		} else {
 			if c.debug {
-				log.Println("none of the bucket acl options has been specified: canned, req headers, req body")
+				debuglogger.Logf("none of the bucket acl options has been specified: canned, req headers, req body")
 			}
 			return SendResponse(ctx,
 				s3err.GetAPIError(s3err.ErrMissingSecurityHeader),
@@ -1702,7 +1714,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	if ok := utils.IsValidBucketName(bucket); !ok {
+	if ok := utils.IsValidBucketName(bucket, c.debug); !ok {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName),
 			&MetaOpts{
 				Logger:     c.logger,
@@ -1710,10 +1722,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				Action:     metrics.ActionCreateBucket,
 			})
 	}
-	if ok := utils.IsValidOwnership(objectOwnership); !ok {
-		if c.debug {
-			log.Printf("invalid bucket object ownership: %v", objectOwnership)
-		}
+	if ok := utils.IsValidOwnership(objectOwnership, c.debug); !ok {
 		return SendResponse(ctx, s3err.APIError{
 			Code:           "InvalidArgument",
 			Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),
@@ -1729,7 +1738,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if acl+grants != "" && objectOwnership == types.ObjectOwnershipBucketOwnerEnforced {
 		if c.debug {
-			log.Printf("bucket acls are disabled for %v object ownership", objectOwnership)
+			debuglogger.Logf("bucket acls are disabled for %v object ownership", objectOwnership)
 		}
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership),
 			&MetaOpts{
@@ -1742,7 +1751,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 
 	if acl != "" && grants != "" {
 		if c.debug {
-			log.Printf("invalid request: %q (grants) %q (acl)", grants, acl)
+			debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
 		}
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants),
 			&MetaOpts{
@@ -1770,6 +1779,9 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		ACL: types.BucketCannedACL(acl),
 	}, defACL, c.iam, acct.Role == auth.RoleAdmin)
 	if err != nil {
+		if c.debug {
+			debuglogger.Logf("failed to update bucket acl: %v", err)
+		}
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -1865,7 +1877,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		err := xml.Unmarshal(ctx.Body(), &objTagging)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unmarshalling object tagging: %v", err)
+				debuglogger.Logf("error unmarshalling object tagging: %v", err)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
 				&MetaOpts{
@@ -1878,7 +1890,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 		if len(objTagging.TagSet.Tags) > 10 {
 			if c.debug {
-				log.Printf("bucket tagging length exceeds 10: %v\n", len(objTagging.TagSet.Tags))
+				debuglogger.Logf("bucket tagging length exceeds 10: %v", len(objTagging.TagSet.Tags))
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
 				&MetaOpts{
@@ -1894,7 +1906,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		for _, tag := range objTagging.TagSet.Tags {
 			if len(tag.Key) > 128 || len(tag.Value) > 256 {
 				if c.debug {
-					log.Printf("invalid tag key/value len: %q %q",
+					debuglogger.Logf("invalid tag key/value len: %q %q",
 						tag.Key, tag.Value)
 				}
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag),
@@ -1975,6 +1987,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 		retention, err := auth.ParseObjectLockRetentionInput(ctx.Body())
 		if err != nil {
+			if c.debug {
+				debuglogger.Logf("failed to parse object lock configuration input: %v", err)
+			}
 			return SendResponse(ctx, err, &MetaOpts{
 				Logger:      c.logger,
 				MetricsMng:  c.mm,
@@ -1995,6 +2010,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("legal-hold") {
 		var legalHold types.ObjectLockLegalHold
 		if err := xml.Unmarshal(ctx.Body(), &legalHold); err != nil {
+			if c.debug {
+				debuglogger.Logf("failed to parse request body: %v", err)
+			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
 					Logger:      c.logger,
@@ -2005,6 +2023,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		if legalHold.Status != types.ObjectLockLegalHoldStatusOff && legalHold.Status != types.ObjectLockLegalHoldStatusOn {
+			if c.debug {
+				debuglogger.Logf("invalid legal hold status: %v", legalHold.Status)
+			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 				&MetaOpts{
 					Logger:      c.logger,
@@ -2050,7 +2071,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		copySource, err := url.QueryUnescape(copySource)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unescaping copy source %q: %v",
+				debuglogger.Logf("error unescaping copy source %q: %v",
 					cs, err)
 			}
 			return SendXMLResponse(ctx, nil,
@@ -2066,7 +2087,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		partNumber := int32(ctx.QueryInt("partNumber", -1))
 		if partNumber < 1 || partNumber > 10000 {
 			if c.debug {
-				log.Printf("invalid part number: %d", partNumber)
+				debuglogger.Logf("invalid part number: %d", partNumber)
 			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrInvalidPartNumber),
@@ -2130,7 +2151,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		partNumber := int32(ctx.QueryInt("partNumber", -1))
 		if partNumber < 1 || partNumber > 10000 {
 			if c.debug {
-				log.Printf("invalid part number: %d", partNumber)
+				debuglogger.Logf("invalid part number: %d", partNumber)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPartNumber),
 				&MetaOpts{
@@ -2165,7 +2186,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
 		if err != nil {
 			if c.debug {
-				log.Printf("error parsing content length %q: %v",
+				debuglogger.Logf("error parsing content length %q: %v",
 					contentLengthStr, err)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -2177,8 +2198,11 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
+		algorithm, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
 		if err != nil {
+			if c.debug {
+				debuglogger.Logf("err parsing checksum headers: %v", err)
+			}
 			return SendResponse(ctx, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -2196,7 +2220,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			body = bytes.NewReader([]byte{})
 		}
 
-		ctx.Locals("logReqBody", false)
 		res, err := c.be.UploadPart(ctx.Context(),
 			&s3.UploadPartInput{
 				Bucket:            &bucket,
@@ -2266,7 +2289,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		if len(ctx.Body()) > 0 {
 			if grants+acl != "" {
 				if c.debug {
-					log.Printf("invalid request: %q (grants) %q (acl)",
+					debuglogger.Logf("invalid request: %q (grants) %q (acl)",
 						grants, acl)
 				}
 				return SendResponse(ctx,
@@ -2283,7 +2306,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
 			if err != nil {
 				if c.debug {
-					log.Printf("error unmarshalling access control policy: %v",
+					debuglogger.Logf("error unmarshalling access control policy: %v",
 						err)
 				}
 				return SendResponse(ctx,
@@ -2322,7 +2345,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		if acl != "" {
 			if acl != "private" && acl != "public-read" && acl != "public-read-write" {
 				if c.debug {
-					log.Printf("invalid acl: %q", acl)
+					debuglogger.Logf("invalid acl: %q", acl)
 				}
 				return SendResponse(ctx,
 					s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -2335,7 +2358,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			}
 			if len(ctx.Body()) > 0 || grants != "" {
 				if c.debug {
-					log.Printf("invalid request: %q (grants) %q (acl) %v (body len)",
+					debuglogger.Logf("invalid request: %q (grants) %q (acl) %v (body len)",
 						grants, acl, len(ctx.Body()))
 				}
 				return SendResponse(ctx,
@@ -2390,7 +2413,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		copySource, err := url.QueryUnescape(copySource)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unescaping copy source %q: %v",
+				debuglogger.Logf("error unescaping copy source %q: %v",
 					cs, err)
 			}
 			return SendXMLResponse(ctx, nil,
@@ -2429,7 +2452,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			tm, err := time.Parse(iso8601Format, copySrcModifSince)
 			if err != nil {
 				if c.debug {
-					log.Printf("error parsing copy source modified since %q: %v",
+					debuglogger.Logf("error parsing copy source modified since %q: %v",
 						copySrcModifSince, err)
 				}
 				return SendXMLResponse(ctx, nil,
@@ -2447,7 +2470,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			tm, err := time.Parse(iso8601Format, copySrcUnmodifSince)
 			if err != nil {
 				if c.debug {
-					log.Printf("error parsing copy source unmodified since %q: %v",
+					debuglogger.Logf("error parsing copy source unmodified since %q: %v",
 						copySrcUnmodifSince, err)
 				}
 				return SendXMLResponse(ctx, nil,
@@ -2465,6 +2488,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
 		if directive != "" && directive != "COPY" && directive != "REPLACE" {
+			if c.debug {
+				debuglogger.Logf("invalid metadata directive: %v", directive)
+			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrInvalidMetadataDirective),
 				&MetaOpts{
@@ -2482,6 +2508,9 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 		tDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive"))
 		if tDirective != "" && tDirective != types.TaggingDirectiveCopy && tDirective != types.TaggingDirectiveReplace {
+			if c.debug {
+				debuglogger.Logf("invalid tagging direcrive: %v", tDirective)
+			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrInvalidTaggingDirective),
 				&MetaOpts{
@@ -2498,11 +2527,8 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
-		err = utils.IsChecksumAlgorithmValid(checksumAlgorithm)
+		err = utils.IsChecksumAlgorithmValid(checksumAlgorithm, c.debug)
 		if err != nil {
-			if c.debug {
-				log.Printf("invalid checksum algorithm: %v", checksumAlgorithm)
-			}
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -2512,7 +2538,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		objLock, err := utils.ParsObjectLockHdrs(ctx)
+		objLock, err := utils.ParsObjectLockHdrs(ctx, c.debug)
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -2624,7 +2650,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
 	if err != nil {
 		if c.debug {
-			log.Printf("error parsing content length %q: %v",
+			debuglogger.Logf("error parsing content length %q: %v",
 				contentLengthStr, err)
 		}
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
@@ -2636,7 +2662,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	objLock, err := utils.ParsObjectLockHdrs(ctx)
+	objLock, err := utils.ParsObjectLockHdrs(ctx, c.debug)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2647,7 +2673,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
+	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2666,7 +2692,6 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		body = bytes.NewReader([]byte{})
 	}
 
-	ctx.Locals("logReqBody", false)
 	res, err := c.be.PutObject(ctx.Context(),
 		s3response.PutObjectInput{
 			Bucket:                    &bucket,
@@ -2942,7 +2967,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) error {
 	err := xml.Unmarshal(ctx.Body(), &dObj)
 	if err != nil {
 		if c.debug {
-			log.Printf("error unmarshalling delete objects: %v", err)
+			debuglogger.Logf("error unmarshalling delete objects: %v", err)
 		}
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
 			&MetaOpts{
@@ -3263,7 +3288,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
 		if partNumberQuery < 1 || partNumberQuery > 10000 {
 			if c.debug {
-				log.Printf("invalid part number: %d", partNumberQuery)
+				debuglogger.Logf("invalid part number: %d", partNumberQuery)
 			}
 			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidPartNumber),
 				&MetaOpts{
@@ -3301,7 +3326,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
 	if checksumMode != "" && checksumMode != types.ChecksumModeEnabled {
 		if c.debug {
-			log.Printf("invalid x-amz-checksum-mode header value: %v\n", checksumMode)
+			debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
 		}
 		return SendResponse(ctx, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-mode"),
 			&MetaOpts{
@@ -3514,6 +3539,9 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		var restoreRequest types.RestoreRequest
 		if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
 			if !errors.Is(err, io.EOF) {
+				if c.debug {
+					debuglogger.Logf("failed to parse the request body: %v", err)
+				}
 				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
 					&MetaOpts{
 						Logger:      c.logger,
@@ -3566,7 +3594,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		err := xml.Unmarshal(ctx.Body(), &payload)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unmarshalling select object content: %v", err)
+				debuglogger.Logf("error unmarshalling select object content: %v", err)
 			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrMalformedXML),
@@ -3624,7 +3652,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		err := xml.Unmarshal(ctx.Body(), &data)
 		if err != nil {
 			if c.debug {
-				log.Printf("error unmarshalling complete multipart upload: %v", err)
+				debuglogger.Logf("error unmarshalling complete multipart upload: %v", err)
 			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrMalformedXML),
@@ -3638,7 +3666,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 		if len(data.Parts) == 0 {
 			if c.debug {
-				log.Println("empty parts provided for complete multipart upload")
+				debuglogger.Logf("empty parts provided for complete multipart upload")
 			}
 			return SendXMLResponse(ctx, nil,
 				s3err.GetAPIError(s3err.ErrEmptyParts),
@@ -3656,6 +3684,9 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			val, err := strconv.ParseInt(mpuObjSizeHdr, 10, 64)
 			//TODO: Not sure if invalid request should be returned
 			if err != nil {
+				if c.debug {
+					debuglogger.Logf("invalid value for 'x-amz-mp-objects-size' header: %v", err)
+				}
 				return SendXMLResponse(ctx, nil,
 					s3err.GetAPIError(s3err.ErrInvalidRequest),
 					&MetaOpts{
@@ -3667,6 +3698,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			}
 
 			if val < 0 {
+				debuglogger.Logf("value for 'x-amz-mp-objects-size' header is less than 0: %v", val)
 				return SendXMLResponse(ctx, nil,
 					s3err.GetInvalidMpObjectSizeErr(val),
 					&MetaOpts{
@@ -3701,11 +3733,8 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		_, checksums, err := utils.ParseChecksumHeaders(ctx)
+		_, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
 		if err != nil {
-			if c.debug {
-				log.Printf("err parsing checksum headers: %v", err)
-			}
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -3716,11 +3745,8 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		}
 
 		checksumType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
-		err = utils.IsChecksumTypeValid(checksumType)
+		err = utils.IsChecksumTypeValid(checksumType, c.debug)
 		if err != nil {
-			if c.debug {
-				log.Printf("invalid checksum type: %v", err)
-			}
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
 					Logger:      c.logger,
@@ -3797,7 +3823,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	objLockState, err := utils.ParsObjectLockHdrs(ctx)
+	objLockState, err := utils.ParsObjectLockHdrs(ctx, c.debug)
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{
@@ -3810,11 +3836,8 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	checksumAlgorithm, checksumType, err := utils.ParseCreateMpChecksumHeaders(ctx)
+	checksumAlgorithm, checksumType, err := utils.ParseCreateMpChecksumHeaders(ctx, c.debug)
 	if err != nil {
-		if c.debug {
-			log.Printf("err parsing checksum headers: %v", err)
-		}
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -3900,7 +3923,7 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(apierr, "", "", ""))
 		}
 
-		log.Printf("Internal Error, %v", err)
+		debuglogger.Logf("Internal Error, %v", err)
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
@@ -3914,8 +3937,6 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 			VersionId:   l.VersionId,
 		})
 	}
-
-	utils.LogCtxDetails(ctx, []byte{})
 
 	if l.Status == 0 {
 		l.Status = http.StatusOK
@@ -3956,7 +3977,7 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		log.Printf("Internal Error, %v", err)
+		debuglogger.Logf("Internal Error, %v", err)
 		ctx.Status(http.StatusInternalServerError)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
@@ -3982,7 +4003,6 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 		}
 	}
 
-	utils.LogCtxDetails(ctx, b)
 	if l.Logger != nil {
 		l.Logger.Log(ctx, nil, b, s3log.LogMeta{
 			Action:      l.Action,
@@ -4011,7 +4031,7 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 
 	msglen := len(xmlhdr) + len(b)
 	if msglen > maxXMLBodyLen {
-		log.Printf("XML encoded body len %v exceeds max len %v",
+		debuglogger.Logf("XML encoded body len %v exceeds max len %v",
 			msglen, maxXMLBodyLen)
 		ctx.Status(http.StatusInternalServerError)
 

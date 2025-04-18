@@ -503,7 +503,7 @@ func validatePartChecksum(checksum s3response.Checksum, part types.CompletedPart
 			continue
 		}
 
-		if !utils.IsValidChecksum(*cs.checksum, cs.algo) {
+		if !utils.IsValidChecksum(*cs.checksum, cs.algo, false) {
 			return s3err.GetAPIError(s3err.ErrInvalidChecksumPart)
 		}
 

@@ -64,15 +64,17 @@ type ChunkReader struct {
 	checksumHash   hash.Hash
 	isEOF          bool
 	isFirstHeader  bool
-	region         string
-	date           time.Time
+	//TODO: Add debug logging for the reader
+	debug  bool
+	region string
+	date   time.Time
 }
 
 // NewChunkReader reads from request body io.Reader and parses out the
 // chunk metadata in stream. The headers are validated for proper signatures.
 // Reading from the chunk reader will read only the object data stream
 // without the chunk headers/trailers.
-func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string, date time.Time, chType checksumType) (io.Reader, error) {
+func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string, date time.Time, chType checksumType, debug bool) (io.Reader, error) {
 	chRdr := &ChunkReader{
 		r:          r,
 		signingKey: getSigningKey(secret, region, date),
@@ -84,6 +86,7 @@ func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string,
 		date:          date,
 		region:        region,
 		trailer:       chType,
+		debug:         debug,
 	}
 
 	if chType != "" {
@@ -390,7 +393,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte, l *int) (int64, stri
 				return cr.handleRdrErr(err, header)
 			}
 
-			if !IsValidChecksum(checksum, algo) {
+			if !IsValidChecksum(checksum, algo, cr.debug) {
 				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
 			}
 

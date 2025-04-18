@@ -76,7 +76,9 @@ func New(
 		})
 	}
 	app.Use(middlewares.DecodeURL(l, mm))
-	app.Use(middlewares.RequestLogger(server.debug))
+	if server.debug {
+		app.Use(middlewares.DebugLogger())
+	}
 
 	// Authentication middlewares
 	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, mm, region, server.debug))

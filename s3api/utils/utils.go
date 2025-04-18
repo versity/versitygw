@@ -31,6 +31,7 @@ import (
 	"github.com/aws/smithy-go/encoding/httpbinding"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
+	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -175,15 +176,21 @@ func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 	ctx.Response().Header.EnableNormalizing()
 }
 
-func ParseUint(str string) (int32, error) {
+func ParseUint(str string, debug bool) (int32, error) {
 	if str == "" {
 		return 1000, nil
 	}
 	num, err := strconv.ParseInt(str, 10, 32)
 	if err != nil {
+		if debug {
+			debuglogger.Logf("invalid intager provided: %v\n", err)
+		}
 		return 1000, fmt.Errorf("invalid int: %w", err)
 	}
 	if num < 0 {
+		if debug {
+			debuglogger.Logf("negative intager provided: %v\n", num)
+		}
 		return 1000, fmt.Errorf("negative uint: %v", num)
 	}
 	if num > 1000 {
@@ -210,17 +217,20 @@ func StreamResponseBody(ctx *fiber.Ctx, rdr io.ReadCloser, bodysize int) {
 	ctx.Context().SetBodyStream(rdr, bodysize)
 }
 
-func IsValidBucketName(bucket string) bool {
+func IsValidBucketName(bucket string, debug bool) bool {
 	if len(bucket) < 3 || len(bucket) > 63 {
+		debuglogger.Logf("bucket name length should be in 3-63 range, got: %v\n", len(bucket))
 		return false
 	}
 	// Checks to contain only digits, lowercase letters, dot, hyphen.
 	// Checks to start and end with only digits and lowercase letters.
 	if !bucketNameRegexp.MatchString(bucket) {
+		debuglogger.Logf("invalid bucket name: %v\n", bucket)
 		return false
 	}
 	// Checks not to be a valid IP address
 	if bucketNameIpRegexp.MatchString(bucket) {
+		debuglogger.Logf("bucket name is an ip address: %v\n", bucket)
 		return false
 	}
 	return true
@@ -293,7 +303,7 @@ func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, outp
 	return output
 }
 
-func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]struct{}, error) {
+func ParseObjectAttributes(ctx *fiber.Ctx, debug bool) (map[s3response.ObjectAttributes]struct{}, error) {
 	attrs := map[s3response.ObjectAttributes]struct{}{}
 	var err error
 	ctx.Request().Header.VisitAll(func(key, value []byte) {
@@ -305,6 +315,9 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 			for _, a := range oattrs {
 				attr := s3response.ObjectAttributes(a)
 				if !attr.IsValid() {
+					if debug {
+						debuglogger.Logf("invalid object attribute: %v\n", attr)
+					}
 					err = s3err.GetAPIError(s3err.ErrInvalidObjectAttributes)
 					break
 				}
@@ -318,6 +331,9 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 	}
 
 	if len(attrs) == 0 {
+		if debug {
+			debuglogger.Logf("empty get object attributes")
+		}
 		return nil, s3err.GetAPIError(s3err.ErrObjectAttributesInvalidHeader)
 	}
 
@@ -330,12 +346,15 @@ type objLockCfg struct {
 	LegalHoldStatus types.ObjectLockLegalHoldStatus
 }
 
-func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
+func ParsObjectLockHdrs(ctx *fiber.Ctx, debug bool) (*objLockCfg, error) {
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
 
 	if (objLockDate != "" && objLockModeHdr == "") || (objLockDate == "" && objLockModeHdr != "") {
+		if debug {
+			debuglogger.Logf("one of 2 required params is missing: (lock date): %v, (lock mode): %v\n", objLockDate, objLockModeHdr)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrObjectLockInvalidHeaders)
 	}
 
@@ -343,9 +362,15 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 	if objLockDate != "" {
 		rDate, err := time.Parse(time.RFC3339, objLockDate)
 		if err != nil {
+			if debug {
+				debuglogger.Logf("failed to parse retain until date: %v\n", err)
+			}
 			return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 		}
 		if rDate.Before(time.Now()) {
+			if debug {
+				debuglogger.Logf("expired retain until date: %v\n", rDate.Format(time.RFC3339))
+			}
 			return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
 		}
 		retainUntilDate = rDate
@@ -356,12 +381,18 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 	if objLockMode != "" &&
 		objLockMode != types.ObjectLockModeCompliance &&
 		objLockMode != types.ObjectLockModeGovernance {
+		if debug {
+			debuglogger.Logf("invalid object lock mode: %v\n", objLockMode)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode)
 	}
 
 	legalHold := types.ObjectLockLegalHoldStatus(legalHoldHdr)
 
 	if legalHold != "" && legalHold != types.ObjectLockLegalHoldStatusOff && legalHold != types.ObjectLockLegalHoldStatusOn {
+		if debug {
+			debuglogger.Logf("invalid object lock legal hold status: %v\n", legalHold)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus)
 	}
 
@@ -372,7 +403,7 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 	}, nil
 }
 
-func IsValidOwnership(val types.ObjectOwnership) bool {
+func IsValidOwnership(val types.ObjectOwnership, debug bool) bool {
 	switch val {
 	case types.ObjectOwnershipBucketOwnerEnforced:
 		return true
@@ -381,6 +412,9 @@ func IsValidOwnership(val types.ObjectOwnership) bool {
 	case types.ObjectOwnershipObjectWriter:
 		return true
 	default:
+		if debug {
+			debuglogger.Logf("invalid object ownership: %v\n", val)
+		}
 		return false
 	}
 }
@@ -456,15 +490,37 @@ func shouldEscape(c byte) bool {
 	return true
 }
 
-func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.ChecksumAlgorithm]string, error) {
+type ChecksumValues map[types.ChecksumAlgorithm]string
+
+// Headers concatinates checksum algorithm by prefixing each
+// with 'x-amz-checksum-'
+// e.g.
+// "x-amz-checksum-crc64nvme, x-amz-checksum-sha1"
+func (cv ChecksumValues) Headers() string {
+	result := ""
+	isFirst := false
+
+	for key := range cv {
+		if !isFirst {
+			result += ", "
+		}
+		result += fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(key)))
+	}
+	return result
+}
+
+func ParseChecksumHeaders(ctx *fiber.Ctx, debug bool) (types.ChecksumAlgorithm, ChecksumValues, error) {
 	sdkAlgorithm := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("X-Amz-Sdk-Checksum-Algorithm")))
 
-	err := IsChecksumAlgorithmValid(sdkAlgorithm)
+	err := IsChecksumAlgorithmValid(sdkAlgorithm, debug)
 	if err != nil {
+		if debug {
+			debuglogger.Logf("invalid checksum algorithm: %v\n", sdkAlgorithm)
+		}
 		return "", nil, err
 	}
 
-	checksums := map[types.ChecksumAlgorithm]string{}
+	checksums := ChecksumValues{}
 
 	var hdrErr error
 	// Parse and validate checksum headers
@@ -475,8 +531,11 @@ func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.Ch
 		}
 
 		algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(string(key), "X-Amz-Checksum-")))
-		err := IsChecksumAlgorithmValid(algo)
+		err := IsChecksumAlgorithmValid(algo, debug)
 		if err != nil {
+			if debug {
+				debuglogger.Logf("invalid checksum header: %s\n", key)
+			}
 			hdrErr = s3err.GetAPIError(s3err.ErrInvalidChecksumHeader)
 			return
 		}
@@ -489,11 +548,14 @@ func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, map[types.Ch
 	}
 
 	if len(checksums) > 1 {
+		if debug {
+			debuglogger.Logf("multiple checksum headers provided: %v\n", checksums.Headers())
+		}
 		return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
 	}
 
 	for al, val := range checksums {
-		if !IsValidChecksum(val, al) {
+		if !IsValidChecksum(val, al, debug) {
 			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
 		}
 		// If any other checksum value is provided,
@@ -515,21 +577,32 @@ var checksumLengths = map[types.ChecksumAlgorithm]int{
 	types.ChecksumAlgorithmSha256:    32,
 }
 
-func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm) bool {
+func IsValidChecksum(checksum string, algorithm types.ChecksumAlgorithm, debug bool) bool {
 	decoded, err := base64.StdEncoding.DecodeString(checksum)
 	if err != nil {
+		if debug {
+			debuglogger.Logf("failed to parse checksum base64: %v\n", err)
+		}
 		return false
 	}
 
 	expectedLength, exists := checksumLengths[algorithm]
 	if !exists {
+		if debug {
+			debuglogger.Logf("unknown checksum algorithm: %v\n", algorithm)
+		}
 		return false
 	}
 
-	return len(decoded) == expectedLength
+	isValid := len(decoded) == expectedLength
+	if !isValid && debug {
+		debuglogger.Logf("decoded checksum length: (expected): %v, (got): %v\n", expectedLength, len(decoded))
+	}
+
+	return isValid
 }
 
-func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
+func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm, debug bool) error {
 	alg = types.ChecksumAlgorithm(strings.ToUpper(string(alg)))
 	if alg != "" &&
 		alg != types.ChecksumAlgorithmCrc32 &&
@@ -537,6 +610,9 @@ func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
 		alg != types.ChecksumAlgorithmSha1 &&
 		alg != types.ChecksumAlgorithmSha256 &&
 		alg != types.ChecksumAlgorithmCrc64nvme {
+		if debug {
+			debuglogger.Logf("invalid checksum algorithm: %v\n", alg)
+		}
 		return s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm)
 	}
 
@@ -544,10 +620,13 @@ func IsChecksumAlgorithmValid(alg types.ChecksumAlgorithm) error {
 }
 
 // Validates the provided checksum type
-func IsChecksumTypeValid(t types.ChecksumType) error {
+func IsChecksumTypeValid(t types.ChecksumType, debug bool) error {
 	if t != "" &&
 		t != types.ChecksumTypeComposite &&
 		t != types.ChecksumTypeFullObject {
+		if debug {
+			debuglogger.Logf("invalid checksum type: %v\n", t)
+		}
 		return s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-type")
 	}
 	return nil
@@ -587,10 +666,13 @@ var checksumMap checksumSchema = checksumSchema{
 }
 
 // Checks if checksum type and algorithm are supported together
-func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType) error {
+func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType, debug bool) error {
 	typeSchema := checksumMap[algo]
 	_, ok := typeSchema[t]
 	if !ok {
+		if debug {
+			debuglogger.Logf("checksum type and algorithm mismatch: (type): %v, (algorithm): %v\n", t, algo)
+		}
 		return s3err.GetChecksumSchemaMismatchErr(algo, t)
 	}
 
@@ -598,26 +680,29 @@ func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType
 }
 
 // Parses and validates the x-amz-checksum-algorithm and x-amz-checksum-type headers
-func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, types.ChecksumType, error) {
+func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx, debug bool) (types.ChecksumAlgorithm, types.ChecksumType, error) {
 	algo := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
-	if err := IsChecksumAlgorithmValid(algo); err != nil {
+	if err := IsChecksumAlgorithmValid(algo, debug); err != nil {
 		return "", "", err
 	}
 
 	chType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
-	if err := IsChecksumTypeValid(chType); err != nil {
+	if err := IsChecksumTypeValid(chType, debug); err != nil {
 		return "", "", err
 	}
 
 	// Verify if checksum algorithm is provided, if
 	// checksum type is specified
 	if chType != "" && algo == "" {
+		if debug {
+			debuglogger.Logf("checksum type can only be used with checksum algorithm: (type): %v\n", chType)
+		}
 		return algo, chType, s3err.GetAPIError(s3err.ErrChecksumTypeWithAlgo)
 	}
 
 	// Verify if the checksum type is supported for
 	// the provided checksum algorithm
-	if err := checkChecksumTypeAndAlgo(algo, chType); err != nil {
+	if err := checkChecksumTypeAndAlgo(algo, chType, debug); err != nil {
 		return algo, chType, err
 	}
 

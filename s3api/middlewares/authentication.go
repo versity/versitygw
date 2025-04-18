@@ -120,7 +120,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 				var err error
 				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 					var cr io.Reader
-					cr, err = utils.NewChunkReader(ctx, r, authData, region, account.Secret, tdate)
+					cr, err = utils.NewChunkReader(ctx, r, authData, region, account.Secret, tdate, debug)
 					return cr
 				})
 				if err != nil {

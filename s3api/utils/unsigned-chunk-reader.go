@@ -44,9 +44,11 @@ type UnsignedChunkReader struct {
 	stash            []byte
 	chunkCounter     int
 	offset           int
+	//TODO: Add debug logging for the reader
+	debug bool
 }
 
-func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader, error) {
+func NewUnsignedChunkReader(r io.Reader, ct checksumType, debug bool) (*UnsignedChunkReader, error) {
 	hasher, err := getHasher(ct)
 	if err != nil {
 		return nil, err
@@ -57,6 +59,7 @@ func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader,
 		stash:        make([]byte, 0),
 		hasher:       hasher,
 		chunkCounter: 1,
+		debug:        debug,
 	}, nil
 }
 
