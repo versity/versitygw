@@ -3,7 +3,7 @@ on: pull_request
 jobs:
 
   build:
-    name: Build
+    name: Go Basic Checks
     runs-on: ubuntu-latest
     steps:
 
@@ -23,9 +23,6 @@ jobs:
       run: |
         go get -v -t -d ./...
 
-    - name: Build
-      run: make
-
     - name: Test
       run: go test -coverprofile profile.txt -race -v -timeout 30s -tags=github ./...
 
@@ -36,3 +33,25 @@ jobs:
     - name: Run govulncheck
       run: govulncheck ./...
       shell: bash
+
+  verify-build:
+    name: Verify Build Targets
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [darwin, freebsd, linux]
+        arch: [amd64, arm64]
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Build for ${{ matrix.os }}/${{ matrix.arch }}
+        run: |
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o versitygw-${{ matrix.os }}-${{ matrix.arch }} cmd/versitygw/*.go
