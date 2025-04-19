@@ -288,15 +288,24 @@ get_and_compare_policy_with_file() {
     log 2 "'get_and_compare_policies' requires bucket, username, password, filename"
     return 1
   fi
+  # shellcheck disable=SC2002
+  if ! sorted_original=$(cat "$4" | jq -S 2>&1); then
+    log 2 "error sorting original policy: $sorted_original"
+    return 1
+  fi
+  log 5 "after sort: $sorted_original"
   if ! get_bucket_policy_with_user "$1" "$2" "$3"; then
     log 2 "error getting bucket policy"
     return 1
   fi
   # shellcheck disable=SC2154
-  echo -n "$bucket_policy" > "$4-copy"
-  log 5 "ORIG: $(cat "$4")"
-  log 5 "COPY: $(cat "$4-copy")"
-  if ! compare_files "$4" "$4-copy"; then
+  if ! sorted_copy=$(echo -n "$bucket_policy" | jq -S 2>&1); then
+    log 2 "error sorting copy: $sorted_copy"
+    return 1
+  fi
+  log 5 "ORIG: $sorted_original"
+  log 5 "COPY: $sorted_copy"
+  if ! compare_files <(echo -n "$sorted_original") <(echo -n "$sorted_copy"); then
     log 2 "policies not equal"
     return 1
   fi
