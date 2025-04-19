@@ -55,7 +55,7 @@ check_attributes_after_upload() {
     log 2 "unexpected parts count, expected 4, was $parts_count"
     return 1
   fi
-  return 1
+  return 0
 }
 
 check_attributes_invalid_param() {

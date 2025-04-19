@@ -106,6 +106,42 @@ delete_temp_log_if_exists() {
   return 0
 }
 
+post_versity_cleanup() {
+  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
+    end_time=$(date +%s)
+    total_time=$((end_time - start_time))
+    log 4 "Total test time: $total_time"
+    if [[ -n "$TIME_LOG" ]]; then
+      echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
+    fi
+  fi
+  if [[ -n "$COVERAGE_DB" ]]; then
+    record_result
+  fi
+  if [[ "$BATS_TEST_COMPLETED" -ne 1 ]]; then
+    if [[ -e "$COMMAND_LOG" ]]; then
+      cat "$COMMAND_LOG"
+      echo "**********************************************************************************"
+    fi
+    if [[ -e "$TEST_LOG_FILE.tmp" ]]; then
+      echo "********************************** LOG *******************************************"
+      cat "$TEST_LOG_FILE.tmp"
+      echo "**********************************************************************************"
+    fi
+  fi
+  if ! delete_command_log; then
+    log 3 "error deleting command log"
+  fi
+  if [ -e "$TEST_LOG_FILE.tmp" ]; then
+    if ! error=$(cat "$TEST_LOG_FILE.tmp" >> "$TEST_LOG_FILE" 2>&1); then
+      log 3 "error appending temp log to main log: $error"
+    fi
+    if ! delete_temp_log_if_exists; then
+      log 3 "error deleting temp log"
+    fi
+  fi
+}
+
 # bats teardown function
 teardown() {
   # shellcheck disable=SC2154
@@ -135,37 +171,5 @@ teardown() {
     fi
   fi
   stop_versity
-  if [[ $LOG_LEVEL -ge 5 ]] || [[ -n "$TIME_LOG" ]]; then
-    end_time=$(date +%s)
-    total_time=$((end_time - start_time))
-    log 4 "Total test time: $total_time"
-    if [[ -n "$TIME_LOG" ]]; then
-      echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
-    fi
-  fi
-  if [[ -n "$COVERAGE_DB" ]]; then
-    record_result
-  fi
-  if [[ "$BATS_TEST_COMPLETED" -ne 1 ]]; then
-    if [[ -e "$COMMAND_LOG" ]]; then
-      cat "$COMMAND_LOG"
-      echo "**********************************************************************************"
-    fi
-    if [[ -e "$TEST_LOG_FILE.tmp" ]]; then
-      echo "********************************** LOG *******************************************"
-      cat "$TEST_LOG_FILE.tmp"
-      echo "**********************************************************************************"
-    fi
-  fi
-  if ! delete_command_log; then
-    log 3 "error deleting command log"
-  fi
-  if [ -e "$TEST_LOG_FILE.tmp" ]; then
-    if ! error=$(cat "$TEST_LOG_FILE.tmp" >> "$TEST_LOG_FILE" 2>&1); then
-      log 2 "error appending temp log to main log: $error"
-    fi
-    if ! delete_temp_log_if_exists; then
-      log 2 "error deleting temp log"
-    fi
-  fi
+  post_versity_cleanup
 }

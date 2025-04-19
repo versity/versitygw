@@ -14,31 +14,33 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/put_public_access_block.sh
 source ./tests/util/util_acl.sh
 
 test_s3api_policy_delete_bucket_policy() {
   policy_file="policy_file"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_file "$policy_file" 0
-  assert_success
-
-  effect="Allow"
-  principal="$username"
-  action="s3:DeleteBucketPolicy"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-
-  run setup_user "$username" "$password" "user"
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:DeleteBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
   run delete_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password"
   assert_failure
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -56,21 +58,24 @@ test_s3api_policy_get_bucket_acl() {
   run create_test_file "$policy_file" 0
   assert_success
 
-  effect="Allow"
-  principal="$username"
-  action="s3:GetBucketAcl"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-
-  run setup_user "$username" "$password" "user"
-  assert_success
-
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
+
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:GetBucketAcl"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
 
   run get_bucket_acl_with_user "$BUCKET_ONE_NAME" "$username" "$password"
   assert_failure
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
@@ -82,24 +87,25 @@ test_s3api_policy_get_bucket_acl() {
 
 test_s3api_policy_get_bucket_policy() {
   policy_file="policy_file"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_file "$policy_file"
-  assert_success
-
-  effect="Allow"
-  principal="$username"
-  action="s3:GetBucketPolicy"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-
-  run setup_user "$username" "$password" "user"
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:GetBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run get_bucket_policy_with_user "$BUCKET_ONE_NAME" "$username" "$password"
@@ -124,22 +130,25 @@ test_s3api_policy_get_bucket_tagging() {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
-  assert_success "error creating user '$USERNAME_ONE'"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:GetBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:GetBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success "error setting up policy"
 
   run put_bucket_tagging "s3api" "$BUCKET_ONE_NAME" "$tag_key" "$tag_value"
   assert_success "unable to put bucket tagging"
 
-  run get_bucket_tagging_with_user "$USERNAME_ONE" "$PASSWORD_ONE" "$BUCKET_ONE_NAME"
+  run get_bucket_tagging_with_user "$username" "$password" "$BUCKET_ONE_NAME"
   assert_failure
 
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success "error putting policy"
 
-  run get_and_check_bucket_tags_with_user "$USERNAME_ONE" "$PASSWORD_ONE" "$BUCKET_ONE_NAME" "$tag_key" "$tag_value"
+  run get_and_check_bucket_tags_with_user "$username" "$password" "$BUCKET_ONE_NAME" "$tag_key" "$tag_value"
   assert_success "get and check bucket tags failed"
 }
 
@@ -158,10 +167,13 @@ test_s3api_policy_put_acl() {
   run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
   assert_success
 
-  run setup_user "$username" "$password" "user"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$username" "s3:PutBucketAcl" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:PutBucketAcl" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success
   if [[ $DIRECT == "true" ]]; then
     run put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME"
@@ -181,24 +193,25 @@ test_s3api_policy_put_acl() {
 test_s3api_policy_put_bucket_policy() {
   policy_file="policy_file"
   policy_file_two="policy_file_two"
-  username=$USERNAME_ONE
-  password=$PASSWORD_ONE
 
   run create_test_file "$policy_file" 0
-  assert_success
-
-  effect="Allow"
-  principal="$username"
-  action="s3:PutBucketPolicy"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
-
-  run setup_user "$username" "$password" "user"
   assert_success
 
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "dummy" "$effect" "$principal" "$action" "$resource"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  effect="Allow"
+  principal="$user_id"
+  action="s3:PutBucketPolicy"
+  resource="arn:aws:s3:::$BUCKET_ONE_NAME"
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
   run put_bucket_policy_with_user "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file" "$username" "$password"
@@ -207,7 +220,7 @@ test_s3api_policy_put_bucket_policy() {
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file_two" "dummy" "$effect" "$principal" "s3:GetBucketPolicy" "$resource"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file_two" "2012-10-17" "$effect" "$principal" "s3:GetBucketPolicy" "$resource"
   assert_success
 
   run put_bucket_policy_with_user "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file_two" "$username" "$password"
@@ -226,16 +239,20 @@ test_s3api_policy_put_bucket_tagging() {
   assert_success "error creating test files"
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
   assert_success "error setting up bucket"
-  run setup_user "$USERNAME_ONE" "$PASSWORD_ONE" "user"
-  assert_success "error setting up user"
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
+  assert_success
+  user_id=${lines[0]}
+  username=${lines[1]}
+  password=${lines[2]}
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$user_id" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success "error setting up policy"
-  run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$USERNAME_ONE" "$PASSWORD_ONE"
+  run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$username" "$password"
   assert_failure
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success "error putting policy"
-  run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$USERNAME_ONE" "$PASSWORD_ONE"
+  run put_bucket_tagging_with_user "$BUCKET_ONE_NAME" "$tag_key" "$tag_value" "$username" "$password"
   assert_success "unable to put bucket tagging despite user permissions"
 
   run get_and_check_bucket_tags "$BUCKET_ONE_NAME" "$tag_key" "$tag_value"

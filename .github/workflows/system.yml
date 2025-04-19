@@ -12,66 +12,79 @@ jobs:
             IAM_TYPE: folder
             RUN_SET: "mc-non-file-count"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "mc, posix, file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "mc-file-count"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "REST, posix, non-static, all, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3, posix, non-file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3-non-file-count"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3, posix, file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3-file-count"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3api, posix, bucket|object|multipart, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-bucket,s3api-object,s3api-multipart"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3api, posix, policy, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-policy"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3api, posix, user, non-static, s3 IAM"
             IAM_TYPE: s3
             RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3api, posix, bucket, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-bucket"
             RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
           - set: "s3api, posix, multipart, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-multipart"
             RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
           - set: "s3api, posix, object, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-object"
             RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
           - set: "s3api, posix, policy, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-policy"
             RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
           - set: "s3api, posix, user, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
           # TODO fix/debug s3 gateway
           #- set: "s3api, s3, multipart|object, non-static, folder IAM"
@@ -88,16 +101,19 @@ jobs:
             IAM_TYPE: folder
             RUN_SET: "s3cmd-file-count"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3cmd, posix, non-user, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3cmd-non-user"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
           - set: "s3cmd, posix, user, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3cmd-user"
             RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
     steps:
       - name: Check out code into the Go module directory
@@ -150,6 +166,7 @@ jobs:
           RUN_VERSITYGW: true
           BACKEND: ${{ matrix.BACKEND }}
           RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
+          DELETE_BUCKETS_AFTER_TEST: ${{ matrix.DELETE_BUCKETS_AFTER_TEST }}
           CERT: ${{ github.workspace }}/cert.pem
           KEY: ${{ github.workspace }}/versitygw.pem
           LOCAL_FOLDER: /tmp/gw
