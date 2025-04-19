@@ -166,6 +166,7 @@ jobs:
           RUN_VERSITYGW: true
           BACKEND: ${{ matrix.BACKEND }}
           RECREATE_BUCKETS: ${{ matrix.RECREATE_BUCKETS }}
+          DELETE_BUCKETS_AFTER_TEST: ${{ matrix.DELETE_BUCKETS_AFTER_TEST }}
           CERT: ${{ github.workspace }}/cert.pem
           KEY: ${{ github.workspace }}/versitygw.pem
           LOCAL_FOLDER: /tmp/gw
