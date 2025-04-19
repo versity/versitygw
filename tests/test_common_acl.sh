@@ -43,6 +43,16 @@ test_put_bucket_acl_s3cmd() {
   assert_success
 }
 
+get_grantee_type_and_id() {
+  if [[ $DIRECT == "true" ]]; then
+    grantee_type="Group"
+    grantee_id="http://acs.amazonaws.com/groups/global/AllUsers"
+  else
+    grantee_type="CanonicalUser"
+    grantee_id="$username"
+  fi
+}
+
 test_common_put_bucket_acl() {
   assert [ $# -eq 1 ]
 
@@ -61,13 +71,7 @@ test_common_put_bucket_acl() {
   run create_test_files "$acl_file"
   assert_success
 
-  if [[ $DIRECT == "true" ]]; then
-    grantee_type="Group"
-    grantee_id="http://acs.amazonaws.com/groups/global/AllUsers"
-  else
-    grantee_type="CanonicalUser"
-    grantee_id="$username"
-  fi
+  get_grantee_type_and_id
   run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "$grantee_type" "$grantee_id" "READ" "$AWS_ACCESS_KEY_ID"
   assert_success
 
