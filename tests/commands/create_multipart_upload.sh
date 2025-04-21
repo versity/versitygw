@@ -122,5 +122,11 @@ create_multipart_upload_rest() {
     log 2 "put-object-retention returned code $result: $(cat "$TEST_FILE_FOLDER/output.txt")"
     return 1
   fi
+  log 5 "result: $(cat "$TEST_FILE_FOLDER/output.txt")"
+  if ! upload_id=$(get_element_text "$TEST_FILE_FOLDER/output.txt" "InitiateMultipartUploadResult" "UploadId"); then
+    log 2 "error getting upload ID: $upload_id"
+    return 1
+  fi
+  echo "$upload_id"
   return 0
 }

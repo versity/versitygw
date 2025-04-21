@@ -434,3 +434,115 @@ list_check_multipart_upload_key() {
   fi
   return 0
 }
+
+upload_part_copy_without_upload_id_or_part_number() {
+  if [ $# -ne 7 ]; then
+    log 2 "'upload_part_copy_without_upload_id_or_part_number' requires bucket name, key, part number, upload ID, response code, error code, message"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="$3" UPLOAD_ID="$4" PART_LOCATION="$BUCKET_ONE_NAME/$2-1" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part_copy.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  log 5 "result: $result"
+  if [ "$result" != "$5" ]; then
+    log 2 "expected '$5', was '$result' ($(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  log 5 "error:  $(cat "$TEST_FILE_FOLDER/response.txt")"
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/response.txt" "$6" "$7"; then
+    log 2 "error checking XML response"
+    return 1
+  fi
+}
+
+upload_part_check_etag_header() {
+  if [ $# -ne 3 ]; then
+    log 2 "'upload_part_check_etag_header' requires bucket name, key, upload ID"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result'"
+    return 1
+  fi
+  etag="$(grep -i "ETag: " "$TEST_FILE_FOLDER/response.txt" | awk '{print $2}' | tr -d '\r')"
+  if ! [[ "$etag" =~ ^\"[0-9a-f]+\" ]]; then
+    log 2 "etag pattern mismatch, etag ($etag) should be hex string surrounded by quotes"
+    return 1
+  fi
+  return 0
+}
+
+upload_part_copy_check_etag_header() {
+  if [ $# -ne 3 ]; then
+    log 2 "'upload_part_copy_check_etag_header' requires bucket, destination file, part location"
+    return 1
+  fi
+  if ! create_upload_and_get_id_rest "$1" "$2"; then
+    log 2 "error creating upload and getting ID"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$upload_id" PART_LOCATION="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part_copy.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part: $result"
+    return 1
+  fi
+  if ! etag=$(get_element_text "$TEST_FILE_FOLDER/response.txt" "CopyPartResult" "ETag"); then
+    log 2 "error getting etag"
+    return 1
+  fi
+  log 5 "etag: $etag"
+  if ! [[ "$etag" =~ ^\"[0-9a-f]+\" ]]; then
+    log 2 "etag pattern mismatch, etag ($etag) should be hex string surrounded by quotes"
+    return 1
+  fi
+  return 0
+}
+
+upload_part_without_part_number() {
+  if [ $# -ne 2 ]; then
+    log 2 "'upload_part_without_upload_id' requires bucket name, key"
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2"; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  if [ "$result" != "405" ]; then
+    log 2 "expected '405', was '$result' ($(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+upload_part_without_upload_id() {
+  if [ $# -ne 2 ]; then
+    log 2 "'upload_part_without_part_number' requires bucket name, key"
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2"; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="1" UPLOAD_ID="" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  if [ "$result" != "405" ]; then
+    log 2 "expected '405', was '$result' ($(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  return 0
+}

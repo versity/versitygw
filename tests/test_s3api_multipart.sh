@@ -29,6 +29,8 @@ source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/list_multipart_uploads.sh
 
+export RUN_USERS=true
+
 # abort-multipart-upload
 @test "test_abort_multipart_upload" {
   local bucket_file="bucket-file"
@@ -115,10 +117,7 @@ source ./tests/commands/list_multipart_uploads.sh
   run multipart_upload_from_bucket "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file" 4
   assert_success
 
-  run get_object "s3api" "$BUCKET_ONE_NAME" "$bucket_file-copy" "$TEST_FILE_FOLDER/$bucket_file-copy"
-  assert_success
-
-  run compare_files "$TEST_FILE_FOLDER"/$bucket_file-copy "$TEST_FILE_FOLDER"/$bucket_file
+  run download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "${bucket_file}-copy" "$TEST_FILE_FOLDER/$bucket_file-copy-two"
   assert_success
 }
 

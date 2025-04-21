@@ -224,7 +224,7 @@ export RUN_USERS=true
 
 @test "directory objects can't contain data" {
   if [ "$DIRECT" == "true" ]; then
-    skip
+    skip "for direct, directory objects can contain data (though discouraged)"
   fi
   test_file="a"
 
@@ -239,7 +239,7 @@ export RUN_USERS=true
 @test "objects containing data can't be copied to directory objects with same name" {
   # operation is legal (though discouraged) for direct
   if [ "$DIRECT" == "true" ]; then
-    skip
+    skip "for direct, directory objects can contain data (though discouraged)"
   fi
   test_file="a"
 

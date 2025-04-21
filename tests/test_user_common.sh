@@ -71,7 +71,7 @@ test_create_user_already_exists() {
 
 test_user_user() {
   if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip
+    skip "test not valid for static buckets"
   fi
 
   run setup_user_v2 "user" "1" "$BUCKET_ONE_NAME"

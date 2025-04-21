@@ -21,12 +21,10 @@ source ./tests/setup.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
+export RUN_USERS=true
 test_file="test_file"
 
 @test "REST - invalid checksum type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1104"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 

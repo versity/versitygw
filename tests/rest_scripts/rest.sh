@@ -101,6 +101,22 @@ log_rest() {
   fi
 }
 
+add_cr_parameters_and_header_fields() {
+  canonical_request+="$line
+"
+  if [[ "$line" == *":"* ]]; then
+    local key="${line%%:*}"
+    local value="${line#*:}"
+    if [ "$key" == "x-amz-content-sha256" ]; then
+      payload="$value"
+    fi
+    if [[ "$value" != "" ]]; then
+      param_list=$(add_parameter "$param_list" "$key" ";")
+      header_fields+=(-H "\"$key: $value\"")
+    fi
+  fi
+}
+
 build_canonical_request() {
   if [ $# -lt 0 ]; then
     log_rest 2 "'build_canonical_request' requires parameters"
@@ -111,19 +127,7 @@ build_canonical_request() {
   local payload=""
   header_fields=()
   for line in "$@"; do
-    canonical_request+="$line
-"
-    if [[ "$line" == *":"* ]]; then
-      local key="${line%%:*}"
-      local value="${line#*:}"
-      if [ "$key" == "x-amz-content-sha256" ]; then
-        payload="$value"
-      fi
-      if [[ "$value" != "" ]]; then
-        param_list=$(add_parameter "$param_list" "$key" ";")
-        header_fields+=(-H "\"$key: $value\"")
-      fi
-    fi
+    add_cr_parameters_and_header_fields
   done
   canonical_request+="
 $param_list
