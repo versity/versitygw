@@ -15,9 +15,9 @@
 package s3proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -40,7 +39,12 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-const aclKey string = "versitygwAcl"
+type metaPrefix string
+
+const (
+	metaPrefixAcl    metaPrefix = "vgw-meta-acl-"
+	metaPrefixPolicy metaPrefix = "vgw-meta-policy-"
+)
 
 type S3Proxy struct {
 	backend.BackendUnsupported
@@ -51,6 +55,7 @@ type S3Proxy struct {
 	secret          string
 	endpoint        string
 	awsRegion       string
+	metaBucket      string
 	disableChecksum bool
 	sslSkipVerify   bool
 	debug           bool
@@ -58,21 +63,26 @@ type S3Proxy struct {
 
 var _ backend.Backend = &S3Proxy{}
 
-func New(access, secret, endpoint, region string, disableChecksum, sslSkipVerify, debug bool) (*S3Proxy, error) {
+func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, disableChecksum, sslSkipVerify, debug bool) (*S3Proxy, error) {
 	s := &S3Proxy{
 		access:          access,
 		secret:          secret,
 		endpoint:        endpoint,
 		awsRegion:       region,
+		metaBucket:      metaBucket,
 		disableChecksum: disableChecksum,
 		sslSkipVerify:   sslSkipVerify,
 		debug:           debug,
 	}
-	client, err := s.getClientWithCtx(context.Background())
+	client, err := s.getClientWithCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
 	s.client = client
+
+	if s.metaBucket != "" && !s.bucketExists(ctx, s.metaBucket) {
+		return nil, fmt.Errorf("the provided meta bucket doesn't exist")
+	}
 	return s, nil
 }
 
@@ -130,27 +140,29 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
 		input.GrantWriteACP = nil
 	}
+	if *input.Bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+	}
 	_, err := s.client.CreateBucket(ctx, input)
 	if err != nil {
 		return handleError(err)
 	}
 
-	var tagSet []types.Tag
-	tagSet = append(tagSet, types.Tag{
-		Key:   backend.GetPtrFromString(aclKey),
-		Value: backend.GetPtrFromString(base64Encode(acl)),
-	})
+	// Store bucket default acl
+	if s.metaBucket != "" {
+		err = s.putMetaBucketObj(ctx, *input.Bucket, acl, metaPrefixAcl)
+		if err != nil {
+			return handleError(err)
+		}
+	}
 
-	_, err = s.client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
-		Bucket: input.Bucket,
-		Tagging: &types.Tagging{
-			TagSet: tagSet,
-		},
-	})
-	return handleError(err)
+	return nil
 }
 
 func (s *S3Proxy) DeleteBucket(ctx context.Context, bucket string) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: &bucket,
 	})
@@ -158,6 +170,9 @@ func (s *S3Proxy) DeleteBucket(ctx context.Context, bucket string) error {
 }
 
 func (s *S3Proxy) PutBucketOwnershipControls(ctx context.Context, bucket string, ownership types.ObjectOwnership) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := s.client.PutBucketOwnershipControls(ctx, &s3.PutBucketOwnershipControlsInput{
 		Bucket: &bucket,
 		OwnershipControls: &types.OwnershipControls{
@@ -172,6 +187,9 @@ func (s *S3Proxy) PutBucketOwnershipControls(ctx context.Context, bucket string,
 }
 
 func (s *S3Proxy) GetBucketOwnershipControls(ctx context.Context, bucket string) (types.ObjectOwnership, error) {
+	if bucket == s.metaBucket {
+		return "", s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	var ownship types.ObjectOwnership
 	resp, err := s.client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
 		Bucket: &bucket,
@@ -182,6 +200,9 @@ func (s *S3Proxy) GetBucketOwnershipControls(ctx context.Context, bucket string)
 	return resp.OwnershipControls.Rules[0].ObjectOwnership, nil
 }
 func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket string) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := s.client.DeleteBucketOwnershipControls(ctx, &s3.DeleteBucketOwnershipControlsInput{
 		Bucket: &bucket,
 	})
@@ -189,6 +210,9 @@ func (s *S3Proxy) DeleteBucketOwnershipControls(ctx context.Context, bucket stri
 }
 
 func (s *S3Proxy) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := s.client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 		Bucket: &bucket,
 		VersioningConfiguration: &types.VersioningConfiguration{
@@ -200,6 +224,9 @@ func (s *S3Proxy) PutBucketVersioning(ctx context.Context, bucket string, status
 }
 
 func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+	if bucket == s.metaBucket {
+		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	out, err := s.client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{
 		Bucket: &bucket,
 	})
@@ -211,6 +238,9 @@ func (s *S3Proxy) GetBucketVersioning(ctx context.Context, bucket string) (s3res
 }
 
 func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVersionsInput) (s3response.ListVersionsResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.ListVersionsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.Delimiter != nil && *input.Delimiter == "" {
 		input.Delimiter = nil
 	}
@@ -255,6 +285,9 @@ func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVe
 var defTime = time.Time{}
 
 func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -366,6 +399,9 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.Cr
 }
 
 func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
 		input.ChecksumCRC32 = nil
 	}
@@ -408,6 +444,9 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
+	if *input.Bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -419,6 +458,9 @@ func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMulti
 }
 
 func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.ListMultipartUploadsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.Delimiter != nil && *input.Delimiter == "" {
 		input.Delimiter = nil
 	}
@@ -487,6 +529,9 @@ func (s *S3Proxy) ListMultipartUploads(ctx context.Context, input *s3.ListMultip
 }
 
 func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3response.ListPartsResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -561,6 +606,9 @@ func (s *S3Proxy) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3re
 }
 
 func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
 		input.ChecksumCRC32 = nil
 	}
@@ -601,6 +649,9 @@ func (s *S3Proxy) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 }
 
 func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.CopySourceIfMatch != nil && *input.CopySourceIfMatch == "" {
 		input.CopySourceIfMatch = nil
 	}
@@ -658,6 +709,9 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 }
 
 func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -812,6 +866,9 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 }
 
 func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -869,6 +926,9 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 }
 
 func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -930,6 +990,9 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.GetObjectAttributesResponse{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -989,6 +1052,9 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 }
 
 func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
 	}
@@ -1127,6 +1193,9 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 }
 
 func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.Delimiter != nil && *input.Delimiter == "" {
 		input.Delimiter = nil
 	}
@@ -1164,6 +1233,9 @@ func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 }
 
 func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ContinuationToken != nil && *input.ContinuationToken == "" {
 		input.ContinuationToken = nil
 	}
@@ -1205,6 +1277,9 @@ func (s *S3Proxy) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 }
 
 func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	if *input.Bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -1229,6 +1304,9 @@ func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput)
 }
 
 func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
+	if *input.Bucket == s.metaBucket {
+		return s3response.DeleteResult{}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
@@ -1252,77 +1330,22 @@ func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInpu
 }
 
 func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
-		input.ExpectedBucketOwner = nil
-	}
-
-	tagout, err := s.client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
-		Bucket: input.Bucket,
-	})
+	data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl)
 	if err != nil {
-		var ae smithy.APIError
-		if errors.As(err, &ae) {
-			// sdk issue workaround for missing NoSuchTagSet error type
-			// https://github.com/aws/aws-sdk-go-v2/issues/2878
-			if strings.Contains(ae.ErrorCode(), "NoSuchTagSet") {
-				return []byte{}, nil
-			}
-			if strings.Contains(ae.ErrorCode(), "NotImplemented") {
-				return []byte{}, nil
-			}
-		}
 		return nil, handleError(err)
 	}
 
-	for _, tag := range tagout.TagSet {
-		if *tag.Key == aclKey {
-			acl, err := base64Decode(*tag.Value)
-			if err != nil {
-				return nil, handleError(err)
-			}
-			return acl, nil
-		}
-	}
-
-	return []byte{}, nil
+	return data, nil
 }
 
 func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {
-	tagout, err := s.client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
-		Bucket: &bucket,
-	})
-	if err != nil {
-		return handleError(err)
-	}
-
-	var found bool
-	for i, tag := range tagout.TagSet {
-		if *tag.Key == aclKey {
-			tagout.TagSet[i] = types.Tag{
-				Key:   backend.GetPtrFromString(aclKey),
-				Value: backend.GetPtrFromString(base64Encode(data)),
-			}
-			found = true
-			break
-		}
-	}
-	if !found {
-		tagout.TagSet = append(tagout.TagSet, types.Tag{
-			Key:   backend.GetPtrFromString(aclKey),
-			Value: backend.GetPtrFromString(base64Encode(data)),
-		})
-	}
-
-	_, err = s.client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
-		Bucket: &bucket,
-		Tagging: &types.Tagging{
-			TagSet: tagout.TagSet,
-		},
-	})
-	return handleError(err)
+	return handleError(s.putMetaBucketObj(ctx, bucket, data, metaPrefixAcl))
 }
 
 func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	tagging := &types.Tagging{
 		TagSet: []types.Tag{},
 	}
@@ -1342,6 +1365,9 @@ func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, t
 }
 
 func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+	if bucket == s.metaBucket {
+		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	output, err := s.client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 		Bucket: &bucket,
 		Key:    &object,
@@ -1359,6 +1385,9 @@ func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (
 }
 
 func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+	if bucket == s.metaBucket {
+		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
 	_, err := s.client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
 		Bucket: &bucket,
 		Key:    &object,
@@ -1367,34 +1396,29 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string
 }
 
 func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
-	_, err := s.client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-		Bucket: &bucket,
-		Policy: backend.GetPtrFromString(string(policy)),
-	})
-	return handleError(err)
+	return handleError(s.putMetaBucketObj(ctx, bucket, policy, metaPrefixPolicy))
 }
 
 func (s *S3Proxy) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
-	policy, err := s.client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-		Bucket: &bucket,
-	})
+	data, err := s.getMetaBucketObjData(ctx, bucket, metaPrefixPolicy)
 	if err != nil {
 		return nil, handleError(err)
 	}
 
-	result := []byte{}
-	if policy.Policy != nil {
-		result = []byte(*policy.Policy)
-	}
-
-	return result, nil
+	return data, nil
 }
 
 func (s *S3Proxy) DeleteBucketPolicy(ctx context.Context, bucket string) error {
-	_, err := s.client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
-		Bucket: &bucket,
+	key := getMetaKey(bucket, metaPrefixPolicy)
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &s.metaBucket,
+		Key:    &key,
 	})
-	return handleError(err)
+	if err != nil && !areErrSame(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return handleError(err)
+	}
+
+	return nil
 }
 
 func (s *S3Proxy) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
@@ -1502,6 +1526,95 @@ func (s *S3Proxy) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket
 	return buckets, nil
 }
 
+func (s *S3Proxy) bucketExists(ctx context.Context, bucket string) bool {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: &bucket,
+	})
+	return err == nil
+}
+
+func (s *S3Proxy) putMetaBucketObj(ctx context.Context, bucket string, data []byte, prefix metaPrefix) error {
+	// if meta bucket is not provided, return successful response
+	if s.metaBucket == "" {
+		return nil
+	}
+
+	key := getMetaKey(bucket, prefix)
+	// store the provided bucket acl/policy as an object in meta bucket
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &s.metaBucket,
+		Key:    &key,
+		Body:   bytes.NewReader(data),
+	})
+	return err
+}
+
+func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefix metaPrefix) ([]byte, error) {
+	// return default bahviour of get bucket policy/acl, if meta bucket is not provided
+	if s.metaBucket == "" {
+		switch prefix {
+		case metaPrefixAcl:
+			return []byte{}, nil
+		case metaPrefixPolicy:
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+		}
+	}
+
+	key := getMetaKey(bucket, prefix)
+	// get meta bucket object
+	res, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &s.metaBucket,
+		Key:    &key,
+	})
+	if areErrSame(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		switch prefix {
+		case metaPrefixAcl:
+			// If bucket acl is not found, return default acl
+			return []byte{}, nil
+		case metaPrefixPolicy:
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read meta object data: %w", err)
+	}
+
+	return data, nil
+}
+
+// Checks if the provided err is a type of smithy.APIError
+// and if the error code and message match with the provided apiErr
+func areErrSame(err error, apiErr s3err.APIError) bool {
+	if err == nil {
+		return false
+	}
+	var ae smithy.APIError
+	if errors.As(err, &ae) {
+		if ae.ErrorCode() != apiErr.Code {
+			return false
+		}
+
+		// 404 errors are not well serialized by aws-sdk-go-v2
+		if ae.ErrorCode() != "NoSuchKey" && ae.ErrorMessage() != apiErr.Description {
+			return false
+		}
+
+		return true
+	}
+
+	return false
+}
+
+// generates meta object key with bucket name and meta prefix
+func getMetaKey(bucket string, prefix metaPrefix) string {
+	return string(prefix) + bucket
+}
+
 func handleError(err error) error {
 	if err == nil {
 		return nil
@@ -1520,18 +1633,6 @@ func handleError(err error) error {
 		return apiErr
 	}
 	return err
-}
-
-func base64Encode(input []byte) string {
-	return base64.StdEncoding.EncodeToString(input)
-}
-
-func base64Decode(encoded string) ([]byte, error) {
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return nil, err
-	}
-	return decoded, nil
 }
 
 func convertObjects(objs []types.Object) []s3response.Object {
