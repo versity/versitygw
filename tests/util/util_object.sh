@@ -484,3 +484,22 @@ put_object_rest_check_expires_header() {
   fi
   return 0
 }
+
+attempt_copy_object_to_directory_with_same_name() {
+  if [ $# -ne 3 ]; then
+    log 2 "'attempt_copy_object_to_directory_with_same_name' requires bucket name, key name, copy source"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2/" COPY_SOURCE="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/copy_object.sh); then
+    log 2 "error copying object: $result"
+    return 1
+  fi
+  if [ "$result" != "409" ]; then
+    log 2 "expected '409', was '$result'"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "ObjectParentIsFile" "Object parent already exists as a file"; then
+    log 2 "error checking XML"
+    return 1
+  fi
+}

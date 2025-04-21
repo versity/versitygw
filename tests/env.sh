@@ -97,16 +97,12 @@ check_bucket_vars() {
     log 1 "BUCKET_TWO_NAME missing"
     exit 1
   fi
-  if [ -z "$RECREATE_BUCKETS" ]; then
-    log 1 "RECREATE_BUCKETS missing"
-    exit 1
-  fi
   if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
     log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
     exit 1
   fi
-  if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
-    log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
+  if [ "$DELETE_BUCKETS_AFTER_TEST" != "true" ] && [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
+    log 1 "DELETE_BUCKETS_AFTER_TEST must be 'true' or 'false'"
     exit 1
   fi
   if [ "$RECREATE_BUCKETS" == "false" ] && [ "$DELETE_BUCKETS_AFTER_TEST" == "true" ]; then
@@ -237,6 +233,18 @@ check_user_vars() {
   if [ -z "$PASSWORD_TWO" ]; then
     log 1 "PASSWORD_TWO missing"
     exit 1
+  fi
+  if [ "$AUTOGENERATE_USERS" != "true" ] && [ "$AUTOGENERATE_USERS" != "false" ]; then
+    log 1 "AUTOGENERATE_USERS must be 'true' or 'false'"
+    return 1
+  fi
+  if [ "$AUTOGENERATE_USERS" == "true" ] && [ "$USER_AUTOGENERATION_PREFIX" == "" ]; then
+    log 1 "USER_AUTOGENERATION_PREFIX is required if AUTOGENERATE_USERS is 'true'"
+    return 1
+  fi
+  if [ "$AUTOGENERATE_USERS" == "false" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" != "false" ]; then
+    log 1 "If AUTOGENERATE_USERS is 'false', 'CREATE_STATIC_USERS_IF_NONEXISTENT' must be true or false"
+    return 1
   fi
 
   if [[ -z "$IAM_TYPE" ]]; then

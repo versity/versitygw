@@ -37,6 +37,10 @@ put_bucket_policy() {
     export put_bucket_policy_error
     return 1
   fi
+  # direct can take some time to take effect
+  if [ "$DIRECT" == "true" ]; then
+    sleep 10
+  fi
   return 0
 }
 

@@ -175,7 +175,7 @@ test_file="test_file"
 
 @test "REST - get object attributes" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1000"
+    skip "https://github.com/versity/versitygw/issues/1001"
   fi
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success

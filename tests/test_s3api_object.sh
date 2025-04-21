@@ -236,30 +236,25 @@ export RUN_USERS=true
   assert_output -p "Directory object contains data payload"
 }
 
-#@test "objects containing data can't be copied to directory objects" {
-#  # TODO finish test after https://github.com/versity/versitygw/issues/1021
-#  skip "https://github.com/versity/versitygw/issues/1021"
-#  test_file="a"
-#
-#  run create_test_file "$test_file" 0
-#  assert_success
-#
-#  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
-#  assert_success
-#
-#  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-#  assert_success
-#
-#  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file/" COPY_SOURCE="$BUCKET_ONE_NAME/$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/copy_object.sh); then
-#    log 2 "error listing multipart upload parts: $result"
-#    return 1
-#  fi
-#  if [ "$result" != "400" ]; then
-#    log 2 "response code '$result': $(cat "$TEST_FILE_FOLDER/result.txt")"
-#    return 1
-#  fi
-#  return 0
-#}
+@test "objects containing data can't be copied to directory objects with same name" {
+  # operation is legal (though discouraged) for direct
+  if [ "$DIRECT" == "true" ]; then
+    skip
+  fi
+  test_file="a"
+
+  run create_test_file "$test_file" 0
+  assert_success
+
+  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run attempt_copy_object_to_directory_with_same_name "$BUCKET_ONE_NAME" "$test_file" "$BUCKET_ONE_NAME/$test_file"
+  assert_success
+}
 
 @test "directory object - create multipart upload" {
   run setup_bucket "s3api" "$BUCKET_ONE_NAME"
