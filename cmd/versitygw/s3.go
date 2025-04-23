@@ -26,6 +26,7 @@ var (
 	s3proxySecret          string
 	s3proxyEndpoint        string
 	s3proxyRegion          string
+	s3proxyMetaBucket      string
 	s3proxyDisableChecksum bool
 	s3proxySslSkipVerify   bool
 	s3proxyDebug           bool
@@ -71,6 +72,12 @@ to an s3 storage backend service.`,
 				EnvVars:     []string{"VGW_S3_REGION"},
 				Destination: &s3proxyRegion,
 			},
+			&cli.StringFlag{
+				Name:        "meta-bucket",
+				Usage:       "s3 service meta bucket to store buckets acl/policy",
+				EnvVars:     []string{"VGW_S3_META_BUCKET"},
+				Destination: &s3proxyMetaBucket,
+			},
 			&cli.BoolFlag{
 				Name:        "disable-checksum",
 				Usage:       "disable gateway to server object checksums",
@@ -97,8 +104,8 @@ to an s3 storage backend service.`,
 }
 
 func runS3(ctx *cli.Context) error {
-	be, err := s3proxy.New(s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
-		s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
+	be, err := s3proxy.New(ctx.Context, s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
+		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
 	if err != nil {
 		return fmt.Errorf("init s3 backend: %w", err)
 	}
