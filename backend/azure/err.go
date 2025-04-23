@@ -40,7 +40,7 @@ func azErrToS3err(azErr *azcore.ResponseError) s3err.APIError {
 	case "BlobNotFound":
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	case "TagsTooLarge":
-		return s3err.GetAPIError(s3err.ErrInvalidTag)
+		return s3err.GetAPIError(s3err.ErrInvalidTagValue)
 	case "Requested Range Not Satisfiable":
 		return s3err.GetAPIError(s3err.ErrInvalidRange)
 	}

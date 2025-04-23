@@ -227,10 +227,10 @@ func ParseObjectTags(t string) (map[string]string, error) {
 	for _, prt := range tagParts {
 		p := strings.Split(prt, "=")
 		if len(p) != 2 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
 		}
 		if len(p[0]) > 128 || len(p[1]) > 256 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidTag)
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
 		}
 		tagging[p[0]] = p[1]
 	}

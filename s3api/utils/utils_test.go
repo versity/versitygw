@@ -16,6 +16,9 @@ package utils
 
 import (
 	"bytes"
+	"encoding/xml"
+	"errors"
+	"math/rand"
 	"net/http"
 	"reflect"
 	"testing"
@@ -25,6 +28,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -853,6 +857,166 @@ func Test_checkChecksumTypeAndAlgo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := checkChecksumTypeAndAlgo(tt.args.algo, tt.args.t, false); (err != nil) != tt.wantErr {
 				t.Errorf("checkChecksumTypeAndAlgo() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseTagging(t *testing.T) {
+	genRandStr := func(lgth int) string {
+		b := make([]byte, lgth)
+		for i := range b {
+			b[i] = byte(rand.Intn(95) + 32) // 126 - 32 + 1 = 95 printable characters
+		}
+		return string(b)
+	}
+	getTagSet := func(lgth int) s3response.TaggingInput {
+		res := s3response.TaggingInput{
+			TagSet: s3response.TagSet{
+				Tags: []s3response.Tag{},
+			},
+		}
+
+		for i := 0; i < lgth; i++ {
+			res.TagSet.Tags = append(res.TagSet.Tags, s3response.Tag{
+				Key:   genRandStr(10),
+				Value: genRandStr(20),
+			})
+		}
+
+		return res
+	}
+	type args struct {
+		data        s3response.TaggingInput
+		overrideXML []byte
+		limit       TagLimit
+		debug       bool
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    map[string]string
+		wantErr error
+	}{
+		{
+			name: "valid tags within limit",
+			args: args{
+				data: s3response.TaggingInput{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{
+							{Key: "key1", Value: "value1"},
+							{Key: "key2", Value: "value2"},
+						},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    map[string]string{"key1": "value1", "key2": "value2"},
+			wantErr: nil,
+		},
+		{
+			name: "malformed XML",
+			args: args{
+				overrideXML: []byte("invalid xml"),
+				limit:       TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "exceeds bucket tag limit",
+			args: args{
+				data:  getTagSet(51),
+				limit: TagLimitBucket,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrBucketTaggingLimited),
+		},
+		{
+			name: "exceeds object tag limit",
+			args: args{
+				data:  getTagSet(11),
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
+		},
+		{
+			name: "invalid 0 length tag key",
+			args: args{
+				data: s3response.TaggingInput{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: "", Value: "value1"}},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagKey),
+		},
+		{
+			name: "invalid long tag key",
+			args: args{
+				data: s3response.TaggingInput{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: genRandStr(130), Value: "value1"}},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagKey),
+		},
+		{
+			name: "invalid long tag value",
+			args: args{
+				data: s3response.TaggingInput{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{{Key: "key", Value: genRandStr(257)}},
+					},
+				},
+				limit: TagLimitBucket,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrInvalidTagValue),
+		},
+		{
+			name: "duplicate tag key",
+			args: args{
+				data: s3response.TaggingInput{
+					TagSet: s3response.TagSet{
+						Tags: []s3response.Tag{
+							{Key: "key", Value: "value1"},
+							{Key: "key", Value: "value2"},
+						},
+					},
+				},
+				limit: TagLimitObject,
+			},
+			want:    nil,
+			wantErr: s3err.GetAPIError(s3err.ErrDuplicateTagKey),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data []byte
+			if tt.args.overrideXML != nil {
+				data = tt.args.overrideXML
+			} else {
+				var err error
+				data, err = xml.Marshal(tt.args.data)
+				if err != nil {
+					t.Fatalf("error marshalling input: %v", err)
+				}
+			}
+			got, err := ParseTagging(data, tt.args.limit, tt.args.debug)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if err == nil && !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("expected result %v, got %v", tt.want, got)
 			}
 		})
 	}

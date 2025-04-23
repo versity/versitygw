@@ -2500,7 +2500,7 @@ func PutBucketTagging_long_tags(s *S3Conf) error {
 			Bucket:  &bucket,
 			Tagging: &tagging})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagKey)); err != nil {
 			return err
 		}
 
@@ -2511,7 +2511,32 @@ func PutBucketTagging_long_tags(s *S3Conf) error {
 			Bucket:  &bucket,
 			Tagging: &tagging})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutBucketTagging_duplicate_keys(s *S3Conf) error {
+	testName := "PutBucketTagging_duplicate_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{Key: getPtr("key"), Value: getPtr("value")},
+				{Key: getPtr("key"), Value: getPtr("value-1")},
+				{Key: getPtr("key-1"), Value: getPtr("value-2")},
+				{Key: getPtr("key-2"), Value: getPtr("value-3")},
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  &bucket,
+			Tagging: &tagging,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDuplicateTagKey)); err != nil {
 			return err
 		}
 
@@ -2813,7 +2838,7 @@ func PutObject_invalid_long_tags(s *S3Conf) error {
 			Tagging: &tagging,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
 			return err
 		}
 
@@ -2827,7 +2852,7 @@ func PutObject_invalid_long_tags(s *S3Conf) error {
 		})
 		cancel()
 
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
 			return err
 		}
 
@@ -6991,7 +7016,7 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 			Key:     &obj,
 			Tagging: &tagging})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagKey)); err != nil {
 			return err
 		}
 
@@ -7003,7 +7028,39 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 			Key:     &obj,
 			Tagging: &tagging})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func PutObjectTagging_duplicate_keys(s *S3Conf) error {
+	testName := "PutObjectTagging_duplicate_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{Key: getPtr("key-1"), Value: getPtr("value-1")},
+				{Key: getPtr("key-2"), Value: getPtr("value-2")},
+				{Key: getPtr("same-key"), Value: getPtr("value-3")},
+				{Key: getPtr("same-key"), Value: getPtr("value-4")},
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:  &bucket,
+			Key:     &obj,
+			Tagging: &tagging,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDuplicateTagKey)); err != nil {
 			return err
 		}
 
@@ -7630,7 +7687,7 @@ func CreateMultipartUpload_with_invalid_tagging(s *S3Conf) error {
 			Tagging: getPtr("invalid_tag"),
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTag)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
 			return err
 		}
 

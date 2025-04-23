@@ -17,6 +17,7 @@ package utils
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -718,4 +719,75 @@ func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx, debug bool) (types.ChecksumAlg
 	}
 
 	return algo, chType, nil
+}
+
+// TagLimit specifies the allowed tag count in a tag set
+type TagLimit int
+
+const (
+	// Tag limit for bucket tagging
+	TagLimitBucket TagLimit = 50
+	// Tag limit for object tagging
+	TagLimitObject TagLimit = 10
+)
+
+// Parses and validates tagging
+func ParseTagging(data []byte, limit TagLimit, debug bool) (map[string]string, error) {
+	var tagging s3response.TaggingInput
+	err := xml.Unmarshal(data, &tagging)
+	if err != nil {
+		if debug {
+			debuglogger.Logf("invalid taggging: %s", data)
+		}
+		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	tLen := len(tagging.TagSet.Tags)
+	if tLen > int(limit) {
+		switch limit {
+		case TagLimitObject:
+			if debug {
+				debuglogger.Logf("bucket tagging length exceeds %v: %v", limit, tLen)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrObjectTaggingLimited)
+		case TagLimitBucket:
+			if debug {
+				debuglogger.Logf("object tagging length exceeds %v: %v", limit, tLen)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrBucketTaggingLimited)
+		}
+	}
+
+	tagSet := make(map[string]string, tLen)
+
+	for _, tag := range tagging.TagSet.Tags {
+		// validate tag key
+		if len(tag.Key) == 0 || len(tag.Key) > 128 {
+			if debug {
+				debuglogger.Logf("tag key should 0 < tag.Key <= 128, key: %v", tag.Key)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// validate tag value
+		if len(tag.Value) > 256 {
+			if debug {
+				debuglogger.Logf("invalid long tag value: (length): %v, (value): %v", len(tag.Value), tag.Value)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+		}
+
+		// make sure there are no duplicate keys
+		_, ok := tagSet[tag.Key]
+		if ok {
+			if debug {
+				debuglogger.Logf("duplicate tag key: %v", tag.Key)
+			}
+			return nil, s3err.GetAPIError(s3err.ErrDuplicateTagKey)
+		}
+
+		tagSet[tag.Key] = tag.Value
+	}
+
+	return tagSet, nil
 }
