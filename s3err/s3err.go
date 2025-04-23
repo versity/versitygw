@@ -84,7 +84,9 @@ const (
 	ErrInvalidCopyDest
 	ErrInvalidCopySource
 	ErrInvalidCopySourceRange
-	ErrInvalidTag
+	ErrInvalidTagKey
+	ErrInvalidTagValue
+	ErrDuplicateTagKey
 	ErrBucketTaggingLimited
 	ErrObjectTaggingLimited
 	ErrAuthHeaderEmpty
@@ -308,9 +310,19 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "The x-amz-copy-source-range value must be of the form bytes=first-last where first and last are the zero-based offsets of the first and last bytes to copy",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidTag: {
+	ErrInvalidTagKey: {
+		Code:           "InvalidTag",
+		Description:    "The TagKey you have provided is invalid",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidTagValue: {
 		Code:           "InvalidTag",
 		Description:    "The TagValue you have provided is invalid",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrDuplicateTagKey: {
+		Code:           "InvalidTag",
+		Description:    "Cannot provide multiple Tags with the same key",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrBucketTaggingLimited: {

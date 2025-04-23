@@ -1211,50 +1211,15 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
-		var bucketTagging s3response.TaggingInput
-		err := xml.Unmarshal(ctx.Body(), &bucketTagging)
+		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitBucket, c.debug)
 		if err != nil {
-			if c.debug {
-				debuglogger.Logf("error unmarshalling bucket tagging: %v", err)
-			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			return SendResponse(ctx, err,
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
 					Action:      metrics.ActionPutBucketTagging,
 					BucketOwner: parsedAcl.Owner,
 				})
-		}
-
-		if len(bucketTagging.TagSet.Tags) > 50 {
-			if c.debug {
-				debuglogger.Logf("bucket tagging length exceeds 50: %v", len(bucketTagging.TagSet.Tags))
-			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrBucketTaggingLimited),
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionPutBucketTagging,
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-
-		tags := make(map[string]string, len(bucketTagging.TagSet.Tags))
-
-		for _, tag := range bucketTagging.TagSet.Tags {
-			if len(tag.Key) > 128 || len(tag.Value) > 256 {
-				if c.debug {
-					debuglogger.Logf("invalid long bucket tagging key/value")
-				}
-				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag),
-					&MetaOpts{
-						Logger:      c.logger,
-						MetricsMng:  c.mm,
-						Action:      metrics.ActionPutBucketTagging,
-						BucketOwner: parsedAcl.Owner,
-					})
-			}
-			tags[tag.Key] = tag.Value
 		}
 
 		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
@@ -1276,7 +1241,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = c.be.PutBucketTagging(ctx.Context(), bucket, tags)
+		err = c.be.PutBucketTagging(ctx.Context(), bucket, tagging)
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,
@@ -1873,51 +1838,15 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		var objTagging s3response.TaggingInput
-		err := xml.Unmarshal(ctx.Body(), &objTagging)
+		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject, c.debug)
 		if err != nil {
-			if c.debug {
-				debuglogger.Logf("error unmarshalling object tagging: %v", err)
-			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			return SendResponse(ctx, err,
 				&MetaOpts{
 					Logger:      c.logger,
 					MetricsMng:  c.mm,
 					Action:      metrics.ActionPutObjectTagging,
 					BucketOwner: parsedAcl.Owner,
 				})
-		}
-
-		if len(objTagging.TagSet.Tags) > 10 {
-			if c.debug {
-				debuglogger.Logf("bucket tagging length exceeds 10: %v", len(objTagging.TagSet.Tags))
-			}
-			return SendResponse(ctx, s3err.GetAPIError(s3err.ErrObjectTaggingLimited),
-				&MetaOpts{
-					Logger:      c.logger,
-					MetricsMng:  c.mm,
-					Action:      metrics.ActionPutObjectTagging,
-					BucketOwner: parsedAcl.Owner,
-				})
-		}
-
-		tags := make(map[string]string, len(objTagging.TagSet.Tags))
-
-		for _, tag := range objTagging.TagSet.Tags {
-			if len(tag.Key) > 128 || len(tag.Value) > 256 {
-				if c.debug {
-					debuglogger.Logf("invalid tag key/value len: %q %q",
-						tag.Key, tag.Value)
-				}
-				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidTag),
-					&MetaOpts{
-						Logger:      c.logger,
-						MetricsMng:  c.mm,
-						Action:      metrics.ActionPutObjectTagging,
-						BucketOwner: parsedAcl.Owner,
-					})
-			}
-			tags[tag.Key] = tag.Value
 		}
 
 		err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
@@ -1940,7 +1869,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		err = c.be.PutObjectTagging(ctx.Context(), bucket, keyStart, tags)
+		err = c.be.PutObjectTagging(ctx.Context(), bucket, keyStart, tagging)
 		return SendResponse(ctx, err,
 			&MetaOpts{
 				Logger:      c.logger,

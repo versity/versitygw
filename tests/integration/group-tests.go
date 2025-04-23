@@ -118,6 +118,7 @@ func TestDeleteBucketOwnershipControls(s *S3Conf) {
 func TestPutBucketTagging(s *S3Conf) {
 	PutBucketTagging_non_existing_bucket(s)
 	PutBucketTagging_long_tags(s)
+	PutBucketTagging_duplicate_keys(s)
 	PutBucketTagging_tag_count_limit(s)
 	PutBucketTagging_success(s)
 	PutBucketTagging_success_status(s)
@@ -298,6 +299,7 @@ func TestCopyObject(s *S3Conf) {
 func TestPutObjectTagging(s *S3Conf) {
 	PutObjectTagging_non_existing_object(s)
 	PutObjectTagging_long_tags(s)
+	PutObjectTagging_duplicate_keys(s)
 	PutObjectTagging_tag_count_limit(s)
 	PutObjectTagging_success(s)
 }
@@ -852,6 +854,7 @@ func GetIntTests() IntTests {
 		"DeleteBucketOwnershipControls_success":                                   DeleteBucketOwnershipControls_success,
 		"PutBucketTagging_non_existing_bucket":                                    PutBucketTagging_non_existing_bucket,
 		"PutBucketTagging_long_tags":                                              PutBucketTagging_long_tags,
+		"PutBucketTagging_duplicate_keys":                                         PutBucketTagging_duplicate_keys,
 		"PutBucketTagging_tag_count_limit":                                        PutBucketTagging_tag_count_limit,
 		"PutBucketTagging_success":                                                PutBucketTagging_success,
 		"PutBucketTagging_success_status":                                         PutBucketTagging_success_status,
@@ -959,6 +962,7 @@ func GetIntTests() IntTests {
 		"CopyObject_success":                                                      CopyObject_success,
 		"PutObjectTagging_non_existing_object":                                    PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                              PutObjectTagging_long_tags,
+		"PutObjectTagging_duplicate_keys":                                         PutObjectTagging_duplicate_keys,
 		"PutObjectTagging_tag_count_limit":                                        PutObjectTagging_tag_count_limit,
 		"PutObjectTagging_success":                                                PutObjectTagging_success,
 		"GetObjectTagging_non_existing_object":                                    GetObjectTagging_non_existing_object,
