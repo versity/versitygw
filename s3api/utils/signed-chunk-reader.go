@@ -233,7 +233,7 @@ func (cr *ChunkReader) parseAndRemoveChunkInfo(p []byte) (int, error) {
 		}
 	}
 
-	chunkSize, sig, bufOffset, err := cr.parseChunkHeaderBytes(p[:n], &n)
+	chunkSize, sig, bufOffset, err := cr.parseChunkHeaderBytes(p[:n])
 	if err == errskipHeader {
 		cr.chunkDataLeft = 0
 		return 0, nil
@@ -322,7 +322,7 @@ const (
 // This returns the chunk payload size, signature, data start offset, and
 // error if any. See the AWS documentation for the chunk header format. The
 // header[0] byte is expected to be the first byte of the chunk size here.
-func (cr *ChunkReader) parseChunkHeaderBytes(header []byte, l *int) (int64, string, int, error) {
+func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int, error) {
 	stashLen := len(cr.stash)
 	if stashLen > maxHeaderSize {
 		return 0, "", 0, errInvalidChunkFormat
@@ -339,14 +339,11 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte, l *int) (int64, stri
 
 	// After the first chunk each chunk header should start
 	// with "\n\r\n"
-	if !cr.isFirstHeader && stashLen == 0 {
+	if !cr.isFirstHeader {
 		err := readAndSkip(rdr, '\r', '\n')
 		if err != nil {
 			return cr.handleRdrErr(err, header)
 		}
-
-		copy(header, header[2:])
-		*l = *l - 2
 	}
 
 	// read and parse the chunk size
@@ -435,10 +432,19 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte, l *int) (int64, stri
 		return cr.handleRdrErr(err, header)
 	}
 
-	ind := bytes.Index(header, []byte{'\r', '\n'})
+	// find the index of chunk ending: '\r\n'
+	// skip the first 2 bytes as it is the starting '\r\n'
+	// the first chunk doesn't contain the starting '\r\n', but
+	// anyway, trimming the first 2 bytes doesn't pollute the logic.
+	ind := bytes.Index(header[2:], []byte{'\r', '\n'})
 	cr.isFirstHeader = false
 
-	return chunkSize, sig, ind + len(chunkHdrDelim) - stashLen, nil
+	// the offset is the found index + 4 - the stash length
+	// where:
+	// ind is the index of '\r\n'
+	// 4 specifies the trimmed 2 bytes plus 2 to shift the index at the end of '\r\n'
+	offset := ind + 4 - stashLen
+	return chunkSize, sig, offset, nil
 }
 
 // Stashes the header in cr.stash and returns "errskipHeader"
