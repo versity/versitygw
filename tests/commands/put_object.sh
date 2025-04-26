@@ -141,3 +141,32 @@ put_object_rest_user_bad_signature() {
   fi
   return 0
 }
+
+put_object_multiple() {
+  if [ $# -ne 3 ]; then
+    log 2 "put object command requires command type, source, destination"
+    return 1
+  fi
+  local exit_code=0
+  local error
+  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
+    # shellcheck disable=SC2086
+    error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    # shellcheck disable=SC2086
+    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put $2 "s3://$3/" 2>&1) || exit_code=$?
+  elif [[ $1 == 'mc' ]]; then
+    # shellcheck disable=SC2086
+    error=$(mc --insecure cp $2 "$MC_ALIAS"/"$3" 2>&1) || exit_code=$?
+  else
+    log 2 "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -ne 0 ]; then
+    log 2 "error copying object to bucket: $error"
+    return 1
+  else
+    log 5 "$error"
+  fi
+  return 0
+}
