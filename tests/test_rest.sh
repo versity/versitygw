@@ -73,10 +73,7 @@ test_file="test_file"
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run get_object "rest" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
-  assert_success
-
-  run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 
   run delete_object "rest" "$BUCKET_ONE_NAME" "$test_file"
@@ -166,10 +163,7 @@ test_file="test_file"
     "$TEST_FILE_FOLDER/$test_file-0" "$TEST_FILE_FOLDER/$test_file-1" "$TEST_FILE_FOLDER/$test_file-2" "$TEST_FILE_FOLDER/$test_file-3"
   assert_success
 
-  run get_object "rest" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
-  assert_success
-
-  run compare_files "$TEST_FILE_FOLDER/$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -298,7 +292,7 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - upload part copy" {
+@test "REST - upload part copy (UploadPartCopy)" {
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -382,9 +376,6 @@ test_file="test_file"
 }
 
 @test "REST - put object w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD without content length" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1043"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -394,7 +385,7 @@ test_file="test_file"
 
 @test "REST - HeadObject does not return 405 with versioning, after file deleted" {
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
-    skip
+    skip "test isn't valid for this configuration"
   fi
   run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -420,7 +411,7 @@ test_file="test_file"
 
 @test "REST - HeadObject returns 405 when querying DeleteMarker" {
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
-    skip
+    skip "test isn't valid for this configuration"
   fi
   run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
   assert_success
@@ -531,5 +522,84 @@ test_file="test_file"
   assert_success
 
   run rest_check_legal_hold "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - UploadPartCopy w/o upload ID" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1226"
+  fi
+  run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "1" "" \
+    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
+  assert_success
+}
+
+@test "REST - UploadPartCopy w/o part number" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1229"
+  fi
+  run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "" "dummy" \
+    405 "MethodNotAllowed" "The specified method is not allowed against this resource"
+  assert_success
+}
+
+@test "REST - UploadPartCopy - ETag is quoted" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1235"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run upload_part_copy_check_etag_header "$BUCKET_ONE_NAME" "$test_file"-mp "$BUCKET_ONE_NAME/$test_file"
+  assert_success
+}
+
+@test "REST - UploadPart - ETag is quoted" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1233"
+  fi
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+  # shellcheck disable=SC2030
+  upload_id=$output
+
+  run upload_part_check_etag_header "$BUCKET_ONE_NAME" "$test_file" "$upload_id"
+  assert_success
+}
+
+@test "REST - UploadPart w/o part number" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1236"
+  fi
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - UploadPart w/o upload ID" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1237"
+  fi
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }

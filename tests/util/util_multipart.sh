@@ -221,7 +221,7 @@ run_and_verify_multipart_upload_with_valid_range() {
 
 create_upload_part_copy_rest() {
   if [ $# -ne 3 ]; then
-    log 2 "'run_and_verify_multipart_upload_with_valid_range' requires bucket, key, >20MB file"
+    log 2 "'create_upload_part_copy_rest' requires bucket, key, >20MB file"
     return 1
   fi
   if ! split_and_put_file "$1" "$2" "$3" 4; then
@@ -314,10 +314,10 @@ setup_multipart_upload_with_params() {
   os_name="$(uname)"
   if [[ "$os_name" == "Darwin" ]]; then
     now=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -j -v +15S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -j -v +20S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
   else
     now=$(date +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -d "$now 15 seconds" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -d "$now 20 seconds" +"%Y-%m-%dT%H:%M:%S")
   fi
 
   if ! create_test_files "$2"; then
