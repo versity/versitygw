@@ -1,4 +1,5 @@
 name: staticcheck
+permissions: {}
 on: pull_request
 jobs: 
 

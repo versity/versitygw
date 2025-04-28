@@ -1,4 +1,5 @@
 name: shellcheck
+permissions: {}
 on: pull_request
 jobs:
 
