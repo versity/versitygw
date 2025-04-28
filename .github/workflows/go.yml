@@ -1,4 +1,5 @@
 name: general
+permissions: {}
 on: pull_request
 jobs:
 

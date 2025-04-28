@@ -1,4 +1,5 @@
 name: system tests
+permissions: {}
 on: pull_request
 jobs:
   build:

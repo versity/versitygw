@@ -1,5 +1,5 @@
 name: azurite functional tests
-
+permissions: {}
 on: pull_request
 
 jobs:

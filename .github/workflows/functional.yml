@@ -1,5 +1,5 @@
 name: functional tests
-
+permissions: {}
 on: pull_request
 
 jobs:
