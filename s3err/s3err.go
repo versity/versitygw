@@ -89,6 +89,7 @@ const (
 	ErrDuplicateTagKey
 	ErrBucketTaggingLimited
 	ErrObjectTaggingLimited
+	ErrInvalidURLEncodedTagging
 	ErrAuthHeaderEmpty
 	ErrSignatureVersionNotSupported
 	ErrMalformedPOSTRequest
@@ -333,6 +334,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrObjectTaggingLimited: {
 		Code:           "BadRequest",
 		Description:    "Object tags cannot be greater than 10",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidURLEncodedTagging: {
+		Code:           "InvalidArgument",
+		Description:    "The header 'x-amz-tagging' shall be encoded as UTF-8 then URLEncoded URL query parameters without tag name duplicates.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMalformedXML: {

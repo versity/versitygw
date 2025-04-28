@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -215,27 +217,81 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 }
 
 // ParseObjectTags parses the url encoded input string into
-// map[string]string key-value tag set
-func ParseObjectTags(t string) (map[string]string, error) {
-	if t == "" {
+// map[string]string with unescaped key/value pair
+func ParseObjectTags(tagging string) (map[string]string, error) {
+	if tagging == "" {
 		return nil, nil
 	}
 
-	tagging := make(map[string]string)
+	tagSet := make(map[string]string)
 
-	tagParts := strings.Split(t, "&")
-	for _, prt := range tagParts {
-		p := strings.Split(prt, "=")
-		if len(p) != 2 {
+	for tagging != "" {
+		var tag string
+		tag, tagging, _ = strings.Cut(tagging, "&")
+		// if 'tag' before the first appearance of '&' is empty continue
+		if tag == "" {
+			continue
+		}
+
+		key, value, found := strings.Cut(tag, "=")
+		// if key is empty, but "=" is present, return invalid url ecnoding err
+		if found && key == "" {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)
+		}
+
+		// return invalid tag key, if the key is longer than 128
+		if len(key) > 128 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// return invalid tag value, if tag value is longer than 256
+		if len(value) > 256 {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
 		}
-		if len(p[0]) > 128 || len(p[1]) > 256 {
+
+		// query unescape tag key
+		key, err := url.QueryUnescape(key)
+		if err != nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)
+		}
+
+		// query unescape tag value
+		value, err = url.QueryUnescape(value)
+		if err != nil {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)
+		}
+
+		// check tag key to be valid
+		if !isValidTagComponent(key) {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// check tag value to be valid
+		if !isValidTagComponent(value) {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
 		}
-		tagging[p[0]] = p[1]
+
+		// duplicate keys are not allowed: return invalid url encoding err
+		_, ok := tagSet[key]
+		if ok {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)
+		}
+
+		tagSet[key] = value
 	}
 
-	return tagging, nil
+	return tagSet, nil
+}
+
+var validTagComponent = regexp.MustCompile(`^[a-zA-Z0-9:/_.\-+ ]+$`)
+
+// isValidTagComponent matches strings which contain letters, decimal digits,
+// and special chars: '/', '_', '-', '+', '.', ' ' (space)
+func isValidTagComponent(str string) bool {
+	if str == "" {
+		return true
+	}
+	return validTagComponent.Match([]byte(str))
 }
 
 func GetMultipartMD5(parts []types.CompletedPart) string {

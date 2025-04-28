@@ -139,7 +139,7 @@ func TestDeleteBucketTagging(s *S3Conf) {
 func TestPutObject(s *S3Conf) {
 	PutObject_non_existing_bucket(s)
 	PutObject_special_chars(s)
-	PutObject_invalid_long_tags(s)
+	PutObject_tagging(s)
 	PutObject_missing_object_lock_retention_config(s)
 	PutObject_with_object_lock(s)
 	PutObject_invalid_legal_hold(s)
@@ -274,6 +274,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_not_owned_source_bucket(s)
 	CopyObject_copy_to_itself(s)
 	CopyObject_copy_to_itself_invalid_directive(s)
+	CopyObject_should_replace_tagging(s)
 	CopyObject_should_copy_tagging(s)
 	CopyObject_invalid_tagging_directive(s)
 	CopyObject_to_itself_with_new_metadata(s)
@@ -320,7 +321,6 @@ func TestDeleteObjectTagging(s *S3Conf) {
 func TestCreateMultipartUpload(s *S3Conf) {
 	CreateMultipartUpload_non_existing_bucket(s)
 	CreateMultipartUpload_with_metadata(s)
-	CreateMultipartUpload_with_invalid_tagging(s)
 	CreateMultipartUpload_with_tagging(s)
 	CreateMultipartUpload_with_object_lock(s)
 	CreateMultipartUpload_with_object_lock_not_enabled(s)
@@ -866,7 +866,7 @@ func GetIntTests() IntTests {
 		"DeleteBucketTagging_success":                                             DeleteBucketTagging_success,
 		"PutObject_non_existing_bucket":                                           PutObject_non_existing_bucket,
 		"PutObject_special_chars":                                                 PutObject_special_chars,
-		"PutObject_invalid_long_tags":                                             PutObject_invalid_long_tags,
+		"PutObject_tagging":                                                       PutObject_tagging,
 		"PutObject_success":                                                       PutObject_success,
 		"PutObject_racey_success":                                                 PutObject_racey_success,
 		"HeadObject_non_existing_object":                                          HeadObject_non_existing_object,
@@ -943,6 +943,7 @@ func GetIntTests() IntTests {
 		"CopyObject_not_owned_source_bucket":                                      CopyObject_not_owned_source_bucket,
 		"CopyObject_copy_to_itself":                                               CopyObject_copy_to_itself,
 		"CopyObject_copy_to_itself_invalid_directive":                             CopyObject_copy_to_itself_invalid_directive,
+		"CopyObject_should_replace_tagging":                                       CopyObject_should_replace_tagging,
 		"CopyObject_should_copy_tagging":                                          CopyObject_should_copy_tagging,
 		"CopyObject_invalid_tagging_directive":                                    CopyObject_invalid_tagging_directive,
 		"CopyObject_to_itself_with_new_metadata":                                  CopyObject_to_itself_with_new_metadata,
@@ -974,7 +975,6 @@ func GetIntTests() IntTests {
 		"DeleteObjectTagging_success":                                             DeleteObjectTagging_success,
 		"CreateMultipartUpload_non_existing_bucket":                               CreateMultipartUpload_non_existing_bucket,
 		"CreateMultipartUpload_with_metadata":                                     CreateMultipartUpload_with_metadata,
-		"CreateMultipartUpload_with_invalid_tagging":                              CreateMultipartUpload_with_invalid_tagging,
 		"CreateMultipartUpload_with_tagging":                                      CreateMultipartUpload_with_tagging,
 		"CreateMultipartUpload_with_object_lock":                                  CreateMultipartUpload_with_object_lock,
 		"CreateMultipartUpload_with_object_lock_not_enabled":                      CreateMultipartUpload_with_object_lock_not_enabled,

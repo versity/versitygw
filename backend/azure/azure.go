@@ -295,7 +295,7 @@ func (az *Azure) DeleteBucketOwnershipControls(ctx context.Context, bucket strin
 }
 
 func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
-	tags, err := parseTags(po.Tagging)
+	tags, err := backend.ParseObjectTags(getString(po.Tagging))
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -872,7 +872,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 
 		// Set object Tagging, if tagging directive is "REPLACE"
 		if input.TaggingDirective == types.TaggingDirectiveReplace {
-			tags, err := parseTags(input.Tagging)
+			tags, err := backend.ParseObjectTags(getString(input.Tagging))
 			if err != nil {
 				return nil, err
 			}
@@ -1034,20 +1034,9 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 	}
 
 	// parse object tags
-	tagsStr := getString(input.Tagging)
-	tags := map[string]string{}
-	if tagsStr != "" {
-		tagParts := strings.Split(tagsStr, "&")
-		for _, prt := range tagParts {
-			p := strings.Split(prt, "=")
-			if len(p) != 2 {
-				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTagValue)
-			}
-			if len(p[0]) > 128 || len(p[1]) > 256 {
-				return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidTagValue)
-			}
-			tags[p[0]] = p[1]
-		}
+	tags, err := backend.ParseObjectTags(getString(input.Tagging))
+	if err != nil {
+		return s3response.InitiateMultipartUploadResult{}, err
 	}
 
 	// set blob legal hold status in metadata
@@ -1087,7 +1076,7 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 	// Create and empty blob in .sgwtmp/multipart/<uploadId>/<object hash>
 	// The blob indicates multipart upload initialization and holds the mp metadata
 	// e.g tagging, content-type, metadata, object lock status ...
-	_, err := az.client.UploadBuffer(ctx, *input.Bucket, tmpPath, []byte{}, opts)
+	_, err = az.client.UploadBuffer(ctx, *input.Bucket, tmpPath, []byte{}, opts)
 	if err != nil {
 		return s3response.InitiateMultipartUploadResult{}, azureErrToS3Err(err)
 	}
@@ -1816,24 +1805,6 @@ func parseAzMetadata(m map[string]*string) map[string]string {
 		meta[k] = *v
 	}
 	return meta
-}
-
-func parseTags(tagstr *string) (map[string]string, error) {
-	tagsStr := getString(tagstr)
-	tags := make(map[string]string)
-
-	if tagsStr != "" {
-		tagParts := strings.Split(tagsStr, "&")
-		for _, prt := range tagParts {
-			p := strings.Split(prt, "=")
-			if len(p) != 2 {
-				return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
-			}
-			tags[p[0]] = p[1]
-		}
-	}
-
-	return tags, nil
 }
 
 func parseAzTags(tagSet []*blob.Tags) map[string]string {
