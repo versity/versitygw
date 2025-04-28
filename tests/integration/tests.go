@@ -2825,37 +2825,111 @@ func PutObject_special_chars(s *S3Conf) error {
 	})
 }
 
-func PutObject_invalid_long_tags(s *S3Conf) error {
-	testName := "PutObject_invalid_long_tags"
+func PutObject_tagging(s *S3Conf) error {
+	testName := "PutObject_tagging"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		key := "my-obj"
-		tagging := fmt.Sprintf("%v=val", genRandString(200))
+		obj := "my-obj"
+		testTagging := func(taggging string, result map[string]string, expectedErr error) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:  &bucket,
-			Key:     &key,
-			Tagging: &tagging,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
-			return err
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				Tagging: &taggging,
+			})
+			cancel()
+			if err == nil && expectedErr != nil {
+				return fmt.Errorf("expected err %w, instead got nil", expectedErr)
+			}
+			if err != nil {
+				if expectedErr == nil {
+					return err
+				}
+				switch eErr := expectedErr.(type) {
+				case s3err.APIError:
+					return checkApiErr(err, eErr)
+				default:
+					return fmt.Errorf("invalid err provided: %w", expectedErr)
+				}
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if len(res.TagSet) != len(result) {
+				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v", len(result), len(res.TagSet))
+			}
+
+			for _, tag := range res.TagSet {
+				val, ok := result[getString(tag.Key)]
+				if !ok {
+					return fmt.Errorf("tag key not found: %v", getString(tag.Key))
+				}
+
+				if val != getString(tag.Value) {
+					return fmt.Errorf("expected the %v tag value to be %v, instead got %v", getString(tag.Key), val, getString(tag.Value))
+				}
+			}
+
+			return nil
 		}
 
-		tagging = fmt.Sprintf("key=%v", genRandString(300))
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:  &bucket,
-			Key:     &key,
-			Tagging: &tagging,
-		})
-		cancel()
-
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
-			return err
+		for _, el := range []struct {
+			tagging     string
+			result      map[string]string
+			expectedErr error
+		}{
+			// success cases
+			{"&", map[string]string{}, nil},
+			{"&&&", map[string]string{}, nil},
+			{"key", map[string]string{"key": ""}, nil},
+			{"key&", map[string]string{"key": ""}, nil},
+			{"key=&", map[string]string{"key": ""}, nil},
+			{"key=val&", map[string]string{"key": "val"}, nil},
+			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
+			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			// invalid url-encoded
+			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// duplicate keys
+			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// invalid tag keys
+			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag values
+			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val(", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			// success special chars
+			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
+			// should handle supported encoded characters
+			{"key%2E=value%2F", map[string]string{"key.": "value/"}, nil},
+			{"key%2D=value%2B", map[string]string{"key-": "value+"}, nil},
+			{"key++key=value++value", map[string]string{"key  key": "value  value"}, nil},
+			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
+			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
+		} {
+			err := testTagging(el.tagging, el.result, el.expectedErr)
+			if err != nil {
+				return err
+			}
 		}
-
 		return nil
 	})
 }
@@ -6201,55 +6275,121 @@ func CopyObject_should_copy_tagging(s *S3Conf) error {
 	})
 }
 
-func CopyObject_should_reaplace_tagging(s *S3Conf) error {
-	testName := "CopyObject_should_reaplace_tagging"
+func CopyObject_should_replace_tagging(s *S3Conf) error {
+	testName := "CopyObject_should_replace_tagging"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		srcObj, dstObj := "source-object", "dest-object"
-		tagging := "foo=bar&baz=quxx"
-
-		_, err := putObjectWithData(100, &s3.PutObjectInput{
+		obj := "my-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
 			Bucket:  &bucket,
-			Key:     &srcObj,
-			Tagging: &tagging,
+			Key:     &obj,
+			Tagging: getPtr("key=value&key1=value1"),
 		}, s3client)
 		if err != nil {
 			return err
 		}
+		testTagging := func(taggging string, result map[string]string, expectedErr error) error {
+			dstObj := "destination-object"
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:           &bucket,
+				Key:              &dstObj,
+				Tagging:          &taggging,
+				CopySource:       getPtr(fmt.Sprintf("%v/%v", bucket, obj)),
+				TaggingDirective: types.TaggingDirectiveReplace,
+			})
+			cancel()
+			if err == nil && expectedErr != nil {
+				return fmt.Errorf("expected err %w, instead got nil", expectedErr)
+			}
+			if err != nil {
+				if expectedErr == nil {
+					return err
+				}
+				switch eErr := expectedErr.(type) {
+				case s3err.APIError:
+					return checkApiErr(err, eErr)
+				default:
+					return fmt.Errorf("invalid err provided: %w", expectedErr)
+				}
+			}
 
-		copyTagging := "key1=val1&key2=val2"
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &dstObj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:           &bucket,
-			Key:              &dstObj,
-			CopySource:       getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
-			TaggingDirective: types.TaggingDirectiveReplace,
-			Tagging:          &copyTagging,
-		})
-		cancel()
-		if err != nil {
-			return err
+			if len(res.TagSet) != len(result) {
+				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v", len(result), len(res.TagSet))
+			}
+
+			for _, tag := range res.TagSet {
+				val, ok := result[getString(tag.Key)]
+				if !ok {
+					return fmt.Errorf("tag key not found: %v", getString(tag.Key))
+				}
+
+				if val != getString(tag.Value) {
+					return fmt.Errorf("expected the %v tag value to be %v, instead got %v", getString(tag.Key), val, getString(tag.Value))
+				}
+			}
+
+			return nil
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
-			Bucket: &bucket,
-			Key:    &dstObj,
-		})
-		cancel()
-		if err != nil {
-			return err
+		for _, el := range []struct {
+			tagging     string
+			result      map[string]string
+			expectedErr error
+		}{
+			// success cases
+			{"&", map[string]string{}, nil},
+			{"&&&", map[string]string{}, nil},
+			{"key", map[string]string{"key": ""}, nil},
+			{"key&", map[string]string{"key": ""}, nil},
+			{"key=&", map[string]string{"key": ""}, nil},
+			{"key=val&", map[string]string{"key": "val"}, nil},
+			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
+			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			// invalid url-encoded
+			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// duplicate keys
+			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// invalid tag keys
+			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag values
+			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val(", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			// success special chars
+			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
+			// should handle supported encoded characters
+			{"key%2E=value%2F", map[string]string{"key.": "value/"}, nil},
+			{"key%2D=value%2B", map[string]string{"key-": "value+"}, nil},
+			{"key++key=value++value", map[string]string{"key  key": "value  value"}, nil},
+			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
+			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
+		} {
+			err := testTagging(el.tagging, el.result, el.expectedErr)
+			if err != nil {
+				return err
+			}
 		}
-
-		expectedTagSet := []types.Tag{
-			{Key: getPtr("key1"), Value: getPtr("val1")},
-			{Key: getPtr("key2"), Value: getPtr("val2")},
-		}
-
-		if !areTagsSame(res.TagSet, expectedTagSet) {
-			return fmt.Errorf("expected the tag set to be %v, instead got %v", expectedTagSet, res.TagSet)
-		}
-
 		return nil
 	})
 }
@@ -7676,93 +7816,138 @@ func CreateMultipartUpload_valid_checksum_algorithm(s *S3Conf) error {
 	})
 }
 
-func CreateMultipartUpload_with_invalid_tagging(s *S3Conf) error {
-	testName := "CreateMultipartUpload_with_invalid_tagging"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:  &bucket,
-			Key:     &obj,
-			Tagging: getPtr("invalid_tag"),
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
 func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 	testName := "CreateMultipartUpload_with_tagging"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		tagging := "key1=val1&key2=val2"
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		out, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:  &bucket,
-			Key:     &obj,
-			Tagging: &tagging,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		parts, _, err := uploadParts(s3client, 100, 1, bucket, obj, *out.UploadId)
-		if err != nil {
-			return err
-		}
-
-		compParts := []types.CompletedPart{}
-		for _, el := range parts {
-			compParts = append(compParts, types.CompletedPart{
-				ETag:       el.ETag,
-				PartNumber: el.PartNumber,
+		testTagging := func(tagging string, result map[string]string, expectedErr error) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			mp, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+				Bucket:  &bucket,
+				Key:     &obj,
+				Tagging: &tagging,
 			})
+			cancel()
+			if err == nil && expectedErr != nil {
+				return fmt.Errorf("expected err %w, instead got nil", expectedErr)
+			}
+			if err != nil {
+				if expectedErr == nil {
+					return err
+				}
+				switch eErr := expectedErr.(type) {
+				case s3err.APIError:
+					return checkApiErr(err, eErr)
+				default:
+					return fmt.Errorf("invalid err provided: %w", expectedErr)
+				}
+			}
+
+			parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+			if err != nil {
+				return err
+			}
+
+			cParts := []types.CompletedPart{
+				{
+					ETag:          parts[0].ETag,
+					PartNumber:    parts[0].PartNumber,
+					ChecksumCRC32: parts[0].ChecksumCRC32,
+				},
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &obj,
+				UploadId: mp.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: cParts,
+				},
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if len(res.TagSet) != len(result) {
+				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v", len(result), len(res.TagSet))
+			}
+
+			for _, tag := range res.TagSet {
+				val, ok := result[getString(tag.Key)]
+				if !ok {
+					return fmt.Errorf("tag key not found: %v", getString(tag.Key))
+				}
+
+				if val != getString(tag.Value) {
+					return fmt.Errorf("expected the %v tag value to be %v, instead got %v", getString(tag.Key), val, getString(tag.Value))
+				}
+			}
+
+			return nil
 		}
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
-			Bucket:   &bucket,
-			Key:      &obj,
-			UploadId: out.UploadId,
-			MultipartUpload: &types.CompletedMultipartUpload{
-				Parts: compParts,
-			},
-		})
-		cancel()
-		if err != nil {
-			return err
+		for _, el := range []struct {
+			tagging     string
+			result      map[string]string
+			expectedErr error
+		}{
+			// success cases
+			{"&", map[string]string{}, nil},
+			{"&&&", map[string]string{}, nil},
+			{"key", map[string]string{"key": ""}, nil},
+			{"key&", map[string]string{"key": ""}, nil},
+			{"key=&", map[string]string{"key": ""}, nil},
+			{"key=val&", map[string]string{"key": "val"}, nil},
+			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
+			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			// invalid url-encoded
+			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// duplicate keys
+			{"key=val&key=val", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
+			// invalid tag keys
+			{"key?=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key(=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag values
+			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val(", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			// success special chars
+			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
+			// should handle supported encoded characters
+			{"key%2E=value%2F", map[string]string{"key.": "value/"}, nil},
+			{"key%2D=value%2B", map[string]string{"key-": "value+"}, nil},
+			{"key++key=value++value", map[string]string{"key  key": "value  value"}, nil},
+			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
+			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
+		} {
+			err := testTagging(el.tagging, el.result, el.expectedErr)
+			if err != nil {
+				fmt.Println("failing for: ", el.tagging)
+				return err
+			}
 		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		resp, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		expectedOutput := []types.Tag{
-			{
-				Key:   getPtr("key1"),
-				Value: getPtr("val1"),
-			},
-			{
-				Key:   getPtr("key2"),
-				Value: getPtr("val2"),
-			},
-		}
-
-		if !areTagsSame(resp.TagSet, expectedOutput) {
-			return fmt.Errorf("expected object tagging to be %v, instead got %v", expectedOutput, resp.TagSet)
-		}
-
 		return nil
 	})
 }
