@@ -351,6 +351,20 @@ type CopyObjectResult struct {
 	CopySourceVersionId string `xml:"-"`
 }
 
+func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias CopyObjectResult
+	aux := &struct {
+		LastModified string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	}
+
+	aux.LastModified = r.LastModified.UTC().Format(iso8601TimeFormat)
+
+	return e.EncodeElement(aux, start)
+}
+
 type CopyPartResult struct {
 	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyPartResult" json:"-"`
 	LastModified      time.Time
@@ -365,18 +379,18 @@ type CopyPartResult struct {
 	CopySourceVersionId string `xml:"-"`
 }
 
-func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
-	type Alias CopyObjectResult
-	aux := &struct {
-		LastModified string `xml:"LastModified"`
-		*Alias
-	}{
-		Alias: (*Alias)(&r),
-	}
-
-	aux.LastModified = r.LastModified.UTC().Format(iso8601TimeFormat)
-
-	return e.EncodeElement(aux, start)
+type CompleteMultipartUploadResult struct {
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CompleteMultipartUploadResult" json:"-"`
+	Location          *string
+	Bucket            *string
+	Key               *string
+	ETag              *string
+	ChecksumCRC32     *string
+	ChecksumCRC32C    *string
+	ChecksumSHA1      *string
+	ChecksumSHA256    *string
+	ChecksumCRC64NVME *string
+	ChecksumType      *types.ChecksumType
 }
 
 type AccessControlPolicy struct {

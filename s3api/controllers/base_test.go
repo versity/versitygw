@@ -1765,8 +1765,8 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 			RestoreObjectFunc: func(context.Context, *s3.RestoreObjectInput) error {
 				return nil
 			},
-			CompleteMultipartUploadFunc: func(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
-				return &s3.CompleteMultipartUploadOutput{}, nil
+			CompleteMultipartUploadFunc: func(context.Context, *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+				return s3response.CompleteMultipartUploadResult{}, "", nil
 			},
 			CreateMultipartUploadFunc: func(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 				return s3response.InitiateMultipartUploadResult{}, nil

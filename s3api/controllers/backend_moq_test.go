@@ -29,7 +29,7 @@ var _ backend.Backend = &BackendMock{}
 //			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, acl []byte) error {
 //				panic("mock out the ChangeBucketOwner method")
 //			},
-//			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+//			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
 //			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
@@ -199,7 +199,7 @@ type BackendMock struct {
 	ChangeBucketOwnerFunc func(contextMoqParam context.Context, bucket string, acl []byte) error
 
 	// CompleteMultipartUploadFunc mocks the CompleteMultipartUpload method.
-	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
+	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error)
 
 	// CopyObjectFunc mocks the CopyObject method.
 	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error)
@@ -904,7 +904,7 @@ func (mock *BackendMock) ChangeBucketOwnerCalls() []struct {
 }
 
 // CompleteMultipartUpload calls CompleteMultipartUploadFunc.
-func (mock *BackendMock) CompleteMultipartUpload(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (mock *BackendMock) CompleteMultipartUpload(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 	if mock.CompleteMultipartUploadFunc == nil {
 		panic("BackendMock.CompleteMultipartUploadFunc: method is nil but Backend.CompleteMultipartUpload was just called")
 	}

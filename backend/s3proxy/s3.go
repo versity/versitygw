@@ -413,9 +413,11 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.Cr
 	}, nil
 }
 
-func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	var res s3response.CompleteMultipartUploadResult
+
 	if *input.Bucket == s.metaBucket {
-		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		return res, "", s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 	if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 == "" {
 		input.ChecksumCRC32 = nil
@@ -454,8 +456,27 @@ func (s *S3Proxy) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		input.SSECustomerKeyMD5 = nil
 	}
 
+	var versionid string
 	out, err := s.client.CompleteMultipartUpload(ctx, input)
-	return out, handleError(err)
+	if out != nil {
+		res = s3response.CompleteMultipartUploadResult{
+			Location:          out.Location,
+			Bucket:            out.Bucket,
+			Key:               out.Key,
+			ETag:              out.ETag,
+			ChecksumCRC32:     out.ChecksumCRC32,
+			ChecksumCRC32C:    out.ChecksumCRC32C,
+			ChecksumCRC64NVME: out.ChecksumCRC64NVME,
+			ChecksumSHA1:      out.ChecksumSHA1,
+			ChecksumSHA256:    out.ChecksumSHA256,
+			ChecksumType:      &out.ChecksumType,
+		}
+		if out.VersionId != nil {
+			versionid = *out.VersionId
+		}
+	}
+
+	return res, versionid, handleError(err)
 }
 
 func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
