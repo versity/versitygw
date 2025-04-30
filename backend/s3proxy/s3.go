@@ -63,6 +63,18 @@ type S3Proxy struct {
 
 var _ backend.Backend = &S3Proxy{}
 
+func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*S3Proxy, error) {
+	s := &S3Proxy{
+		metaBucket: metaBucket,
+	}
+	s.client = client
+
+	if s.metaBucket != "" && !s.bucketExists(ctx, s.metaBucket) {
+		return nil, fmt.Errorf("the provided meta bucket doesn't exist")
+	}
+	return s, s.validate(ctx)
+}
+
 func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, disableChecksum, sslSkipVerify, debug bool) (*S3Proxy, error) {
 	s := &S3Proxy{
 		access:          access,
@@ -79,11 +91,14 @@ func New(ctx context.Context, access, secret, endpoint, region, metaBucket strin
 		return nil, err
 	}
 	s.client = client
+	return s, s.validate(ctx)
+}
 
+func (s *S3Proxy) validate(ctx context.Context) error {
 	if s.metaBucket != "" && !s.bucketExists(ctx, s.metaBucket) {
-		return nil, fmt.Errorf("the provided meta bucket doesn't exist")
+		return fmt.Errorf("the provided meta bucket doesn't exist")
 	}
-	return s, nil
+	return nil
 }
 
 func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
