@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -54,7 +55,26 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 		}
 		ctx.Locals("account", account)
 
+		var contentLength int64
+		contentLengthStr := ctx.Get("Content-Length")
+		if contentLengthStr != "" {
+			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
+			//TODO: not sure if InvalidRequest should be returned in this case
+			if err != nil {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
+			}
+		}
+
 		if utils.IsBigDataAction(ctx) {
+			// Content-Length has to be set for data uploads: PutObject, UploadPart
+			if contentLengthStr == "" {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingContentLength), logger, mm)
+			}
+			// the upload limit for big data actions: PutObject, UploadPart
+			// is 5gb. If the size exceeds the limit, return 'EntityTooLarge' err
+			if contentLength > maxObjSizeLimit {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrEntityTooLarge), logger, mm)
+			}
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 				return utils.NewPresignedAuthReader(ctx, r, authData, account.Secret, debug)
 			})
