@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"net/http"
@@ -1469,7 +1470,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		if err != nil {
 			etag = ""
 		}
-		if parts[i].ETag == nil || etag != *parts[i].ETag {
+		if parts[i].ETag == nil || !areEtagsSame(etag, *parts[i].ETag) {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
@@ -2404,8 +2405,7 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		return nil, fmt.Errorf("write part data: %w", err)
 	}
 
-	dataSum := hash.Sum(nil)
-	etag := hex.EncodeToString(dataSum)
+	etag := generateEtag(hash)
 	err = p.meta.StoreAttribute(f.File(), bucket, partPath, etagkey, []byte(etag))
 	if err != nil {
 		return nil, fmt.Errorf("set etag attr: %w", err)
@@ -2854,8 +2854,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		}
 	}
 
-	dataSum := hash.Sum(nil)
-	etag := fmt.Sprintf("\"%v\"", hex.EncodeToString(dataSum[:]))
+	etag := generateEtag(hash)
 
 	// if the versioning is enabled, generate a new versionID for the object
 	var versionID string
@@ -4985,4 +4984,13 @@ func joinPathWithTrailer(paths ...string) string {
 		joined += "/"
 	}
 	return joined
+}
+
+func generateEtag(h hash.Hash) string {
+	dataSum := h.Sum(nil)
+	return fmt.Sprintf("\"%s\"", hex.EncodeToString(dataSum[:]))
+}
+
+func areEtagsSame(e1, e2 string) bool {
+	return strings.Trim(e1, `"`) == strings.Trim(e2, `"`)
 }
