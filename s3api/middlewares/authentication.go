@@ -33,7 +33,8 @@ import (
 )
 
 const (
-	iso8601Format = "20060102T150405Z"
+	iso8601Format   = "20060102T150405Z"
+	maxObjSizeLimit = 5 * 1024 * 1024 * 1024 // 5gb
 )
 
 type RootUserConfig struct {
@@ -105,6 +106,16 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			return sendResponse(ctx, err, logger, mm)
 		}
 
+		var contentLength int64
+		contentLengthStr := ctx.Get("Content-Length")
+		if contentLengthStr != "" {
+			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
+			//TODO: not sure if InvalidRequest should be returned in this case
+			if err != nil {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
+			}
+		}
+
 		hashPayload := ctx.Get("X-Amz-Content-Sha256")
 		if utils.IsBigDataAction(ctx) {
 			// for streaming PUT actions, authorization is deferred
@@ -126,6 +137,18 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 				if err != nil {
 					return sendResponse(ctx, err, logger, mm)
 				}
+
+				return ctx.Next()
+			}
+
+			// Content-Length has to be set for data uploads: PutObject, UploadPart
+			if contentLengthStr == "" {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingContentLength), logger, mm)
+			}
+			// the upload limit for big data actions: PutObject, UploadPart
+			// is 5gb. If the size exceeds the limit, return 'EntityTooLarge' err
+			if contentLength > maxObjSizeLimit {
+				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrEntityTooLarge), logger, mm)
 			}
 
 			return ctx.Next()
@@ -139,15 +162,6 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			// Compare the calculated hash with the hash provided
 			if hashPayload != hexPayload {
 				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), logger, mm)
-			}
-		}
-
-		var contentLength int64
-		contentLengthStr := ctx.Get("Content-Length")
-		if contentLengthStr != "" {
-			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
-			if err != nil {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
 			}
 		}
 

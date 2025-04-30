@@ -18,11 +18,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/s3err"
+)
+
+const (
+	maxObjSizeLimit = 5 * 1024 * 1024 * 1024 // 5gb
 )
 
 type payloadType string
@@ -96,10 +101,20 @@ func IsStreamingPayload(str string) bool {
 }
 
 func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time, debug bool) (io.Reader, error) {
-	decContLength := ctx.Get("X-Amz-Decoded-Content-Length")
-	if decContLength == "" {
-		return nil, s3err.GetAPIError(s3err.ErrMissingDecodedContentLength)
+	decContLengthStr := ctx.Get("X-Amz-Decoded-Content-Length")
+	if decContLengthStr == "" {
+		return nil, s3err.GetAPIError(s3err.ErrMissingContentLength)
 	}
+	decContLength, err := strconv.ParseInt(decContLengthStr, 10, 64)
+	//TODO: not sure if InvalidRequest should be returned in this case
+	if err != nil {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+	}
+
+	if decContLength > maxObjSizeLimit {
+		return nil, s3err.GetAPIError(s3err.ErrEntityTooLarge)
+	}
+
 	contentSha256 := payloadType(ctx.Get("X-Amz-Content-Sha256"))
 	if !contentSha256.isValid() {
 		//TODO: Add proper APIError
