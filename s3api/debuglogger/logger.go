@@ -15,10 +15,7 @@
 package debuglogger
 
 import (
-	"bytes"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -53,8 +50,7 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 		body := ctx.Request().Body()
 		if len(body) != 0 {
 			printBoxTitleLine(blue, "REQUEST BODY", boxWidth, false)
-			prettyBody := prettyPrintXML(body)
-			fmt.Printf("%s%s%s\n", blue, prettyBody, reset)
+			fmt.Printf("%s%s%s\n", blue, body, reset)
 			printHorizontalBorder(blue, boxWidth, false)
 		}
 	}
@@ -79,8 +75,7 @@ func LogFiberResponseDetails(ctx *fiber.Ctx) {
 		body := ctx.Response().Body()
 		if len(body) != 0 {
 			printBoxTitleLine(blue, "RESPONSE BODY", boxWidth, false)
-			prettyBody := prettyPrintXML(body)
-			fmt.Printf("%s%s%s\n", blue, prettyBody, reset)
+			fmt.Printf("%s%s%s\n", blue, body, reset)
 			printHorizontalBorder(blue, boxWidth, false)
 		}
 	}
@@ -91,59 +86,6 @@ func LogFiberResponseDetails(ctx *fiber.Ctx) {
 func Logf(format string, v ...any) {
 	debugPrefix := "[DEBUG]: "
 	fmt.Printf(yellow+debugPrefix+format+reset+"\n", v...)
-}
-
-// prettyPrintXML takes raw XML input and returns a formatted (pretty-printed) version.
-func prettyPrintXML(input []byte) string {
-	b := &bytes.Buffer{}
-	decoder := xml.NewDecoder(bytes.NewReader(input))
-	encoder := xml.NewEncoder(b)
-	encoder.Indent("", "  ")
-
-	var depth int
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			encoder.Flush()
-			return b.String()
-		}
-		if err != nil {
-			// Return the raw input if decoding fails
-			return string(input)
-		}
-
-		switch t := token.(type) {
-		case xml.StartElement:
-			if depth > 0 {
-				// Strip namespace from tag name
-				t.Name.Space = ""
-
-				// Filter out xmlns attributes to make it more readable
-				newAttrs := make([]xml.Attr, 0, len(t.Attr))
-				for _, attr := range t.Attr {
-					if !(attr.Name.Space == "" && attr.Name.Local == "xmlns") {
-						newAttrs = append(newAttrs, attr)
-					}
-				}
-				t.Attr = newAttrs
-			}
-			depth++
-			err = encoder.EncodeToken(t)
-		case xml.EndElement:
-			if depth > 1 {
-				t.Name.Space = ""
-			}
-			depth--
-			err = encoder.EncodeToken(t)
-		default:
-			err = encoder.EncodeToken(t)
-		}
-
-		if err != nil {
-			// Return the raw input if decoding fails
-			return string(input)
-		}
-	}
 }
 
 // Prints out box title either with closing characters or not:  "┌", "┐"
