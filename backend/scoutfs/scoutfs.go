@@ -193,23 +193,25 @@ func (s *ScoutFS) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 // CompleteMultipartUpload scoutfs complete upload uses scoutfs move blocks
 // ioctl to not have to read and copy the part data to the final object. This
 // saves a read and write cycle for all mutlipart uploads.
-func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}
 
+	var res s3response.CompleteMultipartUploadResult
+
 	if input.Bucket == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return res, "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	if input.Key == nil {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return res, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if input.UploadId == nil {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchUpload)
+		return res, "", s3err.GetAPIError(s3err.ErrNoSuchUpload)
 	}
 	if input.MultipartUpload == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return res, "", s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
 	bucket := *input.Bucket
@@ -219,22 +221,22 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return res, "", s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return res, "", fmt.Errorf("stat bucket: %w", err)
 	}
 
 	sum, err := s.checkUploadIDExists(bucket, object, uploadID)
 	if err != nil {
-		return nil, err
+		return res, "", err
 	}
 
 	objdir := filepath.Join(metaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	checksums, err := s.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, fmt.Errorf("get mp checksums: %w", err)
+		return res, "", fmt.Errorf("get mp checksums: %w", err)
 	}
 
 	// ChecksumType should be the same as specified on CreateMultipartUpload
@@ -244,7 +246,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 			checksumType = types.ChecksumType("null")
 		}
 
-		return nil, s3err.GetChecksumTypeMismatchOnMpErr(checksumType)
+		return res, "", s3err.GetChecksumTypeMismatchOnMpErr(checksumType)
 	}
 
 	// check all parts ok
@@ -255,13 +257,13 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	var partNumber int32
 	for i, part := range parts {
 		if part.PartNumber == nil {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 		if *part.PartNumber < 1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
 		}
 		if *part.PartNumber <= partNumber {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
 		}
 
 		partNumber = *part.PartNumber
@@ -270,14 +272,14 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		fi, err := os.Lstat(fullPartPath)
 		if err != nil {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
 		totalsize += fi.Size()
 		// all parts except the last need to be greater, thena
 		// the minimum allowed size (5 Mib)
 		if i < last && fi.Size() < backend.MinPartSize {
-			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)
+			return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
 
 		b, err := s.meta.RetrieveAttribute(nil, bucket, partObjPath, etagkey)
@@ -286,23 +288,23 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 			etag = ""
 		}
 		if parts[i].ETag == nil || etag != *parts[i].ETag {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
 		partChecksum, err := s.retrieveChecksums(nil, bucket, partObjPath)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get part checksum: %w", err)
+			return res, "", fmt.Errorf("get part checksum: %w", err)
 		}
 
 		// If checksum has been provided on mp initalization
 		err = validatePartChecksum(partChecksum, part)
 		if err != nil {
-			return nil, err
+			return res, "", err
 		}
 	}
 
 	if input.MpuObjectSize != nil && totalsize != *input.MpuObjectSize {
-		return nil, s3err.GetIncorrectMpObjectSizeErr(totalsize, *input.MpuObjectSize)
+		return res, "", s3err.GetIncorrectMpObjectSizeErr(totalsize, *input.MpuObjectSize)
 	}
 
 	// use totalsize=0 because we wont be writing to the file, only moving
@@ -310,22 +312,22 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	f, err := s.openTmpFile(filepath.Join(bucket, metaTmpDir), bucket, object, 0, acct)
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
-			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+			return res, "", s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
-		return nil, fmt.Errorf("open temp file: %w", err)
+		return res, "", fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
 
 	for _, part := range parts {
 		if part.PartNumber == nil || *part.PartNumber < 1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
 		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		pf, err := os.Open(fullPartPath)
 		if err != nil {
-			return nil, fmt.Errorf("open part %v: %v", *part.PartNumber, err)
+			return res, "", fmt.Errorf("open part %v: %v", *part.PartNumber, err)
 		}
 
 		// scoutfs move data is a metadata only operation that moves the data
@@ -334,7 +336,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		err = moveData(pf, f.File())
 		pf.Close()
 		if err != nil {
-			return nil, fmt.Errorf("move blocks part %v: %v", *part.PartNumber, err)
+			return res, "", fmt.Errorf("move blocks part %v: %v", *part.PartNumber, err)
 		}
 	}
 
@@ -343,7 +345,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	objMeta := s.loadUserMetaData(bucket, upiddir, userMetaData)
 	err = s.storeObjectMetadata(f.File(), bucket, object, objMeta)
 	if err != nil {
-		return nil, err
+		return res, "", err
 	}
 
 	objname := filepath.Join(bucket, object)
@@ -352,50 +354,50 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		uid, gid, doChown := s.getChownIDs(acct)
 		err = backend.MkdirAll(dir, uid, gid, doChown, s.newDirPerm)
 		if err != nil {
-			return nil, err
+			return res, "", err
 		}
 	}
 
 	for k, v := range userMetaData {
 		err = s.meta.StoreAttribute(f.File(), bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 		if err != nil {
-			return nil, fmt.Errorf("set user attr %q: %w", k, err)
+			return res, "", fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
 	// load and set tagging
 	tagging, err := s.meta.RetrieveAttribute(nil, bucket, upiddir, tagHdr)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, fmt.Errorf("get object tagging: %w", err)
+		return res, "", fmt.Errorf("get object tagging: %w", err)
 	}
 	if err == nil {
 		err := s.meta.StoreAttribute(f.File(), bucket, object, tagHdr, tagging)
 		if err != nil {
-			return nil, fmt.Errorf("set object tagging: %w", err)
+			return res, "", fmt.Errorf("set object tagging: %w", err)
 		}
 	}
 
 	// load and set legal hold
 	lHold, err := s.meta.RetrieveAttribute(nil, bucket, upiddir, objectLegalHoldKey)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, fmt.Errorf("get object legal hold: %w", err)
+		return res, "", fmt.Errorf("get object legal hold: %w", err)
 	}
 	if err == nil {
 		err := s.meta.StoreAttribute(f.File(), bucket, object, objectLegalHoldKey, lHold)
 		if err != nil {
-			return nil, fmt.Errorf("set object legal hold: %w", err)
+			return res, "", fmt.Errorf("set object legal hold: %w", err)
 		}
 	}
 
 	// load and set retention
 	ret, err := s.meta.RetrieveAttribute(nil, bucket, upiddir, objectRetentionKey)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, fmt.Errorf("get object retention: %w", err)
+		return res, "", fmt.Errorf("get object retention: %w", err)
 	}
 	if err == nil {
 		err := s.meta.StoreAttribute(f.File(), bucket, object, objectRetentionKey, ret)
 		if err != nil {
-			return nil, fmt.Errorf("set object retention: %w", err)
+			return res, "", fmt.Errorf("set object retention: %w", err)
 		}
 	}
 
@@ -404,12 +406,12 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 
 	err = s.meta.StoreAttribute(f.File(), bucket, object, etagkey, []byte(s3MD5))
 	if err != nil {
-		return nil, fmt.Errorf("set etag attr: %w", err)
+		return res, "", fmt.Errorf("set etag attr: %w", err)
 	}
 
 	err = f.link()
 	if err != nil {
-		return nil, fmt.Errorf("link object in namespace: %w", err)
+		return res, "", fmt.Errorf("link object in namespace: %w", err)
 	}
 
 	// cleanup tmp dirs
@@ -418,11 +420,11 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 	// for same object name outstanding
 	os.Remove(filepath.Join(bucket, objdir))
 
-	return &s3.CompleteMultipartUploadOutput{
+	return s3response.CompleteMultipartUploadResult{
 		Bucket: &bucket,
 		ETag:   &s3MD5,
 		Key:    &object,
-	}, nil
+	}, "", nil
 }
 
 func (s *ScoutFS) storeObjectMetadata(f *os.File, bucket, object string, m objectMetadata) error {

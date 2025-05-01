@@ -1350,42 +1350,44 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 // Copeies the multipart metadata from .sgwtmp namespace into the newly created blob
 // Deletes the multipart upload 'blob' from .sgwtmp namespace
 // It indicates the end of the multipart upload
-func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
+func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	var res s3response.CompleteMultipartUploadResult
+
 	tmpPath := createMetaTmpPath(*input.Key, *input.UploadId)
 	blobClient, err := az.getBlobClient(*input.Bucket, tmpPath)
 	if err != nil {
-		return nil, err
+		return res, "", err
 	}
 
 	props, err := blobClient.GetProperties(ctx, nil)
 	if err != nil {
-		return nil, parseMpError(err)
+		return res, "", parseMpError(err)
 	}
 	tags, err := blobClient.GetTags(ctx, nil)
 	if err != nil {
-		return nil, parseMpError(err)
+		return res, "", parseMpError(err)
 	}
 
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
-		return nil, err
+		return res, "", err
 	}
 	blockIds := []string{}
 
 	blockList, err := client.GetBlockList(ctx, blockblob.BlockListTypeUncommitted, nil)
 	if err != nil {
-		return nil, azureErrToS3Err(err)
+		return res, "", azureErrToS3Err(err)
 	}
 
 	if len(blockList.UncommittedBlocks) != len(input.MultipartUpload.Parts) {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+		return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 	}
 
 	uncommittedBlocks := map[int32]*blockblob.Block{}
 	for _, el := range blockList.UncommittedBlocks {
 		ptNumber, err := decodeBlockId(backend.GetStringFromPtr(el.Name))
 		if err != nil {
-			return nil, fmt.Errorf("invalid block name: %w", err)
+			return res, "", fmt.Errorf("invalid block name: %w", err)
 		}
 
 		uncommittedBlocks[int32(ptNumber)] = el
@@ -1397,35 +1399,35 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	last := len(blockList.UncommittedBlocks) - 1
 	for i, part := range input.MultipartUpload.Parts {
 		if part.PartNumber == nil {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 		if *part.PartNumber < 1 {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidCompleteMpPartNumber)
 		}
 		if *part.PartNumber <= partNumber {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPartOrder)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPartOrder)
 		}
 		partNumber = *part.PartNumber
 
 		block, ok := uncommittedBlocks[*part.PartNumber]
 		if !ok {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
 		if *part.ETag != *block.Name {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
+			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 		// all parts except the last need to be greater, than
 		// the minimum allowed size (5 Mib)
 		if i < last && *block.Size < backend.MinPartSize {
-			return nil, s3err.GetAPIError(s3err.ErrEntityTooSmall)
+			return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
 		}
 		totalSize += *block.Size
 		blockIds = append(blockIds, *block.Name)
 	}
 
 	if input.MpuObjectSize != nil && totalSize != *input.MpuObjectSize {
-		return nil, s3err.GetIncorrectMpObjectSizeErr(totalSize, *input.MpuObjectSize)
+		return res, "", s3err.GetIncorrectMpObjectSizeErr(totalSize, *input.MpuObjectSize)
 	}
 
 	opts := &blockblob.CommitBlockListOptions{
@@ -1442,20 +1444,20 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 
 	resp, err := client.CommitBlockList(ctx, blockIds, opts)
 	if err != nil {
-		return nil, parseMpError(err)
+		return res, "", parseMpError(err)
 	}
 
 	// cleanup the multipart upload
 	_, err = blobClient.Delete(ctx, nil)
 	if err != nil {
-		return nil, parseMpError(err)
+		return res, "", parseMpError(err)
 	}
 
-	return &s3.CompleteMultipartUploadOutput{
+	return s3response.CompleteMultipartUploadResult{
 		Bucket: input.Bucket,
 		Key:    input.Key,
 		ETag:   (*string)(resp.ETag),
-	}, nil
+	}, "", nil
 }
 
 func (az *Azure) PutBucketAcl(ctx context.Context, bucket string, data []byte) error {

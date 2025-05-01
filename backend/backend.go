@@ -52,7 +52,7 @@ type Backend interface {
 
 	// multipart operations
 	CreateMultipartUpload(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error)
-	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error)
+	CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (_ s3response.CompleteMultipartUploadResult, versionid string, _ error)
 	AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error
 	ListMultipartUploads(context.Context, *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error)
 	ListParts(context.Context, *s3.ListPartsInput) (s3response.ListPartsResult, error)
@@ -166,8 +166,8 @@ func (BackendUnsupported) DeleteBucketCors(_ context.Context, bucket string) err
 func (BackendUnsupported) CreateMultipartUpload(context.Context, s3response.CreateMultipartUploadInput) (s3response.InitiateMultipartUploadResult, error) {
 	return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (*s3.CompleteMultipartUploadOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	return s3response.CompleteMultipartUploadResult{}, "", s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)

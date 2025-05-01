@@ -3685,7 +3685,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		res, err := c.be.CompleteMultipartUpload(ctx.Context(),
+		res, versid, err := c.be.CompleteMultipartUpload(ctx.Context(),
 			&s3.CompleteMultipartUploadInput{
 				Bucket:   &bucket,
 				Key:      &key,
@@ -3702,11 +3702,11 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				ChecksumType:      checksumType,
 			})
 		if err == nil {
-			if getstring(res.VersionId) != "" {
+			if versid != "" {
 				utils.SetResponseHeaders(ctx, []utils.CustomHeader{
 					{
 						Key:   "x-amz-version-id",
-						Value: getstring(res.VersionId),
+						Value: versid,
 					},
 				})
 			}
@@ -3719,7 +3719,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 					ObjectETag:  res.ETag,
 					EventName:   s3event.EventCompleteMultipartUpload,
-					VersionId:   res.VersionId,
+					VersionId:   backend.GetPtrFromString(versid),
 				})
 		}
 		return SendXMLResponse(ctx, res, err,
