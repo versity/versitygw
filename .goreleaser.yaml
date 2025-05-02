@@ -1,3 +1,5 @@
+version: 2
+
 before:
   hooks:
     - go mod tidy
@@ -23,7 +25,7 @@ builds:
       - -X=main.Build={{.Commit}} -X=main.BuildTime={{.Date}} -X=main.Version={{.Version}}
 
 archives:
-  - format: tar.gz
+  - formats: [ 'tar.gz' ]
     # this name template makes the OS and Arch compatible with the results of uname.
     name_template: >-
       {{ .ProjectName }}_v{{ .Version }}_
@@ -43,7 +45,7 @@ archives:
     # use zip for windows archives
     format_overrides:
     - goos: windows
-      format: zip
+      formats: [ 'zip' ]
 
     # Additional files/globs you want to add to the archive.
     #
@@ -58,7 +60,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-{{.ShortCommit}}"
 
 changelog:
   sort: asc
@@ -86,7 +88,7 @@ nfpms:
 
     license: Apache 2.0
 
-    builds:
+    ids:
       - versitygw
 
     formats:
