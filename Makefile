@@ -72,6 +72,11 @@ dist:
 	rm -f VERSION
 	gzip -f $(TARFILE)
 
+.PHONY: snapshot
+snapshot:
+# brew install goreleaser/tap/goreleaser
+	goreleaser release --snapshot --skip publish --clean
+
 # Creates and runs S3 gateway instance in a docker container
 .PHONY: up-posix
 up-posix:
