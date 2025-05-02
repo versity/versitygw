@@ -57,6 +57,10 @@ const (
 )
 
 func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) S3ApiController {
+	if debug {
+		debuglogger.SetDebugEnabled()
+	}
+
 	return S3ApiController{
 		be:       be,
 		iam:      iam,
@@ -267,7 +271,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 			}
 		}
 		mxParts := ctx.Query("max-parts")
-		maxParts, err := utils.ParseUint(mxParts, c.debug)
+		maxParts, err := utils.ParseUint(mxParts)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("error parsing max parts %q: %v",
@@ -374,7 +378,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		}
 		maxParts := ctx.Get("X-Amz-Max-Parts")
 		partNumberMarker := ctx.Get("X-Amz-Part-Number-Marker")
-		maxPartsParsed, err := utils.ParseUint(maxParts, c.debug)
+		maxPartsParsed, err := utils.ParseUint(maxParts)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("error parsing max parts %q: %v",
@@ -388,7 +392,7 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		attrs, err := utils.ParseObjectAttributes(ctx, c.debug)
+		attrs, err := utils.ParseObjectAttributes(ctx)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -922,7 +926,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
+		maxkeys, err := utils.ParseUint(maxkeysStr)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("error parsing max keys %q: %v",
@@ -1055,7 +1059,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		maxUploads, err := utils.ParseUint(maxUploadsStr, c.debug)
+		maxUploads, err := utils.ParseUint(maxUploadsStr)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("error parsing max uploads %q: %v",
@@ -1106,7 +1110,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 					BucketOwner: parsedAcl.Owner,
 				})
 		}
-		maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
+		maxkeys, err := utils.ParseUint(maxkeysStr)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("error parsing max keys %q: %v",
@@ -1160,7 +1164,7 @@ func (c S3ApiController) ListActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	maxkeys, err := utils.ParseUint(maxkeysStr, c.debug)
+	maxkeys, err := utils.ParseUint(maxkeysStr)
 	if err != nil {
 		if c.debug {
 			debuglogger.Logf("error parsing max keys %q: %v",
@@ -1211,7 +1215,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 
-		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitBucket, c.debug)
+		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitBucket)
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -1269,7 +1273,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 		}
 
 		rulesCount := len(ownershipControls.Rules)
-		isValidOwnership := utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership, c.debug)
+		isValidOwnership := utils.IsValidOwnership(ownershipControls.Rules[0].ObjectOwnership)
 		if rulesCount != 1 || !isValidOwnership {
 			if c.debug && rulesCount != 1 {
 				debuglogger.Logf("ownership control rules should be 1, got %v", rulesCount)
@@ -1679,7 +1683,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	if ok := utils.IsValidBucketName(bucket, c.debug); !ok {
+	if ok := utils.IsValidBucketName(bucket); !ok {
 		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName),
 			&MetaOpts{
 				Logger:     c.logger,
@@ -1687,7 +1691,7 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 				Action:     metrics.ActionCreateBucket,
 			})
 	}
-	if ok := utils.IsValidOwnership(objectOwnership, c.debug); !ok {
+	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return SendResponse(ctx, s3err.APIError{
 			Code:           "InvalidArgument",
 			Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),
@@ -1838,7 +1842,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
-		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject, c.debug)
+		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -2127,7 +2131,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		algorithm, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
+		algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
 		if err != nil {
 			if c.debug {
 				debuglogger.Logf("err parsing checksum headers: %v", err)
@@ -2456,7 +2460,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		}
 
 		checksumAlgorithm := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
-		err = utils.IsChecksumAlgorithmValid(checksumAlgorithm, c.debug)
+		err = utils.IsChecksumAlgorithmValid(checksumAlgorithm)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -2467,7 +2471,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		objLock, err := utils.ParsObjectLockHdrs(ctx, c.debug)
+		objLock, err := utils.ParsObjectLockHdrs(ctx)
 		if err != nil {
 			return SendResponse(ctx, err,
 				&MetaOpts{
@@ -2591,7 +2595,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	objLock, err := utils.ParsObjectLockHdrs(ctx, c.debug)
+	objLock, err := utils.ParsObjectLockHdrs(ctx)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -2602,7 +2606,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
+	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
 	if err != nil {
 		return SendResponse(ctx, err,
 			&MetaOpts{
@@ -3662,7 +3666,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 				})
 		}
 
-		_, checksums, err := utils.ParseChecksumHeaders(ctx, c.debug)
+		_, checksums, err := utils.ParseChecksumHeaders(ctx)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -3674,7 +3678,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 		}
 
 		checksumType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
-		err = utils.IsChecksumTypeValid(checksumType, c.debug)
+		err = utils.IsChecksumTypeValid(checksumType)
 		if err != nil {
 			return SendXMLResponse(ctx, nil, err,
 				&MetaOpts{
@@ -3752,7 +3756,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	objLockState, err := utils.ParsObjectLockHdrs(ctx, c.debug)
+	objLockState, err := utils.ParsObjectLockHdrs(ctx)
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{
@@ -3765,7 +3769,7 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	checksumAlgorithm, checksumType, err := utils.ParseCreateMpChecksumHeaders(ctx, c.debug)
+	checksumAlgorithm, checksumType, err := utils.ParseCreateMpChecksumHeaders(ctx)
 	if err != nil {
 		return SendXMLResponse(ctx, nil, err,
 			&MetaOpts{

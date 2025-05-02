@@ -223,7 +223,7 @@ func TestIsValidBucketName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidBucketName(tt.args.bucket, false); got != tt.want {
+			if got := IsValidBucketName(tt.args.bucket); got != tt.want {
 				t.Errorf("IsValidBucketName() = %v, want %v", got, tt.want)
 			}
 		})
@@ -283,7 +283,7 @@ func TestParseUint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseUint(tt.args.str, false)
+			got, err := ParseUint(tt.args.str)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseMaxKeys() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -411,7 +411,7 @@ func TestIsValidOwnership(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidOwnership(tt.args.val, false); got != tt.want {
+			if got := IsValidOwnership(tt.args.val); got != tt.want {
 				t.Errorf("IsValidOwnership() = %v, want %v", got, tt.want)
 			}
 		})
@@ -601,7 +601,7 @@ func TestIsChecksumAlgorithmValid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := IsChecksumAlgorithmValid(tt.args.alg, false); (err != nil) != tt.wantErr {
+			if err := IsChecksumAlgorithmValid(tt.args.alg); (err != nil) != tt.wantErr {
 				t.Errorf("IsChecksumAlgorithmValid() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -693,7 +693,7 @@ func TestIsValidChecksum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidChecksum(tt.args.checksum, tt.args.algorithm, false); got != tt.want {
+			if got := IsValidChecksum(tt.args.checksum, tt.args.algorithm); got != tt.want {
 				t.Errorf("IsValidChecksum() = %v, want %v", got, tt.want)
 			}
 		})
@@ -733,7 +733,7 @@ func TestIsChecksumTypeValid(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := IsChecksumTypeValid(tt.args.t, false); (err != nil) != tt.wantErr {
+			if err := IsChecksumTypeValid(tt.args.t); (err != nil) != tt.wantErr {
 				t.Errorf("IsChecksumTypeValid() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -855,7 +855,7 @@ func Test_checkChecksumTypeAndAlgo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := checkChecksumTypeAndAlgo(tt.args.algo, tt.args.t, false); (err != nil) != tt.wantErr {
+			if err := checkChecksumTypeAndAlgo(tt.args.algo, tt.args.t); (err != nil) != tt.wantErr {
 				t.Errorf("checkChecksumTypeAndAlgo() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -890,7 +890,6 @@ func TestParseTagging(t *testing.T) {
 		data        s3response.TaggingInput
 		overrideXML []byte
 		limit       TagLimit
-		debug       bool
 	}
 	tests := []struct {
 		name    string
@@ -1010,7 +1009,7 @@ func TestParseTagging(t *testing.T) {
 					t.Fatalf("error marshalling input: %v", err)
 				}
 			}
-			got, err := ParseTagging(data, tt.args.limit, tt.args.debug)
+			got, err := ParseTagging(data, tt.args.limit)
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("expected error %v, got %v", tt.wantErr, err)
