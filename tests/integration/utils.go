@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -420,7 +421,7 @@ func hasObjNames(objs []types.Object, names []string) bool {
 	}
 
 	for _, obj := range objs {
-		if contains(names, *obj.Key) {
+		if slices.Contains(names, *obj.Key) {
 			continue
 		}
 		return false
@@ -435,22 +436,13 @@ func hasPrefixName(prefixes []types.CommonPrefix, names []string) bool {
 	}
 
 	for _, prefix := range prefixes {
-		if contains(names, *prefix.Prefix) {
+		if slices.Contains(names, *prefix.Prefix) {
 			continue
 		}
 		return false
 	}
 
 	return true
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }
 
 type putObjectOutput struct {
@@ -1133,7 +1125,7 @@ func createObjVersions(client *s3.Client, bucket, object string, count int, opts
 	}
 
 	versions := []types.ObjectVersion{}
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rNumber, err := rand.Int(rand.Reader, big.NewInt(100000))
 		dataLength := rNumber.Int64()
 		if err != nil {

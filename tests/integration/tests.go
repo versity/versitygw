@@ -1444,8 +1444,11 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 		if len(out.Parts) != 1 {
 			return fmt.Errorf("expected mp upload parts length to be 1, instead got %v", len(out.Parts))
 		}
-		if *out.Parts[0].ETag != etag {
-			return fmt.Errorf("expected uploaded part etag to be %v, instead got %v", etag, *out.Parts[0].ETag)
+		if getString(out.Parts[0].ETag) != etag {
+			return fmt.Errorf("expected uploaded part etag to be %v, instead got %v", etag, getString(out.Parts[0].ETag))
+		}
+		if out.Parts[0].PartNumber == nil {
+			return fmt.Errorf("expected uploaded part part-number to be not nil")
 		}
 		if *out.Parts[0].PartNumber != partNumber {
 			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
@@ -1625,18 +1628,22 @@ func CreateBucket_default_acl(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 		if len(out.Grants) != 1 {
-			return fmt.Errorf("expected grants length to be 1, instead got %v", len(out.Grants))
+			return fmt.Errorf("expected grants length to be 1, instead got %v",
+				len(out.Grants))
 		}
 		grt := out.Grants[0]
 		if grt.Permission != types.PermissionFullControl {
-			return fmt.Errorf("expected the grantee to have full-control permission, instead got %v", grt.Permission)
+			return fmt.Errorf("expected the grantee to have full-control permission, instead got %v",
+				grt.Permission)
 		}
-		if *grt.Grantee.ID != s.awsID {
-			return fmt.Errorf("expected the grantee id to be %v, instead got %v", s.awsID, *grt.Grantee.ID)
+		if getString(grt.Grantee.ID) != s.awsID {
+			return fmt.Errorf("expected the grantee id to be %v, instead got %v",
+				s.awsID, getString(grt.Grantee.ID))
 		}
 
 		return nil
@@ -1805,8 +1812,9 @@ func HeadBucket_success(s *S3Conf) error {
 		if resp.AccessPointAlias != nil && *resp.AccessPointAlias {
 			return fmt.Errorf("expected bucket access point alias to be false")
 		}
-		if *resp.BucketRegion != s.awsRegion {
-			return fmt.Errorf("expected bucket region to be %v, instead got %v", s.awsRegion, *resp.BucketRegion)
+		if getString(resp.BucketRegion) != s.awsRegion {
+			return fmt.Errorf("expected bucket region to be %v, instead got %v",
+				s.awsRegion, getString(resp.BucketRegion))
 		}
 
 		return nil
@@ -1817,7 +1825,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []types.Bucket{{Name: &bucket}}
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			bckt := getBucketName()
 
 			err := setup(s, bckt)
@@ -1845,7 +1853,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 		cfg.awsSecret = usr.secret
 
 		bckts := []string{}
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			bckts = append(bckts, *buckets[i].Name)
 		}
 
@@ -1863,11 +1871,13 @@ func ListBuckets_as_user(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != usr.access {
-			return fmt.Errorf("expected buckets owner to be %v, instead got %v", usr.access, *out.Owner.ID)
+		if getString(out.Owner.ID) != usr.access {
+			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
+				usr.access, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets[:3]) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[:3], out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				buckets[:3], out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
@@ -1885,7 +1895,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []types.Bucket{{Name: &bucket}}
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			bckt := getBucketName()
 
 			err := setup(s, bckt)
@@ -1918,7 +1928,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 		cfg.awsSecret = admin.secret
 
 		bckts := []string{}
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			bckts = append(bckts, *buckets[i].Name)
 		}
 
@@ -1936,11 +1946,13 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != admin.access {
-			return fmt.Errorf("expected buckets owner to be %v, instead got %v", admin.access, *out.Owner.ID)
+		if getString(out.Owner.ID) != admin.access {
+			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
+				admin.access, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				buckets, out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
@@ -1959,7 +1971,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "my-prefix-"
 		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket}}, []types.Bucket{}
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			bckt := getBucketName()
 			if i%2 == 0 {
 				bckt = prefix + bckt
@@ -1990,14 +2002,17 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 		if getString(out.Prefix) != prefix {
-			return fmt.Errorf("expected prefix to be %v, instead got %v", prefix, getString(out.Prefix))
+			return fmt.Errorf("expected prefix to be %v, instead got %v",
+				prefix, getString(out.Prefix))
 		}
 		if !compareBuckets(out.Buckets, prefixedBuckets) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", prefixedBuckets, out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				prefixedBuckets, out.Buckets)
 		}
 
 		for _, elem := range allBuckets[1:] {
@@ -2043,7 +2058,7 @@ func ListBuckets_truncated(s *S3Conf) error {
 	testName := "ListBuckets_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []types.Bucket{{Name: &bucket}}
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			bckt := getBucketName()
 
 			err := setup(s, bckt)
@@ -2066,14 +2081,17 @@ func ListBuckets_truncated(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets[:maxBuckets]) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[:maxBuckets], out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				buckets[:maxBuckets], out.Buckets)
 		}
-		if getString(out.ContinuationToken) != *buckets[maxBuckets-1].Name {
-			return fmt.Errorf("expected ContinuationToken to be %v, instead got %v", *buckets[maxBuckets-1].Name, getString(out.ContinuationToken))
+		if getString(out.ContinuationToken) != getString(buckets[maxBuckets-1].Name) {
+			return fmt.Errorf("expected ContinuationToken to be %v, instead got %v",
+				getString(buckets[maxBuckets-1].Name), getString(out.ContinuationToken))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -2086,10 +2104,12 @@ func ListBuckets_truncated(s *S3Conf) error {
 		}
 
 		if !compareBuckets(out.Buckets, buckets[maxBuckets:]) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets[maxBuckets:], out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				buckets[maxBuckets:], out.Buckets)
 		}
 		if out.ContinuationToken != nil {
-			return fmt.Errorf("expected nil continuation token, instead got %v", *out.ContinuationToken)
+			return fmt.Errorf("expected nil continuation token, instead got %v",
+				*out.ContinuationToken)
 		}
 		if out.Prefix != nil {
 			return fmt.Errorf("expected nil prefix, instead got %v", *out.Prefix)
@@ -2117,7 +2137,8 @@ func ListBuckets_empty_success(s *S3Conf) error {
 		}
 
 		if len(out.Buckets) > 0 {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", []types.Bucket{}, out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				[]types.Bucket{}, out.Buckets)
 		}
 
 		return nil
@@ -2128,7 +2149,7 @@ func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		buckets := []types.Bucket{{Name: &bucket}}
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			bckt := getBucketName()
 
 			err := setup(s, bckt)
@@ -2148,11 +2169,13 @@ func ListBuckets_success(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets) {
-			return fmt.Errorf("expected list buckets result to be %v, instead got %v", buckets, out.Buckets)
+			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
+				buckets, out.Buckets)
 		}
 
 		for _, elem := range buckets[1:] {
@@ -2549,7 +2572,7 @@ func PutBucketTagging_tag_count_limit(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		tagSet := []types.Tag{}
 
-		for i := 0; i < 51; i++ {
+		for i := range 51 {
 			tagSet = append(tagSet, types.Tag{
 				Key:   getPtr(fmt.Sprintf("key-%v", i)),
 				Value: getPtr(genRandString(10)),
@@ -3403,7 +3426,7 @@ func PutObject_racey_success(s *S3Conf) error {
 	}
 
 	eg := errgroup.Group{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		eg.Go(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := client.PutObject(ctx, &s3.PutObjectInput{
@@ -3533,17 +3556,27 @@ func HeadObject_mp_success(s *S3Conf) error {
 			return err
 		}
 
-		if *out.ContentLength != int64(partSize) {
-			return fmt.Errorf("expected content length to be %v, instead got %v", partSize, *out.ContentLength)
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil content length")
 		}
-		if *out.ETag != *parts[partNumber-1].ETag {
-			return fmt.Errorf("expected ETag to be %v, instead got %v", *parts[partNumber-1].ETag, *out.ETag)
+		if *out.ContentLength != int64(partSize) {
+			return fmt.Errorf("expected content length to be %v, instead got %v",
+				partSize, *out.ContentLength)
+		}
+		if getString(out.ETag) != getString(parts[partNumber-1].ETag) {
+			return fmt.Errorf("expected ETag to be %v, instead got %v",
+				getString(parts[partNumber-1].ETag), getString(out.ETag))
+		}
+		if out.PartsCount == nil {
+			return fmt.Errorf("expected non nil parts count")
 		}
 		if *out.PartsCount != int32(partCount) {
-			return fmt.Errorf("expected part count to be %v, instead got %v", partCount, *out.PartsCount)
+			return fmt.Errorf("expected part count to be %v, instead got %v",
+				partCount, *out.PartsCount)
 		}
 		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, out.StorageClass)
 		}
 
 		return nil
@@ -3801,28 +3834,36 @@ func HeadObject_success(s *S3Conf) error {
 			contentLength = *out.ContentLength
 		}
 		if contentLength != dataLen {
-			return fmt.Errorf("expected data length %v, instead got %v", dataLen, contentLength)
+			return fmt.Errorf("expected data length %v, instead got %v",
+				dataLen, contentLength)
 		}
-		if *out.ContentType != defaultContentType {
-			return fmt.Errorf("expected Content-Type %v, instead got %v", defaultContentType, *out.ContentType)
+		if getString(out.ContentType) != defaultContentType {
+			return fmt.Errorf("expected Content-Type %v, instead got %v",
+				defaultContentType, getString(out.ContentType))
 		}
 		if getString(out.ContentDisposition) != cDisp {
-			return fmt.Errorf("expected Content-Disposition %v, instead got %v", cDisp, getString(out.ContentDisposition))
+			return fmt.Errorf("expected Content-Disposition %v, instead got %v",
+				cDisp, getString(out.ContentDisposition))
 		}
 		if getString(out.ContentEncoding) != cEnc {
-			return fmt.Errorf("expected Content-Encoding %v, instead got %v", cEnc, getString(out.ContentEncoding))
+			return fmt.Errorf("expected Content-Encoding %v, instead got %v",
+				cEnc, getString(out.ContentEncoding))
 		}
 		if getString(out.ContentLanguage) != cLang {
-			return fmt.Errorf("expected Content-Language %v, instead got %v", cLang, getString(out.ContentLanguage))
+			return fmt.Errorf("expected Content-Language %v, instead got %v",
+				cLang, getString(out.ContentLanguage))
 		}
 		if getString(out.ExpiresString) != expires.UTC().Format(timefmt) {
-			return fmt.Errorf("expected Expiress %v, instead got %v", expires.UTC().Format(timefmt), getString(out.ExpiresString))
+			return fmt.Errorf("expected Expiress %v, instead got %v",
+				expires.UTC().Format(timefmt), getString(out.ExpiresString))
 		}
 		if getString(out.CacheControl) != cacheControl {
-			return fmt.Errorf("expected Cache-Control %v, instead got %v", cacheControl, getString(out.CacheControl))
+			return fmt.Errorf("expected Cache-Control %v, instead got %v",
+				cacheControl, getString(out.CacheControl))
 		}
 		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, out.StorageClass)
 		}
 
 		return nil
@@ -4008,19 +4049,23 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 			return fmt.Errorf("nil ETag output")
 		}
 		if strings.Trim(*resp.ETag, "\"") != *out.ETag {
-			return fmt.Errorf("expected ETag to be %v, instead got %v", strings.Trim(*resp.ETag, "\""), *out.ETag)
+			return fmt.Errorf("expected ETag to be %v, instead got %v",
+				strings.Trim(*resp.ETag, "\""), *out.ETag)
 		}
 		if out.ObjectSize == nil {
 			return fmt.Errorf("nil object size output")
 		}
 		if *out.ObjectSize != data_len {
-			return fmt.Errorf("expected object size to be %v, instead got %v", data_len, *out.ObjectSize)
+			return fmt.Errorf("expected object size to be %v, instead got %v",
+				data_len, *out.ObjectSize)
 		}
 		if out.Checksum != nil {
-			return fmt.Errorf("expected checksum to be nil, instead got %v", *out.Checksum)
+			return fmt.Errorf("expected checksum to be nil, instead got %v",
+				*out.Checksum)
 		}
 		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, out.StorageClass)
 		}
 		if out.LastModified == nil {
 			return fmt.Errorf("expected non nil LastModified")
@@ -4086,22 +4131,28 @@ func GetObjectAttributes_checksums(s *S3Conf) error {
 				return fmt.Errorf("expected non-nil checksum in the response")
 			}
 			if res.Checksum.ChecksumType != types.ChecksumTypeFullObject {
-				return fmt.Errorf("expected the %v object checksum type to be %v, instaed got %v", el.key, types.ChecksumTypeFullObject, res.Checksum.ChecksumType)
+				return fmt.Errorf("expected the %v object checksum type to be %v, instaed got %v",
+					el.key, types.ChecksumTypeFullObject, res.Checksum.ChecksumType)
 			}
 			if getString(res.Checksum.ChecksumCRC32) != getString(out.res.ChecksumCRC32) {
-				return fmt.Errorf("expected crc32 checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32), getString(res.Checksum.ChecksumCRC32))
+				return fmt.Errorf("expected crc32 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC32), getString(res.Checksum.ChecksumCRC32))
 			}
 			if getString(res.Checksum.ChecksumCRC32C) != getString(out.res.ChecksumCRC32C) {
-				return fmt.Errorf("expected crc32c checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32C), getString(res.Checksum.ChecksumCRC32C))
+				return fmt.Errorf("expected crc32c checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC32C), getString(res.Checksum.ChecksumCRC32C))
 			}
 			if getString(res.Checksum.ChecksumSHA1) != getString(out.res.ChecksumSHA1) {
-				return fmt.Errorf("expected sha1 checksum to be %v, instead got %v", getString(out.res.ChecksumSHA1), getString(res.Checksum.ChecksumSHA1))
+				return fmt.Errorf("expected sha1 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumSHA1), getString(res.Checksum.ChecksumSHA1))
 			}
 			if getString(res.Checksum.ChecksumSHA256) != getString(out.res.ChecksumSHA256) {
-				return fmt.Errorf("expected sha256 checksum to be %v, instead got %v", getString(out.res.ChecksumSHA256), getString(res.Checksum.ChecksumSHA256))
+				return fmt.Errorf("expected sha256 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumSHA256), getString(res.Checksum.ChecksumSHA256))
 			}
 			if getString(res.Checksum.ChecksumCRC64NVME) != getString(out.res.ChecksumCRC64NVME) {
-				return fmt.Errorf("expected crc64nvme checksum to be %v, instead got %v", getString(out.res.ChecksumCRC64NVME), getString(res.Checksum.ChecksumCRC64NVME))
+				return fmt.Errorf("expected crc64nvme checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC64NVME), getString(res.Checksum.ChecksumCRC64NVME))
 			}
 		}
 		return nil
@@ -4222,14 +4273,20 @@ func GetObject_should_succeed_for_invalid_ranges(s *S3Conf) error {
 				return err
 			}
 
+			if res.ContentLength == nil {
+				return fmt.Errorf("expected non nil content length")
+			}
 			if *res.ContentLength != dataLength {
-				return fmt.Errorf("expected Content-Length to be %v, instead got %v", dataLength, *res.ContentLength)
+				return fmt.Errorf("expected Content-Length to be %v, instead got %v",
+					dataLength, *res.ContentLength)
 			}
 			if getString(res.ContentRange) != "" {
-				return fmt.Errorf("expected empty Content-Range, instead got %v", *res.ContentRange)
+				return fmt.Errorf("expected empty Content-Range, instead got %v",
+					*res.ContentRange)
 			}
 			if getString(res.AcceptRanges) != "bytes" {
-				return fmt.Errorf("expected the accept ranges to be 'bytes', instead got %v", getString(res.AcceptRanges))
+				return fmt.Errorf("expected the accept ranges to be 'bytes', instead got %v",
+					getString(res.AcceptRanges))
 			}
 
 			return nil
@@ -4279,7 +4336,8 @@ func GetObject_content_ranges(s *S3Conf) error {
 
 		expectedRange := "bytes 100-1023/1024"
 		if getString(res.ContentRange) != expectedRange {
-			return fmt.Errorf("expected the accept ranges to be %v, instead got %v", expectedRange, getString(res.ContentRange))
+			return fmt.Errorf("expected the accept ranges to be %v, instead got %v",
+				expectedRange, getString(res.ContentRange))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -4293,7 +4351,8 @@ func GetObject_content_ranges(s *S3Conf) error {
 			return err
 		}
 		if getString(res.ContentRange) != expectedRange {
-			return fmt.Errorf("expected the accept ranges to be %v, instead got %v", expectedRange, getString(res.ContentRange))
+			return fmt.Errorf("expected the accept ranges to be %v, instead got %v",
+				expectedRange, getString(res.ContentRange))
 		}
 
 		return nil
@@ -4378,22 +4437,28 @@ func GetObject_checksums(s *S3Conf) error {
 			}
 
 			if res.ChecksumType != types.ChecksumTypeFullObject {
-				return fmt.Errorf("expected the %v object checksum type to be %v, instaed got %v", el.key, types.ChecksumTypeFullObject, res.ChecksumType)
+				return fmt.Errorf("expected the %v object checksum type to be %v, instaed got %v",
+					el.key, types.ChecksumTypeFullObject, res.ChecksumType)
 			}
 			if getString(res.ChecksumCRC32) != getString(out.res.ChecksumCRC32) {
-				return fmt.Errorf("expected crc32 checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32), getString(res.ChecksumCRC32))
+				return fmt.Errorf("expected crc32 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC32), getString(res.ChecksumCRC32))
 			}
 			if getString(res.ChecksumCRC32C) != getString(out.res.ChecksumCRC32C) {
-				return fmt.Errorf("expected crc32c checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32C), getString(res.ChecksumCRC32C))
+				return fmt.Errorf("expected crc32c checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC32C), getString(res.ChecksumCRC32C))
 			}
 			if getString(res.ChecksumSHA1) != getString(out.res.ChecksumSHA1) {
-				return fmt.Errorf("expected sha1 checksum to be %v, instead got %v", getString(out.res.ChecksumSHA1), getString(res.ChecksumSHA1))
+				return fmt.Errorf("expected sha1 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumSHA1), getString(res.ChecksumSHA1))
 			}
 			if getString(res.ChecksumSHA256) != getString(out.res.ChecksumSHA256) {
-				return fmt.Errorf("expected sha256 checksum to be %v, instead got %v", getString(out.res.ChecksumSHA256), getString(res.ChecksumSHA256))
+				return fmt.Errorf("expected sha256 checksum to be %v, instead got %v",
+					getString(out.res.ChecksumSHA256), getString(res.ChecksumSHA256))
 			}
 			if getString(res.ChecksumCRC64NVME) != getString(out.res.ChecksumCRC64NVME) {
-				return fmt.Errorf("expected crc64nvme checksum to be %v, instead got %v", getString(out.res.ChecksumCRC64NVME), getString(res.ChecksumCRC64NVME))
+				return fmt.Errorf("expected crc64nvme checksum to be %v, instead got %v",
+					getString(out.res.ChecksumCRC64NVME), getString(res.ChecksumCRC64NVME))
 			}
 		}
 
@@ -4428,8 +4493,12 @@ func GetObject_large_object(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil content length")
+		}
 		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+			return fmt.Errorf("expected content-length %v, instead got %v",
+				dataLength, out.ContentLength)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
@@ -4439,7 +4508,8 @@ func GetObject_large_object(s *S3Conf) error {
 		defer out.Body.Close()
 		outCsum := sha256.Sum256(bdy)
 		if outCsum != r.csum {
-			return fmt.Errorf("expected the output data checksum to be %v, instead got %v", r.csum, outCsum)
+			return fmt.Errorf("expected the output data checksum to be %v, instead got %v",
+				r.csum, outCsum)
 		}
 		return nil
 	})
@@ -4481,31 +4551,40 @@ func GetObject_success(s *S3Conf) error {
 			return err
 		}
 		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+			return fmt.Errorf("expected content-length %v, instead got %v",
+				dataLength, out.ContentLength)
 		}
 		if getString(out.ContentType) != defaultContentType {
-			return fmt.Errorf("expected Content-Type %v, instead got %v", defaultContentType, getString(out.ContentType))
+			return fmt.Errorf("expected Content-Type %v, instead got %v",
+				defaultContentType, getString(out.ContentType))
 		}
 		if getString(out.ContentDisposition) != cDisp {
-			return fmt.Errorf("expected Content-Disposition %v, instead got %v", cDisp, getString(out.ContentDisposition))
+			return fmt.Errorf("expected Content-Disposition %v, instead got %v",
+				cDisp, getString(out.ContentDisposition))
 		}
 		if getString(out.ContentEncoding) != cEnc {
-			return fmt.Errorf("expected Content-Encoding %v, instead got %v", cEnc, getString(out.ContentEncoding))
+			return fmt.Errorf("expected Content-Encoding %v, instead got %v",
+				cEnc, getString(out.ContentEncoding))
 		}
 		if getString(out.ContentLanguage) != cLang {
-			return fmt.Errorf("expected Content-Language %v, instead got %v", cLang, getString(out.ContentLanguage))
+			return fmt.Errorf("expected Content-Language %v, instead got %v",
+				cLang, getString(out.ContentLanguage))
 		}
 		if getString(out.ExpiresString) != expires.UTC().Format(timefmt) {
-			return fmt.Errorf("expected Expiress %v, instead got %v", expires.UTC().Format(timefmt), getString(out.ExpiresString))
+			return fmt.Errorf("expected Expiress %v, instead got %v",
+				expires.UTC().Format(timefmt), getString(out.ExpiresString))
 		}
 		if getString(out.CacheControl) != cacheControl {
-			return fmt.Errorf("expected Cache-Control %v, instead got %v", cacheControl, getString(out.CacheControl))
+			return fmt.Errorf("expected Cache-Control %v, instead got %v",
+				cacheControl, getString(out.CacheControl))
 		}
 		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, out.StorageClass)
 		}
 		if !areMapsSame(out.Metadata, meta) {
-			return fmt.Errorf("expected the object metadata to be %v, instead got %v", meta, out.Metadata)
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v",
+				meta, out.Metadata)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
@@ -4545,14 +4624,21 @@ func GetObject_directory_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, out.ContentLength)
+
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil content length")
 		}
-		if *out.ContentType != directoryContentType {
-			return fmt.Errorf("expected content type %v, instead got %v", directoryContentType, *out.ContentType)
+		if *out.ContentLength != dataLength {
+			return fmt.Errorf("expected content-length %v, instead got %v",
+				dataLength, out.ContentLength)
+		}
+		if getString(out.ContentType) != directoryContentType {
+			return fmt.Errorf("expected content type %v, instead got %v",
+				directoryContentType, getString(out.ContentType))
 		}
 		if out.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, out.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, out.StorageClass)
 		}
 
 		out.Body.Close()
@@ -4596,10 +4682,12 @@ func GetObject_by_range_success(s *S3Conf) error {
 			defer out.Body.Close()
 
 			if getString(out.ContentRange) != el.contentRange {
-				return fmt.Errorf("expected content range: %v, instead got: %v", el.contentRange, getString(out.ContentRange))
+				return fmt.Errorf("expected content range: %v, instead got: %v",
+					el.contentRange, getString(out.ContentRange))
 			}
 			if getString(out.AcceptRanges) != "bytes" {
-				return fmt.Errorf("expected accept range: bytes, instead got: %v", getString(out.AcceptRanges))
+				return fmt.Errorf("expected accept range: bytes, instead got: %v",
+					getString(out.AcceptRanges))
 			}
 			b, err := io.ReadAll(out.Body)
 			if err != nil && !errors.Is(err, io.EOF) {
@@ -4652,7 +4740,8 @@ func GetObject_by_range_resp_status(s *S3Conf) error {
 		}
 
 		if resp.StatusCode != http.StatusPartialContent {
-			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusPartialContent, resp.StatusCode)
+			return fmt.Errorf("expected response status to be %v, instead got %v",
+				http.StatusPartialContent, resp.StatusCode)
 		}
 
 		return nil
@@ -4722,11 +4811,13 @@ func ListObjects_with_prefix(s *S3Conf) error {
 			return err
 		}
 
-		if *out.Prefix != prefix {
-			return fmt.Errorf("expected prefix %v, instead got %v", prefix, *out.Prefix)
+		if getString(out.Prefix) != prefix {
+			return fmt.Errorf("expected prefix %v, instead got %v",
+				prefix, getString(out.Prefix))
 		}
 		if !compareObjects(contents[2:], out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], out.Contents)
 		}
 
 		return nil
@@ -4748,12 +4839,14 @@ func ListObjects_paginated(s *S3Conf) error {
 
 		expected := []string{"dir1/subdir.ext", "dir1/subdir1.ext", "dir1/subdir2.ext"}
 		if !hasObjNames(objs, expected) {
-			return fmt.Errorf("expected objects %v, instead got %v", expected, objStrings(objs))
+			return fmt.Errorf("expected objects %v, instead got %v",
+				expected, objStrings(objs))
 		}
 
 		expectedPrefix := []string{"dir1/subdir/"}
 		if !hasPrefixName(prefixes, expectedPrefix) {
-			return fmt.Errorf("expected prefixes %v, instead got %v", expectedPrefix, pfxStrings(prefixes))
+			return fmt.Errorf("expected prefixes %v, instead got %v",
+				expectedPrefix, pfxStrings(prefixes))
 		}
 
 		return nil
@@ -4783,16 +4876,25 @@ func ListObjects_truncated(s *S3Conf) error {
 			return fmt.Errorf("expected output to be truncated")
 		}
 
+		if out1.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
+		}
 		if *out1.MaxKeys != maxKeys {
-			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out1.MaxKeys)
+			return fmt.Errorf("expected max-keys to be %v, instead got %v",
+				maxKeys, out1.MaxKeys)
 		}
 
+		if out1.NextMarker == nil {
+			return fmt.Errorf("expected non nil next marker")
+		}
 		if *out1.NextMarker != "baz" {
-			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out1.NextMarker)
+			return fmt.Errorf("expected next-marker to be baz, instead got %v",
+				*out1.NextMarker)
 		}
 
 		if !compareObjects(contents[:2], out1.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[:2], out1.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[:2], out1.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -4805,16 +4907,21 @@ func ListObjects_truncated(s *S3Conf) error {
 			return err
 		}
 
+		if out2.IsTruncated == nil {
+			return fmt.Errorf("expected non nil is-truncated")
+		}
 		if *out2.IsTruncated {
 			return fmt.Errorf("expected output not to be truncated")
 		}
 
-		if *out2.Marker != *out1.NextMarker {
-			return fmt.Errorf("expected marker to be %v, instead got %v", *out1.NextMarker, *out2.Marker)
+		if getString(out2.Marker) != getString(out1.NextMarker) {
+			return fmt.Errorf("expected marker to be %v, instead got %v",
+				getString(out1.NextMarker), getString(out2.Marker))
 		}
 
 		if !compareObjects(contents[2:], out2.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out2.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], out2.Contents)
 		}
 		return nil
 	})
@@ -4883,7 +4990,8 @@ func ListObjects_exceeding_max_keys(s *S3Conf) error {
 			return fmt.Errorf("unexpected nil max-keys")
 		}
 		if *out.MaxKeys != 1000 {
-			return fmt.Errorf("expected the max-keys to be %v, instaed got %v", 1000, *out.MaxKeys)
+			return fmt.Errorf("expected the max-keys to be %v, instaed got %v",
+				1000, *out.MaxKeys)
 		}
 
 		return nil
@@ -4908,18 +5016,18 @@ func ListObjects_delimiter(s *S3Conf) error {
 			return err
 		}
 
-		if out.Delimiter == nil || *out.Delimiter != "/" {
-			if out.Delimiter == nil {
-				return fmt.Errorf("expected delimiter to be /, instead got nil delim")
-			}
-			return fmt.Errorf("expected delimiter to be /, instead got %v", *out.Delimiter)
+		if getString(out.Delimiter) != "/" {
+			return fmt.Errorf("expected delimiter to be /, instead got %v",
+				getString(out.Delimiter))
 		}
-		if len(out.Contents) != 1 || *out.Contents[0].Key != "asdf" {
-			return fmt.Errorf("expected result [\"asdf\"], instead got %v", out.Contents)
+		if len(out.Contents) != 1 || getString(out.Contents[0].Key) != "asdf" {
+			return fmt.Errorf("expected result [\"asdf\"], instead got %v",
+				out.Contents)
 		}
 
 		if !comparePrefixes([]string{"foo/", "quux/"}, out.CommonPrefixes) {
-			return fmt.Errorf("expected common prefixes to be %v, instead got %v", []string{"foo/", "quux/"}, out.CommonPrefixes)
+			return fmt.Errorf("expected common prefixes to be %v, instead got %v",
+				[]string{"foo/", "quux/"}, out.CommonPrefixes)
 		}
 
 		return nil
@@ -4943,8 +5051,12 @@ func ListObjects_max_keys_none(s *S3Conf) error {
 			return err
 		}
 
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
+		}
 		if *out.MaxKeys != 1000 {
-			return fmt.Errorf("expected max-keys to be 1000, instead got %v", out.MaxKeys)
+			return fmt.Errorf("expected max-keys to be 1000, instead got %v",
+				out.MaxKeys)
 		}
 
 		return nil
@@ -4970,7 +5082,8 @@ func ListObjects_marker_not_from_obj_list(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents[2:], out.Contents) {
-			return fmt.Errorf("expected output to be %v, instead got %v", contents, out.Contents)
+			return fmt.Errorf("expected output to be %v, instead got %v",
+				contents, out.Contents)
 		}
 
 		return nil
@@ -5015,7 +5128,8 @@ func ListObjects_with_checksum(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents, res.Contents) {
-			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, res.Contents)
+			return fmt.Errorf("expected the objects list to be %v, instead got %v",
+				contents, res.Contents)
 		}
 
 		return nil
@@ -5040,20 +5154,25 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 		}
 
 		if out.Marker != nil {
-			return fmt.Errorf("expected the Marker to be nil, instead got %v", *out.Marker)
+			return fmt.Errorf("expected the Marker to be nil, instead got %v",
+				*out.Marker)
 		}
 		if out.NextMarker != nil {
-			return fmt.Errorf("expected the NextMarker to be nil, instead got %v", *out.NextMarker)
+			return fmt.Errorf("expected the NextMarker to be nil, instead got %v",
+				*out.NextMarker)
 		}
 		if out.Delimiter != nil {
-			return fmt.Errorf("expected the Delimiter to be nil, instead got %v", *out.Delimiter)
+			return fmt.Errorf("expected the Delimiter to be nil, instead got %v",
+				*out.Delimiter)
 		}
 		if out.Prefix != nil {
-			return fmt.Errorf("expected the Prefix to be nil, instead got %v", *out.Prefix)
+			return fmt.Errorf("expected the Prefix to be nil, instead got %v",
+				*out.Prefix)
 		}
 
 		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the contents to be %v, instead got %v", contents, out.Contents)
+			return fmt.Errorf("expected the contents to be %v, instead got %v",
+				contents, out.Contents)
 		}
 
 		return nil
@@ -5122,7 +5241,8 @@ func ListObjects_check_owner(s *S3Conf) error {
 		}
 
 		if !compareObjects(objs, res.Contents) {
-			return fmt.Errorf("expected the contents to be %v, instead got %v", objs, res.Contents)
+			return fmt.Errorf("expected the contents to be %v, instead got %v",
+				objs, res.Contents)
 		}
 
 		return nil
@@ -5162,20 +5282,25 @@ func ListObjects_non_truncated_common_prefixes(s *S3Conf) error {
 			return fmt.Errorf("expected non nil max-keys")
 		}
 		if *res.MaxKeys != maxKeys {
-			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, *res.MaxKeys)
+			return fmt.Errorf("expected max-keys to be %v, instead got %v",
+				maxKeys, *res.MaxKeys)
 		}
 		if getString(res.Delimiter) != delim {
-			return fmt.Errorf("expected delimiter to be %v, instead got %v", delim, getString(res.Delimiter))
+			return fmt.Errorf("expected delimiter to be %v, instead got %v",
+				delim, getString(res.Delimiter))
 		}
 		if getString(res.Marker) != marker {
-			return fmt.Errorf("expected marker to be %v, instead got %v", getString(res.Marker), marker)
+			return fmt.Errorf("expected marker to be %v, instead got %v",
+				getString(res.Marker), marker)
 		}
 		if len(res.Contents) != 0 {
-			return fmt.Errorf("expected empty contents, instead got %+v", res.Contents)
+			return fmt.Errorf("expected empty contents, instead got %+v",
+				res.Contents)
 		}
 		cPrefs := []string{"cquux/"}
 		if !comparePrefixes(cPrefs, res.CommonPrefixes) {
-			return fmt.Errorf("expected common prefixes to be %v, instead got %+v", cPrefs, res.CommonPrefixes)
+			return fmt.Errorf("expected common prefixes to be %v, instead got %+v",
+				cPrefs, res.CommonPrefixes)
 		}
 
 		return nil
@@ -5201,11 +5326,13 @@ func ListObjectsV2_start_after(s *S3Conf) error {
 			return err
 		}
 
-		if *out.StartAfter != startAfter {
-			return fmt.Errorf("expected StartAfter to be %v, insted got %v", startAfter, *out.StartAfter)
+		if getString(out.StartAfter) != startAfter {
+			return fmt.Errorf("expected StartAfter to be %v, insted got %v",
+				startAfter, getString(out.StartAfter))
 		}
 		if !compareObjects(contents[1:], out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, out.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents, out.Contents)
 		}
 
 		return nil
@@ -5235,16 +5362,23 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 			return fmt.Errorf("expected output to be truncated")
 		}
 
-		if *out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected max-keys to be %v, instead got %v", maxKeys, out.MaxKeys)
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
 		}
 
-		if *out.NextContinuationToken != "bar" {
-			return fmt.Errorf("expected next-marker to be baz, instead got %v", *out.NextContinuationToken)
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v",
+				maxKeys, out.MaxKeys)
+		}
+
+		if getString(out.NextContinuationToken) != "bar" {
+			return fmt.Errorf("expected next-marker to be baz, instead got %v",
+				getString(out.NextContinuationToken))
 		}
 
 		if !compareObjects(contents[:1], out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[:1], out.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[:1], out.Contents)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -5259,7 +5393,8 @@ func ListObjectsV2_both_start_after_and_continuation_token(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents[2:], resp.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], resp.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], resp.Contents)
 		}
 
 		return nil
@@ -5285,7 +5420,8 @@ func ListObjectsV2_start_after_not_in_list(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents[2:], out.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[2:], out.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[2:], out.Contents)
 		}
 
 		return nil
@@ -5350,8 +5486,10 @@ func ListObjectsV2_both_delimiter_and_prefix(s *S3Conf) error {
 		if res.Prefix == nil || *res.Prefix != prefix {
 			return fmt.Errorf("expected the prefix to be %v", prefix)
 		}
-		if !comparePrefixes([]string{"photos/2006/February/", "photos/2006/January/"}, res.CommonPrefixes) {
-			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"photos/2006/February/", "photos/2006/January/"}, res.CommonPrefixes)
+		if !comparePrefixes([]string{"photos/2006/February/", "photos/2006/January/"},
+			res.CommonPrefixes) {
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
+				[]string{"photos/2006/February/", "photos/2006/January/"}, res.CommonPrefixes)
 		}
 		if len(res.Contents) != 0 {
 			return fmt.Errorf("expected empty objects list, instead got %v", res.Contents)
@@ -5383,10 +5521,12 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 		}
 
 		if !comparePrefixes([]string{"a/"}, res.CommonPrefixes) {
-			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"a/"}, res.CommonPrefixes)
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
+				[]string{"a/"}, res.CommonPrefixes)
 		}
 		if len(res.Contents) != 0 {
-			return fmt.Errorf("expected empty objects list, instead got %v", res.Contents)
+			return fmt.Errorf("expected empty objects list, instead got %v",
+				res.Contents)
 		}
 
 		prefix = "a/"
@@ -5403,10 +5543,12 @@ func ListObjectsV2_single_dir_object_with_delim_and_prefix(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents, res.Contents) {
-			return fmt.Errorf("expected the object list to be %v, instead got %v", []string{"a/"}, res.Contents)
+			return fmt.Errorf("expected the object list to be %v, instead got %v",
+				[]string{"a/"}, res.Contents)
 		}
 		if len(res.CommonPrefixes) != 0 {
-			return fmt.Errorf("expected empty common prefixes, instead got %v", res.CommonPrefixes)
+			return fmt.Errorf("expected empty common prefixes, instead got %v",
+				res.CommonPrefixes)
 		}
 
 		return nil
@@ -5437,14 +5579,21 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 		if !comparePrefixes([]string{"d1/", "d2/", "d3/"}, out.CommonPrefixes) {
 			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"d1/", "d2/", "d3/"}, out.CommonPrefixes)
 		}
+
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
+		}
 		if *out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
+				maxKeys, *out.MaxKeys)
 		}
-		if *out.NextContinuationToken != "d3/" {
-			return fmt.Errorf("expected the NextContinuationToken to be d3/, instead got %v", *out.NextContinuationToken)
+		if getString(out.NextContinuationToken) != "d3/" {
+			return fmt.Errorf("expected the NextContinuationToken to be d3/, instead got %v",
+				getString(out.NextContinuationToken))
 		}
-		if *out.Delimiter != delim {
-			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		if getString(out.Delimiter) != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
+				delim, getString(out.Delimiter))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -5459,10 +5608,12 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 		}
 
 		if !comparePrefixes([]string{"d4/"}, out.CommonPrefixes) {
-			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"d4/"}, out.CommonPrefixes)
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
+				[]string{"d4/"}, out.CommonPrefixes)
 		}
-		if *out.Delimiter != delim {
-			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		if getString(out.Delimiter) != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
+				delim, getString(out.Delimiter))
 		}
 
 		return nil
@@ -5489,18 +5640,24 @@ func ListObjectsV2_all_objs_max_keys(s *S3Conf) error {
 			return err
 		}
 
-		if *out.IsTruncated {
+		if out.IsTruncated == nil || *out.IsTruncated {
 			return fmt.Errorf("expected the output not to be truncated")
 		}
 		if getString(out.NextContinuationToken) != "" {
-			return fmt.Errorf("expected empty NextContinuationToken, instead got %v", *out.NextContinuationToken)
+			return fmt.Errorf("expected empty NextContinuationToken, instead got %v",
+				getString(out.NextContinuationToken))
+		}
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
 		}
 		if *out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
+				maxKeys, *out.MaxKeys)
 		}
 
 		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, out.Contents)
+			return fmt.Errorf("expected the objects list to be %v, instead got %v",
+				contents, out.Contents)
 		}
 
 		return nil
@@ -5525,7 +5682,8 @@ func ListObjectsV2_exceeding_max_keys(s *S3Conf) error {
 			return fmt.Errorf("unexpected nil max-keys")
 		}
 		if *out.MaxKeys != 1000 {
-			return fmt.Errorf("expected the max-keys to be %v, instaed got %v", 1000, *out.MaxKeys)
+			return fmt.Errorf("expected the max-keys to be %v, instaed got %v",
+				1000, *out.MaxKeys)
 		}
 
 		return nil
@@ -5550,23 +5708,29 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 		}
 
 		if out.StartAfter != nil {
-			return fmt.Errorf("expected the StartAfter to be nil, instead got %v", *out.StartAfter)
+			return fmt.Errorf("expected the StartAfter to be nil, instead got %v",
+				*out.StartAfter)
 		}
 		if out.ContinuationToken != nil {
-			return fmt.Errorf("expected the ContinuationToken to be nil, instead got %v", *out.ContinuationToken)
+			return fmt.Errorf("expected the ContinuationToken to be nil, instead got %v",
+				*out.ContinuationToken)
 		}
 		if out.NextContinuationToken != nil {
-			return fmt.Errorf("expected the NextContinuationToken to be nil, instead got %v", *out.NextContinuationToken)
+			return fmt.Errorf("expected the NextContinuationToken to be nil, instead got %v",
+				*out.NextContinuationToken)
 		}
 		if out.Delimiter != nil {
-			return fmt.Errorf("expected the Delimiter to be nil, instead got %v", *out.Delimiter)
+			return fmt.Errorf("expected the Delimiter to be nil, instead got %v",
+				*out.Delimiter)
 		}
 		if out.Prefix != nil {
-			return fmt.Errorf("expected the Prefix to be nil, instead got %v", *out.Prefix)
+			return fmt.Errorf("expected the Prefix to be nil, instead got %v",
+				*out.Prefix)
 		}
 
 		if !compareObjects(contents, out.Contents) {
-			return fmt.Errorf("expected the contents to be %v, instead got %v", contents, out.Contents)
+			return fmt.Errorf("expected the contents to be %v, instead got %v",
+				contents, out.Contents)
 		}
 
 		return nil
@@ -5598,7 +5762,8 @@ func ListObjectsV2_with_owner(s *S3Conf) error {
 		}
 
 		if !compareObjects(objs, res.Contents) {
-			return fmt.Errorf("expected the contents to be %v, instead got %v", objs, res.Contents)
+			return fmt.Errorf("expected the contents to be %v, instead got %v",
+				objs, res.Contents)
 		}
 
 		return nil
@@ -5644,7 +5809,8 @@ func ListObjectsV2_with_checksum(s *S3Conf) error {
 		}
 
 		if !compareObjects(res.Contents, contents) {
-			return fmt.Errorf("expected the objects list to be %v, instead got %v", contents, res.Contents)
+			return fmt.Errorf("expected the objects list to be %v, instead got %v",
+				contents, res.Contents)
 		}
 
 		return nil
@@ -5675,16 +5841,23 @@ func ListObjectsV2_invalid_parent_prefix(s *S3Conf) error {
 		}
 
 		if len(out.CommonPrefixes) > 0 {
-			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{""}, out.CommonPrefixes)
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
+				[]string{""}, out.CommonPrefixes)
+		}
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
 		}
 		if *out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
+				maxKeys, *out.MaxKeys)
 		}
-		if *out.Delimiter != delim {
-			return fmt.Errorf("expected the delimiter to be %v, instead got %v", delim, *out.Delimiter)
+		if getString(out.Delimiter) != delim {
+			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
+				delim, getString(out.Delimiter))
 		}
 		if len(out.Contents) > 0 {
-			return fmt.Errorf("expected the objects to be %v, instead got %v", []types.Object{}, out.Contents)
+			return fmt.Errorf("expected the objects to be %v, instead got %v",
+				[]types.Object{}, out.Contents)
 		}
 		return nil
 	})
@@ -5694,7 +5867,7 @@ func ListObjectVersions_VD_success(s *S3Conf) error {
 	testName := "ListObjectVersions_VD_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		versions := []types.ObjectVersion{}
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			dLgth := int64(i * 100)
 			key := fmt.Sprintf("my-obj-%v", i)
 			out, err := putObjectWithData(dLgth, &s3.PutObjectInput{
@@ -5725,7 +5898,8 @@ func ListObjectVersions_VD_success(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected object versions output to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected object versions output to be %v, instead got %v",
+				versions, res.Versions)
 		}
 		return nil
 	})
@@ -5813,10 +5987,12 @@ func DeleteObject_non_empty_dir_obj(s *S3Conf) error {
 		}
 
 		if len(res.Contents) != 1 {
-			return fmt.Errorf("expected the object list length to be 1, instead got %v", len(res.Contents))
+			return fmt.Errorf("expected the object list length to be 1, instead got %v",
+				len(res.Contents))
 		}
-		if *res.Contents[0].Key != nestedObj {
-			return fmt.Errorf("expected the object key to be %v, instead got %v", nestedObj, *res.Contents[0].Key)
+		if getString(res.Contents[0].Key) != nestedObj {
+			return fmt.Errorf("expected the object key to be %v, instead got %v",
+				nestedObj, getString(res.Contents[0].Key))
 		}
 
 		return nil
@@ -5934,7 +6110,9 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
+		req, err := createSignedReq(http.MethodDelete, s.endpoint,
+			fmt.Sprintf("%v/%v", bucket, obj), s.awsID, s.awsSecret, "s3",
+			s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -5945,7 +6123,8 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 		}
 
 		if resp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+			return fmt.Errorf("expected response status to be %v, instead got %v",
+				http.StatusNoContent, resp.StatusCode)
 		}
 
 		return nil
@@ -5973,7 +6152,8 @@ func DeleteObjects_empty_input(s *S3Conf) error {
 		}
 
 		if len(out.Deleted) != 0 {
-			return fmt.Errorf("expected deleted object count 0, instead got %v", len(out.Deleted))
+			return fmt.Errorf("expected deleted object count 0, instead got %v",
+				len(out.Deleted))
 		}
 		if len(out.Errors) != 0 {
 			return fmt.Errorf("expected 0 errors, instead got %v", len(out.Errors))
@@ -5989,7 +6169,8 @@ func DeleteObjects_empty_input(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents, res.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents, res.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents, res.Contents)
 		}
 
 		return nil
@@ -6014,10 +6195,12 @@ func DeleteObjects_non_existing_objects(s *S3Conf) error {
 		}
 
 		if len(out.Deleted) != 2 {
-			return fmt.Errorf("expected deleted object count 2, instead got %v", len(out.Deleted))
+			return fmt.Errorf("expected deleted object count 2, instead got %v",
+				len(out.Deleted))
 		}
 		if len(out.Errors) != 0 {
-			return fmt.Errorf("expected 0 errors, instead got %v, %v", len(out.Errors), out.Errors)
+			return fmt.Errorf("expected 0 errors, instead got %v, %v",
+				len(out.Errors), out.Errors)
 		}
 
 		return nil
@@ -6053,10 +6236,12 @@ func DeleteObjects_success(s *S3Conf) error {
 		}
 
 		if len(out.Deleted) != 3 {
-			return fmt.Errorf("expected deleted object count 3, instead got %v", len(out.Deleted))
+			return fmt.Errorf("expected deleted object count 3, instead got %v",
+				len(out.Deleted))
 		}
 		if len(out.Errors) != 0 {
-			return fmt.Errorf("expected 2 errors, instead got %v", len(out.Errors))
+			return fmt.Errorf("expected 2 errors, instead got %v",
+				len(out.Errors))
 		}
 
 		if !compareDelObjects(delResult, out.Deleted) {
@@ -6073,7 +6258,8 @@ func DeleteObjects_success(s *S3Conf) error {
 		}
 
 		if !compareObjects(contents[3:], res.Contents) {
-			return fmt.Errorf("expected the output to be %v, instead got %v", contents[3:], res.Contents)
+			return fmt.Errorf("expected the output to be %v, instead got %v",
+				contents[3:], res.Contents)
 		}
 
 		return nil
@@ -6268,7 +6454,8 @@ func CopyObject_should_copy_tagging(s *S3Conf) error {
 		}
 
 		if !areTagsSame(res.TagSet, expectedTagSet) {
-			return fmt.Errorf("expected the tag set to be %v, instead got %v", expectedTagSet, res.TagSet)
+			return fmt.Errorf("expected the tag set to be %v, instead got %v",
+				expectedTagSet, res.TagSet)
 		}
 
 		return nil
@@ -6324,7 +6511,8 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			}
 
 			if len(res.TagSet) != len(result) {
-				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v", len(result), len(res.TagSet))
+				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v",
+					len(result), len(res.TagSet))
 			}
 
 			for _, tag := range res.TagSet {
@@ -6334,7 +6522,8 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 				}
 
 				if val != getString(tag.Value) {
-					return fmt.Errorf("expected the %v tag value to be %v, instead got %v", getString(tag.Key), val, getString(tag.Value))
+					return fmt.Errorf("expected the %v tag value to be %v, instead got %v",
+						getString(tag.Key), val, getString(tag.Value))
 				}
 			}
 
@@ -6377,7 +6566,9 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			// success special chars
-			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
+			{"key-key_key.key/key=value-value_value.value/value",
+				map[string]string{"key-key_key.key/key": "value-value_value.value/value"},
+				nil},
 			// should handle supported encoded characters
 			{"key%2E=value%2F", map[string]string{"key.": "value/"}, nil},
 			{"key%2D=value%2B", map[string]string{"key-": "value+"}, nil},
@@ -6431,7 +6622,8 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 		}
 
 		if !areMapsSame(resp.Metadata, meta) {
-			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v",
+				meta, resp.Metadata)
 		}
 
 		// verify updating metadata has correct meta
@@ -6462,7 +6654,8 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 		}
 
 		if !areMapsSame(resp.Metadata, meta) {
-			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v",
+				meta, resp.Metadata)
 		}
 
 		return nil
@@ -6506,8 +6699,12 @@ func CopyObject_CopySource_starting_with_slash(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected content-length to be set, instead got nil")
+		}
 		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, *out.ContentLength)
+			return fmt.Errorf("expected content-length %v, instead got %v",
+				dataLength, *out.ContentLength)
 		}
 
 		defer out.Body.Close()
@@ -6767,7 +6964,8 @@ func CopyObject_with_legal_hold(s *S3Conf) error {
 		}
 
 		if res.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
-			return fmt.Errorf("expected the copied object legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
+			return fmt.Errorf("expected the copied object legal hold status to be %v, instead got %v",
+				types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
 		}
 
 		err = changeBucketObjectLockStatus(s3client, bucket, false)
@@ -6817,10 +7015,12 @@ func CopyObject_with_retention_lock(s *S3Conf) error {
 		}
 
 		if res.Retention.Mode != types.ObjectLockRetentionModeGovernance {
-			return fmt.Errorf("expected the copied object retention mode to be %v, instead got %v", types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
+			return fmt.Errorf("expected the copied object retention mode to be %v, instead got %v",
+				types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
 		}
 		if res.Retention.RetainUntilDate.UTC().Unix() != retDate.UTC().Unix() {
-			return fmt.Errorf("expected the retention date to be %v, instead got %v", retDate.Format(time.RFC1123), res.Retention.RetainUntilDate.Format(time.RFC1123))
+			return fmt.Errorf("expected the retention date to be %v, instead got %v",
+				retDate.Format(time.RFC1123), res.Retention.RetainUntilDate.Format(time.RFC1123))
 		}
 
 		err = changeBucketObjectLockStatus(s3client, bucket, false)
@@ -6893,7 +7093,8 @@ func CopyObject_create_checksum_on_copy(s *S3Conf) error {
 		}
 
 		if getString(out.ChecksumSHA256) != getString(res.CopyObjectResult.ChecksumSHA256) {
-			return fmt.Errorf("expected the sha256 checksum to be %v, instead got %v", getString(res.CopyObjectResult.ChecksumSHA256), getString(out.ChecksumSHA256))
+			return fmt.Errorf("expected the sha256 checksum to be %v, instead got %v",
+				getString(res.CopyObjectResult.ChecksumSHA256), getString(out.ChecksumSHA256))
 		}
 
 		return nil
@@ -6929,7 +7130,8 @@ func CopyObject_should_copy_the_existing_checksum(s *S3Conf) error {
 			return fmt.Errorf("expected non empty crc32c checksum")
 		}
 		if getString(res.CopyObjectResult.ChecksumCRC32C) != getString(out.res.ChecksumCRC32C) {
-			return fmt.Errorf("expected crc32c checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32C), getString(res.CopyObjectResult.ChecksumCRC32C))
+			return fmt.Errorf("expected crc32c checksum to be %v, instead got %v",
+				getString(out.res.ChecksumCRC32C), getString(res.CopyObjectResult.ChecksumCRC32C))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -6944,7 +7146,8 @@ func CopyObject_should_copy_the_existing_checksum(s *S3Conf) error {
 		}
 
 		if getString(resp.ChecksumCRC32C) != getString(res.CopyObjectResult.ChecksumCRC32C) {
-			return fmt.Errorf("expected crc32c checksum to be %v, instead got %v", getString(res.CopyObjectResult.ChecksumCRC32C), getString(resp.ChecksumCRC32C))
+			return fmt.Errorf("expected crc32c checksum to be %v, instead got %v",
+				getString(res.CopyObjectResult.ChecksumCRC32C), getString(resp.ChecksumCRC32C))
 		}
 
 		return nil
@@ -6982,7 +7185,8 @@ func CopyObject_should_replace_the_existing_checksum(s *S3Conf) error {
 			return fmt.Errorf("expected non empty sha1 checksum")
 		}
 		if res.CopyObjectResult.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected empty crc32 checksum, instead got %v", *res.CopyObjectResult.ChecksumCRC32)
+			return fmt.Errorf("expected empty crc32 checksum, instead got %v",
+				*res.CopyObjectResult.ChecksumCRC32)
 		}
 
 		return nil
@@ -7101,8 +7305,12 @@ func CopyObject_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected content-length to be set, instead got nil")
+		}
 		if *out.ContentLength != dataLength {
-			return fmt.Errorf("expected content-length %v, instead got %v", dataLength, *out.ContentLength)
+			return fmt.Errorf("expected content-length %v, instead got %v",
+				dataLength, *out.ContentLength)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
@@ -7144,7 +7352,9 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 	testName := "PutObjectTagging_long_tags"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr(genRandString(129)), Value: getPtr("val")}}}
+		tagging := types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr(genRandString(129)), Value: getPtr("val")},
+		}}
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
@@ -7160,7 +7370,9 @@ func PutObjectTagging_long_tags(s *S3Conf) error {
 			return err
 		}
 
-		tagging = types.Tagging{TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr(genRandString(257))}}}
+		tagging = types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr("key"), Value: getPtr(genRandString(257))},
+		}}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
@@ -7221,7 +7433,7 @@ func PutObjectTagging_tag_count_limit(s *S3Conf) error {
 		}
 
 		tagSet := []types.Tag{}
-		for i := 0; i < 11; i++ {
+		for i := range 11 {
 			tagSet = append(tagSet, types.Tag{
 				Key:   getPtr(fmt.Sprintf("key-%v", i)),
 				Value: getPtr(genRandString(15)),
@@ -7245,7 +7457,10 @@ func PutObjectTagging_success(s *S3Conf) error {
 	testName := "PutObjectTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+		tagging := types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr("key1"), Value: getPtr("val2")},
+			{Key: getPtr("key2"), Value: getPtr("val2")},
+		}}
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
@@ -7329,7 +7544,10 @@ func GetObjectTagging_success(s *S3Conf) error {
 	testName := "PutObjectTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+		tagging := types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr("key1"), Value: getPtr("val2")},
+			{Key: getPtr("key2"), Value: getPtr("val2")},
+		}}
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
@@ -7408,7 +7626,9 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
+		req, err := createSignedReq(http.MethodDelete, s.endpoint,
+			fmt.Sprintf("%v/%v?tagging", bucket, obj), s.awsID, s.awsSecret,
+			"s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -7419,7 +7639,8 @@ func DeleteObjectTagging_success_status(s *S3Conf) error {
 		}
 
 		if resp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+			return fmt.Errorf("expected response status to be %v, instead got %v",
+				http.StatusNoContent, resp.StatusCode)
 		}
 
 		return nil
@@ -7430,7 +7651,10 @@ func DeleteObjectTagging_success(s *S3Conf) error {
 	testName := "DeleteObjectTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		tagging := types.Tagging{TagSet: []types.Tag{{Key: getPtr("key1"), Value: getPtr("val2")}, {Key: getPtr("key2"), Value: getPtr("val2")}}}
+		tagging := types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr("key1"), Value: getPtr("val2")},
+			{Key: getPtr("key2"), Value: getPtr("val2")},
+		}}
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
@@ -7553,26 +7777,33 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 		}
 
 		if !areMapsSame(resp.Metadata, meta) {
-			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v", meta, resp.Metadata)
+			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v",
+				meta, resp.Metadata)
 		}
 
 		if getString(resp.ContentType) != cType {
-			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v", cType, getString(resp.ContentType))
+			return fmt.Errorf("expected uploaded object content-type to be %v, instead got %v",
+				cType, getString(resp.ContentType))
 		}
 		if getString(resp.ContentEncoding) != cEnc {
-			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", cEnc, getString(resp.ContentEncoding))
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v",
+				cEnc, getString(resp.ContentEncoding))
 		}
 		if getString(resp.ContentLanguage) != cLang {
-			return fmt.Errorf("expected uploaded object content-language to be %v, instead got %v", cLang, getString(resp.ContentLanguage))
+			return fmt.Errorf("expected uploaded object content-language to be %v, instead got %v",
+				cLang, getString(resp.ContentLanguage))
 		}
 		if getString(resp.ContentDisposition) != cDesp {
-			return fmt.Errorf("expected uploaded object content-disposition to be %v, instead got %v", cDesp, getString(resp.ContentDisposition))
+			return fmt.Errorf("expected uploaded object content-disposition to be %v, instead got %v",
+				cDesp, getString(resp.ContentDisposition))
 		}
 		if getString(resp.CacheControl) != cacheControl {
-			return fmt.Errorf("expected uploaded object cache-control to be %v, instead got %v", cacheControl, getString(resp.CacheControl))
+			return fmt.Errorf("expected uploaded object cache-control to be %v, instead got %v",
+				cacheControl, getString(resp.CacheControl))
 		}
 		if getString(resp.ExpiresString) != expires.UTC().Format(timefmt) {
-			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v", expires.UTC().Format(timefmt), getString(resp.ExpiresString))
+			return fmt.Errorf("expected uploaded object content-encoding to be %v, instead got %v",
+				expires.UTC().Format(timefmt), getString(resp.ExpiresString))
 		}
 
 		return nil
@@ -7635,10 +7866,12 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 		}
 
 		if resp.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
-			return fmt.Errorf("expected uploaded object legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, resp.ObjectLockLegalHoldStatus)
+			return fmt.Errorf("expected uploaded object legal hold status to be %v, instead got %v",
+				types.ObjectLockLegalHoldStatusOn, resp.ObjectLockLegalHoldStatus)
 		}
 		if resp.ObjectLockMode != types.ObjectLockModeGovernance {
-			return fmt.Errorf("expected uploaded object lock mode to be %v, instead got %v", types.ObjectLockModeGovernance, resp.ObjectLockMode)
+			return fmt.Errorf("expected uploaded object lock mode to be %v, instead got %v",
+				types.ObjectLockModeGovernance, resp.ObjectLockMode)
 		}
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
@@ -7809,7 +8042,8 @@ func CreateMultipartUpload_valid_checksum_algorithm(s *S3Conf) error {
 		}
 
 		if res.ChecksumAlgorithm != types.ChecksumAlgorithmCrc32c {
-			return fmt.Errorf("expected the checksum algorithm to be %v, instead got %v", types.ChecksumAlgorithmCrc32c, res.ChecksumAlgorithm)
+			return fmt.Errorf("expected the checksum algorithm to be %v, instead got %v",
+				types.ChecksumAlgorithmCrc32c, res.ChecksumAlgorithm)
 		}
 
 		return nil
@@ -7881,7 +8115,8 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			}
 
 			if len(res.TagSet) != len(result) {
-				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v", len(result), len(res.TagSet))
+				return fmt.Errorf("tag lengths are not equal: (expected): %v, (got): %v",
+					len(result), len(res.TagSet))
 			}
 
 			for _, tag := range res.TagSet {
@@ -7891,7 +8126,8 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 				}
 
 				if val != getString(tag.Value) {
-					return fmt.Errorf("expected the %v tag value to be %v, instead got %v", getString(tag.Key), val, getString(tag.Value))
+					return fmt.Errorf("expected the %v tag value to be %v, instead got %v",
+						getString(tag.Key), val, getString(tag.Value))
 				}
 			}
 
@@ -7934,7 +8170,9 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			// success special chars
-			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
+			{"key-key_key.key/key=value-value_value.value/value",
+				map[string]string{"key-key_key.key/key": "value-value_value.value/value"},
+				nil},
 			// should handle supported encoded characters
 			{"key%2E=value%2F", map[string]string{"key.": "value/"}, nil},
 			{"key%2D=value%2B", map[string]string{"key-": "value+"}, nil},
@@ -7961,11 +8199,19 @@ func CreateMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
+		if out.Bucket == nil {
+			return fmt.Errorf("expected bucket name to be not nil")
+		}
+		if out.Key == nil {
+			return fmt.Errorf("expected object name to be not nil")
+		}
 		if *out.Bucket != bucket {
-			return fmt.Errorf("expected bucket name %v, instead got %v", bucket, *out.Bucket)
+			return fmt.Errorf("expected bucket name %v, instead got %v",
+				bucket, *out.Bucket)
 		}
 		if *out.Key != obj {
-			return fmt.Errorf("expected object name %v, instead got %v", obj, *out.Key)
+			return fmt.Errorf("expected object name %v, instead got %v",
+				obj, *out.Key)
 		}
 
 		return nil
@@ -8444,7 +8690,7 @@ func UploadPart_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		if *res.ETag == "" {
+		if getString(res.ETag) == "" {
 			return fmt.Errorf("expected a valid etag, instead got empty")
 		}
 		return nil
@@ -8718,16 +8964,20 @@ func UploadPartCopy_success(s *S3Conf) error {
 		}
 
 		if len(res.Parts) != 1 {
-			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
+			return fmt.Errorf("expected parts to be 1, instead got %v",
+				len(res.Parts))
 		}
-		if *res.Parts[0].PartNumber != 1 {
-			return fmt.Errorf("expected part-number to be 1, instead got %v", res.Parts[0].PartNumber)
+		if res.Parts[0].PartNumber == nil || *res.Parts[0].PartNumber != 1 {
+			return fmt.Errorf("expected part-number to be 1, instead got %v",
+				res.Parts[0].PartNumber)
 		}
-		if *res.Parts[0].Size != int64(objSize) {
-			return fmt.Errorf("expected part size to be %v, instead got %v", objSize, res.Parts[0].Size)
+		if res.Parts[0].Size == nil || *res.Parts[0].Size != int64(objSize) {
+			return fmt.Errorf("expected part size to be %v, instead got %v",
+				objSize, res.Parts[0].Size)
 		}
-		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
-			return fmt.Errorf("expected part etag to be %v, instead got %v", *copyOut.CopyPartResult.ETag, *res.Parts[0].ETag)
+		if getString(res.Parts[0].ETag) != getString(copyOut.CopyPartResult.ETag) {
+			return fmt.Errorf("expected part etag to be %v, instead got %v",
+				getString(copyOut.CopyPartResult.ETag), getString(res.Parts[0].ETag))
 		}
 
 		err = teardown(s, srcBucket)
@@ -8954,16 +9204,26 @@ func UploadPartCopy_by_range_success(s *S3Conf) error {
 		}
 
 		if len(res.Parts) != 1 {
-			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
+			return fmt.Errorf("expected parts to be 1, instead got %v",
+				len(res.Parts))
+		}
+		if res.Parts[0].PartNumber == nil {
+			return fmt.Errorf("expected part-number to be 1, instead got nil")
 		}
 		if *res.Parts[0].PartNumber != 1 {
-			return fmt.Errorf("expected part-number to be 1, instead got %v", res.Parts[0].PartNumber)
+			return fmt.Errorf("expected part-number to be 1, instead got %v",
+				res.Parts[0].PartNumber)
+		}
+		if res.Parts[0].Size == nil {
+			return fmt.Errorf("expected part size to be non nil, instead got nil")
 		}
 		if *res.Parts[0].Size != 101 {
-			return fmt.Errorf("expected part size to be %v, instead got %v", 101, res.Parts[0].Size)
+			return fmt.Errorf("expected part size to be %v, instead got %v",
+				101, res.Parts[0].Size)
 		}
-		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
-			return fmt.Errorf("expected part etag to be %v, instead got %v", *copyOut.CopyPartResult.ETag, *res.Parts[0].ETag)
+		if getString(res.Parts[0].ETag) != getString(copyOut.CopyPartResult.ETag) {
+			return fmt.Errorf("expected part etag to be %v, instead got %v",
+				getString(copyOut.CopyPartResult.ETag), getString(res.Parts[0].ETag))
 		}
 
 		err = teardown(s, srcBucket)
@@ -9011,19 +9271,24 @@ func UploadPartCopy_should_copy_the_checksum(s *S3Conf) error {
 		}
 
 		if getString(res.CopyPartResult.ChecksumCRC32) != getString(out.res.ChecksumCRC32) {
-			return fmt.Errorf("expected crc32 checksum to be %v, instead got %v", getString(out.res.ChecksumCRC32), getString(res.CopyPartResult.ChecksumCRC32))
+			return fmt.Errorf("expected crc32 checksum to be %v, instead got %v",
+				getString(out.res.ChecksumCRC32), getString(res.CopyPartResult.ChecksumCRC32))
 		}
 		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v", *res.CopyPartResult.ChecksumCRC32C)
+			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC32C)
 		}
 		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v", *res.CopyPartResult.ChecksumSHA1)
+			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumSHA1)
 		}
 		if res.CopyPartResult.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected nil sha256 checksum, instead got %v", *res.CopyPartResult.ChecksumSHA256)
+			return fmt.Errorf("expected nil sha256 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumSHA256)
 		}
 		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v", *res.CopyPartResult.ChecksumCRC64NVME)
+			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC64NVME)
 		}
 
 		return nil
@@ -9066,19 +9331,24 @@ func UploadPartCopy_should_not_copy_the_checksum(s *S3Conf) error {
 		}
 
 		if res.CopyPartResult.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected nil crc32 checksum, instead got %v", *res.CopyPartResult.ChecksumCRC32)
+			return fmt.Errorf("expected nil crc32 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC32)
 		}
 		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v", *res.CopyPartResult.ChecksumCRC32C)
+			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC32C)
 		}
 		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v", *res.CopyPartResult.ChecksumSHA1)
+			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumSHA1)
 		}
 		if res.CopyPartResult.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected nil sha256 checksum, instead got %v", *res.CopyPartResult.ChecksumSHA256)
+			return fmt.Errorf("expected nil sha256 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumSHA256)
 		}
 		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v", *res.CopyPartResult.ChecksumCRC64NVME)
+			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC64NVME)
 		}
 
 		return nil
@@ -9121,16 +9391,20 @@ func UploadPartCopy_should_calculate_the_checksum(s *S3Conf) error {
 		}
 
 		if res.CopyPartResult.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected nil crc32 checksum, instead got %v", *res.CopyPartResult.ChecksumCRC32)
+			return fmt.Errorf("expected nil crc32 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC32)
 		}
 		if res.CopyPartResult.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, instead got %v", *res.CopyPartResult.ChecksumCRC32C)
+			return fmt.Errorf("expected nil crc32c checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC32C)
 		}
 		if res.CopyPartResult.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v", *res.CopyPartResult.ChecksumCRC64NVME)
+			return fmt.Errorf("expected nil crc64nvme checksum, instead got %v",
+				*res.CopyPartResult.ChecksumCRC64NVME)
 		}
 		if res.CopyPartResult.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, instead got %v", *res.CopyPartResult.ChecksumSHA1)
+			return fmt.Errorf("expected nil sha1 checksum, instead got %v",
+				*res.CopyPartResult.ChecksumSHA1)
 		}
 		if getString(res.CopyPartResult.ChecksumSHA256) == "" {
 			return fmt.Errorf("expected non empty sha256 checksum")
@@ -9228,8 +9502,12 @@ func ListParts_default_max_parts(s *S3Conf) error {
 			return err
 		}
 
+		if res.MaxParts == nil {
+			return fmt.Errorf("unexpected nil max-parts")
+		}
 		if *res.MaxParts != 1000 {
-			return fmt.Errorf("expected max parts to be 1000, instead got %v", *res.MaxParts)
+			return fmt.Errorf("expected max parts to be 1000, instead got %v",
+				*res.MaxParts)
 		}
 
 		return nil
@@ -9259,7 +9537,8 @@ func ListParts_exceeding_max_parts(s *S3Conf) error {
 			return fmt.Errorf("unexpected nil max-parts")
 		}
 		if *res.MaxParts != 1000 {
-			return fmt.Errorf("expected max-parts to be %v, instead got %v", 1000, *res.MaxParts)
+			return fmt.Errorf("expected max-parts to be %v, instead got %v",
+				1000, *res.MaxParts)
 		}
 
 		return nil
@@ -9294,17 +9573,26 @@ func ListParts_truncated(s *S3Conf) error {
 			return err
 		}
 
+		if res.IsTruncated == nil {
+			return fmt.Errorf("unexpected nil is-truncated")
+		}
+		if res.MaxParts == nil {
+			return fmt.Errorf("unexpected nil max-parts")
+		}
 		if !*res.IsTruncated {
 			return fmt.Errorf("expected the result to be truncated")
 		}
 		if *res.MaxParts != maxParts {
-			return fmt.Errorf("expected max-parts to be %v, instead got %v", maxParts, *res.MaxParts)
+			return fmt.Errorf("expected max-parts to be %v, instead got %v",
+				maxParts, *res.MaxParts)
 		}
-		if *res.NextPartNumberMarker != fmt.Sprint(*parts[2].PartNumber) {
-			return fmt.Errorf("expected next part number marker to be %v, instead got %v", fmt.Sprint(*parts[2].PartNumber), *res.NextPartNumberMarker)
+		if getString(res.NextPartNumberMarker) != fmt.Sprint(*parts[2].PartNumber) {
+			return fmt.Errorf("expected next part number marker to be %v, instead got %v",
+				fmt.Sprint(*parts[2].PartNumber), getString(res.NextPartNumberMarker))
 		}
 		if !compareParts(parts[:3], res.Parts) {
-			return fmt.Errorf("expected the parts data to be %v, instead got %v", parts[:3], res.Parts)
+			return fmt.Errorf("expected the parts data to be %v, instead got %v",
+				parts[:3], res.Parts)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -9319,11 +9607,13 @@ func ListParts_truncated(s *S3Conf) error {
 			return err
 		}
 
-		if *res2.PartNumberMarker != *res.NextPartNumberMarker {
-			return fmt.Errorf("expected part number marker to be %v, instead got %v", *res.NextPartNumberMarker, *res2.PartNumberMarker)
+		if getString(res2.PartNumberMarker) != getString(res.NextPartNumberMarker) {
+			return fmt.Errorf("expected part number marker to be %v, instead got %v",
+				getString(res.NextPartNumberMarker), getString(res2.PartNumberMarker))
 		}
 		if !compareParts(parts[3:], res2.Parts) {
-			return fmt.Errorf("expected the parts data to be %v, instead got %v", parts[3:], res2.Parts)
+			return fmt.Errorf("expected the parts data to be %v, instead got %v",
+				parts[3:], res2.Parts)
 		}
 
 		return nil
@@ -9358,7 +9648,8 @@ func ListParts_with_checksums(s *S3Conf) error {
 			}
 
 			if !compareParts(parts, res.Parts) {
-				return fmt.Errorf("expected the mp parts to be %v, instead got %v", parts, res.Parts)
+				return fmt.Errorf("expected the mp parts to be %v, instead got %v",
+					parts, res.Parts)
 			}
 		}
 
@@ -9392,7 +9683,8 @@ func ListParts_success(s *S3Conf) error {
 		}
 
 		if res.StorageClass != types.StorageClassStandard {
-			return fmt.Errorf("expected the storage class to be %v, instead got %v", types.StorageClassStandard, res.StorageClass)
+			return fmt.Errorf("expected the storage class to be %v, instead got %v",
+				types.StorageClassStandard, res.StorageClass)
 		}
 		if ok := compareParts(parts, res.Parts); !ok {
 			return fmt.Errorf("expected parts %+v, instead got %+v", parts, res.Parts)
@@ -9431,7 +9723,8 @@ func ListMultipartUploads_empty_result(s *S3Conf) error {
 			return err
 		}
 		if len(out.Uploads) != 0 {
-			return fmt.Errorf("expected empty uploads, instead got %+v", out.Uploads)
+			return fmt.Errorf("expected empty uploads, instead got %+v",
+				out.Uploads)
 		}
 
 		return nil
@@ -9481,20 +9774,31 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		if out.IsTruncated == nil {
+			return fmt.Errorf("unexpected nil is-truncated")
+		}
+		if out.MaxUploads == nil {
+			return fmt.Errorf("unexpected nil max-uploads")
+		}
 		if !*out.IsTruncated {
 			return fmt.Errorf("expected the output to be truncated")
 		}
 		if *out.MaxUploads != 2 {
-			return fmt.Errorf("expected max-uploads to be 2, instead got %v", out.MaxUploads)
+			return fmt.Errorf("expected max-uploads to be 2, instead got %v",
+				out.MaxUploads)
 		}
 		if ok := compareMultipartUploads(out.Uploads, uploads[:2]); !ok {
-			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads[:2], out.Uploads)
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
+				uploads[:2], out.Uploads)
 		}
-		if *out.NextKeyMarker != *uploads[1].Key {
-			return fmt.Errorf("expected next-key-marker to be %v, instead got %v", *uploads[1].Key, *out.NextKeyMarker)
+		if getString(out.NextKeyMarker) != getString(uploads[1].Key) {
+			return fmt.Errorf("expected next-key-marker to be %v, instead got %v",
+				getString(uploads[1].Key), getString(out.NextKeyMarker))
 		}
-		if *out.NextUploadIdMarker != *uploads[1].UploadId {
-			return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v", *uploads[1].UploadId, *out.NextUploadIdMarker)
+		if getString(out.NextUploadIdMarker) != getString(uploads[1].UploadId) {
+			return fmt.Errorf("expected next-upload-id-marker to be %v, instead got %v",
+				getString(uploads[1].UploadId), getString(out.NextUploadIdMarker))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -9507,7 +9811,8 @@ func ListMultipartUploads_max_uploads(s *S3Conf) error {
 			return err
 		}
 		if ok := compareMultipartUploads(out.Uploads, uploads[2:]); !ok {
-			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads[2:], out.Uploads)
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
+				uploads[2:], out.Uploads)
 		}
 
 		return nil
@@ -9532,7 +9837,8 @@ func ListMultipartUploads_exceeding_max_uploads(s *S3Conf) error {
 			return fmt.Errorf("unexpected nil max-uploads")
 		}
 		if *res.MaxUploads != 1000 {
-			return fmt.Errorf("expected max-uploads to be %v, instaed got %v", 1000, *res.MaxUploads)
+			return fmt.Errorf("expected max-uploads to be %v, instaed got %v",
+				1000, *res.MaxUploads)
 		}
 
 		return nil
@@ -9559,7 +9865,8 @@ func ListMultipartUploads_incorrect_next_key_marker(s *S3Conf) error {
 		}
 
 		if len(out.Uploads) != 0 {
-			return fmt.Errorf("expected empty list of multipart uploads, instead got %v", out.Uploads)
+			return fmt.Errorf("expected empty list of multipart uploads, instead got %v",
+				out.Uploads)
 		}
 
 		return nil
@@ -9591,7 +9898,8 @@ func ListMultipartUploads_ignore_upload_id_marker(s *S3Conf) error {
 			return err
 		}
 		if ok := compareMultipartUploads(out.Uploads, uploads); !ok {
-			return fmt.Errorf("expected multipart uploads to be %v, instead got %v", uploads, out.Uploads)
+			return fmt.Errorf("expected multipart uploads to be %v, instead got %v",
+				uploads, out.Uploads)
 		}
 
 		return nil
@@ -9658,7 +9966,8 @@ func ListMultipartUploads_with_checksums(s *S3Conf) error {
 		}
 
 		if !compareMultipartUploads(res.Uploads, uploads) {
-			return fmt.Errorf("expected the final multipart uploads to be %v, instead got %v", uploads, res.Uploads)
+			return fmt.Errorf("expected the final multipart uploads to be %v, instead got %v",
+				uploads, res.Uploads)
 		}
 
 		return nil
@@ -9702,10 +10011,12 @@ func ListMultipartUploads_success(s *S3Conf) error {
 		}
 
 		if len(out.Uploads) != 2 {
-			return fmt.Errorf("expected 2 upload, instead got %v", len(out.Uploads))
+			return fmt.Errorf("expected 2 upload, instead got %v",
+				len(out.Uploads))
 		}
 		if ok := compareMultipartUploads(out.Uploads, expected); !ok {
-			return fmt.Errorf("expected uploads %v, instead got %v", expected, out.Uploads)
+			return fmt.Errorf("expected uploads %v, instead got %v",
+				expected, out.Uploads)
 		}
 
 		return nil
@@ -9818,7 +10129,9 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 			return err
 		}
 
-		req, err := createSignedReq(http.MethodDelete, s.endpoint, fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId), s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
+		req, err := createSignedReq(http.MethodDelete, s.endpoint,
+			fmt.Sprintf("%v/%v?uploadId=%v", bucket, obj, *out.UploadId),
+			s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), nil)
 		if err != nil {
 			return err
 		}
@@ -9829,7 +10142,8 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 		}
 
 		if resp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("expected response status to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
+			return fmt.Errorf("expected response status to be %v, instead got %v",
+				http.StatusNoContent, resp.StatusCode)
 		}
 
 		return nil
@@ -9946,12 +10260,15 @@ func CompleteMultipartUpload_invalid_checksum_type(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_invalid_checksum_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32), withChecksumType(types.ChecksumTypeFullObject))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc32),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
+		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
 		if err != nil {
 			return err
 		}
@@ -9989,12 +10306,15 @@ func CompleteMultipartUpload_invalid_checksum_part(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32), withChecksumType(types.ChecksumTypeFullObject))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc32),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
 		if err != nil {
 			return err
 		}
@@ -10036,12 +10356,15 @@ func CompleteMultipartUpload_multiple_checksum_part(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32), withChecksumType(types.ChecksumTypeComposite))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc32),
+			withChecksumType(types.ChecksumTypeComposite))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
 		if err != nil {
 			return err
 		}
@@ -10083,12 +10406,15 @@ func CompleteMultipartUpload_incorrect_checksum_part(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmSha256), withChecksumType(types.ChecksumTypeComposite))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmSha256),
+			withChecksumType(types.ChecksumTypeComposite))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmSha256))
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmSha256))
 		if err != nil {
 			return err
 		}
@@ -10130,12 +10456,15 @@ func CompleteMultipartUpload_different_checksum_part(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32c), withChecksumType(types.ChecksumTypeFullObject))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc32c),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32c))
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32c))
 		if err != nil {
 			return err
 		}
@@ -10182,12 +10511,15 @@ func CompleteMultipartUpload_missing_part_checksum(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmSha1), withChecksumType(types.ChecksumTypeComposite))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmSha1),
+			withChecksumType(types.ChecksumTypeComposite))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmSha1))
+		parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmSha1))
 		if err != nil {
 			return err
 		}
@@ -10238,7 +10570,9 @@ func CompleteMultipartUpload_multiple_final_checksums(s *S3Conf) error {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 5*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32), withChecksumType(types.ChecksumTypeFullObject))
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 3, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
@@ -10303,12 +10637,14 @@ func CompleteMultipartUpload_invalid_final_checksums(s *S3Conf) error {
 			},
 		} {
 
-			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo), withChecksumType(el.t))
+			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo),
+				withChecksumType(el.t))
 			if err != nil {
 				return err
 			}
 
-			parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(el.algo))
+			parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+				*mp.UploadId, withChecksum(el.algo))
 			if err != nil {
 				return err
 			}
@@ -10390,12 +10726,14 @@ func CompleteMultipartUpload_incorrect_final_checksums(s *S3Conf) error {
 				t:    types.ChecksumTypeFullObject,
 			},
 		} {
-			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo), withChecksumType(el.t))
+			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo),
+				withChecksumType(el.t))
 			if err != nil {
 				return err
 			}
 
-			parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(el.algo))
+			parts, _, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj,
+				*mp.UploadId, withChecksum(el.algo))
 			if err != nil {
 				return err
 			}
@@ -10466,7 +10804,8 @@ func CompleteMultipartUpload_should_calculate_the_final_checksum_full_object(s *
 				return err
 			}
 
-			parts, csum, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(el.algo))
+			parts, csum, err := uploadParts(s3client, 15*1024*1024, 3, bucket,
+				obj, *mp.UploadId, withChecksum(el.algo))
 			if err != nil {
 				return err
 			}
@@ -10502,15 +10841,18 @@ func CompleteMultipartUpload_should_calculate_the_final_checksum_full_object(s *
 			switch el.algo {
 			case types.ChecksumAlgorithmCrc32:
 				if getString(res.ChecksumCRC32) != csum {
-					return fmt.Errorf("expected the final crc32 checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC32))
+					return fmt.Errorf("expected the final crc32 checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC32))
 				}
 			case types.ChecksumAlgorithmCrc32c:
 				if getString(res.ChecksumCRC32C) != csum {
-					return fmt.Errorf("expected the final crc32c checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC32C))
+					return fmt.Errorf("expected the final crc32c checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC32C))
 				}
 			case types.ChecksumAlgorithmCrc64nvme:
 				if getString(res.ChecksumCRC64NVME) != csum {
-					return fmt.Errorf("expected the final crc64nvme checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC64NVME))
+					return fmt.Errorf("expected the final crc64nvme checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC64NVME))
 				}
 			}
 		}
@@ -10540,12 +10882,14 @@ func CompleteMultipartUpload_should_verify_the_final_checksum(s *S3Conf) error {
 				t:    types.ChecksumTypeFullObject,
 			},
 		} {
-			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo), withChecksumType(el.t))
+			mp, err := createMp(s3client, bucket, obj, withChecksum(el.algo),
+				withChecksumType(el.t))
 			if err != nil {
 				return err
 			}
 
-			parts, csum, err := uploadParts(s3client, 15*1024*1024, 3, bucket, obj, *mp.UploadId, withChecksum(el.algo))
+			parts, csum, err := uploadParts(s3client, 15*1024*1024, 3, bucket,
+				obj, *mp.UploadId, withChecksum(el.algo))
 			if err != nil {
 				return err
 			}
@@ -10592,15 +10936,18 @@ func CompleteMultipartUpload_should_verify_the_final_checksum(s *S3Conf) error {
 			switch el.algo {
 			case types.ChecksumAlgorithmCrc32:
 				if getString(res.ChecksumCRC32) != csum {
-					return fmt.Errorf("expected the final crc32 checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC32))
+					return fmt.Errorf("expected the final crc32 checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC32))
 				}
 			case types.ChecksumAlgorithmCrc32c:
 				if getString(res.ChecksumCRC32C) != csum {
-					return fmt.Errorf("expected the final crc32c checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC32C))
+					return fmt.Errorf("expected the final crc32c checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC32C))
 				}
 			case types.ChecksumAlgorithmCrc64nvme:
 				if getString(res.ChecksumCRC64NVME) != csum {
-					return fmt.Errorf("expected the final crc64nvme checksum to be %v, instead got %v", csum, getString(res.ChecksumCRC64NVME))
+					return fmt.Errorf("expected the final crc64nvme checksum to be %v, instead got %v",
+						csum, getString(res.ChecksumCRC64NVME))
 				}
 			}
 		}
@@ -10613,12 +10960,15 @@ func CompleteMultipartUpload_checksum_type_mismatch(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_checksum_type_mismatch"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32), withChecksumType(types.ChecksumTypeFullObject))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc32),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
+		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc32))
 		if err != nil {
 			return err
 		}
@@ -10689,19 +11039,24 @@ func CompleteMultipartUpload_should_ignore_the_final_checksum(s *S3Conf) error {
 		}
 
 		if res.ChecksumCRC32 != nil {
-			return fmt.Errorf("expected nil crc32 checksum, insted got %v", *res.ChecksumCRC32)
+			return fmt.Errorf("expected nil crc32 checksum, insted got %v",
+				*res.ChecksumCRC32)
 		}
 		if res.ChecksumCRC32C != nil {
-			return fmt.Errorf("expected nil crc32c checksum, insted got %v", *res.ChecksumCRC32C)
+			return fmt.Errorf("expected nil crc32c checksum, insted got %v",
+				*res.ChecksumCRC32C)
 		}
 		if res.ChecksumSHA1 != nil {
-			return fmt.Errorf("expected nil sha1 checksum, insted got %v", *res.ChecksumSHA1)
+			return fmt.Errorf("expected nil sha1 checksum, insted got %v",
+				*res.ChecksumSHA1)
 		}
 		if res.ChecksumSHA256 != nil {
-			return fmt.Errorf("expected nil sha256 checksum, insted got %v", *res.ChecksumSHA256)
+			return fmt.Errorf("expected nil sha256 checksum, insted got %v",
+				*res.ChecksumSHA256)
 		}
 		if res.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, insted got %v", *res.ChecksumSHA256)
+			return fmt.Errorf("expected nil crc64nvme checksum, insted got %v",
+				*res.ChecksumSHA256)
 		}
 
 		return nil
@@ -10712,12 +11067,15 @@ func CompleteMultipartUpload_should_succeed_without_final_checksum_type(s *S3Con
 	testName := "CompleteMultipartUpload_should_succeed_without_final_checksum_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc64nvme), withChecksumType(types.ChecksumTypeFullObject))
+		mp, err := createMp(s3client, bucket, obj,
+			withChecksum(types.ChecksumAlgorithmCrc64nvme),
+			withChecksumType(types.ChecksumTypeFullObject))
 		if err != nil {
 			return err
 		}
 
-		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj, *mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc64nvme))
+		parts, _, err := uploadParts(s3client, 20*1024*1024, 4, bucket, obj,
+			*mp.UploadId, withChecksum(types.ChecksumAlgorithmCrc64nvme))
 		if err != nil {
 			return err
 		}
@@ -10746,7 +11104,8 @@ func CompleteMultipartUpload_should_succeed_without_final_checksum_type(s *S3Con
 		}
 
 		if res.ChecksumType != types.ChecksumTypeFullObject {
-			return fmt.Errorf("expected the final checksum type to be %v, instead got %v", types.ChecksumTypeFullObject, res.ChecksumType)
+			return fmt.Errorf("expected the final checksum type to be %v, instead got %v",
+				types.ChecksumTypeFullObject, res.ChecksumType)
 		}
 		if getString(res.ChecksumCRC64NVME) == "" {
 			return fmt.Errorf("expected non empty crc64nvme checksum")
@@ -10949,7 +11308,8 @@ func CompleteMultipartUpload_mpu_object_size(s *S3Conf) error {
 			return fmt.Errorf("expected non nil Content-Length")
 		}
 		if *res.ContentLength != mpuSize {
-			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", mpuSize, *res.ContentLength)
+			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v",
+				mpuSize, *res.ContentLength)
 		}
 
 		return nil
@@ -11035,7 +11395,7 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
-		if *res.Key != obj {
+		if getString(res.Key) != obj {
 			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
 		}
 
@@ -11049,11 +11409,16 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
-		if *resp.ETag != *res.ETag {
-			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v", *res.ETag, *resp.ETag)
+		if getString(resp.ETag) != getString(res.ETag) {
+			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v",
+				getString(res.ETag), getString(resp.ETag))
+		}
+		if resp.ContentLength == nil {
+			return fmt.Errorf("expected (head object) non nil Content-Length")
 		}
 		if *resp.ContentLength != int64(objSize) {
-			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", objSize, resp.ContentLength)
+			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v",
+				objSize, resp.ContentLength)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -11066,8 +11431,12 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 			return err
 		}
 
+		if rget.ContentLength == nil {
+			return fmt.Errorf("expected (get object) non nil Content-Length")
+		}
 		if *rget.ContentLength != int64(objSize) {
-			return fmt.Errorf("expected the object content-length to be %v, instead got %v", objSize, *rget.ContentLength)
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v",
+				objSize, *rget.ContentLength)
 		}
 
 		bdy, err := io.ReadAll(rget.Body)
@@ -11080,7 +11449,8 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 		getsum := hex.EncodeToString(sum[:])
 
 		if csum != getsum {
-			return fmt.Errorf("expected the object checksum to be %v, instead got %v", csum, getsum)
+			return fmt.Errorf("expected the object checksum to be %v, instead got %v",
+				csum, getsum)
 		}
 
 		return nil
@@ -11103,7 +11473,7 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 		objSize := int64(25 * 1024 * 1024)
 
 		eg := errgroup.Group{}
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			func(i int) {
 				eg.Go(func() error {
 					out, err := createMp(s3client, bucket, obj)
@@ -11144,7 +11514,7 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 		}
 
 		eg = errgroup.Group{}
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			func(i int) {
 				eg.Go(func() error {
 					ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -11164,8 +11534,9 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 						return err
 					}
 
-					if *res.Key != obj {
-						return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+					if getString(res.Key) != obj {
+						return fmt.Errorf("expected object key to be %v, instead got %v",
+							obj, getString(res.Key))
 					}
 
 					return nil
@@ -11188,8 +11559,12 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 			return err
 		}
 
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected (get object) non nil Content-Length")
+		}
 		if *out.ContentLength != int64(objSize) {
-			return fmt.Errorf("expected the object content-length to be %v, instead got %v", objSize, *out.ContentLength)
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v",
+				objSize, *out.ContentLength)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
@@ -11208,7 +11583,8 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 				return nil
 			}
 		}
-		return fmt.Errorf("expected the object checksum to be one of %v, instead got %v", sums, csum)
+		return fmt.Errorf("expected the object checksum to be one of %v, instead got %v",
+			sums, csum)
 	})
 }
 
@@ -11754,10 +12130,12 @@ func GetBucketAcl_translation_canned_public_read(s *S3Conf) error {
 		}
 
 		if ok := compareGrants(out.Grants, grants); !ok {
-			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+			return fmt.Errorf("expected grants to be %v, instead got %v",
+				grants, out.Grants)
 		}
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 
 		return nil
@@ -11811,10 +12189,12 @@ func GetBucketAcl_translation_canned_public_read_write(s *S3Conf) error {
 		}
 
 		if ok := compareGrants(out.Grants, grants); !ok {
-			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+			return fmt.Errorf("expected grants to be %v, instead got %v",
+				grants, out.Grants)
 		}
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 
 		return nil
@@ -11854,10 +12234,12 @@ func GetBucketAcl_translation_canned_private(s *S3Conf) error {
 		}
 
 		if ok := compareGrants(out.Grants, grants); !ok {
-			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+			return fmt.Errorf("expected grants to be %v, instead got %v",
+				grants, out.Grants)
 		}
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 
 		return nil
@@ -11961,10 +12343,12 @@ func GetBucketAcl_success(s *S3Conf) error {
 		}, grants...)
 
 		if ok := compareGrants(out.Grants, grants); !ok {
-			return fmt.Errorf("expected grants to be %v, instead got %v", grants, out.Grants)
+			return fmt.Errorf("expected grants to be %v, instead got %v",
+				grants, out.Grants)
 		}
-		if *out.Owner.ID != s.awsID {
-			return fmt.Errorf("expected bucket owner to be %v, instead got %v", s.awsID, *out.Owner.ID)
+		if getString(out.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(out.Owner.ID))
 		}
 
 		return nil
@@ -13039,15 +13423,26 @@ func GetObjectLockConfiguration_success(s *S3Conf) error {
 		}
 
 		respConfig := resp.ObjectLockConfiguration
-
 		if respConfig.ObjectLockEnabled != config.ObjectLockEnabled {
-			return fmt.Errorf("expected lock status to be %v, instead got %v", config.ObjectLockEnabled, respConfig.ObjectLockEnabled)
+			return fmt.Errorf("expected lock status to be %v, instead got %v",
+				config.ObjectLockEnabled, respConfig.ObjectLockEnabled)
+		}
+		if respConfig.Rule == nil {
+			return fmt.Errorf("got nil object lock rule")
+		}
+		if respConfig.Rule.DefaultRetention == nil {
+			return fmt.Errorf("got nil object lock default retention")
+		}
+		if respConfig.Rule.DefaultRetention.Days == nil {
+			return fmt.Errorf("expected lock config days to be not nil")
 		}
 		if *respConfig.Rule.DefaultRetention.Days != *config.Rule.DefaultRetention.Days {
-			return fmt.Errorf("expected lock config days to be %v, instead got %v", *config.Rule.DefaultRetention.Days, *respConfig.Rule.DefaultRetention.Days)
+			return fmt.Errorf("expected lock config days to be %v, instead got %v",
+				*config.Rule.DefaultRetention.Days, *respConfig.Rule.DefaultRetention.Days)
 		}
 		if respConfig.Rule.DefaultRetention.Mode != config.Rule.DefaultRetention.Mode {
-			return fmt.Errorf("expected lock config mode to be %v, instead got %v", config.Rule.DefaultRetention.Mode, respConfig.Rule.DefaultRetention.Mode)
+			return fmt.Errorf("expected lock config mode to be %v, instead got %v",
+				config.Rule.DefaultRetention.Mode, respConfig.Rule.DefaultRetention.Mode)
 		}
 
 		return nil
@@ -13837,7 +14232,8 @@ func GetObjectLegalHold_success(s *S3Conf) error {
 		}
 
 		if resp.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
-			return fmt.Errorf("expected legal hold status to be On, instead got %v", resp.LegalHold.Status)
+			return fmt.Errorf("expected legal hold status to be On, instead got %v",
+				resp.LegalHold.Status)
 		}
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
@@ -14860,7 +15256,8 @@ func AccessControl_user_PutBucketAcl_with_policy_access(s *S3Conf) error {
 		}
 
 		if !compareGrants(res.Grants, expectedGrants) {
-			return fmt.Errorf("expected the resulting grants to be %v, instead got %v", expectedGrants, res.Grants)
+			return fmt.Errorf("expected the resulting grants to be %v, instead got %v",
+				expectedGrants, res.Grants)
 		}
 
 		return nil
@@ -14933,8 +15330,10 @@ func IAM_user_access_denied(s *S3Conf) error {
 		return fmt.Errorf("%v: expected cmd error", testName)
 	}
 	if !strings.Contains(string(out), s3err.GetAPIError(s3err.ErrAdminAccessDenied).Code) {
-		failF("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
-		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		failF("%v: expected response error message to be %v, instead got %s",
+			testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s",
+			testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
 	}
 
 	passF(testName)
@@ -14964,8 +15363,10 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 		return fmt.Errorf("%v: expected cmd error", testName)
 	}
 	if !strings.Contains(string(out), s3err.GetAPIError(s3err.ErrAdminAccessDenied).Code) {
-		failF("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
-		return fmt.Errorf("%v: expected response error message to be %v, instead got %s", testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		failF("%v: expected response error message to be %v, instead got %s",
+			testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
+		return fmt.Errorf("%v: expected response error message to be %v, instead got %s",
+			testName, s3err.GetAPIError(s3err.ErrAdminAccessDenied).Error(), out)
 	}
 
 	passF(testName)
@@ -15043,8 +15444,9 @@ func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
 			return err
 		}
 
-		if *resp.Owner.ID != usr.access {
-			return fmt.Errorf("expected the bucket owner to be %v, instead got %v", usr.access, *resp.Owner.ID)
+		if getString(resp.Owner.ID) != usr.access {
+			return fmt.Errorf("expected the bucket owner to be %v, instead got %v",
+				usr.access, getString(resp.Owner.ID))
 		}
 
 		return nil
@@ -15325,10 +15727,12 @@ func GetBucketVersioning_empty_response(s *S3Conf) error {
 		}
 
 		if res.Status != "" {
-			return fmt.Errorf("expected empty versioning status, instead got %v", res.Status)
+			return fmt.Errorf("expected empty versioning status, instead got %v",
+				res.Status)
 		}
 		if res.MFADelete != "" {
-			return fmt.Errorf("expected empty mfa delete status, instead got %v", res.MFADelete)
+			return fmt.Errorf("expected empty mfa delete status, instead got %v",
+				res.MFADelete)
 		}
 
 		return nil
@@ -15348,7 +15752,8 @@ func GetBucketVersioning_success(s *S3Conf) error {
 		}
 
 		if res.Status != types.BucketVersioningStatusEnabled {
-			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v", types.BucketVersioningStatusEnabled, res.Status)
+			return fmt.Errorf("expected bucket versioning status to be %v, instead got %v",
+				types.BucketVersioningStatusEnabled, res.Status)
 		}
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
@@ -15389,7 +15794,8 @@ func Versioning_PutObject_suspended_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if getString(out.res.VersionId) != nullVersionId {
-			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", nullVersionId, getString(out.res.VersionId))
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v",
+				nullVersionId, getString(out.res.VersionId))
 		}
 
 		return nil
@@ -15438,7 +15844,8 @@ func Versioning_PutObject_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the listed versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the listed versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 
 		return nil
@@ -15484,7 +15891,8 @@ func Versioning_PutObject_overwrite_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if getString(out.res.VersionId) != nullVersionId {
-			return fmt.Errorf("expected the uploaded object versionId to be %v, insted got %v", nullVersionId, getString(out.res.VersionId))
+			return fmt.Errorf("expected the uploaded object versionId to be %v, insted got %v",
+				nullVersionId, getString(out.res.VersionId))
 		}
 
 		versions[0].IsLatest = getBoolPtr(false)
@@ -15511,7 +15919,8 @@ func Versioning_PutObject_overwrite_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the listed versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the listed versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 
 		return nil
@@ -15605,7 +16014,8 @@ func Versioning_CopyObject_success(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 
 		return nil
@@ -15629,9 +16039,10 @@ func Versioning_CopyObject_non_existing_version_id(s *S3Conf) error {
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:     &dstBucket,
-			Key:        &dstObj,
-			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId", bucket, srcObj)),
+			Bucket: &dstBucket,
+			Key:    &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId",
+				bucket, srcObj)),
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)); err != nil {
@@ -15678,8 +16089,12 @@ func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 		if out.VersionId == nil || *out.VersionId == "" {
 			return fmt.Errorf("expected non empty versionId")
 		}
+		if out.CopySourceVersionId == nil {
+			return fmt.Errorf("expected non nil CopySourceVersionId")
+		}
 		if *out.CopySourceVersionId != *srcObjVersion.VersionId {
-			return fmt.Errorf("expected the SourceVersionId to be %v, instead got %v", *srcObjVersion.VersionId, *out.CopySourceVersionId)
+			return fmt.Errorf("expected the SourceVersionId to be %v, instead got %v",
+				*srcObjVersion.VersionId, *out.CopySourceVersionId)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -15693,11 +16108,19 @@ func Versioning_CopyObject_from_an_object_version(s *S3Conf) error {
 			return err
 		}
 
+		if res.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if res.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
 		if *res.ContentLength != *srcObjVersion.Size {
-			return fmt.Errorf("expected the copied object size to be %v, instead got %v", *srcObjVersion.Size, *res.ContentLength)
+			return fmt.Errorf("expected the copied object size to be %v, instead got %v",
+				*srcObjVersion.Size, *res.ContentLength)
 		}
 		if *res.VersionId != *out.VersionId {
-			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v", *out.VersionId, *res.VersionId)
+			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v",
+				*out.VersionId, *res.VersionId)
 		}
 
 		return nil
@@ -15734,8 +16157,12 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 		if res.VersionId == nil || *res.VersionId == "" {
 			return fmt.Errorf("expected non empty versionId")
 		}
+		if res.CopySourceVersionId == nil {
+			return fmt.Errorf("expected non nil CopySourceVersionId")
+		}
 		if *res.CopySourceVersionId != srcObjVersionId {
-			return fmt.Errorf("expected the SourceVersionId to be %v, instead got %v", srcObjVersionId, *res.CopySourceVersionId)
+			return fmt.Errorf("expected the SourceVersionId to be %v, instead got %v",
+				srcObjVersionId, *res.CopySourceVersionId)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -15749,8 +16176,12 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 			return err
 		}
 
+		if out.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
 		if *out.VersionId != *res.VersionId {
-			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v", *res.VersionId, *out.VersionId)
+			return fmt.Errorf("expected the copied object versionId to be %v, instead got %v",
+				*res.VersionId, *out.VersionId)
 		}
 
 		err = teardown(s, dstBucket)
@@ -15841,11 +16272,19 @@ func Versioning_HeadObject_success(s *S3Conf) error {
 			return err
 		}
 
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if out.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
 		if *out.ContentLength != dLen {
-			return fmt.Errorf("expected the object content-length to be %v, instead got %v", dLen, *out.ContentLength)
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v",
+				dLen, *out.ContentLength)
 		}
 		if *out.VersionId != *r.res.VersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", *r.res.VersionId, *out.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				*r.res.VersionId, *out.VersionId)
 		}
 
 		return nil
@@ -15874,7 +16313,8 @@ func Versioning_HeadObject_without_versionId(s *S3Conf) error {
 		}
 
 		if getString(res.VersionId) != *lastVersion.VersionId {
-			return fmt.Errorf("expected versionId to be %v, instead got %v", *lastVersion.VersionId, getString(res.VersionId))
+			return fmt.Errorf("expected versionId to be %v, instead got %v",
+				*lastVersion.VersionId, getString(res.VersionId))
 		}
 
 		return nil
@@ -15986,11 +16426,19 @@ func Versioning_GetObject_success(s *S3Conf) error {
 			return err
 		}
 
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if out.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
 		if *out.ContentLength != dLen {
-			return fmt.Errorf("expected the object content-length to be %v, instead got %v", dLen, *out.ContentLength)
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v",
+				dLen, *out.ContentLength)
 		}
 		if *out.VersionId != *r.res.VersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", *r.res.VersionId, *out.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				*r.res.VersionId, *out.VersionId)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
@@ -16015,11 +16463,19 @@ func Versioning_GetObject_success(s *S3Conf) error {
 			return err
 		}
 
+		if out.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if out.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
 		if *out.ContentLength != dLen {
-			return fmt.Errorf("expected the object content-length to be %v, instead got %v", dLen, *out.ContentLength)
+			return fmt.Errorf("expected the object content-length to be %v, instead got %v",
+				dLen, *out.ContentLength)
 		}
 		if *out.VersionId != *r.res.VersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", *r.res.VersionId, *out.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				*r.res.VersionId, *out.VersionId)
 		}
 
 		bdy, err = io.ReadAll(out.Body)
@@ -16148,14 +16604,26 @@ func Versioning_GetObject_null_versionId_obj(s *S3Conf) error {
 			return err
 		}
 
+		if res.ContentLength == nil {
+			return fmt.Errorf("expected non nil ContentLength")
+		}
+		if res.VersionId == nil {
+			return fmt.Errorf("expected non nil VersionId")
+		}
+		if res.ETag == nil {
+			return fmt.Errorf("expected non nil ETag")
+		}
 		if *res.ContentLength != lgth {
-			return fmt.Errorf("expected the Content-Length to be %v, instead got %v", lgth, *res.ContentLength)
+			return fmt.Errorf("expected the Content-Length to be %v, instead got %v",
+				lgth, *res.ContentLength)
 		}
 		if *res.VersionId != nullVersionId {
-			return fmt.Errorf("expected the versionId to be %v, insted got %v", nullVersionId, *res.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, insted got %v",
+				nullVersionId, *res.VersionId)
 		}
 		if *res.ETag != *out.res.ETag {
-			return fmt.Errorf("expecte the ETag to be %v, instead got %v", *out.res.ETag, *res.ETag)
+			return fmt.Errorf("expecte the ETag to be %v, instead got %v",
+				*out.res.ETag, *res.ETag)
 		}
 
 		return nil
@@ -16193,10 +16661,12 @@ func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
 		}
 
 		if getString(res.ETag) != strings.Trim(*version.ETag, "\"") {
-			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", strings.Trim(*version.ETag, "\""), getString(res.ETag))
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v",
+				strings.Trim(*version.ETag, "\""), getString(res.ETag))
 		}
 		if getString(res.VersionId) != *version.VersionId {
-			return fmt.Errorf("expected the uploaded versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))
+			return fmt.Errorf("expected the uploaded versionId to be %v, instead got %v",
+				*version.VersionId, getString(res.VersionId))
 		}
 
 		// Without versionId
@@ -16206,10 +16676,12 @@ func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
 		}
 
 		if getString(res.ETag) != strings.Trim(*version.ETag, "\"") {
-			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v", strings.Trim(*version.ETag, "\""), getString(res.ETag))
+			return fmt.Errorf("expected the uploaded object ETag to be %v, instead got %v",
+				strings.Trim(*version.ETag, "\""), getString(res.ETag))
 		}
 		if getString(res.VersionId) != *version.VersionId {
-			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", *version.VersionId, getString(res.VersionId))
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v",
+				*version.VersionId, getString(res.VersionId))
 		}
 
 		return nil
@@ -16287,8 +16759,12 @@ func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
 			return err
 		}
 
+		if out.VersionId == nil {
+			return fmt.Errorf("expected non nil versionId")
+		}
 		if *out.VersionId != *versionId {
-			return fmt.Errorf("expected deleted object versionId to be %v, instead got %v", *versionId, *out.VersionId)
+			return fmt.Errorf("expected deleted object versionId to be %v, instead got %v",
+				*versionId, *out.VersionId)
 		}
 
 		return nil
@@ -16369,8 +16845,12 @@ func Versioning_DeleteObject_delete_a_delete_marker(s *S3Conf) error {
 		if res.DeleteMarker == nil || !*res.DeleteMarker {
 			return fmt.Errorf("expected the response DeleteMarker to be true")
 		}
+		if res.VersionId == nil {
+			return fmt.Errorf("expected non empty versionId")
+		}
 		if *res.VersionId != *out.VersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", *out.VersionId, *res.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				*out.VersionId, *res.VersionId)
 		}
 
 		return nil
@@ -16410,7 +16890,8 @@ func Versioning_Delete_null_versionId_object(s *S3Conf) error {
 			return err
 		}
 		if getString(res.VersionId) != nullVersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", nullVersionId, getString(res.VersionId))
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				nullVersionId, getString(res.VersionId))
 		}
 
 		return nil
@@ -16441,7 +16922,8 @@ func Versioning_DeleteObject_nested_dir_object(s *S3Conf) error {
 		}
 
 		if getString(res.VersionId) != getString(out.res.VersionId) {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", getString(out.res.VersionId), getString(res.VersionId))
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				getString(out.res.VersionId), getString(res.VersionId))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -16477,7 +16959,7 @@ func Versioning_DeleteObject_suspended(s *S3Conf) error {
 			return err
 		}
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: &bucket,
@@ -16488,11 +16970,19 @@ func Versioning_DeleteObject_suspended(s *S3Conf) error {
 				return err
 			}
 
+			if res.DeleteMarker == nil {
+				return fmt.Errorf("expected the delete marker to be true")
+			}
 			if !*res.DeleteMarker {
-				return fmt.Errorf("expected the delete marker to be true, instead got %v", *res.DeleteMarker)
+				return fmt.Errorf("expected the delete marker to be true, instead got %v",
+					*res.DeleteMarker)
+			}
+			if res.VersionId == nil {
+				return fmt.Errorf("expected non nil versionId")
 			}
 			if *res.VersionId != nullVersionId {
-				return fmt.Errorf("expected the versionId to be %v, instead got %v", nullVersionId, *res.VersionId)
+				return fmt.Errorf("expected the versionId to be %v, instead got %v",
+					nullVersionId, *res.VersionId)
 			}
 		}
 
@@ -16514,10 +17004,12 @@ func Versioning_DeleteObject_suspended(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 		if !compareDelMarkers(res.DeleteMarkers, delMarkers) {
-			return fmt.Errorf("expected the delete markers to be %v, instead got %v", delMarkers, res.DeleteMarkers)
+			return fmt.Errorf("expected the delete markers to be %v, instead got %v",
+				delMarkers, res.DeleteMarkers)
 		}
 
 		return nil
@@ -16582,10 +17074,12 @@ func Versioning_DeleteObjects_success(s *S3Conf) error {
 		}
 
 		if len(out.Errors) != 0 {
-			return fmt.Errorf("errors occurred during the deletion: %v", out.Errors)
+			return fmt.Errorf("errors occurred during the deletion: %v",
+				out.Errors)
 		}
 		if !compareDelObjects(delResult, out.Deleted) {
-			return fmt.Errorf("expected the deleted objects to be %v, instead got %v", delResult, out.Deleted)
+			return fmt.Errorf("expected the deleted objects to be %v, instead got %v",
+				delResult, out.Deleted)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -16614,10 +17108,12 @@ func Versioning_DeleteObjects_success(s *S3Conf) error {
 			},
 		}
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 		if !compareDelMarkers(delMarkers, res.DeleteMarkers) {
-			return fmt.Errorf("expected the resulting delete markers to be %v, instead got %v", delMarkers, res.DeleteMarkers)
+			return fmt.Errorf("expected the resulting delete markers to be %v, instead got %v",
+				delMarkers, res.DeleteMarkers)
 		}
 
 		return nil
@@ -16669,10 +17165,12 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 		}
 
 		if len(out.Errors) != 0 {
-			return fmt.Errorf("errors occurred during the deletion: %v", out.Errors)
+			return fmt.Errorf("errors occurred during the deletion: %v",
+				out.Errors)
 		}
 		if !compareDelObjects(delResult, out.Deleted) {
-			return fmt.Errorf("expected the deleted objects to be %v, instead got %v", delResult, out.Deleted)
+			return fmt.Errorf("expected the deleted objects to be %v, instead got %v",
+				delResult, out.Deleted)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -16696,7 +17194,8 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 			return err
 		}
 		if len(out.Errors) != 0 {
-			return fmt.Errorf("errors occurred during the deletion: %v", out.Errors)
+			return fmt.Errorf("errors occurred during the deletion: %v",
+				out.Errors)
 		}
 
 		delResult = []types.DeletedObject{
@@ -16715,7 +17214,8 @@ func Versioning_DeleteObjects_delete_deleteMarkers(s *S3Conf) error {
 		}
 
 		if !compareDelObjects(delResult, res.Deleted) {
-			return fmt.Errorf("expected the deleted objects to be %v, instead got %v", delResult, res.Deleted)
+			return fmt.Errorf("expected the deleted objects to be %v, instead got %v",
+				delResult, res.Deleted)
 		}
 
 		return nil
@@ -16757,7 +17257,8 @@ func ListObjectVersions_list_single_object_versions(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, out.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, out.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, out.Versions)
 		}
 
 		return nil
@@ -16794,7 +17295,8 @@ func ListObjectVersions_list_multiple_object_versions(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, out.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, out.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, out.Versions)
 		}
 
 		return nil
@@ -16832,24 +17334,37 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 			return err
 		}
 
+		if out.Name == nil {
+			return fmt.Errorf("expected the bucket name to be %v, instead got nil",
+				bucket)
+		}
 		if *out.Name != bucket {
-			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *out.Name)
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v",
+				bucket, *out.Name)
 		}
 		if out.IsTruncated == nil || !*out.IsTruncated {
 			return fmt.Errorf("expected the output to be truncated")
 		}
-		if out.MaxKeys == nil || *out.MaxKeys != maxKeys {
-			return fmt.Errorf("expected the max-keys to be %v, instead got %v", maxKeys, *out.MaxKeys)
+		if out.MaxKeys == nil {
+			return fmt.Errorf("expected the max-keys to be %v, instead got nil",
+				maxKeys)
 		}
-		if *out.NextKeyMarker != *versions[maxKeys-1].Key {
-			return fmt.Errorf("expected the NextKeyMarker to be %v, instead got %v", *versions[maxKeys].Key, *out.NextKeyMarker)
+		if *out.MaxKeys != maxKeys {
+			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
+				maxKeys, *out.MaxKeys)
 		}
-		if *out.NextVersionIdMarker != *versions[maxKeys-1].VersionId {
-			return fmt.Errorf("expected the NextVersionIdMarker to be %v, instead got %v", *versions[maxKeys].VersionId, *out.NextVersionIdMarker)
+		if getString(out.NextKeyMarker) != getString(versions[maxKeys-1].Key) {
+			return fmt.Errorf("expected the NextKeyMarker to be %v, instead got %v",
+				getString(versions[maxKeys-1].Key), getString(out.NextKeyMarker))
+		}
+		if getString(out.NextVersionIdMarker) != getString(versions[maxKeys-1].VersionId) {
+			return fmt.Errorf("expected the NextVersionIdMarker to be %v, instead got %v",
+				getString(versions[maxKeys-1].VersionId), getString(out.NextVersionIdMarker))
 		}
 
 		if !compareVersions(versions[:maxKeys], out.Versions) {
-			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v", versions[:maxKeys], out.Versions)
+			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v",
+				versions[:maxKeys], out.Versions)
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -16863,21 +17378,29 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 			return err
 		}
 
+		if out.Name == nil {
+			return fmt.Errorf("expected the bucket name to be %v, instead got nil",
+				bucket)
+		}
 		if *out.Name != bucket {
-			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *out.Name)
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v",
+				bucket, *out.Name)
 		}
 		if out.IsTruncated != nil && *out.IsTruncated {
 			return fmt.Errorf("expected the output not to be truncated")
 		}
-		if *out.KeyMarker != *versions[maxKeys-1].Key {
-			return fmt.Errorf("expected the KeyMarker to be %v, instead got %v", *versions[maxKeys].Key, *out.KeyMarker)
+		if getString(out.KeyMarker) != getString(versions[maxKeys-1].Key) {
+			return fmt.Errorf("expected the KeyMarker to be %v, instead got %v",
+				getString(versions[maxKeys-1].Key), getString(out.KeyMarker))
 		}
-		if *out.VersionIdMarker != *versions[maxKeys-1].VersionId {
-			return fmt.Errorf("expected the VersionIdMarker to be %v, instead got %v", *versions[maxKeys].VersionId, *out.VersionIdMarker)
+		if getString(out.VersionIdMarker) != getString(versions[maxKeys-1].VersionId) {
+			return fmt.Errorf("expected the VersionIdMarker to be %v, instead got %v",
+				getString(versions[maxKeys-1].VersionId), getString(out.VersionIdMarker))
 		}
 
 		if !compareVersions(versions[maxKeys:], out.Versions) {
-			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v", versions[maxKeys:], out.Versions)
+			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v",
+				versions[maxKeys:], out.Versions)
 		}
 
 		return nil
@@ -16922,10 +17445,12 @@ func ListObjectVersions_with_delete_markers(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 		if !compareDelMarkers(res.DeleteMarkers, delMarkers) {
-			return fmt.Errorf("expected the resulting delete markers to be %v, instead got %v", delMarkers, res.DeleteMarkers)
+			return fmt.Errorf("expected the resulting delete markers to be %v, instead got %v",
+				delMarkers, res.DeleteMarkers)
 		}
 
 		return nil
@@ -16956,7 +17481,8 @@ func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if getString(out.res.VersionId) != nullVersionId {
-			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v", nullVersionId, getString(out.res.VersionId))
+			return fmt.Errorf("expected the uploaded object versionId to be %v, instead got %v",
+				nullVersionId, getString(out.res.VersionId))
 		}
 
 		versions[0].IsLatest = getBoolPtr(false)
@@ -16994,7 +17520,8 @@ func ListObjectVersions_containing_null_versionId_obj(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the listed object versions to be %v, instead got %v", versions, res.Versions)
+			return fmt.Errorf("expected the listed object versions to be %v, instead got %v",
+				versions, res.Versions)
 		}
 
 		return nil
@@ -17056,10 +17583,12 @@ func ListObjectVersions_single_null_versionId_object(s *S3Conf) error {
 		}
 
 		if !compareDelMarkers(resp.DeleteMarkers, delMarkers) {
-			return fmt.Errorf("expected the delete markers list to be %v, instaed got %v", delMarkers, resp.DeleteMarkers)
+			return fmt.Errorf("expected the delete markers list to be %v, instaed got %v",
+				delMarkers, resp.DeleteMarkers)
 		}
 		if !compareVersions(versions, resp.Versions) {
-			return fmt.Errorf("expected the object versions list to be %v, instead got %v", versions, resp.Versions)
+			return fmt.Errorf("expected the object versions list to be %v, instead got %v",
+				versions, resp.Versions)
 		}
 
 		return nil
@@ -17089,7 +17618,8 @@ func ListObjectVersions_checksum(s *S3Conf) error {
 		}
 
 		if !compareVersions(versions, res.Versions) {
-			return fmt.Errorf("expected the versions to be %+v, instead got %+v", versions, res.Versions)
+			return fmt.Errorf("expected the versions to be %+v, instead got %+v",
+				versions, res.Versions)
 		}
 
 		return nil
@@ -17133,11 +17663,21 @@ func Versioning_Multipart_Upload_success(s *S3Conf) error {
 			return err
 		}
 
+		if res.Key == nil {
+			return fmt.Errorf("expected the object key to be %v, instead got nil",
+				obj)
+		}
 		if *res.Key != obj {
-			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+			return fmt.Errorf("expected object key to be %v, instead got %v",
+				obj, *res.Key)
+		}
+		if res.Bucket == nil {
+			return fmt.Errorf("expected the bucket name to be %v, instead got nil",
+				bucket)
 		}
 		if *res.Bucket != bucket {
-			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *res.Bucket)
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v",
+				bucket, *res.Bucket)
 		}
 		if res.ETag == nil || *res.ETag == "" {
 			return fmt.Errorf("expected non-empty ETag")
@@ -17157,14 +17697,26 @@ func Versioning_Multipart_Upload_success(s *S3Conf) error {
 			return err
 		}
 
+		if resp.ETag == nil || *resp.ETag == "" {
+			return fmt.Errorf("expected (head object) non-empty ETag")
+		}
 		if *resp.ETag != *res.ETag {
-			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v", *res.ETag, *resp.ETag)
+			return fmt.Errorf("expected the uploaded object etag to be %v, instead got %v",
+				*res.ETag, *resp.ETag)
+		}
+		if resp.ContentLength == nil {
+			return fmt.Errorf("expected (head object) non nil content length")
 		}
 		if *resp.ContentLength != int64(objSize) {
-			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v", objSize, resp.ContentLength)
+			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v",
+				objSize, resp.ContentLength)
+		}
+		if resp.VersionId == nil {
+			return fmt.Errorf("expected (head object) non nil versionId")
 		}
 		if *resp.VersionId != *res.VersionId {
-			return fmt.Errorf("expected the versionId to be %v, instead got %v", *res.VersionId, *resp.VersionId)
+			return fmt.Errorf("expected the versionId to be %v, instead got %v",
+				*res.VersionId, *resp.VersionId)
 		}
 
 		return nil
@@ -17213,11 +17765,21 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 			return err
 		}
 
+		if res.Key == nil {
+			return fmt.Errorf("expected the object key to be %v, instead got nil",
+				obj)
+		}
 		if *res.Key != obj {
-			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
+			return fmt.Errorf("expected object key to be %v, instead got %v",
+				obj, *res.Key)
+		}
+		if res.Bucket == nil {
+			return fmt.Errorf("expected the bucket name to be %v, instead got nil",
+				bucket)
 		}
 		if *res.Bucket != bucket {
-			return fmt.Errorf("expected the bucket name to be %v, instead got %v", bucket, *res.Bucket)
+			return fmt.Errorf("expected the bucket name to be %v, instead got %v",
+				bucket, *res.Bucket)
 		}
 		if res.ETag == nil || *res.ETag == "" {
 			return fmt.Errorf("expected non-empty ETag")
@@ -17250,7 +17812,8 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 		}, objVersions...)
 
 		if !compareVersions(versions, resp.Versions) {
-			return fmt.Errorf("expected the resulting versions to be %v, instead got %v", versions, resp.Versions)
+			return fmt.Errorf("expected the resulting versions to be %v, instead got %v",
+				versions, resp.Versions)
 		}
 
 		return nil
@@ -17287,7 +17850,8 @@ func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
 			Key:        &dstObj,
 			UploadId:   mp.UploadId,
 			PartNumber: &pNumber,
-			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId", bucket, srcObj)),
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId",
+				bucket, srcObj)),
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion)); err != nil {
@@ -17336,8 +17900,9 @@ func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
 			return err
 		}
 
-		if *copyOut.CopySourceVersionId != *srcObjVersion.VersionId {
-			return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v", *srcObjVersion.VersionId, *copyOut.CopySourceVersionId)
+		if getString(copyOut.CopySourceVersionId) != getString(srcObjVersion.VersionId) {
+			return fmt.Errorf("expected the copy-source-version-id to be %v, instead got %v",
+				getString(srcObjVersion.VersionId), getString(copyOut.CopySourceVersionId))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -17352,16 +17917,26 @@ func Versioning_UploadPartCopy_from_an_object_version(s *S3Conf) error {
 		}
 
 		if len(res.Parts) != 1 {
-			return fmt.Errorf("expected parts to be 1, instead got %v", len(res.Parts))
+			return fmt.Errorf("expected parts to be 1, instead got %v",
+				len(res.Parts))
+		}
+		if res.Parts[0].PartNumber == nil {
+			return fmt.Errorf("expected part-number to be non nil")
 		}
 		if *res.Parts[0].PartNumber != partNumber {
-			return fmt.Errorf("expected part-number to be %v, instead got %v", partNumber, res.Parts[0].PartNumber)
+			return fmt.Errorf("expected part-number to be %v, instead got %v",
+				partNumber, res.Parts[0].PartNumber)
+		}
+		if res.Parts[0].Size == nil {
+			return fmt.Errorf("expected part size to be non nil")
 		}
 		if *res.Parts[0].Size != *srcObjVersion.Size {
-			return fmt.Errorf("expected part size to be %v, instead got %v", *srcObjVersion.Size, res.Parts[0].Size)
+			return fmt.Errorf("expected part size to be %v, instead got %v",
+				*srcObjVersion.Size, res.Parts[0].Size)
 		}
-		if *res.Parts[0].ETag != *copyOut.CopyPartResult.ETag {
-			return fmt.Errorf("expected part etag to be %v, instead got %v", *copyOut.CopyPartResult.ETag, *res.Parts[0].ETag)
+		if getString(res.Parts[0].ETag) != getString(copyOut.CopyPartResult.ETag) {
+			return fmt.Errorf("expected part etag to be %v, instead got %v",
+				getString(copyOut.CopyPartResult.ETag), getString(res.Parts[0].ETag))
 		}
 
 		if err := teardown(s, dstBucket); err != nil {
@@ -17385,7 +17960,8 @@ func Versioning_Enable_object_lock(s *S3Conf) error {
 		}
 
 		if res.Status != types.BucketVersioningStatusEnabled {
-			return fmt.Errorf("expected the bucket versioning status to be %v, instead got %v", types.BucketVersioningStatusEnabled, res.Status)
+			return fmt.Errorf("expected the bucket versioning status to be %v, instead got %v",
+				types.BucketVersioningStatusEnabled, res.Status)
 		}
 
 		return nil
@@ -17495,7 +18071,8 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 		}
 
 		if res.Retention.Mode != types.ObjectLockRetentionModeGovernance {
-			return fmt.Errorf("expected the object retention mode to be %v, instead got %v", types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
+			return fmt.Errorf("expected the object retention mode to be %v, instead got %v",
+				types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
 		}
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
@@ -17593,7 +18170,8 @@ func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
 		}
 
 		if res.LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
-			return fmt.Errorf("expected the object version legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
+			return fmt.Errorf("expected the object version legal hold status to be %v, instead got %v",
+				types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
 		}
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
@@ -17812,7 +18390,7 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 		wg := &sync.WaitGroup{}
 		wg.Add(versionCount)
 
-		for i := 0; i < versionCount; i++ {
+		for range versionCount {
 			go uploadVersion(wg)
 		}
 
@@ -17838,7 +18416,8 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 		}
 
 		if len(res.Versions) != versionCount {
-			return fmt.Errorf("expected %v object versions, instead got %v", versionCount, len(res.Versions))
+			return fmt.Errorf("expected %v object versions, instead got %v",
+				versionCount, len(res.Versions))
 		}
 
 		return nil
