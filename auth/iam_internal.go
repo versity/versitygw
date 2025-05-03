@@ -290,93 +290,49 @@ func (s *IAMServiceInternal) readIAMData() ([]byte, error) {
 
 func (s *IAMServiceInternal) storeIAM(update UpdateAcctFunc) error {
 	// We are going to be racing with other running gateways without any
-	// coordination. So the strategy here is to read the current file data.
-	// If the file doesn't exist, then we assume someone else is currently
-	// updating the file. So we just need to keep retrying. We also need
-	// to make sure the data is consistent within a single update. So racing
-	// writes to a file would possibly leave this in some invalid state.
-	// We can get atomic updates with rename. If we read the data, update
-	// the data, write to a temp file, then rename the tempfile back to the
-	// data file. This should always result in a complete data image.
+	// coordination. So the strategy here is to read the current file data,
+	// update the data, write back out to a temp file, then rename the
+	// temp file to the original file. This rename will replace the
+	// original file with the new file. This is atomic and should always
+	// allow for a consistent view of the data. There is a small
+	// window where the file could be read and then updated by
+	// another process. In this case any updates the other process did
+	// will be lost. This is a limitation of the internal IAM service.
+	// This should be rare, and even when it does happen should result
+	// in a valid IAM file, just without the other process's updates.
 
-	// There is at least one unsolved failure mode here.
-	// If a gateway removes the data file and then crashes, all other
-	// gateways will retry forever thinking that the original will eventually
-	// write the file.
+	iamFname := filepath.Join(s.dir, iamFile)
+	backupFname := filepath.Join(s.dir, iamBackupFile)
 
-	retries := 0
-	fname := filepath.Join(s.dir, iamFile)
+	b, err := os.ReadFile(iamFname)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read iam file: %w", err)
+	}
 
-	for {
-		b, err := os.ReadFile(fname)
-		if errors.Is(err, fs.ErrNotExist) {
-			// racing with someone else updating
-			// keep retrying after backoff
-			retries++
-			if retries < maxretry {
-				time.Sleep(backoff)
-				continue
-			}
+	// save copy of data
+	datacopy := make([]byte, len(b))
+	copy(datacopy, b)
 
-			// we have been unsuccessful trying to read the iam file
-			// so this must be the case where something happened and
-			// the file did not get updated successfully, and probably
-			// isn't going to be. The recovery procedure would be to
-			// copy the backup file into place of the original.
-			return fmt.Errorf("no iam file, needs backup recovery")
-		}
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("read iam file: %w", err)
-		}
+	// make a backup copy in case something happens
+	err = s.writeUsingTempFile(b, backupFname)
+	if err != nil {
+		return fmt.Errorf("write backup iam file: %w", err)
+	}
 
-		// reset retries on successful read
-		retries = 0
+	b, err = update(b)
+	if err != nil {
+		return fmt.Errorf("update iam data: %w", err)
+	}
 
-		err = os.Remove(fname)
-		if errors.Is(err, fs.ErrNotExist) {
-			// racing with someone else updating
-			// keep retrying after backoff
-			time.Sleep(backoff)
-			continue
-		}
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("remove old iam file: %w", err)
-		}
-
-		// save copy of data
-		datacopy := make([]byte, len(b))
-		copy(datacopy, b)
-
-		// make a backup copy in case we crash before update
-		// this is after remove, so there is a small window something
-		// can go wrong, but the remove should barrier other gateways
-		// from trying to write backup at the same time. Only one
-		// gateway will successfully remove the file.
-		os.WriteFile(filepath.Join(s.dir, iamBackupFile), b, iamMode)
-
-		b, err = update(b)
-		if err != nil {
-			// update failed, try to write old data back out
-			os.WriteFile(fname, datacopy, iamMode)
-			return fmt.Errorf("update iam data: %w", err)
-		}
-
-		err = s.writeTempFile(b)
-		if err != nil {
-			// update failed, try to write old data back out
-			os.WriteFile(fname, datacopy, iamMode)
-			return err
-		}
-
-		break
+	err = s.writeUsingTempFile(b, iamFname)
+	if err != nil {
+		return fmt.Errorf("write iam file: %w", err)
 	}
 
 	return nil
 }
 
-func (s *IAMServiceInternal) writeTempFile(b []byte) error {
-	fname := filepath.Join(s.dir, iamFile)
-
+func (s *IAMServiceInternal) writeUsingTempFile(b []byte, fname string) error {
 	f, err := os.CreateTemp(s.dir, iamFile)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -384,6 +340,7 @@ func (s *IAMServiceInternal) writeTempFile(b []byte) error {
 	defer os.Remove(f.Name())
 
 	_, err = f.Write(b)
+	f.Close()
 	if err != nil {
 		return fmt.Errorf("write temp file: %w", err)
 	}
