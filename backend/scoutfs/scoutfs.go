@@ -769,13 +769,13 @@ func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 	return s3response.ListObjectsResult{
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
-		Delimiter:      &delim,
+		Delimiter:      backend.GetPtrFromString(delim),
+		Marker:         backend.GetPtrFromString(marker),
+		NextMarker:     backend.GetPtrFromString(results.NextMarker),
+		Prefix:         backend.GetPtrFromString(prefix),
 		IsTruncated:    &results.Truncated,
-		Marker:         &marker,
 		MaxKeys:        &maxkeys,
 		Name:           &bucket,
-		NextMarker:     &results.NextMarker,
-		Prefix:         &prefix,
 	}, nil
 }
 
