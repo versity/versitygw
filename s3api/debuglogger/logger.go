@@ -19,6 +19,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -81,9 +82,19 @@ func LogFiberResponseDetails(ctx *fiber.Ctx) {
 	}
 }
 
+var debugEnabled atomic.Bool
+
+// SetDebugEnabled sets the debug mode
+func SetDebugEnabled() {
+	debugEnabled.Store(true)
+}
+
 // Logf is the same as 'fmt.Printf' with debug prefix,
 // a color added and '\n' at the end
 func Logf(format string, v ...any) {
+	if !debugEnabled.Load() {
+		return
+	}
 	debugPrefix := "[DEBUG]: "
 	fmt.Printf(yellow+debugPrefix+format+reset+"\n", v...)
 }

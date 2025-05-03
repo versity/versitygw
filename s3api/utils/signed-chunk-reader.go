@@ -390,7 +390,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 				return cr.handleRdrErr(err, header)
 			}
 
-			if !IsValidChecksum(checksum, algo, cr.debug) {
+			if !IsValidChecksum(checksum, algo) {
 				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
 			}
 
