@@ -4312,11 +4312,7 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 	marker := ""
 	if input.ContinuationToken != nil {
 		if input.StartAfter != nil {
-			if *input.StartAfter > *input.ContinuationToken {
-				marker = *input.StartAfter
-			} else {
-				marker = *input.ContinuationToken
-			}
+			marker = max(*input.StartAfter, *input.ContinuationToken)
 		} else {
 			marker = *input.ContinuationToken
 		}
