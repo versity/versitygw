@@ -168,6 +168,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_directory_object_noslash(s)
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_invalid_parent_dir(s)
+	HeadObject_with_range(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		HeadObject_not_enabled_checksum_mode(s)
@@ -193,8 +194,7 @@ func TestGetObjectAttributes(s *S3Conf) {
 func TestGetObject(s *S3Conf) {
 	GetObject_non_existing_key(s)
 	GetObject_directory_object_noslash(s)
-	GetObject_should_succeed_for_invalid_ranges(s)
-	GetObject_content_ranges(s)
+	GetObject_with_range(s)
 	GetObject_invalid_parent(s)
 	GetObject_large_object(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -203,7 +203,6 @@ func TestGetObject(s *S3Conf) {
 	}
 	GetObject_success(s)
 	GetObject_directory_success(s)
-	GetObject_by_range_success(s)
 	GetObject_by_range_resp_status(s)
 	GetObject_non_existing_dir_object(s)
 }
@@ -877,6 +876,7 @@ func GetIntTests() IntTests {
 		"HeadObject_non_existing_dir_object":                                      HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                                HeadObject_name_too_long,
 		"HeadObject_invalid_parent_dir":                                           HeadObject_invalid_parent_dir,
+		"HeadObject_with_range":                                                   HeadObject_with_range,
 		"HeadObject_not_enabled_checksum_mode":                                    HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                    HeadObject_checksums,
 		"HeadObject_success":                                                      HeadObject_success,
@@ -890,14 +890,12 @@ func GetIntTests() IntTests {
 		"GetObjectAttributes_checksums":                                           GetObjectAttributes_checksums,
 		"GetObject_non_existing_key":                                              GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                      GetObject_directory_object_noslash,
-		"GetObject_should_succeed_for_invalid_ranges":                             GetObject_should_succeed_for_invalid_ranges,
-		"GetObject_content_ranges":                                                GetObject_content_ranges,
+		"GetObject_with_range":                                                    GetObject_with_range,
 		"GetObject_invalid_parent":                                                GetObject_invalid_parent,
 		"GetObject_large_object":                                                  GetObject_large_object,
 		"GetObject_checksums":                                                     GetObject_checksums,
 		"GetObject_success":                                                       GetObject_success,
 		"GetObject_directory_success":                                             GetObject_directory_success,
-		"GetObject_by_range_success":                                              GetObject_by_range_success,
 		"GetObject_by_range_resp_status":                                          GetObject_by_range_resp_status,
 		"GetObject_non_existing_dir_object":                                       GetObject_non_existing_dir_object,
 		"ListObjects_non_existing_bucket":                                         ListObjects_non_existing_bucket,

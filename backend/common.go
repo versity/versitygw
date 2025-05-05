@@ -88,11 +88,11 @@ var (
 	errInvalidCopySourceRange = s3err.GetAPIError(s3err.ErrInvalidCopySourceRange)
 )
 
-// ParseGetObjectRange parses input range header and returns startoffset, length, isValid
+// ParseObjectRange parses input range header and returns startoffset, length, isValid
 // and error. If no endoffset specified, then length is set to the object size
 // for invalid inputs, it returns no error, but isValid=false
 // `InvalidRange` error is returnd, only if startoffset is greater than the object size
-func ParseGetObjectRange(size int64, acceptRange string) (int64, int64, bool, error) {
+func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error) {
 	if acceptRange == "" {
 		return 0, size, false, nil
 	}
@@ -113,15 +113,17 @@ func ParseGetObjectRange(size int64, acceptRange string) (int64, int64, bool, er
 	}
 
 	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
-	if err != nil {
+	if err != nil && bRange[0] != "" {
 		return 0, size, false, nil
 	}
 
-	if startOffset >= size {
-		return 0, 0, false, errInvalidRange
-	}
-
 	if bRange[1] == "" {
+		if bRange[0] == "" {
+			return 0, size, false, nil
+		}
+		if startOffset >= size {
+			return 0, 0, false, errInvalidRange
+		}
 		return startOffset, size - startOffset, true, nil
 	}
 
@@ -130,12 +132,22 @@ func ParseGetObjectRange(size int64, acceptRange string) (int64, int64, bool, er
 		return 0, size, false, nil
 	}
 
-	if endOffset < startOffset {
+	if startOffset > endOffset {
 		return 0, size, false, nil
 	}
 
+	// for ranges like 'bytes=-100' return the last bytes specified with 'endOffset'
+	if bRange[0] == "" {
+		endOffset = min(endOffset, size)
+		return size - endOffset, endOffset, true, nil
+	}
+
+	if startOffset >= size {
+		return 0, 0, false, errInvalidRange
+	}
+
 	if endOffset >= size {
-		return startOffset, size - startOffset, true, nil
+		endOffset = size - 1
 	}
 
 	return startOffset, endOffset - startOffset + 1, true, nil

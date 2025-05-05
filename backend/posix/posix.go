@@ -3364,9 +3364,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if input.Key == nil {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if input.Range == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRange)
-	}
 	var versionId string
 	if input.VersionId != nil {
 		versionId = *input.VersionId
@@ -3449,7 +3446,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	objSize := fi.Size()
-	startOffset, length, isValid, err := backend.ParseGetObjectRange(objSize, *input.Range)
+	startOffset, length, isValid, err := backend.ParseObjectRange(objSize, *input.Range)
 	if err != nil {
 		return nil, err
 	}
@@ -3635,20 +3632,34 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			return nil, fmt.Errorf("stat part: %w", err)
 		}
 
+		size := part.Size()
+
+		startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
+		if err != nil {
+			return nil, err
+		}
+
+		var contentRange string
+		if isValid {
+			contentRange = fmt.Sprintf("bytes %v-%v/%v",
+				startOffset, startOffset+length-1, size)
+		}
+
 		b, err := p.meta.RetrieveAttribute(nil, bucket, partPath, etagkey)
 		etag := string(b)
 		if err != nil {
 			etag = ""
 		}
 		partsCount := int32(len(ents))
-		size := part.Size()
 
 		return &s3.HeadObjectOutput{
+			AcceptRanges:  backend.GetPtrFromString("bytes"),
 			LastModified:  backend.GetTimePtr(part.ModTime()),
 			ETag:          &etag,
 			PartsCount:    &partsCount,
-			ContentLength: &size,
+			ContentLength: &length,
 			StorageClass:  types.StorageClassStandard,
+			ContentRange:  &contentRange,
 		}, nil
 	}
 
@@ -3740,6 +3751,17 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	size := fi.Size()
 
+	startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
+	if err != nil {
+		return nil, err
+	}
+
+	var contentRange string
+	if isValid {
+		contentRange = fmt.Sprintf("bytes %v-%v/%v",
+			startOffset, startOffset+length-1, size)
+	}
+
 	var objectLockLegalHoldStatus types.ObjectLockLegalHoldStatus
 	status, err := p.GetObjectLegalHold(ctx, bucket, object, versionId)
 	if err == nil {
@@ -3774,7 +3796,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	return &s3.HeadObjectOutput{
-		ContentLength:             &size,
+		ContentLength:             &length,
+		AcceptRanges:              backend.GetPtrFromString("bytes"),
+		ContentRange:              &contentRange,
 		ContentType:               objMeta.ContentType,
 		ContentEncoding:           objMeta.ContentEncoding,
 		ContentDisposition:        objMeta.ContentDisposition,

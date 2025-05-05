@@ -502,18 +502,8 @@ func createMp(s3client *s3.Client, bucket, key string, opts ...mpOpt) (*s3.Creat
 	return out, err
 }
 
-func isEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i, d := range a {
-		if d != b[i] {
-			return false
-		}
-	}
-
-	return true
+func isSameData(a, b []byte) bool {
+	return bytes.Equal(a, b)
 }
 
 func compareMultipartUploads(list1, list2 []types.MultipartUpload) bool {
