@@ -155,10 +155,20 @@ func (tmp *tmpfile) link() error {
 	}
 	defer dirf.Close()
 
-	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
-	if err != nil {
-		return fmt.Errorf("link tmpfile: %w", err)
+	for {
+		err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
+			int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
+		if errors.Is(err, fs.ErrExist) {
+			err := os.Remove(objPath)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove stale path: %w", err)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("link tmpfile: %w", err)
+		}
+		break
 	}
 
 	err = tmp.f.Close()

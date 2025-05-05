@@ -769,13 +769,13 @@ func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 	return s3response.ListObjectsResult{
 		CommonPrefixes: results.CommonPrefixes,
 		Contents:       results.Objects,
-		Delimiter:      &delim,
+		Delimiter:      backend.GetPtrFromString(delim),
+		Marker:         backend.GetPtrFromString(marker),
+		NextMarker:     backend.GetPtrFromString(results.NextMarker),
+		Prefix:         backend.GetPtrFromString(prefix),
 		IsTruncated:    &results.Truncated,
-		Marker:         &marker,
 		MaxKeys:        &maxkeys,
 		Name:           &bucket,
-		NextMarker:     &results.NextMarker,
-		Prefix:         &prefix,
 	}, nil
 }
 
@@ -790,7 +790,11 @@ func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 	}
 	marker := ""
 	if input.ContinuationToken != nil {
-		marker = *input.ContinuationToken
+		if input.StartAfter != nil {
+			marker = max(*input.StartAfter, *input.ContinuationToken)
+		} else {
+			marker = *input.ContinuationToken
+		}
 	}
 	delim := ""
 	if input.Delimiter != nil {
@@ -816,16 +820,20 @@ func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Inpu
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
 
+	count := int32(len(results.Objects))
+
 	return s3response.ListObjectsV2Result{
 		CommonPrefixes:        results.CommonPrefixes,
 		Contents:              results.Objects,
-		Delimiter:             &delim,
 		IsTruncated:           &results.Truncated,
-		ContinuationToken:     &marker,
 		MaxKeys:               &maxkeys,
 		Name:                  &bucket,
-		NextContinuationToken: &results.NextMarker,
-		Prefix:                &prefix,
+		KeyCount:              &count,
+		Delimiter:             backend.GetPtrFromString(delim),
+		ContinuationToken:     backend.GetPtrFromString(marker),
+		NextContinuationToken: backend.GetPtrFromString(results.NextMarker),
+		Prefix:                backend.GetPtrFromString(prefix),
+		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
 	}, nil
 }
 
