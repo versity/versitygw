@@ -418,7 +418,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
-		offset, count, isValid, err := backend.ParseGetObjectRange(*resp.ContentLength, *input.Range)
+		offset, count, isValid, err := backend.ParseObjectRange(*resp.ContentLength, *input.Range)
 		if err != nil {
 			return nil, err
 		}
@@ -507,10 +507,26 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
+	var size int64
+	if resp.ContentLength != nil {
+		size = *resp.ContentLength
+	}
+
+	startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
+	if err != nil {
+		return nil, err
+	}
+
+	var contentRange string
+	if isValid {
+		contentRange = fmt.Sprintf("bytes %v-%v/%v",
+			startOffset, startOffset+length-1, size)
+	}
 
 	result := &s3.HeadObjectOutput{
-		AcceptRanges:       resp.AcceptRanges,
-		ContentLength:      resp.ContentLength,
+		ContentRange:       &contentRange,
+		AcceptRanges:       backend.GetPtrFromString("bytes"),
+		ContentLength:      &length,
 		ContentType:        resp.ContentType,
 		ContentEncoding:    resp.ContentEncoding,
 		ContentLanguage:    resp.ContentLanguage,

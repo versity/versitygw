@@ -3207,6 +3207,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	parsedAcl := ctx.Locals("parsedAcl").(auth.ACL)
 	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
 	versionId := ctx.Query("versionId")
+	objRange := ctx.Get("Range")
 	key := ctx.Params("key")
 	keyEnd := ctx.Params("*1")
 	if keyEnd != "" {
@@ -3277,6 +3278,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			PartNumber:   partNumber,
 			VersionId:    &versionId,
 			ChecksumMode: checksumMode,
+			Range:        &objRange,
 		})
 	if err != nil {
 		if res != nil {
@@ -3314,6 +3316,18 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 			Key:   "x-amz-restore",
 			Value: getstring(res.Restore),
 		},
+	}
+	if getstring(res.AcceptRanges) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "accept-ranges",
+			Value: getstring(res.AcceptRanges),
+		})
+	}
+	if getstring(res.ContentRange) != "" {
+		headers = append(headers, utils.CustomHeader{
+			Key:   "Content-Range",
+			Value: getstring(res.ContentRange),
+		})
 	}
 	if getstring(res.ContentDisposition) != "" {
 		headers = append(headers, utils.CustomHeader{

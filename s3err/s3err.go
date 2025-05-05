@@ -523,7 +523,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidRange: {
 		Code:           "InvalidRange",
-		Description:    "The requested range is not valid for the request. Try another range.",
+		Description:    "The requested range is not satisfiable",
 		HTTPStatusCode: http.StatusRequestedRangeNotSatisfiable,
 	},
 	ErrInvalidURI: {
