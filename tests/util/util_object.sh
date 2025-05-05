@@ -175,35 +175,6 @@ get_object_metadata() {
   return 0
 }
 
-put_object_multiple() {
-  if [ $# -ne 3 ]; then
-    log 2 "put object command requires command type, source, destination"
-    return 1
-  fi
-  local exit_code=0
-  local error
-  if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
-    # shellcheck disable=SC2086
-    error=$(aws --no-verify-ssl s3 cp "$(dirname "$2")" s3://"$3" --recursive --exclude="*" --include="$2" 2>&1) || exit_code=$?
-  elif [[ $1 == 's3cmd' ]]; then
-    # shellcheck disable=SC2086
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put $2 "s3://$3/" 2>&1) || exit_code=$?
-  elif [[ $1 == 'mc' ]]; then
-    # shellcheck disable=SC2086
-    error=$(mc --insecure cp $2 "$MC_ALIAS"/"$3" 2>&1) || exit_code=$?
-  else
-    log 2 "invalid command type $1"
-    return 1
-  fi
-  if [ $exit_code -ne 0 ]; then
-    log 2 "error copying object to bucket: $error"
-    return 1
-  else
-    log 5 "$error"
-  fi
-  return 0
-}
-
 # add object to versitygw if it doesn't exist
 # params:  source file, destination copy location
 # return 0 for success or already exists, 1 for failure
@@ -483,23 +454,4 @@ put_object_rest_check_expires_header() {
     return 1
   fi
   return 0
-}
-
-attempt_copy_object_to_directory_with_same_name() {
-  if [ $# -ne 3 ]; then
-    log 2 "'attempt_copy_object_to_directory_with_same_name' requires bucket name, key name, copy source"
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2/" COPY_SOURCE="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/copy_object.sh); then
-    log 2 "error copying object: $result"
-    return 1
-  fi
-  if [ "$result" != "409" ]; then
-    log 2 "expected '409', was '$result'"
-    return 1
-  fi
-  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "ObjectParentIsFile" "Object parent already exists as a file"; then
-    log 2 "error checking XML"
-    return 1
-  fi
 }

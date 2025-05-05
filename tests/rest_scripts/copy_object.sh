@@ -24,28 +24,27 @@ bucket_name="$BUCKET_NAME"
 key="$OBJECT_KEY"
 # shellcheck disable=SC2153
 copy_source="$COPY_SOURCE"
+# for testing only
+# shellcheck disable=SC2153
+data_file="$DATA_FILE"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request="PUT
-/$bucket_name/$key
-
-host:$host
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-copy-source:$copy_source
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-copy-source;x-amz-date
-UNSIGNED-PAYLOAD"
+cr_data=("PUT" "/$bucket_name/$key" "")
+cr_data+=("host:$host" "x-amz-content-sha256:UNSIGNED-PAYLOAD")
+cr_data+=("x-amz-copy-source:$copy_source")
+cr_data+=("x-amz-date:$current_date_time")
+build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key")
-curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date,Signature=$signature\"")
-curl_command+=(-H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
--H "\"x-amz-copy-source: $copy_source\""
--H "\"x-amz-date: $current_date_time\"")
+curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")
+if [ "$data_file" != "" ]; then
+  curl_command+=(-T "$data_file")
+fi
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

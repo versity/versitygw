@@ -29,6 +29,7 @@ source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
+source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_acl.sh
@@ -601,5 +602,30 @@ test_file="test_file"
   assert_success
 
   run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - copy object w/invalid copy source" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run copy_object_invalid_copy_source "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - copy object w/copy source and payload" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1242"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run copy_object_copy_source_and_payload "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
