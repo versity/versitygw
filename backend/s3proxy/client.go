@@ -36,6 +36,7 @@ func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 	if s.endpoint != "" {
 		return s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.BaseEndpoint = &s.endpoint
+			o.UsePathStyle = s.usePathStyle
 		}), nil
 	}
 

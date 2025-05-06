@@ -29,6 +29,7 @@ var (
 	s3proxyMetaBucket      string
 	s3proxyDisableChecksum bool
 	s3proxySslSkipVerify   bool
+	s3proxyUsePathStyle    bool
 	s3proxyDebug           bool
 )
 
@@ -93,6 +94,13 @@ to an s3 storage backend service.`,
 				Destination: &s3proxySslSkipVerify,
 			},
 			&cli.BoolFlag{
+				Name:        "use-path-style",
+				Usage:       "use path style addressing for s3 proxy",
+				EnvVars:     []string{"VGW_S3_USE_PATH_STYLE"},
+				Value:       false,
+				Destination: &s3proxyUsePathStyle,
+			},
+			&cli.BoolFlag{
 				Name:        "debug",
 				Usage:       "output extra debug tracing",
 				Value:       false,
@@ -105,7 +113,7 @@ to an s3 storage backend service.`,
 
 func runS3(ctx *cli.Context) error {
 	be, err := s3proxy.New(ctx.Context, s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
-		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyDebug)
+		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyUsePathStyle, s3proxyDebug)
 	if err != nil {
 		return fmt.Errorf("init s3 backend: %w", err)
 	}
