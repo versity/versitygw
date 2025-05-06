@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -675,6 +676,17 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		// -1 will stream response body until EOF if content length not set
 		contentLen := -1
 		if res.ContentLength != nil {
+			if *res.ContentLength > int64(math.MaxInt) {
+				debuglogger.Logf("content length %v int overflow",
+					*res.ContentLength)
+				return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRange),
+					&MetaOpts{
+						Logger:      c.logger,
+						MetricsMng:  c.mm,
+						Action:      metrics.ActionGetObject,
+						BucketOwner: parsedAcl.Owner,
+					})
+			}
 			contentLen = int(*res.ContentLength)
 		}
 		utils.StreamResponseBody(ctx, res.Body, contentLen)
