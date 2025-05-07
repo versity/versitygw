@@ -24,11 +24,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+type Color string
+
 const (
+	green  Color = "\033[32m"
+	yellow Color = "\033[33m"
+	blue   Color = "\033[34m"
+	Purple Color = "\033[0;35m"
+
 	reset      = "\033[0m"
-	green      = "\033[32m"
-	yellow     = "\033[33m"
-	blue       = "\033[34m"
 	borderChar = "─"
 	boxWidth   = 120
 )
@@ -75,9 +79,7 @@ func LogFiberResponseDetails(ctx *fiber.Ctx) {
 	if !ok {
 		body := ctx.Response().Body()
 		if len(body) != 0 {
-			printBoxTitleLine(blue, "RESPONSE BODY", boxWidth, false)
-			fmt.Printf("%s%s%s\n", blue, body, reset)
-			printHorizontalBorder(blue, boxWidth, false)
+			PrintInsideHorizontalBorders(blue, "RESPONSE BODY", string(body), boxWidth)
 		}
 	}
 }
@@ -96,12 +98,32 @@ func Logf(format string, v ...any) {
 		return
 	}
 	debugPrefix := "[DEBUG]: "
-	fmt.Printf(yellow+debugPrefix+format+reset+"\n", v...)
+	fmt.Printf(string(yellow)+debugPrefix+format+reset+"\n", v...)
+}
+
+// Infof prints out green info block with [INFO]: prefix
+func Infof(format string, v ...any) {
+	if !debugEnabled.Load() {
+		return
+	}
+	debugPrefix := "[INFO]: "
+	fmt.Printf(string(green)+debugPrefix+format+reset+"\n", v...)
+}
+
+// PrintInsideHorizontalBorders prints the text inside horizontal
+// border and title in the center of upper border
+func PrintInsideHorizontalBorders(color Color, title, text string, width int) {
+	if !debugEnabled.Load() {
+		return
+	}
+	printBoxTitleLine(color, title, width, false)
+	fmt.Printf("%s%s%s\n", color, text, reset)
+	printHorizontalBorder(color, width, false)
 }
 
 // Prints out box title either with closing characters or not:  "┌", "┐"
 // e.g ┌────────────────[ RESPONSE HEADERS ]────────────────┐
-func printBoxTitleLine(color, title string, length int, closing bool) {
+func printBoxTitleLine(color Color, title string, length int, closing bool) {
 	leftCorner, rightCorner := "┌", "┐"
 
 	if !closing {
@@ -121,22 +143,22 @@ func printBoxTitleLine(color, title string, length int, closing bool) {
 		strings.Repeat(borderChar, rightLen) +
 		rightCorner
 
-	fmt.Println(color + line + reset)
+	fmt.Println(string(color) + line + reset)
 }
 
 // Prints out a horizontal line either with closing characters or not: "└", "┘"
-func printHorizontalBorder(color string, length int, closing bool) {
+func printHorizontalBorder(color Color, length int, closing bool) {
 	leftCorner, rightCorner := "└", "┘"
 	if !closing {
 		leftCorner, rightCorner = borderChar, borderChar
 	}
 
 	line := leftCorner + strings.Repeat(borderChar, length-2) + rightCorner + reset
-	fmt.Println(color + line)
+	fmt.Println(string(color) + line)
 }
 
 // wrapInBox wraps the output of a function call (fn) inside a styled box with a title.
-func wrapInBox(color, title string, length int, fn func()) {
+func wrapInBox(color Color, title string, length int, fn func()) {
 	printBoxTitleLine(color, title, length, true)
 	fn()
 	printHorizontalBorder(color, length, true)
@@ -154,7 +176,7 @@ func getLen(str string) int {
 
 // prints a formatted key-value pair within a box layout,
 // wrapping the value text if it exceeds the allowed width.
-func printWrappedLine(keyColor, key, value string) {
+func printWrappedLine(keyColor Color, key, value string) {
 	prefix := fmt.Sprintf("%s│%s %s%-13s%s : ", green, reset, keyColor, key, reset)
 	prefixLen := len(prefix) - len(green) - len(reset) - len(keyColor) - len(reset)
 	// the actual prefix size without colors

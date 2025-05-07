@@ -29,6 +29,8 @@ import (
 	"math/bits"
 	"strconv"
 	"strings"
+
+	"github.com/versity/versitygw/s3api/debuglogger"
 )
 
 var (
@@ -42,30 +44,28 @@ type UnsignedChunkReader struct {
 	expectedChecksum string
 	hasher           hash.Hash
 	stash            []byte
-	chunkCounter     int
 	offset           int
-	//TODO: Add debug logging for the reader
-	debug bool
 }
 
-func NewUnsignedChunkReader(r io.Reader, ct checksumType, debug bool) (*UnsignedChunkReader, error) {
+func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader, error) {
 	hasher, err := getHasher(ct)
 	if err != nil {
+		debuglogger.Logf("failed to initialize hash calculator: %v", err)
 		return nil, err
 	}
+	debuglogger.Infof("initializing unsigned chunk reader")
 	return &UnsignedChunkReader{
 		reader:       bufio.NewReader(r),
 		checksumType: ct,
 		stash:        make([]byte, 0),
 		hasher:       hasher,
-		chunkCounter: 1,
-		debug:        debug,
 	}, nil
 }
 
 func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 	// First read any stashed data
 	if len(ucr.stash) != 0 {
+		debuglogger.Infof("recovering the stash: (stash length): %v", len(ucr.stash))
 		n := copy(p, ucr.stash)
 		ucr.offset += n
 
@@ -92,22 +92,24 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 		// Read and cache the payload
 		_, err = io.ReadFull(rdr, payload)
 		if err != nil {
+			debuglogger.Logf("failed to read chunk data: %v", err)
 			return 0, err
 		}
 
 		// Skip the trailing "\r\n"
 		if err := ucr.readAndSkip('\r', '\n'); err != nil {
+			debuglogger.Logf("failed to read trailing \\r\\n after chunk data: %v", err)
 			return 0, err
 		}
 
 		// Copy the payload into the io.Reader buffer
 		n := copy(p[ucr.offset:], payload)
 		ucr.offset += n
-		ucr.chunkCounter++
 
 		if int64(n) < chunkSize {
 			// stash the remaining data
 			ucr.stash = payload[n:]
+			debuglogger.Infof("stashing the remaining data: (stash length): %v", len(ucr.stash))
 			dataRead := ucr.offset
 			ucr.offset = 0
 			return dataRead, nil
@@ -116,6 +118,7 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 
 	// Read and validate trailers
 	if err := ucr.readTrailer(); err != nil {
+		debuglogger.Logf("failed to read trailer: %v", err)
 		return 0, err
 	}
 
@@ -145,14 +148,18 @@ func (ucr *UnsignedChunkReader) readAndSkip(data ...byte) error {
 func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
 	line, err := ucr.reader.ReadString('\n')
 	if err != nil {
+		debuglogger.Logf("failed to parse chunk size: %v", err)
 		return 0, errMalformedEncoding
 	}
 	line = strings.TrimSpace(line)
 
 	chunkSize, err := strconv.ParseInt(line, 16, 64)
 	if err != nil {
+		debuglogger.Logf("failed to convert chunk size: %v", err)
 		return 0, errMalformedEncoding
 	}
+
+	debuglogger.Infof("chunk size extracted: %v", chunkSize)
 
 	return chunkSize, nil
 }
@@ -164,6 +171,7 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 	for {
 		v, err := ucr.reader.ReadByte()
 		if err != nil {
+			debuglogger.Logf("failed to read byte: %v", err)
 			if err == io.EOF {
 				return io.ErrUnexpectedEOF
 			}
@@ -176,12 +184,14 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 		var tmp [3]byte
 		_, err = io.ReadFull(ucr.reader, tmp[:])
 		if err != nil {
+			debuglogger.Logf("failed to read chunk ending: \\n\\r\\n: %v", err)
 			if err == io.EOF {
 				return io.ErrUnexpectedEOF
 			}
 			return err
 		}
 		if !bytes.Equal(tmp[:], trailerDelim) {
+			debuglogger.Logf("incorrect trailer delimiter: (expected): \\n\\r\\n, (got): %q", tmp[:])
 			return errMalformedEncoding
 		}
 		break
@@ -192,15 +202,18 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 	trailerHeader = strings.TrimSpace(trailerHeader)
 	trailerHeaderParts := strings.Split(trailerHeader, ":")
 	if len(trailerHeaderParts) != 2 {
+		debuglogger.Logf("invalid trailer header parts: %v", trailerHeaderParts)
 		return errMalformedEncoding
 	}
 
 	if trailerHeaderParts[0] != string(ucr.checksumType) {
+		debuglogger.Logf("invalid checksum type: %v", trailerHeaderParts[0])
 		//TODO: handle the error
 		return errMalformedEncoding
 	}
 
 	ucr.expectedChecksum = trailerHeaderParts[1]
+	debuglogger.Infof("parsed the trailing header:\n%v:%v", trailerHeaderParts[0], trailerHeaderParts[1])
 
 	// Validate checksum
 	return ucr.validateChecksum()
@@ -212,6 +225,7 @@ func (ucr *UnsignedChunkReader) validateChecksum() error {
 	checksum := base64.StdEncoding.EncodeToString(csum)
 
 	if checksum != ucr.expectedChecksum {
+		debuglogger.Logf("incorrect checksum: (expected): %v, (got): %v", ucr.expectedChecksum, checksum)
 		return fmt.Errorf("actual checksum: %v, expected checksum: %v", checksum, ucr.expectedChecksum)
 	}
 
