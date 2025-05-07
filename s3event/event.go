@@ -141,7 +141,12 @@ func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
 
 func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId) EventSchema {
 	path := strings.Split(ctx.Path(), "/")
-	bucket, object := path[1], strings.Join(path[2:], "/")
+
+	var bucket, object string
+	if len(path) > 1 {
+		bucket, object = path[1], strings.Join(path[2:], "/")
+	}
+
 	acc := ctx.Locals("account").(auth.Account)
 
 	return EventSchema{
