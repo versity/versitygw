@@ -68,7 +68,10 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	access := "-"
 	reqURI := ctx.OriginalURL()
 	path := strings.Split(ctx.Path(), "/")
-	bucket, object := path[1], strings.Join(path[2:], "/")
+	var bucket, object string
+	if len(path) > 1 {
+		bucket, object = path[1], strings.Join(path[2:], "/")
+	}
 	errorCode := ""
 	httpStatus := 200
 	startTime := ctx.Locals("startTime").(time.Time)
