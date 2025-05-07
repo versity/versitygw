@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -100,43 +101,49 @@ func IsStreamingPayload(str string) bool {
 		pt == payloadTypeStreamingSignedTrailer
 }
 
-func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time, debug bool) (io.Reader, error) {
+func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
 	decContLengthStr := ctx.Get("X-Amz-Decoded-Content-Length")
 	if decContLengthStr == "" {
+		debuglogger.Logf("missing required header 'X-Amz-Decoded-Content-Length'")
 		return nil, s3err.GetAPIError(s3err.ErrMissingContentLength)
 	}
 	decContLength, err := strconv.ParseInt(decContLengthStr, 10, 64)
 	//TODO: not sure if InvalidRequest should be returned in this case
 	if err != nil {
+		debuglogger.Logf("invalid value for 'X-Amz-Decoded-Content-Length': %v", decContLengthStr)
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
 	if decContLength > maxObjSizeLimit {
+		debuglogger.Logf("the object size exceeds the allowed limit: (size): %v, (limit): %v", decContLength, maxObjSizeLimit)
 		return nil, s3err.GetAPIError(s3err.ErrEntityTooLarge)
 	}
 
 	contentSha256 := payloadType(ctx.Get("X-Amz-Content-Sha256"))
 	if !contentSha256.isValid() {
 		//TODO: Add proper APIError
+		debuglogger.Logf("invalid value for 'X-Amz-Content-Sha256': %v", contentSha256)
 		return nil, fmt.Errorf("invalid x-amz-content-sha256: %v", string(contentSha256))
 	}
 
 	checksumType := checksumType(strings.ToLower(ctx.Get("X-Amz-Trailer")))
 	if contentSha256 != payloadTypeStreamingSigned && !checksumType.isValid() {
+		debuglogger.Logf("invalid value for 'X-Amz-Trailer': %v", checksumType)
 		return nil, s3err.GetAPIError(s3err.ErrTrailerHeaderNotSupported)
 	}
 
 	switch contentSha256 {
 	case payloadTypeStreamingUnsignedTrailer:
-		return NewUnsignedChunkReader(r, checksumType, debug)
+		return NewUnsignedChunkReader(r, checksumType)
 	case payloadTypeStreamingSignedTrailer:
-		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType, debug)
+		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType)
 	case payloadTypeStreamingSigned:
-		return NewSignedChunkReader(r, authdata, region, secret, date, "", debug)
+		return NewSignedChunkReader(r, authdata, region, secret, date, "")
 	// return not supported for:
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER
 	default:
+		debuglogger.Logf("unsupported chunk reader algorithm: %v", contentSha256)
 		return nil, getPayloadTypeNotSupportedErr(contentSha256)
 	}
 }
