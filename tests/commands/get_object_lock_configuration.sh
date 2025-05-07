@@ -16,15 +16,23 @@
 
 get_object_lock_configuration() {
   record_command "get-object-lock-configuration" "client:s3api"
-  if [[ $# -ne 1 ]]; then
-    log 2 "'get object lock configuration' command missing bucket name"
+  if [[ $# -ne 2 ]]; then
+    log 2 "'get object lock configuration' command missing client, bucket name"
     return 1
   fi
-  if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$1" 2>&1); then
-    log 2 "error obtaining lock config: $lock_config"
-    # shellcheck disable=SC2034
-    get_object_lock_config_err=$lock_config
-    return 1
+  if [ "$1" == "rest" ]; then
+    if ! get_object_lock_configuration_rest "$2"; then
+      log 2 "error getting REST object lock configuration"
+      get_object_lock_config_err=$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")
+      return 1
+    fi
+  else
+    if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$2" 2>&1); then
+      log 2 "error obtaining lock config: $lock_config"
+      # shellcheck disable=SC2034
+      get_object_lock_config_err=$lock_config
+      return 1
+    fi
   fi
   lock_config=$(echo "$lock_config" | grep -v "InsecureRequestWarning")
   return 0

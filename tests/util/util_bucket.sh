@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+source ./tests/drivers/head_bucket/head_bucket.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_policy.sh
@@ -55,21 +56,21 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
+  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "rest" "$1"; then
     log 3 "error logging bucket policy"
   fi
 
-  if ! check_object_lock_config "$1"; then
+  if ! check_object_lock_config "rest" "$1"; then
     log 2 "error checking object lock config"
     return 1
   fi
 
-  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "rest" "$1"; then
     log 2 "error adding governance bypass policy"
     return 1
   fi
 
-  if ! list_and_delete_objects "$1"; then
+  if ! list_and_delete_objects "rest" "$1"; then
     log 2 "error listing and deleting objects"
     return 1
   fi
@@ -139,27 +140,6 @@ delete_bucket_contents() {
     return 1
   fi
   return 0
-}
-
-# check if bucket exists
-# param:  bucket name
-# return 0 for true, 1 for false, 2 for error
-bucket_exists() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket_exists command requires client, bucket name"
-    return 2
-  fi
-  local exists=0
-  head_bucket "$1" "$2" || exists=$?
-  # shellcheck disable=SC2181
-  if [ $exists -eq 2 ]; then
-    log 2 "unexpected error checking if bucket exists"
-    return 2
-  fi
-  if [ $exists -eq 0 ]; then
-    return 0
-  fi
-  return 1
 }
 
 direct_wait_for_bucket() {

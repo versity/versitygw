@@ -40,6 +40,7 @@ head_bucket() {
     return $exit_code
   else
     log 2 "invalid command type $1"
+    return 1
   fi
   if [ $exit_code -ne 0 ]; then
     if [[ "$bucket_info" == *"404"* ]] || [[ "$bucket_info" == *"does not exist"* ]]; then
@@ -56,11 +57,11 @@ head_bucket() {
 head_bucket_rest() {
   if [ $# -ne 1 ]; then
     log 2 "'head_bucket_rest' requires bucket name"
-    return 2
+    return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_bucket.sh 2>&1); then
-    log 2 "error getting head bucket"
-    return 2
+    log 2 "error getting head bucket: $result"
+    return 1
   fi
   if [ "$result" == "200" ]; then
     bucket_info="$(cat "$TEST_FILE_FOLDER/result.txt")"

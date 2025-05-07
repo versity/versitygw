@@ -18,9 +18,15 @@ source ./tests/util/util_xml.sh
 # under the License.
 
 parse_objects_list_rest() {
-  # shellcheck disable=SC2154
-  object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Key"]/text()' -)
   object_array=()
+  # shellcheck disable=SC2154
+  if ! object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
+    if [[ "$object_list" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting object list: $object_list"
+    return 1
+  fi
   while read -r object; do
     object_array+=("$object")
   done <<< "$object_list"

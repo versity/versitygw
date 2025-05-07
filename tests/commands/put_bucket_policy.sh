@@ -58,3 +58,19 @@ put_bucket_policy_with_user() {
   fi
   return 0
 }
+
+put_bucket_policy_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_bucket_policy_rest' requires bucket name, policy file"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" POLICY_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_policy.sh); then
+    log 2 "error putting bucket policy: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}

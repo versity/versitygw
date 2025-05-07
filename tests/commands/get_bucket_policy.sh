@@ -27,6 +27,8 @@ get_bucket_policy() {
     get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
     get_bucket_policy_mc "$2" || get_bucket_policy_result=$?
+  elif [ "$1" == 'rest' ]; then
+    get_bucket_policy_rest "$2" || get_bucket_policy_result=$?
   else
     log 2 "command 'get bucket policy' not implemented for '$1'"
     return 1

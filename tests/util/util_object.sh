@@ -50,11 +50,11 @@ source ./tests/util/util_users.sh
 # param: bucket name
 # return 0 for success, 1 for failure
 list_and_delete_objects() {
-  if [ $# -ne 1 ]; then
-    log 2 "'list_and_delete_objects' missing bucket name"
+  if [ $# -ne 2 ]; then
+    log 2 "'list_and_delete_objects' missing client, bucket name"
     return 1
   fi
-  if ! list_objects 's3api' "$1"; then
+  if ! list_objects "$1" "$2"; then
     log 2 "error getting object list"
     return 1
   fi
@@ -67,7 +67,7 @@ list_and_delete_objects() {
     fi
   done
 
-  if ! delete_old_versions "$1"; then
+  if ! delete_old_versions "$2"; then
     log 2 "error deleting old version"
     return 1
   fi
@@ -75,12 +75,12 @@ list_and_delete_objects() {
 }
 
 check_object_lock_config() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_object_lock_config' requires bucket name"
+  if [ $# -ne 2 ]; then
+    log 2 "'check_object_lock_config' requires client, bucket name"
     return 1
   fi
   lock_config_exists=true
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "$1" "$2"; then
     # shellcheck disable=SC2154
     if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
       # shellcheck disable=SC2034
@@ -97,11 +97,11 @@ check_object_lock_config() {
 # return 0 for success, 1 for error
 clear_object_in_bucket() {
   log 6 "clear_object_in_bucket"
-  if [ $# -ne 2 ]; then
-    log 2 "'clear_object_in_bucket' requires bucket, object name"
+  if [ $# -ne 3 ]; then
+    log 2 "'clear_object_in_bucket' requires client, bucket, object name"
     return 1
   fi
-  if ! delete_object 's3api' "$1" "$2"; then
+  if ! delete_object "$1" "$2" "$3"; then
     # shellcheck disable=SC2154
     log 2 "error deleting object $2: $delete_object_error"
     if ! check_for_and_remove_worm_protection "$1" "$2" "$delete_object_error"; then

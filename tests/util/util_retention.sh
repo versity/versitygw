@@ -17,8 +17,8 @@
 # params:  bucket name
 # return 0 for success, 1 for error
 add_governance_bypass_policy() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "'add governance bypass policy' command requires bucket name"
+  if [[ $# -ne 2 ]]; then
+    log 2 "'add governance bypass policy' command requires client, bucket name"
     return 1
   fi
   cat <<EOF > "$TEST_FILE_FOLDER/policy-bypass-governance.txt"
@@ -29,12 +29,12 @@ add_governance_bypass_policy() {
        "Effect": "Allow",
        "Principal": "*",
        "Action": "s3:BypassGovernanceRetention",
-       "Resource": "arn:aws:s3:::$1/*"
+       "Resource": "arn:aws:s3:::$2/*"
     }
   ]
 }
 EOF
-  if ! put_bucket_policy "s3api" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
+  if ! put_bucket_policy "$1" "$2" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
     log 2 "error putting governance bypass policy"
     return 1
   fi
