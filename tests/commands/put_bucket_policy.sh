@@ -27,6 +27,9 @@ put_bucket_policy() {
     policy=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setpolicy "$3" "s3://$2" 2>&1) || put_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
     policy=$(send_command mc --insecure anonymous set-json "$3" "$MC_ALIAS/$2" 2>&1) || put_policy_result=$?
+  elif [ "$1" == 'rest' ]; then
+    put_bucket_policy_rest "$2" "$3" || put_policy_result=$?
+    return $put_policy_result
   else
     log 2 "command 'put bucket policy' not implemented for '$1'"
     return 1

@@ -34,6 +34,7 @@ add_governance_bypass_policy() {
   ]
 }
 EOF
+  log 5 "params: $1 $2"
   if ! put_bucket_policy "$1" "$2" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
     log 2 "error putting governance bypass policy"
     return 1
@@ -51,7 +52,7 @@ check_for_and_remove_worm_protection() {
 
   if [[ $3 == *"WORM"* ]]; then
     log 5 "WORM protection found"
-    if ! put_object_legal_hold "$1" "$2" "OFF"; then
+    if ! put_object_legal_hold "rest" "$1" "$2" "OFF"; then
       log 2 "error removing object legal hold"
       return 2
     fi
@@ -59,7 +60,7 @@ check_for_and_remove_worm_protection() {
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
       log_worm_protection "$1" "$2"
     fi
-    if ! add_governance_bypass_policy "$1"; then
+    if ! add_governance_bypass_policy "rest" "$1"; then
       log 2 "error adding new governance bypass policy"
       return 2
     fi

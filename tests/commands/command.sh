@@ -27,8 +27,11 @@ send_command() {
     fi
     # shellcheck disable=SC2154
     echo "${masked_args[*]}" >> "$COMMAND_LOG"
-    "$@"
-    return $?
   fi
-  "$@"
+  local command_result=0
+  "$@" || command_result=$?
+  if [ "$command_result" != 0 ]; then
+    log 5 "command returned non-zero result: $command_result"
+  fi
+  return $command_result
 }

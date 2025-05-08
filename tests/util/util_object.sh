@@ -61,13 +61,13 @@ list_and_delete_objects() {
   # shellcheck disable=SC2154
   log 5 "objects: ${object_array[*]}"
   for object in "${object_array[@]}"; do
-    if ! clear_object_in_bucket "$1" "$object"; then
+    if ! clear_object_in_bucket "$1" "$2" "$object"; then
       log 2 "error deleting object $object"
       return 1
     fi
   done
 
-  if ! delete_old_versions "$2"; then
+  if ! delete_old_versions "rest" "$2"; then
     log 2 "error deleting old version"
     return 1
   fi

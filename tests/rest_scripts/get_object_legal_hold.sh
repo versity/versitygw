@@ -22,6 +22,8 @@ source ./tests/rest_scripts/rest.sh
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2154
 key="$OBJECT_KEY"
+# shellcheck disable=SC2154
+version_id="$VERSION_ID"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
@@ -35,10 +37,23 @@ x-amz-date:$current_date_time
 host;x-amz-content-sha256;x-amz-date
 UNSIGNED-PAYLOAD"
 
+canonical_request_data=("GET" "/$bucket_name/$key")
+queries=""
+if [ "$VERSION_ID" != "" ]; then
+  queries=$(add_parameter "$queries" "versionId=$version_id")
+fi
+queries=$(add_parameter "$queries" "legal-hold=")
+canonical_request_data+=("host:$host")
+canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+if ! build_canonical_request "${canonical_request_data[@]}"; then
+  log_rest 2 "error building request"
+  exit 1
+fi
+
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name/$key?legal-hold="
+curl_command+=(curl -ks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name/$key?$queries"
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
 -H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
 -H "\"x-amz-date: $current_date_time\""
