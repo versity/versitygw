@@ -59,11 +59,11 @@ check_legal_hold_without_lock_enabled() {
 }
 
 check_remove_legal_hold_versions() {
-  if [ $# -ne 3 ]; then
-    log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
+  if [ $# -ne 4 ]; then
+    log 2 "'check_remove_legal_hold_versions' requires client, bucket, key, version ID"
     return 1
   fi
-  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3"); then
+  if ! legal_hold=$(get_object_legal_hold_rest_version_id "$2" "$3" "$4"); then
     if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
       log 2 "error getting object legal hold status with version id"
       return 1

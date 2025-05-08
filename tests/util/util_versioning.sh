@@ -61,7 +61,7 @@ delete_object_version_with_or_without_retention() {
   log 5 "version ID: ${version_ids[$idx]}"
   # shellcheck disable=SC2154
   if [ "$lock_config_exists" == "true" ]; then
-    if ! check_remove_legal_hold_versions "$2" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    if ! check_remove_legal_hold_versions "rest" "$2" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error checking, removing legal hold versions"
     fi
     if ! put_object_legal_hold_version_id "$2" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
@@ -161,32 +161,53 @@ check_versioning_status_rest() {
   return 0
 }
 
+echo_versions() {
+  if [ $# -ne 2 ]; then
+    log 2 "'echo_versions' requires 'Version' or 'DeleteMarker', 'Key' or 'VersionId'"
+    return 1
+  fi
+  if ! keys=$(echo -n "$versions" | xmllint --xpath "//*[local-name()=\"$1\"]/*[local-name()=\"$2\"]/text()" - 2>&1); then
+    if [[ "$keys" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting Version 'Key' values: $keys"
+    return 1
+  fi
+  log 5 "keys to append: ${keys[*]}"
+  echo "${keys[*]}"
+}
+
 parse_versions_rest() {
   if [ $# -ne 1 ]; then
     log 2 "'parse_versions_request' requires versions variable"
     return 1
   fi
-  if ! rest_version_keys=$(echo -n "$versions" | xmllint --xpath '//*[local-name()="Version"]/*[local-name()="Key"]/text()' - 2>&1); then
-    log 2 "error getting Version 'Key' values: $rest_version_keys"
+  if ! keys=$(echo_versions "Version" "Key"); then
+    log 2 "error getting Version Key values: $keys"
     return 1
   fi
-  version_keys+=($rest_version_keys)
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "Version" "VersionId"); then
+    log 2 "error getting Version VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
+  if ! keys=$(echo_versions "DeleteMarker" "Key"); then
+    log 2 "error getting DeleteMarker Key values: $keys"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "DeleteMarker" "VersionId"); then
+    log 2 "error getting DeleteMarker VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
   log 5 "version keys: ${version_keys[*]}"
-  if ! rest_version_ids=$(echo -n "$versions" | xmllint --xpath '//*[local-name()="Version"]/*[local-name()="VersionId"]/text()' - 2>&1); then
-    log 2 "error getting Version 'VersionID' value: $rest_version_ids"
-    return 1
-  fi
-  version_ids+=($rest_version_ids)
-  if ! marker_keys=$(echo -n "$versions" | xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="Key"]/text()' - 2>&1); then
-    log 2 "error getting Version 'Key' value: $marker_keys"
-    return 1
-  fi
-  version_keys+=($marker_keys)
-  if ! marker_ids=$(echo -n "$versions" | xmllint --xpath '//*[local-name()="DeleteMarker"]/*[local-name()="VersionId"]/text()' - 2>&1); then
-    log 2 "error getting Version 'VersionID' value: $marker_ids"
-    return 1
-  fi
-  version_ids+=($marker_ids)
+  log 5 "version IDs: ${version_ids[*]}"
   return 0
 }
 

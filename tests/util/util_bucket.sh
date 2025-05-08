@@ -75,7 +75,7 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! check_ownership_rule_and_reset_acl "$1"; then
+  if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
     log 2 "error checking ownership rule and resetting acl"
     return 1
   fi
