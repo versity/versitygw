@@ -16414,7 +16414,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 			Key:       &obj,
 			VersionId: r.res.VersionId,
 		})
-		cancel()
+		defer cancel()
 		if err != nil {
 			return err
 		}
@@ -16438,7 +16438,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer out.Body.Close()
+		out.Body.Close()
 
 		outCsum := sha256.Sum256(bdy)
 		if outCsum != r.csum {
@@ -16451,7 +16451,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 			Bucket: &bucket,
 			Key:    &obj,
 		})
-		cancel()
+		defer cancel()
 		if err != nil {
 			return err
 		}
@@ -16475,7 +16475,7 @@ func Versioning_GetObject_success(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer out.Body.Close()
+		out.Body.Close()
 
 		outCsum = sha256.Sum256(bdy)
 		if outCsum != r.csum {
