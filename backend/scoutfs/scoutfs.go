@@ -287,7 +287,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 		if err != nil {
 			etag = ""
 		}
-		if parts[i].ETag == nil || !areEtagsSame(etag, *parts[i].ETag) {
+		if parts[i].ETag == nil || !backend.AreEtagsSame(etag, *parts[i].ETag) {
 			return res, "", s3err.GetAPIError(s3err.ErrInvalidPart)
 		}
 
@@ -1032,8 +1032,4 @@ func isNoAttr(err error) bool {
 		return true
 	}
 	return false
-}
-
-func areEtagsSame(e1, e2 string) bool {
-	return strings.Trim(e1, `"`) == strings.Trim(e2, `"`)
 }
