@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"net/url"
@@ -390,4 +391,15 @@ func MoveFile(source, destination string, perm os.FileMode) error {
 	}
 
 	return nil
+}
+
+// GenerateEtag generates a new quoted etag from the provided hash.Hash
+func GenerateEtag(h hash.Hash) string {
+	dataSum := h.Sum(nil)
+	return fmt.Sprintf("\"%s\"", hex.EncodeToString(dataSum[:]))
+}
+
+// AreEtagsSame compares 2 etags by ignoring quotes
+func AreEtagsSame(e1, e2 string) bool {
+	return strings.Trim(e1, `"`) == strings.Trim(e2, `"`)
 }
