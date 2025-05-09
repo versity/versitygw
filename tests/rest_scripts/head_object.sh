@@ -21,7 +21,7 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2154
-key="$OBJECT_KEY"
+key="$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')"
 # shellcheck disable=SC2153
 version_id="$VERSION_ID"
 

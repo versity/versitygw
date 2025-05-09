@@ -47,9 +47,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, final signature error" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1147"
-  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -147,9 +144,6 @@ source ./tests/util/util_setup.sh
 }
 
 @test "test - REST chunked upload - invalid trailer" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1161"
-  fi
   test_file="test-file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success

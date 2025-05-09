@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/drivers/drivers.sh
+
 setup_bucket_and_file() {
   if ! check_param_count "setup_bucket_and_file" "bucket, file name" 2 $#; then
     return 1

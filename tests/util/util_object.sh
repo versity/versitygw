@@ -48,52 +48,6 @@ source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
 source ./tests/util/util_users.sh
 
-# param: bucket name
-# return 0 for success, 1 for failure
-list_and_delete_objects() {
-  log 6 "list_and_delete_objects"
-  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
-    return 1
-  fi
-  if ! list_objects 'rest' "$1"; then
-    log 2 "error getting object list"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "objects: ${object_array[*]}"
-  for object in "${object_array[@]}"; do
-    if ! clear_object_in_bucket "$1" "$object"; then
-      log 2 "error deleting object $object"
-      return 1
-    fi
-  done
-
-  if ! delete_old_versions "$1"; then
-    log 2 "error deleting old version"
-    return 1
-  fi
-  return 0
-}
-
-check_object_lock_config() {
-  log 6 "check_object_lock_config"
-  if ! check_param_count "check_object_lock_config" "bucket" 1 $#; then
-    return 1
-  fi
-  lock_config_exists=true
-  if ! get_object_lock_configuration "rest" "$1"; then
-    # shellcheck disable=SC2154
-    if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
-      # shellcheck disable=SC2034
-      lock_config_exists=false
-    else
-      log 2 "error getting object lock config"
-      return 1
-    fi
-  fi
-  return 0
-}
-
 # params: bucket, object name
 # return 0 for success, 1 for error
 clear_object_in_bucket() {

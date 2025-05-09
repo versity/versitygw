@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/put_object.sh
+
 multipart_upload_s3api_complete_from_bucket() {
   if ! check_param_count "multipart_upload_s3api_complete_from_bucket" "bucket, copy source, part count" 3 $#; then
     return 1
