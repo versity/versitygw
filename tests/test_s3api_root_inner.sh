@@ -215,7 +215,7 @@ test_retention_bypass_s3api_root() {
 legal_hold_retention_setup() {
   assert [ $# -eq 3 ]
 
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user "$1" "$2" "user"

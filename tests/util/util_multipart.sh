@@ -330,12 +330,12 @@ setup_multipart_upload_with_params() {
     return 1
   fi
 
-  if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"; then
     log 2 "error cleaning up bucket"
     return 1
   fi
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
     if ! create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"; then
       log 2 "error creating bucket with object lock enabled"
       return 1
