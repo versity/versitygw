@@ -20,7 +20,19 @@ check_param_count() {
     return 1
   fi
   if [ "$3" -ne "$4" ]; then
-    log 2 "function $1 requires $2"
+    log_with_stack_ref 2 "function $1 requires $2" 2
+    return 1
+  fi
+  return 0
+}
+
+assert_param_count() {
+  if [ $# -ne 4 ]; then
+    log 2 "'assert_param_count' requires function name, params list, expected, actual"
+    return 1
+  fi
+  if [ "$3" -ne "$4" ]; then
+    log_with_stack_ref 2 "function $1 requires $2" 4
     return 1
   fi
   return 0
@@ -32,7 +44,7 @@ check_param_count_gt() {
     return 1
   fi
   if [ "$3" -gt "$4" ]; then
-    log 2 "function $1 requires $2"
+    log_with_stack_ref 2 "function $1 requires $2" 2
     return 1
   fi
   return 0

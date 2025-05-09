@@ -186,7 +186,7 @@ bucket_cleanup_if_bucket_exists() {
     return 0
   fi
 
-  if bucket_exists "$1"; then
+  if [ "$2" == "true" ] || bucket_exists "$1"; then
     if ! bucket_cleanup "$1"; then
       log 2 "error deleting bucket and/or contents"
       return 1

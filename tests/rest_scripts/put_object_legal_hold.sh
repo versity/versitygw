@@ -26,37 +26,40 @@ key="$(echo -n "$OBJECT_KEY" | jq -sRr @uri)"
 status="$STATUS"
 # shellcheck disable=SC2153
 omit_payload="${OMIT_PAYLOAD:=false}"
+# shellcheck disable=SC2153
+version_id="$VERSION_ID"
 
 if [ "$omit_payload" == "false" ]; then
   payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <LegalHold xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
    <Status>$status</Status>
 </LegalHold>"
+else
+  payload=""
 fi
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
-content_md5=$(echo -n "$payload" | openssl dgst -binary -md5 | openssl base64)
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request="PUT
-/$bucket_name/$key
-legal-hold=
-content-md5:$content_md5
-host:$host
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-content-md5;host;x-amz-content-sha256;x-amz-date
-$payload_hash"
+canonical_request_data=("PUT" "/$bucket_name/$key")
+queries=""
+if [ "$version_id" != "" ]; then
+  queries=$(add_parameter "$queries" "versionId=$version_id")
+fi
+queries=$(add_parameter "$queries" "legal-hold=")
+canonical_request_data+=("$queries" "host:$host")
+canonical_request_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
+if ! build_canonical_request "${canonical_request_data[@]}"; then
+  log_rest 2 "error building request"
+  exit 1
+fi
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key?legal-hold="
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"Content-MD5: $content_md5\""
--H "\"x-amz-content-sha256: $payload_hash\""
--H "\"x-amz-date: $current_date_time\"")
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key?$queries"
+-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=("${header_fields[@]}")
 if [ "$omit_payload" == "false" ]; then
   curl_command+=(-d "\"${payload//\"/\\\"}\"")
 fi
