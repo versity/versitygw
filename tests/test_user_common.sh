@@ -42,7 +42,7 @@ test_admin_user() {
   assert_success
 
   if [ "$RECREATE_BUCKETS" == "true" ]; then
-    run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"
+    run bucket_cleanup_if_bucket_exists "$BUCKET_TWO_NAME"
     assert_success
     run create_bucket_with_user "s3api" "$BUCKET_TWO_NAME" "$admin_username" "$admin_password"
     assert_success
@@ -85,7 +85,7 @@ test_user_user() {
   assert_success
 
   if [ "$RECREATE_BUCKETS" == "true" ]; then
-    run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"
+    run bucket_cleanup_if_bucket_exists "$BUCKET_TWO_NAME"
     assert_success
     run create_bucket "s3api" "$BUCKET_TWO_NAME"
     assert_success
@@ -113,7 +113,7 @@ test_userplus_operation() {
   assert_success
 
   if [ "$RECREATE_BUCKETS" == "true" ]; then
-    run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"
+    run bucket_cleanup_if_bucket_exists "$BUCKET_TWO_NAME"
     assert_success
     run create_bucket_with_user "s3api" "$BUCKET_TWO_NAME" "$username" "$password"
     assert_success
