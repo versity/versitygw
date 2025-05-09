@@ -37,11 +37,13 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
+source ./tests/drivers/drivers.sh
 
 # param:  command type
 # fail on test failure
 test_common_multipart_upload() {
-  assert [ $# -eq 1 ]
+  run check_param_count "test_common_multipart_upload" "client type" 1 "$#"
+  assert_success
 
   bucket_file="largefile"
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
@@ -75,28 +77,31 @@ test_common_create_delete_bucket() {
     return
   fi
 
-  assert [ $# -eq 1 ]
+  run check_param_count "test_common_create_delete_bucket" "client type" 1 "$#"
+  assert_success
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
   run bucket_exists "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  run bucket_cleanup "$1" "$BUCKET_ONE_NAME"
+  run delete_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 }
 
 test_common_copy_object() {
-  if [[ $# -ne 1 ]]; then
-    fail "copy object test requires command type"
-  fi
+  run check_param_count "test_common_copy_object" "client type" 1 "$#"
+  assert_success
 
   local object_name="test-object"
   run create_test_file "$object_name"
   assert_success
 
-  run setup_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
 
   if [[ $1 == 's3' ]]; then
@@ -146,7 +151,7 @@ test_common_put_object_no_data() {
 test_common_put_object() {
   assert [ $# -eq 2 ]
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   # s3 erases file locally, so we need to copy it first
@@ -204,7 +209,7 @@ test_common_list_buckets() {
     fail "List buckets test requires one argument"
   fi
 
-  run setup_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
 
   run list_and_check_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
@@ -238,7 +243,7 @@ test_common_set_get_delete_bucket_tags() {
   local key="test_key"
   local value="test_value"
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run verify_no_bucket_tags "$1" "$BUCKET_ONE_NAME"
@@ -294,7 +299,7 @@ test_common_presigned_url_utf8_chars() {
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -313,7 +318,7 @@ test_common_list_objects_file_count() {
   run create_test_file_count 1001
   assert_success
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run put_object_multiple "$1" "$TEST_FILE_FOLDER/file_*" "$BUCKET_ONE_NAME"
@@ -352,7 +357,7 @@ test_common_delete_object_tagging() {
 test_common_get_bucket_location() {
   assert [ $# -eq 1 ]
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run get_check_bucket_location "$1" "$BUCKET_ONE_NAME"
@@ -376,7 +381,7 @@ test_common_get_put_delete_bucket_policy() {
   assert_success
   log 5 "POLICY: $(cat "$TEST_FILE_FOLDER/$policy_file")"
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run check_for_empty_policy "$1" "$BUCKET_ONE_NAME"
@@ -401,7 +406,7 @@ test_common_ls_directory_object() {
   run create_test_file "$test_file" 0
   assert_success
 
-  run setup_bucket "$1" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   if [ "$1" == 's3cmd' ]; then

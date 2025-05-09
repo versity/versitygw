@@ -48,7 +48,7 @@ export RUN_MC=true
   if [[ $RECREATE_BUCKETS == "false" ]]; then
     skip "will not test bucket deletion in static bucket test config"
   fi
-  run setup_bucket "mc" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run delete_bucket "mc" "$BUCKET_ONE_NAME"
@@ -125,7 +125,7 @@ export RUN_MC=true
 }
 
 @test "test_get_bucket_info_mc" {
-  run setup_bucket "mc" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run bucket_info_contains_bucket "mc" "$BUCKET_ONE_NAME"
@@ -133,7 +133,7 @@ export RUN_MC=true
 }
 
 @test "test_get_bucket_info_doesnt_exist_mc" {
-  run setup_bucket "mc" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run head_bucket "mc" "$BUCKET_ONE_NAME"a
