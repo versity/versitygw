@@ -108,6 +108,9 @@ export RUN_USERS=true
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip test for static buckets"
   fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
   run bucket_info_without_bucket
   assert_success
 }
