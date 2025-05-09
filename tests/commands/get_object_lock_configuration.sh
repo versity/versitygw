@@ -20,7 +20,7 @@ get_object_lock_configuration() {
     log 2 "'get object lock configuration' command missing client, bucket name"
     return 1
   fi
-  if [ "$1" == "rest" ]; then
+  if [ "$1" == 'rest' ]; then
     if ! get_object_lock_configuration_rest "$2"; then
       log 2 "error getting REST object lock configuration"
       get_object_lock_config_err=$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")
@@ -52,5 +52,6 @@ get_object_lock_configuration_rest() {
     log 2 "expected '200', returned '$result': $(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
     return 1
   fi
+  lock_config="$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
   return 0
 }
