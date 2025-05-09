@@ -201,12 +201,12 @@ bucket_cleanup_if_bucket_exists() {
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
-  if [ $# -lt 2 ]; then
-    log 2 "'setup_buckets' command requires client, bucket names"
+  if [ $# -lt 1 ]; then
+    log 2 "'setup_buckets' command requires bucket names"
     return 1
   fi
   for name in "${@:2}"; do
-    if ! setup_bucket "$1" "$name"; then
+    if ! setup_bucket "$name"; then
       log 2 "error setting up bucket $name"
       return 1
     fi
@@ -218,13 +218,13 @@ setup_buckets() {
 # return 0 on successful setup, 1 on error
 setup_bucket() {
   log 6 "setup_bucket"
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_bucket' requires client, bucket name"
+  if [ $# -ne 1 ]; then
+    log 2 "'setup_bucket' requires bucket name"
     return 1
   fi
 
   bucket_exists="true"
-  if ! bucket_exists "$1" "$2"; then
+  if ! bucket_exists "rest" "$2"; then
     if [[ $RECREATE_BUCKETS == "false" ]]; then
       log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
       return 1
@@ -232,14 +232,14 @@ setup_bucket() {
     bucket_exists="false"
   fi
 
-  if ! bucket_cleanup_if_bucket_exists "$1" "$2" "$bucket_exists"; then
+  if ! bucket_cleanup_if_bucket_exists "rest" "$2" "$bucket_exists"; then
     log 2 "error deleting bucket or contents if they exist"
     return 1
   fi
 
   log 5 "util.setup_bucket: command type: $1, bucket name: $2"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if ! create_bucket "$1" "$2"; then
+    if ! create_bucket "rest" "$2"; then
       log 2 "error creating bucket"
       return 1
     fi
@@ -252,12 +252,10 @@ setup_bucket() {
     return 1
   fi
 
-  if [[ $1 == "rest" ]]; then
-    log 5 "putting bucket ownership controls"
-    if bucket_exists "rest" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then
-      log 2 "error putting bucket ownership controls"
-      return 1
-    fi
+  log 5 "putting bucket ownership controls"
+  if bucket_exists "rest" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then
+    log 2 "error putting bucket ownership controls"
+    return 1
   fi
   return 0
 }
