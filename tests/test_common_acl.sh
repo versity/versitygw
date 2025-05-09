@@ -19,7 +19,7 @@ test_put_bucket_acl_s3cmd() {
     skip "https://github.com/versity/versitygw/issues/963"
   fi
 
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   username=$USERNAME_ONE

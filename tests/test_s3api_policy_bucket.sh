@@ -23,7 +23,7 @@ test_s3api_policy_delete_bucket_policy() {
   run create_test_file "$policy_file" 0
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
@@ -58,7 +58,7 @@ test_s3api_policy_get_bucket_acl() {
   run create_test_file "$policy_file" 0
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
@@ -91,7 +91,7 @@ test_s3api_policy_get_bucket_policy() {
   run create_test_file "$policy_file"
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
@@ -127,7 +127,7 @@ test_s3api_policy_get_bucket_tagging() {
   run create_test_files "$policy_file"
   assert_success "error creating test files"
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
@@ -197,7 +197,7 @@ test_s3api_policy_put_bucket_policy() {
   run create_test_file "$policy_file" 0
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
@@ -237,7 +237,7 @@ test_s3api_policy_put_bucket_tagging() {
 
   run create_test_files "$policy_file"
   assert_success "error creating test files"
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success "error setting up bucket"
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"

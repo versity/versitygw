@@ -146,7 +146,7 @@ test_file="test_file"
 }
 
 @test "REST - multipart upload create then abort" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run create_abort_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
@@ -212,7 +212,7 @@ test_file="test_file"
     skip "https://github.com/versity/versitygw/issues/959"
   fi
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
@@ -220,7 +220,7 @@ test_file="test_file"
 }
 
 @test "REST - put policy" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
@@ -269,7 +269,7 @@ test_file="test_file"
     skip "https://github.com/versity/versitygw/issues/999"
   fi
   test_file_two="test_file_2"
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -342,7 +342,7 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1040"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run delete_objects_no_content_md5_header "$BUCKET_ONE_NAME"

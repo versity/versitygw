@@ -247,7 +247,7 @@ export RUN_USERS=true
   run create_test_file "$test_file" 0
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -258,7 +258,7 @@ export RUN_USERS=true
 }
 
 @test "directory object - create multipart upload" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run create_multipart_upload "$BUCKET_ONE_NAME" "test_file/"
