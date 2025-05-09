@@ -16,11 +16,16 @@
 
 list_object_versions() {
   record_command "list-object-versions" "client:s3api"
-  if [[ $# -ne 1 ]]; then
-    log 2 "'list object versions' command requires bucket name"
+  if [[ $# -ne 2 ]]; then
+    log 2 "'list object versions' command requires client, bucket name"
     return 1
   fi
-  versions=$(send_command aws --no-verify-ssl s3api list-object-versions --bucket "$1" 2>&1) || local list_result=$?
+  local list_result=0
+  if [ "$1" == "rest" ]; then
+    list_object_versions_rest "$2" || list_result=$?
+  else
+    versions=$(send_command aws --no-verify-ssl s3api list-object-versions --bucket "$2" 2>&1) || list_result=$?
+  fi
   if [[ $list_result -ne 0 ]]; then
     log 2 "error listing object versions: $versions"
     return 1
@@ -30,14 +35,19 @@ list_object_versions() {
 }
 
 list_object_versions_rest() {
+  log 5 "list_object_versions_rest"
   if [ $# -ne 1 ]; then
     log 2 "'list_object_versions_rest' requires bucket name"
     return 1
   fi
-  log 5 "list object versions REST"
-  if ! result=$(BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object_versions.txt" ./tests/rest_scripts/list_object_versions.sh); then
+  if ! result=$(BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object_versions.txt" ./tests/rest_scripts/list_object_versions.sh 2>&1); then
     log 2 "error listing object versions: $result"
     return 1
   fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/object_versions.txt"))"
+    return 1
+  fi
+  versions=$(cat "$TEST_FILE_FOLDER/object_versions.txt")
   return 0
 }

@@ -14,24 +14,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/logger.sh
-
-send_command() {
-  if [ $# -eq 0 ]; then
-    return 1
+# check if bucket exists
+# param:  bucket name
+# return 0 for true, 1 for false, 2 for error
+bucket_exists() {
+  if [ $# -ne 2 ]; then
+    log 2 "bucket_exists command requires client, bucket name"
+    return 2
   fi
-  if [ -n "$COMMAND_LOG" ]; then
-    args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
-    if ! mask_arg_array "${args[@]}"; then
-      return 1
-    fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+  local exists=0
+  head_bucket "$1" "$2" || exists=$?
+  # shellcheck disable=SC2181
+  if [ $exists -eq 2 ]; then
+    log 2 "unexpected error checking if bucket exists"
+    return 2
   fi
-  local command_result=0
-  "$@" || command_result=$?
-  if [ "$command_result" != 0 ]; then
-    log 5 "command returned non-zero result: $command_result"
+  if [ $exists -eq 0 ]; then
+    return 0
   fi
-  return $command_result
+  return 1
 }

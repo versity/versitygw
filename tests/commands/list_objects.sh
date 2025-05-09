@@ -28,19 +28,19 @@ list_objects() {
   fi
 
   local output
-  local result=0
+  local list_objects_result=0
   if [[ $1 == 's3' ]]; then
-    output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 's3api' ]]; then
-    list_objects_s3api "$2" || result=$?
-    return $result
+    list_objects_s3api "$2" || list_objects_result=$?
+    return $list_objects_result
   elif [[ $1 == 's3cmd' ]]; then
-    output=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 'mc' ]]; then
-    output=$(send_command mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || result=$?
+    output=$(send_command mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 'rest' ]]; then
-    list_objects_rest "$2" || result=$?
-    return $result
+    list_objects_rest "$2" || list_objects_result=$?
+    return $list_objects_result
   else
     fail "invalid command type $1"
     return 1
@@ -134,6 +134,7 @@ list_objects_with_prefix() {
 }
 
 list_objects_rest() {
+  log 6 "list_objects_rest"
   if [ $# -ne 1 ]; then
     log 2 "'list_objects_rest' requires bucket name"
     return 1
@@ -149,8 +150,10 @@ list_objects_rest() {
   fi
   # shellcheck disable=SC2034
   reply=$(cat "$TEST_FILE_FOLDER/objects.txt")
+  log 5 "list objects reply: $reply"
   if ! parse_objects_list_rest; then
     log 2 "error parsing list objects"
     return 1
   fi
+  return 0
 }

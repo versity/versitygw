@@ -74,7 +74,8 @@ get_check_object_lock_config_enabled() {
   fi
   # shellcheck disable=SC2154
   log 5 "Lock config:  $lock_config"
-  if ! enabled=$(echo "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled" 2>&1); then
+  #if ! enabled=$(echo -n "$lock_config" | jq -r ".ObjectLockConfiguration.ObjectLockEnabled" 2>&1); then
+  if ! enabled=$(echo -n "$lock_config" | xmllint --xpath '//*[local-name()="ObjectLockEnabled"]/text()'"" - 2>&1); then
     log 2 "error parsing enabled value: $enabled"
     return 1
   fi

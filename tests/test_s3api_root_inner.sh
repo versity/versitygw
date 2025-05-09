@@ -117,7 +117,7 @@ test_get_put_object_legal_hold_s3api_root() {
   run get_check_object_lock_config_enabled "$BUCKET_ONE_NAME"
   assert_success
 
-  run put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "ON"
+  run put_object_legal_hold "rest" "$BUCKET_ONE_NAME" "$bucket_file" "ON"
   assert_success
 
   run get_and_check_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "ON"
@@ -133,7 +133,7 @@ test_get_put_object_legal_hold_s3api_root() {
   # shellcheck disable=SC2154
   assert_output --partial "Object is WORM protected and cannot be overwritten"
 
-  run put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  run put_object_legal_hold "rest" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
   assert_success
 
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"

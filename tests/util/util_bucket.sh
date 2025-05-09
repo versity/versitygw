@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+source ./tests/drivers/head_bucket/head_bucket.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_policy.sh
@@ -10,29 +11,16 @@ source ./tests/util/util_retention.sh
 # fail if error
 delete_bucket_recursive() {
   log 6 "delete_bucket_recursive"
-  if [ $# -ne 2 ]; then
-    log 2 "'delete_bucket_recursive' requires client, bucket name"
+  if [ $# -ne 1 ]; then
+    log 2 "'delete_bucket_recursive' requires bucket name"
     return 1
   fi
 
-  local exit_code=0
-  local error
-  if [[ $1 == 's3' ]]; then
-    error=$(aws --no-verify-ssl s3 rb s3://"$2" --force 2>&1) || exit_code="$?"
-  elif [[ $1 == 's3api' ]]; then
-    if ! delete_bucket_recursive_s3api "$2"; then
-      log 2 "error deleting bucket recursively (s3api)"
-      return 1
-    fi
-    return 0
-  elif [[ $1 == "s3cmd" ]]; then
-    error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate rb s3://"$2" --recursive 2>&1) || exit_code="$?"
-  elif [[ $1 == "mc" ]]; then
-    error=$(delete_bucket_recursive_mc "$2" 2>&1) || exit_code="$?"
-  else
-    log 2 "invalid client '$1'"
+  if ! delete_bucket_recursive_rest "$1"; then
+    log 2 "error deleting bucket recursively (REST)"
     return 1
   fi
+  return 0
 
   if [ $exit_code -ne 0 ]; then
     if [[ "$error" == *"The specified bucket does not exist"* ]]; then
@@ -48,33 +36,33 @@ delete_bucket_recursive() {
 # restore bucket to pre-test state (or prep for deletion)
 # param: bucket name
 # return 0 on success, 1 on error
-clear_bucket_s3api() {
-  log 6 "clear_bucket_s3api"
+clear_bucket_rest() {
+  log 6 "clear_bucket_rest"
   if [ $# -ne 1 ]; then
-    log 2 "'clear_bucket_s3api' requires bucket name"
+    log 2 "'clear_bucket_rest' requires bucket name"
     return 1
   fi
 
-  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
+  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "rest" "$1"; then
     log 3 "error logging bucket policy"
   fi
 
-  if ! check_object_lock_config "$1"; then
+  if ! check_object_lock_config "rest" "$1"; then
     log 2 "error checking object lock config"
     return 1
   fi
 
-  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "rest" "$1"; then
     log 2 "error adding governance bypass policy"
     return 1
   fi
 
-  if ! list_and_delete_objects "$1"; then
+  if ! list_and_delete_objects "rest" "$1"; then
     log 2 "error listing and deleting objects"
     return 1
   fi
 
-  if ! check_ownership_rule_and_reset_acl "$1"; then
+  if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
     log 2 "error checking ownership rule and resetting acl"
     return 1
   fi
@@ -93,14 +81,14 @@ clear_bucket_s3api() {
 
 # params:  bucket name
 # return 0 if able to delete recursively, 1 if not
-delete_bucket_recursive_s3api() {
+delete_bucket_recursive_rest() {
   log 6 "delete_bucket_recursive_s3api"
   if [ $# -ne 1 ]; then
     log 2 "'delete_bucket_recursive_s3api' requires bucket name"
     return 1
   fi
 
-  if ! clear_bucket_s3api "$1"; then
+  if ! clear_bucket_rest "$1"; then
     log 2 "error clearing bucket (s3api)"
     return 1
   fi
@@ -121,45 +109,11 @@ delete_bucket_contents() {
     return 1
   fi
 
-  local exit_code=0
-  local error
-  if [[ $1 == 's3api' ]]; then
-    if ! clear_bucket_s3api "$2"; then
-      log 2 "error clearing bucket (s3api)"
-      return 1
-    fi
-  elif [[ $1 == "s3cmd" ]]; then
-    delete_bucket_recursive "s3cmd" "$1"
-  elif [[ $1 == "mc" ]]; then
-    delete_bucket_recursive "mc" "$1"
-  elif [[ $1 == "s3" ]]; then
-    delete_bucket_recursive "s3" "$1"
-  else
-    log 2 "unrecognized client: '$1'"
+  if ! clear_bucket_rest "$2"; then
+    log 2 "error clearing bucket (s3api)"
     return 1
   fi
   return 0
-}
-
-# check if bucket exists
-# param:  bucket name
-# return 0 for true, 1 for false, 2 for error
-bucket_exists() {
-  if [ $# -ne 2 ]; then
-    log 2 "bucket_exists command requires client, bucket name"
-    return 2
-  fi
-  local exists=0
-  head_bucket "$1" "$2" || exists=$?
-  # shellcheck disable=SC2181
-  if [ $exists -eq 2 ]; then
-    log 2 "unexpected error checking if bucket exists"
-    return 2
-  fi
-  if [ $exists -eq 0 ]; then
-    return 0
-  fi
-  return 1
 }
 
 direct_wait_for_bucket() {
@@ -168,7 +122,7 @@ direct_wait_for_bucket() {
     return 1
   fi
   bucket_verification_start_time=$(date +%s)
-  while ! bucket_exists "s3api" "$1"; do
+  while ! bucket_exists "rest" "$1"; do
     bucket_verification_end_time=$(date +%s)
     if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
       log 2 "bucket existence check timeout"
@@ -216,7 +170,7 @@ bucket_cleanup() {
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
-  if ! delete_bucket_recursive "$1" "$2"; then
+  if ! delete_bucket_recursive "$2"; then
     log 2 "error with recursive bucket delete"
     return 1
   fi
@@ -247,12 +201,12 @@ bucket_cleanup_if_bucket_exists() {
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
-  if [ $# -lt 2 ]; then
-    log 2 "'setup_buckets' command requires client, bucket names"
+  if [ $# -lt 1 ]; then
+    log 2 "'setup_buckets' command requires bucket names"
     return 1
   fi
   for name in "${@:2}"; do
-    if ! setup_bucket "$1" "$name"; then
+    if ! setup_bucket "$name"; then
       log 2 "error setting up bucket $name"
       return 1
     fi
@@ -264,13 +218,13 @@ setup_buckets() {
 # return 0 on successful setup, 1 on error
 setup_bucket() {
   log 6 "setup_bucket"
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_bucket' requires client, bucket name"
+  if [ $# -ne 1 ]; then
+    log 2 "'setup_bucket' requires bucket name"
     return 1
   fi
 
   bucket_exists="true"
-  if ! bucket_exists "$1" "$2"; then
+  if ! bucket_exists "rest" "$2"; then
     if [[ $RECREATE_BUCKETS == "false" ]]; then
       log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
       return 1
@@ -278,14 +232,14 @@ setup_bucket() {
     bucket_exists="false"
   fi
 
-  if ! bucket_cleanup_if_bucket_exists "$1" "$2" "$bucket_exists"; then
+  if ! bucket_cleanup_if_bucket_exists "rest" "$2" "$bucket_exists"; then
     log 2 "error deleting bucket or contents if they exist"
     return 1
   fi
 
   log 5 "util.setup_bucket: command type: $1, bucket name: $2"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if ! create_bucket "$1" "$2"; then
+    if ! create_bucket "rest" "$2"; then
       log 2 "error creating bucket"
       return 1
     fi
@@ -298,12 +252,10 @@ setup_bucket() {
     return 1
   fi
 
-  if [[ $1 == "s3cmd" ]]; then
-    log 5 "putting bucket ownership controls"
-    if bucket_exists "s3cmd" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then
-      log 2 "error putting bucket ownership controls"
-      return 1
-    fi
+  log 5 "putting bucket ownership controls"
+  if bucket_exists "rest" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then
+    log 2 "error putting bucket ownership controls"
+    return 1
   fi
   return 0
 }
