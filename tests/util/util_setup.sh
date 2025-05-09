@@ -17,7 +17,7 @@ setup_bucket_and_files() {
     log 2 "'setup_bucket_and_files' requires bucket name, file names"
     return 1
   fi
-  if ! setup_bucket "s3api" "$1"; then
+  if ! setup_bucket "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -33,7 +33,7 @@ setup_bucket_and_large_file() {
     log 2 "'setup_bucket_and_large_file' requires bucket name, file name"
     return 1
   fi
-  if ! setup_bucket "s3api" "$1"; then
+  if ! setup_bucket "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -49,7 +49,7 @@ setup_bucket_and_user() {
     log 2 "'setup_bucket_and_user' requires bucket name, username, password, user type"
     return 1
   fi
-  if ! setup_bucket "s3api" "$1"; then
+  if ! setup_bucket "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
