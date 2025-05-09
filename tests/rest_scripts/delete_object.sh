@@ -24,11 +24,18 @@ bucket_name="$BUCKET_NAME"
 key=$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')
 # shellcheck disable=SC2154
 bypass_governance_retention=${BYPASS_GOVERNANCE_RETENTION:=false}
+# shellcheck disable=SC2153,SC2154
+version_id="$VERSION_ID"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 #x-amz-object-attributes:ETag
-canonical_request_data+=("DELETE" "/$bucket_name/$key" "" "host:$host")
+canonical_request_data=("DELETE" "/$bucket_name/$key")
+queries=""
+if [ "$version_id" != "" ]; then
+  queries=$(add_parameter "$queries" "versionId=$version_id")
+fi
+canonical_request_data+=("$queries" "host:$host")
 if [ "$bypass_governance_retention" == "true" ]; then
   canonical_request_data+=("x-amz-bypass-governance-retention:true")
 fi
@@ -39,7 +46,7 @@ build_canonical_request "${canonical_request_data[@]}"
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "$AWS_ENDPOINT_URL/$bucket_name/$key"
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "$AWS_ENDPOINT_URL/$bucket_name/$key?$queries"
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")

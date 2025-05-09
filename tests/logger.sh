@@ -16,9 +16,31 @@
 
 # levels:  1 - crit, 2 - err, 3 - warn, 4 - info, 5 - debug, 6 - trace
 
+check_log_params() {
+  if [ $# -ne 4 ]; then
+    echo "'check_log_params' requires function name, params list, expected, actual"
+    return 1
+  fi
+  if [ "$3" -ne "$4" ]; then
+    echo "function $1 requires $2" 2
+    return 1
+  fi
+  return 0
+}
+
 log() {
-  if [[ $# -ne 2 ]]; then
-    echo "log function requires level, message"
+  if ! check_log_params "log" "level, message" 2 $#; then
+    return 1
+  fi
+  if ! log_with_stack_ref "$1" "$2" 2; then
+    echo "error logging with stack ref"
+    return 1
+  fi
+  return 0
+}
+
+log_with_stack_ref() {
+  if ! check_log_params "log_with_stack_ref" "level, message, stack reference" 3 $#; then
     return 1
   fi
   # shellcheck disable=SC2153
@@ -36,15 +58,14 @@ log() {
     *) echo "invalid log level $1"; return 1
   esac
   if [[ ( "$2" == *"access"* ) || ( "$2" == *"secret"* ) || ( "$2" == *"Credential="* ) ]]; then
-    log_mask "$log_level" "$2"
+    log_mask "$log_level" "$2" "$3"
     return 0
   fi
-  log_message "$log_level" "$2"
+  log_message "$log_level" "$2" "$3"
 }
 
 log_mask() {
-  if [[ $# -ne 2 ]]; then
-    echo "mask and log requires level, string"
+  if ! check_log_params "log_mask" "level, string, stack reference" 3 $#; then
     return 1
   fi
 
@@ -53,12 +74,11 @@ log_mask() {
     return 1
   fi
 
-  log_message "$log_level" "$masked_data"
+  log_message "$log_level" "$masked_data" "$3"
 }
 
 mask_args() {
-  if [ $# -ne 1 ]; then
-    echo "'mask_args' requires string"
+  if ! check_log_params "mask_args" "string" 1 $#; then
     return 1
   fi
   unmasked_array=()
@@ -101,8 +121,7 @@ mask_arg_array() {
 }
 
 check_arg_for_mask() {
-  if [ $# -ne 1 ]; then
-    echo "'check_arg_for_mask' requires arg"
+  if ! check_log_params "check_arg_for_mask" "arg" 1 $#; then
     return 1
   fi
   if [[ $mask_next == true ]]; then
@@ -137,16 +156,16 @@ check_arg_for_mask() {
 }
 
 log_message() {
-  if [[ $# -ne 2 ]]; then
-    echo "log message requires level, message"
+  if ! check_log_params "log_message" "level, message, stack reference" 3 $#; then
     return 1
   fi
+  local bash_source_ref=$(($3+1))
   now="$(date "+%Y-%m-%d %H:%M:%S")"
   if [[ ( "$1" == "CRIT" ) || ( "$1" == "ERROR" ) ]]; then
     echo "$now $1 $2" >&2
   fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$now ${BASH_SOURCE[2]}:${BASH_LINENO[1]} $1 $2" >> "$TEST_LOG_FILE.tmp"
+    echo "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
   sync
 }
