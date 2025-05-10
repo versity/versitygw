@@ -51,6 +51,11 @@ clear_bucket_s3api() {
     return 1
   fi
 
+  if ! abort_all_multipart_uploads "$1"; then
+    log 2 "error aborting all multipart uploads"
+    return 1
+  fi
+
   if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
     log 2 "error checking ownership rule and resetting acl"
     return 1
@@ -167,15 +172,10 @@ bucket_cleanup() {
       return 1
     fi
 
-    if ! abort_all_multipart_uploads "$1"; then
-      log 2 "error aborting all multipart uploads"
-      return 1
-    fi
-
-    if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$1"; then
-      log 2 "error resetting bucket owner"
-      return 1
-    fi
+    #if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$1"; then
+    #  log 2 "error resetting bucket owner"
+    #  return 1
+    #fi
 
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
