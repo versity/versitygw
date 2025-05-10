@@ -34,6 +34,7 @@ source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_attributes.sh
+source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_delete_object.sh
 source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
@@ -652,5 +653,30 @@ test_file="test_file"
   assert_success
 
   run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" 2000000
+  assert_success
+}
+
+@test "REST - create bucket test" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "invalid test for static buckets"
+  fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_bucket_rest "$BUCKET_ONE_NAME"
+  assert_success
+
+  run list_check_buckets_rest
+  assert_success
+}
+
+@test "REST - put object, missing Content-Length" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1321"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_without_content_length "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }

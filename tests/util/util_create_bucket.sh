@@ -59,3 +59,19 @@ create_and_check_bucket_invalid_name() {
   fi
   return 0
 }
+
+create_bucket_rest() {
+  if ! check_param_count "create_bucket_rest" "bucket name" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    bucket_create_error="$(cat "$TEST_FILE_FOLDER/result.txt")"
+    log 2 "expected '200', was '$result' ($bucket_create_error)"
+    return 1
+  fi
+  return 0
+}
