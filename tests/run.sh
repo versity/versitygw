@@ -38,6 +38,7 @@ show_help() {
     echo "   rest-acl            Run REST ACL tests"
     echo "   rest-chunked        Run REST chunked upload tests"
     echo "   rest-checksum       Run REST checksum tests"
+    echo "   rest-multipart      Run REST multipart tests"
     echo "   rest-versioning     Run REST versioning tests"
     echo "   rest-bucket         Run REST bucket tests"
 }
@@ -48,7 +49,7 @@ handle_param() {
           show_help
           exit 0
           ;;
-      s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|rest-versioning|rest-bucket)
+      s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|rest-versioning|rest-bucket|rest-multipart)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -155,6 +156,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_checksum.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_multipart.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_versioning.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_bucket.sh; then
@@ -169,6 +172,10 @@ run_suite() {
       echo "Running REST ACL tests ..."
       "$HOME"/bin/bats ./tests/test_rest_acl.sh || exit_code=$?
       ;;
+    rest-bucket)
+      echo "Running REST bucket tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_bucket.sh || exit_code=$?
+      ;;
     rest-chunked)
       echo "Running REST chunked upload tests ..."
       "$HOME"/bin/bats ./tests/test_rest_chunked.sh || exit_code=$?
@@ -177,13 +184,13 @@ run_suite() {
       echo "Running REST checksum tests ..."
       "$HOME"/bin/bats ./tests/test_rest_checksum.sh || exit_code=$?
       ;;
+    rest-multipart)
+      echo "Running REST multipart tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_multipart.sh || exit_code=$?
+      ;;
     rest-versioning)
       echo "Running REST versioning tests ..."
       "$HOME"/bin/bats ./tests/test_rest_versioning.sh || exit_code=$?
-      ;;
-    rest-bucket)
-      echo "Running REST bucket tests ..."
-      "$HOME"/bin/bats ./tests/test_rest_bucket.sh || exit_code=$?
       ;;
     s3api-user)
       echo "Running s3api user tests ..."

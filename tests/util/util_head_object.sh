@@ -219,3 +219,21 @@ check_default_checksum() {
   fi
   return 0
 }
+
+get_object_size_with_user() {
+  if ! check_param_count "get_object_size_with_user" "username, password, bucket, key" 4 $#; then
+    return 1
+  fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$3" OBJECT_KEY="$4" OUTPUT_FILE="$TEST_FILE_FOLDER/head_object.txt" ./tests/rest_scripts/head_object.sh 2>&1); then
+    log 2 "error attempting to get object info: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "response code '$result', data: $(cat "$TEST_FILE_FOLDER/head_object.txt")"
+    return 1
+  fi
+  log 5 "head object data: $(cat "$TEST_FILE_FOLDER/head_object.txt")"
+  content_length=$(grep "Content-Length:" "$TEST_FILE_FOLDER/head_object.txt" | awk '{print $2}' | tr -d '\r')
+  log 5 "file size: $content_length"
+  echo "$content_length"
+}

@@ -16,6 +16,7 @@
 
 source ./tests/util/util_bucket.sh
 source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_head_object.sh
 source ./tests/util/util_mc.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_versioning.sh
@@ -46,52 +47,6 @@ source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
 source ./tests/util/util_users.sh
-
-# param: bucket name
-# return 0 for success, 1 for failure
-list_and_delete_objects() {
-  log 6 "list_and_delete_objects"
-  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
-    return 1
-  fi
-  if ! list_objects 'rest' "$1"; then
-    log 2 "error getting object list"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "objects: ${object_array[*]}"
-  for object in "${object_array[@]}"; do
-    if ! clear_object_in_bucket "$1" "$object"; then
-      log 2 "error deleting object $object"
-      return 1
-    fi
-  done
-
-  if ! delete_old_versions "$1"; then
-    log 2 "error deleting old version"
-    return 1
-  fi
-  return 0
-}
-
-check_object_lock_config() {
-  log 6 "check_object_lock_config"
-  if ! check_param_count "check_object_lock_config" "bucket" 1 $#; then
-    return 1
-  fi
-  lock_config_exists=true
-  if ! get_object_lock_configuration "rest" "$1"; then
-    # shellcheck disable=SC2154
-    if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
-      # shellcheck disable=SC2034
-      lock_config_exists=false
-    else
-      log 2 "error getting object lock config"
-      return 1
-    fi
-  fi
-  return 0
-}
 
 # params: bucket, object name
 # return 0 for success, 1 for error
@@ -446,4 +401,82 @@ put_object_rest_check_expires_header() {
     return 1
   fi
   return 0
+}
+
+download_file_with_user() {
+  if ! check_param_count_gt "download_large_file" "username, password, bucket, key, destination, chunk size (optional)" 5 $#; then
+    return 1
+  fi
+  if ! file_size=$(get_object_size_with_user "$1" "$2" "$3" "$4" 2>&1); then
+    log 2 "error getting object size: $file_size"
+    return 1
+  fi
+  if [ "$6" != "" ]; then
+    chunk_size="$6"
+  elif [ "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" != "" ]; then
+    chunk_size="$MAX_FILE_DOWNLOAD_CHUNK_SIZE"
+  else
+    chunk_size="$file_size"
+  fi
+  if [ "$file_size" -le "$chunk_size" ]; then
+    if ! get_object_rest_with_user "$1" "$2" "$3" "$4" "$5"; then
+      log 2 "error downloading file"
+      return 1
+    fi
+  else
+    if ! get_object_with_ranged_download "$1" "$2" "$3" "$4" "$5" "$file_size" "$chunk_size"; then
+      log 2 "error downloading object"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+get_object_with_ranged_download() {
+  if ! check_param_count "get_object_with_ranged_download" "username, password, bucket, key, destination, file size, chunk size" 7 $#; then
+    return 1
+  fi
+  number_of_chunks=$(($6/$7))
+  log 5 "number of chunks: $number_of_chunks"
+  if ! result=$(truncate -s "$6" "$5" 2>&1); then
+    log 2 "error allocating file space: $result"
+    return 1
+  fi
+
+  file_byte_idx=0
+  while [ $file_byte_idx -lt "$6" ]; do
+    last_byte=$((file_byte_idx + $7 - 1))
+    [ $last_byte -ge "$6" ] && last_byte=$(($6 - 1))
+    range_value="bytes=${file_byte_idx}-${last_byte}"
+    log 5 "downloading part of file, range $range_value"
+
+    if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$3" OBJECT_KEY="$4" RANGE="$range_value" OUTPUT_FILE="$5.tmp" ./tests/rest_scripts/get_object.sh 2>&1); then
+      log 2 "error getting file data: $result"
+      return 1
+    fi
+    if [ "$result" != "206" ]; then
+      log 2 "expected '206', was '$result' ($(cat "$5.tmp"))"
+      return 1
+    fi
+    if ! dd if="$5.tmp" of="$5" bs=1 seek="$file_byte_idx" count="$7" conv=notrunc 2>"$TEST_FILE_FOLDER/dd_error.txt"; then
+      log 2 "error writing file segment: $(cat "$TEST_FILE_FOLDER/dd_error.txt")"
+      return 1
+    fi
+
+    file_byte_idx=$((last_byte + 1))
+  done
+}
+
+put_object_without_content_length() {
+  if ! check_param_count "put_object_without_content_length" "bucket, key, data file" 3 $#; then
+    return 1
+  fi
+  if ! result=$(BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$3" OMIT_CONTENT_LENGTH="true" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl.sh 2>&1); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 411; then
+    log 2 "error in sending or checking response code"
+    return 1
+  fi
 }

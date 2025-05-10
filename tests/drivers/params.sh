@@ -26,13 +26,25 @@ check_param_count() {
   return 0
 }
 
-assert_param_count() {
-  if [ $# -ne 4 ]; then
-    log 2 "'assert_param_count' requires function name, params list, expected, actual"
+check_param_count_v2() {
+  if [ $# -ne 3 ]; then
+    log 2 "'check_param_count' requires params list, expected, actual"
     return 1
   fi
-  if [ "$3" -ne "$4" ]; then
-    log_with_stack_ref 2 "function $1 requires $2" 4
+  if [ "$2" -ne "$3" ]; then
+    log_with_stack_ref 2 "function '${FUNCNAME[1]}' requires $1" 2
+    return 1
+  fi
+  return 0
+}
+
+assert_param_count() {
+  if [ $# -ne 3 ]; then
+    log 2 "'assert_param_count' requires params list, expected, actual"
+    return 1
+  fi
+  if [ "$2" -ne "$3" ]; then
+    log_with_stack_ref 2 "function '${FUNCNAME[3]}' requires $1" 4
     return 1
   fi
   return 0

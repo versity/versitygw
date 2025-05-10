@@ -28,10 +28,32 @@ parse_objects_list_rest() {
     log 2 "error getting object list: $object_list"
     return 1
   fi
-  while read -r object; do
+  log 5 "object list: '$object_list'"
+  while IFS= read -r object; do
+    log 5 "parsed key: '$object'"
     object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
   done <<< "$object_list"
   log 5 "object array: ${object_array[*]}"
+  return 0
+}
+
+list_check_single_object() {
+  if ! check_param_count "list_check_single_object" "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! list_objects "rest" "$1"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  if [ ${#object_array[@]} -ne "1" ]; then
+    log 2 "expected one object, found ${#object_array[@]}"
+    return 1
+  fi
+  if [ "${object_array[0]}" != "$2" ]; then
+    log 2 "expected '$2', was '${object_array[0]}'"
+    return 1
+  fi
+  return 0
 }
 
 list_check_objects_v1() {

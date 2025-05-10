@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Copyright 2024 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+source ./tests/util/util_multipart_before_completion.sh
+
 check_abort_access_denied() {
   if [ $# -ne 5 ]; then
     log 2 "'check_abort_access_denied' requires bucket, file, username, password"
@@ -27,7 +43,7 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads before upload: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating upload"
     return 1
   fi
