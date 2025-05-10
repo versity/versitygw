@@ -282,19 +282,20 @@ list_objects_check_params_get_token() {
     log 2 "error getting list bucket result: $list_bucket_result"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "$2" "Key"; then
+  echo -n "$list_bucket_result" > "$TEST_FILE_FOLDER/list_bucket_result.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "$2" "Key"; then
     log 2 "key mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "1" "MaxKeys"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "1" "MaxKeys"; then
     log 2 "max keys mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "1" "KeyCount"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "1" "KeyCount"; then
     log 2 "key count mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "true" "IsTruncated"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "true" "IsTruncated"; then
     log 2 "key count mismatch"
     return 1
   fi

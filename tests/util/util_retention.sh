@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 # params:  bucket name
 # return 0 for success, 1 for error

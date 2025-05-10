@@ -44,12 +44,11 @@ upload_part_with_user() {
   export etag
 }
 
-upload_part_and_get_etag_rest() {
-  if [ $# -ne 5 ]; then
-    log 2 "'upload_part_rest' requires bucket name, key, part number, upload ID, part"
+upload_part_rest() {
+  if ! check_param_count_v2 "bucket, key, upload ID, part number, part" 5 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="$4" UPLOAD_ID="$3" DATA_FILE="$5" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" ./tests/rest_scripts/upload_part.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" ./tests/rest_scripts/upload_part.sh); then
     log 2 "error sending upload-part REST command: $result"
     return 1
   fi
@@ -59,6 +58,68 @@ upload_part_and_get_etag_rest() {
   fi
   log 5 "$(cat "$TEST_FILE_FOLDER/etag.txt")"
   etag=$(grep -i "etag" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  log 5 "etag:  $etag"
+  echo "$etag"
+  return 0
+}
+
+upload_part_rest_without_part_number() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2"; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/response.txt" "405" "MethodNotAllowed" "method is not allowed"; then
+    log 2 "error checking error"
+    return 1
+  fi
+  return 0
+}
+
+upload_part_rest_without_upload_id() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2"; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="1" UPLOAD_ID="" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+    # shellcheck disable=SC2154
+    log 2 "error uploading part $i: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/response.txt" "405" "MethodNotAllowed" "method is not allowed"; then
+    log 2 "error checking error"
+    return 1
+  fi
+  return 0
+}
+
+upload_part_rest_with_checksum() {
+  if ! check_param_count_v2 "bucket name, key, upload ID, part number, part, checksum algorithm" 6 $#; then
+    return 1
+  fi
+  # shellcheck disable=SC2154,SC2097,SC2098
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" ./tests/rest_scripts/upload_part.sh); then
+    log 2 "error sending upload-part REST command: $result"
+    return 1
+  fi
+  if [[ "$result" != "200" ]]; then
+    log 2 "upload-part command returned error $result: $(cat "$TEST_FILE_FOLDER/etag.txt")"
+    return 1
+  fi
+  log 5 "$(cat "$TEST_FILE_FOLDER/etag.txt")"
+  etag=$(grep -i "etag" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  # shellcheck disable=SC2034
+  checksum=$(grep -i "x-amz-checksum-" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
   log 5 "etag:  $etag"
   return 0
 }

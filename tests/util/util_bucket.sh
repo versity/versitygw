@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/util/util_acl.sh
@@ -147,7 +147,7 @@ bucket_cleanup() {
 # return 0 for success, 1 for error
 bucket_cleanup_if_bucket_exists() {
   log 6 "bucket_cleanup_if_bucket_exists"
-  if ! check_param_count_gt "bucket_cleanup_if_bucket_exists" "bucket name, bucket known to exist (optional)" 1 $#; then
+  if ! check_param_count_gt "bucket name, bucket known to exist (optional)" 1 $#; then
     return 1
   fi
 
@@ -170,7 +170,7 @@ bucket_cleanup_if_bucket_exists() {
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
-  if ! check_param_count_gt "setup_buckets" "minimum of 1 bucket name" 1 $#; then
+  if ! check_param_count_gt "minimum of 1 bucket name" 1 $#; then
     return 1
   fi
   for name in "$@"; do

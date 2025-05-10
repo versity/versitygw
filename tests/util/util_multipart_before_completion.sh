@@ -200,12 +200,12 @@ create_and_list_multipart_uploads() {
     return 1
   fi
 
-  if ! create_multipart_upload "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating multpart upload"
     return 1
   fi
 
-  if ! create_multipart_upload "$1" "$3"; then
+  if ! create_multipart_upload_rest "$1" "$3"; then
     log 2 "error creating multpart upload two"
     return 1
   fi
@@ -243,7 +243,7 @@ multipart_upload_before_completion_with_user() {
     return 1
   fi
 
-  if ! create_multipart_upload_with_user "$1" "$2" "$5" "$6"; then
+  if ! create_multipart_upload_s3api_with_user "$1" "$2" "$5" "$6"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -276,7 +276,7 @@ multipart_upload_before_completion_with_params() {
     return 1
   fi
 
-  if ! create_multipart_upload_params "$1" "$2" "$5" "$6" "$7" "$8" "$9" "${10}"; then
+  if ! create_multipart_upload_s3api_params "$1" "$2" "$5" "$6" "$7" "$8" "$9" "${10}"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -331,31 +331,8 @@ multipart_upload_before_completion_custom() {
   export parts
 }
 
-create_upload_and_get_id_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'create_upload_and_get_id_rest' requires bucket, key"
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" ./tests/rest_scripts/create_multipart_upload.sh); then
-    log 2 "error creating multipart upload: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "error:  response code: $result, output: $(cat "$TEST_FILE_FOLDER/output.txt")"
-    return 1
-  fi
-  log 5 "multipart upload create info: $(cat "$TEST_FILE_FOLDER/output.txt")"
-  if ! upload_id=$(xmllint --xpath '//*[local-name()="UploadId"]/text()' "$TEST_FILE_FOLDER/output.txt" 2>&1); then
-    log 2 "error getting upload ID: $upload_id"
-    return 1
-  fi
-  log 5 "upload ID: $upload_id"
-  return 0
-}
-
 multipart_upload_range_too_large() {
-  if [ $# -ne 3 ]; then
-    log 2 "'multipart_upload_range_too_large' requires bucket name, key, file location"
+  if ! check_param_count_v2 "bucket, key, file location" 3 $#; then
     return 1
   fi
   if multipart_upload_from_bucket_range "$1" "$2" "$3" 4 "bytes=0-1000000000"; then
@@ -462,16 +439,10 @@ upload_part_check_etag_header() {
     log 2 "'upload_part_check_etag_header' requires bucket name, key, upload ID"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
-    # shellcheck disable=SC2154
-    log 2 "error uploading part $i: $result"
+  if ! etag=$(upload_part_rest "$1" "$2" "$3" 1 2>&1); then
+    log 2 "error getting etag: $etag"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result'"
-    return 1
-  fi
-  etag="$(grep -i "ETag: " "$TEST_FILE_FOLDER/response.txt" | awk '{print $2}' | tr -d '\r')"
   if ! [[ "$etag" =~ ^\"[0-9a-f]+\" ]]; then
     log 2 "etag pattern mismatch, etag ($etag) should be hex string surrounded by quotes"
     return 1
@@ -484,8 +455,8 @@ upload_part_copy_check_etag_header() {
     log 2 "'upload_part_copy_check_etag_header' requires bucket, destination file, part location"
     return 1
   fi
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
-    log 2 "error creating upload and getting ID"
+  if ! upload_id=$(create_multipart_upload_rest "$1" "$2" 2>&1); then
+    log 2 "error creating upload and getting ID: $upload_id"
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$upload_id" PART_LOCATION="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part_copy.sh); then
@@ -535,7 +506,7 @@ upload_part_without_upload_id() {
     log 2 "error creating multpart upload"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="1" UPLOAD_ID="" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$TEST_FILE_FOLDER/$2" PART_NUMBER="1" UPLOAD_ID="" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part.sh 2>&1); then
     # shellcheck disable=SC2154
     log 2 "error uploading part $i: $result"
     return 1

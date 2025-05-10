@@ -125,6 +125,29 @@ list_buckets_rest() {
     log 2 "list-buckets returned code $result: $(cat "$TEST_FILE_FOLDER/buckets.txt")"
     return 1
   fi
-  parse_bucket_list
+  if ! parse_bucket_list "$TEST_FILE_FOLDER/buckets.txt"; then
+    log 2 "error parsing bucket list"
+    return 1
+  fi
+  return 0
+}
+
+list_buckets_rest_prefix() {
+  if ! check_param_count_v2 "prefix" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" PREFIX="$1" ./tests/rest_scripts/list_buckets.sh 2>&1); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  log 5 "buckets w/prefix $1: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  if ! parse_bucket_list "$TEST_FILE_FOLDER/result.txt"; then
+    log 2 "error parsing bucket list"
+    return 1
+  fi
   return 0
 }

@@ -115,3 +115,18 @@ get_object_rest_with_user() {
   fi
   return 0
 }
+
+get_object_rest_with_invalid_streaming_type() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/$2_copy" PAYLOAD="GIBBERISH" ./tests/rest_scripts/get_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/$2_copy" "400" "InvalidArgument" "x-amz-content-sha256 must be"; then
+    log 2 "error checking response"
+    return 1
+  fi
+  return 0
+}

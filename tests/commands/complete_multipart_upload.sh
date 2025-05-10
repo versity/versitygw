@@ -29,3 +29,65 @@ complete_multipart_upload() {
   log 5 "complete multipart upload error: $error"
   return 0
 }
+
+complete_multipart_upload_rest() {
+  if ! check_param_count_v2 "bucket, key, upload ID, parts payload" 4 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+}
+
+complete_multipart_upload_rest_nonexistent_param() {
+  if ! check_param_count_v2 "bucket, key, upload ID, parts payload" 4 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" ALGORITHM_PARAMETER="true" CHECKSUM_ALGORITHM="crc32c" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh 2>&1); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+}
+
+complete_multipart_upload_rest_incorrect_checksum() {
+  if ! check_param_count_v2 "bucket, key, upload ID, parts payload, type, algorithm, correct hash" 7 $#; then
+    return 1
+  fi
+  checksum="$7"
+  if [ "${checksum:0:1}" == "a" ]; then
+    checksum="b${checksum:1}"
+  else
+    checksum="a${checksum:1}"
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" CHECKSUM_TYPE="$5" CHECKSUM_ALGORITHM="$6" CHECKSUM_HASH="$checksum" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh 2>&1); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" 400 "BadDigest" "did not match"; then
+    log 2 "expected '400', was $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+}
+
+complete_multipart_upload_rest_invalid_checksum() {
+  if ! check_param_count_v2 "bucket, key, upload ID, parts payload, type, algorithm, correct hash" 7 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" CHECKSUM_TYPE="$5" CHECKSUM_ALGORITHM="$6" CHECKSUM_HASH="$7" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh 2>&1); then
+    log 2 "error completing multipart upload: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" 400 "InvalidRequest" "header is invalid"; then
+    log 2 "expected '400', was $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+}

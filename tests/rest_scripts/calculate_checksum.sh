@@ -45,25 +45,25 @@ calculate_checksum_python() {
 }
 
 case "$CHECKSUM_TYPE" in
-"crc32c")
+"crc32c"|"CRC32C")
   if ! checksum=$(calculate_checksum_python "crc32c" "$DATA_FILE" 2>&1); then
     log_rest 2 "error getting checksum: $checksum"
     exit 1
   fi
   ;;
-"crc64nvme")
+"crc64nvme"|"CRC64NVME")
   if ! checksum=$(calculate_checksum_python "crc64nvme" "$DATA_FILE" 2>&1); then
     log 2 "error calculating checksum: $checksum"
     exit 1
   fi
   ;;
-"sha256")
+"sha256"|"SHA256")
   checksum="$(sha256sum "$DATA_FILE" | awk '{print $1}' | xxd -r -p | base64)"
   ;;
-"sha1")
+"sha1"|"SHA1")
   checksum="$(sha1sum "$DATA_FILE" | awk '{print $1}' | xxd -r -p | base64)"
   ;;
-"crc32")
+"crc32"|"CRC32")
   checksum="$(gzip -c -1 "$DATA_FILE" | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
   ;;
 *)

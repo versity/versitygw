@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
 parse_bucket_list() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
   # shellcheck disable=SC2154
-  log 5 "bucket list: $(cat "$TEST_FILE_FOLDER/buckets.txt")"
-  bucket_list=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$TEST_FILE_FOLDER/buckets.txt")
+  log 5 "bucket list: $(cat "$1")"
+  bucket_list=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$1")
   bucket_array=()
   while read -r bucket; do
     bucket_array+=("$bucket")
