@@ -123,7 +123,10 @@ upload_check_parts() {
     log 2 "error uploading and checking first part"
     return 1
   fi
-  # shellcheck disable=SC2154
+  if ! list_multipart_uploads_rest "$1"; then
+    log 2 "error listing uploads"
+    return 1
+  fi
   etag_one=$etag
   if ! upload_check_part "$1" "$2" "$upload_id" 2 "$4" "$etag_one"; then
     log 2 "error uploading and checking second part"

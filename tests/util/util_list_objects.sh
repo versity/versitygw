@@ -251,6 +251,10 @@ list_objects_check_params_get_token() {
     log 2 "error attempting to get bucket ACL response: $result"
     return 1
   fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200' was '$result' ($(cat "$TEST_FILE_FOLDER/objects.txt"))"
+    return 1
+  fi
   log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
   if ! list_bucket_result=$(xmllint --xpath '//*[local-name()="ListBucketResult"]' "$TEST_FILE_FOLDER/objects.txt" 2>&1); then
     log 2 "error getting list bucket result: $list_bucket_result"
