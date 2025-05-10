@@ -50,7 +50,12 @@ create_bucket() {
 
 create_bucket_with_user() {
   log 6 "create_bucket_with_user"
+<<<<<<< HEAD
   if ! check_param_count "create_bucket_with_user" "command type, bucket, access ID, secret key" 4 $#; then
+=======
+  if [ $# -ne 4 ]; then
+    log 2 "create bucket missing command type, bucket name, access, secret"
+>>>>>>> 218b926 (test: convert eight or so setup operations to REST)
     return 1
   fi
   local exit_code=0
