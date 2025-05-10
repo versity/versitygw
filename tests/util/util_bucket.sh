@@ -162,21 +162,6 @@ bucket_cleanup() {
       return 1
     fi
 
-    #if ! delete_bucket_policy "s3api" "$1"; then
-    #  log 2 "error deleting bucket policy"
-    #  return 1
-    #fi
-
-    #if ! get_object_ownership_rule_and_update_acl "$1"; then
-    #  log 2 "error getting object ownership rule and updating ACL"
-    #  return 1
-    #fi
-
-    #if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$1"; then
-    #  log 2 "error resetting bucket owner"
-    #  return 1
-    #fi
-
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
