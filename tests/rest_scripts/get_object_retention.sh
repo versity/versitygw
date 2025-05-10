@@ -14,39 +14,27 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/rest_scripts/rest.sh
-
 # Fields
+
+source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
-# shellcheck disable=SC2154
-key="$OBJECT_KEY"
-# shellcheck disable=SC2153,SC2154
-version_id="$VERSION_ID"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-
-canonical_request_data=("GET" "/$bucket_name/$key")
-queries=""
-if [ "$VERSION_ID" != "" ]; then
-  queries=$(add_parameter "$queries" "versionId=$version_id")
-fi
-queries=$(add_parameter "$queries" "legal-hold=")
-canonical_request_data+=("$queries" "host:$host")
+canonical_request_data=("GET" "/$bucket_name" "retention=" "host:$host")
 canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
 if ! build_canonical_request "${canonical_request_data[@]}"; then
   log_rest 2 "error building request"
   exit 1
 fi
-echo -n "$canonical_request" > "cr.txt"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" "\"$AWS_ENDPOINT_URL/$bucket_name/$key?$queries\""
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+# shellcheck disable=SC2154
+curl_command+=(curl -ks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name?retention")
+curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$year_month_day/$AWS_REGION/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")
-# shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1
