@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/drivers.sh
+
 # params:  bucket name
 # return 0 for success, 1 for error
 add_governance_bypass_policy() {
@@ -59,11 +61,7 @@ check_for_and_remove_worm_protection() {
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
       log_worm_protection "$1" "$2"
     fi
-    if ! add_governance_bypass_policy "$1"; then
-      log 2 "error adding new governance bypass policy"
-      return 2
-    fi
-    if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    if ! delete_object_bypass_retention "rest" "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
       return 2
     fi
@@ -80,13 +78,13 @@ log_worm_protection() {
   if ! check_param_count "log_worm_protection" "bucket, key" 2 $#; then
     return 1
   fi
-  if ! get_object_legal_hold "$1" "$2"; then
+  if ! get_object_legal_hold_rest "$1" "$2"; then
     log 2 "error getting object legal hold status"
     return
   fi
   # shellcheck disable=SC2154
   log 5 "LEGAL HOLD: $legal_hold"
-  if ! get_object_retention "$1" "$2"; then
+  if ! get_object_retention_rest "$1" "$2"; then
     log 2 "error getting object retention"
     # shellcheck disable=SC2154
     if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then

@@ -30,47 +30,17 @@ get_object_retention() {
 }
 
 get_object_retention_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'get_object_tagging_rest' requires bucket, key"
+  if ! check_param_count "get_object_retention_rest" "bucket, key" 2 $#; then
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="GET
-/$1/$2
-retention=
-host:$aws_endpoint_url_address
-x-amz-content-sha256:$payload_hash
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-$payload_hash"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/retention.txt" ./tests/rest_scripts/get_object_retention.sh); then
+    log 2 "error getting object retention: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks -w "%{http_code}" "$header://$aws_endpoint_url_address/$1/$2?retention" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: $payload_hash" \
-    -H "x-amz-date: $current_date_time" \
-    -o "$TEST_FILE_FOLDER"/object_retention.txt 2>&1)
-  log 5 "reply status code: $reply"
-  if [[ "$reply" != "200" ]]; then
-    if [ "$reply" == "404" ]; then
-      return 1
-    fi
-    log 2 "reply error: $reply"
-    log 2 "get object retention command returned error: $(cat "$TEST_FILE_FOLDER"/object_retention.txt)"
-    return 2
+  if [ "$result" != "200" ]; then
+    get_object_retention_error="$(cat "$TEST_FILE_FOLDER/retention.txt")"
+    log 2 "GetObjectRetention returned code $result ($get_object_retention_error)"
+    return 1
   fi
-  log 5 "object tags:  $(cat "$TEST_FILE_FOLDER"/object_retention.txt)"
   return 0
 }

@@ -277,7 +277,7 @@ export RUN_USERS=true
   run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run delete_object_bypass_retention "$BUCKET_ONE_NAME" "$test_file" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+  run delete_object_bypass_retention "s3api" "$BUCKET_ONE_NAME" "$test_file" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
   assert_failure
   assert_output -p "InvalidArgument"
   assert_output -p "x-amz-bypass-governance-retention is only applicable"
