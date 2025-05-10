@@ -50,11 +50,11 @@ source ./tests/util/util_users.sh
 # param: bucket name
 # return 0 for success, 1 for failure
 list_and_delete_objects() {
-  if [ $# -ne 1 ]; then
-    log 2 "'list_and_delete_objects' missing bucket name"
+  log 6 "list_and_delete_objects"
+  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
     return 1
   fi
-  if ! list_objects 's3api' "$1"; then
+  if ! list_objects 'rest' "$1"; then
     log 2 "error getting object list"
     return 1
   fi
@@ -75,12 +75,12 @@ list_and_delete_objects() {
 }
 
 check_object_lock_config() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_object_lock_config' requires bucket name"
+  log 6 "check_object_lock_config"
+  if ! check_param_count "check_object_lock_config" "bucket" 1 $#; then
     return 1
   fi
   lock_config_exists=true
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "rest" "$1"; then
     # shellcheck disable=SC2154
     if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
       # shellcheck disable=SC2034
@@ -97,11 +97,10 @@ check_object_lock_config() {
 # return 0 for success, 1 for error
 clear_object_in_bucket() {
   log 6 "clear_object_in_bucket"
-  if [ $# -ne 2 ]; then
-    log 2 "'clear_object_in_bucket' requires bucket, object name"
+  if ! check_param_count "clear_object_in_bucket" "bucket, key" 2 $#; then
     return 1
   fi
-  if ! delete_object 's3api' "$1" "$2"; then
+  if ! delete_object 'rest' "$1" "$2"; then
     # shellcheck disable=SC2154
     log 2 "error deleting object $2: $delete_object_error"
     if ! check_for_and_remove_worm_protection "$1" "$2" "$delete_object_error"; then
@@ -116,9 +115,9 @@ clear_object_in_bucket() {
 # param:  command, object path
 # return 0 for true, 1 for false, 2 for error
 object_exists() {
-  if [ $# -ne 3 ]; then
-    log 2 "object exists check missing command, bucket name, object name"
-    return 2
+  log 6 "object_exists"
+  if ! check_param_count "object_exists" "command type, bucket, key" 3 $#; then
+    return 1
   fi
   head_object "$1" "$2" "$3" || local head_object_result=$?
   if [[ $head_object_result -eq 2 ]]; then
@@ -130,8 +129,8 @@ object_exists() {
 }
 
 put_object_with_metadata() {
-  if [ $# -ne 6 ]; then
-    log 2 "put object command requires command type, source, destination, key, metadata key, metadata value"
+  log 6 "put_object_with_metadata"
+  if ! check_param_count "put_object_with_metadata" "command type, source, destination, key, metadata key, metadata value" 6 $#; then
     return 1
   fi
 
@@ -152,8 +151,8 @@ put_object_with_metadata() {
 }
 
 get_object_metadata() {
-  if [ $# -ne 3 ]; then
-    log 2 "get object metadata command requires command type, bucket, key"
+  log 6 "get_object_metadata"
+  if ! check_param_count "get_object_metadata" "command type, bucket, key" 3 $#; then
     return 1
   fi
 
@@ -179,8 +178,8 @@ get_object_metadata() {
 # params:  source file, destination copy location
 # return 0 for success or already exists, 1 for failure
 check_and_put_object() {
-  if [ $# -ne 3 ]; then
-    log 2 "check and put object function requires source, bucket, destination"
+  log 6 "check_and_put_object"
+  if ! check_param_count "check_and_put_object" "source, bucket, destination" 3 $#; then
     return 1
   fi
   object_exists "s3api" "$2" "$3" || local exists_result=$?
@@ -202,9 +201,9 @@ check_and_put_object() {
 # param:  path of object
 # return 0 for yes, 1 for no, 2 for error
 object_is_accessible() {
-  if [ $# -ne 2 ]; then
-    log 2 "object accessibility check missing bucket and/or key"
-    return 2
+  log 6 "object_is_accessible"
+  if ! check_param_count "object_is_accessible" "bucket, key" 2 $#; then
+    return 1
   fi
   local exit_code=0
   object_data=$(aws --no-verify-ssl s3api head-object --bucket "$1" --key "$2" 2>&1) || exit_code="$?"
@@ -223,8 +222,8 @@ object_is_accessible() {
 # params:  source, destination
 # return 0 for success, 1 for failure
 copy_file() {
-  if [ $# -ne 2 ]; then
-    log 2 "copy file command requires src and dest"
+  log 6 "copy_file"
+  if ! check_param_count "copy_file" "source, destination" 2 $#; then
     return 1
   fi
 
@@ -238,9 +237,8 @@ copy_file() {
 }
 
 list_and_check_directory_obj() {
-  #assert [ $# -eq 2 ]
-  if [ $# -ne 2 ]; then
-    log 2 "'list_and_check_directory_obj' requires client, file name"
+  log 6 "list_and_check_directory_obj"
+  if ! check_param_count "list_and_check_directory_obj" "client, file name" 2 $#; then
     return 1
   fi
   if ! list_objects_with_prefix "$1" "$BUCKET_ONE_NAME" "$2/"; then
@@ -269,8 +267,8 @@ list_and_check_directory_obj() {
 }
 
 check_checksum_invalid_or_incorrect() {
-  if [ $# -ne 6 ]; then
-    log 2 "'check_sha256_invalid_or_incorrect' requires data file, bucket name, key, checksum type, checksum, expected error"
+  log 6 "check_checksum_invalid_or_incorrect"
+  if ! check_param_count "check_checksum_invalid_or_incorrect" "data file, bucket name, key, checksum type, checksum, expected error" 6 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" CHECKSUM_TYPE="$4" CHECKSUM="$5" ./tests/rest_scripts/put_object.sh 2>&1); then
@@ -289,8 +287,8 @@ check_checksum_invalid_or_incorrect() {
 }
 
 put_object_rest_checksum() {
-  if [ $# -ne 4 ]; then
-    log 2 "'put_object_rest_checksum' requires data file, bucket name, key, checksum type"
+  log 6 "put_object_rest_checksum"
+  if ! check_param_count "put_object_rest_checksum" "data file, bucket name, key, checksum type" 4 $#; then
     return 1
   fi
   # shellcheck disable=SC2097,SC2098
@@ -306,8 +304,8 @@ put_object_rest_checksum() {
 }
 
 check_checksum_rest_invalid() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_checksum_rest_invalid' requires checksum type"
+  log 6 "check_checksum_rest_invalid"
+  if ! check_param_count "check_checksum_rest_invalid" "checksum type" 1 $#; then
     return 1
   fi
   test_file="test_file"
@@ -323,8 +321,7 @@ check_checksum_rest_invalid() {
 }
 
 check_checksum_rest_incorrect() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_checksum_rest_incorrect' requires checksum type"
+  if ! check_param_count "check_checksum_rest_incorrect" "checksum type" 1 $#; then
     return 1
   fi
   test_file="test_file"
@@ -346,8 +343,7 @@ check_checksum_rest_incorrect() {
 }
 
 calculate_incorrect_checksum() {
-  if [ $# -ne 2 ]; then
-    log 2 "'calculate_incorrect_checksum' requires checksum type, data"
+  if ! check_param_count "calculate_incorrect_checksum" "checksum type, data" 2 $#; then
     return 1
   fi
   case "$1" in
@@ -381,8 +377,7 @@ calculate_incorrect_checksum() {
 }
 
 put_object_rest_chunked_payload_type_without_content_length() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest_diff_payload_type' requires data file, bucket name, key"
+  if ! check_param_count "put_object_rest_chunked_payload_type_without_content_length" "data file, bucket name, key" 3 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" PAYLOAD="STREAMING-AWS4-HMAC-SHA256-PAYLOAD" ./tests/rest_scripts/put_object.sh 2>&1); then
@@ -397,8 +392,7 @@ put_object_rest_chunked_payload_type_without_content_length() {
 }
 
 add_correct_checksum() {
-  if [ $# -ne 1 ]; then
-    log 2 "'add_correct_checksum' requires checksum type"
+  if ! check_param_count "add_correct_checksum" "checksum type" 1 $#; then
     return 1
   fi
   test_file="test_file"
@@ -415,8 +409,7 @@ add_correct_checksum() {
 }
 
 check_invalid_checksum_type() {
-  if [ $# -ne 3 ]; then
-    log 2 "'check_invalid_checksum_type' requires data file, bucket name, file"
+  if ! check_param_count "check_invalid_checksum_type" "data file, bucket name, file" 3 $#; then
     return 1
   fi
   error_message='The algorithm type you specified in x-amz-checksum- header is invalid.'
@@ -427,8 +420,7 @@ check_invalid_checksum_type() {
 }
 
 put_object_rest_check_expires_header() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object-put_object_rest_check_expires_header' requires data file, bucket, key"
+  if ! check_param_count "put_object_rest_check_expires_header" "data file, bucket name, key" 3 $#; then
     return 1
   fi
   expiry_date="Tue, 11 Mar 2025 16:00:00 GMT"

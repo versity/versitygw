@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 setup_bucket_and_file() {
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_bucket_and_file' requires bucket name, file name"
+  if ! check_param_count "setup_bucket_and_file" "bucket, file name" 2 $#; then
     return 1
   fi
   if ! setup_bucket_and_files "$1" "$2"; then
@@ -13,8 +12,7 @@ setup_bucket_and_file() {
 }
 
 setup_bucket_and_files() {
-  if [ $# -lt 2 ]; then
-    log 2 "'setup_bucket_and_files' requires bucket name, file names"
+  if ! check_param_count_gt "setup_bucket_and_files" "bucket, file name" 2 $#; then
     return 1
   fi
   if ! setup_bucket "$1"; then
@@ -29,8 +27,7 @@ setup_bucket_and_files() {
 }
 
 setup_bucket_and_large_file() {
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_bucket_and_large_file' requires bucket name, file name"
+  if ! check_param_count "setup_bucket_and_large_file" "bucket, file name" 2 $#; then
     return 1
   fi
   if ! setup_bucket "$1"; then
@@ -45,8 +42,7 @@ setup_bucket_and_large_file() {
 }
 
 setup_bucket_and_user() {
-  if [ $# -ne 4 ]; then
-    log 2 "'setup_bucket_and_user' requires bucket name, username, password, user type"
+  if ! check_param_count "setup_bucket_and_user" "bucket, username, password, user type" 4 $#; then
     return 1
   fi
   if ! setup_bucket "$1"; then
@@ -62,8 +58,7 @@ setup_bucket_and_user() {
 }
 
 setup_bucket_file_and_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'setup_bucket_file_and_user' requires bucket name, file, username, password, user type"
+  if ! check_param_count "setup_bucket_file_and_user" "bucket, file, username, password, user type" 5 $#; then
     return 1
   fi
   if ! setup_bucket_and_files "$1" "$2"; then
@@ -79,8 +74,7 @@ setup_bucket_file_and_user() {
 }
 
 setup_bucket_object_lock_enabled() {
-  if [ $# -ne 1 ]; then
-    log 2 "'setup_bucket_object_lock_enabled' requires bucket name"
+  if ! check_param_count "setup_bucket_object_lock_enabled" "bucket" 1 $#; then
     return 1
   fi
   if ! bucket_cleanup_if_bucket_exists "$1"; then

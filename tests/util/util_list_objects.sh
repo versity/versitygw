@@ -18,18 +18,24 @@ source ./tests/util/util_xml.sh
 # under the License.
 
 parse_objects_list_rest() {
-  # shellcheck disable=SC2154
-  object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Key"]/text()' -)
   object_array=()
+  # shellcheck disable=SC2154
+  log 5 "reply: $reply"
+  if ! object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
+    if [[ "$object_list" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting object list: $object_list"
+    return 1
+  fi
   while read -r object; do
-    object_array+=("$object")
+    object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
   done <<< "$object_list"
   log 5 "object array: ${object_array[*]}"
 }
 
 list_check_objects_v1() {
-  if [ $# -ne 5 ]; then
-    log 2 "'list_check_objects_v1' requires bucket, expected key one, expected size one, expected key two, expected size two"
+  if ! check_param_count "list_check_objects_v1" "bucket, expected key one, expected size one, expected key two, expected size two" 5 $#; then
     return 1
   fi
   if ! list_objects_s3api_v1 "$1"; then
@@ -44,8 +50,7 @@ list_check_objects_v1() {
 }
 
 check_listed_objects() {
-  if [ $# -ne 4 ]; then
-    log 2 "'check_listed_objects' requires expected key one, expected size one, expected key two, expected size two"
+  if ! check_param_count "check_listed_objects" "expected key one, expected size one, expected key two, expected size two" 4 $#; then
     return 1
   fi
   # shellcheck disable=SC2154
@@ -84,8 +89,7 @@ check_listed_objects() {
 }
 
 list_check_objects_v2() {
-  if [ $# -ne 5 ]; then
-    log 2 "'list_check_objects_v1' requires bucket, expected key one, expected size one, expected key two, expected size two"
+  if ! check_param_count "list_check_objects_v2" "bucket, expected key one, expected size one, expected key two, expected size two" 5 $#; then
     return 1
   fi
   if ! list_objects_v2 "$1"; then
@@ -100,8 +104,7 @@ list_check_objects_v2() {
 }
 
 list_check_objects_rest() {
-  if [ $# -ne 1 ]; then
-    log 2 "'list_check_objects_rest' requires bucket name"
+  if ! check_param_count "list_check_objects_rest" "bucket" 1 $#; then
     return 1
   fi
   list_objects "rest" "$1"
@@ -122,8 +125,7 @@ list_check_objects_rest() {
 }
 
 list_check_objects_common() {
-  if [ $# -ne 4 ]; then
-    log 2 "'list_check_objects_common' requires client, bucket, object one, object two"
+  if ! check_param_count "list_check_objects_common" "client, bucket, object one, object two" 4 $#; then
     return 1
   fi
   if ! list_objects "$1" "$2"; then
@@ -149,8 +151,7 @@ list_check_objects_common() {
 }
 
 list_objects_check_file_count() {
-  if [ $# -ne 3 ]; then
-    log 2 "'list_objects_check_file_count' requires client, bucket, count"
+  if ! check_param_count "list_objects_check_file_count" "client, bucket, count" 3 $#; then
     return 1
   fi
   if ! list_objects "$1" "$2"; then
@@ -169,8 +170,7 @@ list_objects_check_file_count() {
 }
 
 check_object_listing_with_prefixes() {
-  if [ $# -ne 3 ]; then
-    log 2 "'check_object_listing_with_prefixes' requires bucket name, folder name, object name"
+  if ! check_param_count "check_object_listing_with_prefixes" "bucket, folder name, object name" 3 $#; then
     return 1
   fi
   if ! list_objects_s3api_v1 "$BUCKET_ONE_NAME" "/"; then
@@ -201,8 +201,7 @@ check_object_listing_with_prefixes() {
 }
 
 list_objects_with_user_rest_verify_access_denied() {
-  if [ $# -ne 3 ]; then
-    log 2 "list_objects_with_user_rest_verify_access_denied' requires bucket, username, password"
+  if ! check_param_count "list_objects_with_user_rest_verify_access_denied" "bucket, username, password" 3 $#; then
     return 1
   fi
   if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
@@ -222,8 +221,7 @@ list_objects_with_user_rest_verify_access_denied() {
 }
 
 list_objects_with_user_rest_verify_success() {
-  if [ $# -ne 4 ]; then
-    log 2 "list_objects_with_user_rest_verify_access_denied' requires bucket, username, password, expected object"
+  if ! check_param_count "list_objects_with_user_rest_verify_success" "bucket, username, password, expected object" 4 $#; then
     return 1
   fi
   if ! result=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
@@ -246,8 +244,7 @@ list_objects_with_user_rest_verify_success() {
 }
 
 list_objects_check_params_get_token() {
-  if [ $# -ne 4 ]; then
-    log 2 "'list_objects_check_params_get_token' requires bucket name, files, version two"
+  if ! check_param_count "list_objects_check_params_get_token" "bucket, files, version two" 4 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="$4" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
@@ -284,8 +281,7 @@ list_objects_check_params_get_token() {
 }
 
 list_objects_check_continuation_error() {
-  if [ $# -ne 2 ]; then
-    log 2 "'list_objects_check_continuation_error' requires bucket name, continuation token"
+  if ! check_param_count "list_objects_check_continuation_error" "bucket, continuation token" 2 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="TRUE" MAX_KEYS=1 CONTINUATION_TOKEN="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
@@ -303,8 +299,7 @@ list_objects_check_continuation_error() {
 }
 
 list_objects_v1_check_nextmarker_empty() {
-  if [ $# -ne 1 ]; then
-    log 2 "'get_next_objects_v1' requires bucket name"
+  if ! check_param_count "list_objects_v1_check_nextmarker_empty" "bucket" 1 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="FALSE" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
@@ -330,8 +325,7 @@ list_objects_v1_check_nextmarker_empty() {
 }
 
 get_delete_marker_and_verify_405() {
-  if [ $# -ne 2 ]; then
-    log 2 "'get_delete_marker_and_verify_405' requires bucket name, file name"
+  if ! check_param_count "get_delete_marker_and_verify_405" "bucket, file name" 2 $#; then
     return 1
   fi
   if ! list_object_versions_rest "$1"; then

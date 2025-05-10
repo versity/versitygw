@@ -22,10 +22,9 @@ source ./tests/report.sh
 #   1 - bucket does not exist
 #   2 - misc error
 head_bucket() {
-  log 6 "head_bucket"
+  log 6 "head_bucket '$1' '$2'"
   record_command "head-bucket" "client:$1"
-  if [ $# -ne 2 ]; then
-    log 2 "'head_bucket' command requires client, bucket name"
+  if ! check_param_count "head_bucket" "client, bucket name" 2 $#; then
     return 1
   fi
   local exit_code=0
@@ -37,6 +36,7 @@ head_bucket() {
     bucket_info=$(send_command mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
     bucket_info=$(head_bucket_rest "$2") || exit_code=$?
+    log 5 "head bucket rest exit code: $exit_code"
     return $exit_code
   else
     log 2 "invalid command type $1"
@@ -54,19 +54,21 @@ head_bucket() {
 }
 
 head_bucket_rest() {
-  if [ $# -ne 1 ]; then
-    log 2 "'head_bucket_rest' requires bucket name"
+  log 6 "head_bucket_rest '$1'"
+  if ! check_param_count "head_bucket_rest" "bucket" 1 $#; then
     return 2
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_bucket.sh 2>&1); then
-    log 2 "error getting head bucket"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_bucket.sh 2>&1); then
+    log 2 "error getting head bucket: $result"
     return 2
   fi
   if [ "$result" == "200" ]; then
     bucket_info="$(cat "$TEST_FILE_FOLDER/result.txt")"
     echo "$bucket_info"
+    log 5 "bucket info: $bucket_info"
     return 0
   elif [ "$result" == "404" ]; then
+    log 5 "bucket '$1' not found"
     return 1
   fi
   log 2 "unexpected response code '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
