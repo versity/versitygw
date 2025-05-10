@@ -14,27 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-list_check_buckets_rest() {
-  if ! list_buckets "rest"; then
-    log 2 "error listing buckets"
-    return 1
-  fi
-  bucket_found=false
-  # shellcheck disable=SC2154
-  for bucket in "${bucket_array[@]}"; do
-    log 5 "bucket: $bucket"
-    if [[ $bucket == "$BUCKET_ONE_NAME" ]]; then
-      bucket_found=true
-      break
-    fi
-  done
-  if [[ $bucket_found == "false" ]]; then
-    log 2 "bucket not found"
-    return 1
-  fi
-  return 0
-}
-
 list_and_check_buckets_with_user() {
   if [ $# -ne 5 ]; then
     log 2 "'list_and_check_buckets' requires client, two bucket names, id, key"

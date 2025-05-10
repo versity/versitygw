@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
+source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_bucket.sh
@@ -68,7 +69,7 @@ export RUN_USERS=true
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run list_check_buckets_rest
+  run list_check_buckets_rest "$BUCKET_ONE_NAME"
   assert_success
 }
 
@@ -183,7 +184,7 @@ export RUN_USERS=true
   run create_bucket_rest "$BUCKET_ONE_NAME"
   assert_success
 
-  run list_check_buckets_rest
+  run list_check_buckets_rest "$BUCKET_ONE_NAME"
   assert_success
 }
 
@@ -279,5 +280,38 @@ export RUN_USERS=true
   assert_success
 
   run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/${test_file}-copy"
+  assert_success
+}
+
+@test "REST - list buckets w/prefix" {
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+
+  run list_check_buckets_rest "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+
+  run list_check_buckets_rest_with_prefix "$BUCKET_ONE_NAME"
+  assert_success
+
+  run list_check_buckets_rest_with_prefix "$BUCKET_TWO_NAME"
+  assert_success
+}
+
+@test "REST - list buckets - continuation token isn't bucket name" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1399"
+  fi
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+
+  run check_continuation_token
+  assert_success
+}
+
+@test "REST - list buckets - success" {
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+
+  run check_for_buckets_with_multiple_pages "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
 }
