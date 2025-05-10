@@ -36,12 +36,8 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads after upload creation: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
-    log 2 "error aborting multipart upload: $result"
-    return 1
-  fi
-  if [ "$result" != "204" ]; then
-    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/result.txt)"
+  if ! abort_multipart_upload_rest "$1" "$2" "$upload_id"; then
+    log 2 "error aborting multipart upload"
     return 1
   fi
   log 5 "final uploads: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
@@ -87,6 +83,42 @@ abort_all_multipart_uploads() {
     fi
     log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
     if ! abort_multipart_upload "$1" "$key" "$upload_id"; then
+      log 2 "error aborting multipart upload"
+      return 1
+    fi
+  done
+}
+
+# param: bucket name
+# return 0 for success, 1 for error
+abort_all_multipart_uploads_rest() {
+  if ! check_param_count "abort_all_multipart_uploads_rest" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! list_multipart_uploads_rest "$1"; then
+    log 2 "error listing multipart uploads"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "UPLOADS: $uploads"
+  if ! upload_data=$(xmllint --xpath '//*[local-name()="Upload"]' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
+    if [[ "$upload_data" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error retrieving upload data: $upload_data"
+    return 1
+  fi
+  for upload in $upload_data; do
+    if ! key=$(echo -n "$upload" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
+      log 2 "error retrieving key: $key"
+      return 1
+    fi
+    if ! upload_id=$(echo -n "$upload" | xmllint --xpath '//*[local-name()="UploadId"]/text()' - 2>&1); then
+      log 2 "error retrieving upload ID: $upload_id"
+      return 1
+    fi
+    log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
+    if ! abort_multipart_upload_rest "$1" "$key" "$upload_id"; then
       log 2 "error aborting multipart upload"
       return 1
     fi

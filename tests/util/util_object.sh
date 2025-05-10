@@ -117,7 +117,7 @@ clear_object_in_bucket() {
 object_exists() {
   log 6 "object_exists"
   if ! check_param_count "object_exists" "command type, bucket, key" 3 $#; then
-    return 1
+    return 2
   fi
   head_object "$1" "$2" "$3" || local head_object_result=$?
   if [[ $head_object_result -eq 2 ]]; then

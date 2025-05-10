@@ -27,6 +27,21 @@ abort_multipart_upload() {
   return 0
 }
 
+abort_multipart_upload_rest() {
+  if ! check_param_count "abort_multipart_upload_rest" "bucket, key, upload ID" 3 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
+    log 2 "error aborting multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/result.txt)"
+    return 1
+  fi
+  return 0
+}
+
 abort_multipart_upload_with_user() {
   if [ $# -ne 5 ]; then
     log 2 "'abort multipart upload' command requires bucket, key, upload ID, username, password"
