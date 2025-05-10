@@ -459,3 +459,37 @@ test_file="test_file"
   run delete_object_rest "$BUCKET_ONE_NAME" "$file_name/$file_name"
   assert_success
 }
+
+@test "REST - GetObject w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD type" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_object_rest_with_invalid_streaming_type "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObject w/x-amz-checksum-algorithm" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_with_unneeded_algorithm_param "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32c"
+  assert_success
+}
+
+@test "REST - empty message" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  echo -en "\r\n" > "$TEST_FILE_FOLDER/empty.txt"
+  run send_via_openssl_with_timeout "$TEST_FILE_FOLDER/empty.txt"
+  assert_success
+}
+
+@test "REST - deformed message" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
+  run send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/deformed.txt" 400 "BadRequest" "An error occurred when parsing the HTTP request."
+  assert_success
+}

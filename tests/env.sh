@@ -160,6 +160,7 @@ check_universal_vars() {
       exit 1
     fi
   fi
+  export TEST_FILE_FOLDER
 }
 
 delete_command_log() {

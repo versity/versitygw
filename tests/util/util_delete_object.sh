@@ -27,15 +27,16 @@ delete_object_empty_bucket_check_error() {
     log 2 "error getting XML error data: $error"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "MethodNotAllowed" "Code"; then
+  echo -n "$error" > "$TEST_FILE_FOLDER/error.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "MethodNotAllowed" "Code"; then
     log 2 "Code mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "POST" "Method"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "POST" "Method"; then
     log 2 "Method mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "SERVICE" "ResourceType"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "SERVICE" "ResourceType"; then
     log 2 "ResourceType mismatch"
     return 1
   fi
