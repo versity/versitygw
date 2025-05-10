@@ -287,7 +287,7 @@ test_s3api_policy_invalid_action() {
   run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run check_for_empty_policy "s3api" "$BUCKET_ONE_NAME"

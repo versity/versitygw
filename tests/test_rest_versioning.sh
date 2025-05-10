@@ -26,7 +26,7 @@ source ./tests/util/util_setup.sh
 test_file="test_file"
 
 @test "REST - check, enable, suspend versioning" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   log 5 "get versioning"

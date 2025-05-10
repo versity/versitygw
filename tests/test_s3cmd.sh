@@ -101,7 +101,7 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1154"
   fi
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run put_public_access_block_enable_public_acls "$BUCKET_ONE_NAME"
@@ -122,7 +122,7 @@ export RUN_USERS=true
 #}
 
 @test "test_get_bucket_info_s3cmd" {
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run head_bucket "s3cmd" "$BUCKET_ONE_NAME"
@@ -131,7 +131,7 @@ export RUN_USERS=true
 }
 
 @test "test_get_bucket_info_doesnt_exist_s3cmd" {
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run head_bucket "s3cmd" "$BUCKET_ONE_NAME"a

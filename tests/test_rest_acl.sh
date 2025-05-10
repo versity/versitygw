@@ -26,8 +26,13 @@ source ./tests/util/util_setup.sh
 
 export RUN_USERS=true
 
+if [ "$SKIP_ACL_TESTING" == "true" ]; then
+  skip "Skipping ACL tests"
+  exit 0
+fi
+
 @test "REST - get ACL" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run get_and_check_acl_rest "$BUCKET_ONE_NAME"
@@ -105,7 +110,7 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/986"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
    run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
