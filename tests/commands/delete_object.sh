@@ -18,8 +18,7 @@
 delete_object() {
   log 6 "delete_object"
   record_command "delete-object" "client:$1"
-  if [ $# -ne 3 ]; then
-    log 2 "delete object command requires command type, bucket, key"
+  if ! check_param_count "delete_object" "command type, bucket, key" 3 $#; then
     return 1
   fi
   local exit_code=0
@@ -47,8 +46,7 @@ delete_object() {
 }
 
 delete_object_bypass_retention() {
-  if [[ $# -ne 4 ]]; then
-    log 2 "'delete-object with bypass retention' requires bucket, key, user, password"
+  if ! check_param_count "delete_object_bypass_retention" "bucket, key, user, password" 4 $#; then
     return 1
   fi
   if ! delete_object_error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" send_command aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --bypass-governance-retention 2>&1); then
@@ -59,8 +57,7 @@ delete_object_bypass_retention() {
 }
 
 delete_object_version() {
-  if [[ $# -ne 3 ]]; then
-    log 2 "'delete_object_version' requires bucket, key, version ID"
+  if ! check_param_count "delete_object_version" "bucket, key, version ID" 3 $#; then
     return 1
   fi
   if ! delete_object_error=$(send_command aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --version-id "$3" 2>&1); then
@@ -71,8 +68,7 @@ delete_object_version() {
 }
 
 delete_object_version_bypass_retention() {
-  if [[ $# -ne 3 ]]; then
-    log 2 "'delete_object_version_bypass_retention' requires bucket, key, version ID"
+  if ! check_param_count "delete_object_version_bypass_retention" "bucket, key, version ID" 3 $#; then
     return 1
   fi
   if ! delete_object_error=$(send_command aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --version-id "$3" --bypass-governance-retention 2>&1); then
@@ -84,8 +80,7 @@ delete_object_version_bypass_retention() {
 
 delete_object_with_user() {
   record_command "delete-object" "client:$1"
-  if [ $# -ne 5 ]; then
-    log 2 "delete object with user command requires command type, bucket, key, access ID, secret key"
+  if ! check_param_count "delete_object_version_bypass_retention" "command type, bucket, key, access ID, secret key" 5 $#; then
     return 1
   fi
   local exit_code=0
@@ -101,47 +96,22 @@ delete_object_with_user() {
   fi
   if [ $exit_code -ne 0 ]; then
     log 2 "error deleting object: $delete_object_error"
-    export delete_object_error
     return 1
   fi
   return 0
 }
 
 delete_object_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'delete_object_rest' requires bucket name, object name"
+  if ! check_param_count "delete_object_rest" "bucket, key" 2 $#; then
     return 1
   fi
-
-  generate_hash_for_payload ""
-
-  current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
-  aws_endpoint_url_address=${AWS_ENDPOINT_URL#*//}
-  header=$(echo "$AWS_ENDPOINT_URL" | awk -F: '{print $1}')
-  # shellcheck disable=SC2154
-  canonical_request="DELETE
-/$1/$2
-
-host:$aws_endpoint_url_address
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
-
-  if ! generate_sts_string "$current_date_time" "$canonical_request"; then
-    log 2 "error generating sts string"
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
     return 1
   fi
-  get_signature
-  # shellcheck disable=SC2154
-  reply=$(send_command curl -ks -w "%{http_code}" -X DELETE "$header://$aws_endpoint_url_address/$1/$2" \
-    -H "Authorization: AWS4-HMAC-SHA256 Credential=$AWS_ACCESS_KEY_ID/$ymd/$AWS_REGION/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature" \
-    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-    -H "x-amz-date: $current_date_time" \
-    -o "$TEST_FILE_FOLDER"/delete_object_error.txt 2>&1)
-  if [[ "$reply" != "204" ]]; then
-    log 2 "delete object command returned error: $(cat "$TEST_FILE_FOLDER"/delete_object_error.txt)"
+  if [ "$result" != "204" ]; then
+    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
+    log 2 "expected '204', was '$result' ($delete_object_error)"
     return 1
   fi
   return 0

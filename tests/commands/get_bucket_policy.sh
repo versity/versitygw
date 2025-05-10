@@ -15,18 +15,20 @@
 # under the License.
 
 get_bucket_policy() {
+  log 6 "get_bucket_policy '$1' '$2'"
   record_command "get-bucket-policy" "client:$1"
-  if [[ $# -ne 2 ]]; then
-    log 2 "get bucket policy command requires command type, bucket"
+  if ! check_param_count "get_bucket_policy" "command type, bucket" 2 $#; then
     return 1
   fi
   local get_bucket_policy_result=0
   if [[ $1 == 's3api' ]]; then
-    get_bucket_policy_aws "$2" || get_bucket_policy_result=$?
+    get_bucket_policy_s3api "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
     get_bucket_policy_mc "$2" || get_bucket_policy_result=$?
+  elif [ "$1" == 'rest' ]; then
+    get_bucket_policy_rest "$2" || get_bucket_policy_result=$?
   else
     log 2 "command 'get bucket policy' not implemented for '$1'"
     return 1
@@ -38,10 +40,10 @@ get_bucket_policy() {
   return 0
 }
 
-get_bucket_policy_aws() {
+get_bucket_policy_s3api() {
+  log 6 "get_bucket_policy_s3api '$1'"
   record_command "get-bucket-policy" "client:s3api"
-  if [[ $# -ne 1 ]]; then
-    log 2 "aws 'get bucket policy' command requires bucket"
+  if ! check_param_count "get_bucket_policy_s3api" "bucket" 1 $#; then
     return 1
   fi
   policy_json=$(send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1) || local get_result=$?
@@ -62,8 +64,7 @@ get_bucket_policy_aws() {
 
 get_bucket_policy_with_user() {
   record_command "get-bucket-policy" "client:s3api"
-  if [[ $# -ne 3 ]]; then
-    log 2 "'get bucket policy with user' command requires bucket, username, password"
+  if ! check_param_count "get_bucket_policy_with_user" "bucket, username, password" 3 $#; then
     return 1
   fi
   if policy_json=$(AWS_ACCESS_KEY_ID="$2" AWS_SECRET_ACCESS_KEY="$3" send_command aws --no-verify-ssl s3api get-bucket-policy --bucket "$1" 2>&1); then
@@ -82,8 +83,7 @@ get_bucket_policy_with_user() {
 
 get_bucket_policy_s3cmd() {
   record_command "get-bucket-policy" "client:s3cmd"
-  if [[ $# -ne 1 ]]; then
-    log 2 "s3cmd 'get bucket policy' command requires bucket"
+  if ! check_param_count "get_bucket_policy_s3cmd" "bucket" 1 $#; then
     return 1
   fi
 
@@ -106,8 +106,7 @@ get_bucket_policy_s3cmd() {
 }
 
 get_bucket_policy_rest() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "s3cmd 'get bucket policy' command requires bucket name"
+  if ! check_param_count "get_bucket_policy_rest" "bucket" 1 $#; then
     return 1
   fi
   if ! get_bucket_policy_rest_expect_code "$1" "200"; then
@@ -118,8 +117,7 @@ get_bucket_policy_rest() {
 }
 
 get_bucket_policy_rest_expect_code() {
-  if [[ $# -ne 2 ]]; then
-    log 2 "s3cmd 'get bucket policy' command requires bucket name, expected code"
+  if ! check_param_count "get_bucket_policy_rest_expect_code" "bucket, code" 2 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/policy.txt" ./tests/rest_scripts/get_bucket_policy.sh); then
@@ -169,8 +167,7 @@ search_for_first_policy_line_or_full_policy() {
 
 get_bucket_policy_mc() {
   record_command "get-bucket-policy" "client:mc"
-  if [[ $# -ne 1 ]]; then
-    log 2 "aws 'get bucket policy' command requires bucket"
+  if ! check_param_count "get_bucket_policy_mc" "bucket" 1 $#; then
     return 1
   fi
   bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?

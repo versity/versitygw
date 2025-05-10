@@ -22,25 +22,24 @@ source ./tests/commands/command.sh
 list_objects() {
   log 6 "list_objects"
   record_command "list-objects" "client:$1"
-  if [ $# -ne 2 ]; then
-    log 2 "'list_objects' command requires client, bucket"
+  if ! check_param_count "list_object" "client, bucket" 2 $#; then
     return 1
   fi
 
   local output
-  local result=0
+  local list_objects_result=0
   if [[ $1 == 's3' ]]; then
-    output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command aws --no-verify-ssl s3 ls s3://"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 's3api' ]]; then
-    list_objects_s3api "$2" || result=$?
-    return $result
+    list_objects_s3api "$2" || list_objects_result=$?
+    return $list_objects_result
   elif [[ $1 == 's3cmd' ]]; then
-    output=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || result=$?
+    output=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate ls s3://"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 'mc' ]]; then
-    output=$(send_command mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || result=$?
+    output=$(send_command mc --insecure ls "$MC_ALIAS"/"$2" 2>&1) || list_objects_result=$?
   elif [[ $1 == 'rest' ]]; then
-    list_objects_rest "$2" || result=$?
-    return $result
+    list_objects_rest "$2" || list_objects_result=$?
+    return $list_objects_result
   else
     fail "invalid command type $1"
     return 1
@@ -63,8 +62,7 @@ list_objects() {
 # fail if unable to list
 list_objects_s3api() {
   log 6 "list_objects_s3api"
-  if [ $# -ne 1 ]; then
-    log 2 "'list_objects_s3api' requires bucket"
+  if ! check_param_count "list_objects_s3api" "bucket" 1 $#; then
     return 1
   fi
   if ! output=$(send_command aws --no-verify-ssl s3api list-objects --bucket "$1" 2>&1); then
@@ -107,8 +105,7 @@ list_objects_s3api_v1() {
 }
 
 list_objects_with_prefix() {
-  if [ $# -ne 3 ]; then
-    log 2 "'list_objects_with_prefix' command requires, client, bucket, prefix"
+  if ! check_param_count "list_objects_with_prefix" "client, bucket, prefix" 3 $#; then
     return 1
   fi
   local result=0
@@ -134,8 +131,7 @@ list_objects_with_prefix() {
 }
 
 list_objects_rest() {
-  if [ $# -ne 1 ]; then
-    log 2 "'list_objects_rest' requires bucket name"
+  if ! check_param_count "list_objects_rest" "bucket" 1 $#; then
     return 1
   fi
   log 5 "bucket name: $1"

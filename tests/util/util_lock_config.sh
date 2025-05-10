@@ -17,12 +17,10 @@
 # params: bucket name, expected enabled value, expected governance mode, expected days
 # return 0 for success, 1 for failure
 get_and_check_object_lock_config() {
-  if [ $# -ne 4 ]; then
-    log 2 "'get_and_check_lock_config' requires bucket name, expected enabled value, expected governance mode, expected days"
+  if ! check_param_count "get_and_check_object_lock_config" "bucket, expected enabled value, expected governance mode, expected days" 4 $#; then
     return 1
   fi
-
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "s3api" "$1"; then
     log 2 "error getting object lock config"
     return 1
   fi
@@ -64,11 +62,10 @@ get_and_check_object_lock_config() {
 }
 
 get_check_object_lock_config_enabled() {
-  if [ $# -ne 1 ]; then
-    log 2 "'get_check_object_lock_config_enabled' requires bucket name"
+  if ! check_param_count "get_check_object_lock_config_enabled" "bucket" 1 $#; then
     return 1
   fi
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "s3api" "$1"; then
     log 2 "error getting lock configuration"
     return 1
   fi
@@ -86,8 +83,7 @@ get_check_object_lock_config_enabled() {
 }
 
 check_no_object_lock_config_rest() {
-  if [ $# -ne 1 ]; then
-    log 2 "'get_check_object_lock_config_rest' requires bucket name"
+  if ! check_param_count "check_no_object_lock_config_rest" "bucket" 1 $#; then
     return 1
   fi
   if get_object_lock_configuration_rest "$1"; then
@@ -112,6 +108,9 @@ check_no_object_lock_config_rest() {
 }
 
 check_object_lock_config_enabled_rest() {
+  if ! check_param_count "check_object_lock_config_enabled_rest" "bucket" 1 $#; then
+    return 1
+  fi
   if [ $# -ne 1 ]; then
     log 2 "'get_check_object_lock_config_rest' requires bucket name"
     return 1
