@@ -20,15 +20,20 @@ source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
-# shellcheck disable=SC2154
+# shellcheck disable=SC2153
 key="$OBJECT_KEY"
-# shellcheck disable=SC2154
+# shellcheck disable=SC2153
 checksum_mode="${CHECKSUM_MODE:=false}"
+# shellcheck disable=SC2153
+range="$RANGE"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 #x-amz-object-attributes:ETag
 canonical_request_data+=("GET" "/$bucket_name/$key" "" "host:$host")
+if [ "$range" != "" ]; then
+  canonical_request_data+=("range:$range")
+fi
 if [ "$checksum_mode" == "true" ]; then
   canonical_request_data+=("x-amz-checksum-mode:ENABLED")
 fi

@@ -199,7 +199,7 @@ chunked_upload_trailer_success() {
     log 2 "error performing chunked upload w/trailer"
     return 1
   fi
-  if ! download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
+  if ! download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
     log 2 "error downloading and comparing file"
     return 1
   fi
