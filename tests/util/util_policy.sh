@@ -343,11 +343,12 @@ put_and_check_policy_rest() {
 }
 
 log_bucket_policy() {
+  log 6 "log_bucket_policy"
   if [ $# -ne 1 ]; then
     log 2 "'log_bucket_policy' requires bucket name"
     return
   fi
-  if ! get_bucket_policy "s3api" "$1"; then
+  if ! get_bucket_policy "rest" "$1"; then
     log 2 "error getting bucket policy"
     return
   fi
