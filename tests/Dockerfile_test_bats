@@ -21,6 +21,7 @@ RUN apt-get update && \
     jq \
     bc \
     libxml2-utils \
+    xmlstarlet \
     ca-certificates && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*

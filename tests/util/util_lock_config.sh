@@ -22,7 +22,7 @@ get_and_check_object_lock_config() {
     return 1
   fi
 
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "s3api" "$1"; then
     log 2 "error getting object lock config"
     return 1
   fi
@@ -68,7 +68,7 @@ get_check_object_lock_config_enabled() {
     log 2 "'get_check_object_lock_config_enabled' requires bucket name"
     return 1
   fi
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "s3api" "$1"; then
     log 2 "error getting lock configuration"
     return 1
   fi
