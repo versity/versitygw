@@ -61,6 +61,11 @@ clear_bucket_s3api() {
     return 1
   fi
 
+  if ! delete_bucket_policy "s3api" "$1"; then
+    log 2 "error deleting bucket policy"
+    return 1
+  fi
+
   # shellcheck disable=SC2154
   if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
     log 2 "error disabling object lock config"
@@ -162,15 +167,15 @@ bucket_cleanup() {
       return 1
     fi
 
-    if ! delete_bucket_policy "s3api" "$1"; then
-      log 2 "error deleting bucket policy"
-      return 1
-    fi
+    #if ! delete_bucket_policy "s3api" "$1"; then
+    #  log 2 "error deleting bucket policy"
+    #  return 1
+    #fi
 
-    if ! get_object_ownership_rule_and_update_acl "$1"; then
-      log 2 "error getting object ownership rule and updating ACL"
-      return 1
-    fi
+    #if ! get_object_ownership_rule_and_update_acl "$1"; then
+    #  log 2 "error getting object ownership rule and updating ACL"
+    #  return 1
+    #fi
 
     #if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$1"; then
     #  log 2 "error resetting bucket owner"
