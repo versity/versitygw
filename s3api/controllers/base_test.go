@@ -974,9 +974,9 @@ func TestS3ApiController_PutActions(t *testing.T) {
 			PutObjectAclFunc: func(context.Context, *s3.PutObjectAclInput) error {
 				return nil
 			},
-			CopyObjectFunc: func(context.Context, s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-				return &s3.CopyObjectOutput{
-					CopyObjectResult: &types.CopyObjectResult{},
+			CopyObjectFunc: func(context.Context, s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+				return s3response.CopyObjectOutput{
+					CopyObjectResult: &s3response.CopyObjectResult{},
 				}, nil
 			},
 			PutObjectFunc: func(context.Context, s3response.PutObjectInput) (s3response.PutObjectOutput, error) {

@@ -3855,51 +3855,51 @@ func (p *Posix) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAttr
 	}, nil
 }
 
-func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
 	if input.Bucket == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	if input.Key == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 	if input.CopySource == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
 	}
 	if input.ExpectedBucketOwner == nil {
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
 	srcBucket, srcObject, srcVersionId, err := backend.ParseCopySource(*input.CopySource)
 	if err != nil {
-		return nil, err
+		return s3response.CopyObjectOutput{}, err
 	}
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
 
 	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.CopyObjectOutput{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	vStatus, err := p.getBucketVersioningStatus(ctx, srcBucket)
 	if err != nil {
-		return nil, err
+		return s3response.CopyObjectOutput{}, err
 	}
 	vEnabled := p.isBucketVersioningEnabled(vStatus)
 
 	if srcVersionId != "" {
 		if !p.versioningEnabled() || !vEnabled {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidVersionId)
 		}
 		vId, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get src object version id: %w", err)
+			return s3response.CopyObjectOutput{}, fmt.Errorf("get src object version id: %w", err)
 		}
 
 		if string(vId) != srcVersionId {
@@ -3910,37 +3910,37 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 	_, err = os.Stat(dstBucket)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stat bucket: %w", err)
+		return s3response.CopyObjectOutput{}, fmt.Errorf("stat bucket: %w", err)
 	}
 
 	objPath := joinPathWithTrailer(srcBucket, srcObject)
 	f, err := os.Open(objPath)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if p.versioningEnabled() && vEnabled {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, syscall.ENAMETOOLONG) {
-		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("open object: %w", err)
+		return s3response.CopyObjectOutput{}, fmt.Errorf("open object: %w", err)
 	}
 	defer f.Close()
 
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("stat object: %w", err)
+		return s3response.CopyObjectOutput{}, fmt.Errorf("stat object: %w", err)
 	}
 	if strings.HasSuffix(srcObject, "/") && !fi.IsDir() {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
 	mdmap := make(map[string]string)
@@ -3958,7 +3958,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	dstObjdPath := joinPathWithTrailer(dstBucket, dstObject)
 	if dstObjdPath == objPath {
 		if input.MetadataDirective == types.MetadataDirectiveCopy {
-			return &s3.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
 
 		// Delete the object metadata
@@ -3966,7 +3966,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			err := p.meta.DeleteAttribute(dstBucket, dstObject,
 				fmt.Sprintf("%v.%v", metaHdr, k))
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-				return nil, fmt.Errorf("delete user metadata: %w", err)
+				return s3response.CopyObjectOutput{}, fmt.Errorf("delete user metadata: %w", err)
 			}
 		}
 		// Store the new metadata
@@ -3974,13 +3974,13 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			err := p.meta.StoreAttribute(nil, dstBucket, dstObject,
 				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 			if err != nil {
-				return nil, fmt.Errorf("set user attr %q: %w", k, err)
+				return s3response.CopyObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
 			}
 		}
 
 		checksums, err := p.retrieveChecksums(nil, dstBucket, dstObject)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get obj checksums: %w", err)
+			return s3response.CopyObjectOutput{}, fmt.Errorf("get obj checksums: %w", err)
 		}
 
 		chType = checksums.Type
@@ -3991,18 +3991,18 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 			if checksums.Algorithm != input.ChecksumAlgorithm {
 				f, err := os.Open(dstObjdPath)
 				if err != nil {
-					return nil, fmt.Errorf("open obj file: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("open obj file: %w", err)
 				}
 				defer f.Close()
 
 				hashReader, err := utils.NewHashReader(f, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
 				if err != nil {
-					return nil, fmt.Errorf("initialize hash reader: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
 				}
 
 				_, err = hashReader.Read(nil)
 				if err != nil {
-					return nil, fmt.Errorf("read err: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("read err: %w", err)
 				}
 
 				checksums = s3response.Checksum{}
@@ -4032,7 +4032,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 				err = p.storeChecksums(f, dstBucket, dstObject, checksums)
 				if err != nil {
-					return nil, fmt.Errorf("store checksum: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("store checksum: %w", err)
 				}
 			}
 		}
@@ -4041,7 +4041,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		etag = string(b)
 		vId, _ := p.meta.RetrieveAttribute(nil, dstBucket, dstObject, versionIdKey)
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		version = backend.GetPtrFromString(string(vId))
 
@@ -4056,18 +4056,18 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 				Expires:            input.Expires,
 			})
 		if err != nil {
-			return nil, err
+			return s3response.CopyObjectOutput{}, err
 		}
 
 		if input.TaggingDirective == types.TaggingDirectiveReplace {
 			tags, err := backend.ParseObjectTags(getString(input.Tagging))
 			if err != nil {
-				return nil, err
+				return s3response.CopyObjectOutput{}, err
 			}
 
 			err = p.PutObjectTagging(ctx, dstBucket, dstObject, tags)
 			if err != nil {
-				return nil, err
+				return s3response.CopyObjectOutput{}, err
 			}
 		}
 	} else {
@@ -4075,7 +4075,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		checksums, err := p.retrieveChecksums(f, srcBucket, srcObject)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return nil, fmt.Errorf("get obj checksum: %w", err)
+			return s3response.CopyObjectOutput{}, fmt.Errorf("get obj checksum: %w", err)
 		}
 
 		// If any checksum algorithm is provided, replace, otherwise
@@ -4121,7 +4121,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		res, err := p.PutObject(ctx, putObjectInput)
 		if err != nil {
-			return nil, err
+			return s3response.CopyObjectOutput{}, err
 		}
 
 		// copy the source object tagging after the destination object
@@ -4129,12 +4129,12 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		if input.TaggingDirective == types.TaggingDirectiveCopy {
 			tagging, err := p.meta.RetrieveAttribute(nil, srcBucket, srcObject, tagHdr)
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-				return nil, fmt.Errorf("get source object tagging: %w", err)
+				return s3response.CopyObjectOutput{}, fmt.Errorf("get source object tagging: %w", err)
 			}
 			if err == nil {
 				err := p.meta.StoreAttribute(nil, dstBucket, dstObject, tagHdr, tagging)
 				if err != nil {
-					return nil, fmt.Errorf("set destination object tagging: %w", err)
+					return s3response.CopyObjectOutput{}, fmt.Errorf("set destination object tagging: %w", err)
 				}
 			}
 		}
@@ -4151,11 +4151,11 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 	fi, err = os.Stat(dstObjdPath)
 	if err != nil {
-		return nil, fmt.Errorf("stat dst object: %w", err)
+		return s3response.CopyObjectOutput{}, fmt.Errorf("stat dst object: %w", err)
 	}
 
-	return &s3.CopyObjectOutput{
-		CopyObjectResult: &types.CopyObjectResult{
+	return s3response.CopyObjectOutput{
+		CopyObjectResult: &s3response.CopyObjectResult{
 			ETag:              &etag,
 			LastModified:      backend.GetTimePtr(fi.ModTime()),
 			ChecksumCRC32:     crc32,

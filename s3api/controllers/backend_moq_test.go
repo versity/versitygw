@@ -32,7 +32,7 @@ var _ backend.Backend = &BackendMock{}
 //			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 //				panic("mock out the CompleteMultipartUpload method")
 //			},
-//			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+//			CopyObjectFunc: func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
 //				panic("mock out the CopyObject method")
 //			},
 //			CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
@@ -202,7 +202,7 @@ type BackendMock struct {
 	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error)
 
 	// CopyObjectFunc mocks the CopyObject method.
-	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error)
+	CopyObjectFunc func(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (s3response.CopyObjectOutput, error)
 
 	// CreateBucketFunc mocks the CreateBucket method.
 	CreateBucketFunc func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error
@@ -940,7 +940,7 @@ func (mock *BackendMock) CompleteMultipartUploadCalls() []struct {
 }
 
 // CopyObject calls CopyObjectFunc.
-func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (mock *BackendMock) CopyObject(contextMoqParam context.Context, copyObjectInput s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
 	if mock.CopyObjectFunc == nil {
 		panic("BackendMock.CopyObjectFunc: method is nil but Backend.CopyObject was just called")
 	}

@@ -65,7 +65,7 @@ type Backend interface {
 	GetObject(context.Context, *s3.GetObjectInput) (*s3.GetObjectOutput, error)
 	GetObjectAcl(context.Context, *s3.GetObjectAclInput) (*s3.GetObjectAclOutput, error)
 	GetObjectAttributes(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error)
-	CopyObject(context.Context, s3response.CopyObjectInput) (*s3.CopyObjectOutput, error)
+	CopyObject(context.Context, s3response.CopyObjectInput) (s3response.CopyObjectOutput, error)
 	ListObjects(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error)
 	ListObjectsV2(context.Context, *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error)
 	DeleteObject(context.Context, *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error)
@@ -200,8 +200,8 @@ func (BackendUnsupported) GetObjectAcl(context.Context, *s3.GetObjectAclInput) (
 func (BackendUnsupported) GetObjectAttributes(context.Context, *s3.GetObjectAttributesInput) (s3response.GetObjectAttributesResponse, error) {
 	return s3response.GetObjectAttributesResponse{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) CopyObject(context.Context, s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
-	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+func (BackendUnsupported) CopyObject(context.Context, s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
+	return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) ListObjects(context.Context, *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
 	return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNotImplemented)
