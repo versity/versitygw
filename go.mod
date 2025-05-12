@@ -23,7 +23,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/smira/go-statsd v1.3.4
 	github.com/urfave/cli/v2 v2.27.6
-	github.com/valyala/fasthttp v1.61.0
+	github.com/valyala/fasthttp v1.62.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
 	golang.org/x/sync v0.14.0
 	golang.org/x/sys v0.33.0
