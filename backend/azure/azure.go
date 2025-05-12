@@ -823,14 +823,14 @@ func (az *Azure) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput
 	}, nil
 }
 
-func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
 	dstClient, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
-		return nil, err
+		return s3response.CopyObjectOutput{}, err
 	}
 	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource {
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
+			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
 
 		// Set object meta http headers
@@ -842,7 +842,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 			BlobContentType:        input.ContentType,
 		}, nil)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 		}
 
 		meta := input.Metadata
@@ -857,14 +857,14 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		// Set object metadata
 		_, err = dstClient.SetMetadata(ctx, parseMetadata(meta), nil)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 		}
 
 		// Set object legal hold
 		if input.ObjectLockLegalHoldStatus != "" {
 			err = az.PutObjectLegalHold(ctx, *input.Bucket, *input.Key, "", input.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn)
 			if err != nil {
-				return nil, azureErrToS3Err(err)
+				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
 		}
 		// Set object retention
@@ -878,11 +878,11 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 
 			retParsed, err := json.Marshal(retention)
 			if err != nil {
-				return nil, fmt.Errorf("parse object retention: %w", err)
+				return s3response.CopyObjectOutput{}, fmt.Errorf("parse object retention: %w", err)
 			}
 			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", true, retParsed)
 			if err != nil {
-				return nil, azureErrToS3Err(err)
+				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
 		}
 
@@ -890,16 +890,16 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		if input.TaggingDirective == types.TaggingDirectiveReplace {
 			tags, err := backend.ParseObjectTags(getString(input.Tagging))
 			if err != nil {
-				return nil, err
+				return s3response.CopyObjectOutput{}, err
 			}
 			_, err = dstClient.SetTags(ctx, tags, nil)
 			if err != nil {
-				return nil, azureErrToS3Err(err)
+				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
 		}
 
-		return &s3.CopyObjectOutput{
-			CopyObjectResult: &types.CopyObjectResult{
+		return s3response.CopyObjectOutput{
+			CopyObjectResult: &s3response.CopyObjectResult{
 				LastModified: res.LastModified,
 				ETag:         (*string)(res.ETag),
 			},
@@ -908,13 +908,13 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 
 	srcBucket, srcObj, _, err := backend.ParseCopySource(*input.CopySource)
 	if err != nil {
-		return nil, err
+		return s3response.CopyObjectOutput{}, err
 	}
 
 	// Get the source object
 	downloadResp, err := az.client.DownloadStream(ctx, srcBucket, srcObj, nil)
 	if err != nil {
-		return nil, azureErrToS3Err(err)
+		return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 	}
 
 	pInput := s3response.PutObjectInput{
@@ -952,28 +952,28 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	// Create the destination object
 	resp, err := az.PutObject(ctx, pInput)
 	if err != nil {
-		return nil, err
+		return s3response.CopyObjectOutput{}, err
 	}
 
 	// Copy the object tagging, if tagging directive is "COPY"
 	if input.TaggingDirective == types.TaggingDirectiveCopy {
 		srcClient, err := az.getBlobClient(srcBucket, srcObj)
 		if err != nil {
-			return nil, err
+			return s3response.CopyObjectOutput{}, err
 		}
 		res, err := srcClient.GetTags(ctx, nil)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 		}
 
 		_, err = dstClient.SetTags(ctx, parseAzTags(res.BlobTagSet), nil)
 		if err != nil {
-			return nil, azureErrToS3Err(err)
+			return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 		}
 	}
 
-	return &s3.CopyObjectOutput{
-		CopyObjectResult: &types.CopyObjectResult{
+	return s3response.CopyObjectOutput{
+		CopyObjectResult: &s3response.CopyObjectResult{
 			ETag: &resp.ETag,
 		},
 	}, nil

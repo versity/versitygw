@@ -1089,9 +1089,9 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 	}, handleError(err)
 }
 
-func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (*s3.CopyObjectOutput, error) {
+func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
 	if *input.Bucket == s.metaBucket {
-		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 	if input.CacheControl != nil && *input.CacheControl == "" {
 		input.CacheControl = nil
@@ -1227,7 +1227,33 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 			StorageClass:                   input.StorageClass,
 			TaggingDirective:               input.TaggingDirective,
 		})
-	return out, handleError(err)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, handleError(err)
+	}
+	if out.CopyObjectResult == nil {
+		out.CopyObjectResult = &types.CopyObjectResult{}
+	}
+	return s3response.CopyObjectOutput{
+		BucketKeyEnabled: out.BucketKeyEnabled,
+		CopyObjectResult: &s3response.CopyObjectResult{
+			ChecksumCRC32:     out.CopyObjectResult.ChecksumCRC32,
+			ChecksumCRC32C:    out.CopyObjectResult.ChecksumCRC32C,
+			ChecksumCRC64NVME: out.CopyObjectResult.ChecksumCRC64NVME,
+			ChecksumSHA1:      out.CopyObjectResult.ChecksumSHA1,
+			ChecksumSHA256:    out.CopyObjectResult.ChecksumSHA256,
+			ChecksumType:      out.CopyObjectResult.ChecksumType,
+			ETag:              out.CopyObjectResult.ETag,
+			LastModified:      out.CopyObjectResult.LastModified,
+		},
+		CopySourceVersionId:     out.CopySourceVersionId,
+		Expiration:              out.Expiration,
+		SSECustomerAlgorithm:    out.SSECustomerAlgorithm,
+		SSECustomerKeyMD5:       out.SSECustomerKeyMD5,
+		SSEKMSEncryptionContext: out.SSEKMSEncryptionContext,
+		SSEKMSKeyId:             out.SSEKMSKeyId,
+		ServerSideEncryption:    out.ServerSideEncryption,
+		VersionId:               out.VersionId,
+	}, handleError(err)
 }
 
 func (s *S3Proxy) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {

@@ -344,23 +344,42 @@ type CanonicalUser struct {
 	DisplayName string
 }
 
+type CopyObjectOutput struct {
+	BucketKeyEnabled        *bool
+	CopyObjectResult        *CopyObjectResult
+	CopySourceVersionId     *string
+	Expiration              *string
+	SSECustomerAlgorithm    *string
+	SSECustomerKeyMD5       *string
+	SSEKMSEncryptionContext *string
+	SSEKMSKeyId             *string
+	ServerSideEncryption    types.ServerSideEncryption
+	VersionId               *string
+}
+
 type CopyObjectResult struct {
-	XMLName             xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
-	LastModified        time.Time
-	ETag                string
-	CopySourceVersionId string `xml:"-"`
+	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CopyObjectResult" json:"-"`
+	ChecksumCRC32     *string
+	ChecksumCRC32C    *string
+	ChecksumCRC64NVME *string
+	ChecksumSHA1      *string
+	ChecksumSHA256    *string
+	ChecksumType      types.ChecksumType
+	ETag              *string
+	LastModified      *time.Time
 }
 
 func (r CopyObjectResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias CopyObjectResult
 	aux := &struct {
-		LastModified string `xml:"LastModified"`
+		LastModified string `xml:"LastModified,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(&r),
 	}
-
-	aux.LastModified = r.LastModified.UTC().Format(iso8601TimeFormat)
+	if r.LastModified != nil {
+		aux.LastModified = r.LastModified.UTC().Format(time.RFC3339)
+	}
 
 	return e.EncodeElement(aux, start)
 }
