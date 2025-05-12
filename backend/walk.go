@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
 	"strings"
 	"syscall"
 
@@ -38,10 +37,38 @@ type GetObjFunc func(path string, d fs.DirEntry) (s3response.Object, error)
 
 var ErrSkipObj = errors.New("skip this object")
 
+// map to store object common prefixes
+type cpMap map[string]int
+
+func (c cpMap) Add(key string) {
+	_, ok := c[key]
+	if !ok {
+		c[key] = len(c)
+	}
+}
+
+// Len returns the length of the map
+func (c cpMap) Len() int {
+	return len(c)
+}
+
+// CpArray converts the map into a sorted []types.CommonPrefixes array
+func (c cpMap) CpArray() []types.CommonPrefix {
+	commonPrefixes := make([]types.CommonPrefix, c.Len())
+	for cp, i := range c {
+		pfx := cp
+		commonPrefixes[i] = types.CommonPrefix{
+			Prefix: &pfx,
+		}
+	}
+
+	return commonPrefixes
+}
+
 // Walk walks the supplied fs.FS and returns results compatible with list
 // objects responses
 func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker string, max int32, getObj GetObjFunc, skipdirs []string) (WalkResults, error) {
-	cpmap := make(map[string]struct{})
+	cpmap := cpMap{}
 	var objects []s3response.Object
 
 	// if max is 0, it should return empty non-truncated result
@@ -120,7 +147,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 						return fs.SkipAll
 					}
 					objects = append(objects, dirobj)
-					if (len(objects) + len(cpmap)) == int(max) {
+					if (len(objects) + cpmap.Len()) == int(max) {
 						newMarker = path
 						pastMax = true
 					}
@@ -174,7 +201,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 
 			objects = append(objects, obj)
 
-			if (len(objects) + len(cpmap)) == int(max) {
+			if (len(objects) + cpmap.Len()) == int(max) {
 				newMarker = path
 				pastMax = true
 			}
@@ -218,7 +245,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 				return fs.SkipAll
 			}
 			objects = append(objects, obj)
-			if (len(objects) + len(cpmap)) == int(max) {
+			if (len(objects) + cpmap.Len()) == int(max) {
 				newMarker = path
 				pastMax = true
 			}
@@ -244,8 +271,8 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 			truncated = true
 			return fs.SkipAll
 		}
-		cpmap[cpref] = struct{}{}
-		if (len(objects) + len(cpmap)) == int(max) {
+		cpmap.Add(cpref)
+		if (len(objects) + cpmap.Len()) == int(max) {
 			newMarker = cpref
 			pastMax = true
 		}
@@ -260,25 +287,12 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		return WalkResults{}, err
 	}
 
-	var commonPrefixStrings []string
-	for k := range cpmap {
-		commonPrefixStrings = append(commonPrefixStrings, k)
-	}
-	sort.Strings(commonPrefixStrings)
-	commonPrefixes := make([]types.CommonPrefix, 0, len(commonPrefixStrings))
-	for _, cp := range commonPrefixStrings {
-		pfx := cp
-		commonPrefixes = append(commonPrefixes, types.CommonPrefix{
-			Prefix: &pfx,
-		})
-	}
-
 	if !truncated {
 		newMarker = ""
 	}
 
 	return WalkResults{
-		CommonPrefixes: commonPrefixes,
+		CommonPrefixes: cpmap.CpArray(),
 		Objects:        objects,
 		Truncated:      truncated,
 		NextMarker:     newMarker,
@@ -315,7 +329,7 @@ type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *boo
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
 func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
-	cpmap := make(map[string]struct{})
+	cpmap := cpMap{}
 	var objects []types.ObjectVersion
 	var delMarkers []types.DeleteMarkerEntry
 
@@ -371,11 +385,11 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 			if delimiter == "/" &&
 				prefix != path+"/" &&
 				strings.HasPrefix(path+"/", prefix) {
-				cpmap[path+"/"] = struct{}{}
+				cpmap.Add(path + "/")
 				return fs.SkipDir
 			}
 
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
 			if err == ErrSkipObj {
 				return nil
 			}
@@ -402,7 +416,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		if delimiter == "" {
 			// If no delimiter specified, then all files with matching
 			// prefix are included in results
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
 			if err == ErrSkipObj {
 				return nil
 			}
@@ -445,7 +459,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		suffix := strings.TrimPrefix(path, prefix)
 		before, _, found := strings.Cut(suffix, delimiter)
 		if !found {
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-len(cpmap), d)
+			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
 			if err == ErrSkipObj {
 				return nil
 			}
@@ -467,8 +481,8 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		// Common prefixes are a set, so should not have duplicates.
 		// These are abstractly a "directory", so need to include the
 		// delimiter at the end.
-		cpmap[prefix+before+delimiter] = struct{}{}
-		if (len(objects) + len(cpmap)) == int(max) {
+		cpmap.Add(prefix + before + delimiter)
+		if (len(objects) + cpmap.Len()) == int(max) {
 			nextMarker = path
 			truncated = true
 
@@ -481,21 +495,8 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 		return WalkVersioningResults{}, err
 	}
 
-	var commonPrefixStrings []string
-	for k := range cpmap {
-		commonPrefixStrings = append(commonPrefixStrings, k)
-	}
-	sort.Strings(commonPrefixStrings)
-	commonPrefixes := make([]types.CommonPrefix, 0, len(commonPrefixStrings))
-	for _, cp := range commonPrefixStrings {
-		pfx := cp
-		commonPrefixes = append(commonPrefixes, types.CommonPrefix{
-			Prefix: &pfx,
-		})
-	}
-
 	return WalkVersioningResults{
-		CommonPrefixes:      commonPrefixes,
+		CommonPrefixes:      cpmap.CpArray(),
 		ObjectVersions:      objects,
 		DelMarkers:          delMarkers,
 		Truncated:           truncated,
