@@ -172,7 +172,7 @@ type ListObjectsV2Result struct {
 	Name                  *string
 	Prefix                *string
 	StartAfter            *string
-	ContinuationToken     *string
+	ContinuationToken     *string `xml:"ContinuationToken,omitempty"`
 	NextContinuationToken *string
 	KeyCount              *int32
 	MaxKeys               *int32
