@@ -9650,6 +9650,42 @@ func ListParts_with_checksums(s *S3Conf) error {
 	})
 }
 
+func ListParts_null_checksums(s *S3Conf) error {
+	testName := "ListParts_null_checksums"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = uploadParts(s3client, 20*1024*1024, 3, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ChecksumType != types.ChecksumType("null") {
+			return fmt.Errorf("expected the checksum type to be null, instead got %v", res.ChecksumType)
+		}
+		if res.ChecksumAlgorithm != types.ChecksumAlgorithm("null") {
+			return fmt.Errorf("expected the checksum algorithm to be null, instead got %v", res.ChecksumAlgorithm)
+		}
+
+		return nil
+	})
+}
+
 func ListParts_success(s *S3Conf) error {
 	testName := "ListParts_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -2200,6 +2200,12 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return lpr, fmt.Errorf("get mp checksum: %w", err)
 	}
+	if checksum.Algorithm == "" {
+		checksum.Algorithm = types.ChecksumAlgorithm("null")
+	}
+	if checksum.Type == "" {
+		checksum.Type = types.ChecksumType("null")
+	}
 
 	parts := make([]s3response.Part, 0, len(ents))
 	for i, e := range ents {
