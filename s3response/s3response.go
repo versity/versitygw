@@ -62,7 +62,7 @@ func (p Part) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&p),
 	}
 
-	aux.LastModified = p.LastModified.UTC().Format(iso8601TimeFormat)
+	aux.LastModified = p.LastModified.UTC().Format(time.RFC3339)
 
 	return e.EncodeElement(aux, start)
 }
@@ -198,15 +198,14 @@ type Object struct {
 func (o Object) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 	type Alias Object
 	aux := &struct {
-		LastModified *string `xml:"LastModified,omitempty"`
+		LastModified string `xml:"LastModified,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(&o),
 	}
 
 	if o.LastModified != nil {
-		formattedTime := o.LastModified.UTC().Format(iso8601TimeFormat)
-		aux.LastModified = &formattedTime
+		aux.LastModified = o.LastModified.UTC().Format(time.RFC3339)
 	}
 
 	return e.EncodeElement(aux, start)
@@ -233,7 +232,7 @@ func (u Upload) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 		Alias: (*Alias)(&u),
 	}
 
-	aux.Initiated = u.Initiated.UTC().Format(iso8601TimeFormat)
+	aux.Initiated = u.Initiated.UTC().Format(time.RFC3339)
 
 	return e.EncodeElement(aux, start)
 }
@@ -330,7 +329,7 @@ func (r ListAllMyBucketsEntry) MarshalXML(e *xml.Encoder, start xml.StartElement
 		Alias: (*Alias)(&r),
 	}
 
-	aux.CreationDate = r.CreationDate.UTC().Format(iso8601TimeFormat)
+	aux.CreationDate = r.CreationDate.UTC().Format(time.RFC3339)
 
 	return e.EncodeElement(aux, start)
 }
@@ -396,6 +395,21 @@ type CopyPartResult struct {
 
 	// not included in the body
 	CopySourceVersionId string `xml:"-"`
+}
+
+func (r CopyPartResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias CopyPartResult
+	aux := &struct {
+		LastModified string `xml:"LastModified,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(&r),
+	}
+	if !r.LastModified.IsZero() {
+		aux.LastModified = r.LastModified.UTC().Format(time.RFC3339)
+	}
+
+	return e.EncodeElement(aux, start)
 }
 
 type CompleteMultipartUploadResult struct {
@@ -466,7 +480,37 @@ type ListVersionsResult struct {
 	NextVersionIdMarker *string
 	Prefix              *string
 	VersionIdMarker     *string
-	Versions            []types.ObjectVersion `xml:"Version"`
+	Versions            []ObjectVersion `xml:"Version"`
+}
+
+type ObjectVersion struct {
+	ChecksumAlgorithm []types.ChecksumAlgorithm
+	ChecksumType      types.ChecksumType
+	ETag              *string
+	IsLatest          *bool
+	Key               *string
+	LastModified      *time.Time
+	Owner             *types.Owner
+	RestoreStatus     *types.RestoreStatus
+	Size              *int64
+	StorageClass      types.ObjectVersionStorageClass
+	VersionId         *string
+}
+
+func (o ObjectVersion) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type Alias ObjectVersion
+	aux := &struct {
+		LastModified string `xml:"LastModified"`
+		*Alias
+	}{
+		Alias: (*Alias)(&o),
+	}
+
+	if o.LastModified != nil {
+		aux.LastModified = o.LastModified.UTC().Format(time.RFC3339)
+	}
+
+	return e.EncodeElement(aux, start)
 }
 
 type GetBucketVersioningOutput struct {

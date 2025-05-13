@@ -295,7 +295,7 @@ func (s *S3Proxy) ListObjectVersions(ctx context.Context, input *s3.ListObjectVe
 		NextVersionIdMarker: out.NextVersionIdMarker,
 		Prefix:              out.Prefix,
 		VersionIdMarker:     input.VersionIdMarker,
-		Versions:            out.Versions,
+		Versions:            convertObjectVersions(out.Versions),
 	}, nil
 }
 
@@ -1713,6 +1713,27 @@ func convertObjects(objs []types.Object) []s3response.Object {
 			StorageClass:      obj.StorageClass,
 			ChecksumAlgorithm: obj.ChecksumAlgorithm,
 			ChecksumType:      obj.ChecksumType,
+		})
+	}
+
+	return result
+}
+
+func convertObjectVersions(versions []types.ObjectVersion) []s3response.ObjectVersion {
+	result := make([]s3response.ObjectVersion, 0, len(versions))
+	for _, v := range versions {
+		result = append(result, s3response.ObjectVersion{
+			ChecksumAlgorithm: v.ChecksumAlgorithm,
+			ChecksumType:      v.ChecksumType,
+			ETag:              v.ETag,
+			IsLatest:          v.IsLatest,
+			Key:               v.Key,
+			LastModified:      v.LastModified,
+			Owner:             v.Owner,
+			RestoreStatus:     v.RestoreStatus,
+			Size:              v.Size,
+			StorageClass:      v.StorageClass,
+			VersionId:         v.VersionId,
 		})
 	}
 

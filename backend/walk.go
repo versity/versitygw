@@ -310,7 +310,7 @@ func contains(a string, strs []string) bool {
 
 type WalkVersioningResults struct {
 	CommonPrefixes      []types.CommonPrefix
-	ObjectVersions      []types.ObjectVersion
+	ObjectVersions      []s3response.ObjectVersion
 	DelMarkers          []types.DeleteMarkerEntry
 	Truncated           bool
 	NextMarker          string
@@ -318,7 +318,7 @@ type WalkVersioningResults struct {
 }
 
 type ObjVersionFuncResult struct {
-	ObjectVersions      []types.ObjectVersion
+	ObjectVersions      []s3response.ObjectVersion
 	DelMarkers          []types.DeleteMarkerEntry
 	NextVersionIdMarker string
 	Truncated           bool
@@ -330,7 +330,7 @@ type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *boo
 // ListObjectVersions action response
 func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
 	cpmap := cpMap{}
-	var objects []types.ObjectVersion
+	var objects []s3response.ObjectVersion
 	var delMarkers []types.DeleteMarkerEntry
 
 	var pastMarker bool
