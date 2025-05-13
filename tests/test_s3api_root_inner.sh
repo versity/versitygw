@@ -208,7 +208,7 @@ test_retention_bypass_s3api_root() {
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
 
-  run delete_object_bypass_retention "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
+  run delete_object_bypass_retention "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
   assert_success
 }
 
