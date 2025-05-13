@@ -28,7 +28,7 @@ delete_old_versions() {
     log 2 "'delete_old_versions' requires bucket name"
     return 1
   fi
-  if ! list_object_versions "$1"; then
+  if ! list_object_versions "rest" "$1"; then
     log 2 "error listing object versions"
     return 1
   fi
@@ -37,12 +37,8 @@ delete_old_versions() {
   version_keys=()
   version_ids=()
 
-  if ! parse_version_data "$versions" '.Versions[]'; then
-    log 2 "error parsing Versions elements"
-    return 1
-  fi
-  if ! parse_version_data "$versions" '.DeleteMarkers[]'; then
-    log 2 "error getting DeleteMarkers elements"
+  if ! parse_version_data_by_type "rest" "$2"; then
+    log 2 "error parsing version data"
     return 1
   fi
 
@@ -82,6 +78,29 @@ delete_object_version_with_or_without_retention() {
     fi
   fi
   return 0
+}
+
+parse_version_data_by_type() {
+  if [ $# -ne 2 ]; then
+    log 2 "'parse_version_data_by_type' requires client, data"
+    return 1
+  fi
+  if [ "$1" == "rest" ]; then
+    log 5 "version data: $versions"
+    if ! parse_versions_rest "$versions"; then
+      log 2 "error parsing REST object versions"
+      return 1
+    fi
+  else
+    if ! parse_version_data "$versions" '.Versions[]'; then
+      log 2 "error parsing Versions elements"
+      return 1
+    fi
+    if ! parse_version_data "$versions" '.DeleteMarkers[]'; then
+      log 2 "error getting DeleteMarkers elements"
+      return 1
+    fi
+  fi
 }
 
 parse_version_data() {
@@ -139,6 +158,56 @@ check_versioning_status_rest() {
     log 2 "versioning info should be '$2', is $versioning_status"
     return 1
   fi
+  return 0
+}
+
+echo_versions() {
+  if [ $# -ne 2 ]; then
+    log 2 "'echo_versions' requires 'Version' or 'DeleteMarker', 'Key' or 'VersionId'"
+    return 1
+  fi
+  if ! keys=$(echo -n "$versions" | xmllint --xpath "//*[local-name()=\"$1\"]/*[local-name()=\"$2\"]/text()" - | xmlstarlet unesc 2>&1); then
+    if [[ "$keys" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting Version 'Key' values: $keys"
+    return 1
+  fi
+  log 5 "keys to append: ${keys[*]}"
+  echo "${keys[*]}"
+}
+
+parse_versions_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'parse_versions_request' requires versions variable"
+    return 1
+  fi
+  if ! keys=$(echo_versions "Version" "Key"); then
+    log 2 "error getting Version Key values: $keys"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "Version" "VersionId"); then
+    log 2 "error getting Version VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
+  if ! keys=$(echo_versions "DeleteMarker" "Key"); then
+    log 2 "error getting DeleteMarker Key values: $keys"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "DeleteMarker" "VersionId"); then
+    log 2 "error getting DeleteMarker VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
+  log 5 "version keys: ${version_keys[*]}"
+  log 5 "version IDs: ${version_ids[*]}"
   return 0
 }
 
