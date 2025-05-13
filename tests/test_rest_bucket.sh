@@ -102,3 +102,40 @@ source ./tests/util/util_tags.sh
   run check_object_lock_config_enabled_rest "$BUCKET_ONE_NAME"
   assert_success
 }
+
+@test "REST - can set object lock enabled on existing buckets" {
+  if [ "$DIRECT" != "true" ]; then
+      skip "https://github.com/versity/versitygw/issues/1300"
+    fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Enabled"
+  assert_success
+
+  # this enables object lock without a specific retention policy
+  run remove_retention_policy_rest "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - cannot set object lock enabled without content-md5" {
+  if [ "$DIRECT" != "true" ]; then
+      skip "https://github.com/versity/versitygw/issues/1301"
+    fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  if [ "$DIRECT" == "true" ]; then
+    sleep 5
+  fi
+
+  # this enables object lock without a specific retention policy
+  run put_object_lock_config_without_content_md5 "$BUCKET_ONE_NAME"
+  assert_success
+}

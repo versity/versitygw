@@ -287,7 +287,7 @@ list_users() {
 
 list_users_versitygw() {
   log 6 "list_users_versitygw"
-  users=$(send_command "$VERSITY_EXE" admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users) || local list_result=$?
+  users=$(send_command "$VERSITY_EXE" admin --allow-insecure --access "$AWS_ACCESS_KEY_ID" --secret "$AWS_SECRET_ACCESS_KEY" --endpoint-url "$AWS_ENDPOINT_URL" list-users 2>&1) || local list_result=$?
   if [[ $list_result -ne 0 ]]; then
     log 2 "error listing users: $users"
     return 1
