@@ -22,11 +22,16 @@ source ./tests/rest_scripts/rest.sh
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2154
 key=$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')
+# shellcheck disable=SC2154
+bypass_governance_retention=${BYPASS_GOVERNANCE_RETENTION:=false}
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 #x-amz-object-attributes:ETag
 canonical_request_data+=("DELETE" "/$bucket_name/$key" "" "host:$host")
+if [ "$bypass_governance_retention" == "true" ]; then
+  canonical_request_data+=("x-amz-bypass-governance-retention:true")
+fi
 canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
 
 build_canonical_request "${canonical_request_data[@]}"
