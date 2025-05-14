@@ -821,7 +821,7 @@ func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 // delete markers from the versioning directory and returns
 func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
-		var objects []types.ObjectVersion
+		var objects []s3response.ObjectVersion
 		var delMarkers []types.DeleteMarkerEntry
 		// if the number of available objects is 0, return truncated response
 		if availableObjCount <= 0 {
@@ -856,7 +856,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 			size := int64(0)
 			versionId := "null"
 
-			objects = append(objects, types.ObjectVersion{
+			objects = append(objects, s3response.ObjectVersion{
 				ETag:         &etag,
 				Key:          &key,
 				LastModified: backend.GetTimePtr(fi.ModTime()),
@@ -924,7 +924,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					return nil, fmt.Errorf("get checksum: %w", err)
 				}
 
-				objects = append(objects, types.ObjectVersion{
+				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
 					Key:               &path,
 					LastModified:      backend.GetTimePtr(fi.ModTime()),
@@ -977,7 +977,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 
 		// First find the null versionId object(if exists)
 		// before starting the object versions listing
-		var nullVersionIdObj *types.ObjectVersion
+		var nullVersionIdObj *s3response.ObjectVersion
 		var nullObjDelMarker *types.DeleteMarkerEntry
 		nf, err := os.Stat(filepath.Join(versionPath, nullVersionId))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -1015,7 +1015,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					return nil, fmt.Errorf("get checksum: %w", err)
 				}
 
-				nullVersionIdObj = &types.ObjectVersion{
+				nullVersionIdObj = &s3response.ObjectVersion{
 					ETag:         &etag,
 					Key:          &path,
 					LastModified: backend.GetTimePtr(nf.ModTime()),
@@ -1136,7 +1136,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
 				}
-				objects = append(objects, types.ObjectVersion{
+				objects = append(objects, s3response.ObjectVersion{
 					ETag:              &etag,
 					Key:               &path,
 					LastModified:      backend.GetTimePtr(f.ModTime()),
