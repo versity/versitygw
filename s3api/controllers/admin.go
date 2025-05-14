@@ -100,7 +100,16 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) error {
 			})
 	}
 
-	err := c.iam.UpdateUserAccount(access, props)
+	err := props.Validate()
+	if err != nil {
+		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole),
+			&MetaOpts{
+				Logger: c.l,
+				Action: metrics.ActionAdminUpdateUser,
+			})
+	}
+
+	err = c.iam.UpdateUserAccount(access, props)
 	if err != nil {
 		if strings.Contains(err.Error(), "user not found") {
 			err = s3err.GetAPIError(s3err.ErrAdminUserNotFound)

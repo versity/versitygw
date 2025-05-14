@@ -139,6 +139,9 @@ func (ld *LdapIAMService) UpdateUserAccount(access string, props MutableProps) e
 	if props.UserID != nil {
 		req.Replace(ld.userIdAtr, []string{fmt.Sprint(*props.UserID)})
 	}
+	if props.Role != "" {
+		req.Replace(ld.roleAtr, []string{string(props.Role)})
+	}
 
 	err := ld.conn.Modify(req)
 	//TODO: Handle non existing user case
