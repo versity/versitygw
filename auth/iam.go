@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/versity/versitygw/s3err"
 )
 
 type Role string
@@ -57,8 +59,17 @@ type ListUserAccountsResult struct {
 // Mutable props, which could be changed when updating an IAM account
 type MutableProps struct {
 	Secret  *string `json:"secret"`
+	Role    Role    `json:"role"`
 	UserID  *int    `json:"userID"`
 	GroupID *int    `json:"groupID"`
+}
+
+func (m MutableProps) Validate() error {
+	if m.Role != "" && !m.Role.IsValid() {
+		return s3err.GetAPIError(s3err.ErrAdminInvalidUserRole)
+	}
+
+	return nil
 }
 
 func updateAcc(acc *Account, props MutableProps) {
@@ -70,6 +81,9 @@ func updateAcc(acc *Account, props MutableProps) {
 	}
 	if props.UserID != nil {
 		acc.UserID = *props.UserID
+	}
+	if props.Role != "" {
+		acc.Role = props.Role
 	}
 }
 

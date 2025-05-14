@@ -100,6 +100,11 @@ func adminCommand() *cli.Command {
 						Usage:   "secret access key for the new user",
 						Aliases: []string{"s"},
 					},
+					&cli.StringFlag{
+						Name:    "role",
+						Usage:   "the new user role",
+						Aliases: []string{"r"},
+					},
 					&cli.IntFlag{
 						Name:    "user-id",
 						Usage:   "userID for the new user",
@@ -311,8 +316,14 @@ func deleteUser(ctx *cli.Context) error {
 }
 
 func updateUser(ctx *cli.Context) error {
-	access, secret, userId, groupId := ctx.String("access"), ctx.String("secret"), ctx.Int("user-id"), ctx.Int("group-id")
+	access, secret, userId, groupId, role := ctx.String("access"), ctx.String("secret"), ctx.Int("user-id"), ctx.Int("group-id"), auth.Role(ctx.String("role"))
 	props := auth.MutableProps{}
+	if ctx.IsSet("role") {
+		if !role.IsValid() {
+			return fmt.Errorf("invalid user role: %v", role)
+		}
+		props.Role = role
+	}
 	if ctx.IsSet("secret") {
 		props.Secret = &secret
 	}

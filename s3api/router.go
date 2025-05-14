@@ -42,7 +42,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		app.Patch("/delete-user", middlewares.IsAdmin(logger), adminController.DeleteUser)
 
 		// UpdateUser admin api
-		app.Patch("update-user", middlewares.IsAdmin(logger), adminController.UpdateUser)
+		app.Patch("/update-user", middlewares.IsAdmin(logger), adminController.UpdateUser)
 
 		// ListUsers admin api
 		app.Patch("/list-users", middlewares.IsAdmin(logger), adminController.ListUsers)
