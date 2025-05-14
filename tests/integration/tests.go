@@ -4320,12 +4320,12 @@ func GetObject_with_range(s *S3Conf) error {
 
 		testGetObjectRange := func(rng, contentRange string, cLength int64, expData []byte, expErr error) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
 			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 				Bucket: &bucket,
 				Key:    &obj,
 				Range:  &rng,
 			})
-			cancel()
 			if err == nil && expErr != nil {
 				return fmt.Errorf("expected err %w, instead got nil", expErr)
 			}
