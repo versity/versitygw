@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+source ./tests/drivers/drivers.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_policy.sh
@@ -247,12 +248,11 @@ bucket_cleanup_if_bucket_exists() {
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
-  if [ $# -lt 2 ]; then
-    log 2 "'setup_buckets' command requires client, bucket names"
+  if ! check_param_count_gt "setup_buckets" "minimum of 1 bucket name" 1 $#; then
     return 1
   fi
-  for name in "${@:2}"; do
-    if ! setup_bucket "$1" "$name"; then
+  for name in "$@"; do
+    if ! setup_bucket "$name"; then
       log 2 "error setting up bucket $name"
       return 1
     fi
@@ -264,13 +264,12 @@ setup_buckets() {
 # return 0 on successful setup, 1 on error
 setup_bucket() {
   log 6 "setup_bucket"
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_bucket' requires client, bucket name"
+  if ! check_param_count "setup_bucket" "bucket name" 1 $#; then
     return 1
   fi
 
   bucket_exists="true"
-  if ! bucket_exists "$1" "$2"; then
+  if ! bucket_exists "s3api" "$1"; then
     if [[ $RECREATE_BUCKETS == "false" ]]; then
       log 2 "When RECREATE_BUCKETS isn't set to \"true\", buckets should be pre-created by user"
       return 1
@@ -278,14 +277,14 @@ setup_bucket() {
     bucket_exists="false"
   fi
 
-  if ! bucket_cleanup_if_bucket_exists "$1" "$2" "$bucket_exists"; then
+  if ! bucket_cleanup_if_bucket_exists "s3api" "$1" "$bucket_exists"; then
     log 2 "error deleting bucket or contents if they exist"
     return 1
   fi
 
-  log 5 "util.setup_bucket: command type: $1, bucket name: $2"
+  log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if ! create_bucket "$1" "$2"; then
+    if ! create_bucket "s3api" "$1"; then
       log 2 "error creating bucket"
       return 1
     fi
@@ -294,13 +293,13 @@ setup_bucket() {
   fi
 
   # bucket creation and resets take longer to propagate in direct mode
-  if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$2"; then
+  if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$1"; then
     return 1
   fi
 
   if [[ $1 == "s3cmd" ]]; then
     log 5 "putting bucket ownership controls"
-    if bucket_exists "s3cmd" "$2" && ! put_bucket_ownership_controls "$2" "BucketOwnerPreferred"; then
+    if bucket_exists "s3cmd" "$1" && ! put_bucket_ownership_controls "$1" "BucketOwnerPreferred"; then
       log 2 "error putting bucket ownership controls"
       return 1
     fi

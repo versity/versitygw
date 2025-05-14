@@ -80,7 +80,7 @@ export RUN_USERS=true
 
 # get-bucket-acl
 @test "test_get_bucket_acl" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run get_bucket_acl_and_check_owner "s3api" "$BUCKET_ONE_NAME"
@@ -97,7 +97,7 @@ export RUN_USERS=true
 # get-bucket-tagging - test_set_get_delete_bucket_tags
 
 @test "test_head_bucket" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run check_for_empty_region "$BUCKET_ONE_NAME"

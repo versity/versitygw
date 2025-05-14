@@ -186,7 +186,7 @@ chunked_upload_trailer_success() {
     log 2 "'chunked_upload_trailer_success' requires checksum"
     return 1
   fi
-  if ! setup_bucket "s3api" "$BUCKET_ONE_NAME"; then
+  if ! setup_bucket "$BUCKET_ONE_NAME"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -211,7 +211,7 @@ chunked_upload_trailer_invalid_checksum() {
     log 2 "'chunked_upload_trailer_invalid_checksum' requires checksum"
     return 1
   fi
-  if ! setup_bucket "s3api" "$BUCKET_ONE_NAME"; then
+  if ! setup_bucket "$BUCKET_ONE_NAME"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -243,7 +243,7 @@ chunked_upload_trailer_incorrect_checksum() {
     log 2 "'chunked_upload_trailer_invalid_checksum' requires checksum"
     return 1
   fi
-  if ! setup_bucket "s3api" "$BUCKET_ONE_NAME"; then
+  if ! setup_bucket "$BUCKET_ONE_NAME"; then
     log 2 "error setting up bucket"
     return 1
   fi

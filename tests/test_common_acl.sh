@@ -19,7 +19,7 @@ test_put_bucket_acl_s3cmd() {
     skip "https://github.com/versity/versitygw/issues/963"
   fi
 
-  run setup_bucket "s3cmd" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   username=$USERNAME_ONE
@@ -54,7 +54,8 @@ get_grantee_type_and_id() {
 }
 
 test_common_put_bucket_acl() {
-  assert [ $# -eq 1 ]
+  run check_param_count "test_common_put_bucket_acl" "client type" 1 "$#"
+  assert_success
 
   run setup_bucket_and_user "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
