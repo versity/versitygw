@@ -17,6 +17,7 @@
 # params:  bucket name
 # return 0 for success, 1 for error
 add_governance_bypass_policy() {
+  log 6 "add_governance_bypass_policy '$1'"
   if [[ $# -ne 1 ]]; then
     log 2 "'add governance bypass policy' command requires bucket name"
     return 1
@@ -34,7 +35,7 @@ add_governance_bypass_policy() {
   ]
 }
 EOF
-  if ! put_bucket_policy "s3api" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
+  if ! put_bucket_policy "rest" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
     log 2 "error putting governance bypass policy"
     return 1
   fi
@@ -44,6 +45,7 @@ EOF
 # params: bucket, object, possible WORM error after deletion attempt
 # return 0 for success, 1 for no WORM protection, 2 for error
 check_for_and_remove_worm_protection() {
+  log 6 "check_for_and_remove_worm_protection"
   if [ $# -ne 3 ]; then
     log 2 "'check_for_and_remove_worm_protection' command requires bucket, object, error"
     return 2
@@ -51,7 +53,7 @@ check_for_and_remove_worm_protection() {
 
   if [[ $3 == *"WORM"* ]]; then
     log 5 "WORM protection found"
-    if ! put_object_legal_hold "$1" "$2" "OFF"; then
+    if ! put_object_legal_hold "rest" "$1" "$2" "OFF"; then
       log 2 "error removing object legal hold"
       return 2
     fi
@@ -76,6 +78,7 @@ check_for_and_remove_worm_protection() {
 
 # params: bucket name, object
 log_worm_protection() {
+  log 5 "log_worm_protection"
   if ! get_object_legal_hold "$1" "$2"; then
     log 2 "error getting object legal hold status"
     return

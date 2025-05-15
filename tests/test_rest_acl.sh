@@ -26,6 +26,11 @@ source ./tests/util/util_setup.sh
 
 export RUN_USERS=true
 
+if [ "$SKIP_ACL_TESTING" == "true" ]; then
+  skip "Skipping ACL tests"
+  exit 0
+fi
+
 @test "REST - get ACL" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success

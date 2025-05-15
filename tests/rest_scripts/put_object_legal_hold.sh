@@ -21,7 +21,7 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
-key="$OBJECT_KEY"
+key="$(echo -n "$OBJECT_KEY" | jq -sRr @uri)"
 # shellcheck disable=SC2153
 status="$STATUS"
 # shellcheck disable=SC2153
