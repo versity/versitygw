@@ -2,10 +2,10 @@
 
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/list_object_versions.sh
+source ./tests/drivers/drivers.sh
 
 check_if_versioning_enabled() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_if_versioning_enabled' requires bucket name"
+  if ! check_param_count "check_if_versioning_enabled" "bucket name" $# 1; then
     return 2
   fi
   if ! get_bucket_versioning 's3api' "$1"; then
@@ -24,8 +24,7 @@ check_if_versioning_enabled() {
 }
 
 delete_old_versions() {
-  if [ $# -ne 1 ]; then
-    log 2 "'delete_old_versions' requires bucket name"
+  if ! check_param_count "delete_old_versions" "bucket name" 1 $#; then
     return 1
   fi
   if ! list_object_versions "rest" "$1"; then
@@ -53,8 +52,7 @@ delete_old_versions() {
 }
 
 delete_object_version_with_or_without_retention() {
-  if [ $# -ne 1 ]; then
-    log 2 "'delete_object_version_with_or_without_retention' requires bucket name"
+  if ! check_param_count "delete_object_version_with_or_without_retention" "bucket name" 1 $#; then
     return 1
   fi
   log 5 "idx: $idx"
@@ -64,15 +62,15 @@ delete_object_version_with_or_without_retention() {
     if ! check_remove_legal_hold_versions "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error checking, removing legal hold versions"
     fi
-    if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
-      log 2 "error turning off object legal hold"
-    fi
-    if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    #if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
+    #  log 2 "error turning off object legal hold"
+    #fi
+    if ! delete_object_version_rest_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version, bypassing retention"
       return 1
     fi
   else
-    if ! delete_object_version "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    if ! delete_object_version_rest "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version"
       return 1
     fi
