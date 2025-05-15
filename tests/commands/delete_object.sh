@@ -46,6 +46,23 @@ delete_object() {
   return 0
 }
 
+delete_object_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'delete_object_rest' requires bucket name, object name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
+    log 2 "expected '204', was '$result' ($delete_object_error)"
+    return 1
+  fi
+  return 0
+}
+
 delete_object_bypass_retention() {
   if [[ $# -ne 5 ]]; then
     log 2 "'delete-object with bypass retention' requires client, bucket, key, user, password"
@@ -79,6 +96,22 @@ delete_object_version() {
   return 0
 }
 
+delete_object_version_rest() {
+  if ! check_param_count "delete_object_version_rest" "bucket name, object name, version ID" 3 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
+    log 2 "expected '204', was '$result' ($delete_object_error)"
+    return 1
+  fi
+  return 0
+}
+
 delete_object_version_bypass_retention() {
   if [[ $# -ne 3 ]]; then
     log 2 "'delete_object_version_bypass_retention' requires bucket, key, version ID"
@@ -86,6 +119,22 @@ delete_object_version_bypass_retention() {
   fi
   if ! delete_object_error=$(send_command aws --no-verify-ssl s3api delete-object --bucket "$1" --key "$2" --version-id "$3" --bypass-governance-retention 2>&1); then
     log 2 "error deleting object version with bypass retention: $delete_object_error"
+    return 1
+  fi
+  return 0
+}
+
+delete_object_version_rest_bypass_retention() {
+  if ! check_param_count "delete_object_version_rest_bypass_retention" "bucket, key, version ID" 3 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$3" BYPASS_GOVERNANCE_RETENTION="true" \
+      OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    log 2 "expected '204', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0
@@ -110,23 +159,6 @@ delete_object_with_user() {
   fi
   if [ $exit_code -ne 0 ]; then
     log 2 "error deleting object: $delete_object_error"
-    return 1
-  fi
-  return 0
-}
-
-delete_object_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'delete_object_rest' requires bucket name, object name"
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
-    log 2 "error deleting object: $result"
-    return 1
-  fi
-  if [ "$result" != "204" ]; then
-    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
-    log 2 "expected '204', was '$result' ($delete_object_error)"
     return 1
   fi
   return 0
