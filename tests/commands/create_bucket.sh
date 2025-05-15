@@ -20,6 +20,7 @@ source ./tests/report.sh
 # param:  bucket name
 # return 0 for success, 1 for failure
 create_bucket() {
+  log 6 "create_bucket"
   if [ $# -ne 2 ]; then
     log 2 "create bucket missing command type, bucket name"
     return 1
@@ -28,7 +29,6 @@ create_bucket() {
   record_command "create-bucket" "client:$1"
   local exit_code=0
   local error
-  log 6 "create bucket"
   if [[ $1 == 's3' ]]; then
     error=$(send_command aws --no-verify-ssl s3 mb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 's3api' ]]; then
@@ -50,6 +50,7 @@ create_bucket() {
 }
 
 create_bucket_with_user() {
+  log 6 "create_bucket_with_user"
   if [ $# -ne 4 ]; then
     log 2 "create bucket missing command type, bucket name, access, secret"
     return 1
@@ -73,6 +74,7 @@ create_bucket_with_user() {
 }
 
 create_bucket_object_lock_enabled() {
+  log 6 "create_bucket_object_lock_enabled"
   record_command "create-bucket" "client:s3api"
   if [ $# -ne 1 ]; then
     log 2 "create bucket missing bucket name"
