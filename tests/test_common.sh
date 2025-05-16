@@ -64,9 +64,6 @@ test_common_multipart_upload() {
 
   run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
-
-  bucket_cleanup "$1" "$BUCKET_ONE_NAME"
-  delete_test_files $bucket_file
 }
 
 # common test for creating, deleting buckets
@@ -80,13 +77,13 @@ test_common_create_delete_bucket() {
   run check_param_count "test_common_create_delete_bucket" "client type" 1 "$#"
   assert_success
 
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   run create_bucket "$1" "$BUCKET_ONE_NAME"
   assert_success
 
-  run bucket_exists "$1" "$BUCKET_ONE_NAME"
+  run bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   run delete_bucket "$1" "$BUCKET_ONE_NAME"

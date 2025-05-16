@@ -14,6 +14,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+if [ "$SKIP_ACL_TESTING" == "true" ]; then
+  skip "Skipping ACL tests"
+  exit 0
+fi
+
 test_put_bucket_acl_s3cmd() {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/963"
