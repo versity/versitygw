@@ -270,8 +270,7 @@ get_and_check_acl_rest() {
 }
 
 setup_acl() {
-  if [ $# -ne 4 ]; then
-    log 2 "'setup_acl' requires acl file, grantee type, grantee, permission, owner ID"
+  if ! check_param_count "setup_acl" "acl file, grantee type, grantee, permission, owner ID" 5 $#; then
     return 1
   fi
   cat <<EOF > "$1"
