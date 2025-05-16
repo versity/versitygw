@@ -57,13 +57,13 @@ fi
   username=${lines[2]}
   password=${lines[3]}
 
-  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READ" "$canonical_id"
+  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "CanonicalUser" "$user_canonical_id" "READ" "$canonical_id"
   assert_success
 
   run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
   assert_success
 
-  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  run put_bucket_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
   assert_success
 
   if [ "$DIRECT" == "true" ]; then
@@ -123,7 +123,7 @@ fi
   username=${lines[2]}
   password=${lines[3]}
 
-  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "$user_canonical_id" "READD" "$canonical_id"
+  run setup_acl "$TEST_FILE_FOLDER/acl-file.txt" "CanonicalUser" "$user_canonical_id" "READD" "$canonical_id"
   assert_success
 
   if [ "$DIRECT" == "true" ]; then

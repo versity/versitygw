@@ -67,7 +67,7 @@ setup() {
     export TEST_LOG_FILE
   fi
 
-  if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ]; then
+  if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ]; then
     if ! static_user_versitygw_setup; then
       log 2 "error setting up static versitygw users"
       return 1
