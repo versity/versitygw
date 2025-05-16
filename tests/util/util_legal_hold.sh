@@ -63,7 +63,8 @@ check_remove_legal_hold_versions() {
     log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
     return 1
   fi
-  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3"); then
+  if ! get_object_legal_hold_rest_version_id "$1" "$2" "$3"; then
+    # shellcheck disable=SC2154
     if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
       log 2 "error getting object legal hold status with version id"
       return 1
@@ -71,10 +72,14 @@ check_remove_legal_hold_versions() {
     return 0
   fi
   log 5 "legal hold: $legal_hold"
-  if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
-    log 2 "error getting legal hold status: $status"
+  if ! status=$(get_element_text <(echo -n "$legal_hold") "LegalHold" "Status"); then
+    log 2 "error getting XML legal hold status"
     return 1
   fi
+  #if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
+  #  log 2 "error getting legal hold status: $status"
+  #  return 1
+  #fi
   if [ "$status" == "ON" ]; then
     if ! put_object_legal_hold_version_id "$1" "$2" "$3" "OFF"; then
       log 2 "error removing legal hold of version ID"

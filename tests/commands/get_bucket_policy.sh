@@ -15,6 +15,7 @@
 # under the License.
 
 get_bucket_policy() {
+  log 6 "get_bucket_policy '$1' '$2'"
   record_command "get-bucket-policy" "client:$1"
   if [[ $# -ne 2 ]]; then
     log 2 "get bucket policy command requires command type, bucket"
@@ -22,11 +23,13 @@ get_bucket_policy() {
   fi
   local get_bucket_policy_result=0
   if [[ $1 == 's3api' ]]; then
-    get_bucket_policy_aws "$2" || get_bucket_policy_result=$?
+    get_bucket_policy_s3api "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_policy_s3cmd "$2" || get_bucket_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
     get_bucket_policy_mc "$2" || get_bucket_policy_result=$?
+  elif [ "$1" == 'rest' ]; then
+    get_bucket_policy_rest "$2" || get_bucket_policy_result=$?
   else
     log 2 "command 'get bucket policy' not implemented for '$1'"
     return 1
@@ -38,7 +41,8 @@ get_bucket_policy() {
   return 0
 }
 
-get_bucket_policy_aws() {
+get_bucket_policy_s3api() {
+  log 6 "get_bucket_policy_s3api '$1'"
   record_command "get-bucket-policy" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "aws 'get bucket policy' command requires bucket"

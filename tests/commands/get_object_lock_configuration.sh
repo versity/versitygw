@@ -14,17 +14,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/drivers.sh
+
 get_object_lock_configuration() {
   record_command "get-object-lock-configuration" "client:s3api"
-  if [[ $# -ne 1 ]]; then
-    log 2 "'get object lock configuration' command missing bucket name"
+  if ! check_param_count "get_object_lock_configuration" "client, bucket name" 2 $#; then
     return 1
   fi
-  if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$1" 2>&1); then
-    log 2 "error obtaining lock config: $lock_config"
-    # shellcheck disable=SC2034
-    get_object_lock_config_err=$lock_config
-    return 1
+  if [ "$1" == 'rest' ]; then
+    if ! get_object_lock_configuration_rest "$2"; then
+      log 2 "error getting REST object lock configuration"
+      get_object_lock_config_err=$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")
+      return 1
+    fi
+  else
+    if ! lock_config=$(send_command aws --no-verify-ssl s3api get-object-lock-configuration --bucket "$2" 2>&1); then
+      log 2 "error obtaining lock config: $lock_config"
+      # shellcheck disable=SC2034
+      get_object_lock_config_err=$lock_config
+      return 1
+    fi
   fi
   lock_config=$(echo "$lock_config" | grep -v "InsecureRequestWarning")
   return 0
@@ -32,8 +41,7 @@ get_object_lock_configuration() {
 
 get_object_lock_configuration_rest() {
   log 6 "get_object_lock_configuration_rest"
-  if [ $# -ne 1 ]; then
-    log 2 "'get_object_lock_configuration_rest' requires bucket name"
+  if ! check_param_count "get_object_lock_configuration_rest" "bucket name" 1 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/object-lock-config.txt" ./tests/rest_scripts/get_object_lock_config.sh); then
@@ -44,5 +52,6 @@ get_object_lock_configuration_rest() {
     log 2 "expected '200', returned '$result': $(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
     return 1
   fi
+  lock_config="$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
   return 0
 }
