@@ -67,7 +67,7 @@ setup() {
     export TEST_LOG_FILE
   fi
 
-  if [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ]; then
+  if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" == "true" ]; then
     if ! static_user_versitygw_setup; then
       log 2 "error setting up static versitygw users"
       return 1
@@ -148,10 +148,10 @@ teardown() {
   log 4 "********** BEGIN TEARDOWN **********"
   if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
     log 5 "deleting or clearing buckets"
-    if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"; then
+    if ! bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"; then
       log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
     fi
-    if ! bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_TWO_NAME"; then
+    if ! bucket_cleanup_if_bucket_exists "$BUCKET_TWO_NAME"; then
       log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
     fi
   fi

@@ -111,10 +111,10 @@ test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -388,11 +388,11 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
@@ -414,11 +414,11 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi

@@ -50,11 +50,12 @@ source ./tests/util/util_users.sh
 # param: bucket name
 # return 0 for success, 1 for failure
 list_and_delete_objects() {
+  log 6 "list_and_delete_objects"
   if [ $# -ne 1 ]; then
     log 2 "'list_and_delete_objects' missing bucket name"
     return 1
   fi
-  if ! list_objects 's3api' "$1"; then
+  if ! list_objects 'rest' "$1"; then
     log 2 "error getting object list"
     return 1
   fi
@@ -75,12 +76,13 @@ list_and_delete_objects() {
 }
 
 check_object_lock_config() {
+  log 6 "check_object_lock_config"
   if [ $# -ne 1 ]; then
     log 2 "'check_object_lock_config' requires bucket name"
     return 1
   fi
   lock_config_exists=true
-  if ! get_object_lock_configuration "$1"; then
+  if ! get_object_lock_configuration "rest" "$1"; then
     # shellcheck disable=SC2154
     if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
       # shellcheck disable=SC2034
@@ -101,7 +103,7 @@ clear_object_in_bucket() {
     log 2 "'clear_object_in_bucket' requires bucket, object name"
     return 1
   fi
-  if ! delete_object 's3api' "$1" "$2"; then
+  if ! delete_object 'rest' "$1" "$2"; then
     # shellcheck disable=SC2154
     log 2 "error deleting object $2: $delete_object_error"
     if ! check_for_and_remove_worm_protection "$1" "$2" "$delete_object_error"; then
@@ -116,6 +118,7 @@ clear_object_in_bucket() {
 # param:  command, object path
 # return 0 for true, 1 for false, 2 for error
 object_exists() {
+  log 6 "object_exists"
   if [ $# -ne 3 ]; then
     log 2 "object exists check missing command, bucket name, object name"
     return 2
@@ -130,6 +133,7 @@ object_exists() {
 }
 
 put_object_with_metadata() {
+  log 6 "put_object_with_metadata"
   if [ $# -ne 6 ]; then
     log 2 "put object command requires command type, source, destination, key, metadata key, metadata value"
     return 1
@@ -152,6 +156,7 @@ put_object_with_metadata() {
 }
 
 get_object_metadata() {
+  log 6 "get_object_metadata"
   if [ $# -ne 3 ]; then
     log 2 "get object metadata command requires command type, bucket, key"
     return 1
@@ -179,6 +184,7 @@ get_object_metadata() {
 # params:  source file, destination copy location
 # return 0 for success or already exists, 1 for failure
 check_and_put_object() {
+  log 6 "check_and_put_object"
   if [ $# -ne 3 ]; then
     log 2 "check and put object function requires source, bucket, destination"
     return 1
@@ -202,6 +208,7 @@ check_and_put_object() {
 # param:  path of object
 # return 0 for yes, 1 for no, 2 for error
 object_is_accessible() {
+  log 6 "object_is_accessible"
   if [ $# -ne 2 ]; then
     log 2 "object accessibility check missing bucket and/or key"
     return 2
@@ -223,6 +230,7 @@ object_is_accessible() {
 # params:  source, destination
 # return 0 for success, 1 for failure
 copy_file() {
+  log 6 "copy_file"
   if [ $# -ne 2 ]; then
     log 2 "copy file command requires src and dest"
     return 1
@@ -238,6 +246,7 @@ copy_file() {
 }
 
 list_and_check_directory_obj() {
+  log 6 "list_and_check_directory_obj"
   #assert [ $# -eq 2 ]
   if [ $# -ne 2 ]; then
     log 2 "'list_and_check_directory_obj' requires client, file name"
@@ -269,6 +278,7 @@ list_and_check_directory_obj() {
 }
 
 check_checksum_invalid_or_incorrect() {
+  log 6 "check_checksum_invalid_or_incorrect"
   if [ $# -ne 6 ]; then
     log 2 "'check_sha256_invalid_or_incorrect' requires data file, bucket name, key, checksum type, checksum, expected error"
     return 1
@@ -289,6 +299,7 @@ check_checksum_invalid_or_incorrect() {
 }
 
 put_object_rest_checksum() {
+  log 6 "put_object_rest_checksum"
   if [ $# -ne 4 ]; then
     log 2 "'put_object_rest_checksum' requires data file, bucket name, key, checksum type"
     return 1
@@ -306,6 +317,7 @@ put_object_rest_checksum() {
 }
 
 check_checksum_rest_invalid() {
+  log 6 "check_checksum_rest_invalid"
   if [ $# -ne 1 ]; then
     log 2 "'check_checksum_rest_invalid' requires checksum type"
     return 1
