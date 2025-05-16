@@ -23,13 +23,13 @@ current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("DELETE" "/$bucket_name" "")
 cr_data+=("host:$host")
-cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
+cr_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -x DELETE "https://$host/$bucket_name"
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X DELETE "https://$host/$bucket_name"
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")

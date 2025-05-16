@@ -45,10 +45,11 @@ fi
   payload+="</ObjectLockConfiguration>"
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
+content_md5=$(echo -n "$payload" | openssl dgst -binary -md5 | openssl base64)
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("PUT" "/$bucket_name" "object-lock=")
-cr_data+=("host:$host")
+cr_data+=("content-md5:$content_md5" "host:$host")
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
 
