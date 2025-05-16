@@ -58,6 +58,6 @@ create_canonical_hash_sts_and_signature
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name?object-lock")
 curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
-curl_command+=(-T "$data_file" -o "$OUTPUT_FILE")
+curl_command+=(-d "\"${payload//\"/\\\"}\"" -o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1
