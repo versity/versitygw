@@ -30,8 +30,8 @@ retention_mode="$RETENTION_MODE"
 retention_years="$RETENTION_YEARS"
 
 
-  payload="<?xml version="1.0" encoding="UTF-8"?>
-<ObjectLockConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<ObjectLockConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
    <ObjectLockEnabled>Enabled</ObjectLockEnabled>"
 if [ "$retention_rule" != "false" ]; then
   payload+="<Rule>
