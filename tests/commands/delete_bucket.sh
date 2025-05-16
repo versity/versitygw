@@ -53,7 +53,9 @@ delete_bucket() {
 }
 
 delete_bucket_rest() {
-  if ! check_param_count "delete_bucket_rest" "bucket"
+  if ! check_param_count "delete_bucket_rest" "bucket" 1 $#; then
+    return 1
+  fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_bucket.sh 2>&1); then
     log 2 "error deleting bucket: $result"
     return 1
