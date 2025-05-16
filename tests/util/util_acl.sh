@@ -270,21 +270,20 @@ get_and_check_acl_rest() {
 }
 
 setup_acl() {
-  if [ $# -ne 4 ]; then
-    log 2 "'setup_acl' requires acl file, grantee, permission, owner ID"
+  if ! check_param_count "setup_acl" "acl file, grantee type, grantee, permission, owner ID" 5 $#; then
     return 1
   fi
   cat <<EOF > "$1"
 <AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Owner>
-      <ID>$4</ID>
+      <ID>$5</ID>
   </Owner>
   <AccessControlList>
       <Grant>
-          <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">
-              <ID>$2</ID>
+          <Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="$2">
+              <ID>$3</ID>
           </Grantee>
-          <Permission>$3</Permission>
+          <Permission>$4</Permission>
       </Grant>
   </AccessControlList>
 </AccessControlPolicy>
@@ -342,22 +341,6 @@ create_versitygw_acl_user_or_get_direct_user() {
   fi
 }
 
-put_acl_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'put_acl_rest' requires bucket name, ACL file"
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
-    log 2 "error attempting to put bucket acl: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
-    return 1
-  fi
-  return 0
-}
-
 put_invalid_acl_rest_verify_failure() {
   if [ $# -ne 2 ]; then
     log 2 "'put_invalid_acl_rest_verify_failure' requires bucket name, ACL file"
@@ -405,14 +388,8 @@ check_ownership_rule_and_reset_acl() {
     log 2 "'check_ownership_rule_and_reset_acl' requires bucket name"
     return 1
   fi
-  if ! get_bucket_ownership_controls "$1"; then
+  if ! object_ownership_rule=$(get_bucket_ownership_controls_rest "$1" 2>&1); then
     log 2 "error getting bucket ownership controls"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "ownership controls: $bucket_ownership_controls"
-  if ! object_ownership_rule=$(echo "$bucket_ownership_controls" | jq -r ".OwnershipControls.Rules[0].ObjectOwnership" 2>&1); then
-    log 2 "error getting object ownership rule: $object_ownership_rule"
     return 1
   fi
   log 5 "ownership rule: $object_ownership_rule"
