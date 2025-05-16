@@ -4,7 +4,7 @@ get_and_check_ownership_controls() {
   if ! check_param_count "get_and_check_ownership_controls" "bucket, expected result" 2 $#; then
     return 1
   fi
-  if ! rule=$(get_bucket_ownership_controls "$1" 2>&1); then
+  if ! rule=$(get_bucket_ownership_controls_rest "$1" 2>&1); then
     log 2 "error getting ownership rule: $rule"
     return 1
   fi
