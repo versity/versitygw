@@ -16,6 +16,9 @@
 
 source ./tests/rest_scripts/rest.sh
 
+# shellcheck disable=SC2153
+bucket_name="$BUCKET_NAME"
+
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("DELETE" "/$bucket_name" "")
