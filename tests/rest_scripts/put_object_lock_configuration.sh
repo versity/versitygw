@@ -14,6 +14,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/rest_scripts/rest.sh
+
+# Fields
+
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
