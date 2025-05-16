@@ -93,7 +93,7 @@ delete_bucket_recursive_s3api() {
     return 1
   fi
 
-  if ! delete_bucket 's3api' "$1"; then
+  if ! delete_bucket_rest "$1"; then
     log 2 "error deleting bucket"
     return 1
   fi

@@ -63,7 +63,7 @@ fi
   run list_objects_with_user_rest_verify_access_denied "$BUCKET_ONE_NAME" "$username" "$password"
   assert_success
 
-  run put_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
+  run put_bucket_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/acl-file.txt"
   assert_success
 
   if [ "$DIRECT" == "true" ]; then
