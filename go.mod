@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/aws/aws-sdk-go-v2 v1.36.3
@@ -20,7 +20,7 @@ require (
 	github.com/nats-io/nats.go v1.42.0
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/pkg/xattr v0.4.10
-	github.com/segmentio/kafka-go v0.4.47
+	github.com/segmentio/kafka-go v0.4.48
 	github.com/smira/go-statsd v1.3.4
 	github.com/urfave/cli/v2 v2.27.6
 	github.com/valyala/fasthttp v1.62.0
