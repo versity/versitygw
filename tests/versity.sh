@@ -150,7 +150,7 @@ run_versity_app() {
   if [[ $IAM_TYPE != "s3" ]]; then
     return 0
   fi
-  if bucket_exists "s3api" "$USERS_BUCKET"; then
+  if bucket_exists "$USERS_BUCKET"; then
     return 0
   fi
   if ! create_bucket "s3api" "$USERS_BUCKET"; then

@@ -386,6 +386,7 @@ func TestListParts(s *S3Conf) {
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		ListParts_with_checksums(s)
+		ListParts_null_checksums(s)
 	}
 	ListParts_success(s)
 }
@@ -1111,6 +1112,7 @@ func GetIntTests() IntTests {
 		"ListParts_default_max_parts":                                             ListParts_default_max_parts,
 		"ListParts_truncated":                                                     ListParts_truncated,
 		"ListParts_with_checksums":                                                ListParts_with_checksums,
+		"ListParts_null_checksums":                                                ListParts_null_checksums,
 		"ListParts_success":                                                       ListParts_success,
 		"ListMultipartUploads_non_existing_bucket":                                ListMultipartUploads_non_existing_bucket,
 		"ListMultipartUploads_empty_result":                                       ListMultipartUploads_empty_result,

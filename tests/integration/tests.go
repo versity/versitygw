@@ -4320,12 +4320,12 @@ func GetObject_with_range(s *S3Conf) error {
 
 		testGetObjectRange := func(rng, contentRange string, cLength int64, expData []byte, expErr error) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
 			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
 				Bucket: &bucket,
 				Key:    &obj,
 				Range:  &rng,
 			})
-			cancel()
 			if err == nil && expErr != nil {
 				return fmt.Errorf("expected err %w, instead got nil", expErr)
 			}
@@ -9644,6 +9644,42 @@ func ListParts_with_checksums(s *S3Conf) error {
 				return fmt.Errorf("expected the mp parts to be %v, instead got %v",
 					parts, res.Parts)
 			}
+		}
+
+		return nil
+	})
+}
+
+func ListParts_null_checksums(s *S3Conf) error {
+	testName := "ListParts_null_checksums"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		_, _, err = uploadParts(s3client, 20*1024*1024, 3, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListParts(ctx, &s3.ListPartsInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ChecksumType != types.ChecksumType("null") {
+			return fmt.Errorf("expected the checksum type to be null, instead got %v", res.ChecksumType)
+		}
+		if res.ChecksumAlgorithm != types.ChecksumAlgorithm("null") {
+			return fmt.Errorf("expected the checksum algorithm to be null, instead got %v", res.ChecksumAlgorithm)
 		}
 
 		return nil

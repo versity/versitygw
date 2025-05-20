@@ -51,7 +51,7 @@ test_get_object_full_range_s3api_root() {
   bucket_file="bucket_file"
   echo -n "0123456789" > "$TEST_FILE_FOLDER/$bucket_file"
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -81,7 +81,7 @@ test_put_object_s3api_root() {
   run create_test_files "$bucket_file"
   assert_success
 
-  run setup_buckets "s3api" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
 
   run put_object "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
@@ -215,7 +215,7 @@ test_retention_bypass_s3api_root() {
 legal_hold_retention_setup() {
   assert [ $# -eq 3 ]
 
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   run setup_user "$1" "$2" "user"

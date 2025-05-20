@@ -14,36 +14,36 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/drivers.sh
 source ./tests/env.sh
 source ./tests/util/util_object.sh
 source ./tests/commands/create_bucket.sh
 
 create_bucket_if_not_exists() {
-  if [[ $# -ne 2 ]]; then
-    log 2 "create_bucket_if_not_exists command missing command type, name"
+  if ! check_param_count "create_bucket_if_not_exists" "bucket name" 1 $#; then
     return 1
   fi
-  bucket_exists "$1" "$2" || local exists_result=$?
+  bucket_exists "$1" || local exists_result=$?
   if [[ $exists_result -eq 2 ]]; then
     log 2 "error checking if bucket exists"
     return 1
   fi
   if [[ $exists_result -eq 0 ]]; then
-    echo "bucket '$2' already exists, skipping"
+    echo "bucket '$1' already exists, skipping"
     return 0
   fi
-  if ! create_bucket_object_lock_enabled "$2"; then
+  if ! create_bucket_object_lock_enabled "$1"; then
     log 2 "error creating bucket"
     return 1
   fi
-  echo "bucket '$2' successfully created"
+  echo "bucket '$1' successfully created"
   return 0
 }
 
 base_setup
-if ! create_bucket_if_not_exists "s3api" "$BUCKET_ONE_NAME"; then
+if ! create_bucket_if_not_exists "$BUCKET_ONE_NAME"; then
   log 2 "error creating static bucket one"
-elif ! create_bucket_if_not_exists "s3api" "$BUCKET_TWO_NAME"; then
+elif ! create_bucket_if_not_exists "$BUCKET_TWO_NAME"; then
   log 2 "error creating static bucket two"
 fi
 

@@ -35,7 +35,7 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, signature error" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"
@@ -50,7 +50,7 @@ source ./tests/util/util_setup.sh
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1147"
   fi
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"
@@ -62,7 +62,7 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, success (file with just a's)" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"
@@ -77,7 +77,7 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, success (null bytes)" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"
@@ -92,7 +92,7 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, success (random bytes)" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"
@@ -107,7 +107,7 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST - chunked upload, success (zero-byte file)" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   test_file="test-file"

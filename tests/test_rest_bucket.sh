@@ -30,7 +30,7 @@ source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 
 @test "REST - HeadBucket" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run head_bucket_rest "$BUCKET_ONE_NAME"
@@ -43,7 +43,7 @@ source ./tests/util/util_tags.sh
 }
 
 @test "REST - bucket tagging - no tags" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run verify_no_bucket_tags_rest "$BUCKET_ONE_NAME"
@@ -54,7 +54,7 @@ source ./tests/util/util_tags.sh
   test_key="testKey"
   test_value="testValue"
 
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
@@ -62,7 +62,7 @@ source ./tests/util/util_tags.sh
 }
 
 @test "test_rest_list_buckets" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run list_check_buckets_rest
@@ -70,7 +70,7 @@ source ./tests/util/util_tags.sh
 }
 
 @test "REST - get, put bucket ownership controls" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerEnforced"
@@ -84,17 +84,17 @@ source ./tests/util/util_tags.sh
 }
 
 @test "test_rest_set_get_lock_config" {
-  run setup_bucket "s3api" "$BUCKET_ONE_NAME"
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
   run check_no_object_lock_config_rest "$BUCKET_ONE_NAME"
   assert_success
 
-  run bucket_cleanup_if_bucket_exists "s3api" "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
   # in static bucket config, bucket will still exist
-  if ! bucket_exists "rest" "$BUCKET_ONE_NAME"; then
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
     run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
     assert_success
   fi
