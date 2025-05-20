@@ -299,7 +299,7 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 			continue
 		}
 
-		aclTag, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
+		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
 		if errors.Is(err, meta.ErrNoSuchKey) {
 			// skip buckets without acl tag
 			continue
@@ -308,10 +308,9 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("get acl tag: %w", err)
 		}
 
-		var acl auth.ACL
-		err = json.Unmarshal(aclTag, &acl)
+		acl, err := auth.ParseACL(aclJSON)
 		if err != nil {
-			return s3response.ListAllMyBucketsResult{}, fmt.Errorf("parse acl tag: %w", err)
+			return s3response.ListAllMyBucketsResult{}, err
 		}
 
 		if acl.Owner == input.Owner {
@@ -370,9 +369,10 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 		if err != nil {
 			return fmt.Errorf("get bucket acl: %w", err)
 		}
-		var acl auth.ACL
-		if err := json.Unmarshal(aclJSON, &acl); err != nil {
-			return fmt.Errorf("unmarshal acl: %w", err)
+
+		acl, err := auth.ParseACL(aclJSON)
+		if err != nil {
+			return err
 		}
 
 		if acl.Owner == acct.Access {
@@ -4233,12 +4233,13 @@ func (p *Posix) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 		// All the objects in the bucket are owned by the bucket owner
 		if fetchOwner {
 			aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
-			if err != nil {
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return s3response.Object{}, fmt.Errorf("get bucket acl: %w", err)
 			}
-			var acl auth.ACL
-			if err := json.Unmarshal(aclJSON, &acl); err != nil {
-				return s3response.Object{}, fmt.Errorf("unmarshal acl: %w", err)
+
+			acl, err := auth.ParseACL(aclJSON)
+			if err != nil {
+				return s3response.Object{}, err
 			}
 
 			owner = &types.Owner{
@@ -4950,17 +4951,14 @@ func (p *Posix) ListBucketsAndOwners(ctx context.Context) (buckets []s3response.
 	}
 
 	for _, fi := range fis {
-		aclTag, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
+		aclJSON, err := p.meta.RetrieveAttribute(nil, fi.Name(), "", aclkey)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return buckets, fmt.Errorf("get acl tag: %w", err)
 		}
 
-		var acl auth.ACL
-		if len(aclTag) > 0 {
-			err = json.Unmarshal(aclTag, &acl)
-			if err != nil {
-				return buckets, fmt.Errorf("parse acl tag: %w", err)
-			}
+		acl, err := auth.ParseACL(aclJSON)
+		if err != nil {
+			return buckets, fmt.Errorf("parse acl tag: %w", err)
 		}
 
 		buckets = append(buckets, s3response.Bucket{
