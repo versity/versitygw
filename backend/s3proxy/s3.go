@@ -1511,10 +1511,11 @@ func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versio
 }
 
 func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
-	var acll auth.ACL
-	if err := json.Unmarshal(acl, &acll); err != nil {
-		return fmt.Errorf("unmarshal acl: %w", err)
+	acll, err := auth.ParseACL(acl)
+	if err != nil {
+		return err
 	}
+
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, acll.Owner), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)

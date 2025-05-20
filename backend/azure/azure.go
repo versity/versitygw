@@ -181,11 +181,9 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 			return err
 		}
 
-		var acl auth.ACL
-		if len(aclBytes) > 0 {
-			if err := json.Unmarshal(aclBytes, &acl); err != nil {
-				return fmt.Errorf("unmarshal acl: %w", err)
-			}
+		acl, err := auth.ParseACL(aclBytes)
+		if err != nil {
+			return err
 		}
 
 		if acl.Owner == acct.Access {
@@ -607,9 +605,9 @@ func (az *Azure) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s
 		return s3response.ListObjectsResult{}, azureErrToS3Err(err)
 	}
 
-	var acl auth.ACL
-	if err := json.Unmarshal(aclBytes, &acl); err != nil {
-		return s3response.ListObjectsResult{}, fmt.Errorf("unmarshal acl: %w", err)
+	acl, err := auth.ParseACL(aclBytes)
+	if err != nil {
+		return s3response.ListObjectsResult{}, err
 	}
 
 Pager:
@@ -710,8 +708,9 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 			return s3response.ListObjectsV2Result{}, azureErrToS3Err(err)
 		}
 
-		if err := json.Unmarshal(aclBytes, &acl); err != nil {
-			return s3response.ListObjectsV2Result{}, fmt.Errorf("unmarshal acl: %w", err)
+		acl, err = auth.ParseACL(aclBytes)
+		if err != nil {
+			return s3response.ListObjectsV2Result{}, err
 		}
 	}
 
@@ -1965,11 +1964,9 @@ func (az *Azure) deleteContainerMetaData(ctx context.Context, bucket, key string
 }
 
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
-	var acl auth.ACL
-
 	data, ok := meta[string(key)]
 	if !ok {
-		return &acl, nil
+		return &auth.ACL{}, nil
 	}
 
 	value, err := decodeString(*data)
@@ -1977,13 +1974,9 @@ func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 		return nil, err
 	}
 
-	if len(value) == 0 {
-		return &acl, nil
-	}
-
-	err = json.Unmarshal(value, &acl)
+	acl, err := auth.ParseACL(value)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshal acl: %w", err)
+		return nil, err
 	}
 
 	return &acl, nil
