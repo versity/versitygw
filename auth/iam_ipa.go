@@ -72,6 +72,7 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 	mTLSConfig := &tls.Config{InsecureSkipVerify: isInsecure}
 	tr := &http.Transport{
 		TLSClientConfig: mTLSConfig,
+		Proxy:           http.ProxyFromEnvironment,
 	}
 	ipa.client = http.Client{Jar: jar, Transport: tr}
 
