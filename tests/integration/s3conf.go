@@ -36,8 +36,8 @@ type S3Conf struct {
 	awsSecret         string
 	awsRegion         string
 	endpoint          string
+	hostStyle         bool
 	checksumDisable   bool
-	pathStyle         bool
 	PartSize          int64
 	Concurrency       int
 	debug             bool
@@ -87,8 +87,8 @@ func WithEndpoint(e string) Option {
 func WithDisableChecksum() Option {
 	return func(s *S3Conf) { s.checksumDisable = true }
 }
-func WithPathStyle() Option {
-	return func(s *S3Conf) { s.pathStyle = true }
+func WithHostStyle() Option {
+	return func(s *S3Conf) { s.hostStyle = true }
 }
 func WithPartSize(p int64) Option {
 	return func(s *S3Conf) { s.PartSize = p }
@@ -122,7 +122,12 @@ func (c *S3Conf) getCreds() credentials.StaticCredentialsProvider {
 }
 
 func (c *S3Conf) GetClient() *s3.Client {
-	return s3.NewFromConfig(c.Config())
+	return s3.NewFromConfig(c.Config(), func(o *s3.Options) {
+		if c.hostStyle {
+			o.BaseEndpoint = &c.endpoint
+			o.UsePathStyle = false
+		}
+	})
 }
 
 func (c *S3Conf) Config() aws.Config {

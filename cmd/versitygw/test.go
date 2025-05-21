@@ -34,7 +34,7 @@ var (
 	totalReqs         int
 	upload            bool
 	download          bool
-	pathStyle         bool
+	hostStyle         bool
 	checksumDisable   bool
 	versioningEnabled bool
 	azureTests        bool
@@ -73,6 +73,12 @@ func initTestFlags() []cli.Flag {
 			Usage:       "s3 server endpoint",
 			Destination: &endpoint,
 			Aliases:     []string{"e"},
+		},
+		&cli.BoolFlag{
+			Name:        "host-style",
+			Usage:       "Use host-style bucket addressing",
+			Value:       false,
+			Destination: &hostStyle,
 		},
 		&cli.BoolFlag{
 			Name:        "debug",
@@ -192,12 +198,6 @@ func initTestCommands() []*cli.Command {
 					Destination: &concurrency,
 				},
 				&cli.BoolFlag{
-					Name:        "pathStyle",
-					Usage:       "Use Pathstyle bucket addressing",
-					Value:       false,
-					Destination: &pathStyle,
-				},
-				&cli.BoolFlag{
 					Name:        "checksumDis",
 					Usage:       "Disable server checksum",
 					Value:       false,
@@ -228,8 +228,8 @@ func initTestCommands() []*cli.Command {
 				if debug {
 					opts = append(opts, integration.WithDebug())
 				}
-				if pathStyle {
-					opts = append(opts, integration.WithPathStyle())
+				if hostStyle {
+					opts = append(opts, integration.WithHostStyle())
 				}
 				if checksumDisable {
 					opts = append(opts, integration.WithDisableChecksum())
@@ -292,6 +292,9 @@ func initTestCommands() []*cli.Command {
 				if checksumDisable {
 					opts = append(opts, integration.WithDisableChecksum())
 				}
+				if hostStyle {
+					opts = append(opts, integration.WithHostStyle())
+				}
 
 				s3conf := integration.NewS3Conf(opts...)
 
@@ -320,6 +323,9 @@ func getAction(tf testFunc) func(*cli.Context) error {
 		}
 		if azureTests {
 			opts = append(opts, integration.WithAzureMode())
+		}
+		if hostStyle {
+			opts = append(opts, integration.WithHostStyle())
 		}
 
 		s := integration.NewS3Conf(opts...)
@@ -355,6 +361,9 @@ func extractIntTests() (commands []*cli.Command) {
 				}
 				if versioningEnabled {
 					opts = append(opts, integration.WithVersioningEnabled())
+				}
+				if hostStyle {
+					opts = append(opts, integration.WithHostStyle())
 				}
 
 				s := integration.NewS3Conf(opts...)

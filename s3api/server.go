@@ -29,15 +29,16 @@ import (
 )
 
 type S3ApiServer struct {
-	app      *fiber.App
-	backend  backend.Backend
-	router   *S3ApiRouter
-	port     string
-	cert     *tls.Certificate
-	quiet    bool
-	debug    bool
-	readonly bool
-	health   string
+	app           *fiber.App
+	backend       backend.Backend
+	router        *S3ApiRouter
+	port          string
+	cert          *tls.Certificate
+	quiet         bool
+	debug         bool
+	readonly      bool
+	health        string
+	virtualDomain string
 }
 
 func New(
@@ -76,6 +77,13 @@ func New(
 		})
 	}
 	app.Use(middlewares.DecodeURL(l, mm))
+
+	// initialize host-style parser in virtual domain is specified
+	if server.virtualDomain != "" {
+		app.Use(middlewares.HostStyleParser(server.virtualDomain))
+	}
+
+	// initialize the debug logger in debug mode
 	if server.debug {
 		app.Use(middlewares.DebugLogger())
 	}
@@ -121,6 +129,11 @@ func WithHealth(health string) Option {
 
 func WithReadOnly() Option {
 	return func(s *S3ApiServer) { s.readonly = true }
+}
+
+// WithHostStyle enabled host-style bucket addressing on the server
+func WithHostStyle(virtualDomain string) Option {
+	return func(s *S3ApiServer) { s.virtualDomain = virtualDomain }
 }
 
 func (sa *S3ApiServer) Serve() (err error) {
