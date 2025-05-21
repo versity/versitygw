@@ -51,14 +51,24 @@ clear_bucket_s3api() {
     return 1
   fi
 
+  if ! abort_all_multipart_uploads "$1"; then
+    log 2 "error aborting all multipart uploads"
+    return 1
+  fi
+
   if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
     log 2 "error checking ownership rule and resetting acl"
     return 1
   fi
 
+  if ! delete_bucket_policy "s3api" "$1"; then
+    log 2 "error deleting bucket policy"
+    return 1
+  fi
+
   # shellcheck disable=SC2154
-  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
-    log 2 "error disabling object lock config"
+  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$1"; then
+    log 2 "error removing bucket retention policy"
     return 1
   fi
 
@@ -82,7 +92,7 @@ delete_bucket_recursive_s3api() {
     return 1
   fi
 
-  if ! delete_bucket 's3api' "$1"; then
+  if ! delete_bucket_rest "$1"; then
     log 2 "error deleting bucket"
     return 1
   fi
@@ -112,7 +122,8 @@ bucket_exists() {
     return 2
   fi
   local exists=0
-  head_bucket "s3api" "$1" || exists=$?
+  head_bucket "rest" "$1" || exists=$?
+  log 5 "bucket exists response code: $exists"
   # shellcheck disable=SC2181
   if [ $exists -eq 2 ]; then
     log 2 "unexpected error checking if bucket exists"
@@ -154,26 +165,6 @@ bucket_cleanup() {
       return 1
     fi
 
-    if ! delete_bucket_policy "s3api" "$1"; then
-      log 2 "error deleting bucket policy"
-      return 1
-    fi
-
-    if ! get_object_ownership_rule_and_update_acl "$1"; then
-      log 2 "error getting object ownership rule and updating ACL"
-      return 1
-    fi
-
-    if ! abort_all_multipart_uploads "$1"; then
-      log 2 "error aborting all multipart uploads"
-      return 1
-    fi
-
-    if [ "$RUN_USERS" == "true" ] && ! reset_bucket_owner "$1"; then
-      log 2 "error resetting bucket owner"
-      return 1
-    fi
-
     log 5 "bucket contents, policy, ACL deletion success"
     return 0
   fi
@@ -193,7 +184,12 @@ bucket_cleanup_if_bucket_exists() {
     return 1
   fi
 
-  if [ "$2" == "true" ] || bucket_exists "$1"; then
+  if [ "$2" == "false" ]; then
+    log 5 "skipping cleanup, since bucket doesn't exist"
+    return 0
+  fi
+
+  if bucket_exists "$1"; then
     if ! bucket_cleanup "$1"; then
       log 2 "error deleting bucket and/or contents"
       return 1

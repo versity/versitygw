@@ -37,6 +37,26 @@ get_bucket_ownership_controls() {
   return 0
 }
 
+get_bucket_ownership_controls_rest() {
+  if ! check_param_count "get_bucket_ownership_controls_rest" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/ownershipControls.txt" ./tests/rest_scripts/get_bucket_ownership_controls.sh); then
+    log 2 "error getting bucket ownership controls: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "GetBucketOwnershipControls returned response code: $result, reply:  $(cat "$TEST_FILE_FOLDER/ownershipControls.txt")"
+    return 1
+  fi
+  log 5 "controls: $(cat "$TEST_FILE_FOLDER/ownershipControls.txt")"
+  if ! rule=$(xmllint --xpath '//*[local-name()="ObjectOwnership"]/text()' "$TEST_FILE_FOLDER/ownershipControls.txt" 2>&1); then
+    log 2 "error getting ownership rule: $rule"
+    return 1
+  fi
+  echo "$rule"
+}
+
 get_object_ownership_rule() {
   if [[ -n "$SKIP_BUCKET_OWNERSHIP_CONTROLS" ]]; then
     log 5 "Skipping get bucket ownership controls"
