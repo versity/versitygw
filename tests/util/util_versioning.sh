@@ -2,10 +2,10 @@
 
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/list_object_versions.sh
+source ./tests/drivers/drivers.sh
 
 check_if_versioning_enabled() {
-  if [ $# -ne 1 ]; then
-    log 2 "'check_if_versioning_enabled' requires bucket name"
+  if ! check_param_count "check_if_versioning_enabled" "bucket name" $# 1; then
     return 2
   fi
   if ! get_bucket_versioning 's3api' "$1"; then
@@ -24,11 +24,10 @@ check_if_versioning_enabled() {
 }
 
 delete_old_versions() {
-  if [ $# -ne 1 ]; then
-    log 2 "'delete_old_versions' requires bucket name"
+  if ! check_param_count "delete_old_versions" "bucket name" 1 $#; then
     return 1
   fi
-  if ! list_object_versions "$1"; then
+  if ! list_object_versions "rest" "$1"; then
     log 2 "error listing object versions"
     return 1
   fi
@@ -37,12 +36,8 @@ delete_old_versions() {
   version_keys=()
   version_ids=()
 
-  if ! parse_version_data "$versions" '.Versions[]'; then
-    log 2 "error parsing Versions elements"
-    return 1
-  fi
-  if ! parse_version_data "$versions" '.DeleteMarkers[]'; then
-    log 2 "error getting DeleteMarkers elements"
+  if ! parse_version_data_by_type "rest" "$2"; then
+    log 2 "error parsing version data"
     return 1
   fi
 
@@ -57,8 +52,7 @@ delete_old_versions() {
 }
 
 delete_object_version_with_or_without_retention() {
-  if [ $# -ne 1 ]; then
-    log 2 "'delete_object_version_with_or_without_retention' requires bucket name"
+  if ! check_param_count "delete_object_version_with_or_without_retention" "bucket name" 1 $#; then
     return 1
   fi
   log 5 "idx: $idx"
@@ -68,20 +62,42 @@ delete_object_version_with_or_without_retention() {
     if ! check_remove_legal_hold_versions "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error checking, removing legal hold versions"
     fi
-    if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
-      log 2 "error turning off object legal hold"
-    fi
-    if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    #if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
+    #  log 2 "error turning off object legal hold"
+    #fi
+    if ! delete_object_version_rest_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version, bypassing retention"
       return 1
     fi
   else
-    if ! delete_object_version "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    if ! delete_object_version_rest "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version"
       return 1
     fi
   fi
   return 0
+}
+
+parse_version_data_by_type() {
+  if ! check_param_count "parse_version_data_by_type" "client, data" 2 $#; then
+    return 1
+  fi
+  if [ "$1" == "rest" ]; then
+    log 5 "version data: $versions"
+    if ! parse_versions_rest "$versions"; then
+      log 2 "error parsing REST object versions"
+      return 1
+    fi
+  else
+    if ! parse_version_data "$versions" '.Versions[]'; then
+      log 2 "error parsing Versions elements"
+      return 1
+    fi
+    if ! parse_version_data "$versions" '.DeleteMarkers[]'; then
+      log 2 "error getting DeleteMarkers elements"
+      return 1
+    fi
+  fi
 }
 
 parse_version_data() {
@@ -139,6 +155,54 @@ check_versioning_status_rest() {
     log 2 "versioning info should be '$2', is $versioning_status"
     return 1
   fi
+  return 0
+}
+
+echo_versions() {
+  if ! check_param_count "echo_versions" "'Version' or 'DeleteMarker', 'Key' or 'VersionId'" 2 $#; then
+    return 1
+  fi
+  if ! keys=$(echo -n "$versions" | xmllint --xpath "//*[local-name()=\"$1\"]/*[local-name()=\"$2\"]/text()" - | xmlstarlet unesc 2>&1); then
+    if [[ "$keys" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error getting Version 'Key' values: $keys"
+    return 1
+  fi
+  log 5 "keys to append: ${keys[*]}"
+  echo "${keys[*]}"
+}
+
+parse_versions_rest() {
+  if ! check_param_count "parse_versions_rest" "versions variable" 1 $#; then
+    return 1
+  fi
+  if ! keys=$(echo_versions "Version" "Key"); then
+    log 2 "error getting Version Key values: $keys"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "Version" "VersionId"); then
+    log 2 "error getting Version VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
+  if ! keys=$(echo_versions "DeleteMarker" "Key"); then
+    log 2 "error getting DeleteMarker Key values: $keys"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_keys+=($keys)
+  if ! ids=$(echo_versions "DeleteMarker" "VersionId"); then
+    log 2 "error getting DeleteMarker VersionId values: $ids"
+    return 1
+  fi
+  # shellcheck disable=SC2206
+  version_ids+=($ids)
+  log 5 "version keys: ${version_keys[*]}"
+  log 5 "version IDs: ${version_ids[*]}"
   return 0
 }
 

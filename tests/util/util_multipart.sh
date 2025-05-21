@@ -15,8 +15,7 @@
 # under the License.
 
 multipart_upload_s3api_complete_from_bucket() {
-  if [ $# -ne 3 ]; then
-    log 2 "'multipart_upload_s3api_complete_from_bucket' requires bucket, copy source, part count"
+  if ! check_param_count "multipart_upload_s3api_complete_from_bucket" "bucket, copy source, part count" 3 $#; then
     return 1
   fi
   parts="["
@@ -42,8 +41,7 @@ multipart_upload_s3api_complete_from_bucket() {
 }
 
 multipart_upload_from_bucket() {
-  if [ $# -ne 4 ]; then
-    log 2 "multipart upload from bucket command missing bucket, copy source, key, and/or part count"
+  if ! check_param_count "multipart_upload_from_bucket" "bucket, copy source, key, part count" 4 $#; then
     return 1
   fi
 
@@ -73,8 +71,7 @@ multipart_upload_from_bucket() {
 }
 
 split_and_put_file() {
-  if [ $# -ne 4 ]; then
-    log 2 "'split_and_put_file' requires bucket, key, copy source, part count"
+  if ! check_param_count "split_and_put_file" "bucket, key, copy source, part count" 4 $#; then
     return 1
   fi
   if ! split_file "$3" "$4"; then
@@ -92,8 +89,7 @@ split_and_put_file() {
 }
 
 multipart_upload_from_bucket_range() {
-  if [ $# -ne 5 ]; then
-    log 2 "multipart upload from bucket with range command requires bucket, copy source, key, part count, and range"
+  if ! check_param_count "multipart_upload_from_bucket_range" "bucket, copy source, key, part count, range" 5 $#; then
     return 1
   fi
   if ! split_file "$3" "$4"; then
@@ -133,8 +129,7 @@ multipart_upload_from_bucket_range() {
 }
 
 multipart_upload_custom() {
-  if [ $# -lt 4 ]; then
-    log 2 "multipart upload custom command missing bucket, key, file, part count, and/or optional additional params"
+  if ! check_param_count_gt "multipart_upload_custom" "bucket, key, file, part count, optional additional parameters" 4 $$; then
     return 1
   fi
 
@@ -153,8 +148,7 @@ multipart_upload_custom() {
 }
 
 multipart_upload() {
-  if [ $# -ne 4 ]; then
-    log 2 "multipart upload command missing bucket, key, file, and/or part count"
+  if ! check_param_count "multipart_upload" "bucket, key, file, part count" 4 $#; then
     return 1
   fi
 
@@ -174,8 +168,7 @@ multipart_upload() {
 # params:  bucket, key, source file location, number of parts
 # return 0 for success, 1 for failure
 multipart_upload_with_params() {
-  if [ $# -ne 10 ]; then
-    log 2 "multipart upload command requires bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging"
+  if ! check_param_count "multipart_upload_with_params" "bucket, key, file, part count, content type, metadata, hold status, lock mode, retain until date, tagging" 10 $#; then
     return 1
   fi
   log 5 "1: $1, 2: $2, 3: $3, 4: $4, 5: $5, 6: $6, 7: $7, 8: $8, 9: $9, 10: ${10}"
@@ -194,8 +187,7 @@ multipart_upload_with_params() {
 }
 
 run_and_verify_multipart_upload_with_valid_range() {
-  if [ $# -ne 3 ]; then
-    log 2 "'run_and_verify_multipart_upload_with_valid_range' requires bucket, key, 5MB file"
+  if ! check_param_count "run_and_verify_multipart_upload_with_valid_range" "bucket, key, 5MB file" 3 $#; then
     return 1
   fi
   range_max=$((5*1024*1024-1))
@@ -220,8 +212,7 @@ run_and_verify_multipart_upload_with_valid_range() {
 }
 
 create_upload_part_copy_rest() {
-  if [ $# -ne 3 ]; then
-    log 2 "'create_upload_part_copy_rest' requires bucket, key, >20MB file"
+  if ! check_param_count "create_upload_part_copy_rest" "bucket, key, >20MB file" 3 $#; then
     return 1
   fi
   if ! split_and_put_file "$1" "$2" "$3" 4; then
@@ -263,8 +254,7 @@ create_upload_part_copy_rest() {
 }
 
 create_upload_finish_wrong_etag() {
-  if [ $# -ne 2 ]; then
-    log 2 "'create_upload_finish_wrong_etag' requires bucket, key"
+  if ! check_param_count "create_upload_finish_wrong_etag" "bucket, key" 2 $#; then
     return 1
   fi
 
@@ -307,8 +297,7 @@ create_upload_finish_wrong_etag() {
 }
 
 setup_multipart_upload_with_params() {
-  if [ $# -ne 2 ]; then
-    log 2 "'setup_multipart_upload_with_params' requires bucket name, file name"
+  if ! check_param_count "setup_multipart_upload_with_params" "bucket, key" 2 $#; then
     return 1
   fi
   os_name="$(uname)"
