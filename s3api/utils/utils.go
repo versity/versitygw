@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go/encoding/httpbinding"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/s3api/debuglogger"
@@ -40,10 +39,6 @@ import (
 var (
 	bucketNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`)
 	bucketNameIpRegexp = regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`)
-)
-
-const (
-	upperhex = "0123456789ABCDEF"
 )
 
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
@@ -71,9 +66,9 @@ func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength
 		body = bytes.NewReader(req.Body())
 	}
 
-	escapedURI := escapeOriginalURI(ctx)
+	uri := ctx.OriginalURL()
 
-	httpReq, err := http.NewRequest(string(req.Header.Method()), escapedURI, body)
+	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
@@ -126,8 +121,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 		body = bytes.NewReader(req.Body())
 	}
 
-	uri := string(ctx.Request().URI().Path())
-	uri = httpbinding.EscapePath(uri, false)
+	uri, _, _ := strings.Cut(ctx.OriginalURL(), "?")
 	isFirst := true
 
 	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
@@ -398,77 +392,6 @@ func IsValidOwnership(val types.ObjectOwnership) bool {
 		debuglogger.Logf("invalid object ownership: %v\n", val)
 		return false
 	}
-}
-
-func escapeOriginalURI(ctx *fiber.Ctx) string {
-	path := ctx.Path()
-
-	// Escape the URI original path
-	escapedURI := escapePath(path)
-
-	// Add the URI query params
-	query := string(ctx.Request().URI().QueryArgs().QueryString())
-	if query != "" {
-		escapedURI = escapedURI + "?" + query
-	}
-
-	return escapedURI
-}
-
-// Escapes the path string
-// Most of the parts copied from std url
-func escapePath(s string) string {
-	hexCount := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if shouldEscape(c) {
-			hexCount++
-		}
-	}
-
-	if hexCount == 0 {
-		return s
-	}
-
-	var buf [64]byte
-	var t []byte
-
-	required := len(s) + 2*hexCount
-	if required <= len(buf) {
-		t = buf[:required]
-	} else {
-		t = make([]byte, required)
-	}
-
-	j := 0
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; {
-		case shouldEscape(c):
-			t[j] = '%'
-			t[j+1] = upperhex[c>>4]
-			t[j+2] = upperhex[c&15]
-			j += 3
-		default:
-			t[j] = s[i]
-			j++
-		}
-	}
-
-	return string(t)
-}
-
-// Checks if the character needs to be escaped
-func shouldEscape(c byte) bool {
-	if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' {
-		return false
-	}
-
-	switch c {
-	case '-', '_', '.', '~', '/':
-		return false
-	}
-
-	return true
 }
 
 type ChecksumValues map[types.ChecksumAlgorithm]string

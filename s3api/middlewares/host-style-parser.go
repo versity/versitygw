@@ -15,22 +15,26 @@
 package middlewares
 
 import (
-	"net/url"
+	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/metrics"
-	"github.com/versity/versitygw/s3api/controllers"
-	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
-func DecodeURL(logger s3log.AuditLogger, mm *metrics.Manager) fiber.Handler {
+// HostStyleParser is a middleware which parses the bucket name
+// from the 'Host' header and appends in the request URL path
+func HostStyleParser(virtualDomain string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		unescp, err := url.PathUnescape(string(ctx.Request().URI().PathOriginal()))
-		if err != nil {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidURI), &controllers.MetaOpts{Logger: logger, MetricsMng: mm})
+		host := string(ctx.Request().Host())
+		// the host should match this pattern: '<bucket_name>.<virtual_domain>'
+		bucket, _, found := strings.Cut(host, "."+virtualDomain)
+		if !found || bucket == "" {
+			return ctx.Next()
 		}
-		ctx.Path(unescp)
+		path := ctx.Path()
+		pathStyleUrl := fmt.Sprintf("/%v%v", bucket, path)
+		ctx.Path(pathStyleUrl)
+
 		return ctx.Next()
 	}
 }

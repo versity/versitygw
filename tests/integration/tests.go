@@ -1406,7 +1406,7 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 			return err
 		}
 
-		clt := s3.NewFromConfig(s.Config())
+		clt := s.GetClient()
 		mp, err := createMp(clt, bucket, key)
 		if err != nil {
 			return err
@@ -1600,7 +1600,7 @@ func CreateBucket_ownership_with_acl(s *S3Conf) error {
 	testName := "CreateBucket_ownership_with_acl"
 
 	runF(testName)
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
@@ -1697,7 +1697,7 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	}
 
 	bucket := getBucketName()
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err = client.CreateBucket(ctx, &s3.CreateBucketInput{
@@ -1743,7 +1743,7 @@ func CreateBucket_default_object_lock(s *S3Conf) error {
 	bucket := getBucketName()
 	lockEnabled := true
 
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
@@ -1863,7 +1863,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 			return err
 		}
 
-		userClient := s3.NewFromConfig(cfg.Config())
+		userClient := cfg.GetClient()
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := userClient.ListBuckets(ctx, &s3.ListBucketsInput{})
@@ -1938,7 +1938,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return err
 		}
 
-		adminClient := s3.NewFromConfig(cfg.Config())
+		adminClient := cfg.GetClient()
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := adminClient.ListBuckets(ctx, &s3.ListBucketsInput{})
@@ -2216,7 +2216,7 @@ func DeleteBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "DeleteBucket_non_existing_bucket"
 	runF(testName)
 	bucket := getBucketName()
-	s3client := s3.NewFromConfig(s.Config())
+	s3client := s.GetClient()
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
@@ -3008,7 +3008,7 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	runF(testName)
 	bucket, obj, lockStatus := getBucketName(), "my-obj", true
 
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket:                     &bucket,
@@ -3414,7 +3414,7 @@ func PutObject_racey_success(s *S3Conf) error {
 	runF(testName)
 	bucket, obj, lockStatus := getBucketName(), "my-obj", true
 
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket:                     &bucket,
@@ -3471,7 +3471,7 @@ func PutObject_invalid_credentials(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		newconf := *s
 		newconf.awsSecret = newconf.awsSecret + "badpassword"
-		client := s3.NewFromConfig(newconf.Config())
+		client := newconf.GetClient()
 		_, err := putObjects(client, []string{"my-obj"}, bucket)
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 	})
@@ -6301,7 +6301,7 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
 
-		userS3Client := s3.NewFromConfig(cfg.Config())
+		userS3Client := cfg.GetClient()
 
 		err = createUsers(s, []user{usr})
 		if err != nil {
@@ -11974,7 +11974,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 		newConf := *s
 		newConf.awsID = "grt1"
 		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
+		userClient := newConf.GetClient()
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -12006,7 +12006,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 		newConf := *s
 		newConf.awsID = "grt1"
 		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
+		userClient := newConf.GetClient()
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
@@ -12038,7 +12038,7 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 		newConf := *s
 		newConf.awsID = "grt1"
 		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
+		userClient := newConf.GetClient()
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -12092,7 +12092,7 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 		newConf := *s
 		newConf.awsID = "grt1"
 		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
+		userClient := newConf.GetClient()
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
@@ -12286,7 +12286,7 @@ func GetBucketAcl_access_denied(s *S3Conf) error {
 		newConf := *s
 		newConf.awsID = "grt1"
 		newConf.awsSecret = "grt1secret"
-		userClient := s3.NewFromConfig(newConf.Config())
+		userClient := newConf.GetClient()
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
@@ -14863,7 +14863,7 @@ func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
 
-		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -14889,7 +14889,7 @@ func AccessControl_default_ACL_userplus_access_denied(s *S3Conf) error {
 		cfg.awsID = usr.access
 		cfg.awsSecret = usr.secret
 
-		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -14915,7 +14915,7 @@ func AccessControl_default_ACL_admin_successful_access(s *S3Conf) error {
 		cfg.awsID = admin.access
 		cfg.awsSecret = admin.secret
 
-		_, err = putObjects(s3.NewFromConfig(cfg.Config()), []string{"my-obj"}, bucket)
+		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}

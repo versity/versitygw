@@ -59,7 +59,7 @@ func getBucketName() string {
 }
 
 func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
-	s3client := s3.NewFromConfig(s.Config())
+	s3client := s.GetClient()
 
 	cfg := new(setupCfg)
 	for _, opt := range opts {
@@ -95,7 +95,7 @@ func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
 }
 
 func teardown(s *S3Conf, bucket string) error {
-	s3client := s3.NewFromConfig(s.Config())
+	s3client := s.GetClient()
 
 	deleteObject := func(bucket, key, versionId *string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -200,7 +200,7 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 		failF("%v: failed to create a bucket: %v", testName, err)
 		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
 	}
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 	handlerErr := handler(client, bucketName)
 	if handlerErr != nil {
 		failF("%v: %v", testName, handlerErr)
@@ -222,7 +222,7 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 
 func actionHandlerNoSetup(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, _ ...setupOpt) error {
 	runF(testName)
-	client := s3.NewFromConfig(s.Config())
+	client := s.GetClient()
 	handlerErr := handler(client, "")
 	if handlerErr != nil {
 		failF("%v: %v", testName, handlerErr)
@@ -263,7 +263,7 @@ func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) err
 
 func presignedAuthHandler(s *S3Conf, testName string, handler func(client *s3.PresignClient) error) error {
 	runF(testName)
-	clt := s3.NewPresignClient(s3.NewFromConfig(s.Config()))
+	clt := s3.NewPresignClient(s.GetClient())
 
 	err := handler(clt)
 	if err != nil {
@@ -989,7 +989,7 @@ func getUserS3Client(usr user, cfg *S3Conf) *s3.Client {
 	config.awsID = usr.access
 	config.awsSecret = usr.secret
 
-	return s3.NewFromConfig(config.Config())
+	return config.GetClient()
 }
 
 // if true enables, otherwise disables
