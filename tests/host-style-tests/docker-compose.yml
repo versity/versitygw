@@ -1,0 +1,62 @@
+services:
+  dnsmasq:
+    image: strm/dnsmasq
+    container_name: dns-resolver
+    restart: on-failure
+    volumes:
+      - './dnsmasq.conf:/etc/dnsmasq.conf'
+    ports:
+      - "53/udp"
+    cap_add:
+      - NET_ADMIN
+    healthcheck:
+      test: 'if [ -z "$(netstat -nltu |grep \:53)" ]; then exit 1;else exit 0;fi'
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks:
+      devnet:
+        ipv4_address: 172.20.0.53
+
+  server:
+    build:
+      context: ../..
+      dockerfile: tests/host-style-tests/Dockerfile
+    depends_on:
+      dnsmasq:
+        condition: service_healthy
+    command: ["-a", "user", "-s", "pass", "--virtual-domain", "dev:7070", "--health", "/health", "--iam-dir", "/tmp/vgw", "posix", "/tmp/vgw"]
+    dns:
+      - 172.20.0.53
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7070/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks:
+      devnet:
+        ipv4_address: 172.20.0.10
+    ports:
+      - "7070:7070"  # Optional: if you want to reach it from host
+
+  test:
+    build:
+      context: ../..
+      dockerfile: tests/host-style-tests/Dockerfile
+    depends_on:
+      server:
+        condition: service_healthy
+      dnsmasq:
+        condition: service_healthy
+    command: ["test", "-a", "user", "-s", "pass", "--host-style", "-e", "http://dev:7070", "full-flow"]
+    dns:
+      - 172.20.0.53
+    networks:
+      devnet:
+
+networks:
+  devnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

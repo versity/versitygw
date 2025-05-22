@@ -1,0 +1,13 @@
+name: host style tests
+permissions: {}
+on: pull_request
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: run host-style tests
+        run: make test-host-style

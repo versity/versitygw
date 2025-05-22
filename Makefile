@@ -96,3 +96,9 @@ up-azurite:
 .PHONY: up-app
 up-app:
 	$(DOCKERCOMPOSE) up
+
+# Run the host-style tests in docker containers
+.PHONY: test-host-style
+test-host-style:
+	docker compose -f tests/host-style-tests/docker-compose.yml up --build --abort-on-container-exit --exit-code-from test
+
