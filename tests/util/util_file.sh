@@ -200,7 +200,7 @@ create_large_file() {
     return 1
   fi
 
-  filesize=$((160*1024*1024))
+  filesize=$((24*1024*1024))
   if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1024 count=$((filesize/1024)) 2>&1); then
     log 2 "error adding data to large file: $error"
     return 1

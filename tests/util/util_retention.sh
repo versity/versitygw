@@ -65,7 +65,7 @@ check_for_and_remove_worm_protection() {
     #  log 2 "error adding new governance bypass policy"
     #  return 2
     #fi
-    if ! delete_object_bypass_retention "rest" "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
       return 2
     fi

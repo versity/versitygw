@@ -33,5 +33,8 @@ send_command() {
   if [ "$command_result" -ne 0 ] && [ "$1" == "curl" ]; then
     echo ", curl response code: $command_result"
   fi
+  if [ "$DIRECT" == "true" ]; then
+    sleep "$DIRECT_POST_COMMAND_DELAY"
+  fi
   return $command_result
 }

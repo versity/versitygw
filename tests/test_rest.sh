@@ -243,7 +243,7 @@ test_file="test_file"
   fi
   test_file_two="test_file_2"
   test_file_three="test_file_3"
-  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -269,7 +269,7 @@ test_file="test_file"
     skip "https://github.com/versity/versitygw/issues/999"
   fi
   test_file_two="test_file_2"
-  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -492,10 +492,24 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - PutObjectLegalHold w/o payload" {
+@test "REST - PutObjectLegalHold - missing content-md5" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1191"
+    skip "https://github.com/versity/versitygw/issues/1311"
   fi
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_content_md5 "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObjectLegalHold w/o payload" {
   run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
   assert_success
 
