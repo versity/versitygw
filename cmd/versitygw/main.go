@@ -230,7 +230,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:        "virtual-domain",
-			Usage:       "enables the host-style bucket addressing with the specified virtual domain as base.",
+			Usage:       "enables the virtual host style bucket addressing with the specified arg as the base domain",
 			EnvVars:     []string{"VGW_VIRTUAL_DOMAIN"},
 			Destination: &virtualDomain,
 			Aliases:     []string{"vd"},
