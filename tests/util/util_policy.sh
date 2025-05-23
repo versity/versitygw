@@ -15,8 +15,7 @@
 # under the License.
 
 check_for_empty_policy() {
-  if [[ $# -ne 2 ]]; then
-    log 2 "check for empty policy command requires command type, bucket name"
+  if ! check_param_count "check_for_empty_policy" "command type, bucket name" 2 $#; then
     return 1
   fi
 
@@ -52,8 +51,7 @@ add_direct_user_to_principal() {
 
 get_modified_principal() {
   log 6 "get_modified_principal"
-  if [ $# -ne 1 ]; then
-    log 2 "'get_modified_principal' requires principal string"
+  if ! check_param_count "get_modified_principal" "principal string" 1 $#; then
     return 1
   fi
   IFS=',' read -r -a principals <<< "$1"
@@ -87,8 +85,7 @@ get_modified_principal() {
 
 get_modified_action() {
   log 6 "get_modified_action"
-  if [ $# -ne 1 ]; then
-    log 2 "'get_modified_action' requires action"
+  if ! check_param_count "get_modified_action" "action" 1 $#; then
     return 1
   fi
   local first_char="${1:0:1}"
@@ -104,8 +101,7 @@ get_modified_action() {
 # fail on error
 setup_policy_with_single_statement() {
   log 6 "setup_policy_with_single_statement"
-  if [ $# -ne 6 ]; then
-    log 2 "'setup_policy_with_single_statement' requires policy file, version, effect, principal, action, resource"
+  if ! check_param_count "setup_policy_with_single_statement" "policy file, version, effect, principal, action, resource" 6 $#; then
     return 1
   fi
   log 5 "policy file: $1"
@@ -137,8 +133,7 @@ setup_policy_with_single_statement() {
 # return 0 on success, 1 on error
 setup_policy_with_double_statement() {
   log 6 "setup_policy_with_double_statement"
-  if [ $# -ne 10 ]; then
-    log 2 "invalid number of parameters"
+  if ! check_param_count "setup_policy_with_double_statement" "policy file, version, one set of: 'effect, principal, action, resource', another set" 10 $#; then
     return 1
   fi
   if ! get_modified_principal "$4"; then
@@ -175,8 +170,7 @@ EOF"
 }
 
 get_and_check_policy() {
-  if [ $# -ne 6 ]; then
-    log 2 "'get_and_check_policy' requires client, bucket, expected effect, principal, action, resource"
+  if ! check_param_count "get_and_check_policy" "client, bucket, expected effect, principal, action, resource" 6 $#; then
     return 1
   fi
   if ! get_bucket_policy "$1" "$BUCKET_ONE_NAME"; then
@@ -194,8 +188,7 @@ get_and_check_policy() {
 }
 
 check_policy() {
-  if [ $# -ne 5 ]; then
-    log 2 "'check_policy' requires policy, expected effect, policy, action, resource"
+  if ! check_param_count "check_policy" "policy, expected effect, principal, action, resource" 5 $#; then
     return 1
   fi
   log 5 "policy: $1"
@@ -246,8 +239,7 @@ check_policy() {
 }
 
 put_and_check_for_malformed_policy() {
-  if [ $# -ne 2 ]; then
-    log 2 "'put_and_check_for_malformed_policy' requires bucket name, policy file"
+  if ! check_param_count "put_and_check_for_malformed_policy" "bucket, policy file" 2 $#; then
     return 1
   fi
   if put_bucket_policy "s3api" "$1" "$2"; then
@@ -263,8 +255,7 @@ put_and_check_for_malformed_policy() {
 }
 
 get_and_check_no_policy_error() {
-  if [ $# -ne 1 ]; then
-    log 2 "'get_and_check_no_policy_error' requires bucket name"
+  if ! check_param_count "get_and_check_no_policy_error" "bucket" 1 $#; then
     return 1
   fi
   if ! get_bucket_policy_rest_expect_code "$1" "404"; then
@@ -284,8 +275,7 @@ get_and_check_no_policy_error() {
 }
 
 get_and_compare_policy_with_file() {
-  if [ $# -ne 4 ]; then
-    log 2 "'get_and_compare_policies' requires bucket, username, password, filename"
+  if ! check_param_count "get_and_compare_policy_with_file" "bucket, username, password, filename" 4 $#; then
     return 1
   fi
   # shellcheck disable=SC2002
@@ -313,8 +303,7 @@ get_and_compare_policy_with_file() {
 }
 
 put_and_check_policy_rest() {
-  if [ $# -ne 6 ]; then
-    log 2 "'put_policy_rest' requires bucket name, policy file, effect, principal, action, resource"
+  if ! check_param_count "put_and_check_policy_rest" "bucket, policy file, effect, principal, action, resource" 6 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" POLICY_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_policy.sh); then
@@ -343,11 +332,11 @@ put_and_check_policy_rest() {
 }
 
 log_bucket_policy() {
-  if [ $# -ne 1 ]; then
-    log 2 "'log_bucket_policy' requires bucket name"
-    return
+  log 6 "log_bucket_policy"
+  if ! check_param_count "log_bucket_policy" "bucket" 1 $#; then
+    return 1
   fi
-  if ! get_bucket_policy "s3api" "$1"; then
+  if ! get_bucket_policy "rest" "$1"; then
     log 2 "error getting bucket policy"
     return
   fi

@@ -17,8 +17,7 @@
 source ./tests/util/util_file.sh
 
 start_versity_process() {
-  if [[ $# -ne 1 ]]; then
-    log 1 "start versity process function requires number"
+  if ! check_param_count "start_versity_process" "versity app index" 1 $#; then
     exit 1
   fi
   build_run_and_log_command
@@ -67,8 +66,7 @@ build_run_and_log_command() {
 }
 
 run_versity_app_posix() {
-  if [[ $# -ne 3 ]]; then
-    log 1 "run versity app w/posix command requires access ID, secret key, process number"
+  if ! check_param_count "run_versity_app_posix" "access ID, secret key, versityid app index" 3 $#; then
     exit 1
   fi
   base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION")
@@ -96,8 +94,7 @@ run_versity_app_posix() {
 }
 
 run_versity_app_scoutfs() {
-  if [[ $# -ne 3 ]]; then
-    log 1 "run versity app w/scoutfs command requires access ID, secret key, process number"
+  if ! check_param_count "run_versity_app_scoutfs" "access ID, secret key, versityid app index" 3 $#; then
     exit 1
   fi
   base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION"  --iam-dir="$USERS_FOLDER")
@@ -115,8 +112,7 @@ run_versity_app_scoutfs() {
 }
 
 run_versity_app_s3() {
-  if [[ $# -ne 1 ]]; then
-    log 1 "run versity app w/s3 command requires process number"
+  if ! check_param_count "run_versity_app_s3" "versityid app index" 1 $#; then
     exit 1
   fi
   base_command=("$VERSITY_EXE" --access="$AWS_ACCESS_KEY_ID" --secret="$AWS_SECRET_ACCESS_KEY")
@@ -161,9 +157,8 @@ run_versity_app() {
 }
 
 stop_single_process() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "stop single process function requires process ID"
-    return 1
+  if ! check_param_count "stop_single_process" "versitygw PID" 1 $#; then
+    exit 1
   fi
   log 5 "stop process with ID: $1"
   # shellcheck disable=SC2086

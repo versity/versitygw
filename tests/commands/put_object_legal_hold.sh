@@ -16,12 +16,33 @@
 
 put_object_legal_hold() {
   record_command "put-object-legal-hold" "client:s3api"
-  if [[ $# -ne 3 ]]; then
-    log 2 "'put object legal hold' command requires bucket, key, hold status ('ON' or 'OFF')"
+  if ! check_param_count "put_object_legal_hold" "client, bucket, key, hold status ('ON' or 'OFF')" 4 $#; then
     return 1
   fi
-  if ! error=$(send_command aws --no-verify-ssl s3api put-object-legal-hold --bucket "$1" --key "$2" --legal-hold "{\"Status\": \"$3\"}" 2>&1); then
-    log 2 "error putting object legal hold: $error"
+  if [ "$1" == "rest" ]; then
+    if ! put_object_legal_hold_rest "$2" "$3" "$4"; then
+      log 2 "error updating legal hold status w/REST"
+      return 1
+    fi
+  else
+    if ! error=$(send_command aws --no-verify-ssl s3api put-object-legal-hold --bucket "$2" --key "$3" --legal-hold "{\"Status\": \"$4\"}" 2>&1); then
+      log 2 "error putting object legal hold: $error"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+put_object_legal_hold_rest() {
+  if ! check_param_count "put_object_legal_hold_rest" "bucket, key, hold status ('ON' or 'OFF')" 3 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" STATUS="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh 2>&1); then
+    log 2 "error putting object legal hold: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0
@@ -29,8 +50,7 @@ put_object_legal_hold() {
 
 put_object_legal_hold_version_id() {
   record_command "put-object-legal-hold" "client:s3api"
-  if [[ $# -ne 4 ]]; then
-    log 2 "'put_object_legal_hold_version_id' command requires bucket, key, version ID, hold status ('ON' or 'OFF')"
+  if ! check_param_count "put_object_legal_hold_version_id" "bucket, key, version ID, hold status ('ON' or 'OFF')" 4 $#; then
     return 1
   fi
   local error=""

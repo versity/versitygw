@@ -139,6 +139,7 @@ jobs:
 
       - name: Install s3cmd
         run: |
+          sudo apt-get update
           sudo apt-get install s3cmd
 
       - name: Install mc
@@ -146,10 +147,10 @@ jobs:
           curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o /usr/local/bin/mc
           chmod 755 /usr/local/bin/mc
 
-      - name: Install xmllint (for rest)
+      - name: Install xml libraries (for rest)
         run: |
           sudo apt-get update
-          sudo apt-get install libxml2-utils
+          sudo apt-get install libxml2-utils xmlstarlet
 
       # see https://github.com/versity/versitygw/issues/1034
       - name: Install AWS cli
