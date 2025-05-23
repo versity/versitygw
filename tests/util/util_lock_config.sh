@@ -20,6 +20,7 @@ get_and_check_object_lock_config() {
   if ! check_param_count "get_and_check_object_lock_config" "bucket, expected enabled value, expected governance mode, expected days" 4 $#; then
     return 1
   fi
+
   if ! get_object_lock_configuration "s3api" "$1"; then
     log 2 "error getting object lock config"
     return 1
