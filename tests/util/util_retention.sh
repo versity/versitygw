@@ -14,9 +14,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/drivers.sh
+
 # params:  bucket name
 # return 0 for success, 1 for error
 add_governance_bypass_policy() {
+  log 6 "add_governance_bypass_policy '$1'"
   if [[ $# -ne 1 ]]; then
     log 2 "'add governance bypass policy' command requires bucket name"
     return 1
@@ -34,7 +37,7 @@ add_governance_bypass_policy() {
   ]
 }
 EOF
-  if ! put_bucket_policy "s3api" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
+  if ! put_bucket_policy "rest" "$1" "$TEST_FILE_FOLDER/policy-bypass-governance.txt"; then
     log 2 "error putting governance bypass policy"
     return 1
   fi
@@ -44,14 +47,14 @@ EOF
 # params: bucket, object, possible WORM error after deletion attempt
 # return 0 for success, 1 for no WORM protection, 2 for error
 check_for_and_remove_worm_protection() {
-  if [ $# -ne 3 ]; then
-    log 2 "'check_for_and_remove_worm_protection' command requires bucket, object, error"
+  log 6 "check_for_and_remove_worm_protection"
+  if ! check_param_count "check_for_and_remove_worm_protection" "bucket, object, error" 3 $#; then
     return 2
   fi
 
   if [[ $3 == *"WORM"* ]]; then
     log 5 "WORM protection found"
-    if ! put_object_legal_hold "$1" "$2" "OFF"; then
+    if ! put_object_legal_hold "rest" "$1" "$2" "OFF"; then
       log 2 "error removing object legal hold"
       return 2
     fi
@@ -59,11 +62,11 @@ check_for_and_remove_worm_protection() {
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
       log_worm_protection "$1" "$2"
     fi
-    if ! add_governance_bypass_policy "$1"; then
-      log 2 "error adding new governance bypass policy"
-      return 2
-    fi
-    if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    #if ! add_governance_bypass_policy "$1"; then
+    #  log 2 "error adding new governance bypass policy"
+    #  return 2
+    #fi
+    if ! delete_object_bypass_retention "rest" "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
       return 2
     fi
@@ -76,13 +79,17 @@ check_for_and_remove_worm_protection() {
 
 # params: bucket name, object
 log_worm_protection() {
-  if ! get_object_legal_hold "$1" "$2"; then
+  log 5 "log_worm_protection"
+  if ! check_param_count "log_worm_protection" "bucket, object" 3 $#; then
+    return 2
+  fi
+  if ! get_object_legal_hold_rest "$1" "$2"; then
     log 2 "error getting object legal hold status"
     return
   fi
   # shellcheck disable=SC2154
   log 5 "LEGAL HOLD: $legal_hold"
-  if ! get_object_retention "$1" "$2"; then
+  if ! get_object_retention_rest "$1" "$2"; then
     log 2 "error getting object retention"
     # shellcheck disable=SC2154
     if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
@@ -109,6 +116,25 @@ retention_rest_without_request_body() {
   log 5 "result: $result ($(cat "$TEST_FILE_FOLDER/result.txt"))"
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
     log 2 "error checking xml reply"
+    return 1
+  fi
+  return 0
+}
+
+attempt_to_change_lock_config_without_content_md5() {
+  if ! check_param_count "attempt_to_change_lock_config_without_content_md5" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OMIT_CONTENT_MD5="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_lock_configuration.sh 2>&1); then
+    log 2 "error changing lock configuration: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking lock config error"
     return 1
   fi
   return 0

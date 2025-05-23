@@ -96,7 +96,7 @@ export RUN_USERS=true
   run check_verify_object_tags "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$expected_tag_key" "$expected_tag_val"
   assert_success
 
-  run put_object_legal_hold "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
   assert_success
 
   run get_and_check_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
