@@ -59,15 +59,15 @@ reset_bucket_acl() {
   fi
   # shellcheck disable=SC2154
   if [ "$DIRECT" != "true" ]; then
-    if ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_ACCESS_KEY_ID" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"; then
+    if ! setup_acl "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_ACCESS_KEY_ID" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"; then
       log 2 "error resetting versitygw ACL"
       return 1
     fi
-  elif ! setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_CANONICAL_ID" "FULL_CONTROL" "$AWS_CANONICAL_ID"; then
+  elif ! setup_acl "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$AWS_CANONICAL_ID" "FULL_CONTROL" "$AWS_CANONICAL_ID"; then
     log 2 "error resetting direct ACL"
     return 1
   fi
-  if ! put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$acl_file"; then
+  if ! put_bucket_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$acl_file"; then
     log 2 "error putting bucket acl (s3api)"
     return 1
   fi
@@ -109,6 +109,21 @@ put_bucket_canned_acl_with_user() {
   record_command "put-bucket-acl" "client:s3api"
   if ! error=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" send_command aws --no-verify-ssl s3api put-bucket-acl --bucket "$1" --acl "$2" 2>&1); then
     log 2 "error re-setting bucket acls: $error"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_acl_rest() {
+  if ! check_param_count "put_bucket_acl_rest" "bucket, ACL file" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
     return 1
   fi
   return 0

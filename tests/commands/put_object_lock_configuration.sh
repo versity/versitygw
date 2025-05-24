@@ -27,14 +27,46 @@ put_object_lock_configuration() {
   return 0
 }
 
-put_object_lock_configuration_disabled() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "'put-object-lock-configuration' disable command requires bucket name"
+remove_retention_policy_rest() {
+  if ! check_param_count "remove_retention_policy_rest" "bucket" 1 $#; then
     return 1
   fi
-  local config="{\"ObjectLockEnabled\": \"Enabled\"}"
-  if ! error=$(send_command aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_lock_configuration.sh 2>&1); then
+    log 2 "error putting object lock configuration: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+remove_retention_policy() {
+  if ! check_param_count "remove_retention_policy" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! error=$(aws --no-verify-ssl s3api put-object-lock-configuration --bucket "$1" --object-lock-configuration "$config" 2>&1); then
     log 2 "error putting object lock configuration: $error"
+    return 1
+  fi
+  return 0
+}
+
+put_object_lock_config_without_content_md5() {
+  if ! check_param_count "remove_retention_policy_rest" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OMIT_CONTENT_MD5="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_lock_configuration.sh 2>&1); then
+    log 2 "error putting object lock configuration: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking XML response"
     return 1
   fi
   return 0

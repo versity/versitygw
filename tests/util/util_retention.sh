@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/drivers.sh
+
 # params:  bucket name
 # return 0 for success, 1 for error
 add_governance_bypass_policy() {
@@ -59,10 +61,10 @@ check_for_and_remove_worm_protection() {
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
       log_worm_protection "$1" "$2"
     fi
-    if ! add_governance_bypass_policy "$1"; then
-      log 2 "error adding new governance bypass policy"
-      return 2
-    fi
+    #if ! add_governance_bypass_policy "$1"; then
+    #  log 2 "error adding new governance bypass policy"
+    #  return 2
+    #fi
     if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
       return 2
@@ -86,7 +88,7 @@ log_worm_protection() {
   fi
   # shellcheck disable=SC2154
   log 5 "LEGAL HOLD: $legal_hold"
-  if ! get_object_retention "$1" "$2"; then
+  if ! get_object_retention_rest "$1" "$2"; then
     log 2 "error getting object retention"
     # shellcheck disable=SC2154
     if [[ $get_object_retention_error != *"NoSuchObjectLockConfiguration"* ]]; then
@@ -112,6 +114,25 @@ retention_rest_without_request_body() {
   log 5 "result: $result ($(cat "$TEST_FILE_FOLDER/result.txt"))"
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
     log 2 "error checking xml reply"
+    return 1
+  fi
+  return 0
+}
+
+attempt_to_change_lock_config_without_content_md5() {
+  if ! check_param_count "attempt_to_change_lock_config_without_content_md5" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OMIT_CONTENT_MD5="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_lock_configuration.sh 2>&1); then
+    log 2 "error changing lock configuration: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking lock config error"
     return 1
   fi
   return 0
