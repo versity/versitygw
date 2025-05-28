@@ -178,6 +178,8 @@ type setupCfg struct {
 	LockEnabled      bool
 	VersioningStatus types.BucketVersioningStatus
 	Ownership        types.ObjectOwnership
+	Anonymous        bool
+	SkipTearDown     bool
 }
 
 type setupOpt func(*setupCfg)
@@ -191,26 +193,47 @@ func withOwnership(o types.ObjectOwnership) setupOpt {
 func withVersioning(v types.BucketVersioningStatus) setupOpt {
 	return func(s *setupCfg) { s.VersioningStatus = v }
 }
+func withAnonymousClient() setupOpt {
+	return func(s *setupCfg) { s.Anonymous = true }
+}
+func withSkipTearDown() setupOpt {
+	return func(s *setupCfg) { s.SkipTearDown = true }
+}
 
 func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, opts ...setupOpt) error {
 	runF(testName)
 	bucketName := getBucketName()
+
+	cfg := new(setupCfg)
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	err := setup(s, bucketName, opts...)
 	if err != nil {
 		failF("%v: failed to create a bucket: %v", testName, err)
 		return fmt.Errorf("%v: failed to create a bucket: %w", testName, err)
 	}
-	client := s.GetClient()
+
+	var client *s3.Client
+	if cfg.Anonymous {
+		client = s.GetAnonymousClient()
+	} else {
+		client = s.GetClient()
+	}
+
 	handlerErr := handler(client, bucketName)
 	if handlerErr != nil {
 		failF("%v: %v", testName, handlerErr)
 	}
 
-	err = teardown(s, bucketName)
-	if err != nil {
-		fmt.Printf(colorRed+"%v: failed to delete the bucket: %v", testName, err)
-		if handlerErr == nil {
-			return fmt.Errorf("%v: failed to delete the bucket: %w", testName, err)
+	if !cfg.SkipTearDown {
+		err = teardown(s, bucketName)
+		if err != nil {
+			fmt.Printf(colorRed+"%v: failed to delete the bucket: %v", testName, err)
+			if handlerErr == nil {
+				return fmt.Errorf("%v: failed to delete the bucket: %w", testName, err)
+			}
 		}
 	}
 	if handlerErr == nil {
@@ -976,6 +999,52 @@ func genPolicyDoc(effect, principal, action, resource string) string {
 	return fmt.Sprintf(jsonTemplate, effect, principal, action, resource)
 }
 
+type policyType string
+
+const (
+	policyTypeBucket policyType = "bucket"
+	policyTypeObject policyType = "object"
+	policyTypeFull   policyType = "full"
+)
+
+func grantPublicBucketPolicy(client *s3.Client, bucket string, tp policyType) error {
+	var doc string
+
+	switch tp {
+	case policyTypeBucket:
+		doc = genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%s"`, bucket))
+	case policyTypeObject:
+		doc = genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+	case policyTypeFull:
+		template := `
+		{
+			"Statement": [
+				{
+					"Effect":  "Allow",
+					"Principal": "*",
+					"Action":  "s3:*",
+					"Resource":  "arn:aws:s3:::%s"
+				},
+				{
+					"Effect":  "Allow",
+					"Principal": "*",
+					"Action":  "s3:*",
+					"Resource":  "arn:aws:s3:::%s/*"
+				}
+			]
+		}
+		`
+		doc = fmt.Sprintf(template, bucket, bucket)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+		Bucket: &bucket,
+		Policy: &doc,
+	})
+	cancel()
+	return err
+}
+
 func getMalformedPolicyError(msg string) s3err.APIError {
 	return s3err.APIError{
 		Code:           "MalformedPolicy",
@@ -1333,4 +1402,10 @@ func checkObjectMetaProps(client *s3.Client, bucket, object string, o ObjectMeta
 
 func getBoolPtr(b bool) *bool {
 	return &b
+}
+
+type PublicBucketTestCase struct {
+	Action      string
+	Call        func(ctx context.Context) error
+	ExpectedErr error
 }

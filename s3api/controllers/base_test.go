@@ -32,6 +32,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -99,8 +100,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access", Role: "admin:"})
-		ctx.Locals("isDebug", false)
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access", Role: "admin:"})
 		return ctx.Next()
 	})
 	app.Get("/", s3ApiController.ListBuckets)
@@ -116,8 +116,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access", Role: "admin:"})
-		ctx.Locals("isDebug", false)
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access", Role: "admin:"})
 		return ctx.Next()
 	})
 	appErr.Get("/", s3ApiControllerErr.ListBuckets)
@@ -220,10 +219,9 @@ func TestS3ApiController_GetActions(t *testing.T) {
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Get("/:bucket/:key/*", s3ApiController.GetActions)
@@ -413,10 +411,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -438,10 +435,9 @@ func TestS3ApiController_ListActions(t *testing.T) {
 	}
 	appError := fiber.New()
 	appError.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	appError.Get("/:bucket", s3ApiControllerError.ListActions)
@@ -707,10 +703,9 @@ func TestS3ApiController_PutBucketActions(t *testing.T) {
 	}
 	// Mock ctx.Locals
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{Owner: "valid access"})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{Owner: "valid access"})
 		return ctx.Next()
 	})
 	app.Put("/:bucket", s3ApiController.PutBucketActions)
@@ -1003,10 +998,9 @@ func TestS3ApiController_PutActions(t *testing.T) {
 		},
 	}
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Put("/:bucket/:key/*", s3ApiController.PutActions)
@@ -1292,10 +1286,9 @@ func TestS3ApiController_DeleteBucket(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 
@@ -1378,10 +1371,9 @@ func TestS3ApiController_DeleteObjects(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Post("/:bucket", s3ApiController.DeleteObjects)
@@ -1458,10 +1450,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Delete("/:bucket/:key/*", s3ApiController.DeleteActions)
@@ -1482,10 +1473,9 @@ func TestS3ApiController_DeleteActions(t *testing.T) {
 	}}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	appErr.Delete("/:bucket/:key/*", s3ApiControllerErr.DeleteActions)
@@ -1565,11 +1555,10 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
-		ctx.Locals("region", "us-east-1")
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
+		utils.ContextKeyRegion.Set(ctx, "us-east-1")
 		return ctx.Next()
 	})
 
@@ -1583,17 +1572,16 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 			return acldata, nil
 		},
 		HeadBucketFunc: func(context.Context, *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
-			return nil, s3err.GetAPIError(3)
+			return nil, s3err.GetAPIError(s3err.ErrBucketNotEmpty)
 		},
 	},
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
-		ctx.Locals("region", "us-east-1")
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
+		utils.ContextKeyRegion.Set(ctx, "us-east-1")
 		return ctx.Next()
 	})
 
@@ -1670,10 +1658,9 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	}
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
@@ -1693,10 +1680,9 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 	}
 
 	appErr.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	appErr.Head("/:bucket/:key/*", s3ApiControllerErr.HeadObject)
@@ -1798,10 +1784,9 @@ func TestS3ApiController_CreateActions(t *testing.T) {
 	`
 
 	app.Use(func(ctx *fiber.Ctx) error {
-		ctx.Locals("account", auth.Account{Access: "valid access"})
-		ctx.Locals("isRoot", true)
-		ctx.Locals("isDebug", false)
-		ctx.Locals("parsedAcl", auth.ACL{})
+		utils.ContextKeyAccount.Set(ctx, auth.Account{Access: "valid access"})
+		utils.ContextKeyIsRoot.Set(ctx, true)
+		utils.ContextKeyParsedAcl.Set(ctx, auth.ACL{})
 		return ctx.Next()
 	})
 	app.Post("/:bucket/:key/*", s3ApiController.CreateActions)

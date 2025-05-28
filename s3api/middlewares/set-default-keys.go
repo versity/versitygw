@@ -15,18 +15,23 @@
 package middlewares
 
 import (
-	"io"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
-func wrapBodyReader(ctx *fiber.Ctx, wr func(io.Reader) io.Reader) {
-	r, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader)
-	if !ok {
-		r = ctx.Request().BodyStream()
+func SetDefaultValues(root RootUserConfig, region string) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		// These are necessary for the server access logs
+		utils.ContextKeyRegion.Set(ctx, region)
+		utils.ContextKeyStartTime.Set(ctx, time.Now())
+		utils.ContextKeyRootAccessKey.Set(ctx, root.Access)
+		// Set the account and isRoot to some defulat values, to avoid panics
+		// in case of public buckets
+		utils.ContextKeyAccount.Set(ctx, auth.Account{})
+		utils.ContextKeyIsRoot.Set(ctx, false)
+		return ctx.Next()
 	}
-
-	r = wr(r)
-	utils.ContextKeyBodyReader.Set(ctx, r)
 }
