@@ -21,24 +21,30 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
-key="$(echo -n "$OBJECT_KEY" | jq -sRr @uri)"
+retention_rule="${RETENTION_RULE:=false}"
 # shellcheck disable=SC2153
-status="$STATUS"
+retention_days="$RETENTION_DAYS"
 # shellcheck disable=SC2153
-omit_payload="${OMIT_PAYLOAD:=false}"
+retention_mode="$RETENTION_MODE"
 # shellcheck disable=SC2153
-version_id="$VERSION_ID"
+retention_years="$RETENTION_YEARS"
 # shellcheck disable=SC2153
 omit_content_md5="${OMIT_CONTENT_MD5:=false}"
 
-if [ "$omit_payload" == "false" ]; then
+
   payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<LegalHold xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
-   <Status>$status</Status>
-</LegalHold>"
-else
-  payload=""
+<ObjectLockConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
+   <ObjectLockEnabled>Enabled</ObjectLockEnabled>"
+if [ "$retention_rule" != "false" ]; then
+  payload+="<Rule>
+    <DefaultRetention>
+      <Days>$retention_days<Days>
+      <Mode>$retention_mode</Mode>
+      <Years>$retention_years</Years>
+    </DefaultRetention>
+  </Rule>"
 fi
+  payload+="</ObjectLockConfiguration>"
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
 if [ "$omit_content_md5" == "false" ]; then
@@ -46,31 +52,20 @@ if [ "$omit_content_md5" == "false" ]; then
 fi
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request_data=("PUT" "/$bucket_name/$key")
-queries="legal-hold="
-if [ "$version_id" != "" ]; then
-  queries=$(add_parameter "$queries" "versionId=$version_id")
-fi
-canonical_request_data+=("$queries")
+cr_data=("PUT" "/$bucket_name" "object-lock=")
 if [ "$omit_content_md5" == "false" ]; then
-  canonical_request_data+=("content-md5:$content_md5")
+  cr_data+=("content-md5:$content_md5")
 fi
-canonical_request_data+=("host:$host")
-canonical_request_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
-if ! build_canonical_request "${canonical_request_data[@]}"; then
-  log_rest 2 "error building request"
-  exit 1
-fi
+cr_data+=("host:$host")
+cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
+build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "\"$AWS_ENDPOINT_URL/$bucket_name/$key?$queries\""
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name?object-lock")
+curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
-if [ "$omit_payload" == "false" ]; then
-  curl_command+=(-d "\"${payload//\"/\\\"}\"")
-fi
-curl_command+=(-o "$OUTPUT_FILE")
+curl_command+=(-d "\"${payload//\"/\\\"}\"" -o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

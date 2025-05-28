@@ -26,6 +26,23 @@ list_multipart_uploads() {
   fi
 }
 
+list_multipart_uploads_rest() {
+  record_command "list_multipart_uploads_rest" "client:rest"
+  if ! check_param_count "list_multipart_upload_rest" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/uploads.txt" ./tests/rest_scripts/list_multipart_uploads.sh 2>&1); then
+    log 2 "error listing multipart uploads: $result"
+    return 1
+  fi
+  uploads=$(cat "$TEST_FILE_FOLDER/uploads.txt")
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($uploads)"
+    return 1
+  fi
+  return 0
+}
+
 list_multipart_uploads_with_user() {
   record_command "list-multipart-uploads" "client:s3api"
   if [[ $# -ne 3 ]]; then

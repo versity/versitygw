@@ -21,6 +21,18 @@ log() {
     echo "log function requires level, message"
     return 1
   fi
+  if ! log_with_stack_ref "$1" "$2" 2; then
+    echo "error logging with stack ref"
+    return 1
+  fi
+  return 0
+}
+
+log_with_stack_ref() {
+  if [[ $# -ne 3 ]]; then
+    echo "log_with_stack_ref function requires level, message, stack reference"
+    return 1
+  fi
   # shellcheck disable=SC2153
   if [[ $1 -gt ${LOG_LEVEL_INT:=4} ]]; then
     return 0
@@ -36,15 +48,15 @@ log() {
     *) echo "invalid log level $1"; return 1
   esac
   if [[ ( "$2" == *"access"* ) || ( "$2" == *"secret"* ) || ( "$2" == *"Credential="* ) ]]; then
-    log_mask "$log_level" "$2"
+    log_mask "$log_level" "$2" "$3"
     return 0
   fi
-  log_message "$log_level" "$2"
+  log_message "$log_level" "$2" "$3"
 }
 
 log_mask() {
-  if [[ $# -ne 2 ]]; then
-    echo "mask and log requires level, string"
+  if [[ $# -ne 3 ]]; then
+    echo "mask and log requires level, string, stack reference"
     return 1
   fi
 
@@ -53,7 +65,7 @@ log_mask() {
     return 1
   fi
 
-  log_message "$log_level" "$masked_data"
+  log_message "$log_level" "$masked_data" "$3"
 }
 
 mask_args() {
@@ -137,16 +149,17 @@ check_arg_for_mask() {
 }
 
 log_message() {
-  if [[ $# -ne 2 ]]; then
-    echo "log message requires level, message"
+  if [[ $# -ne 3 ]]; then
+    echo "log message requires level, message, stack reference"
     return 1
   fi
+  local bash_source_ref=$(($3+1))
   now="$(date "+%Y-%m-%d %H:%M:%S")"
   if [[ ( "$1" == "CRIT" ) || ( "$1" == "ERROR" ) ]]; then
     echo "$now $1 $2" >&2
   fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$now ${BASH_SOURCE[2]}:${BASH_LINENO[1]} $1 $2" >> "$TEST_LOG_FILE.tmp"
+    echo "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
   sync
 }

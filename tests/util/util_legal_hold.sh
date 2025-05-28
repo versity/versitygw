@@ -63,7 +63,8 @@ check_remove_legal_hold_versions() {
     log 2 "'check_remove_legal_hold_versions' requires bucket, key, version ID"
     return 1
   fi
-  if ! legal_hold=$(get_object_legal_hold_version_id "$1" "$2" "$3"); then
+  if ! get_object_legal_hold_rest_version_id "$1" "$2" "$3"; then
+    # shellcheck disable=SC2154
     if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
       log 2 "error getting object legal hold status with version id"
       return 1
@@ -71,12 +72,16 @@ check_remove_legal_hold_versions() {
     return 0
   fi
   log 5 "legal hold: $legal_hold"
-  if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
-    log 2 "error getting legal hold status: $status"
+  if ! status=$(get_element_text <(echo -n "$legal_hold") "LegalHold" "Status"); then
+    log 2 "error getting XML legal hold status"
     return 1
   fi
+  #if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
+  #  log 2 "error getting legal hold status: $status"
+  #  return 1
+  #fi
   if [ "$status" == "ON" ]; then
-    if ! put_object_legal_hold_version_id "$1" "$2" "$3" "OFF"; then
+    if ! put_object_legal_hold_rest_version_id "$1" "$2" "$3" "OFF"; then
       log 2 "error removing legal hold of version ID"
       return 1
     fi
@@ -98,7 +103,27 @@ check_legal_hold_without_payload() {
     return 1
   fi
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
-    log 2 "error checking xml error, message"
+    log 2 "error checking xml error, message ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+check_legal_hold_without_content_md5() {
+  if [ $# -ne 2 ]; then
+    log 2 "'check_legal_hold_without_content_md5' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OMIT_CONTENT_MD5="true" STATUS="OFF" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking xml error, message ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0
