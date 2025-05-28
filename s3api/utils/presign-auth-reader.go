@@ -180,7 +180,7 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 		return a, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
 	}
 
-	if ctx.Locals("region") != creds[2] {
+	if ContextKeyRegion.Get(ctx) != creds[2] {
 		return a, s3err.APIError{
 			Code:           "SignatureDoesNotMatch",
 			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", creds[2]),

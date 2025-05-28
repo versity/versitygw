@@ -91,6 +91,7 @@ var supportedActionList = map[Action]struct{}{
 	DeleteObjectTaggingAction:              {},
 	ListBucketVersionsAction:               {},
 	ListBucketAction:                       {},
+	GetBucketObjectLockConfigurationAction: {},
 	PutBucketObjectLockConfigurationAction: {},
 	GetObjectLegalHoldAction:               {},
 	PutObjectLegalHoldAction:               {},

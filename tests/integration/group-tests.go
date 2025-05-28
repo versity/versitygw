@@ -15,7 +15,6 @@
 package integration
 
 func TestAuthentication(s *S3Conf) {
-	Authentication_empty_auth_header(s)
 	Authentication_invalid_auth_header(s)
 	Authentication_unsupported_signature_version(s)
 	Authentication_malformed_credentials(s)
@@ -37,7 +36,6 @@ func TestAuthentication(s *S3Conf) {
 }
 
 func TestPresignedAuthentication(s *S3Conf) {
-	PresignedAuth_missing_algo_query_param(s)
 	PresignedAuth_unsupported_algorithm(s)
 	PresignedAuth_missing_credentials_query_param(s)
 	PresignedAuth_malformed_creds_invalid_parts(s)
@@ -636,6 +634,11 @@ func TestFullFlow(s *S3Conf) {
 	TestGetObjectLegalHold(s)
 	TestWORMProtection(s)
 	TestAccessControl(s)
+	// FIXME: The tests should pass for azure as well
+	// but this issue should be fixed with https://github.com/versity/versitygw/issues/1336
+	if !s.azureTests {
+		TestPublicBuckets(s)
+	}
 	if s.versioningEnabled {
 		TestVersioning(s)
 	}
@@ -775,6 +778,13 @@ func TestAccessControl(s *S3Conf) {
 	AccessControl_copy_object_with_starting_slash_for_user(s)
 }
 
+func TestPublicBuckets(s *S3Conf) {
+	PublicBucket_default_privet_bucket(s)
+	PublicBucket_public_bucket_policy(s)
+	PublicBucket_public_object_policy(s)
+	PublicBucket_public_acl(s)
+}
+
 func TestVersioning(s *S3Conf) {
 	// PutBucketVersioning action
 	PutBucketVersioning_non_existing_bucket(s)
@@ -863,7 +873,6 @@ type IntTests map[string]func(s *S3Conf) error
 
 func GetIntTests() IntTests {
 	return IntTests{
-		"Authentication_empty_auth_header":                                        Authentication_empty_auth_header,
 		"Authentication_invalid_auth_header":                                      Authentication_invalid_auth_header,
 		"Authentication_unsupported_signature_version":                            Authentication_unsupported_signature_version,
 		"Authentication_malformed_credentials":                                    Authentication_malformed_credentials,
@@ -882,7 +891,6 @@ func GetIntTests() IntTests {
 		"Authentication_incorrect_payload_hash":                                   Authentication_incorrect_payload_hash,
 		"Authentication_incorrect_md5":                                            Authentication_incorrect_md5,
 		"Authentication_signature_error_incorrect_secret_key":                     Authentication_signature_error_incorrect_secret_key,
-		"PresignedAuth_missing_algo_query_param":                                  PresignedAuth_missing_algo_query_param,
 		"PresignedAuth_unsupported_algorithm":                                     PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_missing_credentials_query_param":                           PresignedAuth_missing_credentials_query_param,
 		"PresignedAuth_malformed_creds_invalid_parts":                             PresignedAuth_malformed_creds_invalid_parts,
@@ -1277,6 +1285,10 @@ func GetIntTests() IntTests {
 		"AccessControl_root_PutBucketAcl":                                         AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                      AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                  AccessControl_copy_object_with_starting_slash_for_user,
+		"PublicBucket_default_privet_bucket":                                      PublicBucket_default_privet_bucket,
+		"PublicBucket_public_bucket_policy":                                       PublicBucket_public_bucket_policy,
+		"PublicBucket_public_object_policy":                                       PublicBucket_public_object_policy,
+		"PublicBucket_public_acl":                                                 PublicBucket_public_acl,
 		"PutBucketVersioning_non_existing_bucket":                                 PutBucketVersioning_non_existing_bucket,
 		"PutBucketVersioning_invalid_status":                                      PutBucketVersioning_invalid_status,
 		"PutBucketVersioning_success_enabled":                                     PutBucketVersioning_success_enabled,

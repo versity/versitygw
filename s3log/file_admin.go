@@ -22,6 +22,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
 // FileLogger is a local file audit log
@@ -57,7 +58,10 @@ func (f *AdminFileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMe
 	access := "-"
 	reqURI := ctx.OriginalURL()
 	errorCode := ""
-	startTime := ctx.Locals("startTime").(time.Time)
+	startTime, ok := utils.ContextKeyStartTime.Get(ctx).(time.Time)
+	if !ok {
+		startTime = time.Now()
+	}
 	tlsConnState := ctx.Context().TLSConnectionState()
 	if tlsConnState != nil {
 		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
@@ -68,9 +72,9 @@ func (f *AdminFileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMe
 		errorCode = err.Error()
 	}
 
-	switch ctx.Locals("account").(type) {
+	switch utils.ContextKeyAccount.Get(ctx).(type) {
 	case auth.Account:
-		access = ctx.Locals("account").(auth.Account).Access
+		access = utils.ContextKeyAccount.Get(ctx).(auth.Account).Access
 	}
 
 	lf.Time = time.Now()

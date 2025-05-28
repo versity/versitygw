@@ -121,3 +121,10 @@ func (p Principals) Contains(userAccess string) bool {
 	_, found := p[userAccess]
 	return found
 }
+
+// Bucket policy grants public access, if it contains
+// a wildcard match to all the users
+func (p Principals) IsPublic() bool {
+	_, ok := p["*"]
+	return ok
+}

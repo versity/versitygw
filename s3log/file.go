@@ -24,6 +24,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -74,7 +75,7 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	}
 	errorCode := ""
 	httpStatus := 200
-	startTime, ok := ctx.Locals("startTime").(time.Time)
+	startTime, ok := utils.ContextKeyStartTime.Get(ctx).(time.Time)
 	if !ok {
 		startTime = time.Now()
 	}
@@ -95,9 +96,9 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 		}
 	}
 
-	switch ctx.Locals("account").(type) {
-	case auth.Account:
-		access = ctx.Locals("account").(auth.Account).Access
+	acct, ok := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	if ok {
+		access = acct.Access
 	}
 
 	lf.BucketOwner = meta.BucketOwner
@@ -121,7 +122,7 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	lf.HostID = ctx.Get("X-Amz-Id-2")
 	lf.SignatureVersion = "SigV4"
 	lf.AuthenticationType = "AuthHeader"
-	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", ctx.Locals("region").(string))
+	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", utils.ContextKeyRegion.Get(ctx).(string))
 	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
 	lf.AclRequired = "Yes"
 
