@@ -131,6 +131,15 @@ check_universal_vars() {
     fi
     export LOG_LEVEL_INT=$LOG_LEVEL
   fi
+  if [ "$DIRECT" != "true" ]; then
+    if [ -z "$DIRECT_POST_COMMAND_DELAY" ]; then
+      DIRECT_POST_COMMAND_DELAY=0
+    fi
+    export DIRECT_POST_COMMAND_DELAY
+  fi
+  if [ -n "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" ]; then
+    export MAX_FILE_DOWNLOAD_CHUNK_SIZE
+  fi
 
   check_aws_vars
 

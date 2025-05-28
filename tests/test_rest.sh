@@ -74,7 +74,7 @@ test_file="test_file"
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 
   run delete_object "rest" "$BUCKET_ONE_NAME" "$test_file"
@@ -164,7 +164,7 @@ test_file="test_file"
     "$TEST_FILE_FOLDER/$test_file-0" "$TEST_FILE_FOLDER/$test_file-1" "$TEST_FILE_FOLDER/$test_file-2" "$TEST_FILE_FOLDER/$test_file-3"
   assert_success
 
-  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -243,7 +243,7 @@ test_file="test_file"
   fi
   test_file_two="test_file_2"
   test_file_three="test_file_3"
-  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -269,7 +269,7 @@ test_file="test_file"
     skip "https://github.com/versity/versitygw/issues/999"
   fi
   test_file_two="test_file_2"
-  run setup_bucket_and_files "s3api" "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
@@ -300,7 +300,7 @@ test_file="test_file"
   run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 
-  run download_and_compare_file "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -492,10 +492,24 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - PutObjectLegalHold w/o payload" {
+@test "REST - PutObjectLegalHold - missing content-md5" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1191"
+    skip "https://github.com/versity/versitygw/issues/1311"
   fi
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_content_md5 "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObjectLegalHold w/o payload" {
   run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
   assert_success
 
@@ -627,5 +641,16 @@ test_file="test_file"
   assert_success
 
   run copy_object_copy_source_and_payload "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
+
+@test "REST - range download and compare" {
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" 2000000
   assert_success
 }
