@@ -24,6 +24,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
 )
@@ -34,7 +35,6 @@ var (
 
 func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		isRoot, acct := ctx.Locals("isRoot").(bool), ctx.Locals("account").(auth.Account)
 		path := ctx.Path()
 		pathParts := strings.Split(path, "/")
 		bucket := pathParts[1]
@@ -53,6 +53,7 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 			!ctx.Request().URI().QueryArgs().Has("object-lock") &&
 			!ctx.Request().URI().QueryArgs().Has("ownershipControls") &&
 			!ctx.Request().URI().QueryArgs().Has("cors") {
+			isRoot, acct := utils.ContextKeyIsRoot.Get(ctx).(bool), utils.ContextKeyAccount.Get(ctx).(auth.Account)
 			if err := auth.MayCreateBucket(acct, isRoot); err != nil {
 				return controllers.SendXMLResponse(ctx, nil, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
 			}
@@ -77,10 +78,10 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 
 		// if owner is not set, set default owner to root account
 		if parsedAcl.Owner == "" {
-			parsedAcl.Owner = ctx.Locals("rootAccess").(string)
+			parsedAcl.Owner = utils.ContextKeyRootAccessKey.Get(ctx).(string)
 		}
 
-		ctx.Locals("parsedAcl", parsedAcl)
+		utils.ContextKeyParsedAcl.Set(ctx, parsedAcl)
 		return ctx.Next()
 	}
 }

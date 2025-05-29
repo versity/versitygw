@@ -15,7 +15,6 @@
 package integration
 
 func TestAuthentication(s *S3Conf) {
-	Authentication_empty_auth_header(s)
 	Authentication_invalid_auth_header(s)
 	Authentication_unsupported_signature_version(s)
 	Authentication_malformed_credentials(s)
@@ -37,7 +36,6 @@ func TestAuthentication(s *S3Conf) {
 }
 
 func TestPresignedAuthentication(s *S3Conf) {
-	PresignedAuth_missing_algo_query_param(s)
 	PresignedAuth_unsupported_algorithm(s)
 	PresignedAuth_missing_credentials_query_param(s)
 	PresignedAuth_malformed_creds_invalid_parts(s)
@@ -863,7 +861,6 @@ type IntTests map[string]func(s *S3Conf) error
 
 func GetIntTests() IntTests {
 	return IntTests{
-		"Authentication_empty_auth_header":                                        Authentication_empty_auth_header,
 		"Authentication_invalid_auth_header":                                      Authentication_invalid_auth_header,
 		"Authentication_unsupported_signature_version":                            Authentication_unsupported_signature_version,
 		"Authentication_malformed_credentials":                                    Authentication_malformed_credentials,
@@ -882,7 +879,6 @@ func GetIntTests() IntTests {
 		"Authentication_incorrect_payload_hash":                                   Authentication_incorrect_payload_hash,
 		"Authentication_incorrect_md5":                                            Authentication_incorrect_md5,
 		"Authentication_signature_error_incorrect_secret_key":                     Authentication_signature_error_incorrect_secret_key,
-		"PresignedAuth_missing_algo_query_param":                                  PresignedAuth_missing_algo_query_param,
 		"PresignedAuth_unsupported_algorithm":                                     PresignedAuth_unsupported_algorithm,
 		"PresignedAuth_missing_credentials_query_param":                           PresignedAuth_missing_credentials_query_param,
 		"PresignedAuth_malformed_creds_invalid_parts":                             PresignedAuth_malformed_creds_invalid_parts,

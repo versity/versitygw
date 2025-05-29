@@ -33,6 +33,17 @@ type ACL struct {
 	Grantees []Grantee
 }
 
+// IsPublic specifies if the acl grants public read access
+func (acl *ACL) IsPublic() bool {
+	for _, grt := range acl.Grantees {
+		if grt.Permission == PermissionRead && grt.Type == types.TypeGroup && grt.Access == "all-users" {
+			return true
+		}
+	}
+
+	return false
+}
+
 type Grantee struct {
 	Permission Permission
 	Access     string
@@ -435,6 +446,27 @@ func verifyACL(acl ACL, access string, permission Permission) error {
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }
 
+// Verifies if the bucket acl grants public access
+func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket string, action Action) error {
+	aclBytes, err := be.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+		Bucket: &bucket,
+	})
+	if err != nil {
+		return err
+	}
+
+	acl, err := ParseACL(aclBytes)
+	if err != nil {
+		return err
+	}
+
+	if !acl.IsPublic() {
+		return ErrAccessDenied
+	}
+
+	return nil
+}
+
 func MayCreateBucket(acct Account, isRoot bool) error {
 	if isRoot {
 		return nil
@@ -468,17 +500,22 @@ func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
 }
 
 type AccessOptions struct {
-	Acl           ACL
-	AclPermission Permission
-	IsRoot        bool
-	Acc           Account
-	Bucket        string
-	Object        string
-	Action        Action
-	Readonly      bool
+	Acl            ACL
+	AclPermission  Permission
+	IsRoot         bool
+	Acc            Account
+	Bucket         string
+	Object         string
+	Action         Action
+	Readonly       bool
+	IsBucketPublic bool
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
+	// Skip the access check for public buckets
+	if opts.IsBucketPublic {
+		return nil
+	}
 	if opts.Readonly {
 		if opts.AclPermission == PermissionWrite || opts.AclPermission == PermissionWriteAcp {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)

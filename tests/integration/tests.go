@@ -47,31 +47,6 @@ var (
 	nullVersionId = "null"
 )
 
-func Authentication_empty_auth_header(s *S3Conf) error {
-	testName := "Authentication_empty_auth_header"
-	return authHandler(s, &authConfig{
-		testName: testName,
-		path:     "my-bucket",
-		method:   http.MethodGet,
-		body:     nil,
-		service:  "s3",
-		date:     time.Now(),
-	}, func(req *http.Request) error {
-		req.Header.Set("Authorization", "")
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
 func Authentication_invalid_auth_header(s *S3Conf) error {
 	testName := "Authentication_invalid_auth_header"
 	return authHandler(s, &authConfig{
@@ -572,43 +547,6 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 		}
 		defer resp.Body.Close()
 		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-func PresignedAuth_missing_algo_query_param(s *S3Conf) error {
-	testName := "PresignedAuth_missing_algo_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		urlParsed, err := url.Parse(v4req.URL)
-		if err != nil {
-			return err
-		}
-
-		queries := urlParsed.Query()
-		queries.Del("X-Amz-Algorithm")
-		urlParsed.RawQuery = queries.Encode()
-
-		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
-		if err != nil {
-			return err
-		}
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 

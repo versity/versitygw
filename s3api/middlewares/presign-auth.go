@@ -17,7 +17,6 @@ package middlewares
 import (
 	"io"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
@@ -31,20 +30,24 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
+		// The bucket is public, no need to check this signature
+		if utils.ContextKeyPublicBucket.IsSet(ctx) {
+			return ctx.Next()
+		}
 		if ctx.Query("X-Amz-Signature") == "" {
 			return ctx.Next()
 		}
 
-		ctx.Locals("region", region)
-		ctx.Locals("startTime", time.Now())
+		// Set in the context the "authenticated" key, in case the authentication succeeds,
+		// otherwise the middleware will return the caucht error
+		utils.ContextKeyAuthenticated.Set(ctx, true)
 
 		authData, err := utils.ParsePresignedURIParts(ctx)
 		if err != nil {
 			return sendResponse(ctx, err, logger, mm)
 		}
 
-		ctx.Locals("isRoot", authData.Access == root.Access)
-		ctx.Locals("rootAccess", root.Access)
+		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
@@ -53,7 +56,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 		if err != nil {
 			return sendResponse(ctx, err, logger, mm)
 		}
-		ctx.Locals("account", account)
+		utils.ContextKeyAccount.Set(ctx, account)
 
 		var contentLength int64
 		contentLengthStr := ctx.Get("Content-Length")
