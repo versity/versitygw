@@ -78,7 +78,7 @@ check_remove_legal_hold_versions() {
   #  return 1
   #fi
   if [ "$status" == "ON" ]; then
-    if ! put_object_legal_hold_version_id "$1" "$2" "$3" "OFF"; then
+    if ! put_object_legal_hold_rest_version_id "$1" "$2" "$3" "OFF"; then
       log 2 "error removing legal hold of version ID"
       return 1
     fi
