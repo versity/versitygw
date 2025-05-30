@@ -20,32 +20,18 @@ source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
-# shellcheck disable=SC2153
-key="$OBJECT_KEY"
-# shellcheck disable=SC2153
-checksum_mode="${CHECKSUM_MODE:=false}"
-# shellcheck disable=SC2153
-range="$RANGE"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-#x-amz-object-attributes:ETag
-canonical_request_data+=("GET" "/$bucket_name/$key" "" "host:$host")
-if [ "$range" != "" ]; then
-  canonical_request_data+=("range:$range")
-fi
-if [ "$checksum_mode" == "true" ]; then
-  canonical_request_data+=("x-amz-checksum-mode:ENABLED")
-fi
-canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
-
-build_canonical_request "${canonical_request_data[@]}"
+cr_data=("PUT" "/$bucket_name" "" "host:$host")
+cr_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name/$key"
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name")
+curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154

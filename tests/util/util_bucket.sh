@@ -6,28 +6,11 @@ source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_retention.sh
 
-# recursively delete an AWS bucket
-# param:  client, bucket name
-# fail if error
-delete_bucket_recursive() {
-  log 6 "delete_bucket_recursive"
-  if ! check_param_count "delete_bucket_recursive" "bucket name" 1 $#; then
-    return 1
-  fi
-
-  if ! delete_bucket_recursive_s3api "$1"; then
-    log 2 "error deleting bucket recursively (s3api)"
-    return 1
-  fi
-  return 0
-}
-
 # restore bucket to pre-test state (or prep for deletion)
 # param: bucket name
 # return 0 on success, 1 on error
-clear_bucket_s3api() {
-  log 6 "clear_bucket_s3api"
-  if ! check_param_count "clear_bucket_s3api" "bucket" 1 $#; then
+reset_bucket() {
+  if ! check_param_count "reset_bucket" "bucket" 1 $#; then
     return 1
   fi
 
@@ -50,7 +33,7 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! abort_all_multipart_uploads "$1"; then
+  if ! abort_all_multipart_uploads_rest "$1"; then
     log 2 "error aborting all multipart uploads"
     return 1
   fi
@@ -60,14 +43,14 @@ clear_bucket_s3api() {
     return 1
   fi
 
-  if ! delete_bucket_policy "s3api" "$1"; then
+  if ! delete_bucket_policy_rest "$1"; then
     log 2 "error deleting bucket policy"
     return 1
   fi
 
   # shellcheck disable=SC2154
-  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
-    log 2 "error disabling object lock config"
+  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$1"; then
+    log 2 "error removing bucket retention policy"
     return 1
   fi
 
@@ -79,34 +62,19 @@ clear_bucket_s3api() {
 
 # params:  bucket name
 # return 0 if able to delete recursively, 1 if not
-delete_bucket_recursive_s3api() {
+delete_bucket_recursive() {
   log 6 "delete_bucket_recursive_s3api"
   if ! check_param_count "delete_bucket_recursive_s3api" "bucket" 1 $#; then
     return 1
   fi
 
-  if ! clear_bucket_s3api "$1"; then
+  if ! reset_bucket "$1"; then
     log 2 "error clearing bucket (s3api)"
     return 1
   fi
 
-  if ! delete_bucket 's3api' "$1"; then
+  if ! delete_bucket_rest "$1"; then
     log 2 "error deleting bucket"
-    return 1
-  fi
-  return 0
-}
-
-# params: client, bucket name
-# return 0 on success, 1 on error
-delete_bucket_contents() {
-  log 6 "delete_bucket_contents"
-  if ! check_param_count "delete_bucket_contents" "bucket name" 1 $#; then
-    return 1
-  fi
-
-  if ! clear_bucket_s3api "$1"; then
-    log 2 "error clearing bucket (s3api)"
     return 1
   fi
   return 0
@@ -157,7 +125,7 @@ bucket_cleanup() {
     return 1
   fi
   if [[ $RECREATE_BUCKETS == "false" ]]; then
-    if ! delete_bucket_contents "$1"; then
+    if ! reset_bucket "$1"; then
       log 2 "error deleting bucket contents"
       return 1
     fi

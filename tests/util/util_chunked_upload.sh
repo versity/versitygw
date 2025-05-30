@@ -199,7 +199,7 @@ chunked_upload_trailer_success() {
     log 2 "error performing chunked upload w/trailer"
     return 1
   fi
-  if ! download_and_compare_file "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
+  if ! download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
     log 2 "error downloading and comparing file"
     return 1
   fi
@@ -281,9 +281,10 @@ send_via_openssl() {
     return 1
   fi
   host="${AWS_ENDPOINT_URL#http*://}"
-  if [ "$host" == "s3.amazonaws.com" ]; then
+  if [[ "$host" =~ s3\..*amazonaws\.com ]]; then
     host+=":443"
   fi
+  log 5 "connecting to $host"
   if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
     log 2 "error sending openssl command: $result"
     return 1
