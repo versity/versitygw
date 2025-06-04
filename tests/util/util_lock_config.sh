@@ -112,10 +112,6 @@ check_object_lock_config_enabled_rest() {
   if ! check_param_count "check_object_lock_config_enabled_rest" "bucket" 1 $#; then
     return 1
   fi
-  if [ $# -ne 1 ]; then
-    log 2 "'get_check_object_lock_config_rest' requires bucket name"
-    return 1
-  fi
   if ! get_object_lock_configuration_rest "$1"; then
     log 2 "error getting object lock config"
     return 1

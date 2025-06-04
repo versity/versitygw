@@ -2,6 +2,7 @@
 
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/list_object_versions.sh
+source ./tests/drivers/drivers.sh
 
 check_if_versioning_enabled() {
   if ! check_param_count "check_if_versioning_enabled" "bucket" 1 $#; then
@@ -61,15 +62,12 @@ delete_object_version_with_or_without_retention() {
     if ! check_remove_legal_hold_versions "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error checking, removing legal hold versions"
     fi
-    if ! put_object_legal_hold_version_id "$1" "${version_keys[$idx]}" "${version_ids[$idx]}" "OFF"; then
-      log 2 "error turning off object legal hold"
-    fi
-    if ! delete_object_version_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    if ! delete_object_version_rest_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version, bypassing retention"
       return 1
     fi
   else
-    if ! delete_object_version "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
+    if ! delete_object_version_rest "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
       log 2 "error deleting object version"
       return 1
     fi

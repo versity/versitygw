@@ -95,7 +95,7 @@ log_rest() {
     return 1
   fi
   if [ "$BATS_TEST_NAME" != "" ]; then
-    log "$1" "$2"
+    log_with_stack_ref "$1" "$2" 2
   else
     echo "$2"
   fi
