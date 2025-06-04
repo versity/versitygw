@@ -99,7 +99,27 @@ check_legal_hold_without_payload() {
     return 1
   fi
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
-    log 2 "error checking xml error, message"
+    log 2 "error checking xml error, message ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+check_legal_hold_without_content_md5() {
+  if [ $# -ne 2 ]; then
+    log 2 "'check_legal_hold_without_content_md5' requires bucket name, key"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OMIT_CONTENT_MD5="true" STATUS="OFF" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_legal_hold.sh); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking xml error, message ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0

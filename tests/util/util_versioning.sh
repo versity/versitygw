@@ -72,6 +72,7 @@ delete_object_version_with_or_without_retention() {
       return 1
     fi
   fi
+  log 5 "successfully deleted version with key '${version_keys[$idx]}', id '${version_ids[$idx]}'"
   return 0
 }
 

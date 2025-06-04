@@ -118,11 +118,18 @@ upload_check_parts() {
     log 2 "error checking part list before part upload"
     return 1
   fi
+  sleep 5
   parts_payload=""
   if ! upload_check_part "$1" "$2" "$upload_id" 1 "$3"; then
     log 2 "error uploading and checking first part"
     return 1
   fi
+  if ! list_multipart_uploads_rest "$1"; then
+    log 2 "error listing uploads"
+    return 1
+  fi
+  log 5 "aws region: $AWS_REGION"
+  #log 5 "uploads: $uploads"
   # shellcheck disable=SC2154
   etag_one=$etag
   if ! upload_check_part "$1" "$2" "$upload_id" 2 "$4" "$etag_one"; then

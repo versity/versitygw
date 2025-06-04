@@ -14,27 +14,29 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/logger.sh
-
-send_command() {
-  if [ $# -eq 0 ]; then
+# param: bucket name
+# return 0 for success, 1 for failure
+list_and_delete_objects() {
+  log 6 "list_and_delete_objects"
+  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
     return 1
   fi
-  if [ -n "$COMMAND_LOG" ]; then
-    args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
-    if ! mask_arg_array "${args[@]}"; then
+  if ! list_objects 'rest' "$1"; then
+    log 2 "error getting object list"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "objects: ${object_array[*]}"
+  for object in "${object_array[@]}"; do
+    if ! clear_object_in_bucket "$1" "$object"; then
+      log 2 "error deleting object $object"
       return 1
     fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+  done
+
+  if ! delete_old_versions "$1"; then
+    log 2 "error deleting old version"
+    return 1
   fi
-  local command_result=0
-  "$@" || command_result=$?
-  if [ "$command_result" -ne 0 ] && [ "$1" == "curl" ]; then
-    echo ", curl response code: $command_result"
-  fi
-  if [ "$DIRECT" == "true" ]; then
-    sleep "$DIRECT_POST_COMMAND_DELAY"
-  fi
-  return $command_result
+  return 0
 }

@@ -55,6 +55,8 @@ load_parameters() {
     trailer="$TRAILER"
     # shellcheck disable=SC2153
     checksum="$CHECKSUM"
+    # shellcheck disable=SC2153
+    invalid_checksum_type="${INVALID_CHECKSUM_TYPE:=false}"
   fi
 
   readonly initial_sts_data="AWS4-HMAC-SHA256-PAYLOAD
@@ -152,7 +154,7 @@ get_file_size_and_content_length() {
 calculate_checksum() {
   checksum_type="${trailer/x-amz-checksum-/}"
   log_rest 5 "checksum type: $checksum_type"
-  if [ "$CHECKSUM" == "" ]; then
+  if [ "$CHECKSUM" == "" ] && [ "$invalid_checksum_type" != "true" ]; then
     if ! checksum=$(DATA_FILE="$data_file" CHECKSUM_TYPE="$checksum_type" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
       log_rest 2 "error getting checksum: $checksum"
       return 1

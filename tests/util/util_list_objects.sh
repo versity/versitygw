@@ -28,10 +28,32 @@ parse_objects_list_rest() {
     log 2 "error getting object list: $object_list"
     return 1
   fi
-  while read -r object; do
+  log 5 "object list: '$object_list'"
+  while IFS= read -r object; do
+    log 5 "parsed key: '$object'"
     object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
   done <<< "$object_list"
   log 5 "object array: ${object_array[*]}"
+  return 0
+}
+
+list_check_single_object() {
+  if ! check_param_count "list_check_single_object" "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! list_objects "rest" "$1"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  if [ ${#object_array[@]} -ne "1" ]; then
+    log 2 "expected one object, found ${#object_array[@]}"
+    return 1
+  fi
+  if [ "${object_array[0]}" != "$2" ]; then
+    log 2 "expected '$2', was '${object_array[0]}'"
+    return 1
+  fi
+  return 0
 }
 
 list_check_objects_v1() {
@@ -249,6 +271,10 @@ list_objects_check_params_get_token() {
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" VERSION_TWO="$4" MAX_KEYS=1 OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
     log 2 "error attempting to get bucket ACL response: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200' was '$result' ($(cat "$TEST_FILE_FOLDER/objects.txt"))"
     return 1
   fi
   log 5 "objects: $(cat "$TEST_FILE_FOLDER/objects.txt")"
