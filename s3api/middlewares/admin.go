@@ -21,13 +21,14 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
 )
 
 func IsAdmin(logger s3log.AuditLogger) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		acct := ctx.Locals("account").(auth.Account)
+		acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 		if acct.Role != auth.RoleAdmin {
 			path := ctx.Path()
 			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminAccessDenied),
