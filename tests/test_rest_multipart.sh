@@ -129,7 +129,7 @@ test_file="test_file"
   run split_file "$TEST_FILE_FOLDER/$test_file" 4
   assert_success
 
-  run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
+  run upload_part_without_part_number "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
 
@@ -146,3 +146,13 @@ test_file="test_file"
   run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
+
+@test "REST - multipart checksum - UploadPart w/crc64nvme checksum" {
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+}
+
+

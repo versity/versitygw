@@ -546,3 +546,13 @@ upload_part_without_upload_id() {
   fi
   return 0
 }
+
+upload_part_crc64nvme_less_than_16mb() {
+  if [ $# -ne 2 ]; then
+    log 2 "'upload_part_without_upload_id' requires bucket name, key"
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2"; then
+    log 2 "error creating multpart upload"
+    return 1
+  fi
