@@ -27,8 +27,15 @@ send_command() {
     fi
     # shellcheck disable=SC2154
     echo "${masked_args[*]}" >> "$COMMAND_LOG"
-    "$@"
-    return $?
   fi
-  "$@"
+  local command_result=0
+  "$@" || command_result=$?
+  if [ "$command_result" -ne 0 ]; then
+    if [ "$1" == "curl" ]; then
+      echo ", curl response code: $command_result"
+    elif [ "$command_result" -ne 1 ]; then
+      echo " ($1 response code: $command_result)"
+    fi
+  fi
+  return $command_result
 }
