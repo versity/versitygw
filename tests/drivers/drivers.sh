@@ -31,7 +31,7 @@ check_param_count_v2() {
     log 2 "'check_param_count' requires params list, expected, actual"
     return 1
   fi
-  if [ "$3" -ne "$4" ]; then
+  if [ "$2" -ne "$3" ]; then
     log_with_stack_ref 2 "function '${FUNCNAME[1]}' requires $2" 2
     return 1
   fi

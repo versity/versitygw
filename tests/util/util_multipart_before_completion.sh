@@ -547,12 +547,80 @@ upload_part_without_upload_id() {
   return 0
 }
 
-upload_part_crc64nvme_less_than_16mb() {
-  if [ $# -ne 2 ]; then
-    log 2 "'upload_part_without_upload_id' requires bucket name, key"
+multipart_upload_invalid_checksum_type() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2"; then
-    log 2 "error creating multpart upload"
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" CHECKSUM_TYPE="incorrect" ./tests/rest_scripts/create_multipart_upload.sh); then
+    log 2 "error creating multipart upload: $result"
     return 1
   fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt")"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/output.txt" "InvalidRequest" "Value for x-amz-checksum-type header is invalid."; then
+    log 2 "error checking XML response"
+    return 1
+  fi
+  return 0
+}
+
+create_multipart_upload_with_checksum_type_and_algorithm_error() {
+  if ! check_param_count_v2 "bucket, key, checksum type, checksum algorithm, handle fn, response, code, error" 8 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" CHECKSUM_TYPE="$3" CHECKSUM_ALGORITHM="$4" ./tests/rest_scripts/create_multipart_upload.sh 2>&1); then
+    log 2 "error creating multipart upload: $result"
+    return 1
+  fi
+  if ! "$5" "$result" "$TEST_FILE_FOLDER/output.txt" "$6" "$7" "$8"; then
+    log 2 "error checking result"
+    return 1
+  fi
+}
+
+check_multipart_upload_invalid_checksum_type() {
+  if ! check_param_count_v2 "response, response file" 2 $#; then
+    return 1
+  fi
+  if ! check_create_multipart_upload_error "$1" "$2" "400" "InvalidRequest" "Value for x-amz-checksum-type header is invalid"; then
+    log 2 "expected error mismatch"
+    return 1
+  fi
+  return 0
+}
+
+check_create_multipart_upload_error() {
+  if ! check_param_count_v2 "response, response file, expected http code, expected error code, expected error" 5 $#; then
+    return 1
+  fi
+  if [ "$1" != "$3" ]; then
+    log 2 "expected '$3', was '$1' ($(cat "$2"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$2" "$4" "$5"; then
+    log 2 "error checking XML response"
+    return 1
+  fi
+  return 0
+}
+
+multipart_upload_invalid_checksum_algorithm() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" CHECKSUM_ALGORITHM="crc64nvm" ./tests/rest_scripts/create_multipart_upload.sh); then
+    log 2 "error creating multipart upload: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt")"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/output.txt" "InvalidRequest" "Checksum algorithm provided is unsupported."; then
+    log 2 "error checking XML response"
+    return 1
+  fi
+  return 0
+}

@@ -18,6 +18,8 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/setup.sh
+source ./tests/handlers/rest_handlers.sh
+source ./tests/util/util_file.sh
 source ./tests/util/util_list_parts.sh
 source ./tests/util/util_setup.sh
 
@@ -147,11 +149,30 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - multipart checksum - UploadPart w/crc64nvme checksum" {
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+@test "REST - multipart w/invalid checksum type" {
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  run create_multipart_upload_with_checksum_type_and_algorithm_error "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECTS" "" \
+    check_rest_expected_error "400" "InvalidRequest" "Value for x-amz-checksum-type header is invalid"
+  assert_success
+}
+
+@test "REST - multipart w/invalid checksum algorithm" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_multipart_upload_with_checksum_type_and_algorithm_error "$BUCKET_ONE_NAME" "$test_file" "" "crc64nvm" \
+    check_rest_expected_error "400" "InvalidRequest" "Checksum algorithm provided is unsupported."
+  assert_success
+}
+
+@test "REST - multipart checksum w/crc64nvme, composite" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_multipart_upload_with_checksum_type_and_algorithm_error "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "crc64nvme" \
+    check_rest_expected_error "400" "InvalidRequest" "The COMPOSITE checksum type cannot be used with the crc64nvme checksum algorithm."
   assert_success
 }
 

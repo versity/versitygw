@@ -28,6 +28,8 @@ upload_id="$UPLOAD_ID"
 data=$DATA_FILE
 # shellcheck disable=SC2153
 checksum_type="$CHECKSUM_TYPE"
+# shellcheck disable=SC2153
+checksum_hash="$CHECKSUM_HASH"
 
 if [ "$data" != "" ]; then
   payload_hash="$(sha256sum "$data" | awk '{print $1}')"
