@@ -1352,6 +1352,8 @@ func getPartChecksum(algo types.ChecksumAlgorithm, part types.CompletedPart) str
 		return backend.GetStringFromPtr(part.ChecksumSHA1)
 	case types.ChecksumAlgorithmSha256:
 		return backend.GetStringFromPtr(part.ChecksumSHA256)
+	case types.ChecksumAlgorithmCrc64nvme:
+		return backend.GetStringFromPtr(part.ChecksumCRC64NVME)
 	default:
 		return ""
 	}
@@ -1418,6 +1420,12 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	last := len(parts) - 1
 	var totalsize int64
 
+	var composableCRC bool
+	switch checksums.Type {
+	case types.ChecksumTypeFullObject:
+		composableCRC = utils.IsChecksumComposable(checksumAlgorithm)
+	}
+
 	// The initialie values is the lower limit of partNumber: 0
 	var partNumber int32
 	for i, part := range parts {
@@ -1441,7 +1449,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		}
 
 		totalsize += fi.Size()
-		// all parts except the last need to be greater, thena
+		// all parts except the last need to be greater, than or equal to
 		// the minimum allowed size (5 Mib)
 		if i < last && fi.Size() < backend.MinPartSize {
 			return res, "", s3err.GetAPIError(s3err.ErrEntityTooSmall)
@@ -1476,9 +1484,11 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	var compositeChecksumRdr *utils.CompositeChecksumReader
 	switch checksums.Type {
 	case types.ChecksumTypeFullObject:
-		hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksumAlgorithm))))
-		if err != nil {
-			return res, "", fmt.Errorf("initialize hash reader: %w", err)
+		if !composableCRC {
+			hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksumAlgorithm))))
+			if err != nil {
+				return res, "", fmt.Errorf("initialize hash reader: %w", err)
+			}
 		}
 	case types.ChecksumTypeComposite:
 		compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksumAlgorithm))))
@@ -1497,22 +1507,46 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	}
 	defer f.cleanup()
 
-	for _, part := range parts {
+	var composableCsum string
+	for i, part := range parts {
 		partObjPath := filepath.Join(objdir, uploadID, fmt.Sprintf("%v", *part.PartNumber))
 		fullPartPath := filepath.Join(bucket, partObjPath)
 		pf, err := os.Open(fullPartPath)
 		if err != nil {
 			return res, "", fmt.Errorf("open part %v: %v", *part.PartNumber, err)
 		}
+		pfi, err := pf.Stat()
+		if err != nil {
+			pf.Close()
+			return res, "", fmt.Errorf("stat part %v: %v", *part.PartNumber, err)
+		}
 
 		var rdr io.Reader = pf
-		if checksums.Type == types.ChecksumTypeFullObject {
+		switch checksums.Type {
+		case types.ChecksumTypeFullObject:
+			if composableCRC {
+				if i == 0 {
+					composableCsum = getPartChecksum(checksumAlgorithm, part)
+					break
+				}
+				composableCsum, err = utils.AddCRCChecksum(checksumAlgorithm,
+					composableCsum, getPartChecksum(checksumAlgorithm, part),
+					pfi.Size())
+				if err != nil {
+					pf.Close()
+					return res, "", fmt.Errorf("add part %v checksum: %w",
+						*part.PartNumber, err)
+				}
+				break
+			}
 			hashRdr.SetReader(rdr)
 			rdr = hashRdr
-		} else if checksums.Type == types.ChecksumTypeComposite {
+		case types.ChecksumTypeComposite:
 			err := compositeChecksumRdr.Process(getPartChecksum(checksumAlgorithm, part))
 			if err != nil {
-				return res, "", fmt.Errorf("process %v part checksum: %w", *part.PartNumber, err)
+				pf.Close()
+				return res, "", fmt.Errorf("process %v part checksum: %w",
+					*part.PartNumber, err)
 			}
 		}
 
@@ -1621,7 +1655,11 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 		case types.ChecksumTypeComposite:
 			sum = compositeChecksumRdr.Sum()
 		case types.ChecksumTypeFullObject:
-			sum = hashRdr.Sum()
+			if !composableCRC {
+				sum = hashRdr.Sum()
+			} else {
+				sum = composableCsum
+			}
 		}
 
 		switch checksumAlgorithm {
