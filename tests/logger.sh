@@ -39,8 +39,21 @@ log() {
   return 0
 }
 
+# shellcheck disable=SC2317
 log_with_stack_ref() {
   if ! check_log_params "log_with_stack_ref" "level, message, stack reference" 3 $#; then
+    return 1
+  fi
+  if ! log_with_stack_ref "$1" "$2" 2; then
+    echo "error logging with stack ref"
+    return 1
+  fi
+  return 0
+}
+
+log_with_stack_ref() {
+  if [[ $# -ne 3 ]]; then
+    echo "log_with_stack_ref function requires level, message, stack reference"
     return 1
   fi
   # shellcheck disable=SC2153

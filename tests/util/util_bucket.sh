@@ -66,8 +66,8 @@ clear_bucket_s3api() {
   fi
 
   # shellcheck disable=SC2154
-  if [[ $lock_config_exists == true ]] && ! put_object_lock_configuration_disabled "$1"; then
-    log 2 "error disabling object lock config"
+  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$1"; then
+    log 2 "error removing bucket retention policy"
     return 1
   fi
 
@@ -90,7 +90,7 @@ delete_bucket_recursive_s3api() {
     return 1
   fi
 
-  if ! delete_bucket 's3api' "$1"; then
+  if ! delete_bucket_rest "$1"; then
     log 2 "error deleting bucket"
     return 1
   fi

@@ -45,6 +45,24 @@ delete_object() {
   return 0
 }
 
+# shellcheck disable=SC2317
+delete_object_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'delete_object_rest' requires bucket name, object name"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
+    log 2 "expected '204', was '$result' ($delete_object_error)"
+    return 1
+  fi
+  return 0
+}
+
 delete_object_bypass_retention() {
   if ! check_param_count "delete_object_bypass_retention" "client, bucket, key, user, password" 5 $#; then
     return 1

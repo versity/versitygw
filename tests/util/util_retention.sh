@@ -48,7 +48,7 @@ EOF
 check_for_and_remove_worm_protection() {
   log 6 "check_for_and_remove_worm_protection"
   if ! check_param_count "check_for_and_remove_worm_protection" "bucket, key, error" 3 $#; then
-    return 1
+    return 2
   fi
 
   if [[ $3 == *"WORM"* ]]; then
@@ -110,6 +110,25 @@ retention_rest_without_request_body() {
   log 5 "result: $result ($(cat "$TEST_FILE_FOLDER/result.txt"))"
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "MalformedXML" "The XML you provided"; then
     log 2 "error checking xml reply"
+    return 1
+  fi
+  return 0
+}
+
+attempt_to_change_lock_config_without_content_md5() {
+  if ! check_param_count "attempt_to_change_lock_config_without_content_md5" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OMIT_CONTENT_MD5="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object_lock_configuration.sh 2>&1); then
+    log 2 "error changing lock configuration: $result"
+    return 1
+  fi
+  if [ "$result" != "400" ]; then
+    log 2 "expected '400', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/result.txt" "InvalidRequest" "Content-MD5"; then
+    log 2 "error checking lock config error"
     return 1
   fi
   return 0

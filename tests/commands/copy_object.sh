@@ -44,13 +44,13 @@ copy_object() {
 }
 
 copy_object_empty() {
-  record-command "copy-object" "client:s3api"
+  record_command "copy-object" "client:s3api"
   error=$(send_command aws --no-verify-ssl s3api copy-object 2>&1) || local result=$?
   if [[ $result -eq 0 ]]; then
     log 2 "copy object with empty parameters returned no error"
     return 1
   fi
-  if [[ $error != *"the following arguments are required: --bucket, --copy-source, --key" ]]; then
+  if [[ $error != *"the following arguments are required: --bucket, --copy-source, --key"* ]]; then
     log 2 "copy object with no params returned mismatching error: $error"
     return 1
   fi
