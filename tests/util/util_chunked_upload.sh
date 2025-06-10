@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source ./tests/drivers/rest.sh
+
 attempt_seed_signature_without_content_length() {
   if [ "$#" -ne 3 ]; then
     log 2 "'attempt_seed_signature_without_content_length' requires bucket name, key, data file"
@@ -106,17 +108,19 @@ attempt_chunked_upload_with_bad_final_signature() {
     log 2 "error sending command via openssl"
     return 1
   fi
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  log 5 "response code: $response_code"
-  if [ "$response_code" != "403" ]; then
-    log 2 "expected code '403', was '$response_code'"
+  log 5 "response: $result"
+  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
+  if ! get_xml_data "$TEST_FILE_FOLDER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
+    log 2 "error parsing XML data from result"
     return 1
   fi
-  response_data="$(echo "$result" | grep "<Error>" | sed 's/---//g')"
-  log 5 "response data: $response_data"
-  log 5 "END"
-  if ! check_xml_element <(echo "$response_data") "SignatureDoesNotMatch" "Error" "Code"; then
-    log 2 "error checking XML element"
+  log 5 "xml data: $(cat "$TEST_FILE_FOLDER/error_data.txt")"
+  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
+  #response_data="$(echo "$result" | grep "<Error>" | sed 's/---//g')"
+  #response_data_file="$TEST_FILE_FOLDER/response_data.txt"
+  #echo -n "$response_data" > "$response_data_file"
+  if ! check_rest_expected_error "$response_code" "$TEST_FILE_FOLDER/error_data.txt" "403" "SignatureDoesNotMatch" "does not match"; then
+    log 2 "error checking expected REST error"
     return 1
   fi
   return 0
@@ -321,9 +325,12 @@ send_via_openssl_check_code_error_contains() {
     log 2 "error sending and checking code"
     return 1
   fi
-  error_data="$(echo "$result" | grep "<Error>" | sed 's/---//')"
-  echo -n "$error_data" > "$TEST_FILE_FOLDER/error-data.txt"
-  if ! check_xml_error_contains "$TEST_FILE_FOLDER/error-data.txt" "$3" "$4"; then
+  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
+  if ! get_xml_data "$TEST_FILE_FODLER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
+    log 2 "error parsing XML data from result"
+    return 1
+  fi
+  if ! check_xml_error_contains "$TEST_FILE_FOLDER/error_data.txt" "$3" "$4"; then
     log 2 "error checking xml error, message"
     return 1
   fi
