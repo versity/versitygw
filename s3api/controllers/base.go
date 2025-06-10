@@ -15,7 +15,6 @@
 package controllers
 
 import (
-	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -2186,7 +2185,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		if bodyi != nil {
 			body = bodyi.(io.Reader)
 		} else {
-			body = bytes.NewReader([]byte{})
+			body = ctx.Request().BodyStream()
 		}
 
 		res, err := c.be.UploadPart(ctx.Context(),
@@ -2659,7 +2658,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	if bodyi != nil {
 		body = bodyi.(io.Reader)
 	} else {
-		body = bytes.NewReader([]byte{})
+		body = ctx.Request().BodyStream()
 	}
 
 	res, err := c.be.PutObject(ctx.Context(),
@@ -3924,6 +3923,7 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 			ctx.Status(apierr.HTTPStatusCode)
 			return ctx.Send(s3err.GetAPIErrorResponse(apierr, "", "", ""))
 		}
+		fmt.Println(err, "------------")
 
 		fmt.Fprintf(os.Stderr, "Internal Error, %v\n", err)
 		ctx.Status(http.StatusInternalServerError)
