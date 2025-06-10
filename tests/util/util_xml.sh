@@ -10,6 +10,7 @@ get_element_text() {
     xpath+='*[local-name()="'$tree_val'"]/'
   done
   xpath+='text()'
+  log 5 "full document: $(cat "$1")"
   if ! xml_val=$(grep "<" "$1" | xmllint --xpath "$xpath" - 2>&1); then
     log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
     return 1
