@@ -22,7 +22,7 @@ check_rest_expected_error() {
     log 2 "expected '$3', was '$1' ($(cat "$2"))"
     return 1
   fi
-  if ! check_xml_error_contains "$2.error" "$4" "$5"; then
+  if ! check_xml_error_contains "$2" "$4" "$5"; then
     log 2 "error checking XML response"
     return 1
   fi

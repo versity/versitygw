@@ -203,4 +203,8 @@ test_file="test_file"
   assert_success
 }
 
+@test "REST - multipart - crc64nvme checksum, full object" {
+
+}
+
 
