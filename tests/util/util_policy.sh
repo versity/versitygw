@@ -334,7 +334,7 @@ put_and_check_policy_rest() {
 log_bucket_policy() {
   log 6 "log_bucket_policy"
   if ! check_param_count "log_bucket_policy" "bucket" 1 $#; then
-    return 1
+    return
   fi
   if ! get_bucket_policy "rest" "$1"; then
     log 2 "error getting bucket policy"

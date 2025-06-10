@@ -105,8 +105,8 @@ source ./tests/util/util_tags.sh
 
 @test "REST - can set object lock enabled on existing buckets" {
   if [ "$DIRECT" != "true" ]; then
-      skip "https://github.com/versity/versitygw/issues/1300"
-    fi
+    skip "https://github.com/versity/versitygw/issues/1300"
+  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -120,8 +120,8 @@ source ./tests/util/util_tags.sh
 
 @test "REST - cannot set object lock enabled without content-md5" {
   if [ "$DIRECT" != "true" ]; then
-      skip "https://github.com/versity/versitygw/issues/1301"
-    fi
+    skip "https://github.com/versity/versitygw/issues/1301"
+  fi
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
