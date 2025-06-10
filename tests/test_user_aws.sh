@@ -158,12 +158,12 @@ export RUN_USERS=true
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
+  run create_multipart_upload_s3api_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
   assert_failure
 
   run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$username"
   assert_success
 
-  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
+  run create_multipart_upload_s3api_with_user "$BUCKET_ONE_NAME" "dummy" "$username" "$password"
   assert_success
 }

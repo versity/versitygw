@@ -176,15 +176,29 @@ compare_files() {
     log 2 "file comparison requires two files"
     return 2
   fi
+  log 5 "comparing files '$1' and '$2'"
   os=$(uname)
+
   if [[ $os == "Darwin" ]]; then
-    file_one_md5=$(md5 -q "$1")
-    file_two_md5=$(md5 -q "$2")
+    if ! file_one_md5=$(md5 -q "$1" 2>&1); then
+      log 2 "error getting md5 for '$1': $file_one_md5"
+      return 2
+    fi
+    if ! file_two_md5=$(md5 -q "$2" 2>&1); then
+      log 2 "error getting md5 for '$2': $file_two_md5"
+      return 2
+    fi
   else
-    file_one_md5=$(md5sum "$1" | cut -d " " -f 1)
-    file_two_md5=$(md5sum "$2" | cut -d " " -f 1)
+    if ! file_one_md5=$(md5sum "$1" | cut -d " " -f 1 2>&1); then
+      log 2 "error getting md5 for '$1': $file_one_md5"
+      return 2
+    fi
+    if ! file_two_md5=$(md5sum "$2" | cut -d " " -f 1 2>&1); then
+      log 2 "error getting md5 for '$2': $file_two_md5"
+      return 2
+    fi
   fi
-  if [[ $file_one_md5 == "$file_two_md5" ]]; then
+  if [[ "$file_one_md5" == "$file_two_md5" ]]; then
     return 0
   fi
   return 1
@@ -229,34 +243,28 @@ create_test_file_count() {
   return 0
 }
 
-download_and_compare_file() {
-  log 6 "download_and_compare_file"
-  if [[ $# -ne 5 ]]; then
-    log 2 "'download and compare file' requires command type, original file, bucket, key, local file"
+download_and_compare_file_with_user() {
+  if ! check_param_count_gt "download_and_compare_large_file" "original file, bucket, key, destination, username, password, chunk size (optional)" 6 $#; then
     return 1
   fi
-  download_and_compare_file_with_user "$1" "$2" "$3" "$4" "$5" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
-  return "$?"
+  if ! download_file_with_user "$5" "$6" "$2" "$3" "$4" "$7"; then
+    log 2 "error downloading file"
+    return 1
+  fi
+  if ! compare_files "$1" "$4"; then
+    log 2 "files don't match"
+    return 1
+  fi
+  return 0
 }
 
-download_and_compare_file_with_user() {
-  log 6 "download_and_compare_file_with_user"
-  if [[ $# -ne 7 ]]; then
-    log 2 "'download and compare file with user' command requires command type, original file, bucket, key, local file, user, password"
+download_and_compare_file() {
+  log 6 "download_and_compare_file"
+  if ! check_param_count_gt "download_and_compare_file" "original file, bucket, key, destination, chunk size (optional)" 4 $#; then
     return 1
   fi
-  if ! get_object_with_user "$1" "$3" "$4" "$5" "$6" "$7"; then
-    log 2 "error retrieving file"
-    return 1
-  fi
-  log 5 "files: $2, $5"
-  #if [ "$1" == 'mc' ]; then
-  #  file_to_compare="$5/$(basename "$2")"
-  #else
-    file_to_compare="$5"
-  #fi
-  if ! compare_files "$2" "$file_to_compare"; then
-    log 2 "files don't match"
+  if ! download_and_compare_file_with_user "$1" "$2" "$3" "$4" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$5"; then
+    log 2 "error downloading and comparing file with user"
     return 1
   fi
   return 0

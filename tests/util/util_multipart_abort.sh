@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Copyright 2024 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+source ./tests/util/util_multipart_before_completion.sh
+
 check_abort_access_denied() {
   if [ $# -ne 5 ]; then
     log 2 "'check_abort_access_denied' requires bucket, file, username, password"
@@ -27,7 +43,7 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads before upload: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating upload"
     return 1
   fi
@@ -36,12 +52,8 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads after upload creation: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/abort_multipart_upload.sh); then
-    log 2 "error aborting multipart upload: $result"
-    return 1
-  fi
-  if [ "$result" != "204" ]; then
-    log 2 "expected '204' response, actual was '$result' (error: $(cat "$TEST_FILE_FOLDER"/result.txt)"
+  if ! abort_multipart_upload_rest "$1" "$2" "$upload_id"; then
+    log 2 "error aborting multipart upload"
     return 1
   fi
   log 5 "final uploads: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
@@ -87,6 +99,43 @@ abort_all_multipart_uploads() {
     fi
     log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
     if ! abort_multipart_upload "$1" "$key" "$upload_id"; then
+      log 2 "error aborting multipart upload"
+      return 1
+    fi
+  done
+}
+
+# param: bucket name
+# return 0 for success, 1 for error
+abort_all_multipart_uploads_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'abort_all_multipart_uploads' requires bucket name"
+    return 1
+  fi
+  if ! list_multipart_uploads_rest "$1"; then
+    log 2 "error listing multipart uploads"
+    return 1
+  fi
+  # shellcheck disable=SC2154
+  log 5 "UPLOADS: $uploads"
+  if ! upload_data=$(xmllint --xpath '//*[local-name()="Upload"]' "$TEST_FILE_FOLDER/uploads.txt" 2>&1); then
+    if [[ "$upload_data" == *"XPath set is empty"* ]]; then
+      return 0
+    fi
+    log 2 "error retrieving upload data: $upload_data"
+    return 1
+  fi
+  for upload in $upload_data; do
+    if ! key=$(echo -n "$upload" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
+      log 2 "error retrieving key: $key"
+      return 1
+    fi
+    if ! upload_id=$(echo -n "$upload" | xmllint --xpath '//*[local-name()="UploadId"]/text()' - 2>&1); then
+      log 2 "error retrieving upload ID: $upload_id"
+      return 1
+    fi
+    log 5 "Aborting multipart upload for key: $key, UploadId: $upload_id"
+    if ! abort_multipart_upload_rest "$1" "$key" "$upload_id"; then
       log 2 "error aborting multipart upload"
       return 1
     fi

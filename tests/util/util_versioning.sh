@@ -2,7 +2,7 @@
 
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/list_object_versions.sh
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 check_if_versioning_enabled() {
   if ! check_param_count "check_if_versioning_enabled" "bucket" 1 $#; then
@@ -72,6 +72,7 @@ delete_object_version_with_or_without_retention() {
       return 1
     fi
   fi
+  log 5 "successfully deleted version with key '${version_keys[$idx]}', id '${version_ids[$idx]}'"
   return 0
 }
 

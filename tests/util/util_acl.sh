@@ -399,24 +399,6 @@ check_ownership_rule_and_reset_acl() {
   fi
 }
 
-# param: bucket name
-# return 1 for failure, 0 for success
-get_object_ownership_rule_and_update_acl() {
-  if [ $# -ne 1 ]; then
-    log 2 "'get_object_ownership_rule_and_update_acl' requires bucket name"
-    return 1
-  fi
-  if ! get_object_ownership_rule "$1"; then
-    log 2 "error getting object ownership rule"
-    return 1
-  fi
-  log 5 "object ownership rule: $object_ownership_rule"
-  if [[ "$object_ownership_rule" != "BucketOwnerEnforced" ]] && ! put_bucket_canned_acl "$1" "private"; then
-    log 2 "error resetting bucket ACLs"
-    return 1
-  fi
-}
-
 # get object acl
 # param:  object path
 # export acl for success, return 1 for error

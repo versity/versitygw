@@ -14,31 +14,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/logger.sh
-
-send_command() {
-  if [ $# -eq 0 ]; then
+check_object_lock_config() {
+  log 6 "check_object_lock_config"
+  if ! check_param_count "check_object_lock_config" "bucket" 1 $#; then
     return 1
   fi
-  if [ -n "$COMMAND_LOG" ]; then
-    args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
-    if ! mask_arg_array "${args[@]}"; then
+  lock_config_exists=true
+  if ! get_object_lock_configuration "rest" "$1"; then
+    # shellcheck disable=SC2154
+    if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
+      # shellcheck disable=SC2034
+      lock_config_exists=false
+    else
+      log 2 "error getting object lock config"
       return 1
     fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
   fi
-  local command_result=0
-  "$@" || command_result=$?
-  if [ "$command_result" -ne 0 ]; then
-    if [ "$1" == "curl" ]; then
-      echo ", curl response code: $command_result"
-    elif [ "$command_result" -ne 1 ]; then
-      echo " ($1 response code: $command_result)"
-    fi
-  fi
-  if [ "$DIRECT" == "true" ]; then
-    sleep "$DIRECT_POST_COMMAND_DELAY"
-  fi
-  return $command_result
+  return 0
 }
