@@ -33,6 +33,17 @@ type ACL struct {
 	Grantees []Grantee
 }
 
+// IsPublic specifies if the acl grants public read access
+func (acl *ACL) IsPublic(permission Permission) bool {
+	for _, grt := range acl.Grantees {
+		if grt.Permission == permission && grt.Type == types.TypeGroup && grt.Access == "all-users" {
+			return true
+		}
+	}
+
+	return false
+}
+
 type Grantee struct {
 	Permission Permission
 	Access     string
@@ -435,117 +446,22 @@ func verifyACL(acl ACL, access string, permission Permission) error {
 	return s3err.GetAPIError(s3err.ErrAccessDenied)
 }
 
-func MayCreateBucket(acct Account, isRoot bool) error {
-	if isRoot {
-		return nil
-	}
-
-	if acct.Role == RoleUser {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
-	}
-
-	return nil
-}
-
-func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
-	// Owner check
-	if acct.Access == acl.Owner {
-		return nil
-	}
-
-	// Root user has access over almost everything
-	if isRoot {
-		return nil
-	}
-
-	// Admin user case
-	if acct.Role == RoleAdmin {
-		return nil
-	}
-
-	// Return access denied in all other cases
-	return s3err.GetAPIError(s3err.ErrAccessDenied)
-}
-
-type AccessOptions struct {
-	Acl           ACL
-	AclPermission Permission
-	IsRoot        bool
-	Acc           Account
-	Bucket        string
-	Object        string
-	Action        Action
-	Readonly      bool
-}
-
-func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
-	if opts.Readonly {
-		if opts.AclPermission == PermissionWrite || opts.AclPermission == PermissionWriteAcp {
-			return s3err.GetAPIError(s3err.ErrAccessDenied)
-		}
-	}
-	if opts.IsRoot {
-		return nil
-	}
-	if opts.Acc.Role == RoleAdmin {
-		return nil
-	}
-
-	policy, policyErr := be.GetBucketPolicy(ctx, opts.Bucket)
-	if policyErr != nil {
-		if !errors.Is(policyErr, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
-			return policyErr
-		}
-	} else {
-		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action)
-	}
-
-	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource string, opts AccessOptions) error {
-	if opts.IsRoot {
-		return nil
-	}
-	if opts.Acc.Role == RoleAdmin {
-		return nil
-	}
-
-	// Verify destination bucket access
-	if err := VerifyAccess(ctx, be, opts); err != nil {
-		return err
-	}
-	// Verify source bucket access
-	srcBucket, srcObject, found := strings.Cut(copySource, "/")
-	if !found {
-		return s3err.GetAPIError(s3err.ErrInvalidCopySource)
-	}
-
-	// Get source bucket ACL
-	srcBucketACLBytes, err := be.GetBucketAcl(ctx, &s3.GetBucketAclInput{Bucket: &srcBucket})
+// Verifies if the bucket acl grants public access
+func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket string, action Action, permission Permission) error {
+	aclBytes, err := be.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+		Bucket: &bucket,
+	})
 	if err != nil {
 		return err
 	}
 
-	var srcBucketAcl ACL
-	if err := json.Unmarshal(srcBucketACLBytes, &srcBucketAcl); err != nil {
+	acl, err := ParseACL(aclBytes)
+	if err != nil {
 		return err
 	}
 
-	if err := VerifyAccess(ctx, be, AccessOptions{
-		Acl:           srcBucketAcl,
-		AclPermission: PermissionRead,
-		IsRoot:        opts.IsRoot,
-		Acc:           opts.Acc,
-		Bucket:        srcBucket,
-		Object:        srcObject,
-		Action:        GetObjectAction,
-	}); err != nil {
-		return err
+	if !acl.IsPublic(permission) {
+		return ErrAccessDenied
 	}
 
 	return nil

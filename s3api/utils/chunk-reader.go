@@ -88,9 +88,26 @@ func (c checksumType) isValid() bool {
 		c == checksumTypeCrc64nvme
 }
 
+// Extracts and validates the checksum type from the 'X-Amz-Trailer' header
+func ExtractChecksumType(ctx *fiber.Ctx) (checksumType, error) {
+	trailer := ctx.Get("X-Amz-Trailer")
+	chType := checksumType(strings.ToLower(trailer))
+	if chType != "" && !chType.isValid() {
+		debuglogger.Logf("invalid value for 'X-Amz-Trailer': %v", chType)
+		return "", s3err.GetAPIError(s3err.ErrTrailerHeaderNotSupported)
+	}
+
+	return chType, nil
+}
+
 // IsSpecialPayload checks for special authorization types
 func IsSpecialPayload(str string) bool {
 	return specialValues[payloadType(str)]
+}
+
+// Checks if the provided string is unsigned payload trailer type
+func IsUnsignedStreamingPayload(str string) bool {
+	return payloadType(str) == payloadTypeStreamingUnsignedTrailer
 }
 
 // IsChunkEncoding checks for streaming/unsigned authorization types
@@ -126,9 +143,12 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 		return nil, fmt.Errorf("invalid x-amz-content-sha256: %v", string(contentSha256))
 	}
 
-	checksumType := checksumType(strings.ToLower(ctx.Get("X-Amz-Trailer")))
-	if contentSha256 != payloadTypeStreamingSigned && !checksumType.isValid() {
-		debuglogger.Logf("invalid value for 'X-Amz-Trailer': %v", checksumType)
+	checksumType, err := ExtractChecksumType(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if contentSha256 != payloadTypeStreamingSigned && checksumType == "" {
+		debuglogger.Logf("empty value for required trailer header 'X-Amz-Trailer': %v", checksumType)
 		return nil, s3err.GetAPIError(s3err.ErrTrailerHeaderNotSupported)
 	}
 

@@ -22,6 +22,8 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+var ErrAccessDenied = errors.New("access denied")
+
 type policyErr string
 
 func (p policyErr) Error() string {
@@ -89,6 +91,24 @@ func (bp *BucketPolicy) isAllowed(principal string, action Action, resource stri
 	return isAllowed
 }
 
+// isPublic checks if the bucket policy statements contain
+// an entity granting public access
+func (bp *BucketPolicy) isPublic(resource string, action Action) bool {
+	var isAllowed bool
+	for _, statement := range bp.Statement {
+		if statement.isPublic(resource, action) {
+			switch statement.Effect {
+			case BucketPolicyAccessTypeAllow:
+				isAllowed = true
+			case BucketPolicyAccessTypeDeny:
+				return false
+			}
+		}
+	}
+
+	return isAllowed
+}
+
 type BucketPolicyItem struct {
 	Effect     BucketPolicyAccessType `json:"Effect"`
 	Principals Principals             `json:"Principal"`
@@ -132,6 +152,11 @@ func (bpi *BucketPolicyItem) findMatch(principal string, action Action, resource
 	}
 
 	return false
+}
+
+// isPublic checks if the bucket policy statemant grants public access
+func (bpi *BucketPolicyItem) isPublic(resource string, action Action) bool {
+	return bpi.Principals.IsPublic() && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource)
 }
 
 func getMalformedPolicyError(err error) error {
@@ -179,6 +204,25 @@ func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Act
 
 	if !bucketPolicy.isAllowed(access, action, resource) {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
+	return nil
+}
+
+// Checks if the bucket policy grants public access
+func VerifyPublicBucketPolicy(policy []byte, bucket, object string, action Action) error {
+	var bucketPolicy BucketPolicy
+	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
+		return err
+	}
+
+	resource := bucket
+	if object != "" {
+		resource += "/" + object
+	}
+
+	if !bucketPolicy.isPublic(resource, action) {
+		return ErrAccessDenied
 	}
 
 	return nil
