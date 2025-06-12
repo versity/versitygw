@@ -67,11 +67,17 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// HeadBucket
 	app.Head("/:bucket", s3ApiController.HeadBucket)
 
-	// GetBucketAcl action
-	// ListMultipartUploads action
-	// ListObjects action
-	// ListObjectsV2 action
-	app.Get("/:bucket", s3ApiController.ListActions)
+	app.Get("/:bucket", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(s3ApiController.GetBucketTagging, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(s3ApiController.GetBucketOwnershipControls, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(s3ApiController.GetBucketVersioning, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(s3ApiController.GetBucketPolicy, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(s3ApiController.GetBucketCors, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(s3ApiController.GetObjectLockConfiguration, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(s3ApiController.GetBucketAcl, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(s3ApiController.ListMultipartUploads, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgs("versions"), controllers.ProcessResponse(s3ApiController.ListObjectVersions, logger, evs, mm))
+	app.Get("/:bucket", middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(s3ApiController.ListObjectsV2, logger, evs, mm))
+	app.Get("/:bucket", controllers.ProcessResponse(s3ApiController.ListObjects, logger, evs, mm))
 
 	// HeadObject action
 	app.Head("/:bucket/:key/*", s3ApiController.HeadObject)
