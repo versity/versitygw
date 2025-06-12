@@ -10,8 +10,7 @@ source ./tests/util/util_retention.sh
 # param: bucket name
 # return 0 on success, 1 on error
 reset_bucket() {
-  log 6 "reset_bucket"
-  if ! check_param_count "clear_bucket_s3api" "bucket" 1 $#; then
+  if ! check_param_count "reset_bucket" "bucket" 1 $#; then
     return 1
   fi
 

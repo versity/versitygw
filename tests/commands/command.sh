@@ -37,5 +37,8 @@ send_command() {
       echo " ($1 response code: $command_result)"
     fi
   fi
+  if [ "$DIRECT" == "true" ]; then
+    sleep "$DIRECT_POST_COMMAND_DELAY"
+  fi
   return $command_result
 }
