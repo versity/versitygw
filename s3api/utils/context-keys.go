@@ -31,6 +31,7 @@ const (
 	ContextKeyParsedAcl      ContextKey = "parsed-acl"
 	ContextKeySkipResBodyLog ContextKey = "skip-res-body-log"
 	ContextKeyBodyReader     ContextKey = "body-reader"
+	ContextKeySkip           ContextKey = "__skip"
 )
 
 func (ck ContextKey) Values() []ContextKey {
@@ -55,6 +56,10 @@ func (ck ContextKey) Set(ctx *fiber.Ctx, val any) {
 func (ck ContextKey) IsSet(ctx *fiber.Ctx) bool {
 	val := ctx.Locals(string(ck))
 	return val != nil
+}
+
+func (ck ContextKey) Delete(ctx *fiber.Ctx) {
+	ctx.Locals(string(ck), nil)
 }
 
 func (ck ContextKey) Get(ctx *fiber.Ctx) any {
