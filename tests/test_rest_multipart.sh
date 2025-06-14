@@ -19,6 +19,8 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/drivers/rest.sh
+source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
+source ./tests/drivers/upload_part/upload_part_rest.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_list_parts.sh
 source ./tests/util/util_setup.sh
@@ -203,8 +205,26 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - multipart - crc64nvme checksum, full object" {
+@test "REST - multipart - lowercase checksum type and algorithm" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
 
+  run create_multipart_upload_rest_with_checksum_type_and_algorithm "$BUCKET_ONE_NAME" "$test_file" "full_object" "crc64nvme"
+  assert_success
 }
 
+@test "REST - multipart - full object checksum type doesn't require UploadPart checksums" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
 
+  run create_test_file "$test_file" $((5*1024*1024))
+  assert_success
+
+  run create_multipart_upload_rest_with_checksum_type_and_algorithm "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
+  assert_success
+  upload_id=$output
+  log 5 "upload ID: $upload_id"
+
+  run upload_part_rest "$BUCKET_ONE_NAME" "$test_file" "$upload_id" 1 "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
