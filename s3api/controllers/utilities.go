@@ -50,7 +50,7 @@ type MetaOptions struct {
 
 type Response struct {
 	Data     any
-	Headers  map[string]string
+	Headers  map[string]*string
 	MetaOpts *MetaOptions
 }
 
@@ -65,6 +65,10 @@ func ProcessResponse(handler Handler, s3logger s3log.AuditLogger, s3evnt s3event
 		}
 
 		response, err := handler(ctx)
+
+		// Set the response headers
+		SetResponseHeaders(ctx, response.Headers)
+
 		opts := response.MetaOpts
 		// Send the metrics
 		if mm != nil {
@@ -97,9 +101,6 @@ func ProcessResponse(handler Handler, s3logger s3log.AuditLogger, s3evnt s3event
 			return ctx.Send(s3err.GetAPIErrorResponse(
 				s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 		}
-
-		// Set the response headers
-		SetResponseHeaders(ctx, response.Headers)
 
 		if opts.Status == 0 {
 			opts.Status = http.StatusOK
@@ -171,11 +172,14 @@ func ProcessResponse(handler Handler, s3logger s3log.AuditLogger, s3evnt s3event
 	}
 }
 
-func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]string) {
+func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]*string) {
 	if headers == nil {
 		return
 	}
 	for key, val := range headers {
-		ctx.Response().Header.Add(key, val)
+		if val == nil || *val == "" {
+			continue
+		}
+		ctx.Response().Header.Add(key, *val)
 	}
 }
