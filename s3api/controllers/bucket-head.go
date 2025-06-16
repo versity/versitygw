@@ -65,9 +65,9 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	return &Response{
-		Headers: map[string]string{
-			"X-Amz-Access-Point-Alias": "false",
-			"X-Amz-Bucket-Region":      region,
+		Headers: map[string]*string{
+			"X-Amz-Access-Point-Alias": utils.GetStringPtr("false"),
+			"X-Amz-Bucket-Region":      utils.GetStringPtr(region),
 		},
 		MetaOpts: &MetaOptions{
 			Action:      metrics.ActionHeadBucket,

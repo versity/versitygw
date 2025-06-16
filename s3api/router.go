@@ -57,7 +57,14 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	app.Get("/", controllers.ProcessResponse(ctrl.ListBuckets, logger, evs, mm))
 
 	// Put bucket operations
-	app.Put("/:bucket", ctrl.PutBucketActions)
+	app.Put("/:bucket", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutBucketTagging, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.PutBucketOwnershipControls, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.PutBucketVersioning, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.PutObjectLockConfiguration, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.PutBucketCors, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.PutBucketPolicy, logger, evs, mm))
+	app.Put("/:bucket", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutBucketAcl, logger, evs, mm))
+	app.Put("/:bucket", controllers.ProcessResponse(ctrl.CreateBucket, logger, evs, mm))
 
 	// HeadBucket
 	app.Head("/:bucket", controllers.ProcessResponse(ctrl.HeadBucket, logger, evs, mm))
@@ -82,8 +89,8 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	app.Get("/:bucket", middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.ListObjectsV2, logger, evs, mm))
 	app.Get("/:bucket", controllers.ProcessResponse(ctrl.ListObjects, logger, evs, mm))
 
-	// HeadObject action
-	app.Head("/:bucket/:key/*", ctrl.HeadObject)
+	// HeadObject
+	app.Head("/:bucket/:key/*", controllers.ProcessResponse(ctrl.HeadObject, logger, evs, mm))
 
 	// GetObjectAcl action
 	// GetObject action

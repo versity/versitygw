@@ -664,3 +664,37 @@ func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
 
 	return tagSet, nil
 }
+
+// Returns the provided string pointer
+func GetStringPtr(str string) *string {
+	if str == "" {
+		return nil
+	}
+
+	return &str
+}
+
+// Converts any type to a string pointer
+func ConvertToStringPtr[T any](val T) *string {
+	str := fmt.Sprint(val)
+	return &str
+}
+
+// Converst any pointer to a string pointer
+func ConvertPtrToStringPtr[T any](val *T) *string {
+	if val == nil {
+		return nil
+	}
+	str := fmt.Sprint(*val)
+	return &str
+}
+
+// Formats the date with the given formatting and returns a string pointer
+func FormatDatePtrToString(date *time.Time, format string) *string {
+	if date == nil {
+		return nil
+	}
+
+	formatted := date.UTC().Format(format)
+	return &formatted
+}
