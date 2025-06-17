@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -39,15 +40,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
 	versionId := ctx.Query("versionId")
 	objRange := ctx.Get("Range")
-	key := ctx.Params("key")
-	keyEnd := ctx.Params("*1")
-	if keyEnd != "" {
-		key = strings.Join([]string{key, keyEnd}, "/")
-	}
-	path := ctx.Path()
-	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
-		key = key + "/"
-	}
+	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 
 	var partNumber *int32
 	if ctx.Request().URI().QueryArgs().Has("partNumber") {
