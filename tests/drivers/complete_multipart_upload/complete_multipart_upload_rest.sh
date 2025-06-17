@@ -18,7 +18,8 @@ complete_multipart_upload_with_checksum() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count, checksum type, checksum algorithm" 7 $#; then
     return 1
   fi
-  if ! parts_payload=$(upload_parts_rest_before_completion "$1" "$2" "$3" "$4" "$5" 2>&1); then
+  lowercase_checksum_algorithm=$(echo -n "$7" | tr '[:upper:]' '[:lower:]')
+  if ! parts_payload=$(upload_parts_rest_with_checksum_before_completion "$1" "$2" "$3" "$4" "$5" "$lowercase_checksum_algorithm" 2>&1); then
     log 2 "error uploading parts"
     return 1
   fi

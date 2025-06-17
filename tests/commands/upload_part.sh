@@ -105,3 +105,22 @@ upload_part_rest_without_upload_id() {
   fi
   return 0
 }
+
+upload_part_rest_with_checksum() {
+  if ! check_param_count_v2 "bucket name, key, upload ID, part number, part, checksum algorithm" 6 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/upload_part.sh); then
+    log 2 "error sending upload-part REST command: $result"
+    return 1
+  fi
+  if [[ "$result" != "200" ]]; then
+    log 2 "upload-part command returned error $result: $(cat "$TEST_FILE_FOLDER/etag.txt")"
+    return 1
+  fi
+  log 5 "$(cat "$TEST_FILE_FOLDER/etag.txt")"
+  etag=$(grep -i "etag" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  checksum=$(grep -i "x-amz-checksum-" "$TEST_FILE_FOLDER/etag.txt" | awk '{print $2}' | tr -d '\r')
+  log 5 "etag:  $etag"
+  return 0
+}

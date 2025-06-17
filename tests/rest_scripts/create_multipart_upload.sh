@@ -27,8 +27,6 @@ checksum_type="$CHECKSUM_TYPE"
 # shellcheck disable=SC2153
 checksum_algorithm="$CHECKSUM_ALGORITHM"
 
-# Step 1:  generate canonical request hash
-
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("POST" "/$bucket_name/$key" "uploads=" "host:$host")

@@ -53,7 +53,7 @@ cr_data+=("$query_params")
 cr_data+=("host:$host")
 if [ "$checksum_type" != "" ]; then
   if [ "$checksum_hash" == "" ] && ! checksum_hash=$(DATA_FILE="$data" CHECKSUM_TYPE="$checksum_type" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-    log_rest 2 "error calculating checksum hash"
+    log_rest 2 "error calculating checksum hash: $checksum_hash"
     exit 1
   fi
   cr_data+=("x-amz-checksum-${checksum_type}:$checksum_hash")
