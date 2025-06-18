@@ -54,67 +54,69 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		app.Patch("/list-buckets", middlewares.IsAdmin(logger), adminController.ListBuckets)
 	}
 
-	// ListBuckets
+	// ListBuckets action
 	app.Get("/", controllers.ProcessResponse(ctrl.ListBuckets, logger, evs, mm))
 
+	bucketRouter := app.Group("/:bucket")
+	objectRouter := app.Group("/:bucket/*")
+
 	// PUT bucket operations
-	app.Put("/:bucket", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutBucketTagging, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.PutBucketOwnershipControls, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.PutBucketVersioning, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.PutObjectLockConfiguration, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.PutBucketCors, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.PutBucketPolicy, logger, evs, mm))
-	app.Put("/:bucket", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutBucketAcl, logger, evs, mm))
-	app.Put("/:bucket", controllers.ProcessResponse(ctrl.CreateBucket, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutBucketTagging, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.PutBucketOwnershipControls, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.PutBucketVersioning, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.PutObjectLockConfiguration, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.PutBucketCors, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.PutBucketPolicy, logger, evs, mm))
+	bucketRouter.Put("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutBucketAcl, logger, evs, mm))
+	bucketRouter.Put("", controllers.ProcessResponse(ctrl.CreateBucket, logger, evs, mm))
 
-	// HeadBucket
-	app.Head("/:bucket", controllers.ProcessResponse(ctrl.HeadBucket, logger, evs, mm))
+	// HeadBucket action
+	bucketRouter.Head("", controllers.ProcessResponse(ctrl.HeadBucket, logger, evs, mm))
 
-	// Delete bucket operations
-	app.Delete("/:bucket", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.DeleteBucketTagging, logger, evs, mm))
-	app.Delete("/:bucket", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.DeleteBucketOwnershipControls, logger, evs, mm))
-	app.Delete("/:bucket", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.DeleteBucketPolicy, logger, evs, mm))
-	app.Delete("/:bucket", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.DeleteBucketCors, logger, evs, mm))
-	app.Delete("/:bucket", controllers.ProcessResponse(ctrl.DeleteBucket, logger, evs, mm))
+	// DELETE bucket operations
+	bucketRouter.Delete("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.DeleteBucketTagging, logger, evs, mm))
+	bucketRouter.Delete("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.DeleteBucketOwnershipControls, logger, evs, mm))
+	bucketRouter.Delete("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.DeleteBucketPolicy, logger, evs, mm))
+	bucketRouter.Delete("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.DeleteBucketCors, logger, evs, mm))
+	bucketRouter.Delete("", controllers.ProcessResponse(ctrl.DeleteBucket, logger, evs, mm))
 
 	// GET bucket operations
-	app.Get("/:bucket", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetBucketTagging, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.GetBucketOwnershipControls, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.GetBucketVersioning, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.GetBucketPolicy, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.GetBucketCors, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.GetObjectLockConfiguration, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetBucketAcl, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.ListMultipartUploads, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgs("versions"), controllers.ProcessResponse(ctrl.ListObjectVersions, logger, evs, mm))
-	app.Get("/:bucket", middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.ListObjectsV2, logger, evs, mm))
-	app.Get("/:bucket", controllers.ProcessResponse(ctrl.ListObjects, logger, evs, mm))
-
-	// HeadObject
-	app.Head("/:bucket/*", controllers.ProcessResponse(ctrl.HeadObject, logger, evs, mm))
-
-	// GET object operations
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetObjectTagging, logger, evs, mm))
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("retention"), controllers.ProcessResponse(ctrl.GetObjectRetention, logger, evs, mm))
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("legal-hold"), controllers.ProcessResponse(ctrl.GetObjectLegalHold, logger, evs, mm))
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetObjectAcl, logger, evs, mm))
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("attributes"), controllers.ProcessResponse(ctrl.GetObjectAttributes, logger, evs, mm))
-	app.Get("/:bucket/*", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.ListParts, logger, evs, mm))
-	app.Get("/:bucket/*", controllers.ProcessResponse(ctrl.GetObject, logger, evs, mm))
-
-	// DeleteObject action
-	// AbortMultipartUpload action
-	// DeleteObjectTagging action
-	app.Delete("/:bucket/:key/*", ctrl.DeleteActions)
+	bucketRouter.Get("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetBucketTagging, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.GetBucketOwnershipControls, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.GetBucketVersioning, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.GetBucketPolicy, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.GetBucketCors, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.GetObjectLockConfiguration, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetBucketAcl, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.ListMultipartUploads, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgs("versions"), controllers.ProcessResponse(ctrl.ListObjectVersions, logger, evs, mm))
+	bucketRouter.Get("", middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.ListObjectsV2, logger, evs, mm))
+	bucketRouter.Get("", controllers.ProcessResponse(ctrl.ListObjects, logger, evs, mm))
 
 	// DeleteObjects action
-	app.Post("/:bucket", ctrl.DeleteObjects)
+	bucketRouter.Post("", ctrl.DeleteObjects)
 
-	// CompleteMultipartUpload action
-	// CreateMultipartUpload
-	// RestoreObject action
-	// SelectObjectContent action
-	app.Post("/:bucket/:key/*", ctrl.CreateActions)
+	// HeadObject
+	objectRouter.Head("", controllers.ProcessResponse(ctrl.HeadObject, logger, evs, mm))
+
+	// GET object operations
+	objectRouter.Get("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetObjectTagging, logger, evs, mm))
+	objectRouter.Get("", middlewares.MatchQueryArgs("retention"), controllers.ProcessResponse(ctrl.GetObjectRetention, logger, evs, mm))
+	objectRouter.Get("", middlewares.MatchQueryArgs("legal-hold"), controllers.ProcessResponse(ctrl.GetObjectLegalHold, logger, evs, mm))
+	objectRouter.Get("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetObjectAcl, logger, evs, mm))
+	objectRouter.Get("", middlewares.MatchQueryArgs("attributes"), controllers.ProcessResponse(ctrl.GetObjectAttributes, logger, evs, mm))
+	objectRouter.Get("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.ListParts, logger, evs, mm))
+	objectRouter.Get("", controllers.ProcessResponse(ctrl.GetObject, logger, evs, mm))
+
+	// DELETE object operations
+	objectRouter.Delete("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.DeleteObjectTagging, logger, evs, mm))
+	objectRouter.Delete("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.AbortMultipartUplaod, logger, evs, mm))
+	objectRouter.Delete("", controllers.ProcessResponse(ctrl.DeleteObject, logger, evs, mm))
+
+	objectRouter.Post("", middlewares.MatchQueryArgs("restore"), controllers.ProcessResponse(ctrl.RestoreObject, logger, evs, mm))
+	objectRouter.Post("", middlewares.MatchQueryArgs("list-type"), middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.RestoreObject, logger, evs, mm))
+	objectRouter.Post("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.CompleteMultipartUpload, logger, evs, mm))
+	objectRouter.Post("", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.CreateMultipartUpload, logger, evs, mm))
 
 	// CopyObject action
 	// PutObject action
@@ -123,4 +125,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	// PutObjectTagging action
 	// PutObjectAcl action
 	app.Put("/:bucket/:key/*", ctrl.PutActions)
+
+	// Return MethodNotAllowed for all the unmatched routes
+	app.All("*", controllers.ProcessResponse(ctrl.HandleUnmatch, logger, evs, mm))
 }

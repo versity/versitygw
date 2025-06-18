@@ -183,3 +183,12 @@ func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]*string) {
 		ctx.Response().Header.Add(key, *val)
 	}
 }
+
+// Returns MethodNotAllowed for unmatched routes
+func (c S3ApiController) HandleUnmatch(ctx *fiber.Ctx) (*Response, error) {
+	return &Response{
+		MetaOpts: &MetaOptions{
+			Action: metrics.ActionUndetected,
+		},
+	}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+}
