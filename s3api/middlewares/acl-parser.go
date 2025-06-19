@@ -38,7 +38,7 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 		path := ctx.Path()
 		pathParts := strings.Split(path, "/")
 		bucket := pathParts[1]
-		if path == "/" && ctx.Method() == http.MethodGet {
+		if path == "/" {
 			return ctx.Next()
 		}
 		if ctx.Method() == http.MethodPatch {
