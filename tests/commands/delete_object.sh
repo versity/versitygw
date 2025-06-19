@@ -61,19 +61,6 @@ delete_object_bypass_retention() {
   return 0
 }
 
-delete_object_bypass_retention() {
-  if ! check_param_count "delete_object_bypass_retention" "bucket, key, user, password" 4 $#; then
-    return 1
-  fi
-  if ! result=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" \
-      COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" BYPASS_GOVERNANCE_RETENTION="true" \
-      OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
-    log 2 "error deleting object: $result"
-    return 1
-  fi
-  return 0
-}
-
 delete_object_version() {
   if ! check_param_count "delete_object_version" "bucket, key, version ID" 3 $#; then
     return 1

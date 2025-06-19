@@ -13,7 +13,7 @@ get_element_text() {
 
   log 5 "data: $(cat "$1")"
   if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
-    log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$xml_file"))"
+    log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
     return 1
   fi
   echo "$xml_val"
