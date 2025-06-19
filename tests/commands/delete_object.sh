@@ -47,8 +47,7 @@ delete_object() {
 
 # shellcheck disable=SC2317
 delete_object_rest() {
-  if [ $# -ne 2 ]; then
-    log 2 "'delete_object_rest' requires bucket name, object name"
+  if ! check_param_count "delete_object_rest" "bucket, key" 2 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
