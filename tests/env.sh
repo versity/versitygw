@@ -137,6 +137,9 @@ check_universal_vars() {
     fi
     export DIRECT_POST_COMMAND_DELAY
   fi
+  if [ -n "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" ]; then
+    export MAX_FILE_DOWNLOAD_CHUNK_SIZE
+  fi
 
   check_aws_vars
 

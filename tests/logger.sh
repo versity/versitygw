@@ -40,7 +40,7 @@ log() {
 }
 
 log_with_stack_ref() {
-  if ! check_log_params "log_with_stack_ref" "level, message, stack reference" 3 $#; then
+  if ! check_log_params "log_with_stack_ref" "level, string, stack reference" 3 $#; then
     return 1
   fi
   # shellcheck disable=SC2153

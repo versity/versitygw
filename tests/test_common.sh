@@ -62,7 +62,7 @@ test_common_multipart_upload() {
     assert_success
   fi
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -115,7 +115,7 @@ test_common_copy_object() {
     run copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name"
     assert_success
   fi
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
   assert_success
 }
 
@@ -168,7 +168,7 @@ test_common_put_object() {
     assert_success
   fi
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
   assert_success
 
   run delete_object "$1" "$BUCKET_ONE_NAME" "$2"
@@ -196,7 +196,10 @@ test_common_put_get_object() {
   run object_exists "$1" "$BUCKET_ONE_NAME" "$object_name"
   assert_success
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" "$TEST_FILE_FOLDER/${2}-copy"
+  run get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$TEST_FILE_FOLDER/${object_name}-copy"
+  assert_success
+
+  run compare_files "$TEST_FILE_FOLDER/$object_name" "$TEST_FILE_FOLDER/${object_name}-copy"
   assert_success
 }
 

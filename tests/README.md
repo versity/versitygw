@@ -183,6 +183,8 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **SKIP_ACL_TESTING**:  avoid ACL tests for systems which do not use ACLs
 
+**MAX_FILE_DOWNLOAD_CHUNK_SIZE**:  when set, will divide the download of large files with GetObject into chunks of the given size.  Useful for direct testing with slower connections.
+
 ## REST Scripts
 
 REST scripts are included for calls to S3's REST API in the `./tests/rest_scripts/` folder.  To call a script, the following parameters are needed:
