@@ -46,7 +46,7 @@ delete_object() {
 }
 
 delete_object_bypass_retention() {
-  if ! check_param_count "delete_object_bypass_retention" "client, bucket, key, user, password" 5 $#; then
+  if ! check_param_count "delete_object_bypass_retention" "bucket, key, user, password" 4 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then

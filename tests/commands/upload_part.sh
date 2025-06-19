@@ -110,8 +110,8 @@ upload_part_rest_with_checksum() {
   if ! check_param_count_v2 "bucket name, key, upload ID, part number, part, checksum algorithm" 6 $#; then
     return 1
   fi
-  # shellcheck disable=SC2154
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/upload_part.sh); then
+  # shellcheck disable=SC2154,SC2097,SC2098
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PART_NUMBER="$4" DATA_FILE="$5" CHECKSUM_TYPE="$6" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" OUTPUT_FILE="$TEST_FILE_FOLDER/etag.txt" ./tests/rest_scripts/upload_part.sh); then
     log 2 "error sending upload-part REST command: $result"
     return 1
   fi
