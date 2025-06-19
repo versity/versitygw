@@ -230,14 +230,36 @@ test_file="test_file"
 }
 
 @test "REST - multipart - composite - sha256" {
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
   assert_success
+}
 
-  run create_multipart_upload_rest_with_checksum_type_and_algorithm "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
+@test "REST - multipart - composite - sha1" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
   assert_success
-  upload_id=$output
-  log 5 "upload ID: $upload_id"
+}
 
-  run complete_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file" "$upload_id" 2 "COMPOSITE" "SHA256"
+@test "REST - multipart - composite - crc32" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32"
+  assert_success
+}
+
+@test "REST - multipart - composite - crc32c" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
+  assert_success
+}
+
+@test "REST - multipart - full object - crc32" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
+  assert_success
+}
+
+@test "REST - multipart - full object - crc32c" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
+  assert_success
+}
+
+@test "REST - multipart - full object - crc64nvme" {
+  run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC64NVME"
   assert_success
 }

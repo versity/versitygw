@@ -30,6 +30,8 @@ parts="$PARTS"
 checksum_type="$CHECKSUM_TYPE"
 # shellcheck disable=SC2153
 checksum_algorithm="$CHECKSUM_ALGORITHM"
+# shellcheck disable=SC2153
+checksum_hash="$CHECKSUM_HASH"
 
 payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">$parts</CompleteMultipartUpload>"
@@ -40,16 +42,21 @@ cr_data=("POST" "/$bucket_name/$key" "uploadId=$upload_id" "host:$host")
 if [ "$checksum_algorithm" != "" ]; then
   cr_data+=("x-amz-checksum-algorithm:$checksum_algorithm")
 fi
+lowercase_algorithm="$(echo -n "$checksum_algorithm" | tr '[:upper:]' '[:lower:]')"
+if [ "$checksum_hash" != "" ]; then
+  cr_data+=("x-amz-checksum-${lowercase_algorithm}:$checksum_hash")
+fi
 if [ "$checksum_type" != "" ]; then
   cr_data+=("x-amz-checksum-type:$checksum_type")
 fi
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
+echo "$canonical_request" > "versity-gwtest-files/cr.txt"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X POST "$AWS_ENDPOINT_URL/$bucket_name/$key?uploadId=$upload_id"
+curl_command+=(curl -iks -w "\"%{http_code}\"" -X POST "$AWS_ENDPOINT_URL/$bucket_name/$key?uploadId=$upload_id"
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=(-H "\"Content-Type: application/xml\"")
 curl_command+=("${header_fields[@]}")
