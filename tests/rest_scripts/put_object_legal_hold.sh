@@ -28,6 +28,8 @@ status="$STATUS"
 omit_payload="${OMIT_PAYLOAD:=false}"
 # shellcheck disable=SC2153
 version_id="$VERSION_ID"
+# shellcheck disable=SC2153
+omit_content_md5="${OMIT_CONTENT_MD5:=false}"
 
 if [ "$omit_payload" == "false" ]; then
   payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
@@ -39,15 +41,21 @@ else
 fi
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
+if [ "$omit_content_md5" == "false" ]; then
+  content_md5=$(echo -n "$payload" | openssl dgst -binary -md5 | openssl base64)
+fi
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 canonical_request_data=("PUT" "/$bucket_name/$key")
-queries=""
+queries="legal-hold="
 if [ "$version_id" != "" ]; then
   queries=$(add_parameter "$queries" "versionId=$version_id")
 fi
-queries=$(add_parameter "$queries" "legal-hold=")
-canonical_request_data+=("$queries" "host:$host")
+canonical_request_data+=("$queries")
+if [ "$omit_content_md5" == "false" ]; then
+  canonical_request_data+=("content-md5:$content_md5")
+fi
+canonical_request_data+=("host:$host")
 canonical_request_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 if ! build_canonical_request "${canonical_request_data[@]}"; then
   log_rest 2 "error building request"
@@ -57,7 +65,7 @@ fi
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key?$queries"
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "\"$AWS_ENDPOINT_URL/$bucket_name/$key?$queries\""
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 if [ "$omit_payload" == "false" ]; then

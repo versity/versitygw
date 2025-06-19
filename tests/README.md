@@ -151,11 +151,13 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **DIRECT**:  if **true**, bypass versitygw and run directly against s3 (for comparison and validity-checking purposes).
 
-**DIRECT_DISPLAY_NAME**:  username if **DIRECT** is set to **true**.
+**DIRECT_DISPLAY_NAME**:  AWS ACL main user display name if **DIRECT** is set to **true**.
+
+**DIRECT_AWS_USER_ID**:  AWS policy 12-digit user ID if **DIRECT** is set to **true**.
 
 **COVERAGE_DB**:  database to store client command coverage info and usage counts, if using.
 
-**USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  credentials for users created and tested for non-root user **versitygw** operations (non-setup_user_v2).
+**USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  setup_user (v1), credentials for users created and tested for non-root user **versitygw** operations (non-setup_user_v2).
 
 **TEST_FILE_FOLDER**:  where to put temporary test files.
 
@@ -167,13 +169,19 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **TIME_LOG**:  optional log to show duration of individual tests
 
-**DIRECT_S3_ROOT_ACCOUNT_NAME**:  for direct mode, S3 username
+**DIRECT_S3_ROOT_ACCOUNT_NAME**:  for direct mode, S3 username for user with root permissions
 
 **DELETE_BUCKETS_AFTER_TEST**:  whether or not to delete buckets after individual tests, useful for debugging if the post-test bucket state needs to be checked
 
-**AUTOCREATE_USERS**:  setup_user_v2, whether or not to autocreate users for tests.  If set to **false**, users must be pre-created (see `Secret` section above).
+**AUTOGENERATE_USERS**:  setup_user_v2, whether or not to autocreate users for tests.  If set to **false**, users must be pre-created (see `Secret` section above).
 
-**USER_AUTOCREATION_PREFIX**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **true**, the prefix for the autocreated username. 
+**USER_AUTOGENERATION_PREFIX**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **true**, the prefix for the autocreated username. 
+
+**CREATE_STATIC_USERS_IF_NONEXISTENT**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **false**, generate non-existing users if they don't exist, but don't delete them, as with user autogeneration
+
+**DIRECT_POST_COMMAND_DELAY**:  in direct mode, time to wait before sending new commands to try to prevent propagation delay issues
+
+**SKIP_ACL_TESTING**:  avoid ACL tests for systems which do not use ACLs
 
 ## REST Scripts
 
