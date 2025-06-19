@@ -74,7 +74,10 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	}
 	errorCode := ""
 	httpStatus := 200
-	startTime := ctx.Locals("startTime").(time.Time)
+	startTime, ok := ctx.Locals("startTime").(time.Time)
+	if !ok {
+		startTime = time.Now()
+	}
 	tlsConnState := ctx.Context().TLSConnectionState()
 	if tlsConnState != nil {
 		lf.CipherSuite = tls.CipherSuiteName(tlsConnState.CipherSuite)
