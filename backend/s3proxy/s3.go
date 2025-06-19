@@ -69,10 +69,6 @@ func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*
 		metaBucket: metaBucket,
 	}
 	s.client = client
-
-	if s.metaBucket != "" && !s.bucketExists(ctx, s.metaBucket) {
-		return nil, fmt.Errorf("the provided meta bucket doesn't exist")
-	}
 	return s, s.validate(ctx)
 }
 
@@ -115,10 +111,33 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 
 	var buckets []s3response.ListAllMyBucketsEntry
 	for _, b := range output.Buckets {
-		buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-			Name:         *b.Name,
-			CreationDate: *b.CreationDate,
-		})
+		if *b.Name == s.metaBucket {
+			continue
+		}
+		if input.IsAdmin || s.metaBucket == "" {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         *b.Name,
+				CreationDate: *b.CreationDate,
+			})
+			continue
+		}
+
+		data, err := s.getMetaBucketObjData(ctx, *b.Name, metaPrefixAcl)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, handleError(err)
+		}
+
+		acl, err := auth.ParseACL(data)
+		if err != nil {
+			return s3response.ListAllMyBucketsResult{}, err
+		}
+
+		if acl.Owner == input.Owner {
+			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+				Name:         *b.Name,
+				CreationDate: *b.CreationDate,
+			})
+		}
 	}
 
 	return s3response.ListAllMyBucketsResult{
@@ -158,8 +177,29 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 		input.GrantWriteACP = nil
 	}
 	if *input.Bucket == s.metaBucket {
-		return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+		return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
 	}
+
+	acct, ok := ctx.Value("account").(auth.Account)
+	if !ok {
+		acct = auth.Account{}
+	}
+
+	if s.metaBucket != "" {
+		data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl)
+		if err == nil {
+			acl, err := auth.ParseACL(data)
+			if err != nil {
+				return err
+			}
+
+			if acl.Owner == acct.Access {
+				return s3err.GetAPIError(s3err.ErrBucketAlreadyOwnedByYou)
+			}
+			return s3err.GetAPIError(s3err.ErrBucketAlreadyExists)
+		}
+	}
+
 	_, err := s.client.CreateBucket(ctx, input)
 	if err != nil {
 		return handleError(err)
@@ -169,6 +209,8 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 	if s.metaBucket != "" {
 		err = s.putMetaBucketObj(ctx, *input.Bucket, acl, metaPrefixAcl)
 		if err != nil {
+			// attempt to cleanup
+			_ = s.DeleteBucket(ctx, *input.Bucket)
 			return handleError(err)
 		}
 	}
