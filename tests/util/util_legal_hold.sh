@@ -73,10 +73,6 @@ check_remove_legal_hold_versions() {
     log 2 "error getting XML legal hold status"
     return 1
   fi
-  #if ! status="$(echo "$legal_hold" | grep -v "InsecureRequestWarning" | jq -r '.LegalHold.Status' 2>&1)"; then
-  #  log 2 "error getting legal hold status: $status"
-  #  return 1
-  #fi
   if [ "$status" == "ON" ]; then
     if ! put_object_legal_hold_rest_version_id "$1" "$2" "$3" "OFF"; then
       log 2 "error removing legal hold of version ID"
