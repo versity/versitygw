@@ -72,13 +72,6 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 	}
 }
 
-func getstring(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func getint64(i *int64) int64 {
 	if i == nil {
 		return 0
@@ -1974,7 +1967,6 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 			ctx.Status(apierr.HTTPStatusCode)
 			return ctx.Send(s3err.GetAPIErrorResponse(apierr, "", "", ""))
 		}
-		fmt.Println(err, "------------")
 
 		fmt.Fprintf(os.Stderr, "Internal Error, %v\n", err)
 		ctx.Status(http.StatusInternalServerError)

@@ -94,7 +94,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	bucketRouter.Get("", controllers.ProcessResponse(ctrl.ListObjects, logger, evs, mm))
 
 	// DeleteObjects action
-	bucketRouter.Post("", ctrl.DeleteObjects)
+	bucketRouter.Post("", middlewares.MatchQueryArgs("delete"), controllers.ProcessResponse(ctrl.DeleteObjects, logger, evs, mm))
 
 	// HeadObject
 	objectRouter.Head("", controllers.ProcessResponse(ctrl.HeadObject, logger, evs, mm))
@@ -118,13 +118,15 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	objectRouter.Post("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.CompleteMultipartUpload, logger, evs, mm))
 	objectRouter.Post("", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.CreateMultipartUpload, logger, evs, mm))
 
-	// CopyObject action
-	// PutObject action
-	// UploadPart action
-	// UploadPartCopy action
-	// PutObjectTagging action
-	// PutObjectAcl action
-	app.Put("/:bucket/:key/*", ctrl.PutActions)
+	// PUT object operations
+	objectRouter.Put("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutObjectTagging, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchQueryArgs("retention"), controllers.ProcessResponse(ctrl.PutObjectRetention, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchQueryArgs("legal-hold"), controllers.ProcessResponse(ctrl.PutObjectLegalHold, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutObjectAcl, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchQueryArgs("uploadId", "partNumber"), middlewares.MatchHeader("X-Amz-Copy-Source"), controllers.ProcessResponse(ctrl.UploadPartCopy, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchQueryArgs("uploadId", "partNumber"), controllers.ProcessResponse(ctrl.UploadPart, logger, evs, mm))
+	objectRouter.Put("", middlewares.MatchHeader("X-Amz-Copy-Source"), controllers.ProcessResponse(ctrl.CopyObject, logger, evs, mm))
+	objectRouter.Put("", controllers.ProcessResponse(ctrl.PutObject, logger, evs, mm))
 
 	// Return MethodNotAllowed for all the unmatched routes
 	app.All("*", controllers.ProcessResponse(ctrl.HandleUnmatch, logger, evs, mm))

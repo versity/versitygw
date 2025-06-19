@@ -917,6 +917,7 @@ func GetIntTests() IntTests {
 		"PutObject_with_object_lock":                                              PutObject_with_object_lock,
 		"PutObject_invalid_legal_hold":                                            PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                      PutObject_invalid_object_lock_mode,
+		"PutObject_invalid_credentials":                                           PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                        PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
 		"PutObject_invalid_checksum_header":                                       PutObject_invalid_checksum_header,
