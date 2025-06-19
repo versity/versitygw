@@ -244,7 +244,7 @@ create_test_file_count() {
 }
 
 download_and_compare_file_with_user() {
-  if ! check_param_count_gt "download_and_compare_large_file" "original file, bucket, key, destination, username, password, chunk size (optional)" 6 $#; then
+  if ! check_param_count_gt "original file, bucket, key, destination, username, password, chunk size (optional)" 6 $#; then
     return 1
   fi
   if ! download_file_with_user "$5" "$6" "$2" "$3" "$4" "$7"; then
@@ -260,7 +260,7 @@ download_and_compare_file_with_user() {
 
 download_and_compare_file() {
   log 6 "download_and_compare_file"
-  if ! check_param_count_gt "download_and_compare_file" "original file, bucket, key, destination, chunk size (optional)" 4 $#; then
+  if ! check_param_count_gt "original file, bucket, key, destination, chunk size (optional)" 4 $#; then
     return 1
   fi
   if ! download_and_compare_file_with_user "$1" "$2" "$3" "$4" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$5"; then

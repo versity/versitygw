@@ -131,7 +131,7 @@ multipart_upload_from_bucket_range() {
 }
 
 multipart_upload_custom() {
-  if ! check_param_count_gt "multipart_upload_custom" "bucket, key, file, part count, optional additional parameters" 4 $$; then
+  if ! check_param_count_gt "bucket, key, file, part count, optional additional parameters" 4 $$; then
     return 1
   fi
 
