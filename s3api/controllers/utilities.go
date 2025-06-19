@@ -172,6 +172,7 @@ func ProcessResponse(handler Handler, s3logger s3log.AuditLogger, s3evnt s3event
 	}
 }
 
+// Sets the response headers
 func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]*string) {
 	if headers == nil {
 		return

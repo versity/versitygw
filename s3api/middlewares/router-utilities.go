@@ -19,6 +19,7 @@ import (
 	"github.com/versity/versitygw/s3api/utils"
 )
 
+// Evaluates/Matches the provided requst query params
 func MatchQueryArgs(args ...string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
@@ -34,6 +35,23 @@ func MatchQueryArgs(args ...string) fiber.Handler {
 	}
 }
 
+// Evaluates/Matches the requst header
+func MatchHeader(key string) fiber.Handler {
+	return func(ctx *fiber.Ctx) error {
+		if utils.ContextKeySkip.IsSet(ctx) {
+			return ctx.Next()
+		}
+
+		val := ctx.Get(key)
+		if val == "" {
+			utils.ContextKeySkip.Set(ctx, true)
+		}
+
+		return ctx.Next()
+	}
+}
+
+// Evaluates/Matches the requst query param and value
 func MatchQueryArgWithValue(key, val string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		if utils.ContextKeySkip.IsSet(ctx) {
