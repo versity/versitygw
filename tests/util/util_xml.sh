@@ -87,10 +87,11 @@ get_xml_data() {
 
   # Try to extract valid XML using xmllint recover mode
   # This will truncate anything after the root closing tag
-  xmllint --recover --noent --nocdata "$2" 2>/dev/null |
+  truncated=$(xmllint --recover --noent --nocdata "$2" 2>/dev/null |
     awk 'BEGIN{xml=0}
          /<\?xml/{xml=1}
          {if (xml) print}
          /<\/[^>]+>/{lastline=NR}
-         END{exit}'
+         END{exit}')
+  echo -n "$truncated" > "$2"
 }

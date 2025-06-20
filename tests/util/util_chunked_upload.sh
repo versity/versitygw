@@ -327,7 +327,7 @@ send_via_openssl_check_code_error_contains() {
     return 1
   fi
   echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
-  if ! get_xml_data "$TEST_FILE_FODLER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
+  if ! get_xml_data "$TEST_FILE_FOLDER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
     log 2 "error parsing XML data from result"
     return 1
   fi
