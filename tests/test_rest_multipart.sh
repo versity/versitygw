@@ -206,6 +206,9 @@ test_file="test_file"
 }
 
 @test "REST - multipart - lowercase checksum type and algorithm" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1339"
+  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -214,6 +217,9 @@ test_file="test_file"
 }
 
 @test "REST - multipart - full object checksum type doesn't require UploadPart checksums" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1342"
+  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -230,36 +236,57 @@ test_file="test_file"
 }
 
 @test "REST - multipart - composite - sha256" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
   assert_success
 }
 
 @test "REST - multipart - composite - sha1" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32c" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
   assert_success
 }
 
 @test "REST - multipart - full object - crc32" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
   assert_success
 }
 
 @test "REST - multipart - full object - crc32c" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
 @test "REST - multipart - full object - crc64nvme" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1345"
+  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC64NVME"
   assert_success
 }
