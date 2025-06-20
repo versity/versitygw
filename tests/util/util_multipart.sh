@@ -279,19 +279,20 @@ create_upload_finish_wrong_etag() {
     log 2 "error retrieving error info: $error"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "InvalidPart" "Code"; then
+  echo -n "$error" > "$TEST_FILE_FOLDER/error.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "InvalidPart" "Code"; then
     log 2 "code mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$upload_id" "UploadId"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$upload_id" "UploadId"; then
     log 2 "upload ID mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$part_number" "PartNumber"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$part_number" "PartNumber"; then
     log 2 "part number mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$etag" "ETag"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$etag" "ETag"; then
     log 2 "etag mismatch"
     return 1
   fi
