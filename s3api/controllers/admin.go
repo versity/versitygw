@@ -41,23 +41,23 @@ func NewAdminController(iam auth.IAMService, be backend.Backend, l s3log.AuditLo
 	return AdminController{iam: iam, be: be, l: l}
 }
 
-func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
+func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
 	var usr auth.Account
 	err := xml.Unmarshal(ctx.Body(), &usr)
 	if err != nil {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminCreateUser,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	if !usr.Role.IsValid() {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminCreateUser,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole)
 	}
 
 	err = c.iam.CreateAccount(usr)
@@ -66,47 +66,47 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) error {
 			err = s3err.GetAPIError(s3err.ErrAdminUserExists)
 		}
 
-		return SendResponse(ctx, err,
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminCreateUser,
-			})
+			},
+		}, err
 	}
 
-	return SendResponse(ctx, nil,
-		&MetaOpts{
-			Logger: c.l,
+	return &Response{
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminCreateUser,
 			Status: http.StatusCreated,
-		})
+		},
+	}, nil
 }
 
-func (c AdminController) UpdateUser(ctx *fiber.Ctx) error {
+func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
 	if access == "" {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminMissingUserAcess),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminUpdateUser,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrAdminMissingUserAcess)
 	}
 
 	var props auth.MutableProps
 	if err := xml.Unmarshal(ctx.Body(), &props); err != nil {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedXML),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminUpdateUser,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	err := props.Validate()
 	if err != nil {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminUpdateUser,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole)
 	}
 
 	err = c.iam.UpdateUserAccount(access, props)
@@ -115,61 +115,59 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) error {
 			err = s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 		}
 
-		return SendResponse(ctx, err,
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminUpdateUser,
-			})
+			},
+		}, err
 	}
 
-	return SendResponse(ctx, nil,
-		&MetaOpts{
-			Logger: c.l,
+	return &Response{
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminUpdateUser,
-		})
+		},
+	}, nil
 }
 
-func (c AdminController) DeleteUser(ctx *fiber.Ctx) error {
+func (c AdminController) DeleteUser(ctx *fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
 
 	err := c.iam.DeleteUserAccount(access)
-	return SendResponse(ctx, err,
-		&MetaOpts{
-			Logger: c.l,
+	return &Response{
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminDeleteUser,
-		})
+		},
+	}, err
 }
 
-func (c AdminController) ListUsers(ctx *fiber.Ctx) error {
+func (c AdminController) ListUsers(ctx *fiber.Ctx) (*Response, error) {
 	accs, err := c.iam.ListUserAccounts()
-	return SendXMLResponse(ctx,
-		auth.ListUserAccountsResult{
-			Accounts: accs,
-		}, err,
-		&MetaOpts{
-			Logger: c.l,
+	return &Response{
+		Data: auth.ListUserAccountsResult{Accounts: accs},
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminListUsers,
-		})
+		},
+	}, err
 }
 
-func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
+func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
 	owner := ctx.Query("owner")
 	bucket := ctx.Query("bucket")
 
 	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
 	if err != nil {
-		return SendResponse(ctx, err,
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminChangeBucketOwner,
-			})
+			},
+		}, err
 	}
 	if len(accs) > 0 {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminUserNotFound),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminChangeBucketOwner,
-			})
+			},
+		}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 	}
 
 	acl := auth.ACL{
@@ -185,28 +183,29 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) error {
 
 	aclParsed, err := json.Marshal(acl)
 	if err != nil {
-		return SendResponse(ctx, fmt.Errorf("failed to marshal the bucket acl: %w", err),
-			&MetaOpts{
-				Logger: c.l,
+		return &Response{
+			MetaOpts: &MetaOptions{
 				Action: metrics.ActionAdminChangeBucketOwner,
-			})
+			},
+		}, fmt.Errorf("failed to marshal the bucket acl: %w", err)
 	}
 
 	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, aclParsed)
-	return SendResponse(ctx, err,
-		&MetaOpts{
-			Logger: c.l,
+	return &Response{
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminChangeBucketOwner,
-		})
+		},
+	}, err
 }
 
-func (c AdminController) ListBuckets(ctx *fiber.Ctx) error {
+func (c AdminController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 	buckets, err := c.be.ListBucketsAndOwners(ctx.Context())
-	return SendXMLResponse(ctx,
-		s3response.ListBucketsResult{
+	return &Response{
+		Data: s3response.ListBucketsResult{
 			Buckets: buckets,
-		}, err, &MetaOpts{
-			Logger: c.l,
+		},
+		MetaOpts: &MetaOptions{
 			Action: metrics.ActionAdminListBuckets,
-		})
+		},
+	}, err
 }
