@@ -25,23 +25,23 @@ import (
 type S3AdminRouter struct{}
 
 func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger) {
-	controller := controllers.NewAdminController(iam, be, logger)
+	ctrl := controllers.NewAdminController(iam, be, logger)
 
 	// CreateUser admin api
-	app.Patch("/create-user", controller.CreateUser)
+	app.Patch("/create-user", controllers.ProcessResponse(ctrl.CreateUser, logger, nil, nil))
 
 	// DeleteUsers admin api
-	app.Patch("/delete-user", controller.DeleteUser)
+	app.Patch("/delete-user", controllers.ProcessResponse(ctrl.DeleteUser, logger, nil, nil))
 
 	// UpdateUser admin api
-	app.Patch("/update-user", controller.UpdateUser)
+	app.Patch("/update-user", controllers.ProcessResponse(ctrl.UpdateUser, logger, nil, nil))
 
 	// ListUsers admin api
-	app.Patch("/list-users", controller.ListUsers)
+	app.Patch("/list-users", controllers.ProcessResponse(ctrl.ListUsers, logger, nil, nil))
 
 	// ChangeBucketOwner admin api
-	app.Patch("/change-bucket-owner", controller.ChangeBucketOwner)
+	app.Patch("/change-bucket-owner", controllers.ProcessResponse(ctrl.ChangeBucketOwner, logger, nil, nil))
 
 	// ListBucketsAndOwners admin api
-	app.Patch("/list-buckets", controller.ListBuckets)
+	app.Patch("/list-buckets", controllers.ProcessResponse(ctrl.ListBuckets, logger, nil, nil))
 }
