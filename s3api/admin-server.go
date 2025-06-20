@@ -31,6 +31,8 @@ type S3AdminServer struct {
 	router  *S3AdminRouter
 	port    string
 	cert    *tls.Certificate
+	quiet   bool
+	debug   bool
 }
 
 func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
@@ -46,8 +48,13 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 	}
 
 	// Logging middlewares
-	app.Use(logger.New())
+	if !server.quiet {
+		app.Use(logger.New(logger.Config{
+			Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+		}))
+	}
 	app.Use(middlewares.DecodeURL(l, nil))
+	app.Use(middlewares.DebugLogger())
 
 	// Authentication middlewares
 	app.Use(middlewares.VerifyV4Signature(root, iam, l, nil, region, false))
@@ -65,6 +72,16 @@ type AdminOpt func(s *S3AdminServer)
 
 func WithAdminSrvTLS(cert tls.Certificate) AdminOpt {
 	return func(s *S3AdminServer) { s.cert = &cert }
+}
+
+// WithQuiet silences default logging output
+func WithAdminQuiet() AdminOpt {
+	return func(s *S3AdminServer) { s.quiet = true }
+}
+
+// WithAdminDebug enables the debug logging
+func WithAdminDebug() AdminOpt {
+	return func(s *S3AdminServer) { s.debug = true }
 }
 
 func (sa *S3AdminServer) Serve() (err error) {

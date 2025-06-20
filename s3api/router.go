@@ -36,22 +36,22 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		adminController := controllers.NewAdminController(iam, be, aLogger)
 
 		// CreateUser admin api
-		app.Patch("/create-user", middlewares.IsAdmin(logger), adminController.CreateUser)
+		app.Patch("/create-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.CreateUser, aLogger, nil, nil))
 
 		// DeleteUsers admin api
-		app.Patch("/delete-user", middlewares.IsAdmin(logger), adminController.DeleteUser)
+		app.Patch("/delete-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.DeleteUser, aLogger, nil, nil))
 
 		// UpdateUser admin api
-		app.Patch("/update-user", middlewares.IsAdmin(logger), adminController.UpdateUser)
+		app.Patch("/update-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.UpdateUser, aLogger, nil, nil))
 
 		// ListUsers admin api
-		app.Patch("/list-users", middlewares.IsAdmin(logger), adminController.ListUsers)
+		app.Patch("/list-users", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ListUsers, aLogger, nil, nil))
 
 		// ChangeBucketOwner admin api
-		app.Patch("/change-bucket-owner", middlewares.IsAdmin(logger), adminController.ChangeBucketOwner)
+		app.Patch("/change-bucket-owner", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ChangeBucketOwner, aLogger, nil, nil))
 
 		// ListBucketsAndOwners admin api
-		app.Patch("/list-buckets", middlewares.IsAdmin(logger), adminController.ListBuckets)
+		app.Patch("/list-buckets", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ListBuckets, aLogger, nil, nil))
 	}
 
 	// ListBuckets action

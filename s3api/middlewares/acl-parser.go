@@ -55,10 +55,10 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 			!ctx.Request().URI().QueryArgs().Has("cors") {
 			isRoot, acct := utils.ContextKeyIsRoot.Get(ctx).(bool), utils.ContextKeyAccount.Get(ctx).(auth.Account)
 			if err := auth.MayCreateBucket(acct, isRoot); err != nil {
-				return controllers.SendXMLResponse(ctx, nil, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
+				return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
 			}
 			if readonly {
-				return controllers.SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied),
+				return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAccessDenied),
 					&controllers.MetaOpts{
 						Logger: logger,
 						Action: "CreateBucket",
