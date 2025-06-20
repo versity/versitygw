@@ -55,7 +55,8 @@ attempt_chunked_upload_with_bad_first_signature() {
   response_data="${response_data/---/}"
   log 5 "response data: $response_data"
   log 5 "END"
-  if ! check_xml_element <(echo "$response_data") "SignatureDoesNotMatch" "Error" "Code"; then
+  echo -n "$response_data" > "$TEST_FILE_FOLDER/response_data.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/response_data.txt" "SignatureDoesNotMatch" "Error" "Code"; then
     log 2 "error checking XML element"
     return 1
   fi
