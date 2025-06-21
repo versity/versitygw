@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 put_bucket_policy() {
   log 6 "put_bucket_policy '$1' '$2' '$3'"

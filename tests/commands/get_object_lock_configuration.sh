@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 get_object_lock_configuration() {
   record_command "get-object-lock-configuration" "client:s3api"

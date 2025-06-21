@@ -37,12 +37,12 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 # param:  command type
 # fail on test failure
 test_common_multipart_upload() {
-  run assert_param_count "test_common_multipart_upload" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   bucket_file="largefile"
@@ -62,7 +62,7 @@ test_common_multipart_upload() {
     assert_success
   fi
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -74,7 +74,7 @@ test_common_create_delete_bucket() {
     return
   fi
 
-  run assert_param_count "test_common_create_delete_bucket" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
@@ -91,7 +91,7 @@ test_common_create_delete_bucket() {
 }
 
 test_common_copy_object() {
-  run assert_param_count "test_common_copy_object" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local object_name="test-object"
@@ -115,14 +115,14 @@ test_common_copy_object() {
     run copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name"
     assert_success
   fi
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
   assert_success
 }
 
 # param:  client
 # fail on error
 test_common_put_object_with_data() {
-  run assert_param_count "test_common_put_object_with_data" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local object_name="test-object"
@@ -135,7 +135,7 @@ test_common_put_object_with_data() {
 # param:  client
 # fail on error
 test_common_put_object_no_data() {
-  run assert_param_count "test_common_put_object_no_data" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local object_name="test-object"
@@ -148,7 +148,7 @@ test_common_put_object_no_data() {
 # params:  client, filename
 # fail on test failure
 test_common_put_object() {
-  run assert_param_count "test_common_put_object" "client type, file" 2 "$#"
+  run assert_param_count "client type, file" 2 "$#"
   assert_success
 
   run setup_bucket "$BUCKET_ONE_NAME"
@@ -168,7 +168,7 @@ test_common_put_object() {
     assert_success
   fi
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
   assert_success
 
   run delete_object "$1" "$BUCKET_ONE_NAME" "$2"
@@ -179,7 +179,7 @@ test_common_put_object() {
 }
 
 test_common_put_get_object() {
-  run assert_param_count "test_common_put_get_object" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local object_name="test-object"
@@ -196,7 +196,10 @@ test_common_put_get_object() {
   run object_exists "$1" "$BUCKET_ONE_NAME" "$object_name"
   assert_success
 
-  run download_and_compare_file "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name" "$TEST_FILE_FOLDER/${2}-copy"
+  run get_object "$1" "$BUCKET_ONE_NAME" "$object_name" "$TEST_FILE_FOLDER/${object_name}-copy"
+  assert_success
+
+  run compare_files "$TEST_FILE_FOLDER/$object_name" "$TEST_FILE_FOLDER/${object_name}-copy"
   assert_success
 }
 
@@ -204,7 +207,7 @@ test_common_put_get_object() {
 # param:  "aws" or "s3cmd"
 # pass if buckets are properly listed, fail if not
 test_common_list_buckets() {
-  run assert_param_count "test_common_list_buckets" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
@@ -215,7 +218,7 @@ test_common_list_buckets() {
 }
 
 test_common_list_objects() {
-  run assert_param_count "test_common_list_objects" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   object_one="test-file-one"
@@ -234,7 +237,7 @@ test_common_list_objects() {
 }
 
 test_common_set_get_delete_bucket_tags() {
-  run assert_param_count "test_common_set_get_delete_bucket_tags" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local key="test_key"
@@ -260,7 +263,7 @@ test_common_set_get_delete_bucket_tags() {
 }
 
 test_common_set_get_object_tags() {
-  run assert_param_count "test_common_set_get_object_tags" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local bucket_file="bucket-file"
@@ -284,7 +287,7 @@ test_common_set_get_object_tags() {
 }
 
 test_common_presigned_url_utf8_chars() {
-  run assert_param_count "test_common_presigned_url_utf8_chars" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   local bucket_file="my-$%^&*;"
@@ -309,7 +312,7 @@ test_common_presigned_url_utf8_chars() {
 }
 
 test_common_list_objects_file_count() {
-  run assert_param_count "test_common_list_objects_file_count" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   run create_test_file_count 1001
@@ -326,7 +329,7 @@ test_common_list_objects_file_count() {
 }
 
 test_common_delete_object_tagging() {
-  run assert_param_count "test_common_delete_object_tagging" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   bucket_file="bucket_file"
@@ -353,7 +356,7 @@ test_common_delete_object_tagging() {
 }
 
 test_common_get_bucket_location() {
-  run assert_param_count "test_common_get_bucket_location" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   run setup_bucket "$BUCKET_ONE_NAME"
@@ -364,7 +367,7 @@ test_common_get_bucket_location() {
 }
 
 test_common_get_put_delete_bucket_policy() {
-  run assert_param_count "test_common_get_put_delete_bucket_policy" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   policy_file="policy_file"
@@ -401,7 +404,7 @@ test_common_get_put_delete_bucket_policy() {
 }
 
 test_common_ls_directory_object() {
-  run assert_param_count "test_common_ls_directory_object" "client type" 1 "$#"
+  run assert_param_count "client type" 1 "$#"
   assert_success
 
   test_file="a"

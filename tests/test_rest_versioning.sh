@@ -103,3 +103,55 @@ test_file="test_file"
   run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_failure
 }
+
+@test "REST - HeadObject does not return 405 with versioning, after file deleted" {
+  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
+    skip "test isn't valid for this configuration"
+  fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}
+
+@test "REST - HeadObject returns 405 when querying DeleteMarker" {
+  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
+    skip "test isn't valid for this configuration"
+  fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "$BUCKET_ONE_NAME"; then
+    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+    assert_success
+  fi
+
+  run create_test_files "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run get_delete_marker_and_verify_405 "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+}

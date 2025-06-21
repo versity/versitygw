@@ -2,7 +2,7 @@
 
 get_element_text() {
   if [ $# -lt 2 ]; then
-    log 2 "'get_element_text' requires data source, XML tree"
+    log 2 "'get_element_text' requires data file, XML tree"
     return 1
   fi
   local xpath='//'
@@ -10,7 +10,9 @@ get_element_text() {
     xpath+='*[local-name()="'$tree_val'"]/'
   done
   xpath+='text()'
-  if ! xml_val=$(xmllint --xpath "$xpath" "$1" 2>&1); then
+
+  log 5 "data: $(cat "$1")"
+  if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
     log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
     return 1
   fi
@@ -63,4 +65,33 @@ check_xml_error_contains() {
     return 1
   fi
   return 0
+}
+
+get_xml_data() {
+  if ! check_param_count_v2 "data file, output file" 2 $#; then
+    return 1
+  fi
+
+  # Find first line with "<?xml" and everything from there onward
+  xml_start=$(grep -n "<?xml" "$1" | head -n 1 | cut -d: -f1)
+
+  if [ -z "$xml_start" ]; then
+    log 2 "No XML declaration found."
+    return 1
+  fi
+  log 5 "xml start: $xml_start"
+
+  # Grab everything from the XML start line to the end of the file
+  tail -n +"$xml_start" "$1" > "$2"
+  log 5 "xml data after start: $(cat "$2")"
+
+  # Try to extract valid XML using xmllint recover mode
+  # This will truncate anything after the root closing tag
+  truncated=$(xmllint --recover --noent --nocdata "$2" 2>/dev/null |
+    awk 'BEGIN{xml=0}
+         /<\?xml/{xml=1}
+         {if (xml) print}
+         /<\/[^>]+>/{lastline=NR}
+         END{exit}')
+  echo -n "$truncated" > "$2"
 }

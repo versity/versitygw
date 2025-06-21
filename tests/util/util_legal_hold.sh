@@ -69,7 +69,8 @@ check_remove_legal_hold_versions() {
     return 0
   fi
   log 5 "legal hold: $legal_hold"
-  if ! status=$(get_element_text <(echo -n "$legal_hold") "LegalHold" "Status"); then
+  echo -n "$legal_hold" > "$TEST_FILE_FOLDER/legal_hold.xml"
+  if ! status=$(get_element_text "$TEST_FILE_FOLDER/legal_hold.xml" "LegalHold" "Status"); then
     log 2 "error getting XML legal hold status"
     return 1
   fi

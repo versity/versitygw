@@ -137,6 +137,9 @@ check_universal_vars() {
     fi
     export DIRECT_POST_COMMAND_DELAY
   fi
+  if [ -n "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" ]; then
+    export MAX_FILE_DOWNLOAD_CHUNK_SIZE
+  fi
 
   check_aws_vars
 
@@ -157,6 +160,7 @@ check_universal_vars() {
       exit 1
     fi
   fi
+  export TEST_FILE_FOLDER
 }
 
 delete_command_log() {

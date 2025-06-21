@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 # params:  bucket name
 # return 0 for success, 1 for error
@@ -61,7 +61,7 @@ check_for_and_remove_worm_protection() {
     if [[ $LOG_LEVEL_INT -ge 5 ]]; then
       log_worm_protection "$1" "$2"
     fi
-    if ! delete_object_bypass_retention "rest" "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
+    if ! delete_object_bypass_retention "$1" "$2" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"; then
       log 2 "error deleting object after legal hold removal"
       return 2
     fi
