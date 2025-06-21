@@ -459,3 +459,22 @@ test_file="test_file"
   run delete_object_rest "$BUCKET_ONE_NAME" "$file_name/$file_name"
   assert_success
 }
+
+@test "REST - GetObject w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD type" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  #if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/${test_file}_copy" PAYLOAD="STREAMING-AWS4-HMAC-SHA256-PAYLOAD" ./tests/rest_scripts/get_object.sh 2>&1); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$test_file" OUTPUT_FILE="$TEST_FILE_FOLDER/${test_file}_copy" PAYLOAD="GIBBERISH" ./tests/rest_scripts/get_object.sh 2>&1); then
+    log 2 "error: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected 200, was '$result' ($(cat "$TEST_FILE_FOLDER/${test_file}_copy"))"
+    return 1
+  fi
+  return 1
+}
