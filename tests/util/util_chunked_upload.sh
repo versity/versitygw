@@ -337,3 +337,27 @@ send_via_openssl_check_code_error_contains() {
   fi
   return 0
 }
+
+chunked_upload_trailer_different_chunk_size() {
+  if [ $# -ne 4 ]; then
+    log 2 "'chunked_upload_trailer_different_chunk_size' requires data file, bucket, key, checksum type"
+    return 1
+  fi
+  # shellcheck disable=SC2097,SC2098
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
+           AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+           AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+           AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
+           DATA_FILE="$1" \
+           BUCKET_NAME="$2" \
+           OBJECT_KEY="$3" CHUNK_SIZE=16384 TEST_MODE=false TRAILER="x-amz-checksum-$4" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
+    log 2 "error creating command: $result"
+    return 1
+  fi
+
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 200; then
+    log 2 "error sending command via openssl or checking response code"
+    return 1
+  fi
+  return 0
+}
