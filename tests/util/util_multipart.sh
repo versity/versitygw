@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/put_object.sh
+
 multipart_upload_s3api_complete_from_bucket() {
   if ! check_param_count "multipart_upload_s3api_complete_from_bucket" "bucket, copy source, part count" 3 $#; then
     return 1
@@ -58,7 +60,7 @@ multipart_upload_from_bucket() {
     fi
   }
 
-  if ! create_multipart_upload "$1" "$2-copy"; then
+  if ! create_multipart_upload_rest "$1" "$2-copy"; then
     log 2 "error running first multipart upload"
     return 1
   fi
@@ -104,7 +106,7 @@ multipart_upload_from_bucket_range() {
     fi
   }
 
-  if ! create_multipart_upload "$1" "$2-copy"; then
+  if ! create_multipart_upload_rest "$1" "$2-copy"; then
     log 2 "error running first multpart upload"
     return 1
   fi
@@ -129,7 +131,7 @@ multipart_upload_from_bucket_range() {
 }
 
 multipart_upload_custom() {
-  if ! check_param_count_gt "multipart_upload_custom" "bucket, key, file, part count, optional additional parameters" 4 $$; then
+  if ! check_param_count_gt "bucket, key, file, part count, optional additional parameters" 4 $$; then
     return 1
   fi
 
@@ -219,7 +221,7 @@ create_upload_part_copy_rest() {
     log 2 "error splitting and putting file"
     return 1
   fi
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating upload and getting ID"
     return 1
   fi
@@ -260,7 +262,7 @@ create_upload_finish_wrong_etag() {
 
   etag="gibberish"
   part_number=1
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating upload and getting ID"
     return 1
   fi
@@ -277,19 +279,20 @@ create_upload_finish_wrong_etag() {
     log 2 "error retrieving error info: $error"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "InvalidPart" "Code"; then
+  echo -n "$error" > "$TEST_FILE_FOLDER/error.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "InvalidPart" "Code"; then
     log 2 "code mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$upload_id" "UploadId"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$upload_id" "UploadId"; then
     log 2 "upload ID mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$part_number" "PartNumber"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$part_number" "PartNumber"; then
     log 2 "part number mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$error") "$etag" "ETag"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "$etag" "ETag"; then
     log 2 "etag mismatch"
     return 1
   fi

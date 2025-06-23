@@ -28,10 +28,32 @@ parse_objects_list_rest() {
     log 2 "error getting object list: $object_list"
     return 1
   fi
-  while read -r object; do
+  log 5 "object list: '$object_list'"
+  while IFS= read -r object; do
+    log 5 "parsed key: '$object'"
     object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
   done <<< "$object_list"
   log 5 "object array: ${object_array[*]}"
+  return 0
+}
+
+list_check_single_object() {
+  if ! check_param_count "list_check_single_object" "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! list_objects "rest" "$1"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  if [ ${#object_array[@]} -ne "1" ]; then
+    log 2 "expected one object, found ${#object_array[@]}"
+    return 1
+  fi
+  if [ "${object_array[0]}" != "$2" ]; then
+    log 2 "expected '$2', was '${object_array[0]}'"
+    return 1
+  fi
+  return 0
 }
 
 list_check_objects_v1() {
@@ -260,19 +282,20 @@ list_objects_check_params_get_token() {
     log 2 "error getting list bucket result: $list_bucket_result"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "$2" "Key"; then
+  echo -n "$list_bucket_result" > "$TEST_FILE_FOLDER/list_bucket_result.txt"
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "$2" "Key"; then
     log 2 "key mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "1" "MaxKeys"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "1" "MaxKeys"; then
     log 2 "max keys mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "1" "KeyCount"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "1" "KeyCount"; then
     log 2 "key count mismatch"
     return 1
   fi
-  if ! check_xml_element <(echo "$list_bucket_result") "true" "IsTruncated"; then
+  if ! check_xml_element "$TEST_FILE_FOLDER/list_bucket_result.txt" "true" "IsTruncated"; then
     log 2 "key count mismatch"
     return 1
   fi

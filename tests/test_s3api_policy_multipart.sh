@@ -40,7 +40,7 @@ test_s3api_policy_abort_multipart_upload() {
   run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
 
-  run create_multipart_upload_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
+  run create_multipart_upload_s3api_with_user "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
   assert_success
   # shellcheck disable=SC2154
   upload_id="$output"
@@ -82,7 +82,7 @@ test_s3api_policy_list_multipart_uploads() {
   run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
 
-  run create_multipart_upload "$BUCKET_ONE_NAME" "$test_file"
+  run create_multipart_upload_s3api "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run list_multipart_uploads_with_user "$BUCKET_ONE_NAME" "$username" "$password"
