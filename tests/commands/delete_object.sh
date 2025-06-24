@@ -63,21 +63,19 @@ delete_object_rest() {
 }
 
 delete_object_bypass_retention() {
-  if ! check_param_count "delete_object_bypass_retention" "client, bucket, key, user, password" 5 $#; then
+  if ! check_param_count "delete_object_bypass_retention" "bucket, key, user, password" 4 $#; then
     return 1
   fi
-  if [ "$1" == "rest" ]; then
-    if ! result=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" \
-        COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$2" OBJECT_KEY="$3" BYPASS_GOVERNANCE_RETENTION="true" \
-        OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
-      log 2 "error deleting object: $result"
-      return 1
-    fi
-  else
-    if ! delete_object_error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3api delete-object --bucket "$2" --key "$3" --bypass-governance-retention 2>&1); then
-      log 2 "error deleting object with bypass retention: $delete_object_error"
-      return 1
-    fi
+  if ! result=$(AWS_ACCESS_KEY_ID="$3" AWS_SECRET_ACCESS_KEY="$4" \
+      COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" BYPASS_GOVERNANCE_RETENTION="true" \
+      OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/delete_object.sh 2>&1); then
+    log 2 "error deleting object: $result"
+    return 1
+  fi
+  if [ "$result" != "204" ]; then
+    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
+    log 2 "expected '204', was '$result' ($delete_object_error)"
+    return 1
   fi
   return 0
 }
