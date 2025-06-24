@@ -54,6 +54,7 @@ fi
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
+log_rest 5 "cr data: $canonical_request"
 
 curl_command+=(curl -ks -w "\"%{http_code}\"")
 url="'$AWS_ENDPOINT_URL/$bucket_name"

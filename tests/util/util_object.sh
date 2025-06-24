@@ -16,6 +16,7 @@
 
 source ./tests/util/util_bucket.sh
 source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_head_object.sh
 source ./tests/util/util_mc.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_versioning.sh
@@ -446,4 +447,68 @@ put_object_rest_check_expires_header() {
     return 1
   fi
   return 0
+}
+
+download_file_with_user() {
+  if ! check_param_count_gt "download_large_file" "username, password, bucket, key, destination, chunk size (optional)" 5 $#; then
+    return 1
+  fi
+  if ! file_size=$(get_object_size_with_user "$1" "$2" "$3" "$4" 2>&1); then
+    log 2 "error getting object size: $file_size"
+    return 1
+  fi
+  if [ "$6" != "" ]; then
+    chunk_size="$6"
+  elif [ "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" != "" ]; then
+    chunk_size="$MAX_FILE_DOWNLOAD_CHUNK_SIZE"
+  else
+    chunk_size="$file_size"
+  fi
+  if [ "$file_size" -le "$chunk_size" ]; then
+    if ! get_object_rest_with_user "$1" "$2" "$3" "$4" "$5"; then
+      log 2 "error downloading file"
+      return 1
+    fi
+  else
+    if ! get_object_with_ranged_download "$1" "$2" "$3" "$4" "$5" "$file_size" "$chunk_size"; then
+      log 2 "error downloading object"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+get_object_with_ranged_download() {
+  if ! check_param_count "get_object_with_ranged_download" "username, password, bucket, key, destination, file size, chunk size" 7 $#; then
+    return 1
+  fi
+  number_of_chunks=$(($6/$7))
+  log 5 "number of chunks: $number_of_chunks"
+  if ! result=$(truncate -s "$6" "$5" 2>&1); then
+    log 2 "error allocating file space: $result"
+    return 1
+  fi
+
+  file_byte_idx=0
+  while [ $file_byte_idx -lt "$6" ]; do
+    last_byte=$((file_byte_idx + $7 - 1))
+    [ $last_byte -ge "$6" ] && last_byte=$(($6 - 1))
+    range_value="bytes=${file_byte_idx}-${last_byte}"
+    log 5 "downloading part of file, range $range_value"
+
+    if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$3" OBJECT_KEY="$4" RANGE="$range_value" OUTPUT_FILE="$5.tmp" ./tests/rest_scripts/get_object.sh 2>&1); then
+      log 2 "error getting file data: $result"
+      return 1
+    fi
+    if [ "$result" != "206" ]; then
+      log 2 "expected '206', was '$result' ($(cat "$5.tmp"))"
+      return 1
+    fi
+    if ! dd if="$5.tmp" of="$5" bs=1 seek="$file_byte_idx" count="$7" conv=notrunc 2>"$TEST_FILE_FOLDER/dd_error.txt"; then
+      log 2 "error writing file segment: $(cat "$TEST_FILE_FOLDER/dd_error.txt")"
+      return 1
+    fi
+
+    file_byte_idx=$((last_byte + 1))
+  done
 }
