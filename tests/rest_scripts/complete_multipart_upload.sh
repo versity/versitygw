@@ -41,10 +41,11 @@ payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("POST" "/$bucket_name/$key" "uploadId=$upload_id" "host:$host")
+log_rest 5 "Algorithm param: $algorithm_parameter"
+lowercase_algorithm="$(echo -n "$checksum_algorithm" | tr '[:upper:]' '[:lower:]')"
 if [ "$algorithm_parameter" != "false" ]; then
   cr_data+=("x-amz-checksum-algorithm:${checksum_algorithm}")
 fi
-lowercase_algorithm="$(echo -n "$checksum_algorithm" | tr '[:upper:]' '[:lower:]')"
 if [ "$checksum_hash" != "" ]; then
   cr_data+=("x-amz-checksum-${lowercase_algorithm}:$checksum_hash")
 fi

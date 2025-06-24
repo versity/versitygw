@@ -105,7 +105,12 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
     log 2 "error setting up bucket and large file"
     return 1
   fi
-  if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$3" "$4" 2 "sha256"; then
+  if ! create_multipart_upload_rest_with_checksum_type_and_algorithm "$1" "$2" "$3" "$4"; then
+    log 2 "error creating multipart upload"
+    return 1
+  fi
+  lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
+  if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
     log 2 "error uploading parts"
     return 1
   fi

@@ -467,3 +467,11 @@ test_file="test_file"
   run get_object_rest_with_invalid_streaming_type "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
+
+@test "REST - PutObject w/x-amz-checksum-algorithm" {
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_object_rest_with_unneeded_algorithm_param "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32c"
+  assert_success
+}

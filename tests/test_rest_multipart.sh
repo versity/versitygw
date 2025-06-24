@@ -270,6 +270,7 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - multipart - x-amz-checksum-algorithm is ignored" {
-  run test_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file"
+@test "REST - multipart - x-amz-checksum-algorithm is ignored in CompleteMultipartUpload" {
+  run test_complete_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
+  assert_success
 }
