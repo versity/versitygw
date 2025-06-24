@@ -236,57 +236,40 @@ test_file="test_file"
 }
 
 @test "REST - multipart - composite - sha256" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
   assert_success
 }
 
 @test "REST - multipart - composite - sha1" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32c" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
   assert_success
 }
 
 @test "REST - multipart - full object - crc32" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
   assert_success
 }
 
 @test "REST - multipart - full object - crc32c" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
   assert_success
 }
 
 @test "REST - multipart - full object - crc64nvme" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC64NVME"
   assert_success
+}
+
+@test "REST - multipart - x-amz-checksum-algorithm is ignored" {
+  run test_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file"
 }

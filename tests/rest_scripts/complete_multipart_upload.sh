@@ -32,6 +32,8 @@ checksum_type="$CHECKSUM_TYPE"
 checksum_algorithm="$CHECKSUM_ALGORITHM"
 # shellcheck disable=SC2153
 checksum_hash="$CHECKSUM_HASH"
+# shellcheck disable=SC2154
+algorithm_parameter="${ALGORITHM_PARAMETER:=false}"
 
 payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">$parts</CompleteMultipartUpload>"
@@ -39,8 +41,8 @@ payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("POST" "/$bucket_name/$key" "uploadId=$upload_id" "host:$host")
-if [ "$checksum_algorithm" != "" ]; then
-  cr_data+=("x-amz-checksum-algorithm:$checksum_algorithm")
+if [ "$algorithm_parameter" != "false" ]; then
+  cr_data+=("x-amz-checksum-algorithm:${checksum_algorithm}")
 fi
 lowercase_algorithm="$(echo -n "$checksum_algorithm" | tr '[:upper:]' '[:lower:]')"
 if [ "$checksum_hash" != "" ]; then
@@ -51,7 +53,6 @@ if [ "$checksum_type" != "" ]; then
 fi
 cr_data+=("x-amz-content-sha256:$payload_hash" "x-amz-date:$current_date_time")
 build_canonical_request "${cr_data[@]}"
-echo "$canonical_request" > "versity-gwtest-files/cr.txt"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature

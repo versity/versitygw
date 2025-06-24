@@ -86,14 +86,31 @@ test_multipart_upload_with_checksum() {
     log 2 "error setting up bucket and large file"
     return 1
   fi
-
   if ! create_multipart_upload_rest_with_checksum_type_and_algorithm "$1" "$2" "$3" "$4"; then
     log 2 "error creating multipart upload"
     return 1
   fi
-
   if ! complete_multipart_upload_with_checksum "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$3" "$4"; then
     log 2 "error completing multipart upload"
+    return 1
+  fi
+  return 0
+}
+
+test_complete_multipart_upload_unneeded_algorithm_parameter() {
+  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_large_file "$1" "$2"; then
+    log 2 "error setting up bucket and large file"
+    return 1
+  fi
+  if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$3" "$4" 2 "sha256"; then
+    log 2 "error uploading parts"
+    return 1
+  fi
+  if ! complete_multipart_upload_rest_nonexistent_param "$1" "$2" "$upload_id" "$parts_payload"; then
+    log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi
   return 0

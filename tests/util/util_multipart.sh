@@ -244,12 +244,8 @@ create_upload_part_copy_rest() {
     fi
     parts_payload+="<Part><ETag>$etag</ETag><PartNumber>$part_number</PartNumber></Part>"
   done
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$upload_id" PARTS="$parts_payload" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
-    log 2 "error completing multipart upload: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  if ! complete_multipart_upload_rest "$1" "$2" "$upload_id" "$parts_payload"; then
+    log 2 "error completing multipart upload"
     return 1
   fi
   return 0
