@@ -22,6 +22,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
 type S3EventSender interface {
@@ -147,14 +148,14 @@ func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId)
 		bucket, object = path[1], strings.Join(path[2:], "/")
 	}
 
-	acc := ctx.Locals("account").(auth.Account)
+	acc := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 
 	return EventSchema{
 		Records: []EventRecord{
 			{
 				EventVersion: "2.2",
 				EventSource:  "aws:s3",
-				AwsRegion:    ctx.Locals("region").(string),
+				AwsRegion:    utils.ContextKeyRegion.Get(ctx).(string),
 				EventTime:    time.Now().Format(time.RFC3339),
 				EventName:    meta.EventName,
 				UserIdentity: EventUserIdentity{

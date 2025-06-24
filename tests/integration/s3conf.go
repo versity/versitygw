@@ -130,16 +130,24 @@ func (c *S3Conf) GetClient() *s3.Client {
 	})
 }
 
+func (c *S3Conf) GetAnonymousClient() *s3.Client {
+	cfg := c.Config()
+	cfg.Credentials = aws.AnonymousCredentials{}
+	return s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if c.hostStyle {
+			o.BaseEndpoint = &c.endpoint
+			o.UsePathStyle = false
+		}
+	})
+}
+
 func (c *S3Conf) Config() aws.Config {
 	creds := c.getCreds()
-
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr}
 
 	opts := []func(*config.LoadOptions) error{
 		config.WithRegion(c.awsRegion),
 		config.WithCredentialsProvider(creds),
-		config.WithHTTPClient(client),
+		config.WithHTTPClient(c.httpClient),
 		config.WithRetryMaxAttempts(1),
 	}
 
