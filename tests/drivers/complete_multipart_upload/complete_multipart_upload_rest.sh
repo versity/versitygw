@@ -14,6 +14,31 @@
 # specific language governing permissions and limitations
 # under the License.
 
+calculate_multipart_checksum() {
+  if ! check_param_count_gt "checksum type, part count, data file, checksums" 4 $#; then
+    return 1
+  fi
+  log 5 "checksums: ${*:4}"
+  if [ "$1" == "COMPOSITE" ]; then
+    if ! calculate_composite_checksum "$lowercase_checksum_algorithm" ${@:4}; then
+      log 2 "error calculating checksum"
+      return 1
+    fi
+    checksum="$composite-$2"
+    return 0
+  fi
+
+  if [ "$1" != "FULL_OBJECT" ]; then
+    log 2 "unrecognized checksum type: $1"
+    return 1
+  fi
+  if ! checksum=$(DATA_FILE="$3" CHECKSUM_TYPE="$lowercase_checksum_algorithm" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+    log 2 "error calculating checksum: $checksum"
+    return 1
+  fi
+  return 0
+}
+
 complete_multipart_upload_with_checksum() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count, checksum type, checksum algorithm" 7 $#; then
     return 1
@@ -25,18 +50,11 @@ complete_multipart_upload_with_checksum() {
   fi
   log 5 "parts payload: $parts_payload"
   log 5 "checksums: ${checksums[*]}"
-  if [ "$6" == "COMPOSITE" ]; then
-    if ! calculate_composite_checksum "$lowercase_checksum_algorithm" ${checksums[@]}; then
-      log 2 "error calculating checksum"
-      return 1
-    fi
-    composite+="-$5"
-  elif [ "$6" == "FULL_OBJECT" ]; then
-    if composite=$(DATA_FILE="$3" CHECKSUM_TYPE="$lowercase_checksum_algorithm" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-      log 2 "error calculating checksum: $composite"
-    fi
+  if ! calculate_multipart_checksum "$6" "$5" "$3" ${checksums[@]}; then
+    log 2 "error calculating multipart checksum"
+    return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$4" PARTS="$parts_payload" CHECKSUM_TYPE="$6" CHECKSUM_ALGORITHM="$7" CHECKSUM_HASH="$composite" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$4" PARTS="$parts_payload" CHECKSUM_TYPE="$6" CHECKSUM_ALGORITHM="$7" CHECKSUM_HASH="$checksum" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
     log 2 "error completing multipart upload"
     return 1
   fi
@@ -56,11 +74,13 @@ calculate_composite_checksum() {
     log 2 "error truncating file: $result"
     return 1
   fi
+  log 5 "checksums: ${*:2}"
   for checksum in ${@:2}; do
     if ! binary_checksum=$(echo -n "$checksum" | base64 -d 2>&1); then
       log 2 "error calculating binary checksum: $binary_checksum"
       return 1
     fi
+    log 5 "binary checksum: $binary_checksum"
     printf "%s" "$binary_checksum" | cat >> "$TEST_FILE_FOLDER/all_checksums.bin"
   done
   if [ "$1" == "sha256" ]; then
@@ -115,6 +135,34 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
     return 1
   fi
   if ! complete_multipart_upload_rest_nonexistent_param "$1" "$2" "$upload_id" "$parts_payload"; then
+    log 2 "error completing multipart upload with nonexistent param"
+    return 1
+  fi
+  return 0
+}
+
+test_complete_multipart_upload_incorrect_checksum() {
+  if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_large_file "$1" "$2"; then
+    log 2 "error setting up bucket and large file"
+    return 1
+  fi
+  if ! create_multipart_upload_rest_with_checksum_type_and_algorithm "$1" "$2" "$3" "$4"; then
+    log 2 "error creating multipart upload"
+    return 1
+  fi
+  lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
+  if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
+    log 2 "error uploading parts"
+    return 1
+  fi
+  if ! calculate_multipart_checksum "$3" 2 "$TEST_FILE_FOLDER/$2" ${checksums[@]}; then
+    log 2 "error calculating multipart checksum"
+    return 1
+  fi
+  if ! complete_multipart_upload_rest_incorrect_checksum "$1" "$2" "$upload_id" "$parts_payload" "$3" "$4" "$checksum"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi

@@ -274,3 +274,38 @@ test_file="test_file"
   run test_complete_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
   assert_success
 }
+
+@test "REST - multipart - composite - incorrect sha256" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
+  assert_success
+}
+
+@test "REST - multipart - composite - incorrect sha1" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
+  assert_success
+}
+
+@test "REST - multipart - composite - incorrect crc32" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
+  assert_success
+}
+
+@test "REST - multipart - composite - incorrect crc32c" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
+  assert_success
+}
+
+@test "REST - multipart - full object - incorrect crc32" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
+  assert_success
+}
+
+@test "REST - multipart - full object - incorrect crc32c" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
+  assert_success
+}
+
+@test "REST - multipart - full object - incorrect crc64nvme" {
+  run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC64NVME"
+  assert_success
+}
