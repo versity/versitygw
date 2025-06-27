@@ -25,7 +25,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -52,7 +51,6 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -62,7 +60,6 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -71,7 +68,6 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutBucketTagging(ctx.Context(), bucket, tagging)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketTagging,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},
@@ -95,7 +91,6 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -106,7 +101,6 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		debuglogger.Logf("failed to unmarshal request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -120,7 +114,6 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		}
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -129,7 +122,6 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	err := c.be.PutBucketOwnershipControls(ctx.Context(), bucket, ownershipControls.Rules[0].ObjectOwnership)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketOwnershipControls,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -155,7 +147,6 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketVersioning,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -167,7 +158,6 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		debuglogger.Logf("error unmarshalling versioning configuration: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketVersioning,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -178,7 +168,6 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		debuglogger.Logf("invalid versioning configuration status: %v", versioningConf.Status)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketVersioning,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -187,7 +176,6 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	err = c.be.PutBucketVersioning(ctx.Context(), bucket, versioningConf.Status)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketVersioning,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -212,7 +200,6 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectLockConfiguration,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -222,7 +209,6 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectLockConfiguration,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -231,7 +217,6 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	err = c.be.PutObjectLockConfiguration(ctx.Context(), bucket, config)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutObjectLockConfiguration,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -257,7 +242,6 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketCors,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -266,7 +250,6 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutBucketCors(ctx.Context(), []byte{})
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketCors,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -290,7 +273,6 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketPolicy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -300,7 +282,6 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketPolicy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -309,7 +290,6 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutBucketPolicy(ctx.Context(), bucket, ctx.Body())
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketPolicy,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -335,7 +315,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -344,7 +323,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("bucket acls are disabled")
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrAclNotSupported)
@@ -363,7 +341,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -376,7 +353,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("error unmarshalling access control policy: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutBucketAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrMalformedACL)
@@ -387,7 +363,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid access control policy: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutBucketAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, err
@@ -397,7 +372,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid access control policy owner id: %v, expected %v", *accessControlPolicy.Owner.ID, parsedAcl.Owner)
 			return &Response{
 					MetaOpts: &MetaOptions{
-						Action:      metrics.ActionPutBucketAcl,
 						BucketOwner: parsedAcl.Owner,
 					},
 				}, s3err.APIError{
@@ -412,7 +386,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 				grants, acl)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutBucketAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrUnexpectedContent)
@@ -427,7 +400,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid acl: %q", acl)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutBucketAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -437,7 +409,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 				grants, acl)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutBucketAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
@@ -460,7 +431,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("none of the bucket acl options has been specified: canned, req headers, req body")
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMissingSecurityHeader)
@@ -470,7 +440,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -479,7 +448,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutBucketAcl(ctx.Context(), bucket, updAcl)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutBucketAcl,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -500,21 +468,23 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
 	)
 
+	if acct.Role != auth.RoleAdmin && acct.Role != auth.RoleUserPlus {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	// validate the bucket name
 	if ok := utils.IsValidBucketName(bucket); !ok {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionCreateBucket,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
 	// validate the object ownership value
 	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return &Response{
-				MetaOpts: &MetaOptions{
-					Action: metrics.ActionCreateBucket,
-				},
+				MetaOpts: &MetaOptions{},
 			}, s3err.APIError{
 				Code:           "InvalidArgument",
 				Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),
@@ -526,7 +496,6 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("bucket acls are disabled for %v object ownership", objectOwnership)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateBucket,
 				BucketOwner: acct.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership)
@@ -536,7 +505,6 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateBucket,
 				BucketOwner: acct.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
@@ -562,7 +530,6 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("failed to update bucket acl: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateBucket,
 				BucketOwner: acct.Access,
 			},
 		}, err
@@ -575,7 +542,6 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	}, updAcl)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionCreateBucket,
 			BucketOwner: acct.Access,
 		},
 	}, err

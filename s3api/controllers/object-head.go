@@ -23,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -48,7 +47,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid part number: %d", partNumberQuery)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionHeadObject,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
@@ -72,7 +70,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionHeadObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -83,7 +80,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionHeadObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-mode")
@@ -109,7 +105,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		return &Response{
 			Headers: headers,
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionHeadObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -146,7 +141,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 		},
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionHeadObject,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, nil

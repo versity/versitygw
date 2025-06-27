@@ -22,7 +22,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -45,7 +44,6 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("error unmarshalling delete objects: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObjects,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -65,7 +63,6 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObjects,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -75,7 +72,6 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObjects,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -91,7 +87,6 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteObjects,
 			ObjectCount: int64(len(dObj.Objects)),
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectRemovedDeleteObjects,

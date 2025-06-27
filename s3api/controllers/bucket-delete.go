@@ -19,7 +19,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -44,7 +43,6 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteBucketTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -53,7 +51,6 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 	err = c.be.DeleteBucketTagging(ctx.Context(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteBucketTagging,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},
@@ -79,7 +76,6 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -88,7 +84,6 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 	err = c.be.DeleteBucketOwnershipControls(ctx.Context(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteBucketOwnershipControls,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},
@@ -114,7 +109,6 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteBucketPolicy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -123,7 +117,6 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.DeleteBucketPolicy(ctx.Context(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteBucketPolicy,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},
@@ -151,7 +144,6 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteBucketCors,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -160,7 +152,6 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.DeleteBucketCors(ctx.Context(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteBucketCors,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -187,7 +178,6 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteBucket,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -196,7 +186,6 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.DeleteBucket(ctx.Context(), bucket)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteBucket,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},

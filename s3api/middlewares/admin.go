@@ -15,46 +15,20 @@
 package middlewares
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
-	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
-func IsAdmin(logger s3log.AuditLogger) fiber.Handler {
+// IsAdmin is a middleware that restricts access to admin APIs, allowing only admin users
+func IsAdmin(action string) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 		if acct.Role != auth.RoleAdmin {
-			path := ctx.Path()
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrAdminAccessDenied),
-				&controllers.MetaOpts{
-					Logger: logger,
-					Action: detectAction(path),
-				})
+			return s3err.GetAPIError(s3err.ErrAdminAccessDenied)
 		}
 
-		return ctx.Next()
+		return nil
 	}
-}
-
-func detectAction(path string) (action string) {
-	if strings.Contains(path, "create-user") {
-		action = metrics.ActionAdminCreateUser
-	} else if strings.Contains(path, "update-user") {
-		action = metrics.ActionAdminUpdateUser
-	} else if strings.Contains(path, "delete-user") {
-		action = metrics.ActionAdminDeleteUser
-	} else if strings.Contains(path, "list-user") {
-		action = metrics.ActionAdminListUsers
-	} else if strings.Contains(path, "list-buckets") {
-		action = metrics.ActionAdminListBuckets
-	} else if strings.Contains(path, "change-bucket-owner") {
-		action = metrics.ActionAdminChangeBucketOwner
-	}
-	return action
 }

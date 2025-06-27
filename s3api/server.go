@@ -23,6 +23,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
+	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
@@ -76,7 +77,10 @@ func New(
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
-	app.Use(middlewares.DecodeURL(l, mm))
+
+	// initialize the 'DecodeURL' middleware which
+	// path unescapes the url
+	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
 	// initialize host-style parser in virtual domain is specified
 	if server.virtualDomain != "" {

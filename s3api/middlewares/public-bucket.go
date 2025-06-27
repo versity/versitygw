@@ -84,7 +84,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 			if utils.IsUnsignedStreamingPayload(payloadType) {
 				checksumType, err := utils.ExtractChecksumType(ctx)
 				if err != nil {
-					return sendResponse(ctx, err, l, mm)
+					return err
 				}
 
 				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
@@ -93,7 +93,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 					return cr
 				})
 				if err != nil {
-					return sendResponse(ctx, err, l, mm)
+					return err
 				}
 			}
 		}
