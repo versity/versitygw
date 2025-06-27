@@ -27,7 +27,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -47,7 +46,6 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -67,7 +65,6 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -76,7 +73,6 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutObjectTagging(ctx.Context(), bucket, key, tagging)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutObjectTagging,
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectTaggingPut,
 		},
@@ -106,7 +102,6 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectRetention,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -128,7 +123,6 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("failed to parse object lock configuration input: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectRetention,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -137,7 +131,6 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutObjectRetention(ctx.Context(), bucket, key, versionId, bypass, retention)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutObjectRetention,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -157,7 +150,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("failed to parse request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectLegalHold,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -167,7 +159,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid legal hold status: %v", legalHold.Status)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectLegalHold,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -186,7 +177,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectLegalHold,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -195,7 +185,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	err := c.be.PutObjectLegalHold(ctx.Context(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutObjectLegalHold,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -227,7 +216,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPart,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
@@ -248,7 +236,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPart,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -259,7 +246,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("error parsing content length %q: %v", contentLengthStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPart,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -270,7 +256,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("err parsing checksum headers: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPart,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -314,7 +299,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		Headers: headers,
 		MetaOpts: &MetaOptions{
 			ContentLength: contentLength,
-			Action:        metrics.ActionUploadPart,
 			BucketOwner:   parsedAcl.Owner,
 		},
 	}, err
@@ -340,7 +324,6 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("error unescaping copy source %q: %v", cs, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPartCopy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -350,7 +333,6 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPartCopy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
@@ -370,7 +352,6 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionUploadPartCopy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -395,7 +376,6 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		Headers: headers,
 		Data:    resp,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionUploadPartCopy,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -430,7 +410,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObjectAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -442,7 +421,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutObjectAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -454,7 +432,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("error unmarshalling access control policy: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutObjectAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -488,7 +465,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid acl: %q", acl)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutObjectAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -497,7 +473,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("invalid request: %q (grants) %q (acl) %v (body len)", grants, acl, len(ctx.Body()))
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionPutObjectAcl,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -531,7 +506,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	err = c.be.PutObjectAcl(ctx.Context(), input)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionPutObjectAcl,
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectAclPut,
 		},
@@ -567,7 +541,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("error unescaping copy source %q: %v", cs, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -586,7 +559,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -599,7 +571,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("error parsing copy source modified since %q: %v", copySrcModifSince, err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionCopyObject,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -613,7 +584,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("error parsing copy source unmodified since %q: %v", copySrcUnmodifSince, err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionCopyObject,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
@@ -627,7 +597,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid metadata directive: %v", metaDirective)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMetadataDirective)
@@ -637,7 +606,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid tagging direcrive: %v", taggingDirective)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidTaggingDirective)
@@ -648,7 +616,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -658,7 +625,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCopyObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -703,7 +669,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		},
 		Data: res.CopyObjectResult,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionCopyObject,
 			BucketOwner: parsedAcl.Owner,
 			ObjectETag:  etag,
 			VersionId:   res.VersionId,
@@ -758,7 +723,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -768,7 +732,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -779,7 +742,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("error parsing content length %q: %v", contentLengthStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -789,7 +751,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -799,7 +760,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionPutObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -850,7 +810,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		},
 		MetaOpts: &MetaOptions{
 			ContentLength: contentLength,
-			Action:        metrics.ActionPutObject,
 			BucketOwner:   parsedAcl.Owner,
 			ObjectETag:    &res.ETag,
 			ObjectSize:    contentLength,

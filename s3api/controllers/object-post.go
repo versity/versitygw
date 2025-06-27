@@ -24,7 +24,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -45,7 +44,6 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("failed to parse the request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionRestoreObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -65,7 +63,6 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionRestoreObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -78,7 +75,6 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	})
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionRestoreObject,
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectRestoreCompleted,
 		},
@@ -100,7 +96,6 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 		debuglogger.Logf("error unmarshalling select object content: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionSelectObjectContent,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -121,7 +116,6 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionSelectObjectContent,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -143,7 +137,6 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionSelectObjectContent,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, nil
@@ -179,7 +172,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -189,7 +181,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -199,7 +190,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCreateMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -233,7 +223,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 		Headers: headers,
 		Data:    res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionCreateMultipartUpload,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -266,7 +255,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCompleteMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -281,7 +269,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		debuglogger.Logf("error unmarshalling complete multipart upload: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCompleteMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
@@ -291,7 +278,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		debuglogger.Logf("empty parts provided for complete multipart upload")
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCompleteMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrEmptyParts)
@@ -305,7 +291,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			debuglogger.Logf("invalid value for 'x-amz-mp-objects-size' header: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionCompleteMultipartUpload,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
@@ -315,7 +300,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			debuglogger.Logf("value for 'x-amz-mp-objects-size' header is less than 0: %v", val)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionCompleteMultipartUpload,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetInvalidMpObjectSizeErr(val)
@@ -328,7 +312,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCompleteMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -338,7 +321,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionCompleteMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -366,7 +348,6 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			"x-amz-version-id": &versid,
 		},
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionCompleteMultipartUpload,
 			BucketOwner: parsedAcl.Owner,
 			ObjectETag:  res.ETag,
 			EventName:   s3event.EventCompleteMultipartUpload,

@@ -21,6 +21,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3log"
 )
@@ -53,17 +54,10 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 			Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
-	app.Use(middlewares.DecodeURL(l, nil))
+	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 	app.Use(middlewares.DebugLogger())
 
-	// Authentication middlewares
-	app.Use(middlewares.VerifyV4Signature(root, iam, l, nil, region, false))
-	app.Use(middlewares.VerifyMD5Body(l))
-
-	// Admin role checker
-	app.Use(middlewares.IsAdmin(l))
-
-	server.router.Init(app, be, iam, l)
+	server.router.Init(app, be, iam, l, root, region, server.debug)
 
 	return server
 }

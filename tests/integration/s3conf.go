@@ -130,6 +130,10 @@ func (c *S3Conf) GetClient() *s3.Client {
 	})
 }
 
+func (c *S3Conf) GetPresignClient() *s3.PresignClient {
+	return s3.NewPresignClient(c.GetClient())
+}
+
 func (c *S3Conf) GetAnonymousClient() *s3.Client {
 	cfg := c.Config()
 	cfg.Credentials = aws.AnonymousCredentials{}

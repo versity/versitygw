@@ -23,7 +23,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 )
@@ -51,7 +50,6 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObjectTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -61,14 +59,13 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 	return &Response{
 		MetaOpts: &MetaOptions{
 			Status:      http.StatusNoContent,
-			Action:      metrics.ActionDeleteObjectTagging,
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectTaggingDelete,
 		},
 	}, err
 }
 
-func (c S3ApiController) AbortMultipartUplaod(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	uploadId := ctx.Query("uploadId")
@@ -92,7 +89,6 @@ func (c S3ApiController) AbortMultipartUplaod(ctx *fiber.Ctx) (*Response, error)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionAbortMultipartUpload,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -106,7 +102,6 @@ func (c S3ApiController) AbortMultipartUplaod(ctx *fiber.Ctx) (*Response, error)
 		})
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionAbortMultipartUpload,
 			BucketOwner: parsedAcl.Owner,
 			Status:      http.StatusNoContent,
 		},
@@ -141,7 +136,6 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -164,7 +158,6 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -179,7 +172,6 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionDeleteObject,
 				BucketOwner: parsedAcl.Owner,
 				EventName:   s3event.EventObjectRemovedDelete,
 				Status:      http.StatusNoContent,
@@ -198,7 +190,6 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Headers: headers,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionDeleteObject,
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectRemovedDelete,
 			Status:      http.StatusNoContent,

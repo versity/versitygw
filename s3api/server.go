@@ -23,6 +23,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
+	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
@@ -76,7 +77,10 @@ func New(
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
-	app.Use(middlewares.DecodeURL(l, mm))
+
+	// initialize the 'DecodeURL' middleware which
+	// path unescapes the url
+	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
 	// initialize host-style parser in virtual domain is specified
 	if server.virtualDomain != "" {
@@ -91,16 +95,7 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
-	// Public buckets access checker
-	app.Use(middlewares.AuthorizePublicBucketAccess(be, l, mm))
-
-	// Authentication middlewares
-	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, mm, region, server.debug))
-	app.Use(middlewares.VerifyV4Signature(root, iam, l, mm, region, server.debug))
-	app.Use(middlewares.VerifyMD5Body(l))
-	app.Use(middlewares.AclParser(be, l, server.readonly))
-
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly, region, root)
 
 	return server, nil
 }

@@ -18,30 +18,59 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
+	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3log"
 )
 
 type S3AdminRouter struct{}
 
-func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger) {
+func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, root middlewares.RootUserConfig, region string, debug bool) {
 	ctrl := controllers.NewAdminController(iam, be, logger)
+	services := &controllers.Services{
+		Logger: logger,
+	}
 
 	// CreateUser admin api
-	app.Patch("/create-user", controllers.ProcessResponse(ctrl.CreateUser, logger, nil, nil))
+	app.Patch("/create-user",
+		controllers.ProcessHandlers(ctrl.CreateUser, metrics.ActionAdminCreateUser, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminCreateUser),
+		))
 
 	// DeleteUsers admin api
-	app.Patch("/delete-user", controllers.ProcessResponse(ctrl.DeleteUser, logger, nil, nil))
+	app.Patch("/delete-user",
+		controllers.ProcessHandlers(ctrl.DeleteUser, metrics.ActionAdminDeleteUser, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
+		))
 
 	// UpdateUser admin api
-	app.Patch("/update-user", controllers.ProcessResponse(ctrl.UpdateUser, logger, nil, nil))
+	app.Patch("/update-user",
+		controllers.ProcessHandlers(ctrl.UpdateUser, metrics.ActionAdminUpdateUser, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
+		))
 
 	// ListUsers admin api
-	app.Patch("/list-users", controllers.ProcessResponse(ctrl.ListUsers, logger, nil, nil))
+	app.Patch("/list-users",
+		controllers.ProcessHandlers(ctrl.ListUsers, metrics.ActionAdminListUsers, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminListUsers),
+		))
 
 	// ChangeBucketOwner admin api
-	app.Patch("/change-bucket-owner", controllers.ProcessResponse(ctrl.ChangeBucketOwner, logger, nil, nil))
+	app.Patch("/change-bucket-owner",
+		controllers.ProcessHandlers(ctrl.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
+		))
 
 	// ListBucketsAndOwners admin api
-	app.Patch("/list-buckets", controllers.ProcessResponse(ctrl.ListBuckets, logger, nil, nil))
+	app.Patch("/list-buckets",
+		controllers.ProcessHandlers(ctrl.ListBuckets, metrics.ActionAdminListBuckets, services,
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.IsAdmin(metrics.ActionAdminListBuckets),
+		))
 }

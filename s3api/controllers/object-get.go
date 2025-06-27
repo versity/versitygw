@@ -26,7 +26,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -55,7 +54,6 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -65,7 +63,6 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -82,7 +79,6 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: tags,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectTagging,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -112,7 +108,6 @@ func (c S3ApiController) GetObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectRetention,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -122,7 +117,6 @@ func (c S3ApiController) GetObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectRetention,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -132,7 +126,6 @@ func (c S3ApiController) GetObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: retention,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectRetention,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -162,7 +155,6 @@ func (c S3ApiController) GetObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectLegalHold,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -172,7 +164,6 @@ func (c S3ApiController) GetObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: auth.ParseObjectLegalHoldOutput(data),
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectLegalHold,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -201,7 +192,6 @@ func (c S3ApiController) GetObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -213,7 +203,6 @@ func (c S3ApiController) GetObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectAcl,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -240,7 +229,6 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 
 			return &Response{
 				MetaOpts: &MetaOptions{
-					Action:      metrics.ActionListParts,
 					BucketOwner: parsedAcl.Owner,
 				},
 			}, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker)
@@ -254,7 +242,6 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 			maxPartsStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListParts,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxParts)
@@ -274,7 +261,6 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListParts,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -290,7 +276,6 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionListParts,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -322,7 +307,6 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAttributes,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -335,7 +319,6 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 			maxPartsStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAttributes,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxParts)
@@ -346,7 +329,6 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAttributes,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -370,7 +352,6 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 		return &Response{
 			Headers: headers,
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAttributes,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -388,7 +369,6 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 		Headers: headers,
 		Data:    utils.FilterObjectAttributes(attrs, res),
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectAttributes,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -426,7 +406,6 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -437,7 +416,6 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObject,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-mode")
@@ -461,7 +439,6 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		return &Response{
 			Headers: headers,
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectAttributes,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -484,7 +461,6 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 					*res.ContentLength)
 				return &Response{
 					MetaOpts: &MetaOptions{
-						Action:        metrics.ActionGetObject,
 						ContentLength: getint64(res.ContentLength),
 						BucketOwner:   parsedAcl.Owner,
 						Status:        status,
@@ -525,7 +501,6 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 		},
 		MetaOpts: &MetaOptions{
-			Action:        metrics.ActionGetObject,
 			ContentLength: getint64(res.ContentLength),
 			BucketOwner:   parsedAcl.Owner,
 			Status:        status,

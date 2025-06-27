@@ -18,7 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -44,7 +43,6 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionHeadBucket,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -58,7 +56,6 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionHeadBucket,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -70,7 +67,6 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 			"X-Amz-Bucket-Region":      utils.GetStringPtr(region),
 		},
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionHeadBucket,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, nil
