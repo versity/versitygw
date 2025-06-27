@@ -29,105 +29,679 @@ type S3ApiRouter struct {
 	WithAdmSrv bool
 }
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool) {
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm *metrics.Manager, debug bool, readonly bool, region string, root middlewares.RootUserConfig) {
 	ctrl := controllers.New(be, iam, logger, evs, mm, debug, readonly)
+	adminServices := &controllers.Services{
+		Logger: aLogger,
+	}
 
 	if sa.WithAdmSrv {
 		adminController := controllers.NewAdminController(iam, be, aLogger)
 
 		// CreateUser admin api
-		app.Patch("/create-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.CreateUser, aLogger, nil, nil))
+		app.Patch("/create-user",
+			controllers.ProcessHandlers(adminController.CreateUser, metrics.ActionAdminCreateUser, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminCreateUser),
+			))
 
 		// DeleteUsers admin api
-		app.Patch("/delete-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.DeleteUser, aLogger, nil, nil))
+		app.Patch("/delete-user",
+			controllers.ProcessHandlers(adminController.DeleteUser, metrics.ActionAdminDeleteUser, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
+			))
 
 		// UpdateUser admin api
-		app.Patch("/update-user", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.UpdateUser, aLogger, nil, nil))
+		app.Patch("/update-user",
+			controllers.ProcessHandlers(adminController.UpdateUser, metrics.ActionAdminUpdateUser, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
+			))
 
 		// ListUsers admin api
-		app.Patch("/list-users", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ListUsers, aLogger, nil, nil))
+		app.Patch("/list-users",
+			controllers.ProcessHandlers(adminController.ListUsers, metrics.ActionAdminListUsers, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminListUsers),
+			))
 
 		// ChangeBucketOwner admin api
-		app.Patch("/change-bucket-owner", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ChangeBucketOwner, aLogger, nil, nil))
+		app.Patch("/change-bucket-owner",
+			controllers.ProcessHandlers(adminController.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
+			))
 
 		// ListBucketsAndOwners admin api
-		app.Patch("/list-buckets", middlewares.IsAdmin(logger), controllers.ProcessResponse(adminController.ListBuckets, aLogger, nil, nil))
+		app.Patch("/list-buckets",
+			controllers.ProcessHandlers(adminController.ListBuckets, metrics.ActionAdminListBuckets, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, debug),
+				middlewares.IsAdmin(metrics.ActionAdminListBuckets),
+			))
+	}
+
+	services := &controllers.Services{
+		Logger:         logger,
+		EventSender:    evs,
+		MetricsManager: mm,
 	}
 
 	// ListBuckets action
-	app.Get("/", controllers.ProcessResponse(ctrl.ListBuckets, logger, evs, mm))
+	app.Get("/",
+		controllers.ProcessHandlers(
+			ctrl.ListBuckets,
+			metrics.ActionListAllMyBuckets,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListAllMyBuckets, "", auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+		))
 
 	bucketRouter := app.Group("/:bucket")
 	objectRouter := app.Group("/:bucket/*")
 
 	// PUT bucket operations
-	bucketRouter.Put("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutBucketTagging, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.PutBucketOwnershipControls, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.PutBucketVersioning, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.PutObjectLockConfiguration, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.PutBucketCors, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.PutBucketPolicy, logger, evs, mm))
-	bucketRouter.Put("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutBucketAcl, logger, evs, mm))
-	bucketRouter.Put("", controllers.ProcessResponse(ctrl.CreateBucket, logger, evs, mm))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketTagging,
+			metrics.ActionPutBucketTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("ownershipControls"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketOwnershipControls,
+			metrics.ActionPutBucketOwnershipControls,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("versioning"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketVersioning,
+			metrics.ActionPutBucketVersioning,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketVersioning, auth.PutBucketVersioningAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("object-lock"),
+		controllers.ProcessHandlers(
+			ctrl.PutObjectLockConfiguration,
+			metrics.ActionPutObjectLockConfiguration,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectLockConfiguration, auth.PutBucketObjectLockConfigurationAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("cors"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketCors,
+			metrics.ActionPutBucketCors,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("policy"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketPolicy,
+			metrics.ActionPutBucketPolicy,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("acl"),
+		controllers.ProcessHandlers(
+			ctrl.PutBucketAcl,
+			metrics.ActionPutBucketAcl,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketAcl, auth.PutBucketAclAction, auth.PermissionWriteAcp),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Put("",
+		controllers.ProcessHandlers(
+			ctrl.CreateBucket,
+			metrics.ActionCreateBucket,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCreateBucket, auth.CreateBucketAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+		))
 
 	// HeadBucket action
-	bucketRouter.Head("", controllers.ProcessResponse(ctrl.HeadBucket, logger, evs, mm))
+	bucketRouter.Head("",
+		controllers.ProcessHandlers(
+			ctrl.HeadBucket,
+			metrics.ActionHeadBucket,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionHeadBucket, auth.ListBucketAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// DELETE bucket operations
-	bucketRouter.Delete("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.DeleteBucketTagging, logger, evs, mm))
-	bucketRouter.Delete("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.DeleteBucketOwnershipControls, logger, evs, mm))
-	bucketRouter.Delete("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.DeleteBucketPolicy, logger, evs, mm))
-	bucketRouter.Delete("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.DeleteBucketCors, logger, evs, mm))
-	bucketRouter.Delete("", controllers.ProcessResponse(ctrl.DeleteBucket, logger, evs, mm))
+	bucketRouter.Delete("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteBucketTagging,
+			metrics.ActionDeleteBucketTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Delete("",
+		middlewares.MatchQueryArgs("ownershipControls"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteBucketOwnershipControls,
+			metrics.ActionDeleteBucketOwnershipControls,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Delete("",
+		middlewares.MatchQueryArgs("policy"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteBucketPolicy,
+			metrics.ActionDeleteBucketPolicy,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Delete("",
+		middlewares.MatchQueryArgs("cors"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteBucketCors,
+			metrics.ActionDeleteBucketCors,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Delete("",
+		controllers.ProcessHandlers(
+			ctrl.DeleteBucket,
+			metrics.ActionDeleteBucket,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucket, auth.DeleteBucketAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// GET bucket operations
-	bucketRouter.Get("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetBucketTagging, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("ownershipControls"), controllers.ProcessResponse(ctrl.GetBucketOwnershipControls, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("versioning"), controllers.ProcessResponse(ctrl.GetBucketVersioning, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("policy"), controllers.ProcessResponse(ctrl.GetBucketPolicy, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("cors"), controllers.ProcessResponse(ctrl.GetBucketCors, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("object-lock"), controllers.ProcessResponse(ctrl.GetObjectLockConfiguration, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetBucketAcl, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.ListMultipartUploads, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgs("versions"), controllers.ProcessResponse(ctrl.ListObjectVersions, logger, evs, mm))
-	bucketRouter.Get("", middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.ListObjectsV2, logger, evs, mm))
-	bucketRouter.Get("", controllers.ProcessResponse(ctrl.ListObjects, logger, evs, mm))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketTagging,
+			metrics.ActionGetBucketTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketTagging, auth.GetBucketTaggingAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("ownershipControls"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketOwnershipControls,
+			metrics.ActionGetBucketOwnershipControls,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketOwnershipControls, auth.GetBucketOwnershipControlsAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("versioning"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketVersioning,
+			metrics.ActionGetBucketVersioning,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketVersioning, auth.GetBucketVersioningAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("policy"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketPolicy,
+			metrics.ActionGetBucketPolicy,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketPolicy, auth.GetBucketPolicyAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("cors"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketCors,
+			metrics.ActionGetBucketCors,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketCors, auth.GetBucketCorsAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("object-lock"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectLockConfiguration,
+			metrics.ActionGetObjectLockConfiguration,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectLockConfiguration, auth.GetBucketObjectLockConfigurationAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("acl"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketAcl,
+			metrics.ActionGetBucketAcl,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAcl, auth.GetBucketAclAction, auth.PermissionReadAcp),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("uploads"),
+		controllers.ProcessHandlers(
+			ctrl.ListMultipartUploads,
+			metrics.ActionListMultipartUploads,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListMultipartUploads, auth.ListBucketMultipartUploadsAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("versions"),
+		controllers.ProcessHandlers(
+			ctrl.ListObjectVersions,
+			metrics.ActionListObjectVersions,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjectVersions, auth.ListBucketVersionsAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgWithValue("list-type", "2"),
+		controllers.ProcessHandlers(
+			ctrl.ListObjectsV2,
+			metrics.ActionListObjectsV2,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjectsV2, auth.ListBucketAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
+		controllers.ProcessHandlers(
+			ctrl.ListObjects,
+			metrics.ActionListObjects,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjects, auth.ListBucketAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// DeleteObjects action
-	bucketRouter.Post("", middlewares.MatchQueryArgs("delete"), controllers.ProcessResponse(ctrl.DeleteObjects, logger, evs, mm))
+	bucketRouter.Post("",
+		middlewares.MatchQueryArgs("delete"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteObjects,
+			metrics.ActionDeleteObjects,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteObjects, auth.DeleteObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// HeadObject
-	objectRouter.Head("", controllers.ProcessResponse(ctrl.HeadObject, logger, evs, mm))
+	objectRouter.Head("",
+		controllers.ProcessHandlers(
+			ctrl.HeadObject,
+			metrics.ActionHeadObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionHeadObject, auth.GetObjectAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// GET object operations
-	objectRouter.Get("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.GetObjectTagging, logger, evs, mm))
-	objectRouter.Get("", middlewares.MatchQueryArgs("retention"), controllers.ProcessResponse(ctrl.GetObjectRetention, logger, evs, mm))
-	objectRouter.Get("", middlewares.MatchQueryArgs("legal-hold"), controllers.ProcessResponse(ctrl.GetObjectLegalHold, logger, evs, mm))
-	objectRouter.Get("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.GetObjectAcl, logger, evs, mm))
-	objectRouter.Get("", middlewares.MatchQueryArgs("attributes"), controllers.ProcessResponse(ctrl.GetObjectAttributes, logger, evs, mm))
-	objectRouter.Get("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.ListParts, logger, evs, mm))
-	objectRouter.Get("", controllers.ProcessResponse(ctrl.GetObject, logger, evs, mm))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectTagging,
+			metrics.ActionGetObjectTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectTagging, auth.GetObjectTaggingAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("retention"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectRetention,
+			metrics.ActionGetObjectRetention,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectRetention, auth.GetObjectRetentionAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("legal-hold"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectLegalHold,
+			metrics.ActionGetObjectLegalHold,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectLegalHold, auth.GetObjectLegalHoldAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("acl"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectAcl,
+			metrics.ActionGetObjectAcl,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectAcl, auth.GetObjectAclAction, auth.PermissionReadAcp),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("attributes"),
+		controllers.ProcessHandlers(
+			ctrl.GetObjectAttributes,
+			metrics.ActionGetObjectAttributes,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectAttributes, auth.GetObjectAttributesAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("uploadId"),
+		controllers.ProcessHandlers(
+			ctrl.ListParts,
+			metrics.ActionListParts,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListParts, auth.ListMultipartUploadPartsAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Get("",
+		controllers.ProcessHandlers(
+			ctrl.GetObject,
+			metrics.ActionGetObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObject, auth.GetObjectAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// DELETE object operations
-	objectRouter.Delete("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.DeleteObjectTagging, logger, evs, mm))
-	objectRouter.Delete("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.AbortMultipartUplaod, logger, evs, mm))
-	objectRouter.Delete("", controllers.ProcessResponse(ctrl.DeleteObject, logger, evs, mm))
+	objectRouter.Delete("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.DeleteObjectTagging,
+			metrics.ActionDeleteObjectTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteObjectTagging, auth.DeleteObjectTaggingAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Delete("",
+		middlewares.MatchQueryArgs("uploadId"),
+		controllers.ProcessHandlers(
+			ctrl.AbortMultipartUpload,
+			metrics.ActionAbortMultipartUpload,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionAbortMultipartUpload, auth.AbortMultipartUploadAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Delete("",
+		controllers.ProcessHandlers(
+			ctrl.DeleteObject,
+			metrics.ActionDeleteObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteObject, auth.DeleteObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
-	objectRouter.Post("", middlewares.MatchQueryArgs("restore"), controllers.ProcessResponse(ctrl.RestoreObject, logger, evs, mm))
-	objectRouter.Post("", middlewares.MatchQueryArgs("list-type"), middlewares.MatchQueryArgWithValue("list-type", "2"), controllers.ProcessResponse(ctrl.RestoreObject, logger, evs, mm))
-	objectRouter.Post("", middlewares.MatchQueryArgs("uploadId"), controllers.ProcessResponse(ctrl.CompleteMultipartUpload, logger, evs, mm))
-	objectRouter.Post("", middlewares.MatchQueryArgs("uploads"), controllers.ProcessResponse(ctrl.CreateMultipartUpload, logger, evs, mm))
+	objectRouter.Post("",
+		middlewares.MatchQueryArgs("restore"),
+		controllers.ProcessHandlers(
+			ctrl.RestoreObject,
+			metrics.ActionRestoreObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionRestoreObject, auth.RestoreObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Post("",
+		middlewares.MatchQueryArgs("select"),
+		middlewares.MatchQueryArgWithValue("select-type", "2"),
+		controllers.ProcessHandlers(
+			ctrl.SelectObjectContent,
+			metrics.ActionSelectObjectContent,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionSelectObjectContent, auth.GetObjectAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Post("",
+		middlewares.MatchQueryArgs("uploadId"),
+		controllers.ProcessHandlers(
+			ctrl.CompleteMultipartUpload,
+			metrics.ActionCompleteMultipartUpload,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCompleteMultipartUpload, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Post("",
+		middlewares.MatchQueryArgs("uploads"),
+		controllers.ProcessHandlers(
+			ctrl.CreateMultipartUpload,
+			metrics.ActionCreateMultipartUpload,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCreateMultipartUpload, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// PUT object operations
-	objectRouter.Put("", middlewares.MatchQueryArgs("tagging"), controllers.ProcessResponse(ctrl.PutObjectTagging, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchQueryArgs("retention"), controllers.ProcessResponse(ctrl.PutObjectRetention, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchQueryArgs("legal-hold"), controllers.ProcessResponse(ctrl.PutObjectLegalHold, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchQueryArgs("acl"), controllers.ProcessResponse(ctrl.PutObjectAcl, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchQueryArgs("uploadId", "partNumber"), middlewares.MatchHeader("X-Amz-Copy-Source"), controllers.ProcessResponse(ctrl.UploadPartCopy, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchQueryArgs("uploadId", "partNumber"), controllers.ProcessResponse(ctrl.UploadPart, logger, evs, mm))
-	objectRouter.Put("", middlewares.MatchHeader("X-Amz-Copy-Source"), controllers.ProcessResponse(ctrl.CopyObject, logger, evs, mm))
-	objectRouter.Put("", controllers.ProcessResponse(ctrl.PutObject, logger, evs, mm))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("tagging"),
+		controllers.ProcessHandlers(
+			ctrl.PutObjectTagging,
+			metrics.ActionPutObjectTagging,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectTagging, auth.PutObjectTaggingAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("retention"),
+		controllers.ProcessHandlers(
+			ctrl.PutObjectRetention,
+			metrics.ActionPutObjectRetention,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectRetention, auth.PutObjectRetentionAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("legal-hold"),
+		controllers.ProcessHandlers(
+			ctrl.PutObjectLegalHold,
+			metrics.ActionPutObjectLegalHold,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectLegalHold, auth.PutObjectLegalHoldAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("acl"),
+		controllers.ProcessHandlers(
+			ctrl.PutObjectAcl,
+			metrics.ActionPutObjectAcl,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectAcl, auth.PutObjectAclAction, auth.PermissionWriteAcp),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("uploadId", "partNumber"),
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(
+			ctrl.UploadPartCopy,
+			metrics.ActionUploadPartCopy,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionUploadPartCopy, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchQueryArgs("uploadId", "partNumber"),
+		controllers.ProcessHandlers(
+			ctrl.UploadPart,
+			metrics.ActionUploadPart,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionUploadPart, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(
+			ctrl.CopyObject,
+			metrics.ActionCopyObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCopyObject, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
+	objectRouter.Put("",
+		controllers.ProcessHandlers(
+			ctrl.PutObject,
+			metrics.ActionPutObject,
+			services,
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObject, auth.PutObjectAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		))
 
 	// Return MethodNotAllowed for all the unmatched routes
-	app.All("*", controllers.ProcessResponse(ctrl.HandleUnmatch, logger, evs, mm))
+	app.All("*", controllers.ProcessHandlers(ctrl.HandleUnmatch, metrics.ActionUndetected, services))
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3log"
 	"github.com/versity/versitygw/s3response"
@@ -46,17 +45,13 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
 	err := xml.Unmarshal(ctx.Body(), &usr)
 	if err != nil {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminCreateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	if !usr.Role.IsValid() {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminCreateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole)
 	}
 
@@ -67,15 +62,12 @@ func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
 		}
 
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminCreateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, err
 	}
 
 	return &Response{
 		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminCreateUser,
 			Status: http.StatusCreated,
 		},
 	}, nil
@@ -85,27 +77,21 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
 	if access == "" {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminUpdateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrAdminMissingUserAcess)
 	}
 
 	var props auth.MutableProps
 	if err := xml.Unmarshal(ctx.Body(), &props); err != nil {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminUpdateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	err := props.Validate()
 	if err != nil {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminUpdateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrAdminInvalidUserRole)
 	}
 
@@ -116,16 +102,12 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 		}
 
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminUpdateUser,
-			},
+			MetaOpts: &MetaOptions{},
 		}, err
 	}
 
 	return &Response{
-		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminUpdateUser,
-		},
+		MetaOpts: &MetaOptions{},
 	}, nil
 }
 
@@ -134,19 +116,15 @@ func (c AdminController) DeleteUser(ctx *fiber.Ctx) (*Response, error) {
 
 	err := c.iam.DeleteUserAccount(access)
 	return &Response{
-		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminDeleteUser,
-		},
+		MetaOpts: &MetaOptions{},
 	}, err
 }
 
 func (c AdminController) ListUsers(ctx *fiber.Ctx) (*Response, error) {
 	accs, err := c.iam.ListUserAccounts()
 	return &Response{
-		Data: auth.ListUserAccountsResult{Accounts: accs},
-		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminListUsers,
-		},
+		Data:     auth.ListUserAccountsResult{Accounts: accs},
+		MetaOpts: &MetaOptions{},
 	}, err
 }
 
@@ -157,16 +135,12 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
 	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
 	if err != nil {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminChangeBucketOwner,
-			},
+			MetaOpts: &MetaOptions{},
 		}, err
 	}
 	if len(accs) > 0 {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminChangeBucketOwner,
-			},
+			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 	}
 
@@ -184,17 +158,13 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
 	aclParsed, err := json.Marshal(acl)
 	if err != nil {
 		return &Response{
-			MetaOpts: &MetaOptions{
-				Action: metrics.ActionAdminChangeBucketOwner,
-			},
+			MetaOpts: &MetaOptions{},
 		}, fmt.Errorf("failed to marshal the bucket acl: %w", err)
 	}
 
 	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, aclParsed)
 	return &Response{
-		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminChangeBucketOwner,
-		},
+		MetaOpts: &MetaOptions{},
 	}, err
 }
 
@@ -204,8 +174,6 @@ func (c AdminController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 		Data: s3response.ListBucketsResult{
 			Buckets: buckets,
 		},
-		MetaOpts: &MetaOptions{
-			Action: metrics.ActionAdminListBuckets,
-		},
+		MetaOpts: &MetaOptions{},
 	}, err
 }

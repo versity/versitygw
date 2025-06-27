@@ -20,22 +20,20 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
-func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, mm *metrics.Manager, region string, debug bool) fiber.Handler {
+func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
 		// The bucket is public, no need to check this signature
 		if utils.ContextKeyPublicBucket.IsSet(ctx) {
-			return ctx.Next()
+			return nil
 		}
 		if ctx.Query("X-Amz-Signature") == "" {
-			return ctx.Next()
+			return nil
 		}
 
 		// Set in the context the "authenticated" key, in case the authentication succeeds,
@@ -44,17 +42,17 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 
 		authData, err := utils.ParsePresignedURIParts(ctx)
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), logger, mm)
+			return s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)
 		}
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 		utils.ContextKeyAccount.Set(ctx, account)
 
@@ -64,32 +62,32 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, logger
 			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
 			//TODO: not sure if InvalidRequest should be returned in this case
 			if err != nil {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
+				return err
 			}
 		}
 
 		if utils.IsBigDataAction(ctx) {
 			// Content-Length has to be set for data uploads: PutObject, UploadPart
 			if contentLengthStr == "" {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingContentLength), logger, mm)
+				return s3err.GetAPIError(s3err.ErrMissingContentLength)
 			}
 			// the upload limit for big data actions: PutObject, UploadPart
 			// is 5gb. If the size exceeds the limit, return 'EntityTooLarge' err
 			if contentLength > maxObjSizeLimit {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrEntityTooLarge), logger, mm)
+				return s3err.GetAPIError(s3err.ErrEntityTooLarge)
 			}
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 				return utils.NewPresignedAuthReader(ctx, r, authData, account.Secret, debug)
 			})
 
-			return ctx.Next()
+			return nil
 		}
 
 		err = utils.CheckPresignedSignature(ctx, authData, account.Secret, debug)
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
-		return ctx.Next()
+		return nil
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -48,7 +47,6 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -58,7 +56,6 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketTagging,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -75,7 +72,6 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: resp,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketTagging,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -101,7 +97,6 @@ func (c S3ApiController) GetBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketOwnershipControls,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -117,7 +112,6 @@ func (c S3ApiController) GetBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 			},
 		},
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketOwnershipControls,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -143,7 +137,6 @@ func (c S3ApiController) GetBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketVersioning,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -152,7 +145,6 @@ func (c S3ApiController) GetBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	if err := auth.IsAdminOrOwner(acct, isRoot, parsedAcl); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketVersioning,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -162,7 +154,6 @@ func (c S3ApiController) GetBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	return &Response{
 		Data: data,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketVersioning,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -188,7 +179,6 @@ func (c S3ApiController) GetBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketCors,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -198,7 +188,6 @@ func (c S3ApiController) GetBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: data,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketCors,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -224,7 +213,6 @@ func (c S3ApiController) GetBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketPolicy,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -234,7 +222,6 @@ func (c S3ApiController) GetBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: data,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketPolicy,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -267,7 +254,6 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjectVersions,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -279,7 +265,6 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjectVersions,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
@@ -297,7 +282,6 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: data,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionListObjectVersions,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -325,7 +309,6 @@ func (c S3ApiController) GetObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectLockConfiguration,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -335,7 +318,6 @@ func (c S3ApiController) GetObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetObjectLockConfiguration,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -345,7 +327,6 @@ func (c S3ApiController) GetObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	return &Response{
 		Data: resp,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetObjectLockConfiguration,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -373,7 +354,6 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -384,7 +364,6 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionGetBucketAcl,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -394,7 +373,6 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionGetBucketAcl,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -427,7 +405,6 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListMultipartUploads,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -438,7 +415,6 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 			maxUploadsStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListMultipartUploads,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxUploads)
@@ -455,7 +431,6 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionListMultipartUploads,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -489,7 +464,6 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjectsV2,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -500,7 +474,6 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjectsV2,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
@@ -519,7 +492,6 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionListObjectsV2,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
@@ -551,7 +523,6 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjects,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
@@ -563,7 +534,6 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				Action:      metrics.ActionListObjects,
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
@@ -580,7 +550,6 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		Data: res,
 		MetaOpts: &MetaOptions{
-			Action:      metrics.ActionListObjects,
 			BucketOwner: parsedAcl.Owner,
 		},
 	}, err
