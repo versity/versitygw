@@ -78,6 +78,9 @@ func New(
 		})
 	}
 
+	// initilaze the default value setter middleware
+	app.Use(middlewares.SetDefaultValues(root, region))
+
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
@@ -86,9 +89,6 @@ func New(
 	if server.virtualDomain != "" {
 		app.Use(middlewares.HostStyleParser(server.virtualDomain))
 	}
-
-	// initilaze the default value setter middleware
-	app.Use(middlewares.SetDefaultValues(root, region))
 
 	// initialize the debug logger in debug mode
 	if server.debug {
