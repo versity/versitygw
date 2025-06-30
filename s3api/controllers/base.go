@@ -2004,16 +2004,16 @@ func ProcessHandlers(controller Controller, s3action string, svc *Services, hand
 func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm *metrics.Manager) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		err := handler(ctx)
-		if mm != nil {
-			mm.Send(ctx, err, metrics.ActionUndetected, 0, 0)
-		}
-		if logger != nil {
-			logger.Log(ctx, err, ctx.Body(), s3log.LogMeta{
-				Action: metrics.ActionUndetected,
-			})
-		}
-
 		if err != nil {
+			if mm != nil {
+				mm.Send(ctx, err, metrics.ActionUndetected, 0, 0)
+			}
+			if logger != nil {
+				logger.Log(ctx, err, ctx.Body(), s3log.LogMeta{
+					Action: metrics.ActionUndetected,
+				})
+			}
+
 			serr, ok := err.(s3err.APIError)
 			if ok {
 				ctx.Status(serr.HTTPStatusCode)
@@ -2041,6 +2041,9 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	SetResponseHeaders(ctx, response.Headers)
 
 	opts := response.MetaOpts
+	if opts == nil {
+		opts = &MetaOptions{}
+	}
 	// Send the metrics
 	if svc.MetricsManager != nil {
 		if opts.ObjectCount > 0 {
