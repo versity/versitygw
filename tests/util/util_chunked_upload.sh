@@ -281,9 +281,10 @@ send_via_openssl() {
     return 1
   fi
   host="${AWS_ENDPOINT_URL#http*://}"
-  if [ "$host" == "s3.amazonaws.com" ]; then
+  if [[ "$host" =~ s3\..*amazonaws\.com ]]; then
     host+=":443"
   fi
+  log 5 "connecting to $host"
   if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
     log 2 "error sending openssl command: $result"
     return 1

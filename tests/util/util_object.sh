@@ -512,3 +512,17 @@ get_object_with_ranged_download() {
     file_byte_idx=$((last_byte + 1))
   done
 }
+
+put_object_without_content_length() {
+  if ! check_param_count "put_object_without_content_length" "bucket, key, data file" 3 $#; then
+    return 1
+  fi
+  if ! result=$(BUCKET_NAME="$1" OBJECT_KEY="$2" DATA_FILE="$3" OMIT_CONTENT_LENGTH="true" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl.sh 2>&1); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if ! send_via_openssl_and_check_code "$TEST_FILE_FOLDER/command.txt" 411; then
+    log 2 "error in sending or checking response code"
+    return 1
+  fi
+}
