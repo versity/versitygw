@@ -10,7 +10,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/aws/aws-sdk-go-v2 v1.36.5
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.81.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.82.0
 	github.com/aws/smithy-go v1.22.4
 	github.com/go-ldap/ldap/v3 v3.4.11
 	github.com/gofiber/fiber/v2 v2.52.8
@@ -19,7 +19,7 @@ require (
 	github.com/hashicorp/vault-client-go v0.4.3
 	github.com/nats-io/nats.go v1.43.0
 	github.com/oklog/ulid/v2 v2.1.1
-	github.com/pkg/xattr v0.4.11
+	github.com/pkg/xattr v0.4.12
 	github.com/segmentio/kafka-go v0.4.48
 	github.com/smira/go-statsd v1.3.4
 	github.com/urfave/cli/v2 v2.27.7
@@ -59,11 +59,11 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.1.1 // indirect
+	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.11 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.29.17
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.70
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.81
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.82
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.36 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.36 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.36 // indirect
