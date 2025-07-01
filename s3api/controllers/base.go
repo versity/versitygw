@@ -131,6 +131,18 @@ func (c S3ApiController) GetActions(ctx *fiber.Ctx) error {
 		key = key + "/"
 	}
 
+	if key != "" && !utils.IsObjectNameValid(key) {
+		if c.debug {
+			debuglogger.Logf("invalid object name %q", key)
+		}
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:     c.logger,
+				MetricsMng: c.mm,
+				Action:     metrics.ActionGetObject,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 			Readonly:      c.readonly,
@@ -1853,6 +1865,18 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		keyStart = keyStart + "/"
 	}
 
+	if keyStart != "" && !utils.IsObjectNameValid(keyStart) {
+		if c.debug {
+			debuglogger.Logf("invalid object name %q", keyStart)
+		}
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:     c.logger,
+				MetricsMng: c.mm,
+				Action:     metrics.ActionGetObject,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
 		if err != nil {
@@ -2355,6 +2379,19 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 
 	if copySource != "" {
 		cs := copySource
+
+		if !utils.IsObjectNameValid(cs) {
+			if c.debug {
+				debuglogger.Logf("invalid object name %q", cs)
+			}
+			return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+				&MetaOpts{
+					Logger:     c.logger,
+					MetricsMng: c.mm,
+					Action:     metrics.ActionGetObject,
+				})
+		}
+
 		copySource, err := url.QueryUnescape(copySource)
 		if err != nil {
 			if c.debug {
@@ -2995,6 +3032,18 @@ func (c S3ApiController) DeleteActions(ctx *fiber.Ctx) error {
 		key = key + "/"
 	}
 
+	if key != "" && !utils.IsObjectNameValid(key) {
+		if c.debug {
+			debuglogger.Logf("invalid object name %q", key)
+		}
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:     c.logger,
+				MetricsMng: c.mm,
+				Action:     metrics.ActionGetObject,
+			})
+	}
+
 	if ctx.Request().URI().QueryArgs().Has("tagging") {
 		err := auth.VerifyAccess(ctx.Context(), c.be,
 			auth.AccessOptions{
@@ -3228,6 +3277,18 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) error {
 	path := ctx.Path()
 	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
 		key = key + "/"
+	}
+
+	if key != "" && !utils.IsObjectNameValid(key) {
+		if c.debug {
+			debuglogger.Logf("invalid object name %q", key)
+		}
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:     c.logger,
+				MetricsMng: c.mm,
+				Action:     metrics.ActionGetObject,
+			})
 	}
 
 	var partNumber *int32
@@ -3492,6 +3553,18 @@ func (c S3ApiController) CreateActions(ctx *fiber.Ctx) error {
 	path := ctx.Path()
 	if path[len(path)-1:] == "/" && key[len(key)-1:] != "/" {
 		key = key + "/"
+	}
+
+	if key != "" && !utils.IsObjectNameValid(key) {
+		if c.debug {
+			debuglogger.Logf("invalid object name %q", key)
+		}
+		return SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrInvalidRequest),
+			&MetaOpts{
+				Logger:     c.logger,
+				MetricsMng: c.mm,
+				Action:     metrics.ActionGetObject,
+			})
 	}
 
 	if ctx.Request().URI().QueryArgs().Has("restore") {
