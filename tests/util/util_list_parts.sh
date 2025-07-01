@@ -118,6 +118,7 @@ upload_check_parts() {
     log 2 "error checking part list before part upload"
     return 1
   fi
+  sleep 5
   parts_payload=""
   if ! upload_check_part "$1" "$2" "$upload_id" 1 "$3"; then
     log 2 "error uploading and checking first part"

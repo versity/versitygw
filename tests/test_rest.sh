@@ -146,29 +146,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - multipart upload create then abort" {
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_abort_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - multipart upload create, list parts" {
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run upload_check_parts "$BUCKET_ONE_NAME" "$test_file" \
-    "$TEST_FILE_FOLDER/$test_file-0" "$TEST_FILE_FOLDER/$test_file-1" "$TEST_FILE_FOLDER/$test_file-2" "$TEST_FILE_FOLDER/$test_file-3"
-  assert_success
-
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
-  assert_success
-}
-
 @test "REST - get object attributes" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
@@ -205,36 +182,6 @@ test_file="test_file"
   assert_success
 
   run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
-  assert_success
-}
-
-@test "REST - get policy w/o policy" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/959"
-  fi
-
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
-  assert_success
-}
-
-@test "REST - put policy" {
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
-  assert_success
-  log 5 "username: ${lines[1]}"
-  log 5 "password: ${lines[2]}"
-
-  sleep 5
-
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
-  assert_success
-
-  run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
   assert_success
 }
 
@@ -283,28 +230,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - complete upload - invalid part" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1008"
-  fi
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run create_upload_finish_wrong_etag "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - upload part copy (UploadPartCopy)" {
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run create_upload_part_copy_rest "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
-  assert_success
-
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
-  assert_success
-}
-
 @test "REST - head object" {
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -317,25 +242,6 @@ test_file="test_file"
   expected_etag=$output
 
   run get_etag_attribute_rest "$BUCKET_ONE_NAME" "$test_file" "$expected_etag"
-  assert_success
-}
-
-@test "REST - HeadObject - default crc64nvme checksum" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run check_default_checksum "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
-  assert_success
-}
-
-@test "REST - POST call on root endpoint" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1036"
-  fi
-  run delete_object_empty_bucket_check_error
   assert_success
 }
 
@@ -382,58 +288,6 @@ test_file="test_file"
   assert_success
 
   run put_object_rest_chunked_payload_type_without_content_length "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - HeadObject does not return 405 with versioning, after file deleted" {
-  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
-    skip "test isn't valid for this configuration"
-  fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
-  assert_success
-
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run create_test_files "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - HeadObject returns 405 when querying DeleteMarker" {
-  if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
-    skip "test isn't valid for this configuration"
-  fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
-  assert_success
-
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run create_test_files "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run get_delete_marker_and_verify_405 "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
 
@@ -541,85 +395,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - UploadPartCopy w/o upload ID" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1226"
-  fi
-  run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "1" "" \
-    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
-  assert_success
-}
-
-@test "REST - UploadPartCopy w/o part number" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1229"
-  fi
-  run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "" "dummy" \
-    405 "MethodNotAllowed" "The specified method is not allowed against this resource"
-  assert_success
-}
-
-@test "REST - UploadPartCopy - ETag is quoted" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1235"
-  fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run upload_part_copy_check_etag_header "$BUCKET_ONE_NAME" "$test_file"-mp "$BUCKET_ONE_NAME/$test_file"
-  assert_success
-}
-
-@test "REST - UploadPart - ETag is quoted" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1233"
-  fi
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-  # shellcheck disable=SC2030
-  upload_id=$output
-
-  run upload_part_check_etag_header "$BUCKET_ONE_NAME" "$test_file" "$upload_id"
-  assert_success
-}
-
-@test "REST - UploadPart w/o part number" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1236"
-  fi
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - UploadPart w/o upload ID" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1237"
-  fi
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run upload_part_without_upload_id "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
 @test "REST - copy object w/invalid copy source" {
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
@@ -656,20 +431,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - create bucket test" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "invalid test for static buckets"
-  fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_bucket_rest "$BUCKET_ONE_NAME"
-  assert_success
-
-  run list_check_buckets_rest
-  assert_success
-}
-
 @test "REST - put object, missing Content-Length" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1321"
@@ -678,5 +439,23 @@ test_file="test_file"
   assert_success
 
   run put_object_without_content_length "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  assert_success
+}
+
+@test "REST - put, get object, encoded name" {
+  file_name=" \"<>\\^\`{}|+&?%"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$file_name"
+  assert_success
+
+  run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  assert_success
+
+  run list_check_single_object "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  assert_success
+
+  run download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  assert_success
+
+  run delete_object_rest "$BUCKET_ONE_NAME" "$file_name/$file_name"
   assert_success
 }

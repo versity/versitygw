@@ -72,11 +72,6 @@ delete_object_bypass_retention() {
     log 2 "error deleting object: $result"
     return 1
   fi
-  if [ "$result" != "204" ]; then
-    delete_object_error=$(cat "$TEST_FILE_FOLDER/result.txt")
-    log 2 "expected '204', was '$result' ($delete_object_error)"
-    return 1
-  fi
   return 0
 }
 

@@ -29,6 +29,8 @@ source ./tests/util/util_ownership.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 
+export RUN_USERS=true
+
 @test "REST - HeadBucket" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -137,5 +139,57 @@ source ./tests/util/util_tags.sh
 
   # this enables object lock without a specific retention policy
   run put_object_lock_config_without_content_md5 "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - get policy w/o policy" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/959"
+  fi
+
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - put policy" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  assert_success
+  log 5 "username: ${lines[1]}"
+  log 5 "password: ${lines[2]}"
+
+  sleep 5
+
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+
+  run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - create bucket test" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "invalid test for static buckets"
+  fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_bucket_rest "$BUCKET_ONE_NAME"
+  assert_success
+
+  run list_check_buckets_rest
+  assert_success
+}
+
+@test "REST - POST call on root endpoint" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1036"
+  fi
+  run delete_object_empty_bucket_check_error
   assert_success
 }

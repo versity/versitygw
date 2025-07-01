@@ -23,7 +23,7 @@ data_file="$DATA_FILE"
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
-key="$OBJECT_KEY"
+key="$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')"
 # shellcheck disable=SC2153,SC2154
 checksum_type="$CHECKSUM_TYPE"
 # shellcheck disable=SC2153
@@ -38,8 +38,10 @@ checksum_hash="$CHECKSUM"
 fake_signature="$SIGNATURE"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
+data_file_esc="$(echo -n "$data_file" | sed -e 's/[][`"$^{}]/\\&/g')"
+log_rest 5 "sha256sum: $(sha256sum "$data_file")"
 if [ "$payload" == "" ]; then
-  payload_hash="$(sha256sum "$data_file" | awk '{print $1}')"
+  payload_hash="$(sha256sum "$data_file" | awk '{print $1}' | sed 's/\\//g' )"
 else
   payload_hash="$payload"
 fi
@@ -66,9 +68,11 @@ if [ "$fake_signature" != "" ]; then
   signature="$fake_signature"
 fi
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "$AWS_ENDPOINT_URL/$bucket_name/$key")
+
+curl_command+=(curl -ks -w "\"%{http_code}\"" -X PUT "\"$AWS_ENDPOINT_URL/$bucket_name/$key\"")
 curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
-curl_command+=(-T "$data_file" -o "$OUTPUT_FILE")
+curl_command+=(-T "\"$data_file_esc\"" -o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
+log_rest 5 "curl command: ${curl_command[*]}"
 eval "${curl_command[*]}" 2>&1

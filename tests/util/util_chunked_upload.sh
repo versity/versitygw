@@ -112,7 +112,7 @@ attempt_chunked_upload_with_bad_final_signature() {
     log 2 "expected code '403', was '$response_code'"
     return 1
   fi
-  response_data="$(echo "$result" | grep "<")"
+  response_data="$(echo "$result" | grep "<Error>" | sed 's/---//g')"
   log 5 "response data: $response_data"
   log 5 "END"
   if ! check_xml_element <(echo "$response_data") "SignatureDoesNotMatch" "Error" "Code"; then
@@ -158,7 +158,10 @@ put_chunked_upload_trailer_invalid() {
          AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
          DATA_FILE="$1" \
          BUCKET_NAME="$2" \
-         OBJECT_KEY="$3" CHUNK_SIZE=8192 TEST_MODE=false TRAILER="x-amz-checksum-sha10" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
+         OBJECT_KEY="$3" CHUNK_SIZE=8192 TEST_MODE=false \
+         TRAILER="x-amz-checksum-sha10" \
+         INVALID_CHECKSUM_TYPE="true" CHECKSUM="abc" \
+         TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
     log 2 "error creating command: $result"
     return 1
   fi
@@ -172,7 +175,7 @@ put_chunked_upload_trailer_invalid() {
     log 2 "expected response '400', was '$response_code'"
     return 1
   fi
-  error_data="$(echo "$result" | grep "<Error>")"
+  error_data="$(echo "$result" | grep "<Error>" | sed 's/---//g')"
   echo -n "$error_data" > "$TEST_FILE_FOLDER/error-data.txt"
   if ! check_xml_error_contains "$TEST_FILE_FOLDER/error-data.txt" "InvalidRequest" "The value specified in the x-amz-trailer header is not supported"; then
     log 2 "error checking xml error, message"

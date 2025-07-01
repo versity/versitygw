@@ -176,15 +176,29 @@ compare_files() {
     log 2 "file comparison requires two files"
     return 2
   fi
+  log 5 "comparing files '$1' and '$2'"
   os=$(uname)
+
   if [[ $os == "Darwin" ]]; then
-    file_one_md5=$(md5 -q "$1")
-    file_two_md5=$(md5 -q "$2")
+    if ! file_one_md5=$(md5 -q "$1" 2>&1); then
+      log 2 "error getting md5 for '$1': $file_one_md5"
+      return 2
+    fi
+    if ! file_two_md5=$(md5 -q "$2" 2>&1); then
+      log 2 "error getting md5 for '$2': $file_two_md5"
+      return 2
+    fi
   else
-    file_one_md5=$(md5sum "$1" | cut -d " " -f 1)
-    file_two_md5=$(md5sum "$2" | cut -d " " -f 1)
+    if ! file_one_md5=$(md5sum "$1" | cut -d " " -f 1 2>&1); then
+      log 2 "error getting md5 for '$1': $file_one_md5"
+      return 2
+    fi
+    if ! file_two_md5=$(md5sum "$2" | cut -d " " -f 1 2>&1); then
+      log 2 "error getting md5 for '$2': $file_two_md5"
+      return 2
+    fi
   fi
-  if [[ $file_one_md5 == "$file_two_md5" ]]; then
+  if [[ "$file_one_md5" == "$file_two_md5" ]]; then
     return 0
   fi
   return 1
