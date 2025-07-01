@@ -218,6 +218,7 @@ func detectS3Action(ctx *fiber.Ctx, isBucketAction bool) (auth.Action, auth.Perm
 			}
 
 			// UploadPart
+			utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
 			return auth.PutObjectAction, auth.PermissionWrite, nil
 		}
 		if ctx.Get("X-Amz-Copy-Source") != "" {
@@ -225,6 +226,7 @@ func detectS3Action(ctx *fiber.Ctx, isBucketAction bool) (auth.Action, auth.Perm
 		}
 
 		// All the other requests are considered as 'PutObject' in the router
+		utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
 		return auth.PutObjectAction, auth.PermissionWrite, nil
 	case fiber.MethodPost:
 		if isBucketAction {

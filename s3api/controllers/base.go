@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -2216,7 +2217,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 		if bodyi != nil {
 			body = bodyi.(io.Reader)
 		} else {
-			body = ctx.Request().BodyStream()
+			body = bytes.NewReader([]byte{})
 		}
 
 		res, err := c.be.UploadPart(ctx.Context(),
@@ -2702,7 +2703,7 @@ func (c S3ApiController) PutActions(ctx *fiber.Ctx) error {
 	if bodyi != nil {
 		body = bodyi.(io.Reader)
 	} else {
-		body = ctx.Request().BodyStream()
+		body = bytes.NewReader([]byte{})
 	}
 
 	res, err := c.be.PutObject(ctx.Context(),
