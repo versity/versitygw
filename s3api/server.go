@@ -91,6 +91,8 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
+	app.Use(middlewares.ValidateBucketObjectNames(l, mm))
+
 	// Public buckets access checker
 	app.Use(middlewares.AuthorizePublicBucketAccess(be, l, mm))
 

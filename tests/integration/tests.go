@@ -9995,7 +9995,7 @@ func AbortMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
-			Bucket:   getPtr("incorrectBucket"),
+			Bucket:   getPtr("incorrectbucket"),
 			Key:      getPtr("my-obj"),
 			UploadId: getPtr("uploadId"),
 		})
@@ -12328,7 +12328,7 @@ func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		doc := genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
 		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("nonexistingbucket"),
 			Policy: &doc,
 		})
 		cancel()
@@ -13003,7 +13003,7 @@ func GetBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("nonexistingbucket"),
 		})
 		cancel()
 
@@ -13069,7 +13069,7 @@ func DeleteBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("nonexistingbucket"),
 		})
 		cancel()
 
