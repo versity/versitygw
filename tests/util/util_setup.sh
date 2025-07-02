@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-source ./tests/drivers/drivers.sh
 source ./tests/drivers/params.sh
 
 setup_bucket_and_file() {

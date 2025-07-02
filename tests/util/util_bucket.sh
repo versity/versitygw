@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-source ./tests/drivers/drivers.sh
 source ./tests/drivers/params.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/list_objects/list_objects_rest.sh
