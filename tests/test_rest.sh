@@ -461,6 +461,9 @@ test_file="test_file"
 }
 
 @test "REST - GetObject w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD type" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1352"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -469,6 +472,9 @@ test_file="test_file"
 }
 
 @test "REST - PutObject w/x-amz-checksum-algorithm" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1356"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -477,6 +483,9 @@ test_file="test_file"
 }
 
 @test "REST - empty message" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1249"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -486,6 +495,9 @@ test_file="test_file"
 }
 
 @test "REST - deformed message" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1364"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 

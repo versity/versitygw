@@ -153,7 +153,7 @@ put_object_rest_with_unneeded_algorithm_param() {
     return 1
   fi
   if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat $TEST_FILE_FOLDER/result.txt))"
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0
