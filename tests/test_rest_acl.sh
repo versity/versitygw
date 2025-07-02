@@ -164,6 +164,9 @@ fi
 }
 
 @test "REST - invalid canned acl" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1367"
+  fi
   test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
