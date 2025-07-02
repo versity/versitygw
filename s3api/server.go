@@ -83,10 +83,16 @@ func New(
 		app.Use(middlewares.HostStyleParser(server.virtualDomain))
 	}
 
+	// initilaze the default value setter middleware
+	app.Use(middlewares.SetDefaultValues(root, region))
+
 	// initialize the debug logger in debug mode
 	if server.debug {
 		app.Use(middlewares.DebugLogger())
 	}
+
+	// Public buckets access checker
+	app.Use(middlewares.AuthorizePublicBucketAccess(be, l, mm))
 
 	// Authentication middlewares
 	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, mm, region, server.debug))

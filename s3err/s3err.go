@@ -59,6 +59,11 @@ type ErrorCode int
 const (
 	ErrNone ErrorCode = iota
 	ErrAccessDenied
+	ErrAnonymousRequest
+	ErrAnonymousCreateMp
+	ErrAnonymousCopyObject
+	ErrAnonymousPutBucketOwnership
+	ErrAnonymousGetBucketOwnership
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
 	ErrVersionedBucketNotEmpty
@@ -184,6 +189,31 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrAccessDenied: {
 		Code:           "AccessDenied",
 		Description:    "Access Denied.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousRequest: {
+		Code:           "AccessDenied",
+		Description:    "Anonymous users cannot invoke this API. Please authenticate.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousCreateMp: {
+		Code:           "AccessDenied",
+		Description:    "Anonymous users cannot initiate multipart uploads. Please authenticate.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousCopyObject: {
+		Code:           "AccessDenied",
+		Description:    "Anonymous users cannot copy objects. Please authenticate.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousPutBucketOwnership: {
+		Code:           "AccessDenied",
+		Description:    "s3:PutBucketOwnershipControls does not support Anonymous requests!",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousGetBucketOwnership: {
+		Code:           "AccessDenied",
+		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrMethodNotAllowed: {

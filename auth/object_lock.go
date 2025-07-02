@@ -136,7 +136,7 @@ func ParseObjectLegalHoldOutput(status *bool) *s3response.GetObjectLegalHoldResu
 	}
 }
 
-func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []types.ObjectIdentifier, bypass bool, be backend.Backend) error {
+func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []types.ObjectIdentifier, bypass, isBucketPublic bool, be backend.Backend) error {
 	data, err := be.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
@@ -211,7 +211,11 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 							if err != nil {
 								return err
 							}
-							err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+							if isBucketPublic {
+								err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
+							} else {
+								err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+							}
 							if err != nil {
 								return s3err.GetAPIError(s3err.ErrObjectLocked)
 							}
@@ -254,7 +258,11 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 					if err != nil {
 						return err
 					}
-					err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+					if isBucketPublic {
+						err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
+					} else {
+						err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+					}
 					if err != nil {
 						return s3err.GetAPIError(s3err.ErrObjectLocked)
 					}

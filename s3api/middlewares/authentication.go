@@ -46,14 +46,15 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
-		// If account is set in context locals, it means it was presigned url case
-		_, ok := ctx.Locals("account").(auth.Account)
-		if ok {
+		// The bucket is public, no need to check this signature
+		if utils.ContextKeyPublicBucket.IsSet(ctx) {
+			return ctx.Next()
+		}
+		// If ContextKeyAuthenticated is set in context locals, it means it was presigned url case
+		if utils.ContextKeyAuthenticated.IsSet(ctx) {
 			return ctx.Next()
 		}
 
-		ctx.Locals("region", region)
-		ctx.Locals("startTime", time.Now())
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
 			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), logger, mm)
@@ -72,8 +73,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			}, logger, mm)
 		}
 
-		ctx.Locals("isRoot", authData.Access == root.Access)
-		ctx.Locals("rootAccess", root.Access)
+		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
@@ -82,7 +82,8 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		if err != nil {
 			return sendResponse(ctx, err, logger, mm)
 		}
-		ctx.Locals("account", account)
+
+		utils.ContextKeyAccount.Set(ctx, account)
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
