@@ -37,6 +37,10 @@ func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 		return s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.BaseEndpoint = &s.endpoint
 			o.UsePathStyle = s.usePathStyle
+			// The http body stream is not seekable, so most operations cannot
+			// be retried. The error returned to the original client may be
+			// retried by the client.
+			o.Retryer = aws.NopRetryer{}
 		}), nil
 	}
 
