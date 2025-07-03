@@ -3415,6 +3415,81 @@ func PutObject_invalid_credentials(s *S3Conf) error {
 	})
 }
 
+func PutObject_invalid_object_names(s *S3Conf) error {
+	testName := "PutObject_invalid_object_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, obj := range []string{
+			".",
+			"..",
+			"./",
+			"/.",
+			"//",
+			"../",
+			"/..",
+			"/..",
+			"../.",
+			"../../../.",
+			"../../../etc/passwd",
+			"../../../../tmp/foo",
+			"for/../../bar/",
+			"a/a/a/../../../../../etc/passwd",
+			"/a/../../b/../../c/../../../etc/passwd",
+		} {
+			_, err := putObjects(s3client, []string{obj}, bucket)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBadRequest)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutObject_false_negative_object_names(s *S3Conf) error {
+	testName := "PutObject_false_negative_object_names"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs := []string{
+			"%252e%252e%252fetc/passwd",            // double encoding
+			"%2e%2e/%2e%2e/%2e%2e/.ssh/id_rsa",     // double URL-encoded
+			"%u002e%u002e/%u002e%u002e/etc/passwd", // unicode escape
+			"..%2f..%2f..%2fsecret/file.txt",       // URL-encoded
+			"..%c0%af..%c0%afetc/passwd",           // UTF-8 overlong trick
+			".../.../.../target.txt",
+			"..\\u2215..\\u2215etc/passwd",             // Unicode division slash
+			"dir/%20../file.txt",                       // encoded space
+			"dir/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd", // overlong UTF-8 encoding
+			"logs/latest -> /etc/passwd",               // symlink attacks
+			//TODO: add this test case in advanced routing
+			// "/etc/passwd" // absolute path injection
+		}
+		_, err := putObjects(s3client, objs, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(res.Contents) != len(objs) {
+			return fmt.Errorf("expected %v objects, instead got %v", len(objs), len(res.Contents))
+		}
+
+		for i, obj := range res.Contents {
+			if *obj.Key != objs[i] {
+				return fmt.Errorf("expected the %vth object name to be %s, instead got %s", i+1, objs[i], *obj.Key)
+			}
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_non_existing_object(s *S3Conf) error {
 	testName := "HeadObject_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -9995,7 +10070,7 @@ func AbortMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
-			Bucket:   getPtr("incorrectBucket"),
+			Bucket:   getPtr("incorrect-bucket"),
 			Key:      getPtr("my-obj"),
 			UploadId: getPtr("uploadId"),
 		})
@@ -12328,7 +12403,7 @@ func PutBucketPolicy_non_existing_bucket(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		doc := genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
 		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("non-existing-bucket"),
 			Policy: &doc,
 		})
 		cancel()
@@ -13003,7 +13078,7 @@ func GetBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("non-existing-bucket"),
 		})
 		cancel()
 
@@ -13069,7 +13144,7 @@ func DeleteBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
-			Bucket: getPtr("non_existing_bucket"),
+			Bucket: getPtr("non-existing-bucket"),
 		})
 		cancel()
 

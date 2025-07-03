@@ -1720,14 +1720,6 @@ func (c S3ApiController) PutBucketActions(ctx *fiber.Ctx) error {
 			})
 	}
 
-	if ok := utils.IsValidBucketName(bucket); !ok {
-		return SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName),
-			&MetaOpts{
-				Logger:     c.logger,
-				MetricsMng: c.mm,
-				Action:     metrics.ActionCreateBucket,
-			})
-	}
 	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return SendResponse(ctx, s3err.APIError{
 			Code:           "InvalidArgument",

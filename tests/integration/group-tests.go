@@ -150,12 +150,15 @@ func TestPutObject(s *S3Conf) {
 		PutObject_incorrect_checksums(s)
 		PutObject_default_checksum(s)
 		PutObject_checksums_success(s)
+		// azure applies some encoding mechanisms.
+		PutObject_false_negative_object_names(s)
 	}
 	PutObject_success(s)
 	if !s.versioningEnabled {
 		PutObject_racey_success(s)
 	}
 	PutObject_invalid_credentials(s)
+	PutObject_invalid_object_names(s)
 }
 
 func TestHeadObject(s *S3Conf) {
@@ -969,6 +972,8 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                                                 PutObject_special_chars,
 		"PutObject_tagging":                                                       PutObject_tagging,
 		"PutObject_success":                                                       PutObject_success,
+		"PutObject_invalid_object_names":                                          PutObject_invalid_object_names,
+		"PutObject_false_negative_object_names":                                   PutObject_false_negative_object_names,
 		"PutObject_racey_success":                                                 PutObject_racey_success,
 		"HeadObject_non_existing_object":                                          HeadObject_non_existing_object,
 		"HeadObject_invalid_part_number":                                          HeadObject_invalid_part_number,

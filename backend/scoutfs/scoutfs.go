@@ -201,9 +201,6 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 
 	var res s3response.CompleteMultipartUploadResult
 
-	if input.Bucket == nil {
-		return res, "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
-	}
 	if input.Key == nil {
 		return res, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -730,9 +727,6 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
-	if input.Bucket == nil {
-		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
-	}
 	bucket := *input.Bucket
 	prefix := ""
 	if input.Prefix != nil {
@@ -780,9 +774,6 @@ func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (
 }
 
 func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
-	if input.Bucket == nil {
-		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
-	}
 	bucket := *input.Bucket
 	prefix := ""
 	if input.Prefix != nil {
