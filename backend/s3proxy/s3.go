@@ -122,7 +122,7 @@ func (s *S3Proxy) ListBuckets(ctx context.Context, input s3response.ListBucketsI
 			continue
 		}
 
-		data, err := s.getMetaBucketObjData(ctx, *b.Name, metaPrefixAcl)
+		data, err := s.getMetaBucketObjData(ctx, *b.Name, metaPrefixAcl, false)
 		if err != nil {
 			return s3response.ListAllMyBucketsResult{}, handleError(err)
 		}
@@ -186,7 +186,7 @@ func (s *S3Proxy) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 	}
 
 	if s.metaBucket != "" {
-		data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl)
+		data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl, true)
 		if err == nil {
 			acl, err := auth.ParseACL(data)
 			if err != nil {
@@ -1436,7 +1436,7 @@ func (s *S3Proxy) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInpu
 }
 
 func (s *S3Proxy) GetBucketAcl(ctx context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
-	data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl)
+	data, err := s.getMetaBucketObjData(ctx, *input.Bucket, metaPrefixAcl, false)
 	if err != nil {
 		return nil, handleError(err)
 	}
@@ -1506,7 +1506,7 @@ func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []b
 }
 
 func (s *S3Proxy) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
-	data, err := s.getMetaBucketObjData(ctx, bucket, metaPrefixPolicy)
+	data, err := s.getMetaBucketObjData(ctx, bucket, metaPrefixPolicy, false)
 	if err != nil {
 		return nil, handleError(err)
 	}
@@ -1656,7 +1656,10 @@ func (s *S3Proxy) putMetaBucketObj(ctx context.Context, bucket string, data []by
 	return err
 }
 
-func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefix metaPrefix) ([]byte, error) {
+// set checkExists to true if using to check for existence of bucket, in
+// this case it will not return default acl/policy if the metadata does
+// not exist
+func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefix metaPrefix, checkExists bool) ([]byte, error) {
 	// return default bahviour of get bucket policy/acl, if meta bucket is not provided
 	if s.metaBucket == "" {
 		switch prefix {
@@ -1674,6 +1677,10 @@ func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefi
 		Key:    &key,
 	})
 	if areErrSame(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		if checkExists {
+			return nil, err
+		}
+
 		switch prefix {
 		case metaPrefixAcl:
 			// If bucket acl is not found, return default acl
