@@ -26,7 +26,6 @@ import (
 	"hash/crc32"
 	"hash/crc64"
 	"io"
-	"math/bits"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -89,7 +88,7 @@ func NewHashReader(r io.Reader, expectedSum string, ht HashType) (*HashReader, e
 	case HashTypeCRC32C:
 		hash = crc32.New(crc32.MakeTable(crc32.Castagnoli))
 	case HashTypeCRC64NVME:
-		hash = crc64.New(crc64.MakeTable(bits.Reverse64(0xad93d23594c93659)))
+		hash = crc64.New(crc64NVMETable)
 	case HashTypeNone:
 		hash = noop{}
 	default:
@@ -185,7 +184,7 @@ func (hr *HashReader) Type() HashType {
 	return hr.hashType
 }
 
-// Md5SumString converts the hash bytes to the string checksum value
+// Base64SumString converts the hash bytes to the b64 encoded string checksum value
 func Base64SumString(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
@@ -197,6 +196,108 @@ func (n noop) Sum(b []byte) []byte         { return []byte{} }
 func (n noop) Reset()                      {}
 func (n noop) Size() int                   { return 0 }
 func (n noop) BlockSize() int              { return 1 }
+
+// IsChecksumComposable tests if the final foll object crc can be calculated
+// based on the part crc values.
+func IsChecksumComposable(algo types.ChecksumAlgorithm) bool {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32, types.ChecksumAlgorithmCrc32c, types.ChecksumAlgorithmCrc64nvme:
+		return true
+	default:
+		return false
+	}
+}
+
+// AddCRCChecksum calculates the composite CRC checksum after adding the part crc.
+// Only CRC32, CRC32C, and CRC64NVME are supported. The input checksums must be base64-encoded strings.
+func AddCRCChecksum(algo types.ChecksumAlgorithm, crc, partCrc string, partLen int64) (string, error) {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		data, err := base64.StdEncoding.DecodeString(partCrc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode partCrc: %w", err)
+		}
+		if len(data) != 4 {
+			return "", fmt.Errorf("invalid crc32 part checksum length: %d", len(data))
+		}
+		currentCRC, err := base64.StdEncoding.DecodeString(crc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode crc: %w", err)
+		}
+		if len(currentCRC) != 4 {
+			return "", fmt.Errorf("invalid crc32 checksum length: %d", len(currentCRC))
+		}
+
+		currentVal := uint32(currentCRC[0])<<24 | uint32(currentCRC[1])<<16 | uint32(currentCRC[2])<<8 | uint32(currentCRC[3])
+		val := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
+		composite := crc32Combine(crc32.IEEE, currentVal, val, partLen)
+
+		out := []byte{
+			byte(composite >> 24),
+			byte(composite >> 16),
+			byte(composite >> 8),
+			byte(composite),
+		}
+		return base64.StdEncoding.EncodeToString(out), nil
+	case types.ChecksumAlgorithmCrc32c:
+		data, err := base64.StdEncoding.DecodeString(partCrc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode partCrc: %w", err)
+		}
+		if len(data) != 4 {
+			return "", fmt.Errorf("invalid crc32 part checksum length: %d", len(data))
+		}
+		currentCRC, err := base64.StdEncoding.DecodeString(crc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode crc: %w", err)
+		}
+		if len(currentCRC) != 4 {
+			return "", fmt.Errorf("invalid crc32 checksum length: %d", len(currentCRC))
+		}
+
+		currentVal := uint32(currentCRC[0])<<24 | uint32(currentCRC[1])<<16 | uint32(currentCRC[2])<<8 | uint32(currentCRC[3])
+		val := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
+		composite := crc32Combine(crc32.Castagnoli, currentVal, val, partLen)
+
+		// Convert composite to big-endian bytes
+		out := []byte{
+			byte(composite >> 24),
+			byte(composite >> 16),
+			byte(composite >> 8),
+			byte(composite),
+		}
+		return base64.StdEncoding.EncodeToString(out), nil
+	case types.ChecksumAlgorithmCrc64nvme:
+		data, err := base64.StdEncoding.DecodeString(partCrc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode partCrc: %w", err)
+		}
+		if len(data) != 8 {
+			return "", fmt.Errorf("invalid crc64 part checksum length: %d", len(data))
+		}
+		currentCRC, err := base64.StdEncoding.DecodeString(crc)
+		if err != nil {
+			return "", fmt.Errorf("base64 decode crc: %w", err)
+		}
+		if len(currentCRC) != 8 {
+			return "", fmt.Errorf("invalid crc64 checksum length: %d", len(currentCRC))
+		}
+
+		currentVal := uint64(currentCRC[0])<<56 | uint64(currentCRC[1])<<48 | uint64(currentCRC[2])<<40 | uint64(currentCRC[3])<<32 |
+			uint64(currentCRC[4])<<24 | uint64(currentCRC[5])<<16 | uint64(currentCRC[6])<<8 | uint64(currentCRC[7])
+		val := uint64(data[0])<<56 | uint64(data[1])<<48 | uint64(data[2])<<40 | uint64(data[3])<<32 |
+			uint64(data[4])<<24 | uint64(data[5])<<16 | uint64(data[6])<<8 | uint64(data[7])
+		composite := crc64Combine(crc64NVME, currentVal, val, partLen)
+
+		out := []byte{
+			byte(composite >> 56), byte(composite >> 48), byte(composite >> 40), byte(composite >> 32),
+			byte(composite >> 24), byte(composite >> 16), byte(composite >> 8), byte(composite),
+		}
+		return base64.StdEncoding.EncodeToString(out), nil
+	default:
+		return "", fmt.Errorf("composite checksum not supported for algorithm: %v", algo)
+	}
+}
 
 // NewCompositeChecksumReader initializes a composite checksum
 // processor, which decodes and validates the provided
