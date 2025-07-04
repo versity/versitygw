@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 setup_bucket_and_file() {
   if ! check_param_count "setup_bucket_and_file" "bucket, file name" 2 $#; then
@@ -14,7 +14,7 @@ setup_bucket_and_file() {
 }
 
 setup_bucket_and_files() {
-  if ! check_param_count_gt "setup_bucket_and_files" "bucket, file name" 2 $#; then
+  if ! check_param_count_gt "bucket, file name" 2 $#; then
     return 1
   fi
   if ! setup_bucket "$1"; then

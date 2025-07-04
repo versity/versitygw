@@ -216,3 +216,18 @@ source ./tests/util/util_setup.sh
   run chunked_upload_trailer_incorrect_checksum "crc64nvme"
   assert_success
 }
+
+@test "REST chunked upload - smaller chunk size" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  test_file="test-file"
+  run create_test_file "$test_file" 200000
+  assert_success
+
+  run chunked_upload_trailer_different_chunk_size "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha256"
+  assert_success
+
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}

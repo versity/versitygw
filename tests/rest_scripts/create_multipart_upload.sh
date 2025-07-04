@@ -22,30 +22,29 @@ source ./tests/rest_scripts/rest.sh
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2153
 key="$OBJECT_KEY"
-
-# Step 1:  generate canonical request hash
+# shellcheck disable=SC2153
+checksum_type="$CHECKSUM_TYPE"
+# shellcheck disable=SC2153
+checksum_algorithm="$CHECKSUM_ALGORITHM"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request="POST
-/$bucket_name/$key
-uploads=
-host:$host
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
-
-canonical_request_hash="$(echo -n "$canonical_request" | openssl dgst -sha256 | awk '{print $2}')"
+cr_data=("POST" "/$bucket_name/$key" "uploads=" "host:$host")
+if [ "$checksum_algorithm" != "" ]; then
+  cr_data+=("x-amz-checksum-algorithm:$checksum_algorithm")
+fi
+if [ "$checksum_type" != "" ]; then
+  cr_data+=("x-amz-checksum-type:$checksum_type")
+fi
+cr_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
 curl_command+=(curl -ks -w "\"%{http_code}\"" -X POST "$AWS_ENDPOINT_URL/$bucket_name/$key?uploads="
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
--H "\"x-amz-date: $current_date_time\""
--o "$OUTPUT_FILE")
+-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=("${header_fields[@]}")
+curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1

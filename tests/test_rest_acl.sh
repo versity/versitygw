@@ -162,3 +162,18 @@ fi
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$username" "$password"
   assert_success
 }
+
+@test "REST - invalid canned acl" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1367"
+  fi
+  test_file="test_file"
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  assert_success
+
+  run put_bucket_acl_rest_canned_invalid "$BUCKET_ONE_NAME" "privatee"
+  assert_success
+}

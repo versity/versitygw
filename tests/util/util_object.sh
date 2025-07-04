@@ -404,7 +404,7 @@ put_object_rest_check_expires_header() {
 }
 
 download_file_with_user() {
-  if ! check_param_count_gt "download_large_file" "username, password, bucket, key, destination, chunk size (optional)" 5 $#; then
+  if ! check_param_count_gt "username, password, bucket, key, destination, chunk size (optional)" 5 $#; then
     return 1
   fi
   if ! file_size=$(get_object_size_with_user "$1" "$2" "$3" "$4" 2>&1); then
