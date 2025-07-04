@@ -91,6 +91,9 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
+	// initialize the bucket/object name validator
+	app.Use(middlewares.BucketObjectNameValidator(l, mm))
+
 	// Public buckets access checker
 	app.Use(middlewares.AuthorizePublicBucketAccess(be, l, mm))
 
