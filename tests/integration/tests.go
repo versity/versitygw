@@ -1297,11 +1297,6 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		key, partNumber := "my-mp", int32(1)
 
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
-
 		clt := s.GetClient()
 		mp, err := createMp(clt, bucket, key)
 		if err != nil {
@@ -1349,11 +1344,6 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 		}
 		if *out.Parts[0].PartNumber != partNumber {
 			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
-		}
-
-		err = teardown(s, bucket)
-		if err != nil {
-			return err
 		}
 
 		return nil
