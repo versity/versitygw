@@ -385,7 +385,7 @@ func CheckIfAccountsExist(accs []string, iam IAMService) ([]string, error) {
 	for _, acc := range accs {
 		_, err := iam.GetUserAccount(acc)
 		if err != nil {
-			if err == ErrNoSuchUser {
+			if err == ErrNoSuchUser || err == s3err.GetAPIError(s3err.ErrAdminUserNotFound) {
 				result = append(result, acc)
 				continue
 			}

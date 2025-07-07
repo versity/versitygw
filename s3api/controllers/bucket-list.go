@@ -29,7 +29,6 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 	cToken := ctx.Query("continuation-token")
 	prefix := ctx.Query("prefix")
 	maxBucketsStr := ctx.Query("max-buckets")
-
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 
 	var maxBuckets int32 = 10000
