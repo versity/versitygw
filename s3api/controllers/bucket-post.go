@@ -37,19 +37,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	var dObj s3response.DeleteObjects
-
-	err := xml.Unmarshal(ctx.Body(), &dObj)
-	if err != nil {
-		debuglogger.Logf("error unmarshalling delete objects: %v", err)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-	}
-
-	err = auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
 			Acl:            parsedAcl,
@@ -66,6 +54,17 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	var dObj s3response.DeleteObjects
+	err = xml.Unmarshal(ctx.Body(), &dObj)
+	if err != nil {
+		debuglogger.Logf("error unmarshalling delete objects: %v", err)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
 	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, dObj.Objects, bypass, IsBucketPublic, c.be)
