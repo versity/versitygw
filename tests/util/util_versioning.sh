@@ -2,7 +2,7 @@
 
 source ./tests/commands/get_bucket_versioning.sh
 source ./tests/commands/list_object_versions.sh
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 check_if_versioning_enabled() {
   if ! check_param_count "check_if_versioning_enabled" "bucket" 1 $#; then
@@ -203,7 +203,7 @@ parse_versions_rest() {
 }
 
 get_and_check_versions_rest() {
-  if ! check_param_count_gt "get_and_check_versions_rest" "bucket, key, count, expected islatest, expected id equal to null" 5 $#; then
+  if ! check_param_count_gt "bucket, key, count, expected islatest, expected id equal to null" 5 $#; then
     return 1
   fi
   if ! list_object_versions_rest "$1"; then

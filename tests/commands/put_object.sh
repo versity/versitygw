@@ -142,6 +142,22 @@ put_object_rest_user_bad_signature() {
   return 0
 }
 
+put_object_rest_with_unneeded_algorithm_param() {
+  if ! check_param_count_v2 "local file, bucket name, key, checksum type" 4 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" CHECKSUM_TYPE="$4" \
+      ALGORITHM_PARAMETER="true" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_object.sh); then
+    log 2 "error sending object file: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
 put_object_multiple() {
   if [ $# -ne 3 ]; then
     log 2 "put object command requires command type, source, destination"

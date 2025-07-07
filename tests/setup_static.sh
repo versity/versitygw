@@ -14,7 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/drivers/drivers.sh
 source ./tests/env.sh
 source ./tests/util/util_object.sh
 source ./tests/commands/create_bucket.sh

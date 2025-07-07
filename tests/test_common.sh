@@ -37,7 +37,7 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
-source ./tests/drivers/drivers.sh
+source ./tests/drivers/params.sh
 
 # param:  command type
 # fail on test failure

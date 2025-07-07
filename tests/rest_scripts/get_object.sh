@@ -26,6 +26,8 @@ key="$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')"
 checksum_mode="${CHECKSUM_MODE:=false}"
 # shellcheck disable=SC2153
 range="$RANGE"
+# shellcheck disable=SC2153
+payload="${PAYLOAD:=UNSIGNED-PAYLOAD}"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
@@ -37,7 +39,7 @@ fi
 if [ "$checksum_mode" == "true" ]; then
   canonical_request_data+=("x-amz-checksum-mode:ENABLED")
 fi
-canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+canonical_request_data+=("x-amz-content-sha256:$payload" "x-amz-date:$current_date_time")
 
 build_canonical_request "${canonical_request_data[@]}"
 

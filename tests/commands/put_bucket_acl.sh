@@ -16,6 +16,7 @@
 
 source ./tests/util/util_file.sh
 source ./tests/commands/command.sh
+source ./tests/drivers/rest.sh
 
 put_bucket_acl_s3api() {
   log 6 "put_bucket_acl_s3api"
@@ -124,6 +125,36 @@ put_bucket_acl_rest() {
   fi
   if [ "$result" != "200" ]; then
     log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
+    return 1
+  fi
+  return 0
+}
+
+put_canned_acl_rest() {
+  if ! check_param_count_v2 "bucket name, canned ACL" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" CANNED_ACL="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "response code '$result' (message: $(cat "$TEST_FILE_FOLDER/response.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_acl_rest_canned_invalid() {
+  if ! check_param_count_v2 "bucket name, invalid ACL" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" CANNED_ACL="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
+    log 2 "error attempting to put bucket acl: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/response.txt" "400" "InvalidArgument" ""; then
+    log 2 "error checking REST response (message: $(cat "$TEST_FILE_FOLDER/response.txt"))"
     return 1
   fi
   return 0

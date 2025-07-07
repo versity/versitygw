@@ -261,7 +261,7 @@ export RUN_USERS=true
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run create_multipart_upload "$BUCKET_ONE_NAME" "test_file/"
+  run create_multipart_upload_s3api "$BUCKET_ONE_NAME" "test_file/"
   assert_failure
   assert_output -p "Directory object contains data payload"
 }

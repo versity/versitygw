@@ -43,7 +43,7 @@ create_abort_multipart_upload_rest() {
     return 1
   fi
   log 5 "uploads before upload: $(cat "$TEST_FILE_FOLDER/uploads.txt")"
-  if ! create_upload_and_get_id_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2"; then
     log 2 "error creating upload"
     return 1
   fi
