@@ -27,12 +27,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 const IpaVersion = "2.254"
@@ -221,6 +224,8 @@ func (ipa *IpaIAMService) Shutdown() error {
 
 // Implementation
 
+const requestRetries = 3
+
 func (ipa *IpaIAMService) login() error {
 	form := url.Values{}
 	form.Set("user", ipa.username)
@@ -237,17 +242,33 @@ func (ipa *IpaIAMService) login() error {
 	req.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := ipa.client.Do(req)
-	if err != nil {
-		return err
+	var resp *http.Response
+	for i := range requestRetries {
+		resp, err = ipa.client.Do(req)
+		if err == nil {
+			break
+		}
+		// Check for transient network errors
+		if isRetryable(err) {
+			time.Sleep(time.Second * time.Duration(i+1))
+			continue
+		}
+		return fmt.Errorf("login POST to %s failed: %w", req.URL, err)
 	}
+	if err != nil {
+		return fmt.Errorf("login POST to %s failed after retries: %w",
+			req.URL, err)
+	}
+
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 401 {
 		return errors.New("cannot login to FreeIPA: invalid credentials")
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("cannot login to FreeIPA: status code %d", resp.StatusCode)
+		return fmt.Errorf("cannot login to FreeIPA: status code %d",
+			resp.StatusCode)
 	}
 
 	return nil
@@ -294,10 +315,27 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpResp, err := ipa.client.Do(httpReq)
-	if err != nil {
-		return rpcResponse{}, err
+	var httpResp *http.Response
+	for i := range requestRetries {
+		httpResp, err = ipa.client.Do(httpReq)
+		if err == nil {
+			break
+		}
+		// Check for transient network errors
+		if isRetryable(err) {
+			time.Sleep(time.Second * time.Duration(i+1))
+			continue
+		}
+		return rpcResponse{}, fmt.Errorf("ipa request to %s failed: %w",
+			httpReq.URL, err)
 	}
+	if err != nil {
+		return rpcResponse{},
+			fmt.Errorf("ipa request to %s failed after retries: %w",
+				httpReq.URL, err)
+	}
+
+	defer httpResp.Body.Close()
 
 	bytes, err := io.ReadAll(httpResp.Body)
 	ipa.log(string(bytes))
@@ -331,6 +369,30 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		Id:        result.Id,
 		Version:   result.Version,
 	}, nil
+}
+
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+
+	if err, ok := err.(net.Error); ok && err.Timeout() {
+		return true
+	}
+
+	if opErr, ok := err.(*net.OpError); ok {
+		if sysErr, ok := opErr.Err.(*syscall.Errno); ok {
+			if *sysErr == syscall.ECONNRESET {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[string]any) (rpcRequest, error) {
