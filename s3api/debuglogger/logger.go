@@ -45,9 +45,9 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 
 	// log request headers
 	wrapInBox(green, "REQUEST HEADERS", boxWidth, func() {
-		ctx.Request().Header.VisitAll(func(key, value []byte) {
+		for key, value := range ctx.Request().Header.All() {
 			printWrappedLine(yellow, string(key), string(value))
-		})
+		}
 	})
 	// skip request body log for PutObject and UploadPart
 	skipBodyLog := isLargeDataAction(ctx)
@@ -61,18 +61,18 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 	}
 
 	if ctx.Request().URI().QueryArgs().Len() != 0 {
-		ctx.Request().URI().QueryArgs().VisitAll(func(key, val []byte) {
-			log.Printf("%s: %s", key, val)
-		})
+		for key, value := range ctx.Request().URI().QueryArgs().All() {
+			log.Printf("%s: %s", key, value)
+		}
 	}
 }
 
 // Logs http response details: body, headers
 func LogFiberResponseDetails(ctx *fiber.Ctx) {
 	wrapInBox(green, "RESPONSE HEADERS", boxWidth, func() {
-		ctx.Response().Header.VisitAll(func(key, value []byte) {
+		for key, value := range ctx.Response().Header.All() {
 			printWrappedLine(yellow, string(key), string(value))
-		})
+		}
 	})
 
 	_, ok := ctx.Locals("skip-res-body-log").(bool)
