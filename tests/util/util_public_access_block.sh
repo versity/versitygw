@@ -5,8 +5,12 @@ allow_public_access() {
     log 2 "'allow_public_access' requires bucket name"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" BLOCK_PUBLIC_ACLS="FALSE" IGNORE_PUBLIC_ACLS="FALSE" RESTRICT_PUBLIC_BUCKETS="FALSE" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_public_access_block.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" BLOCK_PUBLIC_ACLS="FALSE" IGNORE_PUBLIC_ACLS="FALSE" RESTRICT_PUBLIC_BUCKETS="FALSE" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_public_access_block.sh 2>&1); then
     log 2 "error getting public access block: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/response.txt"))"
     return 1
   fi
   return 0

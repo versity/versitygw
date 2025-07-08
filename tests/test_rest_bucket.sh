@@ -26,6 +26,7 @@ source ./tests/util/util_bucket.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_ownership.sh
+source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
 
@@ -192,4 +193,24 @@ export RUN_USERS=true
   fi
   run delete_object_empty_bucket_check_error
   assert_success
+}
+
+@test "REST - CreateBucket w/invalid acl" {
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ACL="public-reads" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/acl.txt" ./tests/rest_scripts/get_bucket_acl.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  log 5 "acl: $(cat "$TEST_FILE_FOLDER/acl.txt")"
+  return 1
 }
