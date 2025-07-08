@@ -380,7 +380,7 @@ func (s *S3Proxy) CreateMultipartUpload(ctx context.Context, input s3response.Cr
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
-	if input.ObjectLockRetainUntilDate != nil && *input.ObjectLockRetainUntilDate == defTime {
+	if input.ObjectLockRetainUntilDate != nil && (*input.ObjectLockRetainUntilDate).Equal(defTime) {
 		input.ObjectLockRetainUntilDate = nil
 	}
 	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
@@ -530,7 +530,7 @@ func (s *S3Proxy) AbortMultipartUpload(ctx context.Context, input *s3.AbortMulti
 	if input.ExpectedBucketOwner != nil && *input.ExpectedBucketOwner == "" {
 		input.ExpectedBucketOwner = nil
 	}
-	if input.IfMatchInitiatedTime != nil && *input.IfMatchInitiatedTime == defTime {
+	if input.IfMatchInitiatedTime != nil && (*input.IfMatchInitiatedTime).Equal(defTime) {
 		input.IfMatchInitiatedTime = nil
 	}
 	_, err := s.client.AbortMultipartUpload(ctx, input)
@@ -735,13 +735,13 @@ func (s *S3Proxy) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyIn
 	if input.CopySourceIfMatch != nil && *input.CopySourceIfMatch == "" {
 		input.CopySourceIfMatch = nil
 	}
-	if input.CopySourceIfModifiedSince != nil && *input.CopySourceIfModifiedSince == defTime {
+	if input.CopySourceIfModifiedSince != nil && (*input.CopySourceIfModifiedSince).Equal(defTime) {
 		input.CopySourceIfModifiedSince = nil
 	}
 	if input.CopySourceIfNoneMatch != nil && *input.CopySourceIfNoneMatch == "" {
 		input.CopySourceIfNoneMatch = nil
 	}
-	if input.CopySourceIfUnmodifiedSince != nil && *input.CopySourceIfUnmodifiedSince == defTime {
+	if input.CopySourceIfUnmodifiedSince != nil && (*input.CopySourceIfUnmodifiedSince).Equal(defTime) {
 		input.CopySourceIfUnmodifiedSince = nil
 	}
 	if input.CopySourceRange != nil && *input.CopySourceRange == "" {
@@ -955,13 +955,13 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	if input.IfMatch != nil && *input.IfMatch == "" {
 		input.IfMatch = nil
 	}
-	if input.IfModifiedSince != nil && *input.IfModifiedSince == defTime {
+	if input.IfModifiedSince != nil && (*input.IfModifiedSince).Equal(defTime) {
 		input.IfModifiedSince = nil
 	}
 	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
 		input.IfNoneMatch = nil
 	}
-	if input.IfUnmodifiedSince != nil && *input.IfUnmodifiedSince == defTime {
+	if input.IfUnmodifiedSince != nil && (*input.IfUnmodifiedSince).Equal(defTime) {
 		input.IfUnmodifiedSince = nil
 	}
 	if input.PartNumber != nil && *input.PartNumber == 0 {
@@ -985,7 +985,7 @@ func (s *S3Proxy) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	if input.ResponseContentType != nil && *input.ResponseContentType == "" {
 		input.ResponseContentType = nil
 	}
-	if input.ResponseExpires != nil && *input.ResponseExpires == defTime {
+	if input.ResponseExpires != nil && (*input.ResponseExpires).Equal(defTime) {
 		input.ResponseExpires = nil
 	}
 	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
@@ -1015,13 +1015,13 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	if input.IfMatch != nil && *input.IfMatch == "" {
 		input.IfMatch = nil
 	}
-	if input.IfModifiedSince != nil && *input.IfModifiedSince == defTime {
+	if input.IfModifiedSince != nil && (*input.IfModifiedSince).Equal(defTime) {
 		input.IfModifiedSince = nil
 	}
 	if input.IfNoneMatch != nil && *input.IfNoneMatch == "" {
 		input.IfNoneMatch = nil
 	}
-	if input.IfUnmodifiedSince != nil && *input.IfUnmodifiedSince == defTime {
+	if input.IfUnmodifiedSince != nil && (*input.IfUnmodifiedSince).Equal(defTime) {
 		input.IfUnmodifiedSince = nil
 	}
 	if input.PartNumber != nil && *input.PartNumber == 0 {
@@ -1045,7 +1045,7 @@ func (s *S3Proxy) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 	if input.ResponseContentType != nil && *input.ResponseContentType == "" {
 		input.ResponseContentType = nil
 	}
-	if input.ResponseExpires != nil && *input.ResponseExpires == defTime {
+	if input.ResponseExpires != nil && (*input.ResponseExpires).Equal(defTime) {
 		input.ResponseExpires = nil
 	}
 	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
@@ -1153,13 +1153,13 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 	if input.CopySourceIfMatch != nil && *input.CopySourceIfMatch == "" {
 		input.CopySourceIfMatch = nil
 	}
-	if input.CopySourceIfModifiedSince != nil && *input.CopySourceIfModifiedSince == defTime {
+	if input.CopySourceIfModifiedSince != nil && (*input.CopySourceIfModifiedSince).Equal(defTime) {
 		input.CopySourceIfModifiedSince = nil
 	}
 	if input.CopySourceIfNoneMatch != nil && *input.CopySourceIfNoneMatch == "" {
 		input.CopySourceIfNoneMatch = nil
 	}
-	if input.CopySourceIfUnmodifiedSince != nil && *input.CopySourceIfUnmodifiedSince == defTime {
+	if input.CopySourceIfUnmodifiedSince != nil && (*input.CopySourceIfUnmodifiedSince).Equal(defTime) {
 		input.CopySourceIfUnmodifiedSince = nil
 	}
 	if input.CopySourceSSECustomerAlgorithm != nil && *input.CopySourceSSECustomerAlgorithm == "" {
@@ -1192,7 +1192,7 @@ func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInp
 	if input.GrantWriteACP != nil && *input.GrantWriteACP == "" {
 		input.GrantWriteACP = nil
 	}
-	if input.ObjectLockRetainUntilDate != nil && *input.ObjectLockRetainUntilDate == defTime {
+	if input.ObjectLockRetainUntilDate != nil && (*input.ObjectLockRetainUntilDate).Equal(defTime) {
 		input.ObjectLockRetainUntilDate = nil
 	}
 	if input.SSECustomerAlgorithm != nil && *input.SSECustomerAlgorithm == "" {
@@ -1392,7 +1392,7 @@ func (s *S3Proxy) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput)
 	if input.IfMatch != nil && *input.IfMatch == "" {
 		input.IfMatch = nil
 	}
-	if input.IfMatchLastModifiedTime != nil && *input.IfMatchLastModifiedTime == defTime {
+	if input.IfMatchLastModifiedTime != nil && (*input.IfMatchLastModifiedTime).Equal(defTime) {
 		input.IfMatchLastModifiedTime = nil
 	}
 	if input.IfMatchSize != nil && *input.IfMatchSize == 0 {
