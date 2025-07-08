@@ -39,15 +39,6 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	var restoreRequest types.RestoreRequest
-	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
-		debuglogger.Logf("failed to parse the request body: %v", err)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrMalformedXML)
-	}
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
@@ -66,6 +57,16 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	var restoreRequest types.RestoreRequest
+	if err := xml.Unmarshal(ctx.Body(), &restoreRequest); err != nil {
+		debuglogger.Logf("failed to parse the request body: %v", err)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	err = c.be.RestoreObject(ctx.Context(), &s3.RestoreObjectInput{
@@ -89,19 +90,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	var payload s3response.SelectObjectContentPayload
-
-	err := xml.Unmarshal(ctx.Body(), &payload)
-	if err != nil {
-		debuglogger.Logf("error unmarshalling select object content: %v", err)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrMalformedXML)
-	}
-
-	err = auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
 			Acl:            parsedAcl,
@@ -119,6 +108,17 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	var payload s3response.SelectObjectContentPayload
+	err = xml.Unmarshal(ctx.Body(), &payload)
+	if err != nil {
+		debuglogger.Logf("error unmarshalling select object content: %v", err)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	sw := c.be.SelectObjectContent(ctx.Context(),
@@ -260,11 +260,8 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		}, err
 	}
 
-	data := struct {
-		Parts []types.CompletedPart `xml:"Part"`
-	}{}
-
-	err = xml.Unmarshal(ctx.Body(), &data)
+	var body s3response.CompleteMultipartUploadRequestBody
+	err = xml.Unmarshal(ctx.Body(), &body)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling complete multipart upload: %v", err)
 		return &Response{
@@ -274,7 +271,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	if len(data.Parts) == 0 {
+	if len(body.Parts) == 0 {
 		debuglogger.Logf("empty parts provided for complete multipart upload")
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -332,7 +329,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			Key:      &key,
 			UploadId: &uploadId,
 			MultipartUpload: &types.CompletedMultipartUpload{
-				Parts: data.Parts,
+				Parts: body.Parts,
 			},
 			MpuObjectSize:     mpuObjectSize,
 			ChecksumCRC32:     utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc32]),
