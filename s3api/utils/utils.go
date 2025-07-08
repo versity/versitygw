@@ -44,14 +44,14 @@ var (
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
 	metadata = make(map[string]string)
 	headers.DisableNormalizing()
-	headers.VisitAllInOrder(func(key, value []byte) {
+	for key, value := range headers.AllInOrder() {
 		hKey := string(key)
 		if strings.HasPrefix(strings.ToLower(hKey), "x-amz-meta-") {
 			trimmedKey := hKey[11:]
 			headerValue := string(value)
 			metadata[trimmedKey] = headerValue
 		}
-	})
+	}
 	headers.EnableNormalizing()
 
 	return
@@ -74,12 +74,12 @@ func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength
 	}
 
 	// Set the request headers
-	req.Header.VisitAll(func(key, value []byte) {
+	for key, value := range req.Header.All() {
 		keyStr := string(key)
 		if includeHeader(keyStr, signedHdrs) {
 			httpReq.Header.Add(keyStr, string(value))
 		}
-	})
+	}
 
 	// make sure all headers in the signed headers are present
 	for _, header := range signedHdrs {
@@ -124,7 +124,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 	uri, _, _ := strings.Cut(ctx.OriginalURL(), "?")
 	isFirst := true
 
-	ctx.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+	for key, value := range ctx.Request().URI().QueryArgs().All() {
 		_, ok := signedQueryArgs[string(key)]
 		if !ok {
 			escapeValue := url.QueryEscape(string(value))
@@ -135,19 +135,19 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 				uri += fmt.Sprintf("&%s=%s", key, escapeValue)
 			}
 		}
-	})
+	}
 
 	httpReq, err := http.NewRequest(string(req.Header.Method()), uri, body)
 	if err != nil {
 		return nil, errors.New("error in creating an http request")
 	}
 	// Set the request headers
-	req.Header.VisitAll(func(key, value []byte) {
+	for key, value := range req.Header.All() {
 		keyStr := string(key)
 		if includeHeader(keyStr, signedHdrs) {
 			httpReq.Header.Add(keyStr, string(value))
 		}
-	})
+	}
 
 	// Check if Content-Length in signed headers
 	// If content length is non 0, then the header will be included
@@ -297,10 +297,10 @@ func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, outp
 func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]struct{}, error) {
 	attrs := map[s3response.ObjectAttributes]struct{}{}
 	var err error
-	ctx.Request().Header.VisitAll(func(key, value []byte) {
+	for key, value := range ctx.Request().Header.All() {
 		if string(key) == "X-Amz-Object-Attributes" {
 			if len(value) == 0 {
-				return
+				break
 			}
 			oattrs := strings.Split(string(value), ",")
 			for _, a := range oattrs {
@@ -313,7 +313,7 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 				attrs[attr] = struct{}{}
 			}
 		}
-	})
+	}
 
 	if err != nil {
 		return nil, err
@@ -426,10 +426,10 @@ func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValu
 
 	var hdrErr error
 	// Parse and validate checksum headers
-	ctx.Request().Header.VisitAll(func(key, value []byte) {
+	for key, value := range ctx.Request().Header.All() {
 		// Skip `X-Amz-Checksum-Type` as it's a special header
-		if hdrErr != nil || !strings.HasPrefix(string(key), "X-Amz-Checksum-") || string(key) == "X-Amz-Checksum-Type" {
-			return
+		if !strings.HasPrefix(string(key), "X-Amz-Checksum-") || string(key) == "X-Amz-Checksum-Type" {
+			continue
 		}
 
 		algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(string(key), "X-Amz-Checksum-")))
@@ -437,11 +437,11 @@ func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValu
 		if err != nil {
 			debuglogger.Logf("invalid checksum header: %s\n", key)
 			hdrErr = s3err.GetAPIError(s3err.ErrInvalidChecksumHeader)
-			return
+			break
 		}
 
 		checksums[algo] = string(value)
-	})
+	}
 
 	if hdrErr != nil {
 		return sdkAlgorithm, nil, hdrErr
