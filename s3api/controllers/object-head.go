@@ -41,20 +41,6 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	objRange := ctx.Get("Range")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 
-	var partNumber *int32
-	if ctx.Request().URI().QueryArgs().Has("partNumber") {
-		if partNumberQuery < 1 || partNumberQuery > 10000 {
-			debuglogger.Logf("invalid part number: %d", partNumberQuery)
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
-		}
-
-		partNumber = &partNumberQuery
-	}
-
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
@@ -73,6 +59,20 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	var partNumber *int32
+	if ctx.Request().URI().QueryArgs().Has("partNumber") {
+		if partNumberQuery < 1 || partNumberQuery > 10000 {
+			debuglogger.Logf("invalid part number: %d", partNumberQuery)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+		}
+
+		partNumber = &partNumberQuery
 	}
 
 	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))

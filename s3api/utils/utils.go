@@ -677,6 +677,9 @@ func GetStringPtr(str string) *string {
 // Converts any type to a string pointer
 func ConvertToStringPtr[T any](val T) *string {
 	str := fmt.Sprint(val)
+	if str == "" {
+		return nil
+	}
 	return &str
 }
 
@@ -692,6 +695,9 @@ func ConvertPtrToStringPtr[T any](val *T) *string {
 // Formats the date with the given formatting and returns a string pointer
 func FormatDatePtrToString(date *time.Time, format string) *string {
 	if date == nil {
+		return nil
+	}
+	if date.IsZero() {
 		return nil
 	}
 
