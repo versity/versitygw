@@ -26,7 +26,7 @@ var _ backend.Backend = &BackendMock{}
 //			AbortMultipartUploadFunc: func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error {
 //				panic("mock out the AbortMultipartUpload method")
 //			},
-//			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, acl []byte) error {
+//			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, owner string) error {
 //				panic("mock out the ChangeBucketOwner method")
 //			},
 //			CompleteMultipartUploadFunc: func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
@@ -196,7 +196,7 @@ type BackendMock struct {
 	AbortMultipartUploadFunc func(contextMoqParam context.Context, abortMultipartUploadInput *s3.AbortMultipartUploadInput) error
 
 	// ChangeBucketOwnerFunc mocks the ChangeBucketOwner method.
-	ChangeBucketOwnerFunc func(contextMoqParam context.Context, bucket string, acl []byte) error
+	ChangeBucketOwnerFunc func(contextMoqParam context.Context, bucket string, owner string) error
 
 	// CompleteMultipartUploadFunc mocks the CompleteMultipartUpload method.
 	CompleteMultipartUploadFunc func(contextMoqParam context.Context, completeMultipartUploadInput *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error)
@@ -369,8 +369,8 @@ type BackendMock struct {
 			ContextMoqParam context.Context
 			// Bucket is the bucket argument value.
 			Bucket string
-			// ACL is the acl argument value.
-			ACL []byte
+			// Owner is the owner argument value.
+			Owner string
 		}
 		// CompleteMultipartUpload holds details about calls to the CompleteMultipartUpload method.
 		CompleteMultipartUpload []struct {
@@ -864,23 +864,23 @@ func (mock *BackendMock) AbortMultipartUploadCalls() []struct {
 }
 
 // ChangeBucketOwner calls ChangeBucketOwnerFunc.
-func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, bucket string, acl []byte) error {
+func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, bucket string, owner string) error {
 	if mock.ChangeBucketOwnerFunc == nil {
 		panic("BackendMock.ChangeBucketOwnerFunc: method is nil but Backend.ChangeBucketOwner was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
 		Bucket          string
-		ACL             []byte
+		Owner           string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
-		ACL:             acl,
+		Owner:           owner,
 	}
 	mock.lockChangeBucketOwner.Lock()
 	mock.calls.ChangeBucketOwner = append(mock.calls.ChangeBucketOwner, callInfo)
 	mock.lockChangeBucketOwner.Unlock()
-	return mock.ChangeBucketOwnerFunc(contextMoqParam, bucket, acl)
+	return mock.ChangeBucketOwnerFunc(contextMoqParam, bucket, owner)
 }
 
 // ChangeBucketOwnerCalls gets all the calls that were made to ChangeBucketOwner.
@@ -890,12 +890,12 @@ func (mock *BackendMock) ChangeBucketOwner(contextMoqParam context.Context, buck
 func (mock *BackendMock) ChangeBucketOwnerCalls() []struct {
 	ContextMoqParam context.Context
 	Bucket          string
-	ACL             []byte
+	Owner           string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		Bucket          string
-		ACL             []byte
+		Owner           string
 	}
 	mock.lockChangeBucketOwner.RLock()
 	calls = mock.calls.ChangeBucketOwner

@@ -1683,8 +1683,8 @@ func (az *Azure) GetObjectLegalHold(ctx context.Context, bucket, object, version
 	return &status, nil
 }
 
-func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
-	return az.PutBucketAcl(ctx, bucket, acl)
+func (az *Azure) ChangeBucketOwner(ctx context.Context, bucket, owner string) error {
+	return auth.UpdateBucketACLOwner(ctx, az, bucket, owner)
 }
 
 // The action actually returns the containers owned by the user, who initialized the gateway
