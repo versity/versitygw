@@ -199,18 +199,21 @@ export RUN_USERS=true
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ACL="public-reads" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+  run create_bucket_rest_with_invalid_acl "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-full-control - non-existent user" {
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" GRANT_FULL_CONTROL="id=0123" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
     log 2 "error creating bucket: $result"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" "200" "InvalidArgument" ""; then
+    log 2 "error checking XML CreateBucket error"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/acl.txt" ./tests/rest_scripts/get_bucket_acl.sh 2>&1); then
-    log 2 "error creating bucket: $result"
-    return 1
-  fi
-  log 5 "acl: $(cat "$TEST_FILE_FOLDER/acl.txt")"
-  return 1
+  return 0
 }

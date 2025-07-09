@@ -89,3 +89,15 @@ create_bucket_object_lock_enabled() {
   fi
   return 0
 }
+
+create_bucket_rest_with_invalid_acl() {
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ACL="public-reads" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" "400" "InvalidArgument" ""; then
+    log 2 "error checking XML CreateBucket error"
+    return 1
+  fi
+  return 0
+}
