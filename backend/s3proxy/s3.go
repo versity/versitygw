@@ -17,17 +17,12 @@ package s3proxy
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -1553,81 +1548,38 @@ func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versio
 }
 
 func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
-	acll, err := auth.ParseACL(acl)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", s.endpoint, bucket, acll.Owner), nil)
-	if err != nil {
-		return fmt.Errorf("failed to send the request: %w", err)
-	}
-
-	signer := v4.NewSigner()
-
-	hashedPayload := sha256.Sum256([]byte{})
-	hexPayload := hex.EncodeToString(hashedPayload[:])
-
-	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
-
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.access, SecretAccessKey: s.secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
-	if signErr != nil {
-		return fmt.Errorf("failed to sign the request: %w", err)
-	}
-
-	client := http.Client{}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send the request: %w", err)
-	}
-
-	if resp.StatusCode > 300 {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		return fmt.Errorf("%v", string(body))
-	}
-
-	return nil
+	return s.PutBucketAcl(ctx, bucket, acl)
 }
 
 func (s *S3Proxy) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
-	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", s.endpoint), nil)
-	if err != nil {
-		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)
-	}
-
-	signer := v4.NewSigner()
-
-	hashedPayload := sha256.Sum256([]byte{})
-	hexPayload := hex.EncodeToString(hashedPayload[:])
-
-	req.Header.Set("X-Amz-Content-Sha256", hexPayload)
-
-	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.access, SecretAccessKey: s.secret}, req, hexPayload, "s3", s.awsRegion, time.Now())
-	if signErr != nil {
-		return []s3response.Bucket{}, fmt.Errorf("failed to sign the request: %w", err)
-	}
-
-	client := http.Client{}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return []s3response.Bucket{}, fmt.Errorf("failed to send the request: %w", err)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return []s3response.Bucket{}, err
-	}
-	defer resp.Body.Close()
-
 	var buckets []s3response.Bucket
-	if err := json.Unmarshal(body, &buckets); err != nil {
-		return []s3response.Bucket{}, err
+
+	paginator := s3.NewListBucketsPaginator(s.client, &s3.ListBucketsInput{})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, handleError(err)
+		}
+		for _, bucket := range page.Buckets {
+			if *bucket.Name == s.metaBucket {
+				continue
+			}
+			aclJSON, err := s.getMetaBucketObjData(ctx, *bucket.Name, metaPrefixAcl, false)
+			if err != nil {
+				return nil, handleError(err)
+			}
+
+			acl, err := auth.ParseACL(aclJSON)
+			if err != nil {
+				return buckets, fmt.Errorf("parse acl tag: %w", err)
+			}
+
+			buckets = append(buckets, s3response.Bucket{
+				Name:  *bucket.Name,
+				Owner: acl.Owner,
+			})
+		}
 	}
 
 	return buckets, nil
