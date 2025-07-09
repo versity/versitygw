@@ -2117,28 +2117,33 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		return uploads[i].Key < uploads[j].Key
 	})
 
-	for i := keyMarkerInd + 1; i < len(uploads); i++ {
-		if maxUploads == 0 {
-			break
+	start := 0
+	if keyMarker != "" {
+		for i, up := range uploads {
+			if up.Key == keyMarker && (uploadIDMarker == "" ||
+				up.UploadID == uploadIDMarker) {
+				// Start after the marker
+				start = i + 1
+				break
+			}
 		}
-		if keyMarker != "" && uploadIDMarker != "" && uploads[i].UploadID < uploadIDMarker {
-			continue
-		}
-		if i != len(uploads)-1 && len(resultUpds) == maxUploads {
+	}
+
+	for i := start; i < len(uploads); i++ {
+		if len(resultUpds) == maxUploads {
 			return s3response.ListMultipartUploadsResult{
 				Bucket:             bucket,
 				Delimiter:          delimiter,
 				KeyMarker:          keyMarker,
 				MaxUploads:         maxUploads,
-				NextKeyMarker:      resultUpds[i-1].Key,
-				NextUploadIDMarker: resultUpds[i-1].UploadID,
+				NextKeyMarker:      resultUpds[len(resultUpds)-1].Key,
+				NextUploadIDMarker: resultUpds[len(resultUpds)-1].UploadID,
 				IsTruncated:        true,
 				Prefix:             prefix,
 				UploadIDMarker:     uploadIDMarker,
 				Uploads:            resultUpds,
 			}, nil
 		}
-
 		resultUpds = append(resultUpds, uploads[i])
 	}
 
