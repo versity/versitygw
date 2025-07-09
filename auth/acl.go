@@ -466,3 +466,30 @@ func VerifyPublicBucketACL(ctx context.Context, be backend.Backend, bucket strin
 
 	return nil
 }
+
+// UpdateBucketACLOwner sets default ACL with new owner and removes
+// any previous bucket policy that was in place
+func UpdateBucketACLOwner(ctx context.Context, be backend.Backend, bucket, newOwner string) error {
+	acl := ACL{
+		Owner: newOwner,
+		Grantees: []Grantee{
+			{
+				Permission: PermissionFullControl,
+				Access:     newOwner,
+				Type:       types.TypeCanonicalUser,
+			},
+		},
+	}
+
+	result, err := json.Marshal(acl)
+	if err != nil {
+		return fmt.Errorf("marshal ACL: %w", err)
+	}
+
+	err = be.PutBucketAcl(ctx, bucket, result)
+	if err != nil {
+		return err
+	}
+
+	return be.DeleteBucketPolicy(ctx, bucket)
+}

@@ -1547,8 +1547,8 @@ func (s *S3Proxy) GetObjectLegalHold(ctx context.Context, bucket, object, versio
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
-	return s.PutBucketAcl(ctx, bucket, acl)
+func (s *S3Proxy) ChangeBucketOwner(ctx context.Context, bucket, owner string) error {
+	return auth.UpdateBucketACLOwner(ctx, s, bucket, owner)
 }
 
 func (s *S3Proxy) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {

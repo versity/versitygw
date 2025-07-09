@@ -324,7 +324,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 	}
 	adminController := AdminController{
 		be: &BackendMock{
-			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, acl []byte) error {
+			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, owner string) error {
 				return nil
 			},
 		},

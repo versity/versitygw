@@ -4888,8 +4888,8 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 	return data, nil
 }
 
-func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket string, acl []byte) error {
-	return p.PutBucketAcl(ctx, bucket, acl)
+func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, owner string) error {
+	return auth.UpdateBucketACLOwner(ctx, p, bucket, owner)
 }
 
 func listBucketFileInfos(bucketlinks bool) ([]fs.FileInfo, error) {
