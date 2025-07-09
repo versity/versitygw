@@ -220,6 +220,25 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:       c.readonly,
+		Acl:            parsedAcl,
+		AclPermission:  auth.PermissionRead,
+		IsRoot:         isRoot,
+		Acc:            acct,
+		Bucket:         bucket,
+		Object:         key,
+		Action:         auth.ListMultipartUploadPartsAction,
+		IsBucketPublic: isPublicBucket,
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	// parse the part number marker
 	if partNumberMarker != "" {
 		n, err := strconv.Atoi(partNumberMarker)
@@ -245,25 +264,6 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidMaxParts)
-	}
-
-	err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Object:         key,
-		Action:         auth.ListMultipartUploadPartsAction,
-		IsBucketPublic: isPublicBucket,
-	})
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
 	}
 
 	res, err := c.be.ListParts(ctx.Context(), &s3.ListPartsInput{
