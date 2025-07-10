@@ -42,16 +42,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-
-	err = auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:       c.readonly,
 		Acl:            parsedAcl,
 		AclPermission:  auth.PermissionWrite,
@@ -62,6 +53,15 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		Action:         auth.PutBucketTaggingAction,
 		IsBucketPublic: IsBucketPublic,
 	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -145,6 +145,24 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
+	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:       c.readonly,
+		Acl:            parsedAcl,
+		AclPermission:  auth.PermissionWrite,
+		IsRoot:         isRoot,
+		Acc:            acct,
+		Bucket:         bucket,
+		Object:         key,
+		Action:         auth.PutObjectLegalHoldAction,
+		IsBucketPublic: IsBucketPublic,
+	}); err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	var legalHold types.ObjectLockLegalHold
 	if err := xml.Unmarshal(ctx.Body(), &legalHold); err != nil {
 		debuglogger.Logf("failed to parse request body: %v", err)
@@ -162,24 +180,6 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
-	}
-
-	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionWrite,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Object:         key,
-		Action:         auth.PutObjectLegalHoldAction,
-		IsBucketPublic: IsBucketPublic,
-	}); err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
 	}
 
 	err := c.be.PutObjectLegalHold(ctx.Context(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
@@ -212,15 +212,6 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		contentLengthStr = decodedLength
 	}
 
-	if partNumber < 1 || partNumber > 10000 {
-		debuglogger.Logf("invalid part number: %d", partNumber)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
-	}
-
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
@@ -239,6 +230,15 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if partNumber < 1 || partNumber > 10000 {
+		debuglogger.Logf("invalid part number: %d", partNumber)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 	}
 
 	contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
@@ -329,15 +329,6 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
 	}
 
-	if partNumber < 1 || partNumber > 10000 {
-		debuglogger.Logf("invalid part number: %d", partNumber)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
-	}
-
 	err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
 		auth.AccessOptions{
 			Acl:            parsedAcl,
@@ -355,6 +346,15 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if partNumber < 1 || partNumber > 10000 {
+		debuglogger.Logf("invalid part number: %d", partNumber)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 	}
 
 	resp, err := c.be.UploadPartCopy(ctx.Context(),
@@ -390,7 +390,6 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
 	granWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
-	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -415,95 +414,16 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	var input *s3.PutObjectAclInput
-	if len(ctx.Body()) > 0 {
-		if grants+acl != "" {
-			debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-
-		var accessControlPolicy auth.AccessControlPolicy
-		err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
-		if err != nil {
-			debuglogger.Logf("error unmarshalling access control policy: %v", err)
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-
-		//TODO: This part will be changed when object acls are implemented
-
-		grants := []types.Grant{}
-		for _, grt := range accessControlPolicy.AccessControlList.Grants {
-			grants = append(grants, types.Grant{
-				Grantee: &types.Grantee{
-					ID:   &grt.Grantee.ID,
-					Type: grt.Grantee.Type,
-				},
-				Permission: types.Permission(grt.Permission),
-			})
-		}
-
-		input = &s3.PutObjectAclInput{
-			Bucket: &bucket,
-			Key:    &key,
-			ACL:    "",
-			AccessControlPolicy: &types.AccessControlPolicy{
-				Owner:  accessControlPolicy.Owner,
-				Grants: grants,
-			},
-		}
-	}
-	if acl != "" {
-		if acl != "private" && acl != "public-read" && acl != "public-read-write" {
-			debuglogger.Logf("invalid acl: %q", acl)
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-		if len(ctx.Body()) > 0 || grants != "" {
-			debuglogger.Logf("invalid request: %q (grants) %q (acl) %v (body len)", grants, acl, len(ctx.Body()))
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
-
-		input = &s3.PutObjectAclInput{
-			Bucket: &bucket,
-			Key:    &key,
-			ACL:    types.ObjectCannedACL(acl),
-			AccessControlPolicy: &types.AccessControlPolicy{
-				Owner: &types.Owner{ID: &parsedAcl.Owner},
-			},
-		}
-	}
-	if grants != "" {
-		input = &s3.PutObjectAclInput{
-			Bucket:           &bucket,
-			Key:              &key,
-			GrantFullControl: &grantFullControl,
-			GrantRead:        &grantRead,
-			GrantReadACP:     &grantReadACP,
-			GrantWrite:       &granWrite,
-			GrantWriteACP:    &grantWriteACP,
-			AccessControlPolicy: &types.AccessControlPolicy{
-				Owner: &types.Owner{ID: &parsedAcl.Owner},
-			},
-			ACL: "",
-		}
-	}
-
-	err = c.be.PutObjectAcl(ctx.Context(), input)
+	err = c.be.PutObjectAcl(ctx.Context(), &s3.PutObjectAclInput{
+		Bucket:           &bucket,
+		Key:              &key,
+		GrantFullControl: &grantFullControl,
+		GrantRead:        &grantRead,
+		GrantWrite:       &granWrite,
+		ACL:              types.ObjectCannedACL(acl),
+		GrantReadACP:     &grantReadACP,
+		GrantWriteACP:    &grantWriteACP,
+	})
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
