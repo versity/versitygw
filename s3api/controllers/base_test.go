@@ -54,15 +54,15 @@ var (
 )
 
 type testInput struct {
-	bucket       string
-	object       string
-	body         []byte
-	locals       map[utils.ContextKey]any
-	headers      map[string]string
-	queries      map[string]string
-	beRes        any
-	beErr        error
-	extraMockErr error
+	bucket        string
+	body          []byte
+	locals        map[utils.ContextKey]any
+	headers       map[string]string
+	queries       map[string]string
+	beRes         any
+	beErr         error
+	extraMockErr  error
+	extraMockResp any
 }
 
 type testOutput struct {
