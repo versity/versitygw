@@ -23,6 +23,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -3924,7 +3925,7 @@ func SendResponse(ctx *fiber.Ctx, err error, l *MetaOpts) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(apierr, "", "", ""))
 		}
 
-		debuglogger.Logf("Internal Error, %v", err)
+		fmt.Fprintf(os.Stderr, "Internal Error, %v\n", err)
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
@@ -3978,7 +3979,7 @@ func SendXMLResponse(ctx *fiber.Ctx, resp any, err error, l *MetaOpts) error {
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		debuglogger.Logf("Internal Error, %v", err)
+		fmt.Fprintf(os.Stderr, "Internal Error, %v\n", err)
 		ctx.Status(http.StatusInternalServerError)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
