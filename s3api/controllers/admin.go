@@ -113,6 +113,11 @@ func (c AdminController) UpdateUser(ctx *fiber.Ctx) (*Response, error) {
 
 func (c AdminController) DeleteUser(ctx *fiber.Ctx) (*Response, error) {
 	access := ctx.Query("access")
+	if access == "" {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetAPIError(s3err.ErrAdminMissingUserAcess)
+	}
 
 	err := c.iam.DeleteUserAccount(access)
 	return &Response{
