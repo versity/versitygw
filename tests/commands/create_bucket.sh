@@ -101,3 +101,27 @@ create_bucket_rest_with_invalid_acl() {
   fi
   return 0
 }
+
+create_bucket_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, params, response code, error code, message" 5 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/create_bucket.sh" "$3" "$4" "$5"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_rest_expect_success() {
+  if ! check_param_count_v2 "bucket name, params" 2 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/create_bucket.sh" "200"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}

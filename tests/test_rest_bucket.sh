@@ -207,13 +207,55 @@ export RUN_USERS=true
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" GRANT_FULL_CONTROL="id=0123" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
-    log 2 "error creating bucket: $result"
-    return 1
+  if [ "$DIRECT" == "true" ]; then
+    id="id=$ACL_AWS_CANONICAL_ID"0
+  else
+    id="$AWS_ACCESS_KEY_ID"a
   fi
-  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" "200" "InvalidArgument" ""; then
-    log 2 "error checking XML CreateBucket error"
-    return 1
+  envs="GRANT_FULL_CONTROL=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
+  run create_bucket_rest_expect_error "$BUCKET_ONE_NAME" "$envs" "400" "InvalidArgument" "Invalid id"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-full-control - no ownership control change" {
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    id="id=$ACL_AWS_CANONICAL_ID"
+  else
+    id="$AWS_ACCESS_KEY_ID"
   fi
-  return 0
+  envs="GRANT_FULL_CONTROL=$id"
+  run create_bucket_rest_expect_error "$BUCKET_ONE_NAME" "$envs" "400" "InvalidBucketAclWithObjectOwnership" "Bucket cannot have ACLs set"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-full-control - success" {
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+  if [ "$DIRECT" == "true" ]; then
+    id="id=$user_canonical_id"
+  else
+    id="$user_canonical_id"
+  fi
+  envs="GRANT_FULL_CONTROL=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
+  run create_bucket_rest_expect_success "$BUCKET_ONE_NAME" "$envs"
+  assert_success
+
+  test_file="test_file"
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object_rest_with_user "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/${test_file}-copy"
+  assert_success
 }
