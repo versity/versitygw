@@ -196,6 +196,9 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket w/invalid acl" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1379"
+  fi
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
@@ -204,6 +207,9 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - x-amz-grant-full-control - non-existent user" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1384"
+  fi
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 
@@ -218,6 +224,9 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - x-amz-grant-full-control - no ownership control change" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1387"
+  fi
   run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
   assert_success
 

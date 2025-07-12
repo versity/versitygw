@@ -21,7 +21,9 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 acl="$ACL"
+# shellcheck disable=SC2153
 object_ownership="$OBJECT_OWNERSHIP"
+# shellcheck disable=SC2153
 grant_full_control="$GRANT_FULL_CONTROL"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
