@@ -89,3 +89,39 @@ create_bucket_object_lock_enabled() {
   fi
   return 0
 }
+
+create_bucket_rest_with_invalid_acl() {
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ACL="public-reads" OBJECT_OWNERSHIP="BucketOwnerPreferred" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/result.txt" "400" "InvalidArgument" ""; then
+    log 2 "error checking XML CreateBucket error"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, params, response code, error code, message" 5 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/create_bucket.sh" "$3" "$4" "$5"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_rest_expect_success() {
+  if ! check_param_count_v2 "bucket name, params" 2 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/create_bucket.sh" "200"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
