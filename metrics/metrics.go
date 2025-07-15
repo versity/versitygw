@@ -41,8 +41,14 @@ type Tag struct {
 	Value string
 }
 
-// Manager is a manager of metrics plugins
-type Manager struct {
+// Manager is the interface definition for metrics manager
+type Manager interface {
+	Send(ctx *fiber.Ctx, err error, action string, count int64, status int)
+	Close()
+}
+
+// manager is a manager of metrics plugins
+type manager struct {
 	wg  sync.WaitGroup
 	ctx context.Context
 
@@ -59,7 +65,7 @@ type Config struct {
 }
 
 // NewManager initializes metrics plugins and returns a new metrics manager
-func NewManager(ctx context.Context, conf Config) (*Manager, error) {
+func NewManager(ctx context.Context, conf Config) (Manager, error) {
 	if len(conf.StatsdServers) == 0 && len(conf.DogStatsdServers) == 0 {
 		return nil, nil
 	}
@@ -74,7 +80,7 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 
 	addDataChan := make(chan datapoint, dataItemCount)
 
-	mgr := &Manager{
+	mgr := &manager{
 		addDataChan: addDataChan,
 		ctx:         ctx,
 		config:      conf,
@@ -112,7 +118,7 @@ func NewManager(ctx context.Context, conf Config) (*Manager, error) {
 	return mgr, nil
 }
 
-func (m *Manager) Send(ctx *fiber.Ctx, err error, action string, count int64, status int) {
+func (m *manager) Send(ctx *fiber.Ctx, err error, action string, count int64, status int) {
 	// In case of Authentication failures, url parsing ...
 	if action == "" {
 		action = ActionUndetected
@@ -168,12 +174,12 @@ func (m *Manager) Send(ctx *fiber.Ctx, err error, action string, count int64, st
 }
 
 // increment increments the key by one
-func (m *Manager) increment(key string, tags ...Tag) {
+func (m *manager) increment(key string, tags ...Tag) {
 	m.add(key, 1, tags...)
 }
 
 // add adds value to key
-func (m *Manager) add(key string, value int64, tags ...Tag) {
+func (m *manager) add(key string, value int64, tags ...Tag) {
 	if m.ctx.Err() != nil {
 		return
 	}
@@ -192,7 +198,7 @@ func (m *Manager) add(key string, value int64, tags ...Tag) {
 }
 
 // Close closes metrics channels, waits for data to complete, closes all plugins
-func (m *Manager) Close() {
+func (m *manager) Close() {
 	// drain the datapoint channels
 	close(m.addDataChan)
 	m.wg.Wait()
@@ -209,7 +215,7 @@ type publisher interface {
 	Close()
 }
 
-func (m *Manager) addForwarder(addChan <-chan datapoint) {
+func (m *manager) addForwarder(addChan <-chan datapoint) {
 	for data := range addChan {
 		for _, s := range m.publishers {
 			s.Add(data.key, data.value, data.tags...)
