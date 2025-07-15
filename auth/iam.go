@@ -121,6 +121,7 @@ type Opts struct {
 	LDAPGroupIdAtr         string
 	VaultEndpointURL       string
 	VaultSecretStoragePath string
+	VaultAuthMethod        string
 	VaultMountPath         string
 	VaultRootToken         string
 	VaultRoleId            string
@@ -166,7 +167,7 @@ func New(o *Opts) (IAMService, error) {
 			o.S3Endpoint, o.S3Bucket)
 	case o.VaultEndpointURL != "":
 		svc, err = NewVaultIAMService(o.RootAccount, o.VaultEndpointURL, o.VaultSecretStoragePath,
-			o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
+			o.VaultAuthMethod, o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
 			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
 		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
 	case o.IpaHost != "":

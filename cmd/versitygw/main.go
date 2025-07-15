@@ -61,10 +61,10 @@ var (
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
 	ldapUserIdAtr, ldapGroupIdAtr            string
 	vaultEndpointURL, vaultSecretStoragePath string
-	vaultMountPath, vaultRootToken           string
-	vaultRoleId, vaultRoleSecret             string
-	vaultServerCert, vaultClientCert         string
-	vaultClientCertKey                       string
+	vaultAuthMethod, vaultMountPath          string
+	vaultRootToken, vaultRoleId              string
+	vaultRoleSecret, vaultServerCert         string
+	vaultClientCert, vaultClientCertKey      string
 	s3IamAccess, s3IamSecret                 string
 	s3IamRegion, s3IamBucket                 string
 	s3IamEndpoint                            string
@@ -381,6 +381,12 @@ func initFlags() []cli.Flag {
 			Destination: &vaultSecretStoragePath,
 		},
 		&cli.StringFlag{
+			Name:        "iam-vault-auth-method",
+			Usage:       "vault server auth method",
+			EnvVars:     []string{"VGW_IAM_VAULT_AUTH_METHOD"},
+			Destination: &vaultAuthMethod,
+		},
+		&cli.StringFlag{
 			Name:        "iam-vault-mount-path",
 			Usage:       "vault server mount path",
 			EnvVars:     []string{"VGW_IAM_VAULT_MOUNT_PATH"},
@@ -658,6 +664,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		LDAPGroupIdAtr:         ldapGroupIdAtr,
 		VaultEndpointURL:       vaultEndpointURL,
 		VaultSecretStoragePath: vaultSecretStoragePath,
+		VaultAuthMethod:        vaultAuthMethod,
 		VaultMountPath:         vaultMountPath,
 		VaultRootToken:         vaultRootToken,
 		VaultRoleId:            vaultRoleId,
