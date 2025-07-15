@@ -20,11 +20,25 @@ source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
+acl="$ACL"
+# shellcheck disable=SC2153
+object_ownership="$OBJECT_OWNERSHIP"
+# shellcheck disable=SC2153
+grant_full_control="$GRANT_FULL_CONTROL"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 cr_data=("PUT" "/$bucket_name" "" "host:$host")
+if [ "$acl" != "" ]; then
+  cr_data+=("x-amz-acl:$acl")
+fi
 cr_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+if [ "$grant_full_control" != "" ]; then
+  cr_data+=("x-amz-grant-full-control:$grant_full_control")
+fi
+if [ "$object_ownership" != "" ]; then
+  cr_data+=("x-amz-object-ownership:$object_ownership")
+fi
 build_canonical_request "${cr_data[@]}"
 
 # shellcheck disable=SC2119

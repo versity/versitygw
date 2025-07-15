@@ -30,3 +30,51 @@ check_rest_expected_error() {
   fi
   return 0
 }
+
+send_rest_command() {
+  if ! check_param_count_v2 "env vars, script, output file" 3 $#; then
+    return 1
+  fi
+  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$3")
+  if [ "$1" != "" ]; then
+    IFS=' ' read -r -a env_vars <<< "$1"
+    env_array+=("${env_vars[@]}")
+  fi
+  # shellcheck disable=SC2068
+  if ! result=$(${env_array[@]} "$2" 2>&1); then
+    log 2 "error sending command: $result"
+    return 1
+  fi
+}
+
+send_rest_command_expect_error() {
+  if ! check_param_count_v2 "env vars, script, response code, error, message" 5 $#; then
+    return 1
+  fi
+  output_file="$TEST_FILE_FOLDER/error.txt"
+  if ! send_rest_command "$1" "$2" "$output_file"; then
+    log 2 "error sending REST command"
+    return 1
+  fi
+  if ! check_rest_expected_error "$result" "$output_file" "$3" "$4" "$5"; then
+    log 2 "error checking REST error"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_command_expect_success() {
+  if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
+    return 1
+  fi
+  output_file="$TEST_FILE_FOLDER/error.txt"
+  if ! send_rest_command "$1" "$2" "$output_file"; then
+    log 2 "error sending REST command"
+    return 1
+  fi
+  if [ "$result" != "$3" ]; then
+    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/error.txt"))"
+    return 1
+  fi
+  return 0
+}
