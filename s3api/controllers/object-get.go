@@ -461,7 +461,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 					*res.ContentLength)
 				return &Response{
 					MetaOpts: &MetaOptions{
-						ContentLength: getint64(res.ContentLength),
+						ContentLength: utils.GetInt64(res.ContentLength),
 						BucketOwner:   parsedAcl.Owner,
 						Status:        status,
 					},
@@ -501,7 +501,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 			"Last-Modified":                       utils.FormatDatePtrToString(res.LastModified, timefmt),
 		},
 		MetaOpts: &MetaOptions{
-			ContentLength: getint64(res.ContentLength),
+			ContentLength: utils.GetInt64(res.ContentLength),
 			BucketOwner:   parsedAcl.Owner,
 			Status:        status,
 		},

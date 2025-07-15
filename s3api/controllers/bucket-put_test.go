@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -810,4 +811,291 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 	}
 }
 
-// TODO: add a test for PutBucketAcl
+func TestS3ApiController_PutBucketAcl(t *testing.T) {
+	invalidBody, err := xml.Marshal(auth.AccessControlPolicy{
+		Owner: &types.Owner{
+			ID: utils.GetStringPtr("root"),
+		},
+		AccessControlList: auth.AccessControlList{
+			Grants: []auth.Grant{
+				{
+					Permission: auth.Permission("invalid_permission"),
+				},
+			},
+		},
+	})
+	assert.NoError(t, err)
+
+	incorrectOwnerBody, err := xml.Marshal(auth.AccessControlPolicy{
+		Owner: &types.Owner{
+			ID: utils.GetStringPtr("user"),
+		},
+		AccessControlList: auth.AccessControlList{},
+	})
+	assert.NoError(t, err)
+
+	validAccessControlPolicy, err := xml.Marshal(auth.AccessControlPolicy{
+		Owner: &types.Owner{
+			ID: utils.GetStringPtr("root"),
+		},
+		AccessControlList: auth.AccessControlList{},
+	})
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "access denied",
+			input: testInput{
+				locals: accessDeniedLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "fails to get bucket ownership",
+			input: testInput{
+				locals:        defaultLocals,
+				extraMockErr:  s3err.GetAPIError(s3err.ErrInternalError),
+				extraMockResp: types.ObjectOwnership(""),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInternalError),
+			},
+		},
+		{
+			name: "acl not supported",
+			input: testInput{
+				locals:        defaultLocals,
+				extraMockResp: types.ObjectOwnershipBucketOwnerEnforced,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAclNotSupported),
+			},
+		},
+		{
+			name: "invalid request body",
+			input: testInput{
+				locals:        defaultLocals,
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				body:          []byte("invalid_body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedACL),
+			},
+		},
+		{
+			name: "invalid access control policy",
+			input: testInput{
+				locals:        defaultLocals,
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				body:          invalidBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedACL),
+			},
+		},
+		{
+			name: "incorrect owner id",
+			input: testInput{
+				locals:        defaultLocals,
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				body:          incorrectOwnerBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.APIError{
+					Code:           "InvalidArgument",
+					Description:    "Invalid id",
+					HTTPStatusCode: http.StatusBadRequest,
+				},
+			},
+		},
+		{
+			name: "both access control policy and grants",
+			input: testInput{
+				body:          validAccessControlPolicy,
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				headers: map[string]string{
+					"X-Amz-Acl": "public-read",
+				},
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrUnexpectedContent),
+			},
+		},
+		{
+			name: "access control policy success",
+			input: testInput{
+				body:          validAccessControlPolicy,
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				locals:        defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "invalid canned acl",
+			input: testInput{
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				headers: map[string]string{
+					"X-Amz-Acl": "invalid_acl",
+				},
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+		},
+		{
+			name: "both canned acl and grants",
+			input: testInput{
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				headers: map[string]string{
+					"X-Amz-Acl":        "public-read",
+					"X-Amz-Grant-Read": "grt1",
+				},
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants),
+			},
+		},
+		{
+			name: "canned acl success",
+			input: testInput{
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				headers: map[string]string{
+					"X-Amz-Acl": "public-read",
+				},
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "grants update acl fails",
+			input: testInput{
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				headers: map[string]string{
+					"X-Amz-Grant-Read": "grt1",
+				},
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: errors.New("accounts does not exist: grt1"),
+			},
+		},
+		{
+			name: "no option provided",
+			input: testInput{
+				extraMockResp: types.ObjectOwnershipBucketOwnerPreferred,
+				locals:        defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMissingSecurityHeader),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := &BackendMock{
+				PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
+					return tt.input.beErr
+				},
+				GetBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string) (types.ObjectOwnership, error) {
+					return tt.input.extraMockResp.(types.ObjectOwnership), tt.input.extraMockErr
+				},
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+				iam: auth.NewIAMServiceSingle(
+					auth.Account{
+						Access: "root",
+					}),
+			}
+
+			testController(t, ctrl.PutBucketAcl, tt.output.response, tt.output.err,
+				ctxInputs{
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					bucket:  tt.input.bucket,
+					headers: tt.input.headers,
+				})
+		})
+	}
+}

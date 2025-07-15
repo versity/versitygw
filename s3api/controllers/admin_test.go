@@ -23,10 +23,37 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 	"github.com/versity/versitygw/s3response"
 )
+
+func TestNewAdminController(t *testing.T) {
+	type args struct {
+		iam auth.IAMService
+		be  backend.Backend
+		l   s3log.AuditLogger
+	}
+	tests := []struct {
+		name string
+		args args
+		want AdminController
+	}{
+		{
+			name: "initialize admin api",
+			args: args{},
+			want: AdminController{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewAdminController(tt.args.iam, tt.args.be, tt.args.l)
+			assert.Equal(t, got, tt.want)
+		})
+	}
+}
 
 func TestAdminController_CreateUser(t *testing.T) {
 	validBody, err := xml.Marshal(auth.Account{

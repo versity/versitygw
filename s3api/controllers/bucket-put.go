@@ -311,24 +311,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
 	var input *auth.PutBucketAclInput
 
-	ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, err
-	}
-	if ownership == types.ObjectOwnershipBucketOwnerEnforced {
-		debuglogger.Logf("bucket acls are disabled")
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrAclNotSupported)
-	}
-
-	err = auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -344,6 +327,23 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+	if ownership == types.ObjectOwnershipBucketOwnerEnforced {
+		debuglogger.Logf("bucket acls are disabled")
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrAclNotSupported)
 	}
 
 	if len(ctx.Body()) > 0 {

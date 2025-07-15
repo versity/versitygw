@@ -51,7 +51,7 @@ func New(
 	l s3log.AuditLogger,
 	adminLogger s3log.AuditLogger,
 	evs s3event.S3EventSender,
-	mm *metrics.Manager,
+	mm metrics.Manager,
 	opts ...Option,
 ) (*S3ApiServer, error) {
 	server := &S3ApiServer{

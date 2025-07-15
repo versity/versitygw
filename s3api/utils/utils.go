@@ -704,3 +704,12 @@ func FormatDatePtrToString(date *time.Time, format string) *string {
 	formatted := date.UTC().Format(format)
 	return &formatted
 }
+
+// GetInt64 returns the value of int64 pointer
+func GetInt64(n *int64) int64 {
+	if n == nil {
+		return 0
+	}
+
+	return *n
+}
