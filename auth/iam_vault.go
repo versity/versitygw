@@ -28,14 +28,15 @@ import (
 
 type VaultIAMService struct {
 	client            *vault.Client
-	reqOpts           []vault.RequestOption
+	authReqOpts       []vault.RequestOption
+	kvReqOpts         []vault.RequestOption
 	secretStoragePath string
 	rootAcc           Account
 }
 
 var _ IAMService = &VaultIAMService{}
 
-func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath, rootToken, roleID, roleSecret, serverCert, clientCert, clientCertKey string) (IAMService, error) {
+func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, authMethod, mountPath, rootToken, roleID, roleSecret, serverCert, clientCert, clientCertKey string) (IAMService, error) {
 	opts := []vault.ClientOption{
 		vault.WithAddress(endpoint),
 		// set request timeout to 10 secs
@@ -62,10 +63,16 @@ func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath,
 		return nil, fmt.Errorf("init vault client: %w", err)
 	}
 
-	reqOpts := []vault.RequestOption{}
-	// if mount path is not specified, it defaults to "approle"
+	authReqOpts := []vault.RequestOption{}
+	// if auth method path is not specified, it defaults to "approle"
+	if authMethod != "" {
+		authReqOpts = append(authReqOpts, vault.WithMountPath(authMethod))
+	}
+
+	kvReqOpts := []vault.RequestOption{}
+	// if mount path is not specified, it defaults to "kv-v2"
 	if mountPath != "" {
-		reqOpts = append(reqOpts, vault.WithMountPath(mountPath))
+		kvReqOpts = append(kvReqOpts, vault.WithMountPath(mountPath))
 	}
 
 	// Authentication
@@ -84,7 +91,7 @@ func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath,
 		resp, err := client.Auth.AppRoleLogin(ctx, schema.AppRoleLoginRequest{
 			RoleId:   roleID,
 			SecretId: roleSecret,
-		}, reqOpts...)
+		}, authReqOpts...)
 		cancel()
 		if err != nil {
 			return nil, fmt.Errorf("approle authentication failure: %w", err)
@@ -99,7 +106,8 @@ func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath, mountPath,
 
 	return &VaultIAMService{
 		client:            client,
-		reqOpts:           reqOpts,
+		authReqOpts:       authReqOpts,
+		kvReqOpts:         kvReqOpts,
 		secretStoragePath: secretStoragePath,
 		rootAcc:           rootAcc,
 	}, nil
@@ -117,7 +125,7 @@ func (vt *VaultIAMService) CreateAccount(account Account) error {
 		Options: map[string]interface{}{
 			"cas": 0,
 		},
-	}, vt.reqOpts...)
+	}, vt.kvReqOpts...)
 	cancel()
 	if err != nil {
 		if strings.Contains(err.Error(), "check-and-set") {
@@ -134,7 +142,7 @@ func (vt *VaultIAMService) GetUserAccount(access string) (Account, error) {
 		return vt.rootAcc, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := vt.client.Secrets.KvV2Read(ctx, vt.secretStoragePath+"/"+access, vt.reqOpts...)
+	resp, err := vt.client.Secrets.KvV2Read(ctx, vt.secretStoragePath+"/"+access, vt.kvReqOpts...)
 	cancel()
 	if err != nil {
 		return Account{}, err
@@ -172,7 +180,7 @@ func (vt *VaultIAMService) UpdateUserAccount(access string, props MutableProps) 
 
 func (vt *VaultIAMService) DeleteUserAccount(access string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	_, err := vt.client.Secrets.KvV2DeleteMetadataAndAllVersions(ctx, vt.secretStoragePath+"/"+access, vt.reqOpts...)
+	_, err := vt.client.Secrets.KvV2DeleteMetadataAndAllVersions(ctx, vt.secretStoragePath+"/"+access, vt.kvReqOpts...)
 	cancel()
 	if err != nil {
 		return err
@@ -182,7 +190,7 @@ func (vt *VaultIAMService) DeleteUserAccount(access string) error {
 
 func (vt *VaultIAMService) ListUserAccounts() ([]Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	resp, err := vt.client.Secrets.KvV2List(ctx, vt.secretStoragePath, vt.reqOpts...)
+	resp, err := vt.client.Secrets.KvV2List(ctx, vt.secretStoragePath, vt.kvReqOpts...)
 	cancel()
 	if err != nil {
 		if vault.IsErrorStatus(err, 404) {
