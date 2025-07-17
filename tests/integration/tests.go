@@ -63,7 +63,7 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
 			return err
 		}
 
@@ -89,7 +89,7 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
 			return err
 		}
 
@@ -116,7 +116,7 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -143,7 +143,7 @@ func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -170,7 +170,7 @@ func Authentication_credentials_terminated_string(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
 			return err
 		}
 
@@ -193,7 +193,7 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
 			return err
 		}
 
@@ -227,7 +227,7 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, apiErr); err != nil {
+		if err := checkHTTPResponseApiErr(resp, apiErr); err != nil {
 			return err
 		}
 
@@ -254,7 +254,7 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -355,7 +355,7 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
 			return err
 		}
 
@@ -382,7 +382,7 @@ func Authentication_invalid_signed_headers(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -406,7 +406,7 @@ func Authentication_missing_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
 			return err
 		}
 
@@ -430,7 +430,7 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
 			return err
 		}
 
@@ -454,7 +454,7 @@ func Authentication_date_mismatch(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -478,7 +478,7 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
 			return err
 		}
 
@@ -503,7 +503,7 @@ func Authentication_incorrect_md5(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
 			return err
 		}
 
@@ -528,7 +528,7 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -558,7 +558,7 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
 			return err
 		}
 
@@ -595,7 +595,7 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -632,7 +632,7 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -665,7 +665,7 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
 			return err
 		}
 
@@ -698,7 +698,7 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
 			return err
 		}
 
@@ -736,7 +736,7 @@ func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.APIError{
+		if err := checkHTTPResponseApiErr(resp, s3err.APIError{
 			Code:           "SignatureDoesNotMatch",
 			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
 			HTTPStatusCode: http.StatusForbidden,
@@ -773,7 +773,7 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -806,7 +806,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
 			return err
 		}
 
@@ -843,7 +843,7 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -876,7 +876,7 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -913,7 +913,7 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -950,7 +950,7 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -987,7 +987,7 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
 			return err
 		}
 
@@ -1024,7 +1024,7 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
 			return err
 		}
 
@@ -1061,7 +1061,7 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
 			return err
 		}
 
@@ -1105,7 +1105,7 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
 			return err
 		}
 
@@ -1137,7 +1137,7 @@ func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -17944,6 +17944,47 @@ func PutObject_dir_obj_with_data(s *S3Conf) error {
 	})
 }
 
+func PutObject_with_slashes(s *S3Conf) error {
+	testName := "PutObject_with_slashes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{
+			"/obj", "foo//bar", "/foo/baz/bar", "////////bar", "foo//////quxx",
+		}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// it's en expected bahvior in posix to normalize the object pahts,
+		// by removing multiple slashes
+		normalizedObjs := []string{
+			"bar",
+			"foo/bar",
+			"foo/baz/bar",
+			"foo/quxx",
+			"obj",
+		}
+
+		for i := range objs {
+			objs[i].Key = &normalizedObjs[i]
+		}
+
+		if !compareObjects(objs, res.Contents) {
+			return fmt.Errorf("expected the objects to be %vß, instead got %v",
+				objStrings(objs), objStrings(res.Contents))
+		}
+
+		return nil
+	})
+}
+
 func CreateMultipartUpload_dir_obj(s *S3Conf) error {
 	testName := "CreateMultipartUpload_dir_obj"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -20826,4 +20867,97 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// router tests
+func RouterPutPartNumberWithoutUploadId(s *S3Conf) error {
+	testName := "RouterPutPartNumberWithoutUploadId"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPut, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		query := req.URL.Query()
+		query.Add("partNumber", "1")
+		req.URL.RawQuery = query.Encode()
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingUploadId)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPostRoot(s *S3Conf) error {
+	testName := "RouterPostRoot"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPost, s.endpoint+"/", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPostObjectWithoutQuery(s *S3Conf) error {
+	testName := "RouterPostObjectWithoutQuery"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPost, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPUTObjectOnlyUploadId(s *S3Conf) error {
+	testName := "RouterPUTObjectOnlyUploadId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPut, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		query := req.URL.Query()
+		query.Add("uploadId", "my-upload-id")
+		req.URL.RawQuery = query.Encode()
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

@@ -69,8 +69,10 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 }
 
 // Returns MethodNotAllowed for unmatched routes
-func (c S3ApiController) HandleUnmatch(ctx *fiber.Ctx) (*Response, error) {
-	return &Response{}, s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+func (c S3ApiController) HandleErrorRoute(err error) Controller {
+	return func(ctx *fiber.Ctx) (*Response, error) {
+		return &Response{}, err
+	}
 }
 
 // MetaOptions holds the metadata for metrics, audit logs and s3 events

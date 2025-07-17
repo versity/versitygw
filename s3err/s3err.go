@@ -168,6 +168,7 @@ const (
 	ErrInvalidChecksumHeader
 	ErrTrailerHeaderNotSupported
 	ErrBadRequest
+	ErrMissingUploadId
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -730,6 +731,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrBadRequest: {
 		Code:           "400",
 		Description:    "Bad Request",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMissingUploadId: {
+		Code:           "InvalidArgument",
+		Description:    "This operation does not accept partNumber without uploadId",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 

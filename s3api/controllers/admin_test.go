@@ -490,7 +490,7 @@ func TestAdminController_ChangeBucketOwner(t *testing.T) {
 				},
 			}
 			be := &BackendMock{
-				ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket string, acl []byte) error {
+				ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, owner string) error {
 					return tt.input.beErr
 				},
 			}

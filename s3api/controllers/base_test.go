@@ -201,27 +201,30 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestS3ApiController_HandleUnmatch(t *testing.T) {
+func TestS3ApiController_HandleErrorRoute(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  testInput
 		output testOutput
 	}{
 		{
-			name: "return method not allowed",
+			name: "should return the passed error",
+			input: testInput{
+				extraMockErr: s3err.GetAPIError(s3err.ErrAnonymousCreateMp),
+			},
 			output: testOutput{
 				response: &Response{},
-				err:      s3err.GetAPIError(s3err.ErrMethodNotAllowed),
+				err:      s3err.GetAPIError(s3err.ErrAnonymousCreateMp),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrl := S3ApiController{}
-
+			s3Ctrl := S3ApiController{}
+			ctrl := s3Ctrl.HandleErrorRoute(tt.input.extraMockErr)
 			testController(
 				t,
-				ctrl.HandleUnmatch,
+				ctrl,
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{})

@@ -334,7 +334,7 @@ func createSignedReq(method, endpoint, path, access, secret, service, region str
 	return req, nil
 }
 
-func checkAuthErr(resp *http.Response, apiErr s3err.APIError) error {
+func checkHTTPResponseApiErr(resp *http.Response, apiErr s3err.APIError) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
