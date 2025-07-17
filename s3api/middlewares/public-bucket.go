@@ -76,26 +76,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 				if err != nil {
 					return err
 				}
+			} else {
+				utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
 			}
-		}
 
-		if utils.IsBigDataAction(ctx) {
-			payloadType := ctx.Get("X-Amz-Content-Sha256")
-			if utils.IsUnsignedStreamingPayload(payloadType) {
-				checksumType, err := utils.ExtractChecksumType(ctx)
-				if err != nil {
-					return err
-				}
-
-				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-					var cr io.Reader
-					cr, err = utils.NewUnsignedChunkReader(r, checksumType)
-					return cr
-				})
-				if err != nil {
-					return err
-				}
-			}
 		}
 
 		utils.ContextKeyPublicBucket.Set(ctx, true)

@@ -22,6 +22,7 @@ require (
 	github.com/pkg/xattr v0.4.12
 	github.com/segmentio/kafka-go v0.4.48
 	github.com/smira/go-statsd v1.3.4
+	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.7
 	github.com/valyala/fasthttp v1.64.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
@@ -39,6 +40,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.25.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.34.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -57,6 +59,7 @@ require (
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (

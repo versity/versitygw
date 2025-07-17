@@ -15,13 +15,10 @@
 package controllers
 
 import (
-	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -149,25 +146,7 @@ func (c AdminController) ChangeBucketOwner(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
 	}
 
-	acl := auth.ACL{
-		Owner: owner,
-		Grantees: []auth.Grantee{
-			{
-				Permission: auth.PermissionFullControl,
-				Access:     owner,
-				Type:       types.TypeCanonicalUser,
-			},
-		},
-	}
-
-	aclParsed, err := json.Marshal(acl)
-	if err != nil {
-		return &Response{
-			MetaOpts: &MetaOptions{},
-		}, fmt.Errorf("failed to marshal the bucket acl: %w", err)
-	}
-
-	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, aclParsed)
+	err = c.be.ChangeBucketOwner(ctx.Context(), bucket, owner)
 	return &Response{
 		MetaOpts: &MetaOptions{},
 	}, err

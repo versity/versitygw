@@ -95,19 +95,7 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
-	// initialize the bucket/object name validator
-	app.Use(middlewares.BucketObjectNameValidator(l, mm))
-
-	// Public buckets access checker
-	app.Use(middlewares.AuthorizePublicBucketAccess(be, l, mm))
-
-	// Authentication middlewares
-	app.Use(middlewares.VerifyPresignedV4Signature(root, iam, l, mm, region, server.debug))
-	app.Use(middlewares.VerifyV4Signature(root, iam, l, mm, region, server.debug))
-	app.Use(middlewares.VerifyMD5Body(l))
-	app.Use(middlewares.AclParser(be, l, server.readonly))
-
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly, region, root)
 
 	return server, nil
 }
