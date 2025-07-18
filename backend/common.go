@@ -22,6 +22,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -113,7 +114,10 @@ func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error
 		return 0, size, false, nil
 	}
 
-	startOffset, err := strconv.ParseInt(bRange[0], 10, 64)
+	startOffset, err := strconv.ParseInt(bRange[0], 10, strconv.IntSize)
+	if startOffset > int64(math.MaxInt) || startOffset < int64(math.MinInt) {
+		return 0, size, false, errInvalidRange
+	}
 	if err != nil && bRange[0] != "" {
 		return 0, size, false, nil
 	}
@@ -128,7 +132,10 @@ func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error
 		return startOffset, size - startOffset, true, nil
 	}
 
-	endOffset, err := strconv.ParseInt(bRange[1], 10, 64)
+	endOffset, err := strconv.ParseInt(bRange[1], 10, strconv.IntSize)
+	if endOffset > int64(math.MaxInt) {
+		return 0, size, false, errInvalidRange
+	}
 	if err != nil {
 		return 0, size, false, nil
 	}

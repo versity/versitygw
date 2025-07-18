@@ -621,30 +621,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		opts = append(opts, s3api.WithHostStyle(virtualDomain))
 	}
 
-	admApp := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-	})
-
-	var admOpts []s3api.AdminOpt
-
-	if admCertFile != "" || admKeyFile != "" {
-		if admCertFile == "" {
-			return fmt.Errorf("TLS key specified without cert file")
-		}
-		if admKeyFile == "" {
-			return fmt.Errorf("TLS cert specified without key file")
-		}
-
-		cert, err := tls.LoadX509KeyPair(admCertFile, admKeyFile)
-		if err != nil {
-			return fmt.Errorf("tls: load certs: %v", err)
-		}
-		admOpts = append(admOpts, s3api.WithAdminSrvTLS(cert))
-	}
-
 	iam, err := auth.New(&auth.Opts{
 		RootAccount: auth.Account{
 			Access: rootUserAccess,
@@ -732,7 +708,41 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("init gateway: %v", err)
 	}
 
-	admSrv := s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, admOpts...)
+	var admSrv *s3api.S3AdminServer
+
+	if admPort != "" {
+		admApp := fiber.New(fiber.Config{
+			AppName:               "versitygw",
+			ServerHeader:          "VERSITYGW",
+			Network:               fiber.NetworkTCP,
+			DisableStartupMessage: true,
+		})
+
+		var opts []s3api.AdminOpt
+
+		if admCertFile != "" || admKeyFile != "" {
+			if admCertFile == "" {
+				return fmt.Errorf("TLS key specified without cert file")
+			}
+			if admKeyFile == "" {
+				return fmt.Errorf("TLS cert specified without key file")
+			}
+
+			cert, err := tls.LoadX509KeyPair(admCertFile, admKeyFile)
+			if err != nil {
+				return fmt.Errorf("tls: load certs: %v", err)
+			}
+			opts = append(opts, s3api.WithAdminSrvTLS(cert))
+		}
+		if quiet {
+			opts = append(opts, s3api.WithAdminQuiet())
+		}
+		if debug {
+			opts = append(opts, s3api.WithAdminDebug())
+		}
+
+		admSrv = s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, opts...)
+	}
 
 	if !quiet {
 		printBanner(port, admPort, certFile != "", admCertFile != "")
@@ -977,10 +987,7 @@ func getMatchingIPs(spec string) ([]string, error) {
 const columnWidth = 70
 
 func centerText(text string) string {
-	padding := (columnWidth - 2 - len(text)) / 2
-	if padding < 0 {
-		padding = 0
-	}
+	padding := max((columnWidth-2-len(text))/2, 0)
 	return strings.Repeat(" ", padding) + text
 }
 

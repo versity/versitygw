@@ -15,65 +15,26 @@
 package middlewares
 
 import (
-	"net/http"
-	"regexp"
-	"strings"
-
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
-var (
-	singlePath = regexp.MustCompile(`^/[^/]+/?$`)
-)
-
-func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fiber.Handler {
+// ParseAcl retreives the bucket acl and stores in the context locals
+// if no bucket is found, it returns 'NoSuchBucket'
+func ParseAcl(be backend.Backend) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		path := ctx.Path()
-		pathParts := strings.Split(path, "/")
-		bucket := pathParts[1]
-		if path == "/" && ctx.Method() == http.MethodGet {
-			return ctx.Next()
-		}
-		if ctx.Method() == http.MethodPatch {
-			return ctx.Next()
-		}
-		if singlePath.MatchString(path) &&
-			ctx.Method() == http.MethodPut &&
-			!ctx.Request().URI().QueryArgs().Has("acl") &&
-			!ctx.Request().URI().QueryArgs().Has("tagging") &&
-			!ctx.Request().URI().QueryArgs().Has("versioning") &&
-			!ctx.Request().URI().QueryArgs().Has("policy") &&
-			!ctx.Request().URI().QueryArgs().Has("object-lock") &&
-			!ctx.Request().URI().QueryArgs().Has("ownershipControls") &&
-			!ctx.Request().URI().QueryArgs().Has("cors") {
-			isRoot, acct := utils.ContextKeyIsRoot.Get(ctx).(bool), utils.ContextKeyAccount.Get(ctx).(auth.Account)
-			if err := auth.MayCreateBucket(acct, isRoot); err != nil {
-				return controllers.SendXMLResponse(ctx, nil, err, &controllers.MetaOpts{Logger: logger, Action: "CreateBucket"})
-			}
-			if readonly {
-				return controllers.SendXMLResponse(ctx, nil, s3err.GetAPIError(s3err.ErrAccessDenied),
-					&controllers.MetaOpts{
-						Logger: logger,
-						Action: "CreateBucket",
-					})
-			}
-			return ctx.Next()
-		}
+		bucket := ctx.Params("bucket")
 		data, err := be.GetBucketAcl(ctx.Context(), &s3.GetBucketAclInput{Bucket: &bucket})
 		if err != nil {
-			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
+			return err
 		}
 
 		parsedAcl, err := auth.ParseACL(data)
 		if err != nil {
-			return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
+			return err
 		}
 
 		// if owner is not set, set default owner to root account
@@ -82,6 +43,6 @@ func AclParser(be backend.Backend, logger s3log.AuditLogger, readonly bool) fibe
 		}
 
 		utils.ContextKeyParsedAcl.Set(ctx, parsedAcl)
-		return ctx.Next()
+		return nil
 	}
 }

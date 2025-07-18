@@ -17,6 +17,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/versity/versitygw/s3err"
@@ -194,7 +195,7 @@ func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) err
 func VerifyBucketPolicy(policy []byte, access, bucket, object string, action Action) error {
 	var bucketPolicy BucketPolicy
 	if err := json.Unmarshal(policy, &bucketPolicy); err != nil {
-		return err
+		return fmt.Errorf("failed to parse the bucket policy: %w", err)
 	}
 
 	resource := bucket

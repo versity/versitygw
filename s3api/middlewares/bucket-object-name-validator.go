@@ -15,44 +15,28 @@
 package middlewares
 
 import (
-	"net/http"
-
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
 // BucketObjectNameValidator extracts and validates
 // the bucket and object names from the request URI.
-func BucketObjectNameValidator(l s3log.AuditLogger, mm *metrics.Manager) fiber.Handler {
+func BucketObjectNameValidator() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		// skip the check for admin apis
-		if ctx.Method() == http.MethodPatch {
-			return ctx.Next()
-		}
-
-		path := ctx.Path()
-		// skip the check if the operation isn't bucket/object scoped
-		// e.g ListBuckets
-		if path == "/" {
-			return ctx.Next()
-		}
-
-		bucket, object := parsePath(path)
+		bucket, object := parsePath(ctx.Path())
 
 		// check if the provided bucket name is valid
 		if !utils.IsValidBucketName(bucket) {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidBucketName), l, mm)
+			return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 		}
 
 		// check if the provided object name is valid
 		// skip for empty objects: e.g bucket operations: HeadBucket...
 		if object != "" && !utils.IsObjectNameValid(object) {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrBadRequest), l, mm)
+			return s3err.GetAPIError(s3err.ErrBadRequest)
 		}
 
-		return ctx.Next()
+		return nil
 	}
 }

@@ -155,18 +155,6 @@ func VerifyPublicAccess(ctx context.Context, be backend.Backend, action Action, 
 	return nil
 }
 
-func MayCreateBucket(acct Account, isRoot bool) error {
-	if isRoot {
-		return nil
-	}
-
-	if acct.Role == RoleUser {
-		return s3err.GetAPIError(s3err.ErrAccessDenied)
-	}
-
-	return nil
-}
-
 func IsAdminOrOwner(acct Account, isRoot bool, acl ACL) error {
 	// Owner check
 	if acct.Access == acl.Owner {

@@ -412,6 +412,10 @@ func (r CopyPartResult) MarshalXML(e *xml.Encoder, start xml.StartElement) error
 	return e.EncodeElement(aux, start)
 }
 
+type CompleteMultipartUploadRequestBody struct {
+	Parts []types.CompletedPart `xml:"Part"`
+}
+
 type CompleteMultipartUploadResult struct {
 	XMLName           xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ CompleteMultipartUploadResult" json:"-"`
 	Location          *string

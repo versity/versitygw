@@ -284,11 +284,23 @@ func authHandler(s *S3Conf, cfg *authConfig, handler func(req *http.Request) err
 	return nil
 }
 
-func presignedAuthHandler(s *S3Conf, testName string, handler func(client *s3.PresignClient) error) error {
+func presignedAuthHandler(s *S3Conf, testName string, handler func(client *s3.PresignClient, bucket string) error) error {
 	runF(testName)
-	clt := s3.NewPresignClient(s.GetClient())
+	bucket := getBucketName()
+	err := setup(s, bucket)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+	clt := s.GetPresignClient()
 
-	err := handler(clt)
+	err = handler(clt, bucket)
+	if err != nil {
+		failF("%v: %v", testName, err)
+		return fmt.Errorf("%v: %w", testName, err)
+	}
+
+	err = teardown(s, bucket)
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -322,7 +334,7 @@ func createSignedReq(method, endpoint, path, access, secret, service, region str
 	return req, nil
 }
 
-func checkAuthErr(resp *http.Response, apiErr s3err.APIError) error {
+func checkHTTPResponseApiErr(resp *http.Response, apiErr s3err.APIError) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err

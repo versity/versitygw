@@ -2419,6 +2419,10 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		if errors.Is(err, syscall.EDQUOT) {
 			return nil, s3err.GetAPIError(s3err.ErrQuotaExceeded)
 		}
+		// Return the error itself, if it's an 's3err.APIError'
+		if _, ok := err.(s3err.APIError); ok {
+			return nil, err
+		}
 		return nil, fmt.Errorf("write part data: %w", err)
 	}
 
@@ -2852,6 +2856,10 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	if err != nil {
 		if errors.Is(err, syscall.EDQUOT) {
 			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrQuotaExceeded)
+		}
+		// Return the error itself, if it's an 's3err.APIError'
+		if _, ok := err.(s3err.APIError); ok {
+			return s3response.PutObjectOutput{}, err
 		}
 		return s3response.PutObjectOutput{}, fmt.Errorf("write object data: %w", err)
 	}
