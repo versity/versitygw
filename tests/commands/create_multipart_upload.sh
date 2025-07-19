@@ -15,42 +15,14 @@
 # under the License.
 
 create_multipart_upload_rest() {
-  if ! check_param_count_v2 "bucket name, key" 2 $#; then
+  if ! check_param_count_v2 "bucket name, key, additional params, callback" 4 $#; then
     return 1
   fi
-  if ! result=$(BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" COMMAND_LOG=$COMMAND_LOG ./tests/rest_scripts/create_multipart_upload.sh); then
-    log 2 "error creating multipart upload: $result"
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"
+  if ! send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/create_multipart_upload.sh" "200" "$4"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "put-object-retention returned code $result: $(cat "$TEST_FILE_FOLDER/output.txt")"
-    return 1
-  fi
-  if ! upload_id=$(get_element_text "$TEST_FILE_FOLDER/output.txt" "InitiateMultipartUploadResult" "UploadId"); then
-    log 2 "error getting upload ID: $upload_id"
-    return 1
-  fi
-  echo "$upload_id"
-  return 0
-}
-
-create_multipart_upload_rest_with_checksum_type_and_algorithm() {
-  if ! check_param_count_v2 "bucket, key, checksum type, checksum algorithm" 4 $#; then
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG=$COMMAND_LOG BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/output.txt" CHECKSUM_TYPE="$3" CHECKSUM_ALGORITHM="$4" ./tests/rest_scripts/create_multipart_upload.sh 2>&1); then
-    log 2 "error creating multipart upload: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
-    return 1
-  fi
-  if ! upload_id=$(get_element_text "$TEST_FILE_FOLDER/output.txt" "InitiateMultipartUploadResult" "UploadId"); then
-    log 2 "error getting upload ID: $upload_id"
-    return 1
-  fi
-  echo "$upload_id"
   return 0
 }
 

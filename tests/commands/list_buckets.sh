@@ -32,7 +32,7 @@ list_buckets() {
   elif [[ $1 == 'mc' ]]; then
     buckets=$(send_command mc --insecure ls "$MC_ALIAS" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
-    list_buckets_rest || exit_code=$?
+    list_buckets_rest "" "parse_bucket_list" || exit_code=$?
   else
     log 2 "list buckets command not implemented for '$1'"
     return 1
@@ -117,36 +117,11 @@ list_buckets_s3api() {
 }
 
 list_buckets_rest() {
-  if ! result=$(COMMAND_LOG=$COMMAND_LOG OUTPUT_FILE="$TEST_FILE_FOLDER/buckets.txt" ./tests/rest_scripts/list_buckets.sh); then
-    log 2 "error listing buckets: $result"
+  if ! check_param_count_v2 "params, callback" 2 $#; then
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "list-buckets returned code $result: $(cat "$TEST_FILE_FOLDER/buckets.txt")"
-    return 1
-  fi
-  if ! parse_bucket_list "$TEST_FILE_FOLDER/buckets.txt"; then
-    log 2 "error parsing bucket list"
-    return 1
-  fi
-  return 0
-}
-
-list_buckets_rest_prefix() {
-  if ! check_param_count_v2 "prefix" 1 $#; then
-    return 1
-  fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" PREFIX="$1" ./tests/rest_scripts/list_buckets.sh 2>&1); then
-    log 2 "error getting result: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
-    return 1
-  fi
-  log 5 "buckets w/prefix $1: $(cat "$TEST_FILE_FOLDER/result.txt")"
-  if ! parse_bucket_list "$TEST_FILE_FOLDER/result.txt"; then
-    log 2 "error parsing bucket list"
+  if ! send_rest_command_expect_success_callback "$1" "./tests/rest_scripts/list_buckets.sh" "200" "$2"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0

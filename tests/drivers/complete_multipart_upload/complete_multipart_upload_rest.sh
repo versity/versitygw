@@ -165,3 +165,18 @@ test_complete_multipart_upload_invalid_checksum() {
   fi
   return 0
 }
+
+complete_multipart_upload_invalid_object_size_string() {
+  if ! check_param_count_v2 "bucket, key, file" 3 $#; then
+    return 1
+  fi
+  if ! multipart_upload_rest_before_completion "$1" "$2" "$3" 2; then
+    log 2 "error performing multipart upload before completion"
+    return 1
+  fi
+  if ! complete_multipart_upload_rest_expect_error "$1" "$2" "$upload_id" "$parts_payload" "MULTIPART_OBJECT_SIZE=size" "400" "InvalidRequest" "Value for x-amz-mp-object-size header is invalid"; then
+    log 2 "error completing multipart upload"
+    return 1
+  fi
+  return 0
+}

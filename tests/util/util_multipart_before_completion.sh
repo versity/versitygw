@@ -200,12 +200,12 @@ create_and_list_multipart_uploads() {
     return 1
   fi
 
-  if ! create_multipart_upload_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2" "" ""; then
     log 2 "error creating multpart upload"
     return 1
   fi
 
-  if ! create_multipart_upload_rest "$1" "$3"; then
+  if ! create_multipart_upload_rest "$1" "$3" "" ""; then
     log 2 "error creating multpart upload two"
     return 1
   fi
@@ -455,7 +455,7 @@ upload_part_copy_check_etag_header() {
     log 2 "'upload_part_copy_check_etag_header' requires bucket, destination file, part location"
     return 1
   fi
-  if ! upload_id=$(create_multipart_upload_rest "$1" "$2" 2>&1); then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating upload and getting ID: $upload_id"
     return 1
   fi
@@ -481,7 +481,7 @@ upload_part_without_part_number() {
     log 2 "'upload_part_without_upload_id' requires bucket name, key"
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -502,7 +502,7 @@ upload_part_without_upload_id() {
     log 2 "'upload_part_without_part_number' requires bucket name, key"
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating multpart upload"
     return 1
   fi

@@ -31,17 +31,27 @@ complete_multipart_upload() {
 }
 
 complete_multipart_upload_rest() {
-  if ! check_param_count_v2 "bucket, key, upload ID, parts payload" 4 $#; then
+  if ! check_param_count_gt "bucket, key, upload ID, parts, additional params" 4 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh); then
-    log 2 "error completing multipart upload: $result"
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 UPLOAD_ID=$3 PARTS=$4 $5"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/complete_multipart_upload.sh" "200"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+  return 0
+}
+
+complete_multipart_upload_rest_expect_error() {
+  if ! check_param_count_gt "bucket, key, upload ID, parts, additional params, response code, error code, message" 8 $#; then
     return 1
   fi
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 UPLOAD_ID=$3 PARTS=$4 $5"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/complete_multipart_upload.sh" "$6" "$7" "$8"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
 }
 
 complete_multipart_upload_rest_nonexistent_param() {

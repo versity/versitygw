@@ -78,3 +78,29 @@ send_rest_command_expect_success() {
   fi
   return 0
 }
+
+send_rest_command_expect_success_callback() {
+  if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
+    return 1
+  fi
+  output_file="$TEST_FILE_FOLDER/output.txt"
+  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
+  if [ "$1" != "" ]; then
+    IFS=' ' read -r -a env_vars <<< "$1"
+    env_array+=("${env_vars[@]}")
+  fi
+  # shellcheck disable=SC2068
+  if ! result=$(${env_array[@]} "$2" 2>&1); then
+    log 2 "error sending command: $result"
+    return 1
+  fi
+  if [ "$result" != "$3" ]; then
+    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
+    return 1
+  fi
+  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
+    log 2 "callback error"
+    return 1
+  fi
+  return 0
+}

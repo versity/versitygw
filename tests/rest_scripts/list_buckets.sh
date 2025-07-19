@@ -16,25 +16,45 @@
 
 source ./tests/rest_scripts/rest.sh
 
+# shellcheck disable=SC2153
+prefix="$PREFIX"
+# shellcheck disable=SC2153
+max_buckets="$MAX_BUCKETS"
+# shellcheck disable=SC2153
+continuation_token="$CONTINUATION_TOKEN"
+
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
-canonical_request="GET
-/
-
-host:$host
-x-amz-content-sha256:UNSIGNED-PAYLOAD
-x-amz-date:$current_date_time
-
-host;x-amz-content-sha256;x-amz-date
-UNSIGNED-PAYLOAD"
+canonical_request_data=("GET" "/")
+queries=""
+if [ "$continuation_token" != "" ]; then
+  queries=$(add_parameter "$queries" "continuation-token=$continuation_token")
+fi
+if [ "$max_buckets" != "" ]; then
+  queries=$(add_parameter "$queries" "max-buckets=$max_buckets")
+fi
+if [ "$prefix" != "" ]; then
+  queries=$(add_parameter "$queries" "prefix=$prefix")
+fi
+canonical_request_data+=("$queries")
+canonical_request_data+=("host:$host" "x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+if ! build_canonical_request "${canonical_request_data[@]}"; then
+  log_rest 2 "error building request"
+  exit 1
+fi
 
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" "https://$host"
--H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
--H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
--H "\"x-amz-date: $current_date_time\""
--o "$OUTPUT_FILE")
+curl_command+=(curl -ks -w "\"%{http_code}\"")
+url="'$AWS_ENDPOINT_URL"
+if [ "$queries" != "" ]; then
+  url+="?$queries"
+fi
+url+="'"
+curl_command+=("$url")
+curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
+curl_command+=("${header_fields[@]}")
+curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
 eval "${curl_command[*]}" 2>&1
