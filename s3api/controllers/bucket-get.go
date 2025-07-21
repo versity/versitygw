@@ -61,7 +61,9 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 	resp := s3response.Tagging{
-		TagSet: s3response.TagSet{Tags: []s3response.Tag{}},
+		TagSet: s3response.TagSet{
+			Tags: make([]s3response.Tag, 0, len(tags)),
+		},
 	}
 
 	for key, val := range tags {

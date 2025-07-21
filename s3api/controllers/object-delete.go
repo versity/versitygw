@@ -32,7 +32,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -45,7 +45,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.DeleteObjectTaggingAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -71,7 +71,7 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 	uploadId := ctx.Query("uploadId")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -84,7 +84,7 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.AbortMultipartUploadAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -116,7 +116,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	//TODO: check s3:DeleteObjectVersion policy in case a use tries to delete a version of an object
@@ -131,7 +131,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.DeleteObjectAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -152,7 +152,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 			},
 		},
 		bypass,
-		IsBucketPublic,
+		isBucketPublic,
 		c.be,
 	)
 	if err != nil {

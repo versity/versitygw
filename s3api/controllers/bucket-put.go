@@ -301,14 +301,14 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
 	grantRead := ctx.Get("X-Amz-Grant-Read")
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
-	granWrite := ctx.Get("X-Amz-Grant-Write")
+	grantWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 	// context locals
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
+	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	var input *auth.PutBucketAclInput
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -424,7 +424,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			GrantFullControl: &grantFullControl,
 			GrantRead:        &grantRead,
 			GrantReadACP:     &grantReadACP,
-			GrantWrite:       &granWrite,
+			GrantWrite:       &grantWrite,
 			GrantWriteACP:    &grantWriteACP,
 		}
 	} else {
@@ -459,11 +459,11 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
 	grantRead := ctx.Get("X-Amz-Grant-Read")
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
-	granWrite := ctx.Get("X-Amz-Grant-Write")
+	grantWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 	lockEnabled := strings.EqualFold(ctx.Get("X-Amz-Bucket-Object-Lock-Enabled"), "true")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
-	grants := grantFullControl + grantRead + grantReadACP + granWrite + grantWriteACP
+	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	objectOwnership := types.ObjectOwnership(
 		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
 	)
@@ -518,7 +518,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		GrantFullControl: &grantFullControl,
 		GrantRead:        &grantRead,
 		GrantReadACP:     &grantReadACP,
-		GrantWrite:       &granWrite,
+		GrantWrite:       &grantWrite,
 		GrantWriteACP:    &grantWriteACP,
 		AccessControlPolicy: &auth.AccessControlPolicy{
 			Owner: &types.Owner{

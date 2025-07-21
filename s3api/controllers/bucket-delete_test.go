@@ -286,6 +286,7 @@ func TestS3ApiController_DeleteBucketCors(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
+						Status:      http.StatusNoContent,
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAdminMethodNotSupported),
@@ -300,6 +301,7 @@ func TestS3ApiController_DeleteBucketCors(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
+						Status:      http.StatusNoContent,
 					},
 				},
 			},

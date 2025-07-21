@@ -51,7 +51,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		Acc:            acct,
 		Bucket:         bucket,
 		Object:         key,
-		Action:         auth.PutBucketTaggingAction,
+		Action:         auth.PutObjectTaggingAction,
 		IsBucketPublic: IsBucketPublic,
 	})
 	if err != nil {
@@ -233,7 +233,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if partNumber < 1 || partNumber > 10000 {
+	if partNumber < minPartNumber || partNumber > maxPartNumber {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -349,7 +349,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if partNumber < 1 || partNumber > 10000 {
+	if partNumber < minPartNumber || partNumber > maxPartNumber {
 		debuglogger.Logf("invalid part number: %d", partNumber)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -389,7 +389,7 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
 	grantRead := ctx.Get("X-Amz-Grant-Read")
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
-	granWrite := ctx.Get("X-Amz-Grant-Write")
+	grantWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -420,7 +420,7 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 		Key:              &key,
 		GrantFullControl: &grantFullControl,
 		GrantRead:        &grantRead,
-		GrantWrite:       &granWrite,
+		GrantWrite:       &grantWrite,
 		ACL:              types.ObjectCannedACL(acl),
 		GrantReadACP:     &grantReadACP,
 		GrantWriteACP:    &grantWriteACP,
@@ -524,7 +524,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	if taggingDirective != "" && taggingDirective != types.TaggingDirectiveCopy && taggingDirective != types.TaggingDirectiveReplace {
-		debuglogger.Logf("invalid tagging direcrive: %v", taggingDirective)
+		debuglogger.Logf("invalid tagging directive: %v", taggingDirective)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,

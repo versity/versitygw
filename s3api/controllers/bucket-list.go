@@ -31,10 +31,10 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 	maxBucketsStr := ctx.Query("max-buckets")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 
-	var maxBuckets int32 = 10000
+	maxBuckets := defaultMaxBuckets
 	if maxBucketsStr != "" {
 		maxBucketsParsed, err := strconv.ParseInt(maxBucketsStr, 10, 32)
-		if err != nil || maxBucketsParsed < 0 || maxBucketsParsed > 10000 {
+		if err != nil || maxBucketsParsed < 0 || maxBucketsParsed > int64(defaultMaxBuckets) {
 			debuglogger.Logf("error parsing max-buckets %q: %v", maxBucketsStr, err)
 			return &Response{
 				MetaOpts: &MetaOptions{},
@@ -47,7 +47,7 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 		s3response.ListBucketsInput{
 			Owner:             acct.Access,
 			IsAdmin:           acct.Role == auth.RoleAdmin,
-			MaxBuckets:        int32(maxBuckets),
+			MaxBuckets:        maxBuckets,
 			ContinuationToken: cToken,
 			Prefix:            prefix,
 		})

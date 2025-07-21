@@ -42,10 +42,15 @@ type S3ApiController struct {
 }
 
 const (
+	// time constants
 	iso8601Format             = "20060102T150405Z"
 	iso8601TimeFormatExtended = "Mon Jan _2 15:04:05 2006"
 	timefmt                   = "Mon, 02 Jan 2006 15:04:05 GMT"
-	maxXMLBodyLen             = 4 * 1024 * 1024
+
+	maxXMLBodyLen     = 4 * 1024 * 1024
+	minPartNumber     = 1
+	maxPartNumber     = 10000
+	defaultMaxBuckets = int32(10000)
 )
 
 var (

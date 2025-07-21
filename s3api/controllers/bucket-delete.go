@@ -153,6 +153,7 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
+			Status:      http.StatusNoContent,
 		},
 	}, err
 }

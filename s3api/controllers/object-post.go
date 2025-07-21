@@ -36,7 +36,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -49,7 +49,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.RestoreObjectAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -87,7 +87,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -100,7 +100,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.GetObjectAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -237,7 +237,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
-	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
+	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
@@ -250,7 +250,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			Bucket:         bucket,
 			Object:         key,
 			Action:         auth.PutObjectAction,
-			IsBucketPublic: IsBucketPublic,
+			IsBucketPublic: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -283,23 +283,22 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	var mpuObjectSize *int64
 	if mpuObjSizeHdr != "" {
 		val, err := strconv.ParseInt(mpuObjSizeHdr, 10, 64)
-		//TODO: Not sure if invalid request should be returned
 		if err != nil {
-			debuglogger.Logf("invalid value for 'x-amz-mp-objects-size' header: %v", err)
+			debuglogger.Logf("invalid value for 'x-amz-mp-object-size' header: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}, s3err.GetInvalidMpObjectSizeErr(mpuObjSizeHdr)
 		}
 
 		if val < 0 {
-			debuglogger.Logf("value for 'x-amz-mp-objects-size' header is less than 0: %v", val)
+			debuglogger.Logf("value for 'x-amz-mp-object-size' header is less than 0: %v", val)
 			return &Response{
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetInvalidMpObjectSizeErr(val)
+			}, s3err.GetNegatvieMpObjectSizeErr(val)
 		}
 
 		mpuObjectSize = &val
