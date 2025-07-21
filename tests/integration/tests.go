@@ -11260,7 +11260,7 @@ func CompleteMultipartUpload_mpu_object_size(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CompleteMultipartUpload(ctx, input)
 		cancel()
-		if err := checkApiErr(err, s3err.GetInvalidMpObjectSizeErr(invMpuSize)); err != nil {
+		if err := checkApiErr(err, s3err.GetNegatvieMpObjectSizeErr(invMpuSize)); err != nil {
 			return err
 		}
 

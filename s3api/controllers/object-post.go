@@ -283,14 +283,13 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	var mpuObjectSize *int64
 	if mpuObjSizeHdr != "" {
 		val, err := strconv.ParseInt(mpuObjSizeHdr, 10, 64)
-		//TODO: Not sure if invalid request should be returned
 		if err != nil {
 			debuglogger.Logf("invalid value for 'x-amz-mp-objects-size' header: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			}, s3err.GetInvalidMpObjectSizeErr(mpuObjSizeHdr)
 		}
 
 		if val < 0 {
@@ -299,7 +298,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetInvalidMpObjectSizeErr(val)
+			}, s3err.GetNegatvieMpObjectSizeErr(val)
 		}
 
 		mpuObjectSize = &val

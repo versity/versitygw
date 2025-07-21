@@ -420,7 +420,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+				err: s3err.GetInvalidMpObjectSizeErr("invalid_mp_object_size"),
 			},
 		},
 		{
@@ -438,7 +438,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetInvalidMpObjectSizeErr(-4),
+				err: s3err.GetNegatvieMpObjectSizeErr(-4),
 			},
 		},
 		{

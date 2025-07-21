@@ -894,10 +894,18 @@ func GetIncorrectMpObjectSizeErr(expected, actual int64) APIError {
 	}
 }
 
-func GetInvalidMpObjectSizeErr(val int64) APIError {
+func GetNegatvieMpObjectSizeErr(val int64) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is less than zero: '%v'", val),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidMpObjectSizeErr(val string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is invalid: '%s'", val),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
