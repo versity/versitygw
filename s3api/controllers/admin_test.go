@@ -16,439 +16,564 @@ package controllers
 
 import (
 	"context"
-	"fmt"
+	"encoding/xml"
+	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/auth"
+	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
+	"github.com/versity/versitygw/s3log"
 	"github.com/versity/versitygw/s3response"
 )
 
-func TestAdminController_CreateUser(t *testing.T) {
+func TestNewAdminController(t *testing.T) {
 	type args struct {
-		req *http.Request
+		iam auth.IAMService
+		be  backend.Backend
+		l   s3log.AuditLogger
 	}
-
-	adminController := AdminController{
-		iam: &IAMServiceMock{
-			CreateAccountFunc: func(account auth.Account) error {
-				return nil
-			},
-		},
-	}
-
-	app := fiber.New()
-
-	app.Patch("/create-user", adminController.CreateUser)
-
-	succUser := `
-		<Account>
-			<Access>access</Access>
-			<Secret>secret</Secret>
-			<Role>admin</Role>
-			<UserID>0</UserID>
-			<GroupID>0</GroupID>
-		</Account>
-	`
-	invuser := `
-		<Account>
-			<Access>access</Access>
-			<Secret>secret</Secret>
-			<Role>invalid_role</Role>
-			<UserID>0</UserID>
-			<GroupID>0</GroupID>
-		</Account>
-	`
-
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name string
+		args args
+		want AdminController
 	}{
 		{
-			name: "Admin-create-user-malformed-body",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user", nil),
-			},
-			wantErr:    false,
-			statusCode: 400,
-		},
-		{
-			name: "Admin-create-user-invalid-requester-role",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user", strings.NewReader(invuser)),
-			},
-			wantErr:    false,
-			statusCode: 400,
-		},
-		{
-			name: "Admin-create-user-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/create-user", strings.NewReader(succUser)),
-			},
-			wantErr:    false,
-			statusCode: 201,
+			name: "initialize admin api",
+			args: args{},
+			want: AdminController{},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewAdminController(tt.args.iam, tt.args.be, tt.args.l)
+			assert.Equal(t, got, tt.want)
+		})
+	}
+}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.CreateUser() error = %v, wantErr %v", err, tt.wantErr)
-		}
+func TestAdminController_CreateUser(t *testing.T) {
+	validBody, err := xml.Marshal(auth.Account{
+		Access: "access",
+		Secret: "secret",
+		Role:   auth.RoleAdmin,
+	})
+	assert.NoError(t, err)
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.CreateUser() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+	invalidUserRoleBody, err := xml.Marshal(auth.Account{
+		Access: "access",
+		Secret: "secret",
+		Role:   auth.Role("invalid_role"),
+	})
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "invalid request body",
+			input: testInput{
+				body: []byte("invalid_request_body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
+			name: "invalid user role",
+			input: testInput{
+				body: invalidUserRoleBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminInvalidUserRole),
+			},
+		},
+		{
+			name: "backend returns user exists error",
+			input: testInput{
+				body:  validBody,
+				beErr: auth.ErrUserExists,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminUserExists),
+			},
+		},
+		{
+			name: "backend returns other error",
+			input: testInput{
+				body:  validBody,
+				beErr: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				body: validBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						Status: http.StatusCreated,
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				CreateAccountFunc: func(account auth.Account) error {
+					return tt.input.beErr
+				},
+			}
+
+			ctrl := AdminController{
+				iam: iam,
+			}
+
+			testController(
+				t,
+				ctrl.CreateUser,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					body: tt.input.body,
+				})
+		})
 	}
 }
 
 func TestAdminController_UpdateUser(t *testing.T) {
-	type args struct {
-		req *http.Request
-	}
+	validBody, err := xml.Marshal(auth.MutableProps{
+		Secret: utils.GetStringPtr("secret"),
+		Role:   auth.RoleAdmin,
+	})
+	assert.NoError(t, err)
 
-	adminController := AdminController{
-		iam: &IAMServiceMock{
-			UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
-				return nil
-			},
-		},
-	}
-
-	app := fiber.New()
-
-	app.Patch("/update-user", adminController.UpdateUser)
-
-	adminControllerErr := AdminController{
-		iam: &IAMServiceMock{
-			UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
-				return auth.ErrNoSuchUser
-			},
-		},
-	}
-
-	appNotFound := fiber.New()
-
-	appNotFound.Patch("/update-user", adminControllerErr.UpdateUser)
-
-	succUser := `
-		<Account>
-			<Secret>secret</Secret>
-			<UserID>0</UserID>
-			<GroupID>0</GroupID>
-		</Account>
-	`
+	invalidUserRoleBody, err := xml.Marshal(auth.MutableProps{
+		Secret: utils.GetStringPtr("secret"),
+		Role:   auth.Role("invalid_role"),
+	})
+	assert.NoError(t, err)
 
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name   string
+		input  testInput
+		output testOutput
 	}{
 		{
-			name: "Admin-update-user-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", strings.NewReader(succUser)),
+			name: "missing user access key",
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminMissingUserAcess),
 			},
-			wantErr:    false,
-			statusCode: 200,
 		},
 		{
-			name: "Admin-update-user-missing-access",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/update-user", strings.NewReader(succUser)),
+			name: "invalid request body",
+			input: testInput{
+				body: []byte("invalid_request_body"),
+				queries: map[string]string{
+					"access": "user",
+				},
 			},
-			wantErr:    false,
-			statusCode: 404,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
 		},
 		{
-			name: "Admin-update-user-invalid-request-body",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", nil),
+			name: "invalid user role",
+			input: testInput{
+				body: invalidUserRoleBody,
+				queries: map[string]string{
+					"access": "user",
+				},
 			},
-			wantErr:    false,
-			statusCode: 400,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminInvalidUserRole),
+			},
 		},
 		{
-			name: "Admin-update-user-not-found",
-			app:  appNotFound,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/update-user?access=access", strings.NewReader(succUser)),
+			name: "backend returns user not found error",
+			input: testInput{
+				body:  validBody,
+				beErr: auth.ErrNoSuchUser,
+				queries: map[string]string{
+					"access": "user",
+				},
 			},
-			wantErr:    false,
-			statusCode: 404,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminUserNotFound),
+			},
+		},
+		{
+			name: "backend returns other error",
+			input: testInput{
+				body:  validBody,
+				beErr: s3err.GetAPIError(s3err.ErrInvalidRequest),
+				queries: map[string]string{
+					"access": "user",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				body: validBody,
+				queries: map[string]string{
+					"access": "user",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				UpdateUserAccountFunc: func(access string, props auth.MutableProps) error {
+					return tt.input.beErr
+				},
+			}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.UpdateUser() error = %v, wantErr %v", err, tt.wantErr)
-		}
+			ctrl := AdminController{
+				iam: iam,
+			}
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.UpdateUser() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+			testController(
+				t,
+				ctrl.UpdateUser,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					body:    tt.input.body,
+					queries: tt.input.queries,
+				})
+		})
 	}
 }
 
 func TestAdminController_DeleteUser(t *testing.T) {
-	type args struct {
-		req *http.Request
-	}
-
-	adminController := AdminController{
-		iam: &IAMServiceMock{
-			DeleteUserAccountFunc: func(access string) error {
-				return nil
-			},
-		},
-	}
-
-	app := fiber.New()
-
-	app.Patch("/delete-user", adminController.DeleteUser)
-
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name   string
+		input  testInput
+		output testOutput
 	}{
 		{
-			name: "Admin-delete-user-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/delete-user?access=test", nil),
+			name: "missing user access key",
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminMissingUserAcess),
 			},
-			wantErr:    false,
-			statusCode: 200,
+		},
+		{
+			name: "backend returns other error",
+			input: testInput{
+				beErr: s3err.GetAPIError(s3err.ErrInvalidRequest),
+				queries: map[string]string{
+					"access": "user",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				queries: map[string]string{
+					"access": "user",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				DeleteUserAccountFunc: func(access string) error {
+					return tt.input.beErr
+				},
+			}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.DeleteUser() error = %v, wantErr %v", err, tt.wantErr)
-		}
+			ctrl := AdminController{
+				iam: iam,
+			}
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.DeleteUser() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+			testController(
+				t,
+				ctrl.DeleteUser,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					queries: tt.input.queries,
+				})
+		})
 	}
 }
 
 func TestAdminController_ListUsers(t *testing.T) {
-	type args struct {
-		req *http.Request
-	}
-
-	adminController := AdminController{
-		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.Account, error) {
-				return []auth.Account{}, nil
-			},
+	accs := []auth.Account{
+		{
+			Access: "access",
+			Secret: "secret",
+		},
+		{
+			Access: "access",
+			Secret: "secret",
 		},
 	}
-
-	adminControllerErr := AdminController{
-		iam: &IAMServiceMock{
-			ListUserAccountsFunc: func() ([]auth.Account, error) {
-				return []auth.Account{}, fmt.Errorf("server error")
-			},
-		},
-	}
-
-	appErr := fiber.New()
-	appErr.Patch("/list-users", adminControllerErr.ListUsers)
-
-	appSucc := fiber.New()
-	appSucc.Patch("/list-users", adminController.ListUsers)
-
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name   string
+		input  testInput
+		output testOutput
 	}{
 		{
-			name: "Admin-list-users-iam-error",
-			app:  appErr,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
+			name: "backend returns error",
+			input: testInput{
+				beRes: []auth.Account{},
+				beErr: s3err.GetAPIError(s3err.ErrInternalError),
 			},
-			wantErr:    false,
-			statusCode: 500,
+			output: testOutput{
+				response: &Response{
+					Data: auth.ListUserAccountsResult{
+						Accounts: []auth.Account{},
+					},
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInternalError),
+			},
 		},
 		{
-			name: "Admin-list-users-success",
-			app:  appSucc,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/list-users", nil),
+			name: "successful response",
+			input: testInput{
+				beRes: accs,
 			},
-			wantErr:    false,
-			statusCode: 200,
+			output: testOutput{
+				response: &Response{
+					Data: auth.ListUserAccountsResult{
+						Accounts: accs,
+					},
+					MetaOpts: &MetaOptions{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				ListUserAccountsFunc: func() ([]auth.Account, error) {
+					return tt.input.beRes.([]auth.Account), tt.input.beErr
+				},
+			}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
-		}
+			ctrl := AdminController{
+				iam: iam,
+			}
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.ListUsers() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+			testController(
+				t,
+				ctrl.ListUsers,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					queries: tt.input.queries,
+				})
+		})
 	}
 }
 
 func TestAdminController_ChangeBucketOwner(t *testing.T) {
-	type args struct {
-		req *http.Request
-	}
-	adminController := AdminController{
-		be: &BackendMock{
-			ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, owner string) error {
-				return nil
-			},
-		},
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, nil
-			},
-		},
-	}
-
-	adminControllerIamErr := AdminController{
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, fmt.Errorf("unknown server error")
-			},
-		},
-	}
-
-	adminControllerIamAccDoesNotExist := AdminController{
-		iam: &IAMServiceMock{
-			GetUserAccountFunc: func(access string) (auth.Account, error) {
-				return auth.Account{}, auth.ErrNoSuchUser
-			},
-		},
-	}
-
-	app := fiber.New()
-	app.Patch("/change-bucket-owner", adminController.ChangeBucketOwner)
-
-	appIamErr := fiber.New()
-	appIamErr.Patch("/change-bucket-owner", adminControllerIamErr.ChangeBucketOwner)
-
-	appIamNoSuchUser := fiber.New()
-	appIamNoSuchUser.Patch("/change-bucket-owner", adminControllerIamAccDoesNotExist.ChangeBucketOwner)
-
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name   string
+		input  testInput
+		output testOutput
 	}{
 		{
-			name: "Change-bucket-owner-check-account-server-error",
-			app:  appIamErr,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
+			name: "fails to get user account",
+			input: testInput{
+				extraMockErr: s3err.GetAPIError(s3err.ErrInternalError),
 			},
-			wantErr:    false,
-			statusCode: 500,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: errors.New("check user account: "),
+			},
 		},
 		{
-			name: "Change-bucket-owner-acc-does-not-exist",
-			app:  appIamNoSuchUser,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner", nil),
+			name: "user not found",
+			input: testInput{
+				extraMockErr: auth.ErrNoSuchUser,
 			},
-			wantErr:    false,
-			statusCode: 404,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminUserNotFound),
+			},
 		},
 		{
-			name: "Change-bucket-owner-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/change-bucket-owner?bucket=bucket&owner=owner", nil),
+			name: "backend returns error",
+			input: testInput{
+				beErr: s3err.GetAPIError(s3err.ErrAdminMethodNotSupported),
 			},
-			wantErr:    false,
-			statusCode: 200,
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminMethodNotSupported),
+			},
+		},
+		{
+			name: "successful response",
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				GetUserAccountFunc: func(access string) (auth.Account, error) {
+					return auth.Account{}, tt.input.extraMockErr
+				},
+			}
+			be := &BackendMock{
+				ChangeBucketOwnerFunc: func(contextMoqParam context.Context, bucket, owner string) error {
+					return tt.input.beErr
+				},
+			}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.ChangeBucketOwner() error = %v, wantErr %v", err, tt.wantErr)
-		}
+			ctrl := AdminController{
+				iam: iam,
+				be:  be,
+			}
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.ChangeBucketOwner() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+			testController(
+				t,
+				ctrl.ChangeBucketOwner,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{},
+			)
+		})
 	}
 }
 
 func TestAdminController_ListBuckets(t *testing.T) {
-	type args struct {
-		req *http.Request
-	}
-	adminController := AdminController{
-		be: &BackendMock{
-			ListBucketsAndOwnersFunc: func(contextMoqParam context.Context) ([]s3response.Bucket, error) {
-				return []s3response.Bucket{}, nil
-			},
+	res := []s3response.Bucket{
+		{
+			Name:  "bucket",
+			Owner: "owner",
 		},
 	}
 
-	app := fiber.New()
-	app.Patch("/list-buckets", adminController.ListBuckets)
-
 	tests := []struct {
-		name       string
-		app        *fiber.App
-		args       args
-		wantErr    bool
-		statusCode int
+		name   string
+		input  testInput
+		output testOutput
 	}{
 		{
-			name: "List-buckets-success",
-			app:  app,
-			args: args{
-				req: httptest.NewRequest(http.MethodPatch, "/list-buckets", nil),
+			name: "backend returns other error",
+			input: testInput{
+				beRes: []s3response.Bucket{},
+				beErr: s3err.GetAPIError(s3err.ErrNoSuchBucket),
 			},
-			wantErr:    false,
-			statusCode: 200,
+			output: testOutput{
+				response: &Response{
+					Data: s3response.ListBucketsResult{
+						Buckets: []s3response.Bucket{},
+					},
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				beRes: res,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.ListBucketsResult{
+						Buckets: res,
+					},
+					MetaOpts: &MetaOptions{},
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
-		resp, err := tt.app.Test(tt.args.req)
+		t.Run(tt.name, func(t *testing.T) {
+			be := &BackendMock{
+				ListBucketsAndOwnersFunc: func(contextMoqParam context.Context) ([]s3response.Bucket, error) {
+					return tt.input.beRes.([]s3response.Bucket), tt.input.beErr
+				},
+			}
 
-		if (err != nil) != tt.wantErr {
-			t.Errorf("AdminController.ListBuckets() error = %v, wantErr %v", err, tt.wantErr)
-		}
+			ctrl := AdminController{
+				be: be,
+			}
 
-		if resp.StatusCode != tt.statusCode {
-			t.Errorf("AdminController.ListBuckets() statusCode = %v, wantStatusCode = %v", resp.StatusCode, tt.statusCode)
-		}
+			testController(
+				t,
+				ctrl.ListBuckets,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{},
+			)
+		})
 	}
 }

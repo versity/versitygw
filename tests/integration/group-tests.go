@@ -637,6 +637,7 @@ func TestFullFlow(s *S3Conf) {
 	TestGetObjectLegalHold(s)
 	TestWORMProtection(s)
 	TestAccessControl(s)
+	TestRouter(s)
 	// FIXME: The tests should pass for azure as well
 	// but this issue should be fixed with https://github.com/versity/versitygw/issues/1336
 	if !s.azureTests {
@@ -652,6 +653,7 @@ func TestPosix(s *S3Conf) {
 	PutObject_overwrite_file_obj(s)
 	PutObject_overwrite_file_obj_with_nested_obj(s)
 	PutObject_dir_obj_with_data(s)
+	PutObject_with_slashes(s)
 	CreateMultipartUpload_dir_obj(s)
 	PutObject_name_too_long(s)
 	HeadObject_name_too_long(s)
@@ -749,6 +751,7 @@ func TestScoutfs(s *S3Conf) {
 	PutObject_overwrite_file_obj(s)
 	PutObject_overwrite_file_obj_with_nested_obj(s)
 	PutObject_dir_obj_with_data(s)
+	PutObject_with_slashes(s)
 	CreateMultipartUpload_dir_obj(s)
 	PutObject_name_too_long(s)
 	HeadObject_name_too_long(s)
@@ -872,6 +875,12 @@ func TestVersioningDisabled(s *S3Conf) {
 	VersioningDisabled_PutBucketVersioning_not_configured(s)
 }
 
+func TestRouter(s *S3Conf) {
+	RouterPutPartNumberWithoutUploadId(s)
+	RouterPostRoot(s)
+	RouterPostObjectWithoutQuery(s)
+}
+
 type IntTests map[string]func(s *S3Conf) error
 
 func GetIntTests() IntTests {
@@ -917,6 +926,7 @@ func GetIntTests() IntTests {
 		"PutObject_with_object_lock":                                              PutObject_with_object_lock,
 		"PutObject_invalid_legal_hold":                                            PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                      PutObject_invalid_object_lock_mode,
+		"PutObject_invalid_credentials":                                           PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                        PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
 		"PutObject_invalid_checksum_header":                                       PutObject_invalid_checksum_header,
@@ -1273,6 +1283,7 @@ func GetIntTests() IntTests {
 		"PutObject_overwrite_file_obj":                                            PutObject_overwrite_file_obj,
 		"PutObject_overwrite_file_obj_with_nested_obj":                            PutObject_overwrite_file_obj_with_nested_obj,
 		"PutObject_dir_obj_with_data":                                             PutObject_dir_obj_with_data,
+		"PutObject_with_slashes":                                                  PutObject_with_slashes,
 		"CreateMultipartUpload_dir_obj":                                           CreateMultipartUpload_dir_obj,
 		"IAM_user_access_denied":                                                  IAM_user_access_denied,
 		"IAM_userplus_access_denied":                                              IAM_userplus_access_denied,
@@ -1354,5 +1365,9 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_obj_version_locked_with_governance_retention":            Versioning_WORM_obj_version_locked_with_governance_retention,
 		"Versioning_WORM_obj_version_locked_with_compliance_retention":            Versioning_WORM_obj_version_locked_with_compliance_retention,
 		"Versioning_concurrent_upload_object":                                     Versioning_concurrent_upload_object,
+		"RouterPutPartNumberWithoutUploadId":                                      RouterPutPartNumberWithoutUploadId,
+		"RouterPostRoot":                                                          RouterPostRoot,
+		"RouterPostObjectWithoutQuery":                                            RouterPostObjectWithoutQuery,
+		"RouterPUTObjectOnlyUploadId":                                             RouterPUTObjectOnlyUploadId,
 	}
 }

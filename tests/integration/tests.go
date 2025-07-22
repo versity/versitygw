@@ -51,7 +51,6 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 	testName := "Authentication_invalid_auth_header"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -64,7 +63,7 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
 			return err
 		}
 
@@ -76,7 +75,6 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 	testName := "Authentication_unsupported_signature_version"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -91,7 +89,7 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
 			return err
 		}
 
@@ -103,7 +101,6 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 	testName := "Authentication_malformed_credentials"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -119,7 +116,7 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -131,7 +128,6 @@ func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
 	testName := "Authentication_malformed_credentials_invalid_parts"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -147,7 +143,7 @@ func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -159,7 +155,6 @@ func Authentication_credentials_terminated_string(s *S3Conf) error {
 	testName := "Authentication_credentials_terminated_string"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -175,7 +170,7 @@ func Authentication_credentials_terminated_string(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
 			return err
 		}
 
@@ -187,7 +182,6 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 	testName := "Authentication_credentials_incorrect_service"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "ec2",
@@ -199,7 +193,7 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
 			return err
 		}
 
@@ -217,7 +211,6 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 	}
 	return authHandler(&cfg, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -234,7 +227,7 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, apiErr); err != nil {
+		if err := checkHTTPResponseApiErr(resp, apiErr); err != nil {
 			return err
 		}
 
@@ -246,7 +239,6 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 	testName := "Authentication_credentials_invalid_date"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -262,7 +254,7 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -274,7 +266,6 @@ func Authentication_credentials_future_date(s *S3Conf) error {
 	testName := "Authentication_credentials_future_date"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -312,7 +303,6 @@ func Authentication_credentials_past_date(s *S3Conf) error {
 	testName := "Authentication_credentials_past_date"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -350,7 +340,6 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 	testName := "Authentication_credentials_non_existing_access_key"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -366,7 +355,7 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
 			return err
 		}
 
@@ -378,7 +367,6 @@ func Authentication_invalid_signed_headers(s *S3Conf) error {
 	testName := "Authentication_invalid_signed_headers"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -394,7 +382,7 @@ func Authentication_invalid_signed_headers(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -406,7 +394,6 @@ func Authentication_missing_date_header(s *S3Conf) error {
 	testName := "Authentication_missing_date_header"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -419,7 +406,7 @@ func Authentication_missing_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
 			return err
 		}
 
@@ -431,7 +418,6 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 	testName := "Authentication_invalid_date_header"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -444,7 +430,7 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
 			return err
 		}
 
@@ -456,7 +442,6 @@ func Authentication_date_mismatch(s *S3Conf) error {
 	testName := "Authentication_date_mismatch"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -469,7 +454,7 @@ func Authentication_date_mismatch(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -481,7 +466,6 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 	testName := "Authentication_incorrect_payload_hash"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -494,7 +478,7 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
 			return err
 		}
 
@@ -506,7 +490,6 @@ func Authentication_incorrect_md5(s *S3Conf) error {
 	testName := "Authentication_incorrect_md5"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -520,7 +503,7 @@ func Authentication_incorrect_md5(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
 			return err
 		}
 
@@ -534,7 +517,6 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 	cfg.awsSecret = s.awsSecret + "a"
 	return authHandler(&cfg, &authConfig{
 		testName: testName,
-		path:     "my-bucket",
 		method:   http.MethodGet,
 		body:     nil,
 		service:  "s3",
@@ -546,7 +528,7 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -556,9 +538,9 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 
 func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 	testName := "PresignedAuth_unsupported_algorithm"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -576,7 +558,7 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
 			return err
 		}
 
@@ -586,9 +568,9 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 
 func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_missing_credentials_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -613,7 +595,7 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -623,9 +605,9 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 
 func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 	testName := "PresignedAuth_malformed_creds_invalid_parts"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -650,7 +632,7 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
 			return err
 		}
 
@@ -660,9 +642,9 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 
 func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 	testName := "PresignedAuth_creds_invalid_terminator"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -683,7 +665,7 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
 			return err
 		}
 
@@ -693,9 +675,9 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 
 func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 	testName := "PresignedAuth_creds_incorrect_service"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -716,7 +698,7 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
 			return err
 		}
 
@@ -726,17 +708,19 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 
 func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 	testName := "PresignedAuth_creds_incorrect_region"
-	cfg := *s
+	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {
+		cfg := *s
 
-	if cfg.awsRegion == "us-east-1" {
-		cfg.awsRegion = "us-west-1"
-	} else {
-		cfg.awsRegion = "us-east-1"
-	}
+		if cfg.awsRegion == "us-east-1" {
+			cfg.awsRegion = "us-west-1"
+		} else {
+			cfg.awsRegion = "us-east-1"
+		}
 
-	return presignedAuthHandler(&cfg, testName, func(client *s3.PresignClient) error {
+		client := cfg.GetPresignClient()
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -752,7 +736,7 @@ func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.APIError{
+		if err := checkHTTPResponseApiErr(resp, s3err.APIError{
 			Code:           "SignatureDoesNotMatch",
 			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
 			HTTPStatusCode: http.StatusForbidden,
@@ -766,9 +750,9 @@ func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 
 func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 	testName := "PresignedAuth_creds_invalid_date"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -789,7 +773,7 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -799,9 +783,9 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 
 func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 	testName := "PresignedAuth_non_existing_access_key_id"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -822,7 +806,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
 			return err
 		}
 
@@ -832,9 +816,9 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 
 func PresignedAuth_missing_date_query(s *S3Conf) error {
 	testName := "PresignedAuth_missing_date_query"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -859,7 +843,7 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -869,9 +853,9 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 
 func PresignedAuth_dates_mismatch(s *S3Conf) error {
 	testName := "PresignedAuth_dates_mismatch"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -892,7 +876,7 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -902,9 +886,9 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 
 func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_missing_signed_headers_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -929,7 +913,7 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -939,9 +923,9 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 
 func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_missing_expiration_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -966,7 +950,7 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
 			return err
 		}
 
@@ -976,9 +960,9 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 
 func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_invalid_expiration_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -1003,7 +987,7 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
 			return err
 		}
 
@@ -1013,9 +997,9 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 
 func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_negative_expiration_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -1040,7 +1024,7 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
 			return err
 		}
 
@@ -1050,9 +1034,9 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 
 func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 	testName := "PresignedAuth_exceeding_expiration_query_param"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -1077,7 +1061,7 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
 			return err
 		}
 
@@ -1087,9 +1071,9 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 
 func PresignedAuth_expired_request(s *S3Conf) error {
 	testName := "PresignedAuth_expired_request"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -1121,7 +1105,7 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrExpiredPresignRequest)); err != nil {
 			return err
 		}
 
@@ -1131,11 +1115,13 @@ func PresignedAuth_expired_request(s *S3Conf) error {
 
 func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 	testName := "PresignedAuth_incorrect_secret_key"
-	cfg := *s
-	cfg.awsSecret += "x"
-	return presignedAuthHandler(&cfg, testName, func(client *s3.PresignClient) error {
+	return presignedAuthHandler(s, testName, func(_ *s3.PresignClient, bucket string) error {
+		cfg := *s
+		cfg.awsSecret += "x"
+		client := cfg.GetPresignClient()
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: getPtr("my-bucket")})
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
 		cancel()
 		if err != nil {
 			return err
@@ -1151,7 +1137,7 @@ func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkAuthErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
 			return err
 		}
 
@@ -1161,12 +1147,7 @@ func PresignedAuth_incorrect_secret_key(s *S3Conf) error {
 
 func PresignedAuth_PutObject_success(s *S3Conf) error {
 	testName := "PresignedAuth_PutObject_success"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
-		bucket := getBucketName()
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: getPtr("my-obj")})
 		cancel()
@@ -1188,23 +1169,14 @@ func PresignedAuth_PutObject_success(s *S3Conf) error {
 			return fmt.Errorf("expected my-obj to be successfully uploaded and get 200 response status, instead got %v", resp.StatusCode)
 		}
 
-		err = teardown(s, bucket)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	})
 }
 
 func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 	testName := "PresignedAuth_Put_GetObject_with_data"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
-		bucket, obj := getBucketName(), "my-obj"
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		obj := "my-obj"
 
 		data := "Hello world"
 		body := strings.NewReader(data)
@@ -1263,23 +1235,14 @@ func PresignedAuth_Put_GetObject_with_data(s *S3Conf) error {
 			return fmt.Errorf("expected get object response body to be %v, instead got %s", data, respBody)
 		}
 
-		err = teardown(s, bucket)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	})
 }
 
 func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 	testName := "PresignedAuth_Put_GetObject_with_UTF8_chars"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
-		bucket, obj := getBucketName(), "my-$%^&*;"
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		obj := "my-$%^&*;"
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &obj})
@@ -1325,24 +1288,14 @@ func PresignedAuth_Put_GetObject_with_UTF8_chars(s *S3Conf) error {
 			return fmt.Errorf("expected get object response status to be %v, instead got %v", http.StatusOK, resp.StatusCode)
 		}
 
-		err = teardown(s, bucket)
-		if err != nil {
-			return err
-		}
-
 		return nil
 	})
 }
 
 func PresignedAuth_UploadPart(s *S3Conf) error {
 	testName := "PresignedAuth_UploadPart"
-	return presignedAuthHandler(s, testName, func(client *s3.PresignClient) error {
-		bucket, key, partNumber := getBucketName(), "my-mp", int32(1)
-
-		err := setup(s, bucket)
-		if err != nil {
-			return err
-		}
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		key, partNumber := "my-mp", int32(1)
 
 		clt := s.GetClient()
 		mp, err := createMp(clt, bucket, key)
@@ -1391,11 +1344,6 @@ func PresignedAuth_UploadPart(s *S3Conf) error {
 		}
 		if *out.Parts[0].PartNumber != partNumber {
 			return fmt.Errorf("expected uploaded part part-number to be %v, instead got %v", partNumber, *out.Parts[0].PartNumber)
-		}
-
-		err = teardown(s, bucket)
-		if err != nil {
-			return err
 		}
 
 		return nil
@@ -11312,7 +11260,7 @@ func CompleteMultipartUpload_mpu_object_size(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CompleteMultipartUpload(ctx, input)
 		cancel()
-		if err := checkApiErr(err, s3err.GetInvalidMpObjectSizeErr(invMpuSize)); err != nil {
+		if err := checkApiErr(err, s3err.GetNegatvieMpObjectSizeErr(invMpuSize)); err != nil {
 			return err
 		}
 
@@ -17445,7 +17393,7 @@ func PublicBucket_public_acl(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrNotImplemented),
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAccessDenied),
 			},
 			{
 				Action: "GetObjectAttributes",
@@ -17992,6 +17940,47 @@ func PutObject_dir_obj_with_data(s *S3Conf) error {
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)); err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func PutObject_with_slashes(s *S3Conf) error {
+	testName := "PutObject_with_slashes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objs, err := putObjects(s3client, []string{
+			"/obj", "foo//bar", "/foo/baz/bar", "////////bar", "foo//////quxx",
+		}, bucket)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// it's en expected bahvior in posix to normalize the object pahts,
+		// by removing multiple slashes
+		normalizedObjs := []string{
+			"bar",
+			"foo/bar",
+			"foo/baz/bar",
+			"foo/quxx",
+			"obj",
+		}
+
+		for i := range objs {
+			objs[i].Key = &normalizedObjs[i]
+		}
+
+		if !compareObjects(objs, res.Contents) {
+			return fmt.Errorf("expected the objects to be %vß, instead got %v",
+				objStrings(objs), objStrings(res.Contents))
+		}
+
 		return nil
 	})
 }
@@ -20878,4 +20867,97 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+// router tests
+func RouterPutPartNumberWithoutUploadId(s *S3Conf) error {
+	testName := "RouterPutPartNumberWithoutUploadId"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPut, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		query := req.URL.Query()
+		query.Add("partNumber", "1")
+		req.URL.RawQuery = query.Encode()
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingUploadId)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPostRoot(s *S3Conf) error {
+	testName := "RouterPostRoot"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPost, s.endpoint+"/", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPostObjectWithoutQuery(s *S3Conf) error {
+	testName := "RouterPostObjectWithoutQuery"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPost, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func RouterPUTObjectOnlyUploadId(s *S3Conf) error {
+	testName := "RouterPUTObjectOnlyUploadId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodPut, s.endpoint+"/bucket/object", nil)
+		if err != nil {
+			return err
+		}
+
+		query := req.URL.Query()
+		query.Add("uploadId", "my-upload-id")
+		req.URL.RawQuery = query.Encode()
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }

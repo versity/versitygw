@@ -19,17 +19,15 @@ import (
 	"io"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
-func VerifyMD5Body(logger s3log.AuditLogger) fiber.Handler {
+func VerifyMD5Body() fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		incomingSum := ctx.Get("Content-Md5")
 		if incomingSum == "" {
-			return ctx.Next()
+			return nil
 		}
 
 		if utils.IsBigDataAction(ctx) {
@@ -39,18 +37,18 @@ func VerifyMD5Body(logger s3log.AuditLogger) fiber.Handler {
 				return r
 			})
 			if err != nil {
-				return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger})
+				return err
 			}
-			return ctx.Next()
+			return nil
 		}
 
 		sum := md5.Sum(ctx.Body())
 		calculatedSum := utils.Base64SumString(sum[:])
 
 		if incomingSum != calculatedSum {
-			return controllers.SendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidDigest), &controllers.MetaOpts{Logger: logger})
+			return s3err.GetAPIError(s3err.ErrInvalidDigest)
 		}
 
-		return ctx.Next()
+		return nil
 	}
 }

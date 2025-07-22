@@ -168,6 +168,7 @@ const (
 	ErrInvalidChecksumHeader
 	ErrTrailerHeaderNotSupported
 	ErrBadRequest
+	ErrMissingUploadId
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -732,6 +733,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Bad Request",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrMissingUploadId: {
+		Code:           "InvalidArgument",
+		Description:    "This operation does not accept partNumber without uploadId",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 
 	// non aws errors
 	ErrExistingObjectIsDirectory: {
@@ -888,10 +894,18 @@ func GetIncorrectMpObjectSizeErr(expected, actual int64) APIError {
 	}
 }
 
-func GetInvalidMpObjectSizeErr(val int64) APIError {
+func GetNegatvieMpObjectSizeErr(val int64) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
 		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is less than zero: '%v'", val),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidMpObjectSizeErr(val string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Value for x-amz-mp-object-size header is invalid: '%s'", val),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

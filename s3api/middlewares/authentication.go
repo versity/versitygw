@@ -25,11 +25,8 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/metrics"
-	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3log"
 )
 
 const (
@@ -42,45 +39,45 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.AuditLogger, mm *metrics.Manager, region string, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
 		// The bucket is public, no need to check this signature
 		if utils.ContextKeyPublicBucket.IsSet(ctx) {
-			return ctx.Next()
+			return nil
 		}
 		// If ContextKeyAuthenticated is set in context locals, it means it was presigned url case
 		if utils.ContextKeyAuthenticated.IsSet(ctx) {
-			return ctx.Next()
+			return nil
 		}
 
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrAuthHeaderEmpty), logger, mm)
+			return s3err.GetAPIError(s3err.ErrAuthHeaderEmpty)
 		}
 
 		authData, err := utils.ParseAuthorization(authorization)
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
 		if authData.Region != region {
-			return sendResponse(ctx, s3err.APIError{
+			return s3err.APIError{
 				Code:           "SignatureDoesNotMatch",
 				Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", authData.Region),
 				HTTPStatusCode: http.StatusForbidden,
-			}, logger, mm)
+			}
 		}
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
 		account, err := acct.getAccount(authData.Access)
 		if err == auth.ErrNoSuchUser {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID), logger, mm)
+			return s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)
 		}
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
 		utils.ContextKeyAccount.Set(ctx, account)
@@ -88,23 +85,23 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
 		if date == "" {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingDateHeader), logger, mm)
+			return s3err.GetAPIError(s3err.ErrMissingDateHeader)
 		}
 
 		// Parse the date and check the date validity
 		tdate, err := time.Parse(iso8601Format, date)
 		if err != nil {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMalformedDate), logger, mm)
+			return s3err.GetAPIError(s3err.ErrMalformedDate)
 		}
 
 		if date[:8] != authData.Date {
-			return sendResponse(ctx, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch), logger, mm)
+			return s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
 		}
 
 		// Validate the dates difference
 		err = utils.ValidateDate(tdate)
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
 		var contentLength int64
@@ -113,7 +110,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 			contentLength, err = strconv.ParseInt(contentLengthStr, 10, 64)
 			//TODO: not sure if InvalidRequest should be returned in this case
 			if err != nil {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrInvalidRequest), logger, mm)
+				return s3err.GetAPIError(s3err.ErrInvalidRequest)
 			}
 		}
 
@@ -136,23 +133,23 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 					return cr
 				})
 				if err != nil {
-					return sendResponse(ctx, err, logger, mm)
+					return err
 				}
 
-				return ctx.Next()
+				return nil
 			}
 
 			// Content-Length has to be set for data uploads: PutObject, UploadPart
 			if contentLengthStr == "" {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrMissingContentLength), logger, mm)
+				return s3err.GetAPIError(s3err.ErrMissingContentLength)
 			}
 			// the upload limit for big data actions: PutObject, UploadPart
 			// is 5gb. If the size exceeds the limit, return 'EntityTooLarge' err
 			if contentLength > maxObjSizeLimit {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrEntityTooLarge), logger, mm)
+				return s3err.GetAPIError(s3err.ErrEntityTooLarge)
 			}
 
-			return ctx.Next()
+			return nil
 		}
 
 		if !utils.IsSpecialPayload(hashPayload) {
@@ -162,16 +159,16 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, logger s3log.Au
 
 			// Compare the calculated hash with the hash provided
 			if hashPayload != hexPayload {
-				return sendResponse(ctx, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch), logger, mm)
+				return s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)
 			}
 		}
 
 		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength, debug)
 		if err != nil {
-			return sendResponse(ctx, err, logger, mm)
+			return err
 		}
 
-		return ctx.Next()
+		return nil
 	}
 }
 
@@ -185,13 +182,9 @@ func (a accounts) getAccount(access string) (auth.Account, error) {
 		return auth.Account{
 			Access: a.root.Access,
 			Secret: a.root.Secret,
-			Role:   "admin",
+			Role:   auth.RoleAdmin,
 		}, nil
 	}
 
 	return a.iam.GetUserAccount(access)
-}
-
-func sendResponse(ctx *fiber.Ctx, err error, logger s3log.AuditLogger, mm *metrics.Manager) error {
-	return controllers.SendResponse(ctx, err, &controllers.MetaOpts{Logger: logger, MetricsMng: mm})
 }
