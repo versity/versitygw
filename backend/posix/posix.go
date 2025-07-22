@@ -3871,7 +3871,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 	}
 	if input.CopySource == nil {
-		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
 	if input.ExpectedBucketOwner == nil {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidRequest)

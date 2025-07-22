@@ -6617,7 +6617,7 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	})
 }
 
-func CopyObject_CopySource_starting_with_slash(s *S3Conf) error {
+func CopyObject_copy_source_starting_with_slash(s *S3Conf) error {
 	testName := "CopyObject_CopySource_starting_with_slash"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		dataLength, obj := int64(1234567), "src-obj"
@@ -6675,6 +6675,110 @@ func CopyObject_CopySource_starting_with_slash(s *S3Conf) error {
 
 		if err := teardown(s, dstBucket); err != nil {
 			return err
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_invalid_copy_source(s *S3Conf) error {
+	testName := "CopyObject_invalid_copy_source"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, test := range []struct {
+			copySource  string
+			expectedErr s3err.APIError
+		}{
+			// invalid encoding
+			{
+				// Invalid hex digits
+				copySource:  "bucket/%ZZ",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Ends with incomplete escape
+				copySource:  "100%/foo/bar/baz",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Only one digit after %
+				copySource:  "bucket/%A/bar",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// 'G' is not a hex digit
+				copySource:  "bucket/%G1/",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Just a single percent sign
+				copySource:  "%",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Only one hex digit
+				copySource:  "bucket/%1",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Incomplete multibyte UTF-8
+				copySource:  "bucket/%C3%",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			// invalid bucket name
+			{
+				// ip v4 address
+				copySource:  "192.168.1.1/foo",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			{
+				// ip v6 address
+				copySource:  "2001:0db8:85a3:0000:0000:8a2e:0370:7334/something",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			{
+				// some special chars
+				copySource:  "my-buc@k&()t/obj",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			// invalid object key
+			{
+				// object is missing
+				copySource:  "bucket",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				// object is missing
+				copySource:  "bucket/",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			// directory navigation object keys
+			{
+				copySource:  "bucket/.",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/..",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/../",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/foo/ba/../../../r/baz",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				CopySource: &test.copySource,
+			})
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -8762,7 +8866,7 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 		partNumber := int32(-10)
 		_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
 			Bucket:     &bucket,
-			CopySource: getPtr("Copy-Source"),
+			CopySource: getPtr("bucket/key"),
 			UploadId:   getPtr("uploadId"),
 			Key:        getPtr("non-existing-object-key"),
 			PartNumber: &partNumber,
@@ -8779,25 +8883,104 @@ func UploadPartCopy_invalid_part_number(s *S3Conf) error {
 func UploadPartCopy_invalid_copy_source(s *S3Conf) error {
 	testName := "UploadPartCopy_invalid_copy_source"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-
-		out, err := createMp(s3client, bucket, obj)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		partNumber := int32(1)
-		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
-			Bucket:     &bucket,
-			CopySource: getPtr("invalid-copy-source"),
-			UploadId:   out.UploadId,
-			Key:        &obj,
-			PartNumber: &partNumber,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidCopySource)); err != nil {
-			return err
+		for _, test := range []struct {
+			copySource  string
+			expectedErr s3err.APIError
+		}{
+			// invalid encoding
+			{
+				// Invalid hex digits
+				copySource:  "bucket/%ZZ",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Ends with incomplete escape
+				copySource:  "100%/foo/bar/baz",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Only one digit after %
+				copySource:  "bucket/%A/bar",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// 'G' is not a hex digit
+				copySource:  "bucket/%G1/",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Just a single percent sign
+				copySource:  "%",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Only one hex digit
+				copySource:  "bucket/%1",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			{
+				// Incomplete multibyte UTF-8
+				copySource:  "bucket/%C3%",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
+			},
+			// invalid bucket name
+			{
+				// ip v4 address
+				copySource:  "192.168.1.1/foo",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			{
+				// ip v6 address
+				copySource:  "2001:0db8:85a3:0000:0000:8a2e:0370:7334/something",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			{
+				// some special chars
+				copySource:  "my-buc@k&()t/obj",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+			// invalid object key
+			{
+				// object is missing
+				copySource:  "bucket",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				// object is missing
+				copySource:  "bucket/",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			// directory navigation object keys
+			{
+				copySource:  "bucket/.",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/..",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/../",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+			{
+				copySource:  "bucket/foo/ba/../../../r/baz",
+				expectedErr: s3err.GetAPIError(s3err.ErrInvalidCopySourceObject),
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:     &bucket,
+				Key:        getPtr("obj"),
+				UploadId:   getPtr("mock-upload-id"),
+				CopySource: &test.copySource,
+				PartNumber: &partNumber,
+			})
+			cancel()
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return err
+			}
 		}
 
 		return nil

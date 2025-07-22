@@ -19,7 +19,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -319,15 +318,13 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	cs := copySource
-	copySource, err := url.QueryUnescape(copySource)
+	err := utils.ValidateCopySource(copySource)
 	if err != nil {
-		debuglogger.Logf("error unescaping copy source %q: %v", cs, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		}, err
 	}
 
 	err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
@@ -456,15 +453,13 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	cs := copySource
-	copySource, err := url.QueryUnescape(copySource)
+	err := utils.ValidateCopySource(copySource)
 	if err != nil {
-		debuglogger.Logf("error unescaping copy source %q: %v", cs, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		}, err
 	}
 
 	err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
@@ -490,11 +485,12 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		tm, err := time.Parse(iso8601Format, copySrcModifSince)
 		if err != nil {
 			debuglogger.Logf("error parsing copy source modified since %q: %v", copySrcModifSince, err)
+			// TODO: check the error type for invalid values
 			return &Response{
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+			}, s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 		}
 		mtime = &tm
 	}
@@ -503,11 +499,12 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		tm, err := time.Parse(iso8601Format, copySrcUnmodifSince)
 		if err != nil {
 			debuglogger.Logf("error parsing copy source unmodified since %q: %v", copySrcUnmodifSince, err)
+			// TODO: check the error type for invalid values
 			return &Response{
 				MetaOpts: &MetaOptions{
 					BucketOwner: parsedAcl.Owner,
 				},
-			}, s3err.GetAPIError(s3err.ErrInvalidCopySource)
+			}, s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 		}
 		umtime = &tm
 	}

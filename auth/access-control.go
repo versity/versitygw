@@ -40,7 +40,7 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 	// Verify source bucket access
 	srcBucket, srcObject, found := strings.Cut(copySource, "/")
 	if !found {
-		return s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		return s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
 
 	// Get source bucket ACL

@@ -278,7 +278,8 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_should_copy_tagging(s)
 	CopyObject_invalid_tagging_directive(s)
 	CopyObject_to_itself_with_new_metadata(s)
-	CopyObject_CopySource_starting_with_slash(s)
+	CopyObject_copy_source_starting_with_slash(s)
+	CopyObject_invalid_copy_source(s)
 	CopyObject_non_existing_dir_object(s)
 	CopyObject_should_copy_meta_props(s)
 	CopyObject_should_replace_meta_props(s)
@@ -1062,7 +1063,8 @@ func GetIntTests() IntTests {
 		"CopyObject_should_copy_tagging":                                          CopyObject_should_copy_tagging,
 		"CopyObject_invalid_tagging_directive":                                    CopyObject_invalid_tagging_directive,
 		"CopyObject_to_itself_with_new_metadata":                                  CopyObject_to_itself_with_new_metadata,
-		"CopyObject_CopySource_starting_with_slash":                               CopyObject_CopySource_starting_with_slash,
+		"CopyObject_copy_source_starting_with_slash":                              CopyObject_copy_source_starting_with_slash,
+		"CopyObject_invalid_copy_source":                                          CopyObject_invalid_copy_source,
 		"CopyObject_non_existing_dir_object":                                      CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                       CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                    CopyObject_should_replace_meta_props,
