@@ -67,7 +67,7 @@ perform_multipart_upload_rest() {
     log 2 "'upload_check_parts' requires bucket, key, part list"
     return 1
   fi
-  if ! upload_id=$(create_multipart_upload_rest "$1" "$2" 2>&1); then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating multipart upload"
     return 1
   fi
@@ -105,7 +105,7 @@ upload_check_parts() {
     log 2 "'upload_check_parts' requires bucket, key, part list"
     return 1
   fi
-  if ! upload_id=$(create_multipart_upload_rest "$1" "$2" 2>&1); then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating upload"
     return 1
   fi

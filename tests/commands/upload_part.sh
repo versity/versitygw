@@ -67,7 +67,7 @@ upload_part_rest_without_part_number() {
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating multpart upload"
     return 1
   fi
@@ -87,7 +87,7 @@ upload_part_rest_without_upload_id() {
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2"; then
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
     log 2 "error creating multpart upload"
     return 1
   fi

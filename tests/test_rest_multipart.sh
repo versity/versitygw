@@ -114,7 +114,7 @@ test_file="test_file"
   run split_file "$TEST_FILE_FOLDER/$test_file" 4
   assert_success
 
-  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file"
+  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file" "" "parse_upload_id"
   assert_success
   # shellcheck disable=SC2030
   upload_id=$output
@@ -212,7 +212,7 @@ test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run create_multipart_upload_rest_with_checksum_type_and_algorithm "$BUCKET_ONE_NAME" "$test_file" "full_object" "crc64nvme"
+  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file" "CHECKSUM_TYPE=full_object CHECKSUM_ALGORITHM=crc64nvme" "parse_upload_id"
   assert_success
 }
 
@@ -226,7 +226,7 @@ test_file="test_file"
   run create_test_file "$test_file" $((5*1024*1024))
   assert_success
 
-  run create_multipart_upload_rest_with_checksum_type_and_algorithm "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32"
+  run create_multipart_upload_rest "$BUCKET_ONE_NAME" "$test_file" "CHECKSUM_TYPE=FULL_OBJECT CHECKSUM_ALGORITHM=CRC32" "parse_upload_id"
   assert_success
   upload_id=$output
   log 5 "upload ID: $upload_id"
@@ -369,5 +369,16 @@ test_file="test_file"
 
 @test "REST - multipart - full object - invalid crc64nvme" {
   run test_complete_multipart_upload_invalid_checksum "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC64NVME"
+  assert_success
+}
+
+@test "REST - multipart - x-amz-mp-object-size - invalid string" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1398"
+  fi
+  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run complete_multipart_upload_invalid_object_size_string "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }

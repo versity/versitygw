@@ -14,6 +14,20 @@
 # specific language governing permissions and limitations
 # under the License.
 
+multipart_upload_rest_before_completion() {
+  if ! check_param_count_v2 "bucket, key, file, part count" 4 $#; then
+    return 1
+  fi
+  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
+    log 2 "error creating multipart upload"
+    return 1
+  fi
+  if ! upload_parts_rest_before_completion "$1" "$2" "$3" "$upload_id" "$4"; then
+    log 2 "error uploading parts before completion"
+    return 1
+  fi
+}
+
 upload_parts_rest_before_completion() {
   if ! check_param_count_v2 "bucket, key, file, upload ID, part count" 5 $#; then
     return 1
@@ -22,7 +36,7 @@ upload_parts_rest_before_completion() {
     log 2 "error splitting file"
     return 1
   fi
-  local parts_payload=""
+  parts_payload=""
   for ((part=0;part<"$5";part++)); do
     part_number=$((part+1))
     if ! etag=$(upload_part_rest "$1" "$2" "$4" "$part_number" "$3-$part" 2>&1); then
@@ -68,7 +82,7 @@ perform_full_multipart_upload_with_checksum_before_completion() {
     log 2 "error setting up bucket and large file"
     return 1
   fi
-  if ! create_multipart_upload_rest_with_checksum_type_and_algorithm "$1" "$2" "$3" "$4"; then
+  if ! create_multipart_upload_rest "$1" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id"; then
     log 2 "error creating multipart upload"
     return 1
   fi
