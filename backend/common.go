@@ -230,7 +230,7 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 
 	srcBucket, srcObject, ok := strings.Cut(copySource, "/")
 	if !ok {
-		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySource)
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
 
 	return srcBucket, srcObject, versionId, nil

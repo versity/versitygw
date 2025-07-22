@@ -26,6 +26,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
@@ -895,6 +896,54 @@ func TestParseTagging(t *testing.T) {
 			if err == nil && !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("expected result %v, got %v", tt.want, got)
 			}
+		})
+	}
+}
+
+func TestValidateCopySource(t *testing.T) {
+	tests := []struct {
+		name       string
+		copysource string
+		err        error
+	}{
+		// invalid encoding
+		{"invalid encoding 1", "%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 2", "%2", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 3", "%G1", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 4", "%1Z", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 5", "%0H", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 6", "%XY", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 7", "%E", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 8", "hello%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 9", "%%", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 10", "%2Gmore", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 11", "100%%sure", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 12", "%#00", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 13", "%0%0", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		{"invalid encoding 14", "%?versionId=id", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)},
+		// invalid bucket name
+		{"invalid bucket name 1", "168.200.1.255/obj/foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		{"invalid bucket name 2", "/0000:0db8:85a3:0000:0000:8a2e:0370:7224/smth", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		{"invalid bucket name 3", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		{"invalid bucket name 4", "//obj/foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		{"invalid bucket name 5", "//obj/foo?versionId=id", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)},
+		// invalid object name
+		{"invalid object name 1", "bucket/../foo", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		{"invalid object name 2", "bucket/", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		{"invalid object name 3", "bucket", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		{"invalid object name 4", "bucket/../foo/dir/../../../", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		{"invalid object name 5", "bucket/.?versionId=smth", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		// success
+		{"no error 1", "bucket/object", nil},
+		{"no error 2", "bucket/object/key", nil},
+		{"no error 3", "bucket/4*&(*&(89765))", nil},
+		{"no error 4", "bucket/foo/../bar", nil},
+		{"no error 5", "bucket/foo/bar/baz?versionId=id", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCopySource(tt.copysource)
+			assert.Equal(t, tt.err, err)
 		})
 	}
 }

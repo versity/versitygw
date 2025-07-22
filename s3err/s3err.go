@@ -87,8 +87,10 @@ const (
 	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
 	ErrInvalidCopyDest
-	ErrInvalidCopySource
 	ErrInvalidCopySourceRange
+	ErrInvalidCopySourceBucket
+	ErrInvalidCopySourceObject
+	ErrInvalidCopySourceEncoding
 	ErrInvalidTagKey
 	ErrInvalidTagValue
 	ErrDuplicateTagKey
@@ -333,14 +335,24 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "This copy request is illegal because it is trying to copy an object to itself without changing the object's metadata, storage class, website redirect location or encryption attributes.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidCopySource: {
-		Code:           "InvalidArgument",
-		Description:    "Copy Source must mention the source bucket and key: sourcebucket/sourcekey.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
 	ErrInvalidCopySourceRange: {
 		Code:           "InvalidArgument",
 		Description:    "The x-amz-copy-source-range value must be of the form bytes=first-last where first and last are the zero-based offsets of the first and last bytes to copy",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCopySourceBucket: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid copy source bucket name",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCopySourceObject: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid copy source object key",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidCopySourceEncoding: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid copy source encoding",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidTagKey: {

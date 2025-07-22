@@ -585,6 +585,9 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/key",
+				},
 			},
 			output: testOutput{
 				response: &Response{
@@ -612,7 +615,7 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding),
 			},
 		},
 		{
@@ -806,6 +809,9 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			name: "verify access fails",
 			input: testInput{
 				locals: accessDeniedLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
 			},
 			output: testOutput{
 				response: &Response{
@@ -820,9 +826,6 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			name: "invalid copy source",
 			input: testInput{
 				locals: defaultLocals,
-				headers: map[string]string{
-					"X-Amz-Copy-Source": "bad%G1",
-				},
 			},
 			output: testOutput{
 				response: &Response{
@@ -830,7 +833,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
 			},
 		},
 		{
@@ -848,7 +851,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
 			},
 		},
 		{
@@ -866,7 +869,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySource),
+				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
 			},
 		},
 		{
