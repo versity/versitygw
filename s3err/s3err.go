@@ -646,8 +646,8 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrInvalidBucketAclWithObjectOwnership: {
-		Code:           "ErrInvalidBucketAclWithObjectOwnership",
-		Description:    "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting.",
+		Code:           "InvalidBucketAclWithObjectOwnership",
+		Description:    "Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrBothCannedAndHeaderGrants: {
