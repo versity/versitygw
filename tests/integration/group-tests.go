@@ -869,6 +869,8 @@ func TestVersioning(s *S3Conf) {
 	Versioning_WORM_obj_version_locked_with_compliance_retention(s)
 	// Concurrent requests
 	//Versioninig_concurrent_upload_object(s)
+	Versioning_AccessControl_GetObjectVersion(s)
+	Versioning_AccessControl_HeadObjectVersion(s)
 }
 
 func TestVersioningDisabled(s *S3Conf) {
@@ -1366,6 +1368,8 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                      Versioning_WORM_obj_version_locked_with_legal_hold,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":            Versioning_WORM_obj_version_locked_with_governance_retention,
 		"Versioning_WORM_obj_version_locked_with_compliance_retention":            Versioning_WORM_obj_version_locked_with_compliance_retention,
+		"Versioning_AccessControl_GetObjectVersion":                               Versioning_AccessControl_GetObjectVersion,
+		"Versioning_AccessControl_HeadObjectVersion":                              Versioning_AccessControl_HeadObjectVersion,
 		"Versioning_concurrent_upload_object":                                     Versioning_concurrent_upload_object,
 		"RouterPutPartNumberWithoutUploadId":                                      RouterPutPartNumberWithoutUploadId,
 		"RouterPostRoot":                                                          RouterPostRoot,

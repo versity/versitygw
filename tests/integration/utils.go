@@ -53,6 +53,35 @@ var (
 	adminErrorPrefix = "XAdmin"
 )
 
+type user struct {
+	access string
+	secret string
+	role   string
+}
+
+var (
+	testuser1 user = user{
+		access: "grt1",
+		secret: "grt1secret",
+		role:   "user",
+	}
+	testuser2 user = user{
+		access: "grt2",
+		secret: "grt2secret",
+		role:   "user",
+	}
+	testuserplus user = user{
+		access: "grtplus",
+		secret: "grt1plussecret",
+		role:   "userplus",
+	}
+	testadmin user = user{
+		access: "admin",
+		secret: "adminsecret",
+		role:   "admin",
+	}
+)
+
 func getBucketName() string {
 	bcktCount++
 	return fmt.Sprintf("test-bucket-%v", bcktCount)
@@ -899,12 +928,6 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 	return parts, csum, err
 }
 
-type user struct {
-	access string
-	secret string
-	role   string
-}
-
 func createUsers(s *S3Conf, users []user) error {
 	for _, usr := range users {
 		err := deleteUser(s, usr.access)
@@ -1063,14 +1086,6 @@ func getMalformedPolicyError(msg string) s3err.APIError {
 		Description:    msg,
 		HTTPStatusCode: http.StatusBadRequest,
 	}
-}
-
-func getUserS3Client(usr user, cfg *S3Conf) *s3.Client {
-	config := *cfg
-	config.awsID = usr.access
-	config.awsSecret = usr.secret
-
-	return config.GetClient()
 }
 
 // if true enables, otherwise disables

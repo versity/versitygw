@@ -1383,15 +1383,10 @@ func CreateBucket_invalid_bucket_name(s *S3Conf) error {
 func CreateBucket_as_user(s *S3Conf) error {
 	testName := "CreateBucket_as_user"
 	runF(testName)
-	usr := user{
-		access: "grt1",
-		secret: "grt1secret",
-		role:   "user",
-	}
 	cfg := *s
-	cfg.awsID = usr.access
-	cfg.awsSecret = usr.secret
-	err := createUsers(s, []user{usr})
+	cfg.awsID = testuser1.access
+	cfg.awsSecret = testuser1.secret
+	err := createUsers(s, []user{testuser1})
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
@@ -1411,19 +1406,14 @@ func CreateBucket_existing_bucket(s *S3Conf) error {
 	testName := "CreateBucket_existing_bucket"
 	runF(testName)
 	bucket := getBucketName()
-	admin := user{
-		access: "admin1",
-		secret: "admin1secret",
-		role:   "admin",
-	}
-	if err := createUsers(s, []user{admin}); err != nil {
+	if err := createUsers(s, []user{testadmin}); err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	adminCfg := *s
-	adminCfg.awsID = admin.access
-	adminCfg.awsSecret = admin.secret
+	adminCfg.awsID = testadmin.access
+	adminCfg.awsSecret = testadmin.secret
 
 	err := setup(&adminCfg, bucket)
 	if err != nil {
@@ -1724,32 +1714,23 @@ func ListBuckets_as_user(s *S3Conf) error {
 				Name: &bckt,
 			})
 		}
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
 
-		err := createUsers(s, []user{usr})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
-
-		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
 
 		bckts := []string{}
 		for i := range 3 {
 			bckts = append(bckts, *buckets[i].Name)
 		}
 
-		err = changeBucketsOwner(s, bckts, usr.access)
+		err = changeBucketsOwner(s, bckts, testuser1.access)
 		if err != nil {
 			return err
 		}
 
-		userClient := cfg.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := userClient.ListBuckets(ctx, &s3.ListBucketsInput{})
@@ -1758,9 +1739,9 @@ func ListBuckets_as_user(s *S3Conf) error {
 			return err
 		}
 
-		if getString(out.Owner.ID) != usr.access {
+		if getString(out.Owner.ID) != testuser1.access {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
-				usr.access, getString(out.Owner.ID))
+				testuser1.access, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets[:3]) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
@@ -1794,37 +1775,23 @@ func ListBuckets_as_admin(s *S3Conf) error {
 				Name: &bckt,
 			})
 		}
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		admin := user{
-			access: "admin1",
-			secret: "admin1secret",
-			role:   "admin",
-		}
 
-		err := createUsers(s, []user{usr, admin})
+		err := createUsers(s, []user{testuser1, testadmin})
 		if err != nil {
 			return err
 		}
-
-		cfg := *s
-		cfg.awsID = admin.access
-		cfg.awsSecret = admin.secret
 
 		bckts := []string{}
 		for i := range 3 {
 			bckts = append(bckts, *buckets[i].Name)
 		}
 
-		err = changeBucketsOwner(s, bckts, usr.access)
+		err = changeBucketsOwner(s, bckts, testuser1.access)
 		if err != nil {
 			return err
 		}
 
-		adminClient := cfg.GetClient()
+		adminClient := s.getUserClient(testadmin)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := adminClient.ListBuckets(ctx, &s3.ListBucketsInput{})
@@ -1833,9 +1800,9 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			return err
 		}
 
-		if getString(out.Owner.ID) != admin.access {
+		if getString(out.Owner.ID) != testadmin.access {
 			return fmt.Errorf("expected buckets owner to be %v, instead got %v",
-				admin.access, getString(out.Owner.ID))
+				testadmin.access, getString(out.Owner.ID))
 		}
 		if !compareBuckets(out.Buckets, buckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
@@ -6252,19 +6219,9 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 			return err
 		}
 
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
+		userClient := s.getUserClient(testuser1)
 
-		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
-
-		userS3Client := cfg.GetClient()
-
-		err = createUsers(s, []user{usr})
+		err = createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -6275,13 +6232,13 @@ func CopyObject_not_owned_source_bucket(s *S3Conf) error {
 			return err
 		}
 
-		err = changeBucketsOwner(s, []string{bucket}, usr.access)
+		err = changeBucketsOwner(s, []string{bucket}, testuser1.access)
 		if err != nil {
 			return err
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = userS3Client.CopyObject(ctx, &s3.CopyObjectInput{
+		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:     &dstBucket,
 			Key:        getPtr("obj-1"),
 			CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, srcObj)),
@@ -11816,7 +11773,7 @@ func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket:    &bucket,
 			ACL:       types.BucketCannedACLPrivate,
-			GrantRead: getPtr("user1"),
+			GrantRead: getPtr("testuser1"),
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)); err != nil {
@@ -11892,21 +11849,16 @@ func PutBucketAcl_invalid_acl_acp_and_grants(s *S3Conf) error {
 func PutBucketAcl_invalid_owner(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_owner"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
 
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+		if err := changeBucketsOwner(s, []string{bucket}, testuser1.access); err != nil {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
@@ -11915,7 +11867,7 @@ func PutBucketAcl_invalid_owner(s *S3Conf) error {
 				Grants: []types.Grant{
 					{
 						Grantee: &types.Grantee{
-							ID:   getPtr(usr.access),
+							ID:   getPtr(testuser1.access),
 							Type: types.TypeCanonicalUser,
 						},
 						Permission: types.PermissionRead,
@@ -12087,7 +12039,7 @@ func PutBucketAcl_empty_grantee_ID_in_body(s *S3Conf) error {
 func PutBucketAcl_success_access_denied(s *S3Conf) error {
 	testName := "PutBucketAcl_success_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -12099,7 +12051,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 				Grants: []types.Grant{
 					{
 						Grantee: &types.Grantee{
-							ID:   getPtr("grt1"),
+							ID:   getPtr(testuser1.access),
 							Type: types.TypeCanonicalUser,
 						},
 						Permission: types.PermissionRead,
@@ -12115,10 +12067,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 			return err
 		}
 
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := newConf.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -12132,7 +12081,7 @@ func PutBucketAcl_success_access_denied(s *S3Conf) error {
 func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 	testName := "PutBucketAcl_success_canned_acl"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -12147,10 +12096,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 			return err
 		}
 
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := newConf.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
@@ -12164,7 +12110,7 @@ func PutBucketAcl_success_canned_acl(s *S3Conf) error {
 func PutBucketAcl_success_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_success_acp"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -12172,17 +12118,14 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket:    &bucket,
-			GrantRead: getPtr("grt1"),
+			GrantRead: &testuser1.access,
 		})
 		cancel()
 		if err != nil {
 			return err
 		}
 
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := newConf.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -12205,7 +12148,7 @@ func PutBucketAcl_success_acp(s *S3Conf) error {
 func PutBucketAcl_success_grants(s *S3Conf) error {
 	testName := "PutBucketAcl_success_grants"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -12217,7 +12160,7 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 				Grants: []types.Grant{
 					{
 						Grantee: &types.Grantee{
-							ID:   getPtr("grt1"),
+							ID:   &testuser1.access,
 							Type: types.TypeCanonicalUser,
 						},
 						Permission: types.PermissionFullControl,
@@ -12233,10 +12176,7 @@ func PutBucketAcl_success_grants(s *S3Conf) error {
 			return err
 		}
 
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := newConf.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err != nil {
@@ -12422,15 +12362,12 @@ func GetBucketAcl_translation_canned_private(s *S3Conf) error {
 func GetBucketAcl_access_denied(s *S3Conf) error {
 	testName := "GetBucketAcl_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{{"grt1", "grt1secret", "user"}})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
 
-		newConf := *s
-		newConf.awsID = "grt1"
-		newConf.awsSecret = "grt1secret"
-		userClient := newConf.GetClient()
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.GetBucketAcl(ctx, &s3.GetBucketAclInput{
@@ -13011,11 +12948,7 @@ func PutBucketPolicy_bucket_action_on_object_resource(s *S3Conf) error {
 func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 	testName := "PutBucketPolicy_explicit_deny"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		user2 := user{"grt2", "grt2secret", "user"}
-		err := createUsers(s, []user{
-			{"grt1", "grt1secret", "user"},
-			user2,
-		})
+		err := createUsers(s, []user{testuser1, testuser2})
 		if err != nil {
 			return err
 		}
@@ -13075,7 +13008,7 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 			return err
 		}
 
-		userClient := getUserS3Client(user2, s)
+		userClient := s.getUserClient(testuser2)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.PutObject(ctx, &s3.PutObjectInput{
@@ -13094,13 +13027,12 @@ func PutBucketPolicy_explicit_deny(s *S3Conf) error {
 func PutBucketPolicy_multi_wildcard_resource(s *S3Conf) error {
 	testName := "PutBucketPolicy_multi_wildcard_resource"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{"grt1", "grt1secret", "user"}
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
 		resource := fmt.Sprintf(`["arn:aws:s3:::%v/*/*", "arn:aws:s3:::%v"]`, bucket, bucket)
-		principal := fmt.Sprintf("\"%v\"", usr.access)
+		principal := fmt.Sprintf("\"%v\"", testuser1.access)
 		doc := genPolicyDoc("Allow", principal, `"s3:*"`, resource)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -13113,7 +13045,7 @@ func PutBucketPolicy_multi_wildcard_resource(s *S3Conf) error {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 		_, err = putObjects(userClient, []string{"foo"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
@@ -13131,13 +13063,12 @@ func PutBucketPolicy_multi_wildcard_resource(s *S3Conf) error {
 func PutBucketPolicy_any_char_match(s *S3Conf) error {
 	testName := "PutBucketPolicy_any_char_match"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{"grt1", "grt1secret", "user"}
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
 		resource := fmt.Sprintf(`["arn:aws:s3:::%v/m?-obj/*"]`, bucket)
-		principal := fmt.Sprintf("\"%v\"", usr.access)
+		principal := fmt.Sprintf("\"%v\"", testuser1.access)
 		doc := genPolicyDoc("Allow", principal, `"s3:*"`, resource)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -13150,7 +13081,7 @@ func PutBucketPolicy_any_char_match(s *S3Conf) error {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 		_, err = putObjects(userClient, []string{"myy-obj/hello", "rand/foo", "my-objj/bar"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
@@ -13168,10 +13099,7 @@ func PutBucketPolicy_any_char_match(s *S3Conf) error {
 func PutBucketPolicy_success(s *S3Conf) error {
 	testName := "PutBucketPolicy_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		err := createUsers(s, []user{
-			{"grt1", "grt1secret", "user"},
-			{"grt2", "grt2secret", "user"},
-		})
+		err := createUsers(s, []user{testuser1, testuser2})
 		if err != nil {
 			return err
 		}
@@ -14993,21 +14921,14 @@ func WORMProtection_root_bypass_governance_retention_delete_object(s *S3Conf) er
 func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
 	testName := "AccessControl_default_ACL_user_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		err := createUsers(s, []user{usr})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
 
-		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
+		userClient := s.getUserClient(testuser1)
 
-		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
+		_, err = putObjects(userClient, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -15019,21 +14940,14 @@ func AccessControl_default_ACL_user_access_denied(s *S3Conf) error {
 func AccessControl_default_ACL_userplus_access_denied(s *S3Conf) error {
 	testName := "AccessControl_default_ACL_userplus_access_denied"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "userplus1",
-			secret: "userplus1secret",
-			role:   "userplus",
-		}
-		err := createUsers(s, []user{usr})
+		err := createUsers(s, []user{testuserplus})
 		if err != nil {
 			return err
 		}
 
-		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
+		client := s.getUserClient(testuserplus)
 
-		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
+		_, err = putObjects(client, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
 			return err
 		}
@@ -15045,21 +14959,14 @@ func AccessControl_default_ACL_userplus_access_denied(s *S3Conf) error {
 func AccessControl_default_ACL_admin_successful_access(s *S3Conf) error {
 	testName := "AccessControl_default_ACL_admin_successful_access"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		admin := user{
-			access: "admin1",
-			secret: "admin1secret",
-			role:   "admin",
-		}
-		err := createUsers(s, []user{admin})
+		err := createUsers(s, []user{testadmin})
 		if err != nil {
 			return err
 		}
 
-		cfg := *s
-		cfg.awsID = admin.access
-		cfg.awsSecret = admin.secret
+		adminClient := s.getUserClient(testadmin)
 
-		_, err = putObjects(cfg.GetClient(), []string{"my-obj"}, bucket)
+		_, err = putObjects(adminClient, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
@@ -15071,17 +14978,7 @@ func AccessControl_default_ACL_admin_successful_access(s *S3Conf) error {
 func AccessControl_bucket_resource_single_action(s *S3Conf) error {
 	testName := "AccessControl_bucket_resource_single_action"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr1 := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		usr2 := user{
-			access: "grt2",
-			secret: "grt2secret",
-			role:   "user",
-		}
-		err := createUsers(s, []user{usr1, usr2})
+		err := createUsers(s, []user{testuser1, testuser2})
 		if err != nil {
 			return err
 		}
@@ -15097,10 +14994,10 @@ func AccessControl_bucket_resource_single_action(s *S3Conf) error {
 			return err
 		}
 
-		user1Client := getUserS3Client(usr1, s)
+		testuser1Client := s.getUserClient(testuser1)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = user1Client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+		_, err = testuser1Client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
 			Bucket: &bucket,
 		})
 		cancel()
@@ -15109,7 +15006,7 @@ func AccessControl_bucket_resource_single_action(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = user1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+		_, err = testuser1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 			Bucket: &bucket,
 		})
 		cancel()
@@ -15117,7 +15014,7 @@ func AccessControl_bucket_resource_single_action(s *S3Conf) error {
 			return err
 		}
 
-		user2Client := getUserS3Client(usr2, s)
+		user2Client := s.getUserClient(testuser2)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = user2Client.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
@@ -15135,17 +15032,7 @@ func AccessControl_bucket_resource_single_action(s *S3Conf) error {
 func AccessControl_bucket_resource_all_action(s *S3Conf) error {
 	testName := "AccessControl_bucket_resource_all_action"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr1 := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		usr2 := user{
-			access: "grt2",
-			secret: "grt2secret",
-			role:   "user",
-		}
-		err := createUsers(s, []user{usr1, usr2})
+		err := createUsers(s, []user{testuser1, testuser2})
 		if err != nil {
 			return err
 		}
@@ -15164,13 +15051,13 @@ func AccessControl_bucket_resource_all_action(s *S3Conf) error {
 			return err
 		}
 
-		user1Client := getUserS3Client(usr1, s)
-		_, err = putObjects(user1Client, []string{"my-obj"}, bucket)
+		testuser1Client := s.getUserClient(testuser1)
+		_, err = putObjects(testuser1Client, []string{"my-obj"}, bucket)
 		if err != nil {
 			return err
 		}
 
-		user2Client := getUserS3Client(usr2, s)
+		user2Client := s.getUserClient(testuser2)
 
 		_, err = putObjects(user2Client, []string{"my-obj"}, bucket)
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
@@ -15190,12 +15077,7 @@ func AccessControl_single_object_resource_actions(s *S3Conf) error {
 			return err
 		}
 
-		usr1 := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		err = createUsers(s, []user{usr1})
+		err = createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -15212,10 +15094,10 @@ func AccessControl_single_object_resource_actions(s *S3Conf) error {
 			return err
 		}
 
-		user1Client := getUserS3Client(usr1, s)
+		testuser1Client := s.getUserClient(testuser1)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = user1Client.GetObject(ctx, &s3.GetObjectInput{
+		_, err = testuser1Client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
 		})
@@ -15225,7 +15107,7 @@ func AccessControl_single_object_resource_actions(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = user1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+		_, err = testuser1Client.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 			Bucket: &bucket,
 		})
 		cancel()
@@ -15257,12 +15139,7 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 			]
 		}`, bucket, bucket, bucket)
 
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		err := createUsers(s, []user{usr})
+		err := createUsers(s, []user{testuser1})
 		if err != nil {
 			return err
 		}
@@ -15277,7 +15154,7 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.ListObjects(ctx, &s3.ListObjectsInput{
@@ -15304,21 +15181,15 @@ func AccessControl_multi_statement_policy(s *S3Conf) error {
 func AccessControl_bucket_ownership_to_user(s *S3Conf) error {
 	testName := "AccessControl_bucket_ownership_to_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+		if err := changeBucketsOwner(s, []string{bucket}, testuser1.access); err != nil {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := userClient.HeadBucket(ctx, &s3.HeadBucketInput{
@@ -15336,21 +15207,16 @@ func AccessControl_bucket_ownership_to_user(s *S3Conf) error {
 func AccessControl_root_PutBucketAcl(s *S3Conf) error {
 	testName := "AccessControl_root_PutBucketAcl"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
 
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+		if err := changeBucketsOwner(s, []string{bucket}, testuser1.access); err != nil {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
@@ -15369,17 +15235,11 @@ func AccessControl_root_PutBucketAcl(s *S3Conf) error {
 func AccessControl_user_PutBucketAcl_with_policy_access(s *S3Conf) error {
 	testName := "AccessControl_user_PutBucketAcl_with_policy_access"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
-		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, usr.access), `"s3:PutBucketAcl"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%v"`, testuser1.access), `"s3:PutBucketAcl"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket))
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
@@ -15391,7 +15251,7 @@ func AccessControl_user_PutBucketAcl_with_policy_access(s *S3Conf) error {
 			return err
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.PutBucketAcl(ctx, &s3.PutBucketAclInput{
 			Bucket: &bucket,
@@ -15446,13 +15306,7 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 			return err
 		}
 
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+		if err := changeBucketsOwner(s, []string{bucket}, testuser1.access); err != nil {
 			return err
 		}
 
@@ -15461,7 +15315,7 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 			"key1": "val1",
 		}
 
-		userClient := getUserS3Client(usr, s)
+		userClient := s.getUserClient(testuser1)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = userClient.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:            &bucket,
@@ -17899,19 +17753,13 @@ func IAM_user_access_denied(s *S3Conf) error {
 	testName := "IAM_user_access_denied"
 	runF(testName)
 
-	usr := user{
-		access: "grt1",
-		secret: "grt1secret",
-		role:   "user",
-	}
-
-	err := createUsers(s, []user{usr})
+	err := createUsers(s, []user{testuser1})
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	out, err := execCommand(s.getAdminCommand("-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
+	out, err := execCommand(s.getAdminCommand("-a", testuser1.access, "-s", testuser1.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
 	if err == nil {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)
@@ -17932,19 +17780,13 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 	testName := "IAM_userplus_access_denied"
 	runF(testName)
 
-	usr := user{
-		access: "grt1",
-		secret: "grt1secret",
-		role:   "userplus",
-	}
-
-	err := createUsers(s, []user{usr})
+	err := createUsers(s, []user{testuserplus})
 	if err != nil {
 		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
-	out, err := execCommand(s.getAdminCommand("-a", usr.access, "-s", usr.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
+	out, err := execCommand(s.getAdminCommand("-a", testuserplus.access, "-s", testuserplus.secret, "-er", s.endpoint, "delete-user", "-a", "random_access")...)
 	if err == nil {
 		failF("%v: expected cmd error", testName)
 		return fmt.Errorf("%v: expected cmd error", testName)
@@ -17964,20 +17806,14 @@ func IAM_userplus_access_denied(s *S3Conf) error {
 func IAM_userplus_CreateBucket(s *S3Conf) error {
 	testName := "IAM_userplus_CreateBucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "userplus",
-		}
-
-		err := createUsers(s, []user{usr})
+		err := createUsers(s, []user{testuserplus})
 		if err != nil {
 			return err
 		}
 
 		cfg := *s
-		cfg.awsID = usr.access
-		cfg.awsSecret = usr.secret
+		cfg.awsID = testuserplus.access
+		cfg.awsSecret = testuserplus.secret
 
 		bckt := getBucketName()
 		err = setup(&cfg, bckt)
@@ -18004,22 +17840,12 @@ func IAM_userplus_CreateBucket(s *S3Conf) error {
 func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
 	testName := "IAM_admin_ChangeBucketOwner"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		admin := user{
-			access: "admin1",
-			secret: "admin1secret",
-			role:   "admin",
-		}
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-		err := createUsers(s, []user{admin, usr})
+		err := createUsers(s, []user{testadmin, testuser1})
 		if err != nil {
 			return err
 		}
 
-		err = changeBucketsOwner(s, []string{bucket}, usr.access)
+		err = changeBucketsOwner(s, []string{bucket}, testuser1.access)
 		if err != nil {
 			return err
 		}
@@ -18031,9 +17857,9 @@ func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
 			return err
 		}
 
-		if getString(resp.Owner.ID) != usr.access {
+		if getString(resp.Owner.ID) != testuser1.access {
 			return fmt.Errorf("expected the bucket owner to be %v, instead got %v",
-				usr.access, getString(resp.Owner.ID))
+				testuser1.access, getString(resp.Owner.ID))
 		}
 
 		return nil
@@ -18043,18 +17869,12 @@ func IAM_admin_ChangeBucketOwner(s *S3Conf) error {
 func IAM_ChangeBucketOwner_back_to_root(s *S3Conf) error {
 	testName := "IAM_ChangeBucketOwner_back_to_root"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		usr := user{
-			access: "grt1",
-			secret: "grt1secret",
-			role:   "user",
-		}
-
-		if err := createUsers(s, []user{usr}); err != nil {
+		if err := createUsers(s, []user{testuser1}); err != nil {
 			return err
 		}
 
 		// Change the bucket ownership to a random user
-		if err := changeBucketsOwner(s, []string{bucket}, usr.access); err != nil {
+		if err := changeBucketsOwner(s, []string{bucket}, testuser1.access); err != nil {
 			return err
 		}
 
@@ -20959,6 +20779,146 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 
 		return nil
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {
+	testName := "Versioning_AccessControl_GetObjectVersion"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objData, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = createUsers(s, []user{testuser1})
+		if err != nil {
+			return err
+		}
+
+		doc := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		fmt.Println(doc)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser1)
+
+		// querying with versionId should return access denied
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objData.res.VersionId,
+		})
+		defer cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		// grant the user s3:GetObjectVersion
+		doc = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObjectVersion"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objData.res.VersionId,
+		})
+		defer cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_AccessControl_HeadObjectVersion(s *S3Conf) error {
+	testName := "Versioning_AccessControl_HeadObjectVersion"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objData, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		err = createUsers(s, []user{testuser1})
+		if err != nil {
+			return err
+		}
+
+		doc := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		fmt.Println(doc)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser1)
+
+		// querying with versionId should return access denied
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objData.res.VersionId,
+		})
+		cancel()
+		if err := checkSdkApiErr(err, http.StatusText(http.StatusForbidden)); err != nil {
+			return err
+		}
+
+		// grant the user s3:GetObjectVersion
+		doc = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObjectVersion"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &doc,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = userClient.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: objData.res.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
 func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {

@@ -57,6 +57,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 				locals: defaultLocals,
 				queries: map[string]string{
 					"partNumber": "-4",
+					"versionId":  "id",
 				},
 			},
 			output: testOutput{
