@@ -41,6 +41,11 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	objRange := ctx.Get("Range")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 
+	action := auth.GetObjectAction
+	if ctx.Request().URI().QueryArgs().Has("versionId") {
+		action = auth.GetObjectVersionAction
+	}
+
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:       c.readonly,
@@ -50,7 +55,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			Acc:            acct,
 			Bucket:         bucket,
 			Object:         key,
-			Action:         auth.GetObjectAction,
+			Action:         action,
 			IsBucketPublic: isPublicBucket,
 		})
 	if err != nil {

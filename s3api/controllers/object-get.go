@@ -388,7 +388,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	utils.ContextKeySkipResBodyLog.Set(ctx, true)
 
 	action := auth.GetObjectAction
-	if versionId != "" {
+	if ctx.Request().URI().QueryArgs().Has("versionId") {
 		action = auth.GetObjectVersionAction
 	}
 

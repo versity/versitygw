@@ -145,6 +145,14 @@ func (c *S3Conf) GetAnonymousClient() *s3.Client {
 	})
 }
 
+func (cfg *S3Conf) getUserClient(usr user) *s3.Client {
+	config := *cfg
+	config.awsID = usr.access
+	config.awsSecret = usr.secret
+
+	return config.GetClient()
+}
+
 func (c *S3Conf) Config() aws.Config {
 	creds := c.getCreds()
 
