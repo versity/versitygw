@@ -115,6 +115,9 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		}
 
 		hashPayload := ctx.Get("X-Amz-Content-Sha256")
+		if !utils.IsValidSh256PayloadHeader(hashPayload) {
+			return s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)
+		}
 		if utils.IsBigDataAction(ctx) {
 			// for streaming PUT actions, authorization is deferred
 			// until end of stream due to need to get length and

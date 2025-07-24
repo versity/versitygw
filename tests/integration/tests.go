@@ -462,16 +462,41 @@ func Authentication_date_mismatch(s *S3Conf) error {
 	})
 }
 
+func Authentication_invalid_sha256_payload_hash(s *S3Conf) error {
+	testName := "Authentication_invalid_sha256_payload_hash"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodPut,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+		path:     "bucket/object",
+	}, func(req *http.Request) error {
+		req.Header.Set("X-Amz-Content-Sha256", "invalid_sha256")
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func Authentication_incorrect_payload_hash(s *S3Conf) error {
 	testName := "Authentication_incorrect_payload_hash"
 	return authHandler(s, &authConfig{
 		testName: testName,
-		method:   http.MethodGet,
+		method:   http.MethodPut,
 		body:     nil,
 		service:  "s3",
 		date:     time.Now(),
+		path:     "bucket/object?tagging",
 	}, func(req *http.Request) error {
-		req.Header.Set("X-Amz-Content-Sha256", "7sa6df576dsa5f675sad67f")
+		req.Header.Set("X-Amz-Content-Sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b854")
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {

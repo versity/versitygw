@@ -31,6 +31,7 @@ func TestAuthentication(s *S3Conf) {
 	Authentication_invalid_date_header(s)
 	Authentication_date_mismatch(s)
 	Authentication_incorrect_payload_hash(s)
+	Authentication_invalid_sha256_payload_hash(s)
 	Authentication_incorrect_md5(s)
 	Authentication_signature_error_incorrect_secret_key(s)
 }
@@ -904,6 +905,7 @@ func GetIntTests() IntTests {
 		"Authentication_invalid_date_header":                                      Authentication_invalid_date_header,
 		"Authentication_date_mismatch":                                            Authentication_date_mismatch,
 		"Authentication_incorrect_payload_hash":                                   Authentication_incorrect_payload_hash,
+		"Authentication_invalid_sha256_payload_hash":                              Authentication_invalid_sha256_payload_hash,
 		"Authentication_incorrect_md5":                                            Authentication_incorrect_md5,
 		"Authentication_signature_error_incorrect_secret_key":                     Authentication_signature_error_incorrect_secret_key,
 		"PresignedAuth_unsupported_algorithm":                                     PresignedAuth_unsupported_algorithm,
