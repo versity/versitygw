@@ -277,7 +277,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrInvalidPartNumberMarker: {
 		Code:           "InvalidArgument",
-		Description:    "Argument partNumberMarker must be an integer.",
+		Description:    "Argument part-number-marker must be an integer between 0 and 2147483647",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidObjectAttributes: {
