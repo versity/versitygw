@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
@@ -313,5 +314,28 @@ export RUN_USERS=true
   assert_success
 
   run check_for_buckets_with_multiple_pages "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-read" {
+  test_file="$test_file"
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "skip bucket create tests for static buckets"
+  fi
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+  if [ "$DIRECT" == "true" ]; then
+    id="id=$user_canonical_id"
+  else
+    id="$user_canonical_id"
+  fi
+  envs="GRANT_READ_ACP=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
+  run create_bucket_and_check_acl "$BUCKET_ONE_NAME" "$envs" "$username" "$password"
   assert_success
 }

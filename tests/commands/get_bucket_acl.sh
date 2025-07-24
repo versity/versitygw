@@ -48,3 +48,27 @@ get_bucket_acl_with_user() {
   fi
   return 0
 }
+
+get_bucket_acl_rest() {
+  if ! check_param_count_v2 "bucket, env vars, callback fn" 3 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_success_callback "$env_vars" "./tests/rest_scripts/get_bucket_acl.sh" "200" "$3"; then
+    log 2 "error getting bucket ACL"
+    return 1
+  fi
+  return 0
+}
+
+get_bucket_acl_rest_expect_error() {
+  if ! check_param_count_v2 "bucket, env vars, expected response code, expected error, expected message" 5 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/get_bucket_acl.sh" "$3" "$4" "$5"; then
+    log 2 "error checking for get bucket acl error"
+    return 1
+  fi
+  return 0
+}

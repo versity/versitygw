@@ -234,16 +234,19 @@ get_and_check_acl_rest() {
     log 2 "'get_and_check_acl_rest' requires bucket name"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/acl.txt" ./tests/rest_scripts/get_bucket_acl.sh); then
-    log 2 "error attempting to get bucket ACL response: $result"
+  if ! get_bucket_acl_rest "$1" "check_acl_rest"; then
+    log 2 "error getting and checking acl"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "get acl returned code '$result' (message: $(cat "$TEST_FILE_FOLDER/acl.txt"))"
+  return 0
+}
+
+check_acl_rest() {
+  if ! check_param_count_v2 "acl file" 1 $#; then
     return 1
   fi
-  log 5 "acl: $(cat "$TEST_FILE_FOLDER/acl.txt")"
-  if ! access_control_policy=$(xmllint --xpath '//*[local-name()="AccessControlPolicy"]' "$TEST_FILE_FOLDER/acl.txt" 2>&1); then
+  log 5 "acl: $(cat "$1")"
+  if ! access_control_policy=$(xmllint --xpath '//*[local-name()="AccessControlPolicy"]' "$1" 2>&1); then
     log 2 "error getting access control policy: $access_control_policy"
     return 1
   fi
