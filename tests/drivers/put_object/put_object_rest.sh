@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Copyright 2024 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+put_object_success_or_access_denied() {
+  if ! check_param_count_v2 "username, password, data file, bucket, key, expect success" 6 $#; then
+    return 1
+  fi
+  if [ "$6" == "true" ]; then
+    if ! put_object_rest_with_user "$1" "$2" "$3" "$4" "$5"; then
+      log 2 "expected PutObject to succeed, didn't"
+      return 1
+    fi
+  else
+    if ! put_object_rest_expect_error "$3" "$4" "$5" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2" "403" "AccessDenied" "Access Denied"; then
+      log 2 "expected GetBucketAcl access denied"
+      return 1
+    fi
+    if ! put_object_rest "$3" "$4" "$5"; then
+      log 2 "error putting object with root account"
+      return 1
+    fi
+  fi
+  return 0
+}

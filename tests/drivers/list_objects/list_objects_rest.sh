@@ -21,7 +21,7 @@ list_and_delete_objects() {
   if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
     return 1
   fi
-  if ! list_objects 'rest' "$1"; then
+  if ! list_objects_rest "$1" "parse_objects_list_rest"; then
     log 2 "error getting object list"
     return 1
   fi
@@ -37,6 +37,44 @@ list_and_delete_objects() {
   if ! delete_old_versions "$1"; then
     log 2 "error deleting old version"
     return 1
+  fi
+  return 0
+}
+
+list_check_single_object() {
+  if ! check_param_count_gt "bucket, key, env params (optional)" 2 $#; then
+    return 1
+  fi
+  if ! list_objects_rest "$1" "parse_objects_list_rest" "$3"; then
+    log 2 "error listing objects"
+    return 1
+  fi
+  if [ ${#object_array[@]} -ne "1" ]; then
+    log 2 "expected one object, found ${#object_array[@]}"
+    return 1
+  fi
+  if [ "${object_array[0]}" != "$2" ]; then
+    log 2 "expected '$2', was '${object_array[0]}'"
+    return 1
+  fi
+  return 0
+}
+
+list_objects_success_or_access_denied() {
+  if ! check_param_count_v2 "username, password, bucket, key, expect success" 5 $#; then
+    return 1
+  fi
+  log 5 "true or false: $5"
+  if [ "$5" == "true" ]; then
+    if ! list_check_single_object "$3" "$4" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2"; then
+      log 2 "expected ListObjects to succeed, didn't"
+      return 1
+    fi
+  else
+    if ! list_objects_rest_expect_error "$3" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2" "403" "AccessDenied" "Access Denied"; then
+      log 2 "expected ListObjects access denied"
+      return 1
+    fi
   fi
   return 0
 }

@@ -25,6 +25,14 @@ acl="$ACL"
 object_ownership="$OBJECT_OWNERSHIP"
 # shellcheck disable=SC2153
 grant_full_control="$GRANT_FULL_CONTROL"
+# shellcheck disable=SC2153
+grant_read="$GRANT_READ"
+# shellcheck disable=SC2153
+grant_read_acp="$GRANT_READ_ACP"
+# shellcheck disable=SC2153
+grant_write="$GRANT_WRITE"
+# shellcheck disable=SC2153
+grant_write_acp="$GRANT_WRITE_ACP"
 
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
@@ -35,6 +43,18 @@ fi
 cr_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
 if [ "$grant_full_control" != "" ]; then
   cr_data+=("x-amz-grant-full-control:$grant_full_control")
+fi
+if [ "$grant_read" != "" ]; then
+  cr_data+=("x-amz-grant-read:$grant_read")
+fi
+if [ "$grant_read_acp" != "" ]; then
+  cr_data+=("x-amz-grant-read-acp:$grant_read_acp")
+fi
+if [ "$grant_write" != "" ]; then
+  cr_data+=("x-amz-grant-write:$grant_write")
+fi
+if [ "$grant_write_acp" != "" ]; then
+  cr_data+=("x-amz-grant-write-acp:$grant_write_acp")
 fi
 if [ "$object_ownership" != "" ]; then
   cr_data+=("x-amz-object-ownership:$object_ownership")

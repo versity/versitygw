@@ -89,28 +89,53 @@ get_object_with_user() {
 
 get_object_rest() {
   log 6 "get_object_rest"
-  if [ $# -ne 3 ]; then
-    log 2 "'get_object_rest' requires bucket name, object name, output file"
+  if ! check_param_count_v2 "bucket name, object key, output file" 3 $#; then
     return 1
   fi
-  if ! get_object_rest_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
-    log 2 "error getting REST object with root user"
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE=$3"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/get_object.sh" "200"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+get_object_rest_special_chars() {
+  if ! check_param_count_v2 "bucket name, key, output file" 3 $#; then
+    return 1
+  fi
+  # do this in case there are spaces in the name
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" OUTPUT_FILE="$TEST_FILE_FOLDER/error.txt" BUCKET_NAME="$1" OBJECT_KEY="$2" OUTPUT_FILE="$3" ./tests/rest_scripts/get_object.sh 2>&1); then
+    log 2 "error sending put object command: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$3"))"
+    return 1
+  fi
+  return 0
+}
+
+get_object_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, object key, output file, env vars, response code, error, message" 7 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 OUTPUT_FILE=$3 $4"
+  log 5 "env vars: $env_vars"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/get_object.sh" "$5" "$6" "$7"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0
 }
 
 get_object_rest_with_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'get_object_rest_with_user' requires username, password, bucket name, object name, output file"
+  if ! check_param_count_v2 "username, password, bucket name, object key, output file" 5 $#; then
     return 1
   fi
-  if ! result=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$3" OBJECT_KEY="$4" OUTPUT_FILE="$5" ./tests/rest_scripts/get_object.sh 2>&1); then
-    log 2 "error getting object: $result"
-    return 1
-  fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$3"))"
+  env_vars="AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2 BUCKET_NAME=$3 OBJECT_KEY=$4 OUTPUT_FILE=$5"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/get_object.sh" "200"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0

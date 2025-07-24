@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
@@ -313,5 +314,30 @@ export RUN_USERS=true
   assert_success
 
   run check_for_buckets_with_multiple_pages "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-full-control - success w/tests" {
+  run setup_and_create_bucket_and_check_acl "GRANT_FULL_CONTROL"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-read" {
+  run setup_and_create_bucket_and_check_acl "GRANT_READ"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-write" {
+  run setup_and_create_bucket_and_check_acl "GRANT_WRITE"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-read-acp" {
+  run setup_and_create_bucket_and_check_acl "GRANT_READ_ACP"
+  assert_success
+}
+
+@test "REST - CreateBucket - x-amz-grant-write-acp" {
+  run setup_and_create_bucket_and_check_acl "GRANT_WRITE_ACP"
   assert_success
 }

@@ -131,22 +131,27 @@ list_objects_with_prefix() {
 }
 
 list_objects_rest() {
-  if ! check_param_count "list_objects_rest" "bucket" 1 $#; then
+  if ! check_param_count_gt "bucket, callback, params (optional)" 2 $#; then
     return 1
   fi
-  log 5 "bucket name: $1"
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/objects.txt" ./tests/rest_scripts/list_objects.sh); then
-    log 2 "error listing objects: $result"
+  env_params="BUCKET_NAME=$1 $3"
+  log 5 "env params: $env_params"
+  if ! send_rest_command_expect_success_callback "$env_params" "./tests/rest_scripts/list_objects.sh" "200" "$2"; then
+    log 2 "error sending list objects REST command"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/objects.txt"))"
+  return 0
+}
+
+list_objects_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, env vars, response code, error, message" 5 $#; then
     return 1
   fi
-  # shellcheck disable=SC2034
-  reply=$(cat "$TEST_FILE_FOLDER/objects.txt")
-  if ! parse_objects_list_rest; then
-    log 2 "error parsing list objects"
+  env_vars="BUCKET_NAME=$1 $2"
+  log 5 "env vars: $env_vars"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/list_objects.sh" "$3" "$4" "$5"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
+  return 0
 }
