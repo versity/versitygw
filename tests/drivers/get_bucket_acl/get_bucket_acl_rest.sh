@@ -61,3 +61,15 @@ check_that_acl_xml_does_not_have_owner_permission() {
   fi
   return 0
 }
+
+check_for_display_name() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  log 5 "data: $(cat "$1")"
+  if ! display_name="$(xmllint --xpath "//*[local-name()='AccessControlPolicy']/*[local-name()='Owner']/*[local-name()='DisplayName']" "$1" 2>&1)"; then
+    log 2 "error getting display name: $display_name"
+    return 1
+  fi
+  return 0
+}

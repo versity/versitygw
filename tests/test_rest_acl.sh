@@ -204,3 +204,11 @@ fi
   run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_that_acl_xml_does_not_have_owner_permission"
   assert_success
 }
+
+@test "GetBucketAcl - DisplayName" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_for_display_name"
+  assert_success
+}

@@ -70,23 +70,22 @@ put_object_with_user() {
 }
 
 put_object_rest() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest' requires local file, bucket name, key"
+  if ! check_param_count_gt "local file, bucket name, key, env vars (optional)" 3 $#; then
     return 1
   fi
-  if ! put_object_rest_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
-    log 2 "error putting object with REST with root user"
+  env_vars="DATA_FILE=$1 BUCKET_NAME=$2 OBJECT_KEY=$3 $4"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/put_object.sh" "200"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0
 }
 
 put_object_rest_with_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'put_object_rest_with_user' requires username, password, local file, bucket name, key"
+  if ! check_param_count_gt "username, password, local file, bucket name, key, env vars (optional)" 6 $#; then
     return 1
   fi
-  if ! put_object_rest_with_user_and_code "$1" "$2" "$3" "$4" "$5" "200"; then
+  if ! put_object_rest "$3" "$4" "$5" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2 $6"; then
     log 2 "error putting object with user '$1'"
     return 1
   fi

@@ -32,8 +32,19 @@ create_bucket_and_check_acl() {
   local read=false
   local write_acp=false
   local write=false
-  if [[ ( "$2" == *"GRANT_FULL_CONTROL"* ) || ( "$2" == *"GRANT_READ_ACP"* ) ]]; then
+  if [[ "$2" == *"GRANT_FULL_CONTROL"* ]]; then
     read_acp=true
+    read=true
+    write_acp=true
+    write=true
+  elif [[ "$2" == *"GRANT_READ_ACP"* ]]; then
+    read_acp=true
+  elif [[ "$2" == *"GRANT_READ"* ]]; then
+    read=true
+  elif [[ "$2" == *"GRANT_WRITE_ACP"* ]]; then
+    write_acp=true
+  elif [[ "$2" == *"GRANT_WRITE"* ]]; then
+    write=true
   fi
   if ! get_bucket_acl_success_or_access_denied "$1" "$2 AWS_ACCESS_KEY_ID=$3 AWS_SECRET_ACCESS_KEY=$4" "$read_acp"; then
     log 2 "error getting bucket acl"
