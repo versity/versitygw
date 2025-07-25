@@ -413,22 +413,22 @@ func (cv ChecksumValues) Headers() string {
 	return result
 }
 
-func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValues, error) {
-	sdkAlgorithm := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("X-Amz-Sdk-Checksum-Algorithm")))
-
-	err := IsChecksumAlgorithmValid(sdkAlgorithm)
-	if err != nil {
-		debuglogger.Logf("invalid checksum algorithm: %v\n", sdkAlgorithm)
-		return "", nil, err
-	}
-
+// ParseCalculatedChecksumHeaders parses and validates x-amz-checksum-x header keys
+// e.g x-amz-checksum-crc32, x-amz-checksum-sha256 ...
+func ParseCalculatedChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 	checksums := ChecksumValues{}
 
 	var hdrErr error
 	// Parse and validate checksum headers
 	for key, value := range ctx.Request().Header.All() {
-		// Skip `X-Amz-Checksum-Type` as it's a special header
-		if !strings.HasPrefix(string(key), "X-Amz-Checksum-") || string(key) == "X-Amz-Checksum-Type" {
+		// only check the headers with 'X-Amz-Checksum-' prefix
+		if !strings.HasPrefix(string(key), "X-Amz-Checksum-") {
+			continue
+		}
+		//  "X-Amz-Checksum-Type" and "X-Amz-Checksum-Algorithm" aren't considered
+		// as invalid values, even if the s3 action doesn't expect these headers
+		switch string(key) {
+		case "X-Amz-Checksum-Type", "X-Amz-Checksum-Algorithm":
 			continue
 		}
 
@@ -444,12 +444,48 @@ func ParseChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValu
 	}
 
 	if hdrErr != nil {
-		return sdkAlgorithm, nil, hdrErr
+		return checksums, hdrErr
 	}
 
 	if len(checksums) > 1 {
 		debuglogger.Logf("multiple checksum headers provided: %v\n", checksums.Headers())
-		return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+		return checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+	}
+
+	return checksums, nil
+}
+
+// ParseChecksumHeaders parses/validates x-amz-checksum-x headers key/values
+func ParseChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
+	// first parse/validate 'x-amz-checksum-x' headers
+	checksums, err := ParseCalculatedChecksumHeaders(ctx)
+	if err != nil {
+		return checksums, err
+	}
+
+	// check if the values are valid
+	for al, val := range checksums {
+		if !IsValidChecksum(val, al) {
+			return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+		}
+	}
+
+	return checksums, nil
+}
+
+// ParseChecksumHeadersAndSdkAlgo parses/validates 'x-amz-sdk-checksum-algorithm' and
+// 'x-amz-checksum-x' precalculated request headers
+func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValues, error) {
+	sdkAlgorithm := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("X-Amz-Sdk-Checksum-Algorithm")))
+	err := IsChecksumAlgorithmValid(sdkAlgorithm)
+	if err != nil {
+		debuglogger.Logf("invalid checksum algorithm: %v\n", sdkAlgorithm)
+		return "", nil, err
+	}
+
+	checksums, err := ParseCalculatedChecksumHeaders(ctx)
+	if err != nil {
+		return sdkAlgorithm, checksums, err
 	}
 
 	for al, val := range checksums {

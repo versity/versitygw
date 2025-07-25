@@ -449,7 +449,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 				locals: defaultLocals,
 				body:   validMpBody,
 				headers: map[string]string{
-					"X-Amz-Sdk-Checksum-Algorithm": "invalid_checksum_algo",
+					"X-Amz-Checksum-Crc32": "invalid_checksum",
 				},
 			},
 			output: testOutput{
@@ -458,7 +458,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm),
+				err: s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-crc32"),
 			},
 		},
 		{
