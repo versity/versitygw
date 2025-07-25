@@ -1726,7 +1726,7 @@ func HeadBucket_success(s *S3Conf) error {
 func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []types.Bucket{{Name: &bucket}}
+		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 6 {
 			bckt := getBucketName()
 
@@ -1736,7 +1736,8 @@ func ListBuckets_as_user(s *S3Conf) error {
 			}
 
 			buckets = append(buckets, types.Bucket{
-				Name: &bckt,
+				Name:         &bckt,
+				BucketRegion: &s.awsRegion,
 			})
 		}
 
@@ -1787,7 +1788,7 @@ func ListBuckets_as_user(s *S3Conf) error {
 func ListBuckets_as_admin(s *S3Conf) error {
 	testName := "ListBuckets_as_admin"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []types.Bucket{{Name: &bucket}}
+		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 6 {
 			bckt := getBucketName()
 
@@ -1797,7 +1798,8 @@ func ListBuckets_as_admin(s *S3Conf) error {
 			}
 
 			buckets = append(buckets, types.Bucket{
-				Name: &bckt,
+				Name:         &bckt,
+				BucketRegion: &s.awsRegion,
 			})
 		}
 
@@ -1849,7 +1851,7 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 	testName := "ListBuckets_with_prefix"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		prefix := "my-prefix-"
-		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket}}, []types.Bucket{}
+		allBuckets, prefixedBuckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}, []types.Bucket{}
 		for i := range 5 {
 			bckt := getBucketName()
 			if i%2 == 0 {
@@ -1862,12 +1864,14 @@ func ListBuckets_with_prefix(s *S3Conf) error {
 			}
 
 			allBuckets = append(allBuckets, types.Bucket{
-				Name: &bckt,
+				Name:         &bckt,
+				BucketRegion: &s.awsRegion,
 			})
 
 			if i%2 == 0 {
 				prefixedBuckets = append(prefixedBuckets, types.Bucket{
-					Name: &bckt,
+					Name:         &bckt,
+					BucketRegion: &s.awsRegion,
 				})
 			}
 		}
@@ -1936,7 +1940,7 @@ func ListBuckets_invalid_max_buckets(s *S3Conf) error {
 func ListBuckets_truncated(s *S3Conf) error {
 	testName := "ListBuckets_truncated"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []types.Bucket{{Name: &bucket}}
+		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 5 {
 			bckt := getBucketName()
 
@@ -1946,7 +1950,8 @@ func ListBuckets_truncated(s *S3Conf) error {
 			}
 
 			buckets = append(buckets, types.Bucket{
-				Name: &bckt,
+				Name:         &bckt,
+				BucketRegion: &s.awsRegion,
 			})
 		}
 
@@ -2027,7 +2032,7 @@ func ListBuckets_empty_success(s *S3Conf) error {
 func ListBuckets_success(s *S3Conf) error {
 	testName := "ListBuckets_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		buckets := []types.Bucket{{Name: &bucket}}
+		buckets := []types.Bucket{{Name: &bucket, BucketRegion: &s.awsRegion}}
 		for range 5 {
 			bckt := getBucketName()
 
@@ -2037,7 +2042,8 @@ func ListBuckets_success(s *S3Conf) error {
 			}
 
 			buckets = append(buckets, types.Bucket{
-				Name: &bckt,
+				Name:         &bckt,
+				BucketRegion: &s.awsRegion,
 			})
 		}
 

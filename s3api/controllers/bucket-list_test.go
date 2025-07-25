@@ -58,15 +58,12 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
-				beRes:  validRes,
 				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
+				beRes:  s3response.ListAllMyBucketsResult{},
 			},
 			output: testOutput{
-				response: &Response{
-					Data:     validRes,
-					MetaOpts: &MetaOptions{},
-				},
-				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
+				response: &Response{},
+				err:      s3err.GetAPIError(s3err.ErrNoSuchBucket),
 			},
 		},
 		{
@@ -80,8 +77,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data:     validRes,
-					MetaOpts: &MetaOptions{},
+					Data: validRes,
 				},
 			},
 		},

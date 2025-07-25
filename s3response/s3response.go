@@ -317,6 +317,7 @@ type ListAllMyBucketsResult struct {
 
 type ListAllMyBucketsEntry struct {
 	Name         string
+	BucketRegion string
 	CreationDate time.Time
 }
 

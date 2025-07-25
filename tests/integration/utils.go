@@ -729,6 +729,11 @@ func compareBuckets(list1 []types.Bucket, list2 []types.Bucket) bool {
 
 	for i, elem := range list1 {
 		if *elem.Name != *list2[i].Name {
+			fmt.Printf("bucket names are not equal: %s != %s\n", *elem.Name, *list2[i].Name)
+			return false
+		}
+		if *elem.BucketRegion != *list2[i].BucketRegion {
+			fmt.Printf("bucket regions are not equal: %s != %s\n", *elem.BucketRegion, *list2[i].BucketRegion)
 			return false
 		}
 	}
