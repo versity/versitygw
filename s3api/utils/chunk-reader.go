@@ -15,6 +15,7 @@
 package utils
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,6 +104,28 @@ func ExtractChecksumType(ctx *fiber.Ctx) (checksumType, error) {
 // IsSpecialPayload checks for special authorization types
 func IsSpecialPayload(str string) bool {
 	return specialValues[payloadType(str)]
+}
+
+// IsValidSh256PayloadHeader checks if the provided x-amz-content-sha256
+// paylod header is valid special paylod type or a valid sh256 hash
+func IsValidSh256PayloadHeader(value string) bool {
+	// empty header is valid
+	if value == "" {
+		return true
+	}
+	// special values are valid
+	if specialValues[payloadType(value)] {
+		return true
+	}
+
+	// check to be a valid sha256
+	if len(value) != 64 {
+		return false
+	}
+
+	// decode the string as hex
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 // Checks if the provided string is unsigned payload trailer type

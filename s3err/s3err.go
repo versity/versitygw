@@ -125,6 +125,7 @@ const (
 	ErrSignatureTerminationStr
 	ErrSignatureIncorrService
 	ErrContentSHA256Mismatch
+	ErrInvalidSHA256Paylod
 	ErrMissingContentLength
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
@@ -528,6 +529,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrContentSHA256Mismatch: {
 		Code:           "XAmzContentSHA256Mismatch",
 		Description:    "The provided 'x-amz-content-sha256' header does not match what was computed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidSHA256Paylod: {
+		Code:           "InvalidArgument",
+		Description:    "x-amz-content-sha256 must be UNSIGNED-PAYLOAD, STREAMING-UNSIGNED-PAYLOAD-TRAILER, STREAMING-AWS4-HMAC-SHA256-PAYLOAD, STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER or a valid sha256 value.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingContentLength: {
