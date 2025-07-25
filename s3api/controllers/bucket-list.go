@@ -30,6 +30,10 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 	prefix := ctx.Query("prefix")
 	maxBucketsStr := ctx.Query("max-buckets")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = defaultRegion
+	}
 
 	maxBuckets := defaultMaxBuckets
 	if maxBucketsStr != "" {
@@ -51,8 +55,15 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 			ContinuationToken: cToken,
 			Prefix:            prefix,
 		})
+	if err != nil {
+		return &Response{}, err
+	}
+
+	for i := range res.Buckets.Bucket {
+		res.Buckets.Bucket[i].BucketRegion = region
+	}
+
 	return &Response{
-		Data:     res,
-		MetaOpts: &MetaOptions{},
-	}, err
+		Data: res,
+	}, nil
 }

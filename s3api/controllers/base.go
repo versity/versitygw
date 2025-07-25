@@ -51,6 +51,8 @@ const (
 	minPartNumber     = 1
 	maxPartNumber     = 10000
 	defaultMaxBuckets = int32(10000)
+
+	defaultRegion = "us-east-1"
 )
 
 var (
