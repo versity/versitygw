@@ -39,6 +39,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -1435,4 +1436,19 @@ type PublicBucketTestCase struct {
 	Action      string
 	Call        func(ctx context.Context) error
 	ExpectedErr error
+}
+
+// randomizeCase randomizes the provided string latters case
+func randomizeCase(s string) string {
+	var b strings.Builder
+
+	for _, ch := range s {
+		if rnd.Intn(2) == 0 {
+			b.WriteRune(unicode.ToLower(ch))
+		} else {
+			b.WriteRune(unicode.ToUpper(ch))
+		}
+	}
+
+	return b.String()
 }

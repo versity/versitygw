@@ -8043,23 +8043,37 @@ func CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type(s *S3Conf
 	})
 }
 
-func CreateMultipartUpload_valid_checksum_algorithm(s *S3Conf) error {
-	testName := "CreateMultipartUpload_valid_checksum_algorithm"
+func CreateMultipartUpload_valid_algo_type(s *S3Conf) error {
+	testName := "CreateMultipartUpload_valid_algo_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		res, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
-			Bucket:            &bucket,
-			Key:               getPtr("my-obj"),
-			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32c,
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
+		obj := "my-obj"
+		for _, test := range []struct {
+			chType types.ChecksumType
+			chAlgo types.ChecksumAlgorithm
+		}{
+			// composite type
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc32},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc32c},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha1},
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmSha256},
+			// full object type
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmCrc64nvme},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmCrc32},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmCrc32c},
+		} {
+			randChType := types.ChecksumType(randomizeCase(string(test.chType)))
+			randChAlgo := types.ChecksumAlgorithm(randomizeCase(string(test.chAlgo)))
+			out, err := createMp(s3client, bucket, obj, withChecksum(randChAlgo), withChecksumType(randChType))
+			if err != nil {
+				return err
+			}
 
-		if res.ChecksumAlgorithm != types.ChecksumAlgorithmCrc32c {
-			return fmt.Errorf("expected the checksum algorithm to be %v, instead got %v",
-				types.ChecksumAlgorithmCrc32c, res.ChecksumAlgorithm)
+			if out.ChecksumAlgorithm != test.chAlgo {
+				return fmt.Errorf("expected the checksum algorithm to be %v, instead got %v", test.chAlgo, out.ChecksumAlgorithm)
+			}
+			if out.ChecksumType != test.chType {
+				return fmt.Errorf("expected the checksum type to be %v, instead got %v", test.chType, out.ChecksumType)
+			}
 		}
 
 		return nil

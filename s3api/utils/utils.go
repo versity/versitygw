@@ -569,12 +569,12 @@ func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType
 
 // Parses and validates the x-amz-checksum-algorithm and x-amz-checksum-type headers
 func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, types.ChecksumType, error) {
-	algo := types.ChecksumAlgorithm(ctx.Get("x-amz-checksum-algorithm"))
+	algo := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("x-amz-checksum-algorithm")))
 	if err := IsChecksumAlgorithmValid(algo); err != nil {
 		return "", "", err
 	}
 
-	chType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
+	chType := types.ChecksumType(strings.ToUpper(ctx.Get("x-amz-checksum-type")))
 	if err := IsChecksumTypeValid(chType); err != nil {
 		return "", "", err
 	}

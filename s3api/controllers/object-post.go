@@ -217,6 +217,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	if err == nil {
 		headers = map[string]*string{
 			"x-amz-checksum-algorithm": utils.ConvertToStringPtr(checksumAlgorithm),
+			"x-amz-checksum-type":      utils.ConvertToStringPtr(checksumType),
 		}
 	}
 	return &Response{
@@ -233,7 +234,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	uploadId := ctx.Query("uploadId")
 	mpuObjSizeHdr := ctx.Get("X-Amz-Mp-Object-Size")
-	checksumType := types.ChecksumType(ctx.Get("x-amz-checksum-type"))
+	checksumType := types.ChecksumType(strings.ToUpper(ctx.Get("x-amz-checksum-type")))
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)

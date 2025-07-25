@@ -334,7 +334,7 @@ func TestCreateMultipartUpload(s *S3Conf) {
 		CreateMultipartUpload_invalid_checksum_algorithm(s)
 		CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type(s)
 		CreateMultipartUpload_invalid_checksum_type(s)
-		CreateMultipartUpload_valid_checksum_algorithm(s)
+		CreateMultipartUpload_valid_algo_type(s)
 	}
 	CreateMultipartUpload_success(s)
 }
@@ -723,7 +723,7 @@ func TestScoutfs(s *S3Conf) {
 	CreateMultipartUpload_invalid_checksum_algorithm(s)
 	CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type(s)
 	CreateMultipartUpload_invalid_checksum_type(s)
-	CreateMultipartUpload_valid_checksum_algorithm(s)
+	CreateMultipartUpload_valid_algo_type(s)
 	CreateMultipartUpload_success(s)
 
 	CompletedMultipartUpload_non_existing_bucket(s)
@@ -1104,7 +1104,7 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_invalid_checksum_algorithm":                        CreateMultipartUpload_invalid_checksum_algorithm,
 		"CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type":       CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type,
 		"CreateMultipartUpload_invalid_checksum_type":                             CreateMultipartUpload_invalid_checksum_type,
-		"CreateMultipartUpload_valid_checksum_algorithm":                          CreateMultipartUpload_valid_checksum_algorithm,
+		"CreateMultipartUpload_valid_algo_type":                                   CreateMultipartUpload_valid_algo_type,
 		"CreateMultipartUpload_success":                                           CreateMultipartUpload_success,
 		"UploadPart_non_existing_bucket":                                          UploadPart_non_existing_bucket,
 		"UploadPart_invalid_part_number":                                          UploadPart_invalid_part_number,
