@@ -46,8 +46,16 @@ create_bucket_and_check_acl() {
   elif [[ "$2" == *"GRANT_WRITE"* ]]; then
     write=true
   fi
-  if ! get_bucket_acl_success_or_access_denied "$1" "$2 AWS_ACCESS_KEY_ID=$3 AWS_SECRET_ACCESS_KEY=$4" "$read_acp"; then
-    log 2 "error getting bucket acl"
+  if ! get_bucket_acl_success_or_access_denied "$1" "$2" "$3" "$read_acp"; then
+    log 2 "get ACL permissions mismatch"
+    return 1
+  fi
+  if ! put_object_success_or_access_denied "$3" "$4" "$TEST_FILE_FOLDER/test_file" "$1" "test_file" "$write"; then
+    log 2 "put object permissions mismatch"
+    return 1
+  fi
+  if ! get_object_success_or_access_denied "$3" "$4" "$1" "test_file" "$TEST_FILE_FOLDER/test_file_copy" "$read"; then
+    log 2 "put object permissions mismatch"
     return 1
   fi
   return 0

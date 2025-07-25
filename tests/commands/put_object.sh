@@ -92,6 +92,18 @@ put_object_rest_with_user() {
   return 0
 }
 
+put_object_rest_expect_error() {
+  if ! check_param_count_gt "local file, bucket name, key, env vars, response code, error code, message" 7 $#; then
+    return 1
+  fi
+  env_vars="DATA_FILE=$1 BUCKET_NAME=$2 OBJECT_KEY=$3 $4"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/put_object.sh" "$5" "$6" "$7"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
 put_object_rest_with_user_and_code() {
   if [ $# -ne 6 ]; then
     log 2 "'put_object_rest_with_user' requires username, password, local file, bucket name, key, expected response code"

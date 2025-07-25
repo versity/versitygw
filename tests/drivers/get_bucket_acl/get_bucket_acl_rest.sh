@@ -15,16 +15,16 @@
 # under the License.
 
 get_bucket_acl_success_or_access_denied() {
-  if ! check_param_count_v2 "bucket, env, expect success" 3 $#; then
+  if ! check_param_count_v2 "bucket, username, password, expect success" 3 $#; then
     return 1
   fi
-  if [ "$3" == "true" ]; then
-    if ! get_bucket_acl_rest "$1" "$2" "get_bucket_acl_data"; then
+  if [ "$4" == "true" ]; then
+    if ! get_bucket_acl_rest "$1" "AWS_ACCESS_KEY_ID=$2 AWS_SECRET_ACCESS_KEY=$3" "get_bucket_acl_data"; then
       log 2 "expected GetBucketAcl to succeed, didn't"
       return 1
     fi
   else
-    if ! get_bucket_acl_rest_expect_error "$1" "$2" "403" "AccessDenied" "Access Denied"; then
+    if ! get_bucket_acl_rest_expect_error "$1" "AWS_ACCESS_KEY_ID=$2 AWS_SECRET_ACCESS_KEY=$3" "403" "AccessDenied" "Access Denied"; then
       log 2 "expected GetBucketAcl access denied"
       return 1
     fi
