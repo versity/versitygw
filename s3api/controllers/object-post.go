@@ -305,7 +305,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		mpuObjectSize = &val
 	}
 
-	_, checksums, err := utils.ParseChecksumHeaders(ctx)
+	checksums, err := utils.ParseChecksumHeaders(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

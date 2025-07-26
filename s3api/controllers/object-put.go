@@ -251,7 +251,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}
 
-	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
+	algorithm, checksums, err := utils.ParseChecksumHeadersAndSdkAlgo(ctx)
 	if err != nil {
 		debuglogger.Logf("err parsing checksum headers: %v", err)
 		return &Response{
@@ -674,7 +674,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	algorithm, checksums, err := utils.ParseChecksumHeaders(ctx)
+	algorithm, checksums, err := utils.ParseChecksumHeadersAndSdkAlgo(ctx)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
