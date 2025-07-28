@@ -15,6 +15,7 @@
 package middlewares
 
 import (
+	"bytes"
 	"io"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,6 +26,11 @@ func wrapBodyReader(ctx *fiber.Ctx, wr func(io.Reader) io.Reader) {
 	r, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader)
 	if !ok {
 		r = ctx.Request().BodyStream()
+		// Override the body reader with an empty reader to prevent panics
+		// in case of unexpected or malformed HTTP requests.
+		if r == nil {
+			r = bytes.NewBuffer([]byte{})
+		}
 	}
 
 	r = wr(r)
