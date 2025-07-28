@@ -2401,7 +2401,8 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 
 	// If checksum isn't provided for the part,
 	// but it has been provided on mp initalization
-	if hashRdr == nil && chErr == nil && checksums.Algorithm != "" {
+	// and checksum type is 'COMPOSITE', return mismatch error
+	if hashRdr == nil && chErr == nil && checksums.Type == types.ChecksumTypeComposite {
 		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, "null")
 	}
 
@@ -2412,6 +2413,18 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 		if checksums.Algorithm != algo {
 			return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, algo)
 		}
+	}
+
+	// if no checksum algorithm or precalculated checksum is
+	// provided, but one has been on multipart upload initialization,
+	// anyways calculate and store the uploaded part checksum
+	if hashRdr == nil && checksums.Algorithm != "" {
+		hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(checksums.Algorithm))))
+		if err != nil {
+			return nil, fmt.Errorf("initialize hash reader: %w", err)
+		}
+
+		tr = hashRdr
 	}
 
 	_, err = io.Copy(f, tr)
