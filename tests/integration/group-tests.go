@@ -353,6 +353,9 @@ func TestUploadPart(s *S3Conf) {
 		UploadPart_checksum_algorithm_mistmatch_on_initialization(s)
 		UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value(s)
 		UploadPart_incorrect_checksums(s)
+		UploadPart_no_checksum_with_full_object_checksum_type(s)
+		UploadPart_no_checksum_with_composite_checksum_type(s)
+		UploadPart_should_calculate_checksum_if_only_algorithm_is_provided(s)
 		UploadPart_with_checksums_success(s)
 	}
 	UploadPart_success(s)
@@ -1118,6 +1121,9 @@ func GetIntTests() IntTests {
 		"UploadPart_checksum_algorithm_mistmatch_on_initialization":               UploadPart_checksum_algorithm_mistmatch_on_initialization,
 		"UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value":    UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value,
 		"UploadPart_incorrect_checksums":                                          UploadPart_incorrect_checksums,
+		"UploadPart_no_checksum_with_full_object_checksum_type":                   UploadPart_no_checksum_with_full_object_checksum_type,
+		"UploadPart_no_checksum_with_composite_checksum_type":                     UploadPart_no_checksum_with_composite_checksum_type,
+		"UploadPart_should_calculate_checksum_if_only_algorithm_is_provided":      UploadPart_should_calculate_checksum_if_only_algorithm_is_provided,
 		"UploadPart_with_checksums_success":                                       UploadPart_with_checksums_success,
 		"UploadPart_success":                                                      UploadPart_success,
 		"UploadPartCopy_non_existing_bucket":                                      UploadPartCopy_non_existing_bucket,
