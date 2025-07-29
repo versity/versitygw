@@ -28,7 +28,7 @@ services:
       - "10002:10002"
     restart: always
     hostname: azurite
-    command: "azurite --oauth basic --cert /tests/certs/azurite.pem --key /tests/certs/azurite-key.pem --blobHost 0.0.0.0"
+    command: "azurite --oauth basic --cert /tests/certs/azurite.pem --key /tests/certs/azurite-key.pem --blobHost 0.0.0.0 --skipApiVersionCheck"
     volumes:
       - ./tests/certs:/tests/certs
   azuritegw:
