@@ -341,3 +341,11 @@ export RUN_USERS=true
   run setup_and_create_bucket_and_check_acl "GRANT_WRITE_ACP"
   assert_success
 }
+
+@test "REST - HeadBucket - mismatched owner" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run head_bucket_rest_expect_error "$BUCKET_ONE_NAME" "EXPECTED_OWNER=012345678901" "400" "InvalidRequest" "Wrong owner"
+  assert_success
+}

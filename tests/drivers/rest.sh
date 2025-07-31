@@ -70,6 +70,10 @@ send_rest_command_expect_error() {
   return 0
 }
 
+send_rest_command_expect_header_error() {
+
+}
+
 send_rest_command_expect_success() {
   if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
     return 1
