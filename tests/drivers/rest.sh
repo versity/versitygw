@@ -70,43 +70,83 @@ send_rest_command_expect_error() {
   return 0
 }
 
-send_rest_command_expect_success() {
-  if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
+check_rest_expected_header_error() {
+  if ! check_param_count_v2 "response code, file, expected response, expected error" 4 $#; then
+    return 1
+  fi
+  status_line=$(head -n 1 "$2")
+
+  # Parse the status code and message
+  status_code=$(echo "$status_line" | awk '{print $2}')
+  status_message=$(echo "$status_line" | cut -d' ' -f3- | tr -d '\r')
+  log 5 "status code: $status_code, status message: $status_message"
+  if [ "$1" != "$3" ]; then
+    log 2 "expected curl response '$3', was '$1"
+    return 1
+  fi
+  if [ "$status_code" != "$3" ]; then
+    log 2 "expected HTTP response '$3', was '$status_code"
+    return 1
+  fi
+  if [ "$status_message" != "$4" ]; then
+    log 2 "expected message '$4', was '$status_message'"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_command_expect_header_error() {
+  if ! check_param_count_v2 "env vars, script, response code, message" 4 $#; then
     return 1
   fi
   if ! send_rest_command "$1" "$2"; then
     log 2 "error sending REST command"
     return 1
   fi
-  if [ "$result" != "$3" ]; then
-    log 2 "expected '$3', was '$result' ($(cat "$output_file"))"
+  if ! check_rest_expected_header_error "$result" "$output_file" "$3" "$4"; then
+    log 2 "error checking REST error"
     return 1
   fi
   return 0
 }
 
+send_rest_command_expect_success() {
+if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
+  return 1
+fi
+if ! send_rest_command "$1" "$2"; then
+  log 2 "error sending REST command"
+  return 1
+fi
+if [ "$result" != "$3" ]; then
+  log 2 "expected '$3', was '$result' ($(cat "$output_file"))"
+  return 1
+fi
+return 0
+}
+
 send_rest_command_expect_success_callback() {
-  if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
-    return 1
-  fi
-  output_file="$TEST_FILE_FOLDER/output.txt"
-  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
-  if [ "$1" != "" ]; then
-    IFS=' ' read -r -a env_vars <<< "$1"
-    env_array+=("${env_vars[@]}")
-  fi
-  # shellcheck disable=SC2068
-  if ! result=$(${env_array[@]} "$2" 2>&1); then
-    log 2 "error sending command: $result"
-    return 1
-  fi
-  if [ "$result" != "$3" ]; then
-    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
-    return 1
-  fi
-  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
-    log 2 "callback error"
-    return 1
-  fi
-  return 0
+if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
+  return 1
+fi
+output_file="$TEST_FILE_FOLDER/output.txt"
+local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
+if [ "$1" != "" ]; then
+  IFS=' ' read -r -a env_vars <<< "$1"
+  env_array+=("${env_vars[@]}")
+fi
+# shellcheck disable=SC2068
+if ! result=$(${env_array[@]} "$2" 2>&1); then
+  log 2 "error sending command: $result"
+  return 1
+fi
+if [ "$result" != "$3" ]; then
+  log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
+  return 1
+fi
+if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
+  log 2 "callback error"
+  return 1
+fi
+return 0
 }

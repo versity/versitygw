@@ -20,12 +20,17 @@ source ./tests/rest_scripts/rest.sh
 
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
+# shellcheck disable=SC2153
+expected_owner="$EXPECTED_OWNER"
 
 # shellcheck disable=SC2034
 current_date_time=$(date -u +"%Y%m%dT%H%M%SZ")
 
 canonical_request_data=("HEAD" "/$bucket_name" "" "host:$host")
 canonical_request_data+=("x-amz-content-sha256:UNSIGNED-PAYLOAD" "x-amz-date:$current_date_time")
+if [ "$expected_owner" != "" ]; then
+  canonical_request_data+=("x-amz-expected-bucket-owner:$expected_owner")
+fi
 if ! build_canonical_request "${canonical_request_data[@]}"; then
   log_rest 2 "error building request"
   exit 1
@@ -33,7 +38,7 @@ fi
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ksI -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name"
+curl_command+=(curl -Iks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name"
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=$param_list,Signature=$signature\"")
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")

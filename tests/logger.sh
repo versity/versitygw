@@ -142,7 +142,7 @@ check_arg_for_mask() {
   elif [[ "$arg" == --access_key=* ]]; then
     masked_args+=("${arg:0:17}****")
   elif [[ "$arg" == *"Credential="* ]]; then
-    masked_args+=("$(echo "$arg" | sed -E 's/(Credential=[A-Z]{5})[^\/]*/\1*****/g')")
+    masked_args+=("$(echo "$arg" | sed -E 's/(Credential=[A-Z0-9]{5})[^\/]*/\1****/g')")
   elif [[ "$arg" == *"AWS_ACCESS_KEY_ID="* ]]; then
     masked_args+=("AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:0:5}****")
   else

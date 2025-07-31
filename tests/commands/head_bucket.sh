@@ -55,7 +55,7 @@ head_bucket() {
 
 head_bucket_rest() {
   log 6 "head_bucket_rest '$1'"
-  if ! check_param_count "head_bucket_rest" "bucket" 1 $#; then
+  if ! check_param_count_gt "bucket, callback, params (optional)" 1 $#; then
     return 2
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/head_bucket.sh 2>&1); then
@@ -73,4 +73,28 @@ head_bucket_rest() {
   fi
   log 2 "unexpected response code '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
   return 2
+}
+
+head_bucket_rest_expect_success() {
+  if ! check_param_count_v2 "bucket name, params" 2 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/head_bucket.sh" "200"; then
+    log 2 "error sending REST command"
+    return 1
+  fi
+  return 0
+}
+
+head_bucket_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, params, response code, message" 4 $#; then
+    return 1
+  fi
+  env_vars="BUCKET_NAME=$1 $2"
+  if ! send_rest_command_expect_header_error "$env_vars" "./tests/rest_scripts/head_bucket.sh" "$3" "$4"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
 }

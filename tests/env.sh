@@ -131,7 +131,7 @@ check_universal_vars() {
     fi
     export LOG_LEVEL_INT=$LOG_LEVEL
   fi
-  if [ "$DIRECT" != "true" ]; then
+  if [ "$DIRECT" == "true" ]; then
     if [ -z "$DIRECT_POST_COMMAND_DELAY" ]; then
       DIRECT_POST_COMMAND_DELAY=0
     fi
