@@ -32,10 +32,18 @@ check_rest_expected_error() {
 }
 
 send_rest_command() {
-  if ! check_param_count_v2 "env vars, script, output file" 3 $#; then
+  if ! check_param_count_v2 "env vars, script" 2 $#; then
     return 1
   fi
-  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$3")
+  if [[ "$1" == *"OUTPUT_FILE"* ]]; then
+    if ! output_file=$(echo -n "$1" | sed -n 's/^.*OUTPUT_FILE=\([^ ]*\).*$/\1/p' 2>&1); then
+      log 2 "error getting output file: $output_file"
+    fi
+    log 5 "output file: $output_file"
+  else
+    output_file="$TEST_FILE_FOLDER/output.txt"
+  fi
+  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
     IFS=' ' read -r -a env_vars <<< "$1"
     env_array+=("${env_vars[@]}")
@@ -51,8 +59,7 @@ send_rest_command_expect_error() {
   if ! check_param_count_v2 "env vars, script, response code, error, message" 5 $#; then
     return 1
   fi
-  output_file="$TEST_FILE_FOLDER/error.txt"
-  if ! send_rest_command "$1" "$2" "$output_file"; then
+  if ! send_rest_command "$1" "$2"; then
     log 2 "error sending REST command"
     return 1
   fi
@@ -67,13 +74,12 @@ send_rest_command_expect_success() {
   if ! check_param_count_v2 "env vars, script, response code" 3 $#; then
     return 1
   fi
-  output_file="$TEST_FILE_FOLDER/error.txt"
-  if ! send_rest_command "$1" "$2" "$output_file"; then
+  if ! send_rest_command "$1" "$2"; then
     log 2 "error sending REST command"
     return 1
   fi
   if [ "$result" != "$3" ]; then
-    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/error.txt"))"
+    log 2 "expected '$3', was '$result' ($(cat "$output_file"))"
     return 1
   fi
   return 0

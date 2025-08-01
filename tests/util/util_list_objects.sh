@@ -18,10 +18,12 @@ source ./tests/util/util_xml.sh
 # under the License.
 
 parse_objects_list_rest() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
   object_array=()
   # shellcheck disable=SC2154
-  log 5 "reply: $reply"
-  if ! object_list=$(echo "$reply" | xmllint --xpath '//*[local-name()="Key"]/text()' - 2>&1); then
+  if ! object_list=$(xmllint --xpath '//*[local-name()="Key"]/text()' "$1" 2>&1); then
     if [[ "$object_list" == *"XPath set is empty"* ]]; then
       return 0
     fi
@@ -34,25 +36,6 @@ parse_objects_list_rest() {
     object_array+=("$(echo -n "$object" | xmlstarlet unesc)")
   done <<< "$object_list"
   log 5 "object array: ${object_array[*]}"
-  return 0
-}
-
-list_check_single_object() {
-  if ! check_param_count "list_check_single_object" "bucket, key" 2 $#; then
-    return 1
-  fi
-  if ! list_objects "rest" "$1"; then
-    log 2 "error listing objects"
-    return 1
-  fi
-  if [ ${#object_array[@]} -ne "1" ]; then
-    log 2 "expected one object, found ${#object_array[@]}"
-    return 1
-  fi
-  if [ "${object_array[0]}" != "$2" ]; then
-    log 2 "expected '$2', was '${object_array[0]}'"
-    return 1
-  fi
   return 0
 }
 
@@ -129,7 +112,7 @@ list_check_objects_rest() {
   if ! check_param_count "list_check_objects_rest" "bucket" 1 $#; then
     return 1
   fi
-  list_objects "rest" "$1"
+  list_objects_rest "$1" "parse_objects_list_rest"
   object_found=false
   # shellcheck disable=SC2154
   for object in "${object_array[@]}"; do

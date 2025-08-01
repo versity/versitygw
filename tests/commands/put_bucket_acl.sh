@@ -116,15 +116,36 @@ put_bucket_canned_acl_with_user() {
 }
 
 put_bucket_acl_rest() {
-  if ! check_param_count "put_bucket_acl_rest" "bucket, ACL file" 2 $#; then
+  if ! check_param_count_v2 "bucket, ACL file" 2 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" ACL_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_bucket_acl.sh); then
-    log 2 "error attempting to put bucket acl: $result"
+  local put_bucket_acl_env_vars="BUCKET_NAME=$1 ACL_FILE=$2"
+  if ! send_rest_command_expect_success "$put_bucket_acl_env_vars" "./tests/rest_scripts/put_bucket_acl.sh" "200"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 5 "response returned code: $result (error: $(cat "$TEST_FILE_FOLDER/response.txt")"
+  return 0
+}
+
+put_bucket_acl_rest_expect_error() {
+  if ! check_param_count_v2 "bucket, ACL file, env params, response code, error code, message" 6 $#; then
+    return 1
+  fi
+  local put_bucket_acl_env_vars="BUCKET_NAME=$1 ACL_FILE=$2 $3"
+  if ! send_rest_command_expect_error "$put_bucket_acl_env_vars" "./tests/rest_scripts/put_bucket_acl.sh" "$4" "$5" "$6"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_acl_rest_with_user() {
+  if ! check_param_count_v2 "username, password, bucket, ACL file" 4 $#; then
+    return 1
+  fi
+  local put_bucket_acl_env_vars="AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2 BUCKET_NAME=$3 ACL_FILE=$4"
+  if ! send_rest_command_expect_success "$put_bucket_acl_env_vars" "./tests/rest_scripts/put_bucket_acl.sh" "200"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0

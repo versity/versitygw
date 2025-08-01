@@ -447,13 +447,16 @@ test_file="test_file"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$file_name"
   assert_success
 
-  run put_object_rest "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  run put_object_rest_special_chars "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name"
   assert_success
 
   run list_check_single_object "$BUCKET_ONE_NAME" "$file_name/$file_name"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  run get_object_rest_special_chars "$BUCKET_ONE_NAME" "$file_name/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  assert_success
+
+  run compare_files "$TEST_FILE_FOLDER/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 
   run delete_object_rest "$BUCKET_ONE_NAME" "$file_name/$file_name"

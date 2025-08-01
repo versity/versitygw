@@ -4,11 +4,23 @@ build_xpath_string() {
   if ! check_param_count_gt "XML tree" 1 $#; then
     return 1
   fi
+  if ! build_xpath_string_for_element "$@"; then
+    return 1
+  fi
+  xpath+='/text()'
+}
+
+build_xpath_string_for_element() {
+  if ! check_param_count_gt "XML tree" 1 $#; then
+    return 1
+  fi
   xpath='//'
-  for tree_val in "$@"; do
-    xpath+='*[local-name()="'$tree_val'"]/'
+  for ((idx=1;idx<=$#;idx++)); do
+    xpath+='*[local-name()="'${!idx}'"]'
+    if [ "$idx" != $# ]; then
+      xpath+='/'
+    fi
   done
-  xpath+='text()'
 }
 
 check_for_empty_element() {
@@ -27,6 +39,22 @@ check_for_empty_element() {
   return 1
 }
 
+get_element() {
+  if ! check_param_count_gt "data file, XML tree" 2 $#; then
+    return 1
+  fi
+
+  if ! build_xpath_string_for_element "${@:2}"; then
+    log 2 "error building XPath search string"
+    return 1
+  fi
+  if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
+    log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
+    return 1
+  fi
+  echo "$xml_val"
+}
+
 get_element_text() {
   if [ $# -lt 2 ]; then
     log 2 "'get_element_text' requires data file, XML tree"
@@ -39,6 +67,7 @@ get_element_text() {
   fi
 
   log 5 "data: $(cat "$1")"
+  log 5 "xml data: $(grep '<[^/][^ >]*>' "$1")"
   if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
     log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
     return 1

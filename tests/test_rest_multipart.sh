@@ -283,9 +283,9 @@ test_file="test_file"
 }
 
 @test "REST - multipart - x-amz-checksum-algorithm is ignored in CompleteMultipartUpload" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1345"
-  fi
+  #if [ "$DIRECT" != "true" ]; then
+  #  skip "https://github.com/versity/versitygw/issues/1345"
+  #fi
   run test_complete_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
   assert_success
 }

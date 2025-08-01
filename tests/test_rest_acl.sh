@@ -18,10 +18,13 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/commands/put_object.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_acl.sh
 source ./tests/util/util_object.sh
+source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_setup.sh
 
 export RUN_USERS=true
@@ -175,5 +178,43 @@ fi
   assert_success
 
   run put_bucket_acl_rest_canned_invalid "$BUCKET_ONE_NAME" "privatee"
+  assert_success
+}
+
+@test "REST - FULL_CONTROL permission not returned for owner after CreateBucket with GRANT_READ_ACP" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1407"
+  fi
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  canonical_id=${lines[0]}
+  user_canonical_id=${lines[1]}
+  username=${lines[2]}
+  password=${lines[3]}
+
+  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  assert_success
+  if [ "$DIRECT" == "true" ]; then
+    id="id=$user_canonical_id"
+  else
+    id="$user_canonical_id"
+  fi
+
+  envs="GRANT_READ_ACP=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
+  run create_bucket_rest_expect_success "$BUCKET_ONE_NAME" "$envs"
+  assert_success
+
+  run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_that_acl_xml_does_not_have_owner_permission"
+  assert_success
+}
+
+@test "GetBucketAcl - DisplayName" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1414"
+  fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_for_display_name"
   assert_success
 }

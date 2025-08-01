@@ -70,24 +70,51 @@ put_object_with_user() {
 }
 
 put_object_rest() {
-  if [ $# -ne 3 ]; then
-    log 2 "'put_object_rest' requires local file, bucket name, key"
+  if ! check_param_count_gt "local file, bucket name, key, env vars (optional)" 3 $#; then
     return 1
   fi
-  if ! put_object_rest_with_user "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$2" "$3"; then
-    log 2 "error putting object with REST with root user"
+  env_vars="DATA_FILE=$1 BUCKET_NAME=$2 OBJECT_KEY=$3 $4"
+  if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/put_object.sh" "200"; then
+    log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_special_chars() {
+  if ! check_param_count_v2 "local file, bucket name, key" 3 $#; then
+    return 1
+  fi
+  # do this in case there are spaces in the name
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" OUTPUT_FILE="$TEST_FILE_FOLDER/error.txt" DATA_FILE="$1" BUCKET_NAME="$2" OBJECT_KEY="$3" ./tests/rest_scripts/put_object.sh 2>&1); then
+    log 2 "error sending put object command: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/error.txt"))"
     return 1
   fi
   return 0
 }
 
 put_object_rest_with_user() {
-  if [ $# -ne 5 ]; then
-    log 2 "'put_object_rest_with_user' requires username, password, local file, bucket name, key"
+  if ! check_param_count_gt "username, password, local file, bucket name, key, env vars (optional)" 5 $#; then
     return 1
   fi
-  if ! put_object_rest_with_user_and_code "$1" "$2" "$3" "$4" "$5" "200"; then
+  if ! put_object_rest "$3" "$4" "$5" "AWS_ACCESS_KEY_ID=$1 AWS_SECRET_ACCESS_KEY=$2 $6"; then
     log 2 "error putting object with user '$1'"
+    return 1
+  fi
+  return 0
+}
+
+put_object_rest_expect_error() {
+  if ! check_param_count_gt "local file, bucket name, key, env vars, response code, error code, message" 7 $#; then
+    return 1
+  fi
+  env_vars="DATA_FILE=$1 BUCKET_NAME=$2 OBJECT_KEY=$3 $4"
+  if ! send_rest_command_expect_error "$env_vars" "./tests/rest_scripts/put_object.sh" "$5" "$6" "$7"; then
+    log 2 "error sending REST command and checking error"
     return 1
   fi
   return 0
