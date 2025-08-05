@@ -17,33 +17,34 @@
 # Function to display help information
 show_help() {
     echo "Usage: $0 [option...]"
-    echo "   -h, --help          Display this help message and exit"
-    echo "                       Separate the below by comma"
-    echo "   s3api               Run all tests with s3api cli"
-    echo "   s3api-multipart     Run multipart tests with s3api cli"
-    echo "   s3api-bucket        Run bucket tests with s3api cli"
-    echo "   s3api-object        Run object tests with s3api cli"
-    echo "   s3api-policy        Run policy tests with s3api cli"
-    echo "   s3api-user          Run user tests with s3api cli"
-    echo "   s3                  Run tests with s3 cli"
-    echo "   s3cmd               Run tests with s3cmd utility"
-    echo "   s3cmd-user          Run user tests with s3cmd utility"
-    echo "   s3cmd-non-user      Run non-user tests with s3cmd utility"
-    echo "   s3cmd-file-count    Run file count test with s3cmd utility"
-    echo "   mc                  Run tests with mc utility"
-    echo "   mc-non-file-count   Run non-file count tests with mc utility"
-    echo "   mc-file-count       Run file count test with mc utility"
-    echo "   rest                Run tests with rest cli"
-    echo "   rest-base           Run REST base tests"
-    echo "   rest-acl            Run REST ACL tests"
-    echo "   rest-chunked        Run REST chunked upload tests"
-    echo "   rest-checksum       Run REST checksum tests"
-    echo "   rest-create-bucket  Run REST create bucket tests"
-    echo "   rest-head-bucket    Run REST head bucket tests"
-    echo "   rest-list-buckets   Run REST list-buckets tests"
-    echo "   rest-multipart      Run REST multipart tests"
-    echo "   rest-versioning     Run REST versioning tests"
-    echo "   rest-bucket         Run REST bucket tests"
+    echo "   -h, --help           Display this help message and exit"
+    echo "                        Separate the below by comma"
+    echo "   s3api                Run all tests with s3api cli"
+    echo "   s3api-multipart      Run multipart tests with s3api cli"
+    echo "   s3api-bucket         Run bucket tests with s3api cli"
+    echo "   s3api-object         Run object tests with s3api cli"
+    echo "   s3api-policy         Run policy tests with s3api cli"
+    echo "   s3api-user           Run user tests with s3api cli"
+    echo "   s3                   Run tests with s3 cli"
+    echo "   s3cmd                Run tests with s3cmd utility"
+    echo "   s3cmd-user           Run user tests with s3cmd utility"
+    echo "   s3cmd-non-user       Run non-user tests with s3cmd utility"
+    echo "   s3cmd-file-count     Run file count test with s3cmd utility"
+    echo "   mc                   Run tests with mc utility"
+    echo "   mc-non-file-count    Run non-file count tests with mc utility"
+    echo "   mc-file-count        Run file count test with mc utility"
+    echo "   rest                 Run tests with rest cli"
+    echo "   rest-base            Run REST base tests"
+    echo "   rest-acl             Run REST ACL tests"
+    echo "   rest-chunked         Run REST chunked upload tests"
+    echo "   rest-checksum        Run REST checksum tests"
+    echo "   rest-create-bucket   Run REST create bucket tests"
+    echo "   rest-head-bucket     Run REST head bucket tests"
+    echo "   rest-list-buckets    Run REST list-buckets tests"
+    echo "   rest-multipart       Run REST multipart tests"
+    echo "   rest-not-implemented Run REST multipart tests"
+    echo "   rest-versioning      Run REST versioning tests"
+    echo "   rest-bucket          Run REST bucket tests"
 }
 
 handle_param() {
@@ -55,7 +56,8 @@ handle_param() {
       s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|\
       s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|\
       s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
-      rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-versioning|rest-bucket|rest-multipart)
+      rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
+      rest-versioning|rest-bucket|rest-multipart)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -170,6 +172,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_multipart.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_not_implemented.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_versioning.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_bucket.sh; then
@@ -207,6 +211,10 @@ run_suite() {
     rest-list-buckets)
       echo "Running REST list-buckets tests ..."
       "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh || exit_code=$?
+      ;;
+    rest-not-implemented)
+      echo "Running REST not-implemented tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_not_implemented.sh || exit_code=$?
       ;;
     rest-multipart)
       echo "Running REST multipart tests ..."
