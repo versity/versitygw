@@ -34,10 +34,13 @@ show_help() {
     echo "   mc-non-file-count   Run non-file count tests with mc utility"
     echo "   mc-file-count       Run file count test with mc utility"
     echo "   rest                Run tests with rest cli"
-    echo "   rest-base           Run REST base tasks"
+    echo "   rest-base           Run REST base tests"
     echo "   rest-acl            Run REST ACL tests"
     echo "   rest-chunked        Run REST chunked upload tests"
     echo "   rest-checksum       Run REST checksum tests"
+    echo "   rest-create-bucket  Run REST create bucket tests"
+    echo "   rest-head-bucket    Run REST head bucket tests"
+    echo "   rest-list-buckets   Run REST list-buckets tests"
     echo "   rest-multipart      Run REST multipart tests"
     echo "   rest-versioning     Run REST versioning tests"
     echo "   rest-bucket         Run REST bucket tests"
@@ -49,7 +52,10 @@ handle_param() {
           show_help
           exit 0
           ;;
-      s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|rest-versioning|rest-bucket|rest-multipart)
+      s3|s3-file-count|s3-non-file-count|s3api|s3cmd|s3cmd-user|s3cmd-non-user|\
+      s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|\
+      s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
+      rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-versioning|rest-bucket|rest-multipart)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -156,6 +162,12 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_checksum.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_create_bucket.sh; then
+        exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh; then
+        exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_multipart.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_versioning.sh; then
@@ -183,6 +195,18 @@ run_suite() {
     rest-checksum)
       echo "Running REST checksum tests ..."
       "$HOME"/bin/bats ./tests/test_rest_checksum.sh || exit_code=$?
+      ;;
+    rest-create-bucket)
+      echo "Running REST create bucket tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_create_bucket.sh || exit_code=$?
+      ;;
+    rest-head-bucket)
+      echo "Running REST head bucket tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh || exit_code=$?
+      ;;
+    rest-list-buckets)
+      echo "Running REST list-buckets tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh || exit_code=$?
       ;;
     rest-multipart)
       echo "Running REST multipart tests ..."
