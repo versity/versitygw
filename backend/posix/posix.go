@@ -39,6 +39,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
+	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -1360,6 +1361,10 @@ func getPartChecksum(algo types.ChecksumAlgorithm, part types.CompletedPart) str
 }
 
 func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
+	return p.CompleteMultipartUploadWithCopy(ctx, input, nil)
+}
+
+func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.CompleteMultipartUploadInput, customMove func(from *os.File, to *os.File) error) (s3response.CompleteMultipartUploadResult, string, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -1550,7 +1555,16 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 			}
 		}
 
-		_, err = io.Copy(f.File(), rdr)
+		if customMove != nil {
+			err = customMove(pf, f.File())
+			if err != nil {
+				// Fail back to standard copy
+				debuglogger.Logf("Custom data block move failed (%w), failing back to io.Copy()", err)
+				_, err = io.Copy(f.File(), rdr)
+			}
+		} else {
+			_, err = io.Copy(f.File(), rdr)
+		}
 		pf.Close()
 		if err != nil {
 			if errors.Is(err, syscall.EDQUOT) {
