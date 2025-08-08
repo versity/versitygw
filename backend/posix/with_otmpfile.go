@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -165,14 +166,10 @@ func (tmp *tmpfile) link() error {
 	// of last upload completed wins and is not some combination of writes
 	// from simultaneous uploads.
 	objPath := filepath.Join(tmp.bucket, tmp.objname)
-	err := os.Remove(objPath)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove stale path: %w", err)
-	}
 
 	dir := filepath.Dir(objPath)
 
-	err = backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
+	err := backend.MkdirAll(dir, tmp.uid, tmp.gid, tmp.needsChown, tmp.newDirPerm)
 	if err != nil {
 		return fmt.Errorf("make parent dir: %w", err)
 	}
@@ -194,21 +191,33 @@ func (tmp *tmpfile) link() error {
 	}
 	defer dirf.Close()
 
-	for {
-		err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
-			int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
-		if errors.Is(err, syscall.EEXIST) {
-			err := os.Remove(objPath)
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("remove stale path: %w", err)
+	err = unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
+		int(dirf.Fd()), filepath.Base(objPath), unix.AT_SYMLINK_FOLLOW)
+	if errors.Is(err, syscall.EEXIST) {
+		// Linkat cannot overwrite files; we will allocate a temporary file, Linkat to it and then Renameat it
+		// to avoid potential race condition
+		retries := 1
+		for {
+			tmpName := fmt.Sprintf(".%s.sgwtmp.%d", filepath.Base(objPath), time.Now().UnixNano())
+			err := unix.Linkat(int(procdir.Fd()), filepath.Base(tmp.f.Name()),
+				int(dirf.Fd()), tmpName, unix.AT_SYMLINK_FOLLOW)
+			if errors.Is(err, syscall.EEXIST) && retries < 3 {
+				retries += 1
+				continue
 			}
-			continue
+			if err != nil {
+				return fmt.Errorf("cannot find free temporary file: %w", err)
+			}
+
+			err = unix.Renameat(int(dirf.Fd()), tmpName, int(dirf.Fd()), filepath.Base(objPath))
+			if err != nil {
+				return fmt.Errorf("overwriting renameat failed: %w", err)
+			}
+			break
 		}
-		if err != nil {
-			return fmt.Errorf("link tmpfile (fd %q as %q): %w",
-				filepath.Base(tmp.f.Name()), objPath, err)
-		}
-		break
+	} else if err != nil {
+		return fmt.Errorf("link tmpfile (fd %q as %q): %w",
+			filepath.Base(tmp.f.Name()), objPath, err)
 	}
 
 	err = tmp.f.Close()

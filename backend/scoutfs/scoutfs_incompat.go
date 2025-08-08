@@ -20,43 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/versity/versitygw/auth"
 )
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	return nil, fmt.Errorf("scoutfs only available on linux")
 }
 
-type tmpfile struct{}
-
 var (
 	errNotSupported = errors.New("not supported")
 )
-
-func (s *ScoutFS) openTmpFile(_, _, _ string, _ int64, _ auth.Account) (*tmpfile, error) {
-	// make these look used for static check
-	_ = s.chownuid
-	_ = s.chowngid
-	_ = s.euid
-	_ = s.egid
-	return nil, errNotSupported
-}
-
-func (tmp *tmpfile) link() error {
-	return errNotSupported
-}
-
-func (tmp *tmpfile) Write(b []byte) (int, error) {
-	return 0, errNotSupported
-}
-
-func (tmp *tmpfile) cleanup() {
-}
-
-func (tmp *tmpfile) File() *os.File {
-	return nil
-}
 
 func moveData(_, _ *os.File) error {
 	return errNotSupported
