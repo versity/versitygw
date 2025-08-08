@@ -211,7 +211,7 @@ func (tmp *tmpfile) link() error {
 
 			err = unix.Renameat(int(dirf.Fd()), tmpName, int(dirf.Fd()), filepath.Base(objPath))
 			if err != nil {
-				return fmt.Errorf("Overwriting renameat failed: %w", err)
+				return fmt.Errorf("overwriting renameat failed: %w", err)
 			}
 			break
 		}
