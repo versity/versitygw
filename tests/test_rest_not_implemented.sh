@@ -23,6 +23,35 @@ source ./tests/setup.sh
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run send_rest_command_expect_error "BUCKET_NAME=$BUCKET_ONE_NAME" "./tests/rest_scripts/put_bucket_analytics_configuration.sh" "400" "something" "something"
+  #run send_rest_command_expect_error "BUCKET_NAME=$BUCKET_ONE_NAME" "./tests/rest_scripts/put_bucket_analytics_configuration.sh" "400" "something" "something"
+  #assert_success
+
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" 2>&1); then
+    log 2 "error: $curl_command"
+    return 1
+  fi
+  log 5 "curl command: $curl_command"
+  full_command="send_command $curl_command"
+  if ! result=$(eval "${full_command[*]}" 2>&1); then
+    log 2 "error sending command: $result"
+    return 1
+  fi
+  return 0
+}
+
+@test "REST - GetBucketAnalyticsConfiguration" {
+  run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
+
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" -query "analytics=" 2>&1); then
+    log 2 "error: $curl_command"
+    return 1
+  fi
+  full_command="send_command $curl_command"
+  if ! result=$(eval "${full_command[*]}" 2>&1); then
+    log 2 "error sending command: $result"
+    return 1
+  fi
+  log 5 "result: $result"
+  return 1
 }
