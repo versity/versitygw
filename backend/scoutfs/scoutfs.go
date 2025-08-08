@@ -69,11 +69,6 @@ type ScoutFS struct {
 var _ backend.Backend = &ScoutFS{}
 
 const (
-	metaTmpDir          = ".sgwtmp"
-	metaTmpMultipartDir = metaTmpDir + "/multipart"
-)
-
-var (
 	stageComplete      = "ongoing-request=\"false\", expiry-date=\"Fri, 2 Dec 2050 00:00:00 GMT\""
 	stageInProgress    = "true"
 	stageNotInProgress = "false"
@@ -123,7 +118,7 @@ func (s *ScoutFS) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s
 		sum := sha256.Sum256([]byte(*input.Key))
 		partPath := filepath.Join(
 			*input.Bucket,                        // bucket
-			metaTmpMultipartDir,                  // temp multipart dir
+			posix.MetaTmpMultipartDir,            // temp multipart dir
 			fmt.Sprintf("%x", sum),               // hashed objname
 			*input.UploadId,                      // upload id
 			fmt.Sprintf("%v", *input.PartNumber), // part number
@@ -239,14 +234,23 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
-	return s.Posix.ListObjectsParametrized(ctx, input, s.fileToObj)
+	if s.glaciermode {
+		return s.Posix.ListObjectsParametrized(ctx, input, s.glacierFileToObj)
+	} else {
+		return s.Posix.ListObjects(ctx, input)
+	}
 }
 
 func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
-	return s.Posix.ListObjectsV2Parametrized(ctx, input, s.fileToObj)
+	if s.glaciermode {
+		return s.Posix.ListObjectsV2Parametrized(ctx, input, s.glacierFileToObj)
+	} else {
+		return s.Posix.ListObjectsV2(ctx, input)
+	}
 }
 
-func (s *ScoutFS) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
+// FileToObj function for ListObject calls that adds a Glacier storage class if the file is offline
+func (s *ScoutFS) glacierFileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 	posixFileToObj := s.Posix.FileToObj(bucket, fetchOwner)
 
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
@@ -255,19 +259,17 @@ func (s *ScoutFS) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 			return res, err
 		}
 		objPath := filepath.Join(bucket, path)
-		if s.glaciermode {
-			// Check if there are any offline exents associated with this file.
-			// If so, we will return the Glacier storage class
-			st, err := statMore(objPath)
-			if errors.Is(err, fs.ErrNotExist) {
-				return s3response.Object{}, backend.ErrSkipObj
-			}
-			if err != nil {
-				return s3response.Object{}, fmt.Errorf("stat more: %w", err)
-			}
-			if st.Offline_blocks != 0 {
-				res.StorageClass = types.ObjectStorageClassGlacier
-			}
+		// Check if there are any offline exents associated with this file.
+		// If so, we will return the Glacier storage class
+		st, err := statMore(objPath)
+		if errors.Is(err, fs.ErrNotExist) {
+			return s3response.Object{}, backend.ErrSkipObj
+		}
+		if err != nil {
+			return s3response.Object{}, fmt.Errorf("stat more: %w", err)
+		}
+		if st.Offline_blocks != 0 {
+			res.StorageClass = types.ObjectStorageClassGlacier
 		}
 		return res, nil
 	}
