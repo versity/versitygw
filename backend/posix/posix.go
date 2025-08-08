@@ -1563,7 +1563,7 @@ func (p *Posix) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteM
 	upiddir := filepath.Join(objdir, uploadID)
 
 	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(bucket, upiddir, nil, userMetaData)
+	objMeta := p.loadObjectMetaData(nil, bucket, upiddir, nil, userMetaData)
 	err = p.storeObjectMetadata(f.File(), bucket, object, objMeta)
 	if err != nil {
 		return res, "", err
@@ -1859,7 +1859,7 @@ type objectMetadata struct {
 
 // fill out the user metadata map with the metadata for the object
 // and return object meta properties as `ObjectMetadata`
-func (p *Posix) loadObjectMetaData(bucket, object string, fi *os.FileInfo, m map[string]string) objectMetadata {
+func (p *Posix) loadObjectMetaData(f *os.File, bucket, object string, fi *os.FileInfo, m map[string]string) objectMetadata {
 	ents, err := p.meta.ListAttributes(bucket, object)
 	if err != nil || len(ents) == 0 {
 		return objectMetadata{}
@@ -1870,7 +1870,7 @@ func (p *Posix) loadObjectMetaData(bucket, object string, fi *os.FileInfo, m map
 			if !isValidMeta(e) {
 				continue
 			}
-			b, err := p.meta.RetrieveAttribute(nil, bucket, object, e)
+			b, err := p.meta.RetrieveAttribute(f, bucket, object, e)
 			if err != nil {
 				continue
 			}
@@ -1884,7 +1884,7 @@ func (p *Posix) loadObjectMetaData(bucket, object string, fi *os.FileInfo, m map
 
 	var result objectMetadata
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, contentTypeHdr)
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, contentTypeHdr)
 	if err == nil {
 		result.ContentType = backend.GetPtrFromString(string(b))
 	}
@@ -1896,27 +1896,27 @@ func (p *Posix) loadObjectMetaData(bucket, object string, fi *os.FileInfo, m map
 		}
 	}
 
-	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentEncHdr)
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, contentEncHdr)
 	if err == nil {
 		result.ContentEncoding = backend.GetPtrFromString(string(b))
 	}
 
-	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentDispHdr)
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, contentDispHdr)
 	if err == nil {
 		result.ContentDisposition = backend.GetPtrFromString(string(b))
 	}
 
-	b, err = p.meta.RetrieveAttribute(nil, bucket, object, contentLangHdr)
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, contentLangHdr)
 	if err == nil {
 		result.ContentLanguage = backend.GetPtrFromString(string(b))
 	}
 
-	b, err = p.meta.RetrieveAttribute(nil, bucket, object, cacheCtrlHdr)
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, cacheCtrlHdr)
 	if err == nil {
 		result.CacheControl = backend.GetPtrFromString(string(b))
 	}
 
-	b, err = p.meta.RetrieveAttribute(nil, bucket, object, expiresHdr)
+	b, err = p.meta.RetrieveAttribute(f, bucket, object, expiresHdr)
 	if err == nil {
 		result.Expires = backend.GetPtrFromString(string(b))
 	}
@@ -2286,7 +2286,7 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 
 	userMetaData := make(map[string]string)
 	upiddir := filepath.Join(objdir, uploadID)
-	p.loadObjectMetaData(bucket, upiddir, nil, userMetaData)
+	p.loadObjectMetaData(nil, bucket, upiddir, nil, userMetaData)
 
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
@@ -3428,7 +3428,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	objPath := filepath.Join(bucket, object)
 
-	fi, err := os.Stat(objPath)
+	fid, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
 			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
@@ -3442,10 +3442,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		return nil, fmt.Errorf("stat object: %w", err)
 	}
 
-	if strings.HasSuffix(object, "/") && !fi.IsDir() {
+	if strings.HasSuffix(object, "/") && !fid.IsDir() {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
-	if !strings.HasSuffix(object, "/") && fi.IsDir() {
+	if !strings.HasSuffix(object, "/") && fid.IsDir() {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 
@@ -3464,33 +3464,15 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			}
 			return &s3.GetObjectOutput{
 				DeleteMarker: getBoolPtr(true),
-				LastModified: backend.GetTimePtr(fi.ModTime()),
+				LastModified: backend.GetTimePtr(fid.ModTime()),
 			}, err
 		}
 	}
 
-	objSize := fi.Size()
-	startOffset, length, isValid, err := backend.ParseObjectRange(objSize, *input.Range)
-	if err != nil {
-		return nil, err
-	}
-
-	if fi.IsDir() {
-		// directory objects are always 0 len
-		objSize = 0
-		length = 0
-	}
-
-	var contentRange string
-	if isValid {
-		contentRange = fmt.Sprintf("bytes %v-%v/%v",
-			startOffset, startOffset+length-1, objSize)
-	}
-
-	if fi.IsDir() {
+	if fid.IsDir() {
 		userMetaData := make(map[string]string)
 
-		objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
+		objMeta := p.loadObjectMetaData(nil, bucket, object, &fid, userMetaData)
 		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 		etag := string(b)
 		if err != nil {
@@ -3507,6 +3489,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			tagCount = &tgCount
 		}
 
+		var length int64 = 0
 		return &s3.GetObjectOutput{
 			AcceptRanges:       backend.GetPtrFromString("bytes"),
 			ContentLength:      &length,
@@ -3517,10 +3500,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 			CacheControl:       objMeta.CacheControl,
 			ExpiresString:      objMeta.Expires,
 			ETag:               &etag,
-			LastModified:       backend.GetTimePtr(fi.ModTime()),
+			LastModified:       backend.GetTimePtr(fid.ModTime()),
 			Metadata:           userMetaData,
 			TagCount:           tagCount,
-			ContentRange:       &contentRange,
+			ContentRange:       nil,
 			StorageClass:       types.StorageClassStandard,
 			VersionId:          &versionId,
 		}, nil
@@ -3538,11 +3521,45 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		versionId = string(vId)
 	}
 
+	f, err := os.Open(objPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open object: %w", err)
+	}
+
+	fi, err := f.Stat()
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if versionId != "" {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, syscall.ENAMETOOLONG) {
+		return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat object: %w", err)
+	}
+
+	objSize := fi.Size()
+	startOffset, length, isValid, err := backend.ParseObjectRange(objSize, *input.Range)
+	if err != nil {
+		return nil, err
+	}
+
+	var contentRange string
+	if isValid {
+		contentRange = fmt.Sprintf("bytes %v-%v/%v",
+			startOffset, startOffset+length-1, objSize)
+	}
+
 	userMetaData := make(map[string]string)
 
-	objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
+	objMeta := p.loadObjectMetaData(f, bucket, object, &fi, userMetaData)
 
-	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
 	etag := string(b)
 	if err != nil {
 		etag = ""
@@ -3556,14 +3573,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	if tags != nil {
 		tgCount := int32(len(tags))
 		tagCount = &tgCount
-	}
-
-	f, err := os.Open(objPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("open object: %w", err)
 	}
 
 	var checksums s3response.Checksum
@@ -3762,7 +3771,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(bucket, object, &fi, userMetaData)
+	objMeta := p.loadObjectMetaData(nil, bucket, object, &fi, userMetaData)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -3965,7 +3974,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 
 	mdmap := make(map[string]string)
-	p.loadObjectMetaData(srcBucket, srcObject, &fi, mdmap)
+	p.loadObjectMetaData(nil, srcBucket, srcObject, &fi, mdmap)
 
 	var etag string
 	var version *string
@@ -4125,7 +4134,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		// load and pass the source object meta properties, if metadata directive is "COPY"
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
-			metaProps := p.loadObjectMetaData(srcBucket, srcObject, &fi, nil)
+			metaProps := p.loadObjectMetaData(nil, srcBucket, srcObject, &fi, nil)
 			putObjectInput.ContentEncoding = metaProps.ContentEncoding
 			putObjectInput.ContentDisposition = metaProps.ContentDisposition
 			putObjectInput.ContentLanguage = metaProps.ContentLanguage
