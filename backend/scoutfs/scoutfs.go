@@ -30,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/pkg/xattr"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
@@ -49,9 +48,6 @@ type ScoutFS struct {
 	*posix.Posix
 	rootfd  *os.File
 	rootdir string
-
-	// bucket/object metadata storage facility
-	meta meta.MetadataStorer
 
 	// glaciermode enables the following behavior:
 	// GET object:  if file offline, return invalid object state
@@ -75,8 +71,6 @@ var _ backend.Backend = &ScoutFS{}
 const (
 	metaTmpDir          = ".sgwtmp"
 	metaTmpMultipartDir = metaTmpDir + "/multipart"
-	etagkey             = "etag"
-	checksumsKey        = "checksums"
 )
 
 var (
@@ -245,173 +239,25 @@ func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.
 }
 
 func (s *ScoutFS) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
-	bucket := *input.Bucket
-	prefix := ""
-	if input.Prefix != nil {
-		prefix = *input.Prefix
-	}
-	marker := ""
-	if input.Marker != nil {
-		marker = *input.Marker
-	}
-	delim := ""
-	if input.Delimiter != nil {
-		delim = *input.Delimiter
-	}
-	maxkeys := int32(0)
-	if input.MaxKeys != nil {
-		maxkeys = *input.MaxKeys
-	}
-
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
-	if err != nil {
-		return s3response.ListObjectsResult{}, fmt.Errorf("stat bucket: %w", err)
-	}
-
-	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		s.fileToObj(bucket), []string{metaTmpDir})
-	if err != nil {
-		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
-	}
-
-	return s3response.ListObjectsResult{
-		CommonPrefixes: results.CommonPrefixes,
-		Contents:       results.Objects,
-		Delimiter:      backend.GetPtrFromString(delim),
-		Marker:         backend.GetPtrFromString(marker),
-		NextMarker:     backend.GetPtrFromString(results.NextMarker),
-		Prefix:         backend.GetPtrFromString(prefix),
-		IsTruncated:    &results.Truncated,
-		MaxKeys:        &maxkeys,
-		Name:           &bucket,
-	}, nil
+	return s.Posix.ListObjectsParametrized(ctx, input, s.fileToObj)
 }
 
 func (s *ScoutFS) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
-	bucket := *input.Bucket
-	prefix := ""
-	if input.Prefix != nil {
-		prefix = *input.Prefix
-	}
-	marker := ""
-	if input.ContinuationToken != nil {
-		if input.StartAfter != nil {
-			marker = max(*input.StartAfter, *input.ContinuationToken)
-		} else {
-			marker = *input.ContinuationToken
-		}
-	}
-	delim := ""
-	if input.Delimiter != nil {
-		delim = *input.Delimiter
-	}
-	maxkeys := int32(0)
-	if input.MaxKeys != nil {
-		maxkeys = *input.MaxKeys
-	}
-
-	_, err := os.Stat(bucket)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
-	}
-	if err != nil {
-		return s3response.ListObjectsV2Result{}, fmt.Errorf("stat bucket: %w", err)
-	}
-
-	fileSystem := os.DirFS(bucket)
-	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, int32(maxkeys),
-		s.fileToObj(bucket), []string{metaTmpDir})
-	if err != nil {
-		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
-	}
-
-	count := int32(len(results.Objects))
-
-	return s3response.ListObjectsV2Result{
-		CommonPrefixes:        results.CommonPrefixes,
-		Contents:              results.Objects,
-		IsTruncated:           &results.Truncated,
-		MaxKeys:               &maxkeys,
-		Name:                  &bucket,
-		KeyCount:              &count,
-		Delimiter:             backend.GetPtrFromString(delim),
-		ContinuationToken:     backend.GetPtrFromString(marker),
-		NextContinuationToken: backend.GetPtrFromString(results.NextMarker),
-		Prefix:                backend.GetPtrFromString(prefix),
-		StartAfter:            backend.GetPtrFromString(*input.StartAfter),
-	}, nil
+	return s.Posix.ListObjectsV2Parametrized(ctx, input, s.fileToObj)
 }
 
-func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
+func (s *ScoutFS) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
+	posixFileToObj := s.Posix.FileToObj(bucket, fetchOwner)
+
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
+		res, err := posixFileToObj(path, d)
+		if err != nil || d.IsDir() {
+			return res, err
+		}
 		objPath := filepath.Join(bucket, path)
-		if d.IsDir() {
-			// directory object only happens if directory empty
-			// check to see if this is a directory object by checking etag
-			etagBytes, err := s.meta.RetrieveAttribute(nil, bucket, path, etagkey)
-			if errors.Is(err, meta.ErrNoSuchKey) || errors.Is(err, fs.ErrNotExist) {
-				return s3response.Object{}, backend.ErrSkipObj
-			}
-			if err != nil {
-				return s3response.Object{}, fmt.Errorf("get etag: %w", err)
-			}
-			etag := string(etagBytes)
-
-			fi, err := d.Info()
-			if errors.Is(err, fs.ErrNotExist) {
-				return s3response.Object{}, backend.ErrSkipObj
-			}
-			if err != nil {
-				return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
-			}
-
-			size := int64(0)
-			mtime := fi.ModTime()
-
-			return s3response.Object{
-				ETag:         &etag,
-				Key:          &path,
-				LastModified: &mtime,
-				Size:         &size,
-				StorageClass: types.ObjectStorageClassStandard,
-			}, nil
-		}
-
-		// Retreive the object checksum algorithm
-		checksums, err := s.retrieveChecksums(nil, bucket, path)
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return s3response.Object{}, backend.ErrSkipObj
-		}
-
-		// file object, get object info and fill out object data
-		b, err := s.meta.RetrieveAttribute(nil, bucket, path, etagkey)
-		if errors.Is(err, fs.ErrNotExist) {
-			return s3response.Object{}, backend.ErrSkipObj
-		}
-		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-			return s3response.Object{}, fmt.Errorf("get etag: %w", err)
-		}
-		// note: meta.ErrNoSuchKey will return etagBytes = []byte{}
-		// so this will just set etag to "" if its not already set
-
-		etag := string(b)
-
-		fi, err := d.Info()
-		if errors.Is(err, fs.ErrNotExist) {
-			return s3response.Object{}, backend.ErrSkipObj
-		}
-		if err != nil {
-			return s3response.Object{}, fmt.Errorf("get fileinfo: %w", err)
-		}
-
-		sc := types.ObjectStorageClassStandard
 		if s.glaciermode {
 			// Check if there are any offline exents associated with this file.
-			// If so, we will return the InvalidObjectState error.
+			// If so, we will return the Glacier storage class
 			st, err := statMore(objPath)
 			if errors.Is(err, fs.ErrNotExist) {
 				return s3response.Object{}, backend.ErrSkipObj
@@ -420,33 +266,11 @@ func (s *ScoutFS) fileToObj(bucket string) backend.GetObjFunc {
 				return s3response.Object{}, fmt.Errorf("stat more: %w", err)
 			}
 			if st.Offline_blocks != 0 {
-				sc = types.ObjectStorageClassGlacier
+				res.StorageClass = types.ObjectStorageClassGlacier
 			}
 		}
-
-		size := fi.Size()
-		mtime := fi.ModTime()
-
-		return s3response.Object{
-			ETag:              &etag,
-			Key:               &path,
-			LastModified:      &mtime,
-			Size:              &size,
-			StorageClass:      sc,
-			ChecksumAlgorithm: []types.ChecksumAlgorithm{checksums.Algorithm},
-			ChecksumType:      checksums.Type,
-		}, nil
+		return res, nil
 	}
-}
-
-func (s *ScoutFS) retrieveChecksums(f *os.File, bucket, object string) (checksums s3response.Checksum, err error) {
-	checksumsAtr, err := s.meta.RetrieveAttribute(f, bucket, object, checksumsKey)
-	if err != nil {
-		return checksums, err
-	}
-
-	err = json.Unmarshal(checksumsAtr, &checksums)
-	return checksums, err
 }
 
 // RestoreObject will set stage request on file if offline and do nothing if

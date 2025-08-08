@@ -48,7 +48,6 @@ func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 		Posix:            p,
 		rootfd:           f,
 		rootdir:          rootdir,
-		meta:             metastore,
 		glaciermode:      opts.GlacierMode,
 		disableNoArchive: opts.DisableNoArchive,
 	}, nil

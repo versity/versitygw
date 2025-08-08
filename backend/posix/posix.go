@@ -4206,6 +4206,10 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 }
 
 func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3response.ListObjectsResult, error) {
+	return p.ListObjectsParametrized(ctx, input, p.FileToObj)
+}
+
+func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjectsInput, customFileToObj func(string, bool) backend.GetObjFunc) (s3response.ListObjectsResult, error) {
 	bucket := *input.Bucket
 	prefix := ""
 	if input.Prefix != nil {
@@ -4234,7 +4238,7 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket, true), []string{metaTmpDir})
+		customFileToObj(bucket, true), []string{metaTmpDir})
 	if err != nil {
 		return s3response.ListObjectsResult{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
@@ -4252,7 +4256,7 @@ func (p *Posix) ListObjects(ctx context.Context, input *s3.ListObjectsInput) (s3
 	}, nil
 }
 
-func (p *Posix) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
+func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
 		var owner *types.Owner
 		// Retreive the object owner data from bucket ACL, if fetchOwner is true
@@ -4355,6 +4359,10 @@ func (p *Posix) fileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 }
 
 func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input) (s3response.ListObjectsV2Result, error) {
+	return p.ListObjectsV2Parametrized(ctx, input, p.FileToObj)
+}
+
+func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObjectsV2Input, customFileToObj func(string, bool) backend.GetObjFunc) (s3response.ListObjectsV2Result, error) {
 	bucket := *input.Bucket
 	prefix := ""
 	if input.Prefix != nil {
@@ -4391,7 +4399,7 @@ func (p *Posix) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input)
 
 	fileSystem := os.DirFS(bucket)
 	results, err := backend.Walk(ctx, fileSystem, prefix, delim, marker, maxkeys,
-		p.fileToObj(bucket, fetchOwner), []string{metaTmpDir})
+		customFileToObj(bucket, fetchOwner), []string{metaTmpDir})
 	if err != nil {
 		return s3response.ListObjectsV2Result{}, fmt.Errorf("walk %v: %w", bucket, err)
 	}
