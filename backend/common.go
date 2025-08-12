@@ -95,40 +95,43 @@ var (
 // for invalid inputs, it returns no error, but isValid=false
 // `InvalidRange` error is returnd, only if startoffset is greater than the object size
 func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error) {
+	// Return full object (invalid range, no error) if header empty
 	if acceptRange == "" {
 		return 0, size, false, nil
 	}
 
 	rangeKv := strings.Split(acceptRange, "=")
-
 	if len(rangeKv) != 2 {
 		return 0, size, false, nil
 	}
-
-	if rangeKv[0] != "bytes" {
+	if rangeKv[0] != "bytes" { // unsupported unit -> ignore
 		return 0, size, false, nil
 	}
 
 	bRange := strings.Split(rangeKv[1], "-")
-	if len(bRange) != 2 {
+	if len(bRange) != 2 { // malformed / multi-range
 		return 0, size, false, nil
 	}
 
+	// Parse start; empty start indicates a suffix-byte-range-spec (e.g. bytes=-100)
 	startOffset, err := strconv.ParseInt(bRange[0], 10, strconv.IntSize)
 	if startOffset > int64(math.MaxInt) || startOffset < int64(math.MinInt) {
 		return 0, size, false, errInvalidRange
 	}
-	if err != nil && bRange[0] != "" {
+	if err != nil && bRange[0] != "" { // invalid numeric start (non-empty) -> ignore range
 		return 0, size, false, nil
 	}
 
+	// If end part missing (e.g. bytes=100-)
 	if bRange[1] == "" {
-		if bRange[0] == "" {
+		if bRange[0] == "" { // bytes=- (meaningless) -> ignore
 			return 0, size, false, nil
 		}
+		// start beyond or at size is unsatisfiable -> error (RequestedRangeNotSatisfiable)
 		if startOffset >= size {
 			return 0, 0, false, errInvalidRange
 		}
+		// bytes=100- => from start to end
 		return startOffset, size - startOffset, true, nil
 	}
 
@@ -136,28 +139,37 @@ func ParseObjectRange(size int64, acceptRange string) (int64, int64, bool, error
 	if endOffset > int64(math.MaxInt) {
 		return 0, size, false, errInvalidRange
 	}
-	if err != nil {
+	if err != nil { // invalid numeric end -> ignore range
 		return 0, size, false, nil
 	}
 
-	if startOffset > endOffset {
-		return 0, size, false, nil
-	}
-
-	// for ranges like 'bytes=-100' return the last bytes specified with 'endOffset'
+	// Suffix range handling (bRange[0] == "")
 	if bRange[0] == "" {
+		// Disallow -0 (always unsatisfiable)
+		if endOffset == 0 {
+			return 0, 0, false, errInvalidRange
+		}
+		// For zero-sized objects any positive suffix is treated as invalid (ignored, no error)
+		if size == 0 {
+			return 0, size, false, nil
+		}
+		// Clamp to object size (request more bytes than exist -> entire object)
 		endOffset = min(endOffset, size)
 		return size - endOffset, endOffset, true, nil
 	}
 
+	// Normal range (start-end)
+	if startOffset > endOffset { // start > end -> ignore
+		return 0, size, false, nil
+	}
+	// Start beyond or at end of object -> error
 	if startOffset >= size {
 		return 0, 0, false, errInvalidRange
 	}
-
+	// Adjust end beyond object size (trim)
 	if endOffset >= size {
 		endOffset = size - 1
 	}
-
 	return startOffset, endOffset - startOffset + 1, true, nil
 }
 
