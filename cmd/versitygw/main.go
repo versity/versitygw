@@ -45,6 +45,8 @@ var (
 	certFile, keyFile                        string
 	kafkaURL, kafkaTopic, kafkaKey           string
 	natsURL, natsTopic                       string
+	rabbitmqURL, rabbitmqExchange            string
+	rabbitmqRoutingKey                       string
 	eventWebhookURL                          string
 	eventConfigFilePath                      string
 	logWebhookURL, accessLog                 string
@@ -287,6 +289,27 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_EVENT_NATS_TOPIC"},
 			Destination: &natsTopic,
 			Aliases:     []string{"ent"},
+		},
+		&cli.StringFlag{
+			Name:        "event-rabbitmq-url",
+			Usage:       "rabbitmq server url to send the bucket notifications (amqp or amqps scheme)",
+			EnvVars:     []string{"VGW_EVENT_RABBITMQ_URL"},
+			Destination: &rabbitmqURL,
+			Aliases:     []string{"eru"},
+		},
+		&cli.StringFlag{
+			Name:        "event-rabbitmq-exchange",
+			Usage:       "rabbitmq exchange to publish bucket notifications to (blank for default)",
+			EnvVars:     []string{"VGW_EVENT_RABBITMQ_EXCHANGE"},
+			Destination: &rabbitmqExchange,
+			Aliases:     []string{"ere"},
+		},
+		&cli.StringFlag{
+			Name:        "event-rabbitmq-routing-key",
+			Usage:       "rabbitmq routing key when publishing bucket notifications (defaults to bucket name when blank)",
+			EnvVars:     []string{"VGW_EVENT_RABBITMQ_ROUTING_KEY"},
+			Destination: &rabbitmqRoutingKey,
+			Aliases:     []string{"errk"},
 		},
 		&cli.StringFlag{
 			Name:        "event-webhook-url",
@@ -693,6 +716,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		KafkaTopicKey:        kafkaKey,
 		NatsURL:              natsURL,
 		NatsTopic:            natsTopic,
+		RabbitmqURL:          rabbitmqURL,
+		RabbitmqExchange:     rabbitmqExchange,
+		RabbitmqRoutingKey:   rabbitmqRoutingKey,
 		WebhookURL:           eventWebhookURL,
 		FilterConfigFilePath: eventConfigFilePath,
 	})
