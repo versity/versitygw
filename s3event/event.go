@@ -72,9 +72,10 @@ type ConfigurationId string
 
 // This field will be changed after implementing per bucket notifications
 const (
-	ConfigurationIdKafka   ConfigurationId = "kafka-global"
-	ConfigurationIdNats    ConfigurationId = "nats-global"
-	ConfigurationIdWebhook ConfigurationId = "webhook-global"
+	ConfigurationIdKafka    ConfigurationId = "kafka-global"
+	ConfigurationIdNats     ConfigurationId = "nats-global"
+	ConfigurationIdWebhook  ConfigurationId = "webhook-global"
+	ConfigurationIdRabbitMQ ConfigurationId = "rabbitmq-global"
 )
 
 type EventS3Data struct {
@@ -113,6 +114,9 @@ type EventConfig struct {
 	KafkaTopicKey        string
 	NatsURL              string
 	NatsTopic            string
+	RabbitmqURL          string
+	RabbitmqExchange     string
+	RabbitmqRoutingKey   string
 	WebhookURL           string
 	FilterConfigFilePath string
 }
@@ -133,6 +137,9 @@ func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
 	case cfg.NatsURL != "":
 		evSender, err = InitNatsEventService(cfg.NatsURL, cfg.NatsTopic, filter)
 		fmt.Printf("initializing S3 Event Notifications with Nats. URL: %v, topic: %v\n", cfg.NatsURL, cfg.NatsTopic)
+	case cfg.RabbitmqURL != "":
+		evSender, err = InitRabbitmqEventService(cfg.RabbitmqURL, cfg.RabbitmqExchange, cfg.RabbitmqRoutingKey, filter)
+		fmt.Printf("initializing S3 Event Notifications with RabbitMQ. URL: %v, exchange: %v, routing key: %v\n", cfg.RabbitmqURL, cfg.RabbitmqExchange, cfg.RabbitmqRoutingKey)
 	default:
 		return nil, nil
 	}

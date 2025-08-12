@@ -20,6 +20,7 @@ require (
 	github.com/nats-io/nats.go v1.44.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pkg/xattr v0.4.12
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/segmentio/kafka-go v0.4.48
 	github.com/smira/go-statsd v1.3.4
 	github.com/stretchr/testify v1.10.0
