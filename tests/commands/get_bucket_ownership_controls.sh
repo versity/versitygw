@@ -46,6 +46,10 @@ get_bucket_ownership_controls_rest() {
     return 1
   fi
   if [ "$result" != "200" ]; then
+    if check_xml_element_contains "$TEST_FILE_FOLDER/ownershipControls.txt" "OwnershipControlsNotFoundError" "Error" "Code"; then
+      echo ""
+      return 0
+    fi
     log 2 "GetBucketOwnershipControls returned response code: $result, reply:  $(cat "$TEST_FILE_FOLDER/ownershipControls.txt")"
     return 1
   fi
