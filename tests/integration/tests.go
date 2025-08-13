@@ -3758,7 +3758,7 @@ func HeadObject_invalid_parent_dir(s *S3Conf) error {
 func HeadObject_with_range(s *S3Conf) error {
 	testName := "HeadObject_with_range"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj, objLength := "my-obj", int64(2300)
+		obj, objLength := "my-obj", int64(100)
 		_, err := putObjectWithData(objLength, &s3.PutObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
@@ -3776,7 +3776,7 @@ func HeadObject_with_range(s *S3Conf) error {
 			})
 			cancel()
 			if err == nil && expectErr {
-				return fmt.Errorf("expected err 'RequestedRangeNotSatisfiable' error, instead got nil")
+				return fmt.Errorf("%v: expected err 'RequestedRangeNotSatisfiable' error, instead got nil", rg)
 			}
 			if err != nil {
 				if !expectErr {
@@ -3786,73 +3786,92 @@ func HeadObject_with_range(s *S3Conf) error {
 				var ae smithy.APIError
 				if errors.As(err, &ae) {
 					if ae.ErrorCode() != "RequestedRangeNotSatisfiable" {
-						return fmt.Errorf("expected RequestedRangeNotSatisfiable, instead got %v", ae.ErrorCode())
+						return fmt.Errorf("%v: expected RequestedRangeNotSatisfiable, instead got %v", rg, ae.ErrorCode())
 					}
 					if ae.ErrorMessage() != "Requested Range Not Satisfiable" {
-						return fmt.Errorf("expected the error message to be 'Requested Range Not Satisfiable', instead got %v", ae.ErrorMessage())
+						return fmt.Errorf("%v: expected the error message to be 'Requested Range Not Satisfiable', instead got %v", rg, ae.ErrorMessage())
 					}
 					return nil
 				}
-
-				return fmt.Errorf("invalid error got %w", err)
+				return fmt.Errorf("%v: invalid error got %w", rg, err)
 			}
 
 			if getString(res.AcceptRanges) != "bytes" {
-				return fmt.Errorf("expected accept ranges to be 'bytes', instead got %v", getString(res.AcceptRanges))
+				return fmt.Errorf("%v: expected accept ranges to be 'bytes', instead got %v", rg, getString(res.AcceptRanges))
 			}
 			if res.ContentLength == nil {
-				return fmt.Errorf("expected non nil content-length")
+				return fmt.Errorf("%v: expected non nil content-length", rg)
 			}
 			if *res.ContentLength != cLength {
-				return fmt.Errorf("expected content-length to be %v, instead got %v", cLength, *res.ContentLength)
+				return fmt.Errorf("%v: expected content-length to be %v, instead got %v", rg, cLength, *res.ContentLength)
 			}
 			if getString(res.ContentRange) != contentRange {
-				return fmt.Errorf("expected content-range to be %v, instead got %v", contentRange, getString(res.ContentRange))
+				return fmt.Errorf("%v: expected content-range to be %v, instead got %v", rg, contentRange, getString(res.ContentRange))
 			}
-
 			return nil
 		}
 
+		// Reference server expectations for a 100-byte object.
 		for _, el := range []struct {
 			objRange      string
 			contentRange  string
 			contentLength int64
 			expectedErr   bool
 		}{
-			// invalid ranges: no error
-			{"100", "", objLength, false},
-			{"100-", "", objLength, false},
-			{"invalid_range", "", objLength, false},
-			{"bytes=120", "", objLength, false},
-			{"bytes=20-10", "", objLength, false},
+			// The following inputs should NOT produce an error and return the full object with empty Content-Range.
+			{"bytes=,", "", objLength, false},
+			{"bytes= -1", "", objLength, false},
+			{"bytes=--1", "", objLength, false},
+			{"bytes=0 -1", "", objLength, false},
+			{"bytes=0--1", "", objLength, false},
+			{"bytes=10-5", "", objLength, false}, // start > end treated as invalid
 			{"bytes=abc", "", objLength, false},
-			{"bytes=abc-xyz", "", objLength, false},
+			{"bytes=a-z", "", objLength, false},
+			{"foo=0-1", "", objLength, false},          // unsupported unit
+			{"bytes=00-01", "bytes 0-1/100", 2, false}, // valid numeric despite leading zeros
+			{"bytes=abc-xyz", "", objLength, false},    // retain legacy invalid pattern
 			{"bytes=100-x", "", objLength, false},
-			{fmt.Sprintf("bytes=%v-%v", objLength+2, objLength-100), "", objLength, false},
-			// valid ranges
-			{"bytes=-1000000", fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, false},
-			{"bytes=100-", fmt.Sprintf("bytes 100-%v/%v", objLength-1, objLength), objLength - 100, false},
-			{"bytes=-100", fmt.Sprintf("bytes %v-%v/%v", objLength-100, objLength-1, objLength), 100, false},
-			{"bytes=0-", fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, false},
-			{"bytes=100-200", fmt.Sprintf("bytes 100-200/%v", objLength), 101, false},
-			{fmt.Sprintf("bytes=100-%v", objLength), fmt.Sprintf("bytes 100-%v/%v", objLength-1, objLength), objLength - 100, false},
-			{fmt.Sprintf("bytes=0-%v", objLength), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, false},
-			{fmt.Sprintf("bytes=0-%v", objLength-1), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, false},
-			{fmt.Sprintf("bytes=-%v", objLength), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, false},
+			{"bytes=0-0,1-2", "", objLength, false}, // multiple ranges unsupported -> ignore
 
-			// not satisfiable ranges: return error
-			{fmt.Sprintf("bytes=%v-", objLength), "", 0, true},
-			{fmt.Sprintf("bytes=%v-", objLength+2), "", 0, true},
-			{fmt.Sprintf("bytes=%v-%v", objLength+2, objLength+100), "", 0, true},
+			// Valid suffix ranges (negative forms)
+			{"bytes=-1", "bytes 99-99/100", 1, false},
+			{"bytes=-2", "bytes 98-99/100", 2, false},
+			{"bytes=-10", "bytes 90-99/100", 10, false},
+			{"bytes=-100", "bytes 0-99/100", objLength, false},
+			{"bytes=-101", "bytes 0-99/100", objLength, false}, // larger than object -> entire object
+
+			// Standard byte ranges
+			{"bytes=0-0", "bytes 0-0/100", 1, false},
+			{"bytes=0-99", "bytes 0-99/100", objLength, false},
+			{"bytes=0-100", "bytes 0-99/100", objLength, false}, // end past object -> trimmed
+			{"bytes=0-999999", "bytes 0-99/100", objLength, false},
+			{"bytes=1-99", "bytes 1-99/100", objLength - 1, false},
+			{"bytes=50-99", "bytes 50-99/100", 50, false},
+			{"bytes=50-", "bytes 50-99/100", 50, false},
+			{"bytes=0-", "bytes 0-99/100", objLength, false},
+			{"bytes=99-99", "bytes 99-99/100", 1, false},
+
+			// Ranges expected to produce RequestedRangeNotSatisfiable
+			{"bytes=-0", "", 0, true},
+			{"bytes=100-100", "", 0, true},
+			{"bytes=100-110", "", 0, true},
 		} {
-			err := testRange(el.objRange, el.contentRange, el.contentLength, el.expectedErr)
-			if err != nil {
+			if err := testRange(el.objRange, el.contentRange, el.contentLength, el.expectedErr); err != nil {
 				return err
 			}
 		}
-
 		return nil
 	})
+}
+
+func HeadObject_zero_len_with_range(s *S3Conf) error {
+	testName := "HeadObject_zero_len_with_range"
+	return headObject_zero_len_with_range_helper(testName, "my-obj", s)
+}
+
+func HeadObject_dir_with_range(s *S3Conf) error {
+	testName := "HeadObject_dir_with_range"
+	return headObject_zero_len_with_range_helper(testName, "my-dir/", s)
 }
 
 func HeadObject_success(s *S3Conf) error {
@@ -4273,7 +4292,8 @@ func GetObject_directory_object_noslash(s *S3Conf) error {
 func GetObject_with_range(s *S3Conf) error {
 	testName := "GetObject_with_range"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj, objLength := "my-obj", int64(800)
+		// Match HeadObject_with_range: 100-byte object
+		obj, objLength := "my-obj", int64(100)
 		res, err := putObjectWithData(objLength, &s3.PutObjectInput{
 			Bucket: &bucket,
 			Key:    &obj,
@@ -4291,18 +4311,16 @@ func GetObject_with_range(s *S3Conf) error {
 				Range:  &rng,
 			})
 			if err == nil && expErr != nil {
-				return fmt.Errorf("expected err %w, instead got nil", expErr)
+				return fmt.Errorf("expected err %v, instead got nil", expErr)
 			}
 			if err != nil {
 				if expErr == nil {
 					return err
 				}
-
 				parsedErr, ok := expErr.(s3err.APIError)
 				if !ok {
 					return fmt.Errorf("invalid error type provided, expected s3err.APIError")
 				}
-
 				return checkApiErr(err, parsedErr)
 			}
 
@@ -4328,7 +4346,6 @@ func GetObject_with_range(s *S3Conf) error {
 			if !isSameData(outData, expData) {
 				return fmt.Errorf("incorrect data retrieved")
 			}
-
 			return nil
 		}
 
@@ -4339,40 +4356,63 @@ func GetObject_with_range(s *S3Conf) error {
 			expData      []byte
 			expErr       error
 		}{
-			// invalid ranges: no error
-			{"100", "", objLength, res.data, nil},
-			{"100-", "", objLength, res.data, nil},
-			{"invalid_range", "", objLength, res.data, nil},
-			{"bytes=120", "", objLength, res.data, nil},
-			{"bytes=20-10", "", objLength, res.data, nil},
+			// Invalid / ignored ranges (return full object, empty Content-Range)
+			{"bytes=,", "", objLength, res.data, nil},
+			{"bytes= -1", "", objLength, res.data, nil},
+			{"bytes=--1", "", objLength, res.data, nil},
+			{"bytes=0 -1", "", objLength, res.data, nil},
+			{"bytes=0--1", "", objLength, res.data, nil},
+			{"bytes=10-5", "", objLength, res.data, nil},
 			{"bytes=abc", "", objLength, res.data, nil},
+			{"bytes=a-z", "", objLength, res.data, nil},
+			{"foo=0-1", "", objLength, res.data, nil},
 			{"bytes=abc-xyz", "", objLength, res.data, nil},
 			{"bytes=100-x", "", objLength, res.data, nil},
+			{"bytes=0-0,1-2", "", objLength, res.data, nil},
 			{fmt.Sprintf("bytes=%v-%v", objLength+2, objLength-100), "", objLength, res.data, nil},
-			// valid ranges
-			{"bytes=-1000000", fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, res.data, nil},
-			{"bytes=100-", fmt.Sprintf("bytes 100-%v/%v", objLength-1, objLength), objLength - 100, res.data[100:], nil},
-			{"bytes=-100", fmt.Sprintf("bytes %v-%v/%v", objLength-100, objLength-1, objLength), 100, res.data[objLength-100:], nil},
-			{"bytes=0-", fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, res.data, nil},
-			{"bytes=100-200", fmt.Sprintf("bytes 100-200/%v", objLength), 101, res.data[100:201], nil},
-			{fmt.Sprintf("bytes=100-%v", objLength), fmt.Sprintf("bytes 100-%v/%v", objLength-1, objLength), objLength - 100, res.data[100:], nil},
-			{fmt.Sprintf("bytes=0-%v", objLength), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, res.data, nil},
-			{fmt.Sprintf("bytes=0-%v", objLength-1), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, res.data, nil},
-			{fmt.Sprintf("bytes=-%v", objLength), fmt.Sprintf("bytes 0-%v/%v", objLength-1, objLength), objLength, res.data, nil},
 
-			// not satisfiable ranges: return error
-			{fmt.Sprintf("bytes=%v-", objLength), "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
-			{fmt.Sprintf("bytes=%v-", objLength+2), "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
-			{fmt.Sprintf("bytes=%v-%v", objLength+2, objLength+100), "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			// Valid numeric with leading zeros
+			{"bytes=00-01", "bytes 0-1/100", 2, res.data[0:2], nil},
+
+			// Suffix ranges
+			{"bytes=-1", "bytes 99-99/100", 1, res.data[99:], nil},
+			{"bytes=-2", "bytes 98-99/100", 2, res.data[98:], nil},
+			{"bytes=-10", "bytes 90-99/100", 10, res.data[90:], nil},
+			{"bytes=-100", "bytes 0-99/100", objLength, res.data, nil},
+			{"bytes=-101", "bytes 0-99/100", objLength, res.data, nil},
+
+			// Standard byte ranges
+			{"bytes=0-0", "bytes 0-0/100", 1, res.data[0:1], nil},
+			{"bytes=0-99", "bytes 0-99/100", objLength, res.data, nil},
+			{"bytes=0-100", "bytes 0-99/100", objLength, res.data, nil},
+			{"bytes=0-999999", "bytes 0-99/100", objLength, res.data, nil},
+			{"bytes=1-99", "bytes 1-99/100", 99, res.data[1:], nil},
+			{"bytes=50-99", "bytes 50-99/100", 50, res.data[50:], nil},
+			{"bytes=50-", "bytes 50-99/100", 50, res.data[50:], nil},
+			{"bytes=0-", "bytes 0-99/100", objLength, res.data, nil},
+			{"bytes=99-99", "bytes 99-99/100", 1, res.data[99:], nil},
+
+			// Unsatisfiable -> error
+			{"bytes=-0", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			{"bytes=100-100", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			{"bytes=100-110", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
 		} {
-			err := testGetObjectRange(el.rng, el.contentRange, el.cLength, el.expData, el.expErr)
-			if err != nil {
+			if err := testGetObjectRange(el.rng, el.contentRange, el.cLength, el.expData, el.expErr); err != nil {
 				return err
 			}
 		}
-
 		return nil
 	})
+}
+
+func GetObject_zero_len_with_range(s *S3Conf) error {
+	testName := "GetObject_zero_len_with_range"
+	return getObject_zero_len_with_range_helper(testName, "my-obj", s)
+}
+
+func GetObject_dir_with_range(s *S3Conf) error {
+	testName := "GetObject_dir_with_range"
+	return getObject_zero_len_with_range_helper(testName, "my-dir/", s)
 }
 
 func GetObject_invalid_parent(s *S3Conf) error {

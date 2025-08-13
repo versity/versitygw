@@ -171,6 +171,8 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_invalid_parent_dir(s)
 	HeadObject_with_range(s)
+	HeadObject_zero_len_with_range(s)
+	HeadObject_dir_with_range(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		HeadObject_not_enabled_checksum_mode(s)
@@ -197,6 +199,8 @@ func TestGetObject(s *S3Conf) {
 	GetObject_non_existing_key(s)
 	GetObject_directory_object_noslash(s)
 	GetObject_with_range(s)
+	GetObject_zero_len_with_range(s)
+	GetObject_dir_with_range(s)
 	GetObject_invalid_parent(s)
 	GetObject_large_object(s)
 	//TODO: remove the condition after implementing checksums in azure
@@ -1002,6 +1006,8 @@ func GetIntTests() IntTests {
 		"HeadObject_name_too_long":                                                HeadObject_name_too_long,
 		"HeadObject_invalid_parent_dir":                                           HeadObject_invalid_parent_dir,
 		"HeadObject_with_range":                                                   HeadObject_with_range,
+		"HeadObject_zero_len_with_range":                                          HeadObject_zero_len_with_range,
+		"HeadObject_dir_with_range":                                               HeadObject_dir_with_range,
 		"HeadObject_not_enabled_checksum_mode":                                    HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                    HeadObject_checksums,
 		"HeadObject_success":                                                      HeadObject_success,
@@ -1016,6 +1022,8 @@ func GetIntTests() IntTests {
 		"GetObject_non_existing_key":                                              GetObject_non_existing_key,
 		"GetObject_directory_object_noslash":                                      GetObject_directory_object_noslash,
 		"GetObject_with_range":                                                    GetObject_with_range,
+		"GetObject_zero_len_with_range":                                           GetObject_zero_len_with_range,
+		"GetObject_dir_with_range":                                                GetObject_dir_with_range,
 		"GetObject_invalid_parent":                                                GetObject_invalid_parent,
 		"GetObject_large_object":                                                  GetObject_large_object,
 		"GetObject_checksums":                                                     GetObject_checksums,

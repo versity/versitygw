@@ -3484,6 +3484,11 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	if fid.IsDir() {
+		_, _, _, err := backend.ParseObjectRange(0, *input.Range)
+		if err != nil {
+			return nil, err
+		}
+
 		userMetaData := make(map[string]string)
 
 		objMeta := p.loadObjectMetaData(nil, bucket, object, &fid, userMetaData)
@@ -3794,6 +3799,9 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	size := fi.Size()
+	if fi.IsDir() {
+		size = 0
+	}
 
 	startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
 	if err != nil {
