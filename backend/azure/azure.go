@@ -362,8 +362,10 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 		}
 	}
 
+	// Azure ETag values are not S3 compatible,
+	// so append "-1" to avoid client SDK ETag validation issues.
 	return s3response.PutObjectOutput{
-		ETag: string(*uploadResp.ETag),
+		ETag: string(*uploadResp.ETag) + "-1",
 	}, nil
 }
 
@@ -444,6 +446,8 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		contentType = backend.GetPtrFromString(backend.DefaultContentType)
 	}
 
+	// Azure ETag values are not S3 compatible,
+	// so append "-1" to avoid client SDK ETag validation issues.
 	return &s3.GetObjectOutput{
 		AcceptRanges:       backend.GetPtrFromString("bytes"),
 		ContentLength:      blobDownloadResponse.ContentLength,
@@ -453,7 +457,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		ContentLanguage:    blobDownloadResponse.ContentLanguage,
 		CacheControl:       blobDownloadResponse.CacheControl,
 		ExpiresString:      blobDownloadResponse.Metadata[string(keyExpires)],
-		ETag:               (*string)(blobDownloadResponse.ETag),
+		ETag:               backend.GetPtrFromString(string(*blobDownloadResponse.ETag) + "-1"),
 		LastModified:       blobDownloadResponse.LastModified,
 		Metadata:           parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
 		TagCount:           &tagcount,
