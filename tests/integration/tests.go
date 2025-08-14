@@ -13512,6 +13512,794 @@ func DeleteBucketPolicy_success(s *S3Conf) error {
 	})
 }
 
+// Bucket CORS tests
+func PutBucketCors_non_existing_bucket(s *S3Conf) error {
+	testName := "PutBucketCors_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: getPtr("non-existing-bucket"),
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://origin.com"},
+						AllowedMethods: []string{http.MethodGet},
+					},
+				},
+			},
+		})
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
+func PutBucketCors_empty_cors_rules(s *S3Conf) error {
+	testName := "PutBucketCors_empty_cors_rules"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{},
+			},
+		})
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML))
+	})
+}
+
+func PutBucketCors_invalid_method(s *S3Conf) error {
+	testName := "PutBucketCors_invalid_method"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, test := range []struct {
+			invalidMethod  string
+			allowedMethods []string
+		}{
+			{"get", []string{"get"}},
+			{"put", []string{"put"}},
+			{"post", []string{"post"}},
+			{"head", []string{"head"}},
+			{"delete", []string{"delete"}},
+			{http.MethodPatch, []string{http.MethodGet, http.MethodPatch}},
+			{http.MethodOptions, []string{http.MethodPost, http.MethodOptions}},
+			{"invalid_method", []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete, "invalid_method"}},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket: &bucket,
+				CORSConfiguration: &types.CORSConfiguration{
+					CORSRules: []types.CORSRule{
+						{
+							AllowedOrigins: []string{"http://origin.com"},
+							AllowedMethods: test.allowedMethods,
+							AllowedHeaders: []string{"X-Amz-Date"},
+							ExposeHeaders:  []string{"Authorization"},
+						},
+					},
+				},
+			})
+
+			if err := checkApiErr(err, s3err.GetUnsopportedCORSMethodErr(test.invalidMethod)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func PutBucketCors_invalid_header(s *S3Conf) error {
+	testName := "PutBucketCors_invalid_header"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, test := range []struct {
+			invalidHeader string
+			headers       []string
+		}{
+			{"invalid header", []string{"X-Amz-Date", "X-Amz-Content-Sha256", "invalid header"}},
+			{"X-Custom:Header", []string{"Authorization", "X-Custom:Header"}},
+			{"X(Custom)", []string{"Content-Length", "X(Custom)"}},
+			{"Bad/Header", []string{"Content-Encoding", "Bad/Header"}},
+			{"X[Key]", []string{"Date", "X[Key]"}},
+			{"Bad=Name", []string{"X-Amz-Custome-Header", "Bad=Name"}},
+			{`X"Quote"`, []string{`X"Quote"`}},
+		} {
+			// first check for allowed headers
+			cfg := &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://origin.com"},
+						AllowedMethods: []string{http.MethodPost},
+						AllowedHeaders: test.headers,
+						ExposeHeaders:  []string{"Authorization"},
+					},
+				},
+			}
+
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket:            &bucket,
+				CORSConfiguration: cfg,
+			})
+			if err := checkApiErr(err, s3err.GetInvalidCORSHeaderErr(test.invalidHeader)); err != nil {
+				return err
+			}
+
+			// second check for expose headers
+			cfg.CORSRules[0].AllowedHeaders = []string{"X-Amz-Date"} // set to any valid header
+			cfg.CORSRules[0].ExposeHeaders = test.headers
+
+			err = putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket:            &bucket,
+				CORSConfiguration: cfg,
+			})
+			if err := checkApiErr(err, s3err.GetInvalidCORSHeaderErr(test.invalidHeader)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// TODO: report a bug for this case
+func PutBucketCors_invalid_content_md5(s *S3Conf) error {
+	testName := "PutBucketCors_invalid_content_md5"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return nil
+	})
+}
+
+func PutBucketCors_incorrect_content_md5(s *S3Conf) error {
+	testName := "PutBucketCors_incorrect_content_md5"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		return nil
+	})
+}
+
+func PutBucketCors_success(s *S3Conf) error {
+	testName := "PutBucketCors_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		maxAgePositive, maxAgeNegative := int32(3000), int32(-100)
+		return putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://origin.com"},
+						AllowedMethods: []string{http.MethodPost, http.MethodPut},
+						AllowedHeaders: []string{"X-Amz-Date"},
+						ExposeHeaders:  []string{"Authorization"},
+						// weirdely negative max age seconds are also considered valid
+						MaxAgeSeconds: &maxAgeNegative,
+					},
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodDelete, http.MethodGet, http.MethodHead},
+						AllowedHeaders: []string{"Content-Type", "Content-Encoding", "Content-MD5"},
+						ExposeHeaders:  []string{"Authorization", "X-Amz-Date", "X-Amz-Conten-Sha256"},
+						ID:             getPtr("id"),
+						MaxAgeSeconds:  &maxAgePositive,
+					},
+					{
+						AllowedOrigins: []string{"http://example.com", "https://something.net", "http://*origin.com"},
+						AllowedMethods: []string{http.MethodGet},
+					},
+				},
+			},
+		})
+	})
+}
+
+func GetBucketCors_non_existing_bucket(s *S3Conf) error {
+	testName := "GetBucketCors_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+			Bucket: getPtr("non-existing-bucket"),
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
+func GetBucketCors_no_such_bucket_cors(s *S3Conf) error {
+	testName := "GetBucketCors_no_such_bucket_cors"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration))
+	})
+}
+
+func GetBucketCors_success(s *S3Conf) error {
+	testName := "GetBucketCors_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		cfg := &types.CORSConfiguration{
+			CORSRules: []types.CORSRule{
+				{
+					AllowedOrigins: []string{"http://origin.com", "helloworld.net"},
+					AllowedMethods: []string{http.MethodPost, http.MethodPut, http.MethodHead},
+					AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Meta-Something"},
+					ExposeHeaders:  []string{"Authorization", "Content-Disposition"},
+					MaxAgeSeconds:  getPtr(int32(125)),
+				},
+				{
+					AllowedOrigins: []string{"*"},
+					AllowedMethods: []string{http.MethodDelete, http.MethodGet, http.MethodHead},
+					AllowedHeaders: []string{"Content-*"},
+					ExposeHeaders:  []string{"Authorization", "X-Amz-Date", "X-Amz-Conten-Sha256"},
+					ID:             getPtr("my_extra_unique_id"),
+					MaxAgeSeconds:  getPtr(int32(-200)),
+				},
+			},
+		}
+
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket:            &bucket,
+			CORSConfiguration: cfg,
+		})
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		return compareCorsConfig(cfg.CORSRules, res.CORSRules)
+	})
+}
+
+func DeleteBucketCors_non_existing_bucket(s *S3Conf) error {
+	testName := "DeleteBucketCors_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
+			Bucket: getPtr("non-existing-bucket"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
+func DeleteBucketCors_success(s *S3Conf) error {
+	testName := "DeleteBucketCors_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		deletebucketcors := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
+				Bucket: &bucket,
+			})
+			cancel()
+			return err
+		}
+
+		// should not return error when deleting unset bucket CORS
+		err := deletebucketcors()
+		if err != nil {
+			return err
+		}
+
+		err = putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://origin.com"},
+						AllowedMethods: []string{http.MethodPost},
+						AllowedHeaders: []string{"X-Amz-Meta-Header"},
+						ExposeHeaders:  []string{"Content-Disposition"},
+						MaxAgeSeconds:  getPtr(int32(5000)),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		err = deletebucketcors()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration))
+	})
+}
+
+func PreflightOPTIONS_non_existing_bucket(s *S3Conf) error {
+	testName := "PreflightOPTIONS_non_existing_bucket"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		res, err := makeOPTIONSRequest(s, "non-existing-bucket", "http://localhost:7070", http.MethodPost, "X-Amz-Date")
+		if err != nil {
+			return err
+		}
+		return checkApiErr(res.err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
+func PreflightOPTIONS_missing_origin(s *S3Conf) error {
+	testName := "PreflightOPTIONS_missing_origin"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		res, err := makeOPTIONSRequest(s, bucket, "", http.MethodGet, "X-Custom-Header")
+		if err != nil {
+			return err
+		}
+		return checkApiErr(res.err, s3err.GetAPIError(s3err.ErrMissingCORSOrigin))
+	})
+}
+
+func PreflightOPTIONS_invalid_request_method(s *S3Conf) error {
+	testName := "PreflightOPTIONS_invalid_request_method"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, method := range []string{
+			// should be case sensitive, all with capital letters
+			"get", "Get", "GEt", "geT",
+			"post", "Post", "POSt", "posT",
+			"put", "Put", "pUt", "puT",
+			"head", "Head", "HEAd", "heAD",
+			// unsupported methods
+			"PATCH", "CONNECT", "OPTIONS",
+			// nonsense strings
+			"something", "invalid_method", "method",
+		} {
+			res, err := makeOPTIONSRequest(s, bucket, "www.my-origin.com", method, "X-Custom-Header")
+			if err != nil {
+				return err
+			}
+			if err := checkApiErr(res.err, s3err.GetInvalidCORSMethodErr(method)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func PreflightOPTIONS_invalid_request_headers(s *S3Conf) error {
+	testName := "PreflightOPTIONS_invalid_request_headers"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, test := range []struct {
+			invalidHeader string
+			headers       string
+		}{
+			{"invalid header", "X-Amz-Date,X-Amz-Content-Sha256,invalid header"}, // invalid 'space' in header name
+			{"X-Custom:Header", "Authorization,X-Custom:Header"},                 // invalid char :
+			{"X(Custom)", "Content-Length,X(Custom)"},                            // invalid char ()
+			{" Bad/Header", "Content-Encoding, Bad/Header"},                      // extra 'space', invalid char /
+			{"X[Key]", "Date,X[Key]"},                                            // invalid char '[]'
+			{"Bad=Name", "X-Amz-Custome-Header,Bad=Name"},                        // invalid char =
+			{`X"Quote"`, `X"Quote"`},                                             // invalid quote "
+			{"NonAsciiŁ", "Content-Length,NonAsciiŁ"},                            // non-ASCII character
+			{"Emoji😀", "X-Emoji,Emoji😀"},                                         // emoji invalid
+			{"bad@char", "Accept-Encoding,bad@char"},                             // @ is invalid
+			{"tab\tchar", "tab\tchar,X-Something-Valid"},                         // invalid encodign \t
+		} {
+			res, err := makeOPTIONSRequest(s, bucket, "www.my-origin.com", http.MethodGet, test.headers)
+			if err != nil {
+				return err
+			}
+			if err := checkApiErr(res.err, s3err.GetInvalidCORSRequestHeaderErr(test.invalidHeader)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func PreflightOPTIONS_unset_bucket_cors(s *S3Conf) error {
+	testName := "PreflightOPTIONS_unset_bucket_cors"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		res, err := makeOPTIONSRequest(s, bucket, "http://example.com", http.MethodPost, "X-Amz-Date,Date")
+		if err != nil {
+			return err
+		}
+		return checkApiErr(res.err, s3err.GetAPIError(s3err.ErrCORSIsNotEnabled))
+	})
+}
+
+func PreflightOPTIONS_access_forbidden(s *S3Conf) error {
+	testName := "PreflightOPTIONS_access_forbidden"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://example.com", "https://example.com"},
+						AllowedMethods: []string{http.MethodGet},
+						AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Content-Sha256"},
+					},
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodHead},
+					},
+					{
+						AllowedOrigins: []string{"http://origin*"},
+						AllowedMethods: []string{http.MethodPost},
+						AllowedHeaders: []string{"Authorization"},
+					},
+					{
+						AllowedOrigins: []string{"http://something.com"},
+						AllowedMethods: []string{http.MethodPut},
+						AllowedHeaders: []string{"X-Amz-*"},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			origin  string
+			method  string
+			headers string
+		}{
+			// origin deson't match
+			{"http://non-matching-origin.net", http.MethodGet, "X-Amz-Date"},
+			// method doesn't match
+			{"http://example.com", http.MethodPut, "X-Amz-Content-Sha256"},
+			// header doesn't match
+			{"http://example.com", http.MethodGet, "X-Amz-Expected-Bucket-Owner"},
+			// extra header
+			{"http://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256,Extra-Header"},
+			// extra header (2nd rule)
+			{"https://any-origin.com", http.MethodHead, "X-Amz-Extra-Header"},
+			// origin match, method not (2nd rule)
+			{"https://any-origin.com", http.MethodPost, ""},
+			// third rule: headers doesn't match
+			{"https://origin.com", http.MethodPost, "Content-Length"},
+			// third rule: extra header
+			{"https://origin.com", http.MethodPost, "Authorization,Content-Disposition"},
+			// third rule: origin doesn't match
+			{"https://www.origin.com", http.MethodPost, "Authorization"},
+			// forth rule: header doesn't match the wildcard
+			{"https://something.com", http.MethodPut, "Authorization"},
+			{"https://something.com", http.MethodPut, "X-Amz"},
+			{"https://something.com", http.MethodPut, "X-Amz-Date,Content-Length"},
+		} {
+			res, err := makeOPTIONSRequest(s, bucket, test.origin, test.method, test.headers)
+			if err != nil {
+				return err
+			}
+
+			if err := checkApiErr(res.err, s3err.GetAPIError(s3err.ErrCORSForbidden)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func PreflightOPTIONS_access_granted(s *S3Conf) error {
+	testName := "PreflightOPTIONS_access_granted"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://example.com", "https://example.com"},
+						AllowedMethods: []string{http.MethodGet, http.MethodHead},
+						AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Content-Sha256"},
+						ExposeHeaders:  []string{"Content-Type", "Content-Length"},
+						MaxAgeSeconds:  getPtr(int32(100)),
+					},
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodHead},
+						AllowedHeaders: []string{"X-Amz-Meta-Something"},
+					},
+					{
+						AllowedOrigins: []string{"something.net"},
+						AllowedMethods: []string{http.MethodPost, http.MethodPut},
+						AllowedHeaders: []string{"Authorization"},
+						ExposeHeaders:  []string{"Content-Disposition", "Content-Encoding"},
+						MaxAgeSeconds:  getPtr(int32(3000)),
+						ID:             getPtr("unique_id"),
+					},
+					{
+						AllowedOrigins: []string{"http://www*"},
+						AllowedMethods: []string{http.MethodGet},
+						AllowedHeaders: []string{"x-amz-server-side-encryption"},
+						ExposeHeaders:  []string{"X-Amz-Expected-Bucket-Owner"},
+						MaxAgeSeconds:  getPtr(int32(5000)),
+					},
+					{
+						AllowedOrigins: []string{"http://uniquie-origin.net"},
+						AllowedMethods: []string{http.MethodPost, http.MethodPut},
+						AllowedHeaders: []string{"X-Amz-*-Suffix"},
+						ExposeHeaders:  []string{"Authorization", "Content-Type"},
+						MaxAgeSeconds:  getPtr(int32(2000)),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		varyHdr := "Origin, Access-Control-Request-Headers, Access-Control-Request-Method"
+
+		for _, test := range []struct {
+			origin  string
+			method  string
+			headers string
+			result  PreflightResult
+		}{
+			// first rule matches
+			{"http://example.com", http.MethodGet, "X-Amz-Date", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodGet, "X-Amz-Content-Sha256", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodHead, "", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"https://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256", PreflightResult{"https://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			// second rule matches: origin is a wildcard
+			{"http://anything.com", http.MethodHead, "X-Amz-Meta-Something", PreflightResult{"*", "HEAD", "", "", "false", varyHdr, nil}},
+			{"hello.com", http.MethodHead, "", PreflightResult{"*", "HEAD", "", "", "false", varyHdr, nil}},
+			// third rule matches
+			{"something.net", http.MethodPut, "Authorization", PreflightResult{"something.net", "POST, PUT", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
+			{"something.net", http.MethodPost, "", PreflightResult{"something.net", "POST, PUT", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
+			// forth rule matches: origin contains wildcard
+			{"http://www.hello.world.com", http.MethodGet, "", PreflightResult{"http://www.hello.world.com", "GET", "X-Amz-Expected-Bucket-Owner", "5000", "true", varyHdr, nil}},
+			{"http://www.example.com", http.MethodGet, "x-amz-server-side-encryption", PreflightResult{"http://www.example.com", "GET", "X-Amz-Expected-Bucket-Owner", "5000", "true", varyHdr, nil}},
+			// fifth rule matches: allowed headers contains wildcard
+			{"http://uniquie-origin.net", http.MethodPost, "X-Amz-anything-Suffix", PreflightResult{"http://uniquie-origin.net", "POST, PUT", "Authorization, Content-Type", "2000", "true", varyHdr, nil}},
+			{"http://uniquie-origin.net", http.MethodPut, "X-Amz-yyy-xxx-Suffix", PreflightResult{"http://uniquie-origin.net", "POST, PUT", "Authorization, Content-Type", "2000", "true", varyHdr, nil}},
+		} {
+			err := testOPTIONSEdnpoint(s, bucket, test.origin, test.method, test.headers, &test.result)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func CORSMiddleware_invalid_method(s *S3Conf) error {
+	testName := "CORSMiddleware_invalid_method"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://www.example.com"},
+						AllowedMethods: []string{http.MethodPut},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// create a PutObject signed request
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+			"Origin":                        "http://www.example.com",
+			"Access-Control-Request-Method": "invalid_method",
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		result, err := extractCORSHeaders(resp)
+		if err != nil {
+			return err
+		}
+
+		return checkApiErr(result.err, s3err.GetInvalidCORSMethodErr("invalid_method"))
+	})
+}
+
+func CORSMiddleware_invalid_headers(s *S3Conf) error {
+	testName := "CORSMiddleware_invalid_headers"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://www.example.com"},
+						AllowedMethods: []string{http.MethodPut},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// create a PutObject signed request
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+			"Origin":                         "http://www.example.com",
+			"Access-Control-Request-Headers": "invalid header",
+		})
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		result, err := extractCORSHeaders(resp)
+		if err != nil {
+			return err
+		}
+
+		return checkApiErr(result.err, s3err.GetInvalidCORSRequestHeaderErr("invalid header"))
+	})
+}
+
+func CORSMiddleware_access_forbidden(s *S3Conf) error {
+	testName := "CORSMiddleware_access_forbidden"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://example.com", "https://example.com"},
+						AllowedMethods: []string{http.MethodGet},
+						AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Content-Sha256"},
+					},
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodHead},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			origin  string
+			method  string
+			headers string
+		}{
+			// origin deson't match
+			{"http://non-matching-origin.net", http.MethodGet, "X-Amz-Date"},
+			// method doesn't match
+			{"http://example.com", http.MethodPut, "X-Amz-Content-Sha256"},
+			// header doesn't match
+			{"http://example.com", http.MethodGet, "X-Amz-Expected-Bucket-Owner"},
+			// extra header
+			{"http://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256,Extra-Header"},
+			// extra header (2nd rule)
+			{"https://any-origin.com", http.MethodHead, "X-Amz-Extra-Header"},
+			// origin match, method not (2nd rule)
+			{"https://any-origin.com", http.MethodPost, ""},
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+				"Origin":                         test.origin,
+				"Access-Control-Request-Headers": test.headers,
+				"Access-Control-Request-Method":  test.method,
+			})
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			res, err := extractCORSHeaders(resp)
+			if err != nil {
+				return err
+			}
+
+			// no error expected, all the headers should be empty
+			if err := comparePreflightResult(&PreflightResult{}, res); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+func CORSMiddleware_access_granted(s *S3Conf) error {
+	testName := "CORSMiddleware_access_granted"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+			Bucket: &bucket,
+			CORSConfiguration: &types.CORSConfiguration{
+				CORSRules: []types.CORSRule{
+					{
+						AllowedOrigins: []string{"http://example.com", "https://example.com"},
+						AllowedMethods: []string{http.MethodGet, http.MethodHead},
+						AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Content-Sha256"},
+						ExposeHeaders:  []string{"Content-Type", "Content-Length"},
+						MaxAgeSeconds:  getPtr(int32(100)),
+					},
+					{
+						AllowedOrigins: []string{"*"},
+						AllowedMethods: []string{http.MethodHead},
+						AllowedHeaders: []string{"X-Amz-Meta-Something"},
+					},
+					{
+						AllowedOrigins: []string{"something.net"},
+						AllowedMethods: []string{http.MethodPost, http.MethodPut},
+						AllowedHeaders: []string{"Authorization"},
+						ExposeHeaders:  []string{"Content-Disposition", "Content-Encoding"},
+						MaxAgeSeconds:  getPtr(int32(3000)),
+						ID:             getPtr("unique_id"),
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		varyHdr := "Origin, Access-Control-Request-Headers, Access-Control-Request-Method"
+
+		for _, test := range []struct {
+			origin  string
+			method  string
+			headers string
+			result  PreflightResult
+		}{
+			// first rule matches
+			{"http://example.com", http.MethodGet, "X-Amz-Date", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodGet, "X-Amz-Content-Sha256", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodHead, "", PreflightResult{"http://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"https://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256", PreflightResult{"https://example.com", "GET, HEAD", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			// second rule matches
+			{"http://anything.com", http.MethodHead, "X-Amz-Meta-Something", PreflightResult{"*", "HEAD", "", "", "false", varyHdr, nil}},
+			{"hello.com", http.MethodHead, "", PreflightResult{"*", "HEAD", "", "", "false", varyHdr, nil}},
+			// third rule matches
+			{"something.net", http.MethodPut, "Authorization", PreflightResult{"something.net", "POST, PUT", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
+			{"something.net", http.MethodPost, "", PreflightResult{"something.net", "POST, PUT", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
+		} {
+			req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"/my-obj", s.awsID, s.awsSecret, "s3", s.awsRegion, nil, time.Now(), map[string]string{
+				"Origin":                         test.origin,
+				"Access-Control-Request-Headers": test.headers,
+				"Access-Control-Request-Method":  test.method,
+			})
+			if err != nil {
+				return err
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			res, err := extractCORSHeaders(resp)
+			if err != nil {
+				return err
+			}
+
+			if err := comparePreflightResult(&test.result, res); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // Object lock tests
 func PutObjectLockConfiguration_non_existing_bucket(s *S3Conf) error {
 	testName := "PutObjectLockConfiguration_non_existing_bucket"
@@ -16571,7 +17359,7 @@ func PublicBucket_public_bucket_policy(s *S3Conf) error {
 					})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrNotImplemented),
+				ExpectedErr: nil,
 			},
 			{
 				Action: "GetBucketCors",
@@ -16579,7 +17367,7 @@ func PublicBucket_public_bucket_policy(s *S3Conf) error {
 					_, err := s3client.GetBucketCors(ctx, &s3.GetBucketCorsInput{Bucket: &bucket})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrNotImplemented),
+				ExpectedErr: nil,
 			},
 			{
 				Action: "DeleteBucketCors",
@@ -16587,7 +17375,7 @@ func PublicBucket_public_bucket_policy(s *S3Conf) error {
 					_, err := s3client.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{Bucket: &bucket})
 					return err
 				},
-				ExpectedErr: s3err.GetAPIError(s3err.ErrNotImplemented),
+				ExpectedErr: nil,
 			},
 			{
 				Action: "CreateMultipartUpload",
@@ -21321,7 +22109,6 @@ func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {
 		}
 
 		doc := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
-		fmt.Println(doc)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 			Bucket: &bucket,
@@ -21391,7 +22178,6 @@ func Versioning_AccessControl_HeadObjectVersion(s *S3Conf) error {
 		}
 
 		doc := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser1.access), `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
-		fmt.Println(doc)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 			Bucket: &bucket,

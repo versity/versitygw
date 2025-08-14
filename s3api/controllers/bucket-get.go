@@ -187,8 +187,17 @@ func (c S3ApiController) GetBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	data, err := c.be.GetBucketCors(ctx.Context(), bucket)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	output, err := auth.ParseCORSOutput(data)
 	return &Response{
-		Data: data,
+		Data: output,
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},

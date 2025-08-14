@@ -46,7 +46,7 @@ type Backend interface {
 	PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error
 	GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error)
 	DeleteBucketOwnershipControls(_ context.Context, bucket string) error
-	PutBucketCors(context.Context, []byte) error
+	PutBucketCors(_ context.Context, bucket string, cors []byte) error
 	GetBucketCors(_ context.Context, bucket string) ([]byte, error)
 	DeleteBucketCors(_ context.Context, bucket string) error
 
@@ -153,7 +153,7 @@ func (BackendUnsupported) GetBucketOwnershipControls(_ context.Context, bucket s
 func (BackendUnsupported) DeleteBucketOwnershipControls(_ context.Context, bucket string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutBucketCors(context.Context, []byte) error {
+func (BackendUnsupported) PutBucketCors(context.Context, string, []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetBucketCors(_ context.Context, bucket string) ([]byte, error) {

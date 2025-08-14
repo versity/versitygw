@@ -17,6 +17,7 @@ package s3proxy
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -1496,6 +1497,45 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string
 	return handleError(err)
 }
 
+func (s *S3Proxy) PutBucketCors(ctx context.Context, bucket string, cors []byte) error {
+	cfg, err := auth.ParseCORSOutput(cors)
+	if err != nil {
+		return handleError(err)
+	}
+
+	_, err = s.client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket:            &bucket,
+		CORSConfiguration: parseGatewayCORSToSDKConfig(cfg),
+	})
+
+	return handleError(err)
+}
+
+func (s *S3Proxy) GetBucketCors(ctx context.Context, bucket string) ([]byte, error) {
+	resp, err := s.client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: &bucket,
+	})
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	config := parseSdkCORSToGatewayConfig(resp.CORSRules)
+	data, err := xml.Marshal(config)
+	if err != nil {
+		return nil, handleError(err)
+	}
+
+	return data, nil
+}
+
+func (s *S3Proxy) DeleteBucketCors(ctx context.Context, bucket string) error {
+	_, err := s.client.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
+		Bucket: &bucket,
+	})
+
+	return handleError(err)
+}
+
 func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
 	return handleError(s.putMetaBucketObj(ctx, bucket, policy, metaPrefixPolicy))
 }
@@ -1736,6 +1776,92 @@ func convertObjectVersions(versions []types.ObjectVersion) []s3response.ObjectVe
 			Size:              v.Size,
 			StorageClass:      v.StorageClass,
 			VersionId:         v.VersionId,
+		})
+	}
+
+	return result
+}
+
+func parseGatewayCORSToSDKConfig(config *auth.CORSConfiguration) *types.CORSConfiguration {
+	if config == nil {
+		return nil
+	}
+
+	result := &types.CORSConfiguration{
+		CORSRules: make([]types.CORSRule, 0, len(config.Rules)),
+	}
+
+	for _, cfg := range config.Rules {
+		result.CORSRules = append(result.CORSRules, types.CORSRule{
+			AllowedMethods: convertCORSMethodsToString(cfg.AllowedMethods),
+			AllowedHeaders: convertCORSHeadersToString(cfg.AllowedHeaders),
+			ExposeHeaders:  convertCORSHeadersToString(cfg.ExposeHeaders),
+			AllowedOrigins: cfg.AllowedOrigins,
+			ID:             cfg.ID,
+			MaxAgeSeconds:  cfg.MaxAgeSeconds,
+		})
+	}
+
+	return result
+}
+
+// convertCORSHeadersToString []auth.CORSHeader to []string
+func convertCORSHeadersToString(headers []auth.CORSHeader) []string {
+	result := make([]string, 0, len(headers))
+	for _, h := range headers {
+		result = append(result, h.String())
+	}
+
+	return result
+}
+
+// convertCORSMethodsToString converts []auth.CORSHTTPMethod to []string
+func convertCORSMethodsToString(methods []auth.CORSHTTPMethod) []string {
+	result := make([]string, 0, len(methods))
+	for _, m := range methods {
+		result = append(result, m.String())
+	}
+
+	return result
+}
+
+// convertCORSHeaders converts []string to []auth.CORSHeader
+func convertCORSHeaders(headers []string) []auth.CORSHeader {
+	result := make([]auth.CORSHeader, 0, len(headers))
+	for _, h := range headers {
+		result = append(result, auth.CORSHeader(h))
+	}
+
+	return result
+}
+
+// convertCORSMethods converts []string to []auth.CORSHTTPMethod
+func convertCORSMethods(methods []string) []auth.CORSHTTPMethod {
+	result := make([]auth.CORSHTTPMethod, 0, len(methods))
+	for _, m := range methods {
+		result = append(result, auth.CORSHTTPMethod(m))
+	}
+
+	return result
+}
+
+func parseSdkCORSToGatewayConfig(rules []types.CORSRule) *auth.CORSConfiguration {
+	if rules == nil {
+		return nil
+	}
+
+	result := &auth.CORSConfiguration{
+		Rules: make([]auth.CORSRule, 0, len(rules)),
+	}
+
+	for _, cfg := range rules {
+		result.Rules = append(result.Rules, auth.CORSRule{
+			AllowedMethods: convertCORSMethods(cfg.AllowedMethods),
+			AllowedHeaders: convertCORSHeaders(cfg.AllowedHeaders),
+			ExposeHeaders:  convertCORSHeaders(cfg.ExposeHeaders),
+			AllowedOrigins: cfg.AllowedOrigins,
+			ID:             cfg.ID,
+			MaxAgeSeconds:  cfg.MaxAgeSeconds,
 		})
 	}
 

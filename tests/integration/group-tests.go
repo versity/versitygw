@@ -527,6 +527,44 @@ func TestDeleteBucketPolicy(s *S3Conf) {
 	DeleteBucketPolicy_success(s)
 }
 
+func TestPutBucketCors(s *S3Conf) {
+	PutBucketCors_non_existing_bucket(s)
+	PutBucketCors_empty_cors_rules(s)
+	PutBucketCors_invalid_method(s)
+	PutBucketCors_invalid_header(s)
+	PutBucketCors_invalid_content_md5(s)
+	PutBucketCors_incorrect_content_md5(s)
+	PutBucketCors_success(s)
+}
+
+func TestGetBucketCors(s *S3Conf) {
+	GetBucketCors_non_existing_bucket(s)
+	GetBucketCors_no_such_bucket_cors(s)
+	GetBucketCors_success(s)
+}
+
+func TestDeleteBucketCors(s *S3Conf) {
+	DeleteBucketCors_non_existing_bucket(s)
+	DeleteBucketCors_success(s)
+}
+
+func TestPreflightOPTIONSEndpoint(s *S3Conf) {
+	PreflightOPTIONS_non_existing_bucket(s)
+	PreflightOPTIONS_missing_origin(s)
+	PreflightOPTIONS_invalid_request_method(s)
+	PreflightOPTIONS_invalid_request_headers(s)
+	PreflightOPTIONS_unset_bucket_cors(s)
+	PreflightOPTIONS_access_forbidden(s)
+	PreflightOPTIONS_access_granted(s)
+}
+
+func TestCORSMiddleware(s *S3Conf) {
+	CORSMiddleware_invalid_method(s)
+	CORSMiddleware_invalid_headers(s)
+	CORSMiddleware_access_forbidden(s)
+	CORSMiddleware_access_granted(s)
+}
+
 func TestPutObjectLockConfiguration(s *S3Conf) {
 	PutObjectLockConfiguration_non_existing_bucket(s)
 	PutObjectLockConfiguration_empty_config(s)
@@ -660,6 +698,10 @@ func TestFullFlow(s *S3Conf) {
 	TestPutBucketPolicy(s)
 	TestGetBucketPolicy(s)
 	TestDeleteBucketPolicy(s)
+	TestPutBucketCors(s)
+	TestGetBucketCors(s)
+	TestDeleteBucketCors(s)
+	TestPreflightOPTIONSEndpoint(s)
 	TestPutObjectLockConfiguration(s)
 	TestGetObjectLockConfiguration(s)
 	TestPutObjectRetention(s)
@@ -1272,6 +1314,29 @@ func GetIntTests() IntTests {
 		"DeleteBucketPolicy_non_existing_bucket":                                  DeleteBucketPolicy_non_existing_bucket,
 		"DeleteBucketPolicy_remove_before_setting":                                DeleteBucketPolicy_remove_before_setting,
 		"DeleteBucketPolicy_success":                                              DeleteBucketPolicy_success,
+		"PutBucketCors_non_existing_bucket":                                       PutBucketCors_non_existing_bucket,
+		"PutBucketCors_empty_cors_rules":                                          PutBucketCors_empty_cors_rules,
+		"PutBucketCors_invalid_method":                                            PutBucketCors_invalid_method,
+		"PutBucketCors_invalid_header":                                            PutBucketCors_invalid_header,
+		"PutBucketCors_invalid_content_md5":                                       PutBucketCors_invalid_content_md5,
+		"PutBucketCors_incorrect_content_md5":                                     PutBucketCors_incorrect_content_md5,
+		"GetBucketCors_non_existing_bucket":                                       GetBucketCors_non_existing_bucket,
+		"GetBucketCors_no_such_bucket_cors":                                       GetBucketCors_no_such_bucket_cors,
+		"GetBucketCors_success":                                                   GetBucketCors_success,
+		"DeleteBucketCors_non_existing_bucket":                                    DeleteBucketCors_non_existing_bucket,
+		"DeleteBucketCors_success":                                                DeleteBucketCors_success,
+		"PutBucketCors_success":                                                   PutBucketCors_success,
+		"PreflightOPTIONS_non_existing_bucket":                                    PreflightOPTIONS_non_existing_bucket,
+		"PreflightOPTIONS_missing_origin":                                         PreflightOPTIONS_missing_origin,
+		"PreflightOPTIONS_invalid_request_method":                                 PreflightOPTIONS_invalid_request_method,
+		"PreflightOPTIONS_invalid_request_headers":                                PreflightOPTIONS_invalid_request_headers,
+		"PreflightOPTIONS_unset_bucket_cors":                                      PreflightOPTIONS_unset_bucket_cors,
+		"PreflightOPTIONS_access_forbidden":                                       PreflightOPTIONS_access_forbidden,
+		"PreflightOPTIONS_access_granted":                                         PreflightOPTIONS_access_granted,
+		"CORSMiddleware_invalid_method":                                           CORSMiddleware_invalid_method,
+		"CORSMiddleware_invalid_headers":                                          CORSMiddleware_invalid_headers,
+		"CORSMiddleware_access_forbidden":                                         CORSMiddleware_access_forbidden,
+		"CORSMiddleware_access_granted":                                           CORSMiddleware_access_granted,
 		"PutObjectLockConfiguration_non_existing_bucket":                          PutObjectLockConfiguration_non_existing_bucket,
 		"PutObjectLockConfiguration_empty_config":                                 PutObjectLockConfiguration_empty_config,
 		"PutObjectLockConfiguration_not_enabled_on_bucket_creation":               PutObjectLockConfiguration_not_enabled_on_bucket_creation,
