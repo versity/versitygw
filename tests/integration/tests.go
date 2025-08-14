@@ -5256,7 +5256,7 @@ func ListObjects_non_truncated_common_prefixes(s *S3Conf) error {
 			return err
 		}
 
-		delim, marker, maxKeys := "/", "boo/", int32(1)
+		delim, marker, maxKeys := "/", "boo/", int32(2)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		res, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
@@ -5585,8 +5585,8 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
 				maxKeys, *out.MaxKeys)
 		}
-		if getString(out.NextContinuationToken) != "d3/" {
-			return fmt.Errorf("expected the NextContinuationToken to be d3/, instead got %v",
+		if getString(out.NextContinuationToken) != "d3/f3" {
+			return fmt.Errorf("expected the NextContinuationToken to be d3/f3, instead got %v",
 				getString(out.NextContinuationToken))
 		}
 		if getString(out.Delimiter) != delim {
