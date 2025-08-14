@@ -4128,11 +4128,11 @@ func GetObjectAttributes_existing_object(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-
 		if resp.ETag == nil || out.ETag == nil {
 			return fmt.Errorf("nil ETag output")
 		}
-		if strings.Trim(*resp.ETag, "\"") != *out.ETag {
+		expectedETag := strings.Trim(strings.TrimSuffix(*resp.ETag, "\"-1"), "\"")
+		if expectedETag != *out.ETag {
 			return fmt.Errorf("expected ETag to be %v, instead got %v",
 				strings.Trim(*resp.ETag, "\""), *out.ETag)
 		}

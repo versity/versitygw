@@ -741,6 +741,14 @@ func compareBuckets(list1 []types.Bucket, list2 []types.Bucket) bool {
 	return true
 }
 
+func stripAzureSuffix(etag string) string {
+    // Remove Azure's -1 suffix if present
+    if strings.HasSuffix(etag, "-1") {
+        return strings.TrimSuffix(etag, "-1")
+    }
+    return etag
+}
+
 func compareObjects(list1, list2 []types.Object) bool {
 	if len(list1) != len(list2) {
 		fmt.Println("list lengths are not equal")
@@ -752,11 +760,11 @@ func compareObjects(list1, list2 []types.Object) bool {
 			fmt.Printf("keys are not equal: %q != %q\n", *obj.Key, *list2[i].Key)
 			return false
 		}
-		if *obj.ETag != *list2[i].ETag {
-			fmt.Printf("etags are not equal: (%q %q)  %q != %q\n",
-				*obj.Key, *list2[i].Key, *obj.ETag, *list2[i].ETag)
-			return false
-		}
+		if stripAzureSuffix(*obj.ETag) != stripAzureSuffix(*list2[i].ETag) {
+            fmt.Printf("etags are not equal: (%q %q)  %q != %q\n",
+                *obj.Key, *list2[i].Key, *obj.ETag, *list2[i].ETag)
+            return false
+        }
 		if *obj.Size != *list2[i].Size {
 			fmt.Printf("sizes are not equal: (%q %q)  %v != %v\n",
 				*obj.Key, *list2[i].Key, *obj.Size, *list2[i].Size)
