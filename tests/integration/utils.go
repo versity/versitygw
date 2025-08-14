@@ -1457,3 +1457,175 @@ func randomizeCase(s string) string {
 
 	return b.String()
 }
+
+func headObject_zero_len_with_range_helper(testName, obj string, s *S3Conf) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objLength := int64(0)
+		_, err := putObjectWithData(objLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testRange := func(rg, contentRange string, cLength int64, expectErr bool) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Range:  &rg,
+			})
+			cancel()
+			if err == nil && expectErr {
+				return fmt.Errorf("%v: expected err 'RequestedRangeNotSatisfiable' error, instead got nil", rg)
+			}
+			if err != nil {
+				if !expectErr {
+					return err
+				}
+				var ae smithy.APIError
+				if errors.As(err, &ae) {
+					if ae.ErrorCode() != "RequestedRangeNotSatisfiable" {
+						return fmt.Errorf("%v: expected RequestedRangeNotSatisfiable, instead got %v", rg, ae.ErrorCode())
+					}
+					if ae.ErrorMessage() != "Requested Range Not Satisfiable" {
+						return fmt.Errorf("%v: expected the error message to be 'Requested Range Not Satisfiable', instead got %v", rg, ae.ErrorMessage())
+					}
+					return nil
+				}
+				return fmt.Errorf("%v: invalid error got %w", rg, err)
+			}
+
+			if getString(res.AcceptRanges) != "bytes" {
+				return fmt.Errorf("%v: expected accept ranges to be 'bytes', instead got %v", rg, getString(res.AcceptRanges))
+			}
+			if res.ContentLength == nil {
+				return fmt.Errorf("%v: expected non nil content-length", rg)
+			}
+			if *res.ContentLength != cLength {
+				return fmt.Errorf("%v: expected content-length to be %v, instead got %v", rg, cLength, *res.ContentLength)
+			}
+			if getString(res.ContentRange) != contentRange {
+				return fmt.Errorf("%v: expected content-range to be %v, instead got %v", rg, contentRange, getString(res.ContentRange))
+			}
+			return nil
+		}
+
+		// Reference server expectations for a 0-byte object.
+		for _, el := range []struct {
+			objRange      string
+			contentRange  string
+			contentLength int64
+			expectedErr   bool
+		}{
+			{"bytes=abc", "", objLength, false},
+			{"bytes=a-z", "", objLength, false},
+			{"bytes=,", "", objLength, false},
+			{"bytes=0-0,1-2", "", objLength, false},
+			{"foo=0-1", "", objLength, false},
+			{"bytes=--1", "", objLength, false},
+			{"bytes=0--1", "", objLength, false},
+			{"bytes= -1", "", objLength, false},
+			{"bytes=0 -1", "", objLength, false},
+			{"bytes=-1", "", objLength, false},   // reference server returns no error, empty Content-Range
+			{"bytes=00-01", "", objLength, true}, // RequestedRangeNotSatisfiable
+			{"bytes=-0", "", 0, true},
+			{"bytes=0-0", "", 0, true},
+			{"bytes=0-", "", 0, true},
+		} {
+			if err := testRange(el.objRange, el.contentRange, el.contentLength, el.expectedErr); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func getObject_zero_len_with_range_helper(testName, obj string, s *S3Conf) error {
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		objLength := int64(0)
+		res, err := putObjectWithData(objLength, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testGetObjectRange := func(rng, contentRange string, cLength int64, expData []byte, expErr error) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			defer cancel()
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Range:  &rng,
+			})
+			if err == nil && expErr != nil {
+				return fmt.Errorf("%v: expected err %v, instead got nil", rng, expErr)
+			}
+			if err != nil {
+				if expErr == nil {
+					return err
+				}
+				parsedErr, ok := expErr.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type provided, expected s3err.APIError")
+				}
+				return checkApiErr(err, parsedErr)
+			}
+
+			if out.ContentLength == nil {
+				return fmt.Errorf("%v: expected non nil content-length", rng)
+			}
+			if *out.ContentLength != cLength {
+				return fmt.Errorf("%v: expected content-length to be %v, instead got %v", rng, cLength, *out.ContentLength)
+			}
+			if getString(out.AcceptRanges) != "bytes" {
+				return fmt.Errorf("%v: expected accept-ranges to be 'bytes', instead got %v", rng, getString(out.AcceptRanges))
+			}
+			if getString(out.ContentRange) != contentRange {
+				return fmt.Errorf("%v: expected content-range to be %v, instead got %v", rng, contentRange, getString(out.ContentRange))
+			}
+
+			data, err := io.ReadAll(out.Body)
+			if err != nil {
+				return fmt.Errorf("%v: read object data: %w", rng, err)
+			}
+			out.Body.Close()
+			if !isSameData(data, expData) {
+				return fmt.Errorf("%v: incorrect data retrieved", rng)
+			}
+			return nil
+		}
+
+		for _, el := range []struct {
+			rng          string
+			contentRange string
+			cLength      int64
+			expData      []byte
+			expErr       error
+		}{
+			{"bytes=abc", "", objLength, res.data, nil},
+			{"bytes=a-z", "", objLength, res.data, nil},
+			{"bytes=,", "", objLength, res.data, nil},
+			{"bytes=0-0,1-2", "", objLength, res.data, nil},
+			{"foo=0-1", "", objLength, res.data, nil},
+			{"bytes=--1", "", objLength, res.data, nil},
+			{"bytes=0--1", "", objLength, res.data, nil},
+			{"bytes= -1", "", objLength, res.data, nil},
+			{"bytes=0 -1", "", objLength, res.data, nil},
+			{"bytes=-1", "", objLength, res.data, nil},
+			// error (RequestedRangeNotSatisfiable)
+			{"bytes=00-01", "", objLength, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			{"bytes=-0", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			{"bytes=0-0", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+			{"bytes=0-", "", 0, nil, s3err.GetAPIError(s3err.ErrInvalidRange)},
+		} {
+			if err := testGetObjectRange(el.rng, el.contentRange, el.cLength, el.expData, el.expErr); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

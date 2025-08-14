@@ -71,25 +71,21 @@ send_rest_command_expect_error() {
 }
 
 check_rest_expected_header_error() {
-  if ! check_param_count_v2 "response code, file, expected response, expected error" 4 $#; then
+  if ! check_param_count_v2 "file, expected response, expected error" 3 $#; then
     return 1
   fi
-  status_line=$(head -n 1 "$2")
+  status_line=$(head -n 1 "$1")
 
   # Parse the status code and message
   status_code=$(echo "$status_line" | awk '{print $2}')
   status_message=$(echo "$status_line" | cut -d' ' -f3- | tr -d '\r')
   log 5 "status code: $status_code, status message: $status_message"
-  if [ "$1" != "$3" ]; then
-    log 2 "expected curl response '$3', was '$1"
+  if [ "$2" != "$status_code" ]; then
+    log 2 "expected curl response '$2', was '$status_code'"
     return 1
   fi
-  if [ "$status_code" != "$3" ]; then
-    log 2 "expected HTTP response '$3', was '$status_code"
-    return 1
-  fi
-  if [ "$status_message" != "$4" ]; then
-    log 2 "expected message '$4', was '$status_message'"
+  if [ "$status_message" != "$3" ]; then
+    log 2 "expected message '$3', was '$status_message'"
     return 1
   fi
   return 0
@@ -103,7 +99,7 @@ send_rest_command_expect_header_error() {
     log 2 "error sending REST command"
     return 1
   fi
-  if ! check_rest_expected_header_error "$result" "$output_file" "$3" "$4"; then
+  if ! check_rest_expected_header_error "$output_file" "$3" "$4"; then
     log 2 "error checking REST error"
     return 1
   fi
