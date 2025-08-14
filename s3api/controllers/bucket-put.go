@@ -15,6 +15,7 @@
 package controllers
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -247,7 +248,61 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutBucketCors(ctx.Context(), []byte{})
+	body := ctx.Body()
+
+	var corsConfig auth.CORSConfiguration
+	err = xml.Unmarshal(body, &corsConfig)
+	if err != nil {
+		debuglogger.Logf("invalid CORS request body: %v", err)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+
+	// validate the CORS configuration rules
+	err = corsConfig.Validate()
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	algo, checksusms, err := utils.ParseChecksumHeadersAndSdkAlgo(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	if algo != "" {
+		rdr, err := utils.NewHashReader(bytes.NewReader(body), checksusms[algo], utils.HashType(strings.ToLower(string(algo))))
+		if err != nil {
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
+
+		// Pass the same body to avoid data duplication
+		_, err = rdr.Read(body)
+		if err != nil {
+			debuglogger.Logf("failed to read hash calculation data: %v", err)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, err
+		}
+	}
+
+	err = c.be.PutBucketCors(ctx.Context(), bucket, body)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,

@@ -60,6 +60,7 @@ const (
 	keyOwnership           key = "Ownership"
 	keyTags                key = "Tags"
 	keyPolicy              key = "Policy"
+	keyCors                key = "Cors"
 	keyBucketLock          key = "Bucketlock"
 	keyObjRetention        key = "Objectretention"
 	keyObjLegalHold        key = "Objectlegalhold"
@@ -1504,6 +1505,29 @@ func (az *Azure) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 
 func (az *Azure) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return az.PutBucketPolicy(ctx, bucket, nil)
+}
+
+func (az *Azure) PutBucketCors(ctx context.Context, bucket string, cors []byte) error {
+	if cors == nil {
+		return az.deleteContainerMetaData(ctx, bucket, string(keyCors))
+	}
+
+	return az.setContainerMetaData(ctx, bucket, string(keyCors), cors)
+}
+
+func (az *Azure) GetBucketCors(ctx context.Context, bucket string) ([]byte, error) {
+	p, err := az.getContainerMetaData(ctx, bucket, string(keyCors))
+	if err != nil {
+		return nil, err
+	}
+	if len(p) == 0 {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+	}
+	return p, nil
+}
+
+func (az *Azure) DeleteBucketCors(ctx context.Context, bucket string) error {
+	return az.PutBucketCors(ctx, bucket, nil)
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {

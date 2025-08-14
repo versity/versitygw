@@ -103,6 +103,7 @@ const (
 	bucketLockKey       = "bucket-lock"
 	objectRetentionKey  = "object-retention"
 	objectLegalHoldKey  = "object-legal-hold"
+	corskey             = "cors"
 	versioningKey       = "versioning"
 	deleteMarkerKey     = "delete-marker"
 	versionIdKey        = "version-id"
@@ -4657,6 +4658,56 @@ func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, err
 
 func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	return p.PutBucketPolicy(ctx, bucket, nil)
+}
+
+func (p *Posix) PutBucketCors(_ context.Context, bucket string, cors []byte) error {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return fmt.Errorf("stat bucket: %w", err)
+	}
+
+	if cors == nil {
+		err = p.meta.DeleteAttribute(bucket, "", corskey)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("remove cors: %w", err)
+		}
+
+		return nil
+	}
+
+	err = p.meta.StoreAttribute(nil, bucket, "", corskey, cors)
+	if err != nil {
+		return fmt.Errorf("set cors: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Posix) GetBucketCors(_ context.Context, bucket string) ([]byte, error) {
+	_, err := os.Stat(bucket)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat bucket: %w", err)
+	}
+
+	cors, err := p.meta.RetrieveAttribute(nil, bucket, "", corskey)
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return cors, nil
+}
+
+func (p *Posix) DeleteBucketCors(ctx context.Context, bucket string) error {
+	return p.PutBucketCors(ctx, bucket, nil)
 }
 
 func (p *Posix) isBucketObjectLockEnabled(bucket string) error {

@@ -75,6 +75,7 @@ var (
 	ActionPutBucketCors                 = "s3_PutBucketCors"
 	ActionGetBucketCors                 = "s3_GetBucketCors"
 	ActionDeleteBucketCors              = "s3_DeleteBucketCors"
+	ActionOptions                       = "s3_Options"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"

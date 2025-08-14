@@ -134,7 +134,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutBucketAclFunc: func(contextMoqParam context.Context, bucket string, data []byte) error {
 //				panic("mock out the PutBucketAcl method")
 //			},
-//			PutBucketCorsFunc: func(contextMoqParam context.Context, bytes []byte) error {
+//			PutBucketCorsFunc: func(contextMoqParam context.Context, bucket string, cors []byte) error {
 //				panic("mock out the PutBucketCors method")
 //			},
 //			PutBucketOwnershipControlsFunc: func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error {
@@ -304,7 +304,7 @@ type BackendMock struct {
 	PutBucketAclFunc func(contextMoqParam context.Context, bucket string, data []byte) error
 
 	// PutBucketCorsFunc mocks the PutBucketCors method.
-	PutBucketCorsFunc func(contextMoqParam context.Context, bytes []byte) error
+	PutBucketCorsFunc func(contextMoqParam context.Context, bucket string, cors []byte) error
 
 	// PutBucketOwnershipControlsFunc mocks the PutBucketOwnershipControls method.
 	PutBucketOwnershipControlsFunc func(contextMoqParam context.Context, bucket string, ownership types.ObjectOwnership) error
@@ -635,8 +635,10 @@ type BackendMock struct {
 		PutBucketCors []struct {
 			// ContextMoqParam is the contextMoqParam argument value.
 			ContextMoqParam context.Context
-			// Bytes is the bytes argument value.
-			Bytes []byte
+			// Bucket is the bucket argument value.
+			Bucket string
+			// Cors is the cors argument value.
+			Cors []byte
 		}
 		// PutBucketOwnershipControls holds details about calls to the PutBucketOwnershipControls method.
 		PutBucketOwnershipControls []struct {
@@ -2192,21 +2194,23 @@ func (mock *BackendMock) PutBucketAclCalls() []struct {
 }
 
 // PutBucketCors calls PutBucketCorsFunc.
-func (mock *BackendMock) PutBucketCors(contextMoqParam context.Context, bytes []byte) error {
+func (mock *BackendMock) PutBucketCors(contextMoqParam context.Context, bucket string, cors []byte) error {
 	if mock.PutBucketCorsFunc == nil {
 		panic("BackendMock.PutBucketCorsFunc: method is nil but Backend.PutBucketCors was just called")
 	}
 	callInfo := struct {
 		ContextMoqParam context.Context
-		Bytes           []byte
+		Bucket          string
+		Cors            []byte
 	}{
 		ContextMoqParam: contextMoqParam,
-		Bytes:           bytes,
+		Bucket:          bucket,
+		Cors:            cors,
 	}
 	mock.lockPutBucketCors.Lock()
 	mock.calls.PutBucketCors = append(mock.calls.PutBucketCors, callInfo)
 	mock.lockPutBucketCors.Unlock()
-	return mock.PutBucketCorsFunc(contextMoqParam, bytes)
+	return mock.PutBucketCorsFunc(contextMoqParam, bucket, cors)
 }
 
 // PutBucketCorsCalls gets all the calls that were made to PutBucketCors.
@@ -2215,11 +2219,13 @@ func (mock *BackendMock) PutBucketCors(contextMoqParam context.Context, bytes []
 //	len(mockedBackend.PutBucketCorsCalls())
 func (mock *BackendMock) PutBucketCorsCalls() []struct {
 	ContextMoqParam context.Context
-	Bytes           []byte
+	Bucket          string
+	Cors            []byte
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
-		Bytes           []byte
+		Bucket          string
+		Cors            []byte
 	}
 	mock.lockPutBucketCors.RLock()
 	calls = mock.calls.PutBucketCors

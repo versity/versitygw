@@ -703,7 +703,7 @@ func getString(str *string) string {
 	return *str
 }
 
-func getPtr(str string) *string {
+func getPtr[T any](str T) *T {
 	return &str
 }
 
@@ -1628,4 +1628,168 @@ func getObject_zero_len_with_range_helper(testName, obj string, s *S3Conf) error
 		}
 		return nil
 	})
+}
+
+func getInt32(ptr *int32) int32 {
+	if ptr == nil {
+		return 0
+	}
+
+	return *ptr
+}
+
+func putBucketCors(client *s3.Client, input *s3.PutBucketCorsInput) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutBucketCors(ctx, input)
+	cancel()
+	return err
+}
+
+func compareCorsConfig(expected, got []types.CORSRule) error {
+	if expected == nil && got == nil {
+		return nil
+	}
+	if got == nil {
+		return errors.New("nil CORS config")
+	}
+
+	if len(expected) != len(got) {
+		return fmt.Errorf("expected CORS rules length to be %v, instead got %v", len(expected), len(got))
+	}
+
+	for i, r := range expected {
+		rule := got[i]
+		if !slices.Equal(r.AllowedOrigins, rule.AllowedOrigins) {
+			return fmt.Errorf("expected the allowed origins to be %v, instead got %v", r.AllowedOrigins, rule.AllowedOrigins)
+		}
+		if !slices.Equal(r.AllowedMethods, rule.AllowedMethods) {
+			return fmt.Errorf("expected the allowed methods to be %v, instead got %v", r.AllowedMethods, rule.AllowedMethods)
+		}
+		if !slices.Equal(r.AllowedHeaders, rule.AllowedHeaders) {
+			return fmt.Errorf("expected the allowed headers to be %v, instead got %v", r.AllowedHeaders, rule.AllowedHeaders)
+		}
+		if !slices.Equal(r.ExposeHeaders, rule.ExposeHeaders) {
+			return fmt.Errorf("expected the allowed origins to be %v, instead got %v", r.ExposeHeaders, rule.ExposeHeaders)
+		}
+		if getInt32(r.MaxAgeSeconds) != getInt32(rule.MaxAgeSeconds) {
+			return fmt.Errorf("expected the max age seconds to be %v, instead got %v", getInt32(r.MaxAgeSeconds), getInt32(rule.MaxAgeSeconds))
+		}
+		if getString(r.ID) != getString(rule.ID) {
+			return fmt.Errorf("expected ID to be %v, instead got %v", getString(r.ID), getString(rule.ID))
+		}
+	}
+
+	return nil
+}
+
+type PreflightResult struct {
+	Origin           string
+	Methods          string
+	ExposeHeaders    string
+	MaxAge           string
+	AllowCredentials string
+	Vary             string
+	err              error
+}
+
+func extractCORSHeaders(resp *http.Response) (*PreflightResult, error) {
+	if resp.StatusCode >= 400 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read response body: %w", err)
+		}
+
+		var errResp smithy.GenericAPIError
+		err = xml.Unmarshal(body, &errResp)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal respone body: %w", err)
+		}
+
+		return &PreflightResult{
+			err: &errResp,
+		}, nil
+	}
+
+	return &PreflightResult{
+		Origin:           resp.Header.Get("Access-Control-Allow-Origin"),
+		Methods:          resp.Header.Get("Access-Control-Allow-Methods"),
+		ExposeHeaders:    resp.Header.Get("Access-Control-Expose-Headers"),
+		MaxAge:           resp.Header.Get("Access-Control-Max-Age"),
+		AllowCredentials: resp.Header.Get("Access-Control-Allow-Credentials"),
+		Vary:             resp.Header.Get("Vary"),
+	}, nil
+}
+
+func makeOPTIONSRequest(s *S3Conf, bucket, origin, method string, headers string) (*PreflightResult, error) {
+	req, err := http.NewRequest(http.MethodOptions, fmt.Sprintf("%s/%s/object", s.endpoint, bucket), nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Add("Origin", origin)
+	req.Header.Add("Access-Control-Request-Method", method)
+	req.Header.Add("Access-Control-Request-Headers", headers)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+
+	return extractCORSHeaders(resp)
+}
+
+func comparePreflightResult(expected, got *PreflightResult) error {
+	if expected == nil {
+		return fmt.Errorf("nil expected preflight request result")
+	}
+	if got == nil {
+		return fmt.Errorf("expected the preflights result to be %v, instead got nil", *expected)
+	}
+
+	if expected.err != nil {
+		if got.err == nil {
+			return fmt.Errorf("expected %w error, instaed got nil", expected.err)
+		}
+
+		apiErr, ok := expected.err.(s3err.APIError)
+		if !ok {
+			return fmt.Errorf("expected s3err.APIError, instead got %w", expected.err)
+		}
+
+		return checkApiErr(got.err, apiErr)
+	}
+
+	if got.err != nil {
+		return fmt.Errorf("expected no error, instaed got %w", got.err)
+	}
+
+	if expected.Origin != got.Origin {
+		return fmt.Errorf("expected the origin to be %v, instead got %v", expected.Origin, got.Origin)
+	}
+	if expected.Methods != got.Methods {
+		return fmt.Errorf("expected the allowed methods to be %v, instead got %v", expected.Methods, got.Methods)
+	}
+	if expected.ExposeHeaders != got.ExposeHeaders {
+		return fmt.Errorf("expected the expose headers to be %v, instead got %v", expected.ExposeHeaders, got.ExposeHeaders)
+	}
+	if expected.MaxAge != got.MaxAge {
+		return fmt.Errorf("expected the max age to be %v, instead got %v", expected.MaxAge, got.MaxAge)
+	}
+	if expected.AllowCredentials != got.AllowCredentials {
+		return fmt.Errorf("expected the allow credentials to be %v, instead got %v", expected.AllowCredentials, got.AllowCredentials)
+	}
+	if expected.Vary != got.Vary {
+		return fmt.Errorf("expected the Vary header to be %v, instead got %v", expected.Vary, got.Vary)
+	}
+
+	return nil
+}
+
+func testOPTIONSEdnpoint(s *S3Conf, bucket, origin, method string, headers string, expected *PreflightResult) error {
+	result, err := makeOPTIONSRequest(s, bucket, origin, method, headers)
+	if err != nil {
+		return err
+	}
+
+	return comparePreflightResult(expected, result)
 }
