@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_xml.sh
+source ./tests/drivers/xml.sh
 
 check_rest_expected_error() {
   if ! check_param_count_v2 "response, response file, expected http code, expected error code, expected error" 5 $#; then

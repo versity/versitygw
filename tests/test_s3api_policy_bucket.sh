@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/commands/put_public_access_block.sh
-source ./tests/util/util_acl.sh
 
 test_s3api_policy_delete_bucket_policy() {
   policy_file="policy_file"

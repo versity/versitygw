@@ -35,3 +35,22 @@ put_object_success_or_access_denied() {
   fi
   return 0
 }
+
+setup_bucket_and_add_file() {
+  if ! check_param_count_v2 "bucket, filename" 2 $#; then
+    return 1
+  fi
+  if ! setup_bucket "$1"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  if ! create_test_files "$2"; then
+    log 2 "error creating test file"
+    return 1
+  fi
+  if ! put_object_rest "$TEST_FILE_FOLDER/$2" "$1" "$2"; then
+    log 2 "error putting REST object"
+    return 1
+  fi
+  return 0
+}

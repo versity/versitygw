@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util/util_acl.sh
 source ./tests/util/util_bucket_location.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_list_buckets.sh

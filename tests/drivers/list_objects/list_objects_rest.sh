@@ -14,33 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# param: bucket name
-# return 0 for success, 1 for failure
-list_and_delete_objects() {
-  log 6 "list_and_delete_objects"
-  if ! check_param_count "list_and_delete_objects" "bucket" 1 $#; then
-    return 1
-  fi
-  if ! list_objects_rest "$1" "parse_objects_list_rest"; then
-    log 2 "error getting object list"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "objects: ${object_array[*]}"
-  for object in "${object_array[@]}"; do
-    if ! clear_object_in_bucket "$1" "$object"; then
-      log 2 "error deleting object $object"
-      return 1
-    fi
-  done
-
-  if ! delete_old_versions "$1"; then
-    log 2 "error deleting old version"
-    return 1
-  fi
-  return 0
-}
-
 list_check_single_object() {
   if ! check_param_count_gt "bucket, key, env params (optional)" 2 $#; then
     return 1
