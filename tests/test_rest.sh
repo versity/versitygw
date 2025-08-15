@@ -30,9 +30,9 @@ source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
+source ./tests/drivers/xml.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_acl.sh
 source ./tests/util/util_attributes.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_delete_object.sh
@@ -52,7 +52,6 @@ source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
 source ./tests/util/util_time.sh
 source ./tests/util/util_versioning.sh
-source ./tests/util/util_xml.sh
 
 export RUN_USERS=true
 test_file="test_file"
@@ -331,9 +330,6 @@ test_file="test_file"
 }
 
 @test "REST - PutObjectRetention - w/o request body" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1185"
-  fi
   run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
   assert_success
 

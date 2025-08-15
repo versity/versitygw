@@ -73,3 +73,46 @@ check_for_display_name() {
   fi
   return 0
 }
+
+check_acl_rest() {
+  if ! check_param_count_v2 "acl file" 1 $#; then
+    return 1
+  fi
+  log 5 "acl: $(cat "$1")"
+  if ! access_control_policy=$(xmllint --xpath '//*[local-name()="AccessControlPolicy"]' "$1" 2>&1); then
+    log 2 "error getting access control policy: $access_control_policy"
+    return 1
+  fi
+  if ! owner=$(echo "$access_control_policy" | xmllint --xpath '//*[local-name()="Owner"]' - 2>&1); then
+    log 2 "error getting owner information: $owner"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    if ! check_direct_display_name; then
+      log 2 "error checking direct display name"
+      return 1
+    fi
+  else
+    if ! id=$(echo "$owner" | xmllint --xpath '//*[local-name()="ID"]/text()' - 2>&1); then
+      log 2 "error getting ID: $id"
+      return 1
+    fi
+    if [ "$id" != "$AWS_ACCESS_KEY_ID" ]; then
+      log 2 "ID mismatch"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+get_and_check_acl_rest() {
+  if [ $# -ne 1 ]; then
+    log 2 "'get_and_check_acl_rest' requires bucket name"
+    return 1
+  fi
+  if ! get_bucket_acl_rest "$1" "" "check_acl_rest"; then
+    log 2 "error getting and checking acl"
+    return 1
+  fi
+  return 0
+}

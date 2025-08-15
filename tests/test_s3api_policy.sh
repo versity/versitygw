@@ -35,6 +35,7 @@ source ./tests/commands/get_object.sh
 source ./tests/commands/put_bucket_policy.sh
 source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object.sh
+source ./tests/drivers/get_bucket_acl/get_bucket_acl_s3api.sh
 
 export RUN_USERS=true
 

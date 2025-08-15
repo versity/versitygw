@@ -18,6 +18,7 @@ source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/drivers/get_object/get_object_rest.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
+source ./tests/drivers/user.sh
 
 setup_and_create_bucket_and_check_acl() {
   if [ "$RECREATE_BUCKETS" == "false" ]; then

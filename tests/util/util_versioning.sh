@@ -23,59 +23,6 @@ check_if_versioning_enabled() {
   return 1
 }
 
-delete_old_versions() {
-  if ! check_param_count "delete_old_versions" "bucket" 1 $#; then
-    return 1
-  fi
-  if ! list_object_versions "rest" "$1"; then
-    log 2 "error listing object versions"
-    return 1
-  fi
-  # shellcheck disable=SC2154
-  log 5 "versions: $versions"
-  version_keys=()
-  version_ids=()
-
-  if ! parse_version_data_by_type "rest" "$2"; then
-    log 2 "error parsing version data"
-    return 1
-  fi
-
-  log 5 "version keys: ${version_keys[*]}"
-  log 5 "version IDs: ${version_ids[*]}"
-  for idx in "${!version_keys[@]}"; do
-    if ! delete_object_version_with_or_without_retention "$1"; then
-      log 2 "error deleting version with or without retention"
-      return 1
-    fi
-  done
-}
-
-delete_object_version_with_or_without_retention() {
-  if ! check_param_count "delete_object_version_with_or_without_retention" "bucket" 1 $#; then
-    return 1
-  fi
-  log 5 "idx: $idx"
-  log 5 "version ID: ${version_ids[$idx]}"
-  # shellcheck disable=SC2154
-  if [ "$lock_config_exists" == "true" ]; then
-    if ! check_remove_legal_hold_versions "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-      log 2 "error checking, removing legal hold versions"
-    fi
-    if ! delete_object_version_rest_bypass_retention "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-      log 2 "error deleting object version, bypassing retention"
-      return 1
-    fi
-  else
-    if ! delete_object_version_rest "$1" "${version_keys[$idx]}" "${version_ids[$idx]}"; then
-      log 2 "error deleting object version"
-      return 1
-    fi
-  fi
-  log 5 "successfully deleted version with key '${version_keys[$idx]}', id '${version_ids[$idx]}'"
-  return 0
-}
-
 parse_version_data_by_type() {
   if ! check_param_count "parse_version_data_by_type" "client, data" 2 $#; then
     return 1

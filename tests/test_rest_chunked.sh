@@ -153,41 +153,26 @@ source ./tests/util/util_setup.sh
 }
 
 @test "test - REST chunked upload - sha1 trailer - invalid" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1165"
-  fi
   run chunked_upload_trailer_invalid_checksum "sha1"
   assert_success
 }
 
 @test "test - REST chunked upload - sha256 trailer - invalid" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1165"
-  fi
   run chunked_upload_trailer_invalid_checksum "sha256"
   assert_success
 }
 
 @test "test - REST chunked upload - crc32 trailer - invalid" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1165"
-  fi
   run chunked_upload_trailer_invalid_checksum "crc32"
   assert_success
 }
 
 @test "test - REST chunked upload - crc32c trailer - invalid" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1165"
-  fi
   run chunked_upload_trailer_invalid_checksum "crc32c"
   assert_success
 }
 
 @test "test - REST chunked upload - crc64nvme trailer - invalid" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1165"
-  fi
   run chunked_upload_trailer_invalid_checksum "crc64nvme"
   assert_success
 }

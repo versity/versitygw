@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_xml.sh
+source ./tests/drivers/xml.sh
 
 check_rest_expected_error() {
   if ! check_param_count_v2 "response, response file, expected http code, expected error code, expected error" 5 $#; then
@@ -26,6 +26,23 @@ check_rest_expected_error() {
   fi
   if ! check_xml_error_contains "$2" "$4" "$5"; then
     log 2 "error checking XML response"
+    return 1
+  fi
+  return 0
+}
+
+check_rest_go_expected_error() {
+  if ! check_param_count_v2 "response file, expected http code, expected error code, expected error" 4 $#; then
+    return 1
+  fi
+  status_line=$(head -n 1 "$1")
+  status_code=$(echo "$status_line" | awk '{print $2}')
+  if [ "$2" != "$status_code" ]; then
+    log 2 "expected curl response '$2', was '$status_code'"
+    return 1
+  fi
+  if ! check_xml_error_contains "$1" "$3" "$4"; then
+    log 2 "error checking XML error"
     return 1
   fi
   return 0
@@ -145,4 +162,53 @@ if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
   return 1
 fi
 return 0
+}
+
+send_rest_go_command_expect_error() {
+  if [ $# -lt 3 ] && [ $(($# % 2)) -ne 1 ]; then
+    log 2 "'send_rest_go_command_expect_failure' param count must be 3 or greater, odd (key/value pairs)"
+    return 1
+  fi
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:4}" 2>&1); then
+    log 2 "error: $curl_command"
+    return 1
+  fi
+  local full_command="send_command $curl_command"
+  log 5 "full command: $full_command"
+  if ! result=$(eval "${full_command[*]}" 2>&1); then
+    log 3 "error sending command: $result"
+    return 1
+  fi
+  log 5 "result: $result"
+  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
+  if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/result.txt" "$1" "$2" "$3"; then
+    log 2 "error checking expected header error"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command() {
+  if [ $# -lt 1 ] && [ $(($# % 2)) -ne 1 ]; then
+    log 2 "'send_rest_go_command_expect_failure' param count must be 1 or greater, odd (key/value pairs)"
+    return 1
+  fi
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:2}" 2>&1); then
+    log 2 "error: $curl_command"
+    return 1
+  fi
+  local full_command="send_command $curl_command"
+  log 5 "curl command: $curl_command"
+  if ! result=$(eval "${full_command[*]}" 2>&1); then
+    log 3 "error sending command: $result"
+    return 1
+  fi
+  log 5 "result: $result"
+  status_line=$(sed -n 1p <<< "$result")
+  status_code=$(echo "$status_line" | awk '{print $2}')
+  if [ "$1" != "$status_code" ]; then
+    log 2 "expected curl response '$1', was '$status_code'"
+    return 1
+  fi
+  return 0
 }

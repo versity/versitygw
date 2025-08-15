@@ -22,7 +22,6 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_acl.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_setup.sh

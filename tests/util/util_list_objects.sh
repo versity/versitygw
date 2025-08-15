@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 source ./tests/commands/list_objects_v2.sh
-source ./tests/util/util_xml.sh
+source ./tests/drivers/xml.sh
 
 # Copyright 2024 Versity Software
 # This file is licensed under the Apache License, Version 2.0

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 )
@@ -21,6 +22,7 @@ var awsAccessKeyId *string
 var awsSecretAccessKey *string
 var serviceName *string
 var debug *bool
+var signedParamsMap restParams
 
 type S3Command struct {
 	Method             string
@@ -32,6 +34,7 @@ type S3Command struct {
 	AwsAccessKeyId     string
 	AwsSecretAccessKey string
 	ServiceName        string
+	SignedParams       map[string]string
 
 	currentDateTime      string
 	host                 string
@@ -42,6 +45,27 @@ type S3Command struct {
 	signedParamString    string
 	yearMonthDay         string
 	signature            string
+}
+
+type restParams map[string]string
+
+func (r *restParams) String() string {
+	return fmt.Sprintf("%v", *r)
+}
+
+func (r *restParams) Set(value string) error {
+	*r = make(map[string]string)
+	pairs := strings.Split(value, ",")
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, ":", 2)
+		if len(kv) != 2 {
+		}
+		if len(kv) != 2 {
+			return fmt.Errorf("invalid key-value pair: %s", pair)
+		}
+		(*r)[kv[0]] = kv[1]
+	}
+	return nil
 }
 
 func main() {
@@ -59,6 +83,7 @@ func main() {
 		AwsAccessKeyId:     *awsAccessKeyId,
 		AwsSecretAccessKey: *awsSecretAccessKey,
 		ServiceName:        *serviceName,
+		SignedParams:       signedParamsMap,
 	}
 	curlShellCommand, err := s3Command.CurlShellCommand()
 	if err != nil {
@@ -78,6 +103,7 @@ func checkFlags() error {
 	awsRegion = flag.String("awsRegion", "us-east-1", "AWS region")
 	serviceName = flag.String("serviceName", "s3", "Service name")
 	debug = flag.Bool("debug", false, "Print debug statements")
+	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
 	// Parse the flags
 	flag.Parse()
 
@@ -114,6 +140,13 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 		{"x-amz-content-sha256", s.payloadHash},
 		{"x-amz-date", s.currentDateTime},
 	}
+	for key, value := range s.SignedParams {
+		s.headerValues = append(s.headerValues, []string{key, value})
+	}
+	sort.Slice(s.headerValues,
+		func(i, j int) bool {
+			return s.headerValues[i][0] < s.headerValues[j][0]
+		})
 	s.path = "/" + s.BucketName
 	if s.ObjectKey != "" {
 		s.path += "/" + s.ObjectKey
