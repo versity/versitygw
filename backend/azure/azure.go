@@ -363,7 +363,7 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 	}
 
 	return s3response.PutObjectOutput{
-		ETag: string(*uploadResp.ETag),
+		ETag: convertAzureEtag(uploadResp.ETag),
 	}, nil
 }
 
@@ -453,7 +453,7 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		ContentLanguage:    blobDownloadResponse.ContentLanguage,
 		CacheControl:       blobDownloadResponse.CacheControl,
 		ExpiresString:      blobDownloadResponse.Metadata[string(keyExpires)],
-		ETag:               (*string)(blobDownloadResponse.ETag),
+		ETag:               backend.GetPtrFromString(convertAzureEtag(blobDownloadResponse.ETag)),
 		LastModified:       blobDownloadResponse.LastModified,
 		Metadata:           parseAndFilterAzMetadata(blobDownloadResponse.Metadata),
 		TagCount:           &tagcount,
@@ -531,7 +531,7 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		ContentDisposition: resp.ContentDisposition,
 		CacheControl:       resp.CacheControl,
 		ExpiresString:      resp.Metadata[string(keyExpires)],
-		ETag:               (*string)(resp.ETag),
+		ETag:               backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
 		LastModified:       resp.LastModified,
 		Metadata:           parseAndFilterAzMetadata(resp.Metadata),
 		StorageClass:       types.StorageClassStandard,
@@ -568,7 +568,7 @@ func (az *Azure) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAtt
 	}
 
 	return s3response.GetObjectAttributesResponse{
-		ETag:         backend.TrimEtag(data.ETag),
+		ETag:         data.ETag,
 		ObjectSize:   data.ContentLength,
 		StorageClass: data.StorageClass,
 		LastModified: data.LastModified,
@@ -623,7 +623,7 @@ Pager:
 				break Pager
 			}
 			objects = append(objects, s3response.Object{
-				ETag:         backend.GetPtrFromString(fmt.Sprintf("%q", *v.Properties.ETag)),
+				ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
 				Key:          v.Name,
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
@@ -728,7 +728,7 @@ Pager:
 			}
 
 			obj := s3response.Object{
-				ETag:         backend.GetPtrFromString(fmt.Sprintf("%q", *v.Properties.ETag)),
+				ETag:         backend.GetPtrFromString(convertAzureEtag(v.Properties.ETag)),
 				Key:          v.Name,
 				LastModified: v.Properties.LastModified,
 				Size:         v.Properties.ContentLength,
@@ -900,7 +900,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		return s3response.CopyObjectOutput{
 			CopyObjectResult: &s3response.CopyObjectResult{
 				LastModified: res.LastModified,
-				ETag:         (*string)(res.ETag),
+				ETag:         backend.GetPtrFromString(convertAzureEtag(res.ETag)),
 			},
 		}, nil
 	}
@@ -1471,7 +1471,7 @@ func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.Complete
 	return s3response.CompleteMultipartUploadResult{
 		Bucket: input.Bucket,
 		Key:    input.Key,
-		ETag:   (*string)(resp.ETag),
+		ETag:   backend.GetPtrFromString(convertAzureEtag(resp.ETag)),
 	}, "", nil
 }
 
@@ -2001,4 +2001,12 @@ func (az *Azure) checkIfMpExists(ctx context.Context, bucket, obj, uploadId stri
 	}
 
 	return nil
+}
+
+func convertAzureEtag(etag *azcore.ETag) string {
+	// Azure ETag values are not S3 compatible,
+	// so append "-1" to avoid client SDK ETag validation issues.
+	str := (*string)(etag)
+
+	return *backend.TrimEtag(str) + "-1"
 }
