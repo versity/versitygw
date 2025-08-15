@@ -17,7 +17,10 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -313,6 +316,20 @@ func TestS3ApiController_GetBucketVersioning(t *testing.T) {
 }
 
 func TestS3ApiController_GetBucketCors(t *testing.T) {
+	cors := &auth.CORSConfiguration{
+		Rules: []auth.CORSRule{
+			{
+				AllowedOrigins: []string{"origin"},
+				AllowedMethods: []auth.CORSHTTPMethod{http.MethodPut},
+				AllowedHeaders: []auth.CORSHeader{"X-Amz-Date"},
+			},
+		},
+	}
+	beRes, err := xml.Marshal(cors)
+	assert.NoError(t, err)
+
+	var nilResp *auth.CORSConfiguration
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -341,7 +358,6 @@ func TestS3ApiController_GetBucketCors(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					Data: []byte{},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
@@ -350,14 +366,30 @@ func TestS3ApiController_GetBucketCors(t *testing.T) {
 			},
 		},
 		{
-			name: "successful response",
+			name: "invalid data from backend",
 			input: testInput{
 				locals: defaultLocals,
-				beRes:  []byte("mock_cors_resp"),
+				beRes:  []byte("invalid_data"),
 			},
 			output: testOutput{
 				response: &Response{
-					Data: []byte("mock_cors_resp"),
+					Data: nilResp,
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: errors.New("failed to parse cors config:"),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  beRes,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: cors,
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
