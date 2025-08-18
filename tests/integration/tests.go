@@ -14594,6 +14594,79 @@ func GetObjectLegalHold_success(s *S3Conf) error {
 	}, withLock())
 }
 
+func PutBucketAnalyticsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "PutBucketAnalyticsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAnalyticsConfiguration(ctx,
+			&s3.PutBucketAnalyticsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("uniquie_id"),
+				AnalyticsConfiguration: &types.AnalyticsConfiguration{
+					Id: getPtr("my-id"),
+					StorageClassAnalysis: &types.StorageClassAnalysis{
+						DataExport: &types.StorageClassAnalysisDataExport{
+							OutputSchemaVersion: types.StorageClassAnalysisSchemaVersionV1,
+							Destination: &types.AnalyticsExportDestination{
+								S3BucketDestination: &types.AnalyticsS3BucketDestination{
+									Bucket: &bucket,
+									Format: types.AnalyticsS3ExportFileFormatCsv,
+								},
+							},
+						},
+					},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketAnalyticsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "GetBucketAnalyticsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketAnalyticsConfiguration(ctx,
+			&s3.GetBucketAnalyticsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("uniquie_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func ListBucketAnalyticsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "ListBucketAnalyticsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBucketAnalyticsConfigurations(ctx,
+			&s3.ListBucketAnalyticsConfigurationsInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeleteBucketAnalyticsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "DeleteBucketAnalyticsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketAnalyticsConfiguration(ctx,
+			&s3.DeleteBucketAnalyticsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("uniquie_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
