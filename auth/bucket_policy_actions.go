@@ -60,9 +60,12 @@ const (
 	GetBucketOwnershipControlsAction       Action = "s3:GetBucketOwnershipControls"
 	PutBucketCorsAction                    Action = "s3:PutBucketCORS"
 	GetBucketCorsAction                    Action = "s3:GetBucketCORS"
-	PutAnalyticsConfiguration              Action = "s3:PutAnalyticsConfiguration"
-	GetAnalyticsConfiguration              Action = "s3:GetAnalyticsConfiguration"
-	AllActions                             Action = "s3:*"
+	PutAnalyticsConfigurationAction        Action = "s3:PutAnalyticsConfiguration"
+	GetAnalyticsConfigurationAction        Action = "s3:GetAnalyticsConfiguration"
+	PutEncryptionConfigurationAction       Action = "s3:PutEncryptionConfiguration"
+	GetEncryptionConfigurationAction       Action = "s3:GetEncryptionConfiguration"
+
+	AllActions Action = "s3:*"
 )
 
 var supportedActionList = map[Action]struct{}{

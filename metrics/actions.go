@@ -79,6 +79,9 @@ var (
 	ActionGetBucketAnalyticsConfiguration    = "s3_GetBucketAnalyticsConfiguration"
 	ActionListBucketAnalyticsConfigurations  = "s3_ListBucketAnalyticsConfigurations"
 	ActionDeleteBucketAnalyticsConfiguration = "s3_DeleteBucketAnalyticsConfiguration"
+	ActionPutBucketEncryption                = "s3_PutBucketEncryption"
+	ActionGetBucketEncryption                = "s3_GetBucketEncryption"
+	ActionDeleteBucketEncryption             = "s3_DeleteBucketEcryption"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
