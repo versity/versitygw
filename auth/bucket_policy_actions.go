@@ -60,6 +60,8 @@ const (
 	GetBucketOwnershipControlsAction       Action = "s3:GetBucketOwnershipControls"
 	PutBucketCorsAction                    Action = "s3:PutBucketCORS"
 	GetBucketCorsAction                    Action = "s3:GetBucketCORS"
+	PutAnalyticsConfiguration              Action = "s3:PutAnalyticsConfiguration"
+	GetAnalyticsConfiguration              Action = "s3:GetAnalyticsConfiguration"
 	AllActions                             Action = "s3:*"
 )
 

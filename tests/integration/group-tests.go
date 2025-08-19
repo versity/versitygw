@@ -583,6 +583,13 @@ func TestGetObjectLegalHold(s *S3Conf) {
 	GetObjectLegalHold_success(s)
 }
 
+func TestNotImplementedActions(s *S3Conf) {
+	PutBucketAnalyticsConfiguration_not_implemented(s)
+	GetBucketAnalyticsConfiguration_not_implemented(s)
+	ListBucketAnalyticsConfiguration_not_implemented(s)
+	DeleteBucketAnalyticsConfiguration_not_implemented(s)
+}
+
 func TestWORMProtection(s *S3Conf) {
 	WORMProtection_bucket_object_lock_configuration_compliance_mode(s)
 	WORMProtection_bucket_object_lock_configuration_governance_mode(s)
@@ -1288,6 +1295,10 @@ func GetIntTests() IntTests {
 		"GetObjectLegalHold_disabled_lock":                                        GetObjectLegalHold_disabled_lock,
 		"GetObjectLegalHold_unset_config":                                         GetObjectLegalHold_unset_config,
 		"GetObjectLegalHold_success":                                              GetObjectLegalHold_success,
+		"PutBucketAnalyticsConfiguration_not_implemented":                         PutBucketAnalyticsConfiguration_not_implemented,
+		"GetBucketAnalyticsConfiguration_not_implemented":                         GetBucketAnalyticsConfiguration_not_implemented,
+		"ListBucketAnalyticsConfiguration_not_implemented":                        ListBucketAnalyticsConfiguration_not_implemented,
+		"DeleteBucketAnalyticsConfiguration_not_implemented":                      DeleteBucketAnalyticsConfiguration_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":         WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":         WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":              WORMProtection_bucket_object_lock_governance_bypass_delete,

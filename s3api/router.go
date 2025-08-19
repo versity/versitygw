@@ -196,6 +196,20 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.ParseAcl(be),
 		))
 	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("analytics"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionPutBucketAnalyticsConfiguration,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketAnalyticsConfiguration, auth.PutAnalyticsConfiguration, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
+	bucketRouter.Put("",
 		controllers.ProcessHandlers(
 			ctrl.CreateBucket,
 			metrics.ActionCreateBucket,
@@ -274,6 +288,20 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.VerifyMD5Body(),
 			middlewares.ParseAcl(be),
 		))
+	bucketRouter.Delete("",
+		middlewares.MatchQueryArgs("analytics"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionDeleteBucketAnalyticsConfiguration,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketAnalyticsConfiguration, auth.PutAnalyticsConfiguration, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
 	bucketRouter.Delete("",
 		controllers.ProcessHandlers(
 			ctrl.DeleteBucket,
@@ -405,6 +433,34 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.VerifyMD5Body(),
 			middlewares.ParseAcl(be),
 		))
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("analytics", "id"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionGetBucketAnalyticsConfiguration,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAnalyticsConfiguration, auth.GetAnalyticsConfiguration, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("analytics"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionListBucketAnalyticsConfigurations,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListBucketAnalyticsConfigurations, auth.GetAnalyticsConfiguration, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
 	bucketRouter.Get("",
 		middlewares.MatchQueryArgWithValue("list-type", "2"),
 		controllers.ProcessHandlers(
