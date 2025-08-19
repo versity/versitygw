@@ -25,7 +25,7 @@ require (
 	github.com/smira/go-statsd v1.3.4
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.7
-	github.com/valyala/fasthttp v1.64.0
+	github.com/valyala/fasthttp v1.65.0
 	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
 	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.35.0
