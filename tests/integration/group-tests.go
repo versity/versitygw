@@ -593,6 +593,11 @@ func TestNotImplementedActions(s *S3Conf) {
 	PutBucketEncryption_not_implemented(s)
 	GetBucketEncryption_not_implemented(s)
 	DeleteBucketEncryption_not_implemented(s)
+	// bucket intelligent tierieng actions
+	PutBucketIntelligentTieringConfiguration_not_implemented(s)
+	GetBucketIntelligentTieringConfiguration_not_implemented(s)
+	ListBucketIntelligentTieringConfiguration_not_implemented(s)
+	DeleteBucketIntelligentTieringConfiguration_not_implemented(s)
 }
 
 func TestWORMProtection(s *S3Conf) {
@@ -1307,6 +1312,10 @@ func GetIntTests() IntTests {
 		"PutBucketEncryption_not_implemented":                                     PutBucketEncryption_not_implemented,
 		"GetBucketEncryption_not_implemented":                                     GetBucketEncryption_not_implemented,
 		"DeleteBucketEncryption_not_implemented":                                  DeleteBucketEncryption_not_implemented,
+		"PutBucketIntelligentTieringConfiguration_not_implemented":                PutBucketIntelligentTieringConfiguration_not_implemented,
+		"GetBucketIntelligentTieringConfiguration_not_implemented":                GetBucketIntelligentTieringConfiguration_not_implemented,
+		"ListBucketIntelligentTieringConfiguration_not_implemented":               ListBucketIntelligentTieringConfiguration_not_implemented,
+		"DeleteBucketIntelligentTieringConfiguration_not_implemented":             DeleteBucketIntelligentTieringConfiguration_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":         WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":         WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":              WORMProtection_bucket_object_lock_governance_bypass_delete,

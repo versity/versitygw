@@ -14718,6 +14718,76 @@ func DeleteBucketEncryption_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketIntelligentTieringConfiguration_not_implemented(s *S3Conf) error {
+	testName := "PutBucketIntelligentTieringConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		days := int32(32)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketIntelligentTieringConfiguration(ctx,
+			&s3.PutBucketIntelligentTieringConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+				IntelligentTieringConfiguration: &types.IntelligentTieringConfiguration{
+					Id:     getPtr("my-id"),
+					Status: types.IntelligentTieringStatusEnabled,
+					Tierings: []types.Tiering{
+						{
+							AccessTier: types.IntelligentTieringAccessTierArchiveAccess,
+							Days:       &days,
+						},
+					},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketIntelligentTieringConfiguration_not_implemented(s *S3Conf) error {
+	testName := "GetBucketIntelligentTieringConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketIntelligentTieringConfiguration(ctx,
+			&s3.GetBucketIntelligentTieringConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func ListBucketIntelligentTieringConfiguration_not_implemented(s *S3Conf) error {
+	testName := "ListBucketIntelligentTieringConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBucketIntelligentTieringConfigurations(ctx,
+			&s3.ListBucketIntelligentTieringConfigurationsInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeleteBucketIntelligentTieringConfiguration_not_implemented(s *S3Conf) error {
+	testName := "DeleteBucketIntelligentTieringConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketIntelligentTieringConfiguration(ctx,
+			&s3.DeleteBucketIntelligentTieringConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
