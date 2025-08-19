@@ -86,6 +86,10 @@ var (
 	ActionGetBucketIntelligentTieringConfiguration    = "s3_GetBucketIntelligentTieringConfiguration"
 	ActionListBucketIntelligentTieringConfigurations  = "s3_ListBucketIntelligentTieringConfigurations"
 	ActionDeleteBucketIntelligentTieringConfiguration = "s3_DeleteBucketIntelligentTieringConfiguration"
+	ActionPutBucketInventoryConfiguration             = "s3_PutBucketInventoryConfiguration"
+	ActionGetBucketInventoryConfiguration             = "s3_GetBucketInventoryConfiguration"
+	ActionListBucketInventoryConfigurations           = "s3_ListBucketInventoryConfigurations"
+	ActionDeleteBucketInventoryConfiguration          = "s3_DeleteBucketInventoryConfiguration"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
