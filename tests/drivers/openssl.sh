@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_xml.sh
+source ./tests/drivers/xml.sh
 
 send_via_openssl() {
   if ! check_param_count_v2 "command file" 1 $#; then

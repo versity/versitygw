@@ -209,17 +209,40 @@ compare_files() {
 # fail on error
 create_large_file() {
   log 6 "create_large_file"
-  if [ $# -ne 1 ]; then
-    log 2 "'create_large_file' requires file name"
+  if ! check_param_count_v2 "file name" 1 $#; then
     return 1
   fi
+  if ! create_large_file_with_size "$1" 160; then
+    log 2 "error creating 160MB file"
+    return 1
+  fi
+  return 0
+}
 
-  filesize=$((160*1024*1024))
+create_large_file_with_size() {
+  if ! check_param_count_v2 "file name, size in MB" 2 $#; then
+    return 1
+  fi
+  filesize=$(($2*1024*1024))
   if ! error=$(dd if=/dev/urandom of="$TEST_FILE_FOLDER"/"$1" bs=1024 count=$((filesize/1024)) 2>&1); then
     log 2 "error adding data to large file: $error"
     return 1
   fi
   return 0
+}
+
+create_and_split_large_file() {
+  if ! check_param_count_v2 "file name, size in MB, pieces" 3 $#; then
+    return 1
+  fi
+  if ! create_large_file_with_size "$1" "$2"; then
+    log 2 "error creating large file"
+    return 1
+  fi
+  if ! split_file "$TEST_FILE_FOLDER/$1" "$3"; then
+    log 2 "error splitting file"
+    return 1
+  fi
 }
 
 # param: number of files

@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/commands/put_public_access_block.sh
-source ./tests/util/util_acl.sh
 
 test_s3api_policy_delete_bucket_policy() {
   policy_file="policy_file"
@@ -28,6 +27,7 @@ test_s3api_policy_delete_bucket_policy() {
 
   run setup_user_v2 "user" 1 "$BUCKET_ONE_NAME"
   assert_success
+  # shellcheck disable=SC2154
   user_id=${lines[0]}
   username=${lines[1]}
   password=${lines[2]}
