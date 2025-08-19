@@ -14788,6 +14788,85 @@ func DeleteBucketIntelligentTieringConfiguration_not_implemented(s *S3Conf) erro
 	})
 }
 
+func PutBucketInventoryConfiguration_not_implemented(s *S3Conf) error {
+	testName := "PutBucketInventoryConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		enabled := true
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketInventoryConfiguration(ctx,
+			&s3.PutBucketInventoryConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+				InventoryConfiguration: &types.InventoryConfiguration{
+					Destination: &types.InventoryDestination{
+						S3BucketDestination: &types.InventoryS3BucketDestination{
+							Bucket: &bucket,
+							Format: types.InventoryFormatCsv,
+							Encryption: &types.InventoryEncryption{
+								SSEKMS: &types.SSEKMS{
+									KeyId: getPtr("my-key-id"),
+								},
+							},
+						},
+					},
+					Id:                     getPtr("my-id"),
+					IncludedObjectVersions: types.InventoryIncludedObjectVersionsAll,
+					IsEnabled:              &enabled,
+					Schedule: &types.InventorySchedule{
+						Frequency: types.InventoryFrequencyDaily,
+					},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketInventoryConfiguration_not_implemented(s *S3Conf) error {
+	testName := "GetBucketInventoryConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketInventoryConfiguration(ctx,
+			&s3.GetBucketInventoryConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func ListBucketInventoryConfiguration_not_implemented(s *S3Conf) error {
+	testName := "ListBucketInventoryConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBucketInventoryConfigurations(ctx,
+			&s3.ListBucketInventoryConfigurationsInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeleteBucketInventoryConfiguration_not_implemented(s *S3Conf) error {
+	testName := "DeleteBucketInventoryConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketInventoryConfiguration(ctx,
+			&s3.DeleteBucketInventoryConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
