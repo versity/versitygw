@@ -72,6 +72,8 @@ const (
 	GetLifecycleConfigurationAction          Action = "s3:GetLifecycleConfiguration"
 	PutBucketLoggingAction                   Action = "s3:PutBucketLogging"
 	GetBucketLoggingAction                   Action = "s3:GetBucketLogging"
+	PutBucketRequestPaymentAction            Action = "s3:PutBucketRequestPayment"
+	GetBucketRequestPaymentAction            Action = "s3:GetBucketRequestPayment"
 
 	AllActions Action = "s3:*"
 )
