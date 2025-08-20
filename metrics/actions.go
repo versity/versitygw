@@ -93,6 +93,8 @@ var (
 	ActionPutBucketLifecycleConfiguration             = "s3_PutBucketLifecycleConfiguration"
 	ActionGetBucketLifecycleConfiguration             = "s3_GetBucketLifecycleConfiguration"
 	ActionDeleteBucketLifecycle                       = "s3_DeleteBucketLifecycle"
+	ActionPutBucketLogging                            = "s3_PutBucketLogging"
+	ActionGetBucketLogging                            = "s3_GetBucketLogging"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
