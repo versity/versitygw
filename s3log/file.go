@@ -101,6 +101,11 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 		access = acct.Access
 	}
 
+	region, ok := utils.ContextKeyRegion.Get(ctx).(string)
+	if ok {
+		lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", region)
+	}
+
 	lf.BucketOwner = meta.BucketOwner
 	lf.Bucket = bucket
 	lf.Time = time.Now()
@@ -122,7 +127,6 @@ func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	lf.HostID = ctx.Get("X-Amz-Id-2")
 	lf.SignatureVersion = "SigV4"
 	lf.AuthenticationType = "AuthHeader"
-	lf.HostHeader = fmt.Sprintf("s3.%v.amazonaws.com", utils.ContextKeyRegion.Get(ctx).(string))
 	lf.AccessPointARN = fmt.Sprintf("arn:aws:s3:::%v", strings.Join(path, "/"))
 	lf.AclRequired = "Yes"
 
