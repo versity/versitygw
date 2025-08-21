@@ -78,6 +78,8 @@ const (
 	GetMetricsConfigurationAction            Action = "s3:GetMetricsConfiguration"
 	PutReplicationConfigurationAction        Action = "s3:PutReplicationConfiguration"
 	GetReplicationConfigurationAction        Action = "s3:GetReplicationConfiguration"
+	PutBucketPublicAccessBlockAction         Action = "s3:PutBucketPublicAccessBlock"
+	GetBucketPublicAccessBlockAction         Action = "s3:GetBucketPublicAccessBlock"
 
 	AllActions Action = "s3:*"
 )
@@ -139,6 +141,8 @@ var supportedActionList = map[Action]struct{}{
 	GetMetricsConfigurationAction:            {},
 	PutReplicationConfigurationAction:        {},
 	GetReplicationConfigurationAction:        {},
+	PutBucketPublicAccessBlockAction:         {},
+	GetBucketPublicAccessBlockAction:         {},
 	AllActions:                               {},
 }
 

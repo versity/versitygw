@@ -15889,6 +15889,51 @@ func DeleteBucketReplication_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutPublicAccessBlock_not_implemented(s *S3Conf) error {
+	testName := "PutPublicAccessBlock_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutPublicAccessBlock(ctx,
+			&s3.PutPublicAccessBlockInput{
+				Bucket: &bucket,
+				PublicAccessBlockConfiguration: &types.PublicAccessBlockConfiguration{
+					BlockPublicPolicy: getPtr(true),
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetPublicAccessBlock_not_implemented(s *S3Conf) error {
+	testName := "GetPublicAccessBlock_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetPublicAccessBlock(ctx,
+			&s3.GetPublicAccessBlockInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeletePublicAccessBlock_not_implemented(s *S3Conf) error {
+	testName := "DeletePublicAccessBlock_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeletePublicAccessBlock(ctx,
+			&s3.DeletePublicAccessBlockInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

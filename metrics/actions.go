@@ -105,6 +105,9 @@ var (
 	ActionPutBucketReplication                        = "s3_PutBucketReplication"
 	ActionGetBucketReplication                        = "s3_GetBucketReplication"
 	ActionDeleteBucketReplication                     = "s3_DeleteBucketReplication"
+	ActionPutPublicAccessBlock                        = "s3_PutPublicAccessBlock"
+	ActionGetPublicAccessBlock                        = "s3_GetPublicAccessBlock"
+	ActionDeletePublicAccessBlock                     = "s3_DeletePublicAccessBlock"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -441,6 +444,18 @@ func init() {
 	}
 	ActionMap[ActionDeleteBucketReplication] = Action{
 		Name:    "DeleteBucketReplication",
+		Service: "s3",
+	}
+	ActionMap[ActionPutPublicAccessBlock] = Action{
+		Name:    "PutPublicAccessBlock",
+		Service: "s3",
+	}
+	ActionMap[ActionGetPublicAccessBlock] = Action{
+		Name:    "GetPublicAccessBlock",
+		Service: "s3",
+	}
+	ActionMap[ActionDeletePublicAccessBlock] = Action{
+		Name:    "DeletePublicAccessBlock",
 		Service: "s3",
 	}
 }
