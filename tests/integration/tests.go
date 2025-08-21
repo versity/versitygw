@@ -15712,6 +15712,52 @@ func DeleteBucketLifecycle_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketLogging_not_implemented(s *S3Conf) error {
+	testName := "PutBucketLogging_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketLogging(ctx,
+			&s3.PutBucketLoggingInput{
+				Bucket: &bucket,
+				BucketLoggingStatus: &types.BucketLoggingStatus{
+					LoggingEnabled: &types.LoggingEnabled{
+						TargetBucket: &bucket,
+						TargetGrants: []types.TargetGrant{
+							{
+								Grantee: &types.Grantee{
+									Type: types.TypeCanonicalUser,
+									ID:   getPtr("grt1"),
+								},
+								Permission: types.BucketLogsPermissionRead,
+							},
+						},
+						TargetObjectKeyFormat: &types.TargetObjectKeyFormat{
+							SimplePrefix: &types.SimplePrefix{},
+						},
+						TargetPrefix: getPtr("prefix"),
+					},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketLogging_not_implemented(s *S3Conf) error {
+	testName := "GetBucketLogging_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketLogging(ctx,
+			&s3.GetBucketLoggingInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -70,6 +70,8 @@ const (
 	GetInventoryConfigurationAction          Action = "s3:GetInventoryConfiguration"
 	PutLifecycleConfigurationAction          Action = "s3:PutLifecycleConfiguration"
 	GetLifecycleConfigurationAction          Action = "s3:GetLifecycleConfiguration"
+	PutBucketLoggingAction                   Action = "s3:PutBucketLogging"
+	GetBucketLoggingAction                   Action = "s3:GetBucketLogging"
 
 	AllActions Action = "s3:*"
 )
