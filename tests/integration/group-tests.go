@@ -641,6 +641,10 @@ func TestNotImplementedActions(s *S3Conf) {
 	GetBucketInventoryConfiguration_not_implemented(s)
 	ListBucketInventoryConfiguration_not_implemented(s)
 	DeleteBucketInventoryConfiguration_not_implemented(s)
+	// bucket lifecycle configuration actions
+	PutBucketLifecycleConfiguration_not_implemented(s)
+	GetBucketLifecycleConfiguration_not_implemented(s)
+	DeleteBucketLifecycle_not_implemented(s)
 }
 
 func TestWORMProtection(s *S3Conf) {
@@ -1390,6 +1394,9 @@ func GetIntTests() IntTests {
 		"GetBucketInventoryConfiguration_not_implemented":                         GetBucketInventoryConfiguration_not_implemented,
 		"ListBucketInventoryConfiguration_not_implemented":                        ListBucketInventoryConfiguration_not_implemented,
 		"DeleteBucketInventoryConfiguration_not_implemented":                      DeleteBucketInventoryConfiguration_not_implemented,
+		"PutBucketLifecycleConfiguration_not_implemented":                         PutBucketLifecycleConfiguration_not_implemented,
+		"GetBucketLifecycleConfiguration_not_implemented":                         GetBucketLifecycleConfiguration_not_implemented,
+		"DeleteBucketLifecycle_not_implemented":                                   DeleteBucketLifecycle_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":         WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":         WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":              WORMProtection_bucket_object_lock_governance_bypass_delete,

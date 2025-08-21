@@ -91,6 +91,9 @@ var (
 	ActionGetBucketInventoryConfiguration             = "s3_GetBucketInventoryConfiguration"
 	ActionListBucketInventoryConfigurations           = "s3_ListBucketInventoryConfigurations"
 	ActionDeleteBucketInventoryConfiguration          = "s3_DeleteBucketInventoryConfiguration"
+	ActionPutBucketLifecycleConfiguration             = "s3_PutBucketLifecycleConfiguration"
+	ActionGetBucketLifecycleConfiguration             = "s3_GetBucketLifecycleConfiguration"
+	ActionDeleteBucketLifecycle                       = "s3_DeleteBucketLifecycle"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"

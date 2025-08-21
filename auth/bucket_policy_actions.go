@@ -68,6 +68,8 @@ const (
 	GetIntelligentTieringConfigurationAction Action = "s3:GetIntelligentTieringConfiguration"
 	PutInventoryConfigurationAction          Action = "s3:PutInventoryConfiguration"
 	GetInventoryConfigurationAction          Action = "s3:GetInventoryConfiguration"
+	PutLifecycleConfigurationAction          Action = "s3:PutLifecycleConfiguration"
+	GetLifecycleConfigurationAction          Action = "s3:GetLifecycleConfiguration"
 
 	AllActions Action = "s3:*"
 )
