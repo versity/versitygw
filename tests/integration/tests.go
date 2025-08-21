@@ -15758,6 +15758,37 @@ func GetBucketLogging_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketRequestPayment_not_implemented(s *S3Conf) error {
+	testName := "PutBucketRequestPayment_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketRequestPayment(ctx,
+			&s3.PutBucketRequestPaymentInput{
+				Bucket: &bucket,
+				RequestPaymentConfiguration: &types.RequestPaymentConfiguration{
+					Payer: types.PayerBucketOwner,
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketRequestPayment_not_implemented(s *S3Conf) error {
+	testName := "GetBucketRequestPayment_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketRequestPayment(ctx,
+			&s3.GetBucketRequestPaymentInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
