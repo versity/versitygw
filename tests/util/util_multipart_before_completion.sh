@@ -435,11 +435,10 @@ upload_part_copy_without_upload_id_or_part_number() {
 }
 
 upload_part_check_etag_header() {
-  if [ $# -ne 3 ]; then
-    log 2 "'upload_part_check_etag_header' requires bucket name, key, upload ID"
+  if ! check_param_count_v2 "bucket, key, upload ID, part number, part" 5 $#; then
     return 1
   fi
-  if ! etag=$(upload_part_rest "$1" "$2" "$3" 1 2>&1); then
+  if ! etag=$(upload_part_rest "$1" "$2" "$3" "$4" "$5" 2>&1); then
     log 2 "error getting etag: $etag"
     return 1
   fi

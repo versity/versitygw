@@ -25,6 +25,7 @@ source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_bucket.sh
+source ./tests/util/util_delete_object.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_ownership.sh
@@ -169,7 +170,7 @@ export RUN_USERS=true
 
 @test "REST - POST call on root endpoint" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1036"
+    skip "https://github.com/versity/versitygw/issues/1487"
   fi
   run delete_object_empty_bucket_check_error
   assert_success

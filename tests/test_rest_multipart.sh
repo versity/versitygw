@@ -73,27 +73,18 @@ test_file="test_file"
 }
 
 @test "REST - UploadPartCopy w/o upload ID" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1226"
-  fi
   run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "1" "" \
     400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
   assert_success
 }
 
 @test "REST - UploadPartCopy w/o part number" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1229"
-  fi
   run upload_part_copy_without_upload_id_or_part_number "$BUCKET_ONE_NAME" "$test_file" "" "dummy" \
     405 "MethodNotAllowed" "The specified method is not allowed against this resource"
   assert_success
 }
 
 @test "REST - UploadPartCopy - ETag is quoted" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1235"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -105,9 +96,6 @@ test_file="test_file"
 }
 
 @test "REST - UploadPart - ETag is quoted" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1233"
-  fi
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -119,14 +107,11 @@ test_file="test_file"
   # shellcheck disable=SC2030
   upload_id=$output
 
-  run upload_part_check_etag_header "$BUCKET_ONE_NAME" "$test_file" "$upload_id"
+  run upload_part_check_etag_header "$BUCKET_ONE_NAME" "$test_file" "$upload_id" "1" "$TEST_FILE_FOLDER/${test_file}-0"
   assert_success
 }
 
 @test "REST - UploadPart w/o part number" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1236"
-  fi
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -206,9 +191,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart - lowercase checksum type and algorithm" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1339"
-  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -217,9 +199,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart - full object checksum type doesn't require UploadPart checksums" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1342"
-  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -283,9 +262,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart - x-amz-checksum-algorithm is ignored in CompleteMultipartUpload" {
-  #if [ "$DIRECT" != "true" ]; then
-  #  skip "https://github.com/versity/versitygw/issues/1345"
-  #fi
   run test_complete_multipart_upload_unneeded_algorithm_parameter "$BUCKET_ONE_NAME" "$test_file" "FULL_OBJECT" "CRC32C"
   assert_success
 }
@@ -373,9 +349,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart - x-amz-mp-object-size - invalid string" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1398"
-  fi
   run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 

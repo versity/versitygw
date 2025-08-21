@@ -301,13 +301,19 @@ setup_multipart_upload_with_params() {
     return 1
   fi
   os_name="$(uname)"
+  if [ "$DIRECT" == "true" ]; then
+    later_seconds="40"
+  else
+    later_seconds="20"
+  fi
   if [[ "$os_name" == "Darwin" ]]; then
     now=$(date -u +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -j -v +20S -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -j -v "+${later_seconds}S" -f "%Y-%m-%dT%H:%M:%S" "$now" +"%Y-%m-%dT%H:%M:%S")
   else
     now=$(date +"%Y-%m-%dT%H:%M:%S")
-    later=$(date -d "$now 20 seconds" +"%Y-%m-%dT%H:%M:%S")
+    later=$(date -d "$now $later_seconds seconds" +"%Y-%m-%dT%H:%M:%S")
   fi
+  log 5 "later in function: $later"
 
   if ! create_test_files "$2"; then
     log 2 "error creating test file"

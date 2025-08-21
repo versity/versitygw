@@ -20,7 +20,6 @@ source ./tests/commands/list_parts.sh
 source ./tests/util/util_get_bucket_acl.sh
 source ./tests/util/util_get_object_attributes.sh
 source ./tests/util/util_get_object_retention.sh
-source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_objects.sh
 source ./tests/util/util_setup.sh

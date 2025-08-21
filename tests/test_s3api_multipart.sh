@@ -28,6 +28,7 @@ source ./tests/util/util_tags.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/list_multipart_uploads.sh
+source ./tests/drivers/head_object/head_object_s3api.sh
 
 export RUN_USERS=true
 

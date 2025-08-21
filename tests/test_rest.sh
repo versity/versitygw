@@ -30,13 +30,13 @@ source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
+source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_attributes.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_delete_object.sh
-source ./tests/util/util_head_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_list_objects.sh
@@ -282,43 +282,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - put object w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD without content length" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_chunked_payload_type_without_content_length "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - invalid 'Expires' parameter" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_check_expires_header "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - PutObject with user permission - admin user" {
-  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
-  assert_success
-  username="${lines[${#lines[@]}-2]}"
-  password="${lines[${#lines[@]}-1]}"
-  log 5 "username: $username, password: $password"
-
-  run put_object_rest_with_user "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - PutObject with no permission - 'user' user" {
-  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
-  assert_success
-  username="${lines[${#lines[@]}-2]}"
-  password="${lines[${#lines[@]}-1]}"
-
-  run put_object_rest_with_user_and_code "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "403"
-  assert_success
-}
-
 @test "REST - PutObject - user permission, bad signature" {
   run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
   assert_success
@@ -375,9 +338,6 @@ test_file="test_file"
 }
 
 @test "REST - PutObjectLegalHold - success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1193"
-  fi
   run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
   assert_success
 
@@ -427,17 +387,6 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - put object, missing Content-Length" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1321"
-  fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_without_content_length "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
-  assert_success
-}
-
 @test "REST - put, get object, encoded name" {
   file_name=" \"<>\\^\`{}|+&?%"
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$file_name"
@@ -460,47 +409,9 @@ test_file="test_file"
 }
 
 @test "REST - GetObject w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1352"
-  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run get_object_rest_with_invalid_streaming_type "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-}
-
-@test "REST - PutObject w/x-amz-checksum-algorithm" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1356"
-  fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  run put_object_rest_with_unneeded_algorithm_param "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32c"
-  assert_success
-}
-
-@test "REST - empty message" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1249"
-  fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  echo -en "\r\n" > "$TEST_FILE_FOLDER/empty.txt"
-  run send_via_openssl_with_timeout "$TEST_FILE_FOLDER/empty.txt"
-  assert_success
-}
-
-@test "REST - deformed message" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1364"
-  fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
-
-  echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
-  run send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/deformed.txt" 400 "BadRequest" "An error occurred when parsing the HTTP request."
   assert_success
 }

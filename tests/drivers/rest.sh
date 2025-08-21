@@ -139,34 +139,34 @@ return 0
 }
 
 send_rest_command_expect_success_callback() {
-if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
-  return 1
-fi
-output_file="$TEST_FILE_FOLDER/output.txt"
-local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
-if [ "$1" != "" ]; then
-  IFS=' ' read -r -a env_vars <<< "$1"
-  env_array+=("${env_vars[@]}")
-fi
-# shellcheck disable=SC2068
-if ! result=$(${env_array[@]} "$2" 2>&1); then
-  log 2 "error sending command: $result"
-  return 1
-fi
-if [ "$result" != "$3" ]; then
-  log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
-  return 1
-fi
-if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
-  log 2 "callback error"
-  return 1
-fi
-return 0
+  if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
+    return 1
+  fi
+  output_file="$TEST_FILE_FOLDER/output.txt"
+  local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
+  if [ "$1" != "" ]; then
+    IFS=' ' read -r -a env_vars <<< "$1"
+    env_array+=("${env_vars[@]}")
+  fi
+  # shellcheck disable=SC2068
+  if ! result=$(${env_array[@]} "$2" 2>&1); then
+    log 2 "error sending command: $result"
+    return 1
+  fi
+  if [ "$result" != "$3" ]; then
+    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
+    return 1
+  fi
+  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
+    log 2 "callback error"
+    return 1
+  fi
+  return 0
 }
 
 send_rest_go_command_expect_error() {
   if [ $# -lt 3 ] && [ $(($# % 2)) -ne 1 ]; then
-    log 2 "'send_rest_go_command_expect_failure' param count must be 3 or greater, odd (key/value pairs)"
+    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (key/value pairs)"
     return 1
   fi
   if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:4}" 2>&1); then

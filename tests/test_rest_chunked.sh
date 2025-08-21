@@ -22,7 +22,6 @@ source ./tests/setup.sh
 source ./tests/util/util_bucket.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_file.sh
-source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
 @test "REST - chunked upload, no content length" {

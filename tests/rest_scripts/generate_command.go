@@ -23,6 +23,7 @@ var awsSecretAccessKey *string
 var serviceName *string
 var debug *bool
 var signedParamsMap restParams
+var payloadFile *string
 
 type S3Command struct {
 	Method             string
@@ -35,6 +36,7 @@ type S3Command struct {
 	AwsSecretAccessKey string
 	ServiceName        string
 	SignedParams       map[string]string
+	PayloadFile        string
 
 	currentDateTime      string
 	host                 string
@@ -84,6 +86,7 @@ func main() {
 		AwsSecretAccessKey: *awsSecretAccessKey,
 		ServiceName:        *serviceName,
 		SignedParams:       signedParamsMap,
+		PayloadFile:        *payloadFile,
 	}
 	curlShellCommand, err := s3Command.CurlShellCommand()
 	if err != nil {
@@ -104,6 +107,7 @@ func checkFlags() error {
 	serviceName = flag.String("serviceName", "s3", "Service name")
 	debug = flag.Bool("debug", false, "Print debug statements")
 	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
+	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
 	// Parse the flags
 	flag.Parse()
 
@@ -168,7 +172,7 @@ func (s *S3Command) generateCanonicalRequestString() {
 
 	signedParams := []string{"host"}
 	for _, headerValue := range s.headerValues {
-		key := headerValue[0]
+		key := strings.ToLower(headerValue[0])
 		canonicalRequestLines = append(canonicalRequestLines, key+":"+headerValue[1])
 		signedParams = append(signedParams, key)
 	}
@@ -224,6 +228,9 @@ func (s *S3Command) buildCurlShellCommand() string {
 	for _, headerValue := range s.headerValues {
 		headerString := fmt.Sprintf("\"%s: %s\"", headerValue[0], headerValue[1])
 		curlCommand = append(curlCommand, "-H", headerString)
+	}
+	if s.PayloadFile != "" {
+		curlCommand = append(curlCommand, "-T", s.PayloadFile)
 	}
 	return strings.Join(curlCommand, " ")
 }

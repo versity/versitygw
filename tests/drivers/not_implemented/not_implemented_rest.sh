@@ -33,7 +33,7 @@ send_not_implemented_expect_failure() {
   fi
   log 5 "result: $result"
   echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
-  if ! check_rest_expected_header_error "$TEST_FILE_FOLDER/result.txt" "501" "NotImplemented"; then
+  if ! check_rest_expected_header_error "$TEST_FILE_FOLDER/result.txt" "501" "Not Implemented"; then
     log 2 "error checking expected header error"
     return 1
   fi
