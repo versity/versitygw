@@ -12884,25 +12884,6 @@ func PutBucketPolicy_invalid_action(s *S3Conf) error {
 	})
 }
 
-func PutBucketPolicy_unsupported_action(s *S3Conf) error {
-	testName := "PutBucketPolicy_unsupported_action"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		doc := genPolicyDoc("Allow", `"*"`, `"s3:PutLifecycleConfiguration"`, `"arn:aws:s3:::*"`)
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-			Bucket: &bucket,
-			Policy: &doc,
-		})
-		cancel()
-
-		if err := checkApiErr(err, getMalformedPolicyError("Policy has invalid action")); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 func PutBucketPolicy_incorrect_action_wildcard_usage(s *S3Conf) error {
 	testName := "PutBucketPolicy_incorrect_action_wildcard_usage"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -15782,6 +15763,68 @@ func GetBucketRequestPayment_not_implemented(s *S3Conf) error {
 		_, err := s3client.GetBucketRequestPayment(ctx,
 			&s3.GetBucketRequestPaymentInput{
 				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func PutBucketMetricsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "PutBucketMetricsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketMetricsConfiguration(ctx,
+			&s3.PutBucketMetricsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+				MetricsConfiguration: &types.MetricsConfiguration{
+					Id: getPtr("EntireBucket"),
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketMetricsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "GetBucketMetricsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketMetricsConfiguration(ctx,
+			&s3.GetBucketMetricsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func ListBucketMetricsConfigurations_not_implemented(s *S3Conf) error {
+	testName := "ListBucketMetricsConfigurations_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListBucketMetricsConfigurations(ctx,
+			&s3.ListBucketMetricsConfigurationsInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeleteBucketMetricsConfiguration_not_implemented(s *S3Conf) error {
+	testName := "DeleteBucketMetricsConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketMetricsConfiguration(ctx,
+			&s3.DeleteBucketMetricsConfigurationInput{
+				Bucket: &bucket,
+				Id:     getPtr("unique_id"),
 			})
 		cancel()
 

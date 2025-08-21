@@ -98,6 +98,10 @@ var (
 	ActionGetBucketLogging                            = "s3_GetBucketLogging"
 	ActionPutBucketRequestPayment                     = "s3_PutBucketRequestPayment"
 	ActionGetBucketRequestPayment                     = "s3_GetBucketRequestPayment"
+	ActionPutBucketMetricsConfiguration               = "s3_PutBucketMetricsConfiguration"
+	ActionGetBucketMetricsConfiguration               = "s3_GetBucketMetricsConfiguration"
+	ActionListBucketMetricsConfigurations             = "s3_ListBucketMetricsConfigurations"
+	ActionDeleteBucketMetricsConfiguration            = "s3_DeleteBucketMetricsConfiguration"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"

@@ -493,7 +493,6 @@ func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_empty_actions_string(s)
 	PutBucketPolicy_empty_actions_array(s)
 	PutBucketPolicy_invalid_action(s)
-	PutBucketPolicy_unsupported_action(s)
 	PutBucketPolicy_incorrect_action_wildcard_usage(s)
 	PutBucketPolicy_empty_principals_string(s)
 	PutBucketPolicy_empty_principals_array(s)
@@ -648,9 +647,14 @@ func TestNotImplementedActions(s *S3Conf) {
 	// bucket logging actions
 	PutBucketLogging_not_implemented(s)
 	GetBucketLogging_not_implemented(s)
-	// request payment actions
+	// bucket request payment actions
 	PutBucketRequestPayment_not_implemented(s)
 	GetBucketRequestPayment_not_implemented(s)
+	// bucket metrics configuration actions
+	PutBucketMetricsConfiguration_not_implemented(s)
+	GetBucketMetricsConfiguration_not_implemented(s)
+	ListBucketMetricsConfigurations_not_implemented(s)
+	DeleteBucketMetricsConfiguration_not_implemented(s)
 }
 
 func TestWORMProtection(s *S3Conf) {
@@ -1298,7 +1302,6 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_empty_actions_string":                                    PutBucketPolicy_empty_actions_string,
 		"PutBucketPolicy_empty_actions_array":                                     PutBucketPolicy_empty_actions_array,
 		"PutBucketPolicy_invalid_action":                                          PutBucketPolicy_invalid_action,
-		"PutBucketPolicy_unsupported_action":                                      PutBucketPolicy_unsupported_action,
 		"PutBucketPolicy_incorrect_action_wildcard_usage":                         PutBucketPolicy_incorrect_action_wildcard_usage,
 		"PutBucketPolicy_empty_principals_string":                                 PutBucketPolicy_empty_principals_string,
 		"PutBucketPolicy_empty_principals_array":                                  PutBucketPolicy_empty_principals_array,
@@ -1407,6 +1410,10 @@ func GetIntTests() IntTests {
 		"GetBucketLogging_not_implemented":                                        GetBucketLogging_not_implemented,
 		"PutBucketRequestPayment_not_implemented":                                 PutBucketRequestPayment_not_implemented,
 		"GetBucketRequestPayment_not_implemented":                                 GetBucketRequestPayment_not_implemented,
+		"PutBucketMetricsConfiguration_not_implemented":                           PutBucketMetricsConfiguration_not_implemented,
+		"GetBucketMetricsConfiguration_not_implemented":                           GetBucketMetricsConfiguration_not_implemented,
+		"ListBucketMetricsConfigurations_not_implemented":                         ListBucketMetricsConfigurations_not_implemented,
+		"DeleteBucketMetricsConfiguration_not_implemented":                        DeleteBucketMetricsConfiguration_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":         WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":         WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":              WORMProtection_bucket_object_lock_governance_bypass_delete,
