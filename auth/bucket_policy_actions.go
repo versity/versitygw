@@ -76,6 +76,8 @@ const (
 	GetBucketRequestPaymentAction            Action = "s3:GetBucketRequestPayment"
 	PutMetricsConfigurationAction            Action = "s3:PutMetricsConfiguration"
 	GetMetricsConfigurationAction            Action = "s3:GetMetricsConfiguration"
+	PutReplicationConfigurationAction        Action = "s3:PutReplicationConfiguration"
+	GetReplicationConfigurationAction        Action = "s3:GetReplicationConfiguration"
 
 	AllActions Action = "s3:*"
 )
@@ -135,6 +137,8 @@ var supportedActionList = map[Action]struct{}{
 	GetBucketRequestPaymentAction:            {},
 	PutMetricsConfigurationAction:            {},
 	GetMetricsConfigurationAction:            {},
+	PutReplicationConfigurationAction:        {},
+	GetReplicationConfigurationAction:        {},
 	AllActions:                               {},
 }
 
