@@ -15832,6 +15832,63 @@ func DeleteBucketMetricsConfiguration_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketReplication_not_implemented(s *S3Conf) error {
+	testName := "PutBucketReplication_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketReplication(ctx,
+			&s3.PutBucketReplicationInput{
+				Bucket: &bucket,
+				ReplicationConfiguration: &types.ReplicationConfiguration{
+					Role: getPtr("arn:aws:iam::35667example:role/CrossRegionReplicationRoleForS3"),
+					Rules: []types.ReplicationRule{
+						{
+							Destination: &types.Destination{
+								Bucket: &bucket,
+								AccessControlTranslation: &types.AccessControlTranslation{
+									Owner: types.OwnerOverrideDestination,
+								},
+								Account: getPtr("grt1"),
+							},
+							Status: types.ReplicationRuleStatusEnabled,
+						},
+					},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketReplication_not_implemented(s *S3Conf) error {
+	testName := "GetBucketReplication_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketReplication(ctx,
+			&s3.GetBucketReplicationInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func DeleteBucketReplication_not_implemented(s *S3Conf) error {
+	testName := "DeleteBucketReplication_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucketReplication(ctx,
+			&s3.DeleteBucketReplicationInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

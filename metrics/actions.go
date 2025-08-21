@@ -82,7 +82,7 @@ var (
 	ActionDeleteBucketAnalyticsConfiguration          = "s3_DeleteBucketAnalyticsConfiguration"
 	ActionPutBucketEncryption                         = "s3_PutBucketEncryption"
 	ActionGetBucketEncryption                         = "s3_GetBucketEncryption"
-	ActionDeleteBucketEncryption                      = "s3_DeleteBucketEcryption"
+	ActionDeleteBucketEncryption                      = "s3_DeleteBucketEncryption"
 	ActionPutBucketIntelligentTieringConfiguration    = "s3_PutBucketIntelligentTieringConfiguration"
 	ActionGetBucketIntelligentTieringConfiguration    = "s3_GetBucketIntelligentTieringConfiguration"
 	ActionListBucketIntelligentTieringConfigurations  = "s3_ListBucketIntelligentTieringConfigurations"
@@ -102,6 +102,9 @@ var (
 	ActionGetBucketMetricsConfiguration               = "s3_GetBucketMetricsConfiguration"
 	ActionListBucketMetricsConfigurations             = "s3_ListBucketMetricsConfigurations"
 	ActionDeleteBucketMetricsConfiguration            = "s3_DeleteBucketMetricsConfiguration"
+	ActionPutBucketReplication                        = "s3_PutBucketReplication"
+	ActionGetBucketReplication                        = "s3_GetBucketReplication"
+	ActionDeleteBucketReplication                     = "s3_DeleteBucketReplication"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -306,6 +309,138 @@ func init() {
 	}
 	ActionMap[ActionDeleteBucketCors] = Action{
 		Name:    "DeleteBucketCors",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketOwnershipControls] = Action{
+		Name:    "PutBucketOwnershipControls",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketOwnershipControls] = Action{
+		Name:    "GetBucketOwnershipControls",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketOwnershipControls] = Action{
+		Name:    "DeleteBucketOwnershipControls",
+		Service: "s3",
+	}
+	ActionMap[ActionOptions] = Action{
+		Name:    "Options",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketAnalyticsConfiguration] = Action{
+		Name:    "PutBucketAnalyticsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketAnalyticsConfiguration] = Action{
+		Name:    "GetBucketAnalyticsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionListBucketAnalyticsConfigurations] = Action{
+		Name:    "ListBucketAnalyticsConfigurations",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketAnalyticsConfiguration] = Action{
+		Name:    "DeleteBucketAnalyticsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketEncryption] = Action{
+		Name:    "PutBucketEncryption",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketEncryption] = Action{
+		Name:    "GetBucketEncryption",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketEncryption] = Action{
+		Name:    "DeleteBucketEncryption",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketIntelligentTieringConfiguration] = Action{
+		Name:    "PutBucketIntelligentTieringConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketIntelligentTieringConfiguration] = Action{
+		Name:    "GetBucketIntelligentTieringConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionListBucketIntelligentTieringConfigurations] = Action{
+		Name:    "ListBucketIntelligentTieringConfigurations",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketIntelligentTieringConfiguration] = Action{
+		Name:    "DeleteBucketIntelligentTieringConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketInventoryConfiguration] = Action{
+		Name:    "PutBucketInventoryConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketInventoryConfiguration] = Action{
+		Name:    "GetBucketInventoryConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionListBucketInventoryConfigurations] = Action{
+		Name:    "ListBucketInventoryConfigurations",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketInventoryConfiguration] = Action{
+		Name:    "DeleteBucketInventoryConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketLifecycleConfiguration] = Action{
+		Name:    "PutBucketLifecycleConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketLifecycleConfiguration] = Action{
+		Name:    "GetBucketLifecycleConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketLifecycle] = Action{
+		Name:    "DeleteBucketLifecycle",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketLogging] = Action{
+		Name:    "PutBucketLogging",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketLogging] = Action{
+		Name:    "GetBucketLogging",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketRequestPayment] = Action{
+		Name:    "PutBucketRequestPayment",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketRequestPayment] = Action{
+		Name:    "GetBucketRequestPayment",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketMetricsConfiguration] = Action{
+		Name:    "PutBucketMetricsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketMetricsConfiguration] = Action{
+		Name:    "GetBucketMetricsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionListBucketMetricsConfigurations] = Action{
+		Name:    "ListBucketMetricsConfigurations",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketMetricsConfiguration] = Action{
+		Name:    "DeleteBucketMetricsConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketReplication] = Action{
+		Name:    "PutBucketReplication",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketReplication] = Action{
+		Name:    "GetBucketReplication",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketReplication] = Action{
+		Name:    "DeleteBucketReplication",
 		Service: "s3",
 	}
 }
