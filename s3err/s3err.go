@@ -172,6 +172,10 @@ const (
 	ErrTrailerHeaderNotSupported
 	ErrBadRequest
 	ErrMissingUploadId
+	ErrNoSuchCORSConfiguration
+	ErrCORSForbidden
+	ErrMissingCORSOrigin
+	ErrCORSIsNotEnabled
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -756,6 +760,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "This operation does not accept partNumber without uploadId",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
+	ErrNoSuchCORSConfiguration: {
+		Code:           "NoSuchCORSConfiguration",
+		Description:    "The CORS configuration does not exist",
+		HTTPStatusCode: http.StatusNotFound,
+	},
+	ErrCORSForbidden: {
+		Code:           "AccessForbidden",
+		Description:    "CORSResponse: This CORS request is not allowed. This is usually because the evalution of Origin, request method / Access-Control-Request-Method or Access-Control-Request-Headers are not whitelisted by the resource's CORS spec.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrMissingCORSOrigin: {
+		Code:           "BadRequest",
+		Description:    "Insufficient information. Origin request header needed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrCORSIsNotEnabled: {
+		Code:           "AccessForbidden",
+		Description:    "CORSResponse: CORS is not enabled for this bucket.",
+		HTTPStatusCode: http.StatusForbidden,
+	},
 
 	// non aws errors
 	ErrExistingObjectIsDirectory: {
@@ -932,6 +956,38 @@ func CreateExceedingRangeErr(objSize int64) APIError {
 	return APIError{
 		Code:           "InvalidArgument",
 		Description:    fmt.Sprintf("Range specified is not valid for source object of size: %d", objSize),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidCORSHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`AllowedHeader "%s" contains invalid character.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidCORSRequestHeaderErr(header string) APIError {
+	return APIError{
+		Code:           "BadRequest",
+		Description:    fmt.Sprintf(`Access-Control-Request-Headers "%s" contains invalid character.`, header),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetUnsopportedCORSMethodErr(method string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf("Found unsupported HTTP method in CORS config. Unsupported method is %s", method),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidCORSMethodErr(method string) APIError {
+	return APIError{
+		Code:           "BadRequest",
+		Description:    fmt.Sprintf("Invalid Access-Control-Request-Method: %s", method),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

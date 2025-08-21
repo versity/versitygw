@@ -463,6 +463,26 @@ func TestS3ApiController_PutObjectLockConfiguration(t *testing.T) {
 }
 
 func TestS3ApiController_PutBucketCors(t *testing.T) {
+	validBody, err := xml.Marshal(auth.CORSConfiguration{
+		Rules: []auth.CORSRule{
+			{
+				AllowedOrigins: []string{"*"},
+				AllowedMethods: []auth.CORSHTTPMethod{http.MethodPost},
+			},
+		},
+	})
+	assert.NoError(t, err)
+
+	invalidCors, err := xml.Marshal(auth.CORSConfiguration{
+		Rules: []auth.CORSRule{
+			{
+				AllowedOrigins: []string{"origin"},
+				AllowedMethods: []auth.CORSHTTPMethod{"invalid_method"},
+			},
+		},
+	})
+	assert.NoError(t, err)
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -483,10 +503,53 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid request body",
+			input: testInput{
+				locals: defaultLocals,
+				body:   []byte("invalid_body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
+			name: "invalid cors config",
+			input: testInput{
+				locals: defaultLocals,
+				body:   invalidCors,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetUnsopportedCORSMethodErr("invalid_method"),
+			},
+		},
+		{
+			name: "invalid checksum algo",
+			input: testInput{
+				locals: defaultLocals,
+				body:   validBody,
+				headers: map[string]string{
+					"X-Amz-Sdk-Checksum-Algorithm": "invalid_algo",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: "root"},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm),
+			},
+		},
+		{
 			name: "backend error",
 			input: testInput{
 				locals: defaultLocals,
 				beErr:  s3err.GetAPIError(s3err.ErrNotImplemented),
+				body:   validBody,
 			},
 			output: testOutput{
 				response: &Response{
@@ -499,6 +562,7 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 			name: "success",
 			input: testInput{
 				locals: defaultLocals,
+				body:   validBody,
 			},
 			output: testOutput{
 				response: &Response{
@@ -513,7 +577,7 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
-				PutBucketCorsFunc: func(contextMoqParam context.Context, bytes []byte) error {
+				PutBucketCorsFunc: func(contextMoqParam context.Context, bucket string, cors []byte) error {
 					return tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
@@ -526,7 +590,9 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 			}
 
 			testController(t, ctrl.PutBucketCors, tt.output.response, tt.output.err, ctxInputs{
-				locals: tt.input.locals,
+				locals:  tt.input.locals,
+				body:    tt.input.body,
+				headers: tt.input.headers,
 			})
 		})
 	}
