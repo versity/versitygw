@@ -15934,6 +15934,37 @@ func DeletePublicAccessBlock_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketNotificationConfiguratio_not_implemented(s *S3Conf) error {
+	testName := "PutBucketNotificationConfiguratio_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketNotificationConfiguration(ctx,
+			&s3.PutBucketNotificationConfigurationInput{
+				Bucket: &bucket,
+				NotificationConfiguration: &types.NotificationConfiguration{
+					EventBridgeConfiguration: &types.EventBridgeConfiguration{},
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketNotificationConfiguratio_not_implemented(s *S3Conf) error {
+	testName := "GetBucketNotificationConfiguratio_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketNotificationConfiguration(ctx,
+			&s3.GetBucketNotificationConfigurationInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
