@@ -84,6 +84,8 @@ const (
 	GetBucketNotificationAction              Action = "s3:GetBucketNotification"
 	PutAccelerateConfigurationAction         Action = "s3:PutAccelerateConfiguration"
 	GetAccelerateConfigurationAction         Action = "s3:GetAccelerateConfiguration"
+	PutBucketWebsiteAction                   Action = "s3:PutBucketWebsite"
+	GetBucketWebsiteAction                   Action = "s3:GetBucketWebsite"
 
 	AllActions Action = "s3:*"
 )
@@ -151,6 +153,8 @@ var supportedActionList = map[Action]struct{}{
 	GetBucketNotificationAction:              {},
 	PutAccelerateConfigurationAction:         {},
 	GetAccelerateConfigurationAction:         {},
+	PutBucketWebsiteAction:                   {},
+	GetBucketWebsiteAction:                   {},
 	AllActions:                               {},
 }
 

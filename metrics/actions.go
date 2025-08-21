@@ -112,6 +112,9 @@ var (
 	ActionGetBucketNotificationConfiguration          = "s3_GetBucketNotificationConfiguration"
 	ActionPutBucketAccelerateConfiguration            = "s3_PutBucketAccelerateConfiguration"
 	ActionGetBucketAccelerateConfiguration            = "s3_GetBucketAccelerateConfiguration"
+	ActionPutBucketWebsite                            = "s3_PutBucketWebsite"
+	ActionGetBucketWebsite                            = "s3_GetBucketWebsite"
+	ActionDeleteBucketWebsite                         = "s3_DeleteBucketWebsite"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -476,6 +479,18 @@ func init() {
 	}
 	ActionMap[ActionGetBucketAccelerateConfiguration] = Action{
 		Name:    "GetBucketAccelerateConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketWebsite] = Action{
+		Name:    "PutBucketWebsite",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketWebsite] = Action{
+		Name:    "GetBucketWebsite",
+		Service: "s3",
+	}
+	ActionMap[ActionDeleteBucketWebsite] = Action{
+		Name:    "DeleteBucketWebsite",
 		Service: "s3",
 	}
 }
