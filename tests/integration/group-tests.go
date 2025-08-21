@@ -663,6 +663,9 @@ func TestNotImplementedActions(s *S3Conf) {
 	PutPublicAccessBlock_not_implemented(s)
 	GetPublicAccessBlock_not_implemented(s)
 	DeletePublicAccessBlock_not_implemented(s)
+	// bucket notification actions
+	PutBucketNotificationConfiguratio_not_implemented(s)
+	GetBucketNotificationConfiguratio_not_implemented(s)
 }
 
 func TestWORMProtection(s *S3Conf) {
@@ -1428,6 +1431,8 @@ func GetIntTests() IntTests {
 		"PutPublicAccessBlock_not_implemented":                                    PutPublicAccessBlock_not_implemented,
 		"GetPublicAccessBlock_not_implemented":                                    GetPublicAccessBlock_not_implemented,
 		"DeletePublicAccessBlock_not_implemented":                                 DeletePublicAccessBlock_not_implemented,
+		"PutBucketNotificationConfiguratio_not_implemented":                       PutBucketNotificationConfiguratio_not_implemented,
+		"GetBucketNotificationConfiguratio_not_implemented":                       GetBucketNotificationConfiguratio_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":         WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":         WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":              WORMProtection_bucket_object_lock_governance_bypass_delete,

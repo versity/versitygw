@@ -80,6 +80,8 @@ const (
 	GetReplicationConfigurationAction        Action = "s3:GetReplicationConfiguration"
 	PutBucketPublicAccessBlockAction         Action = "s3:PutBucketPublicAccessBlock"
 	GetBucketPublicAccessBlockAction         Action = "s3:GetBucketPublicAccessBlock"
+	PutBucketNotificationAction              Action = "s3:PutBucketNotification"
+	GetBucketNotificationAction              Action = "s3:GetBucketNotification"
 
 	AllActions Action = "s3:*"
 )
@@ -143,6 +145,8 @@ var supportedActionList = map[Action]struct{}{
 	GetReplicationConfigurationAction:        {},
 	PutBucketPublicAccessBlockAction:         {},
 	GetBucketPublicAccessBlockAction:         {},
+	PutBucketNotificationAction:              {},
+	GetBucketNotificationAction:              {},
 	AllActions:                               {},
 }
 
