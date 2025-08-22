@@ -15965,6 +15965,37 @@ func GetBucketNotificationConfiguratio_not_implemented(s *S3Conf) error {
 	})
 }
 
+func PutBucketAccelerateConfiguration_not_implemented(s *S3Conf) error {
+	testName := "PutBucketAccelerateConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAccelerateConfiguration(ctx,
+			&s3.PutBucketAccelerateConfigurationInput{
+				Bucket: &bucket,
+				AccelerateConfiguration: &types.AccelerateConfiguration{
+					Status: types.BucketAccelerateStatusEnabled,
+				},
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetBucketAccelerateConfiguration_not_implemented(s *S3Conf) error {
+	testName := "GetBucketAccelerateConfiguration_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketAccelerateConfiguration(ctx,
+			&s3.GetBucketAccelerateConfigurationInput{
+				Bucket: &bucket,
+			})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
 func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) error {
 	testName := "WORMProtection_bucket_object_lock_configuration_compliance_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
