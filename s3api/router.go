@@ -357,6 +357,20 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		),
 	)
 	bucketRouter.Put("",
+		middlewares.MatchQueryArgs("accelerate"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionPutBucketAccelerateConfiguration,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutBucketAccelerateConfiguration, auth.PutAccelerateConfigurationAction, auth.PermissionWrite),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
+	bucketRouter.Put("",
 		controllers.ProcessHandlers(
 			ctrl.CreateBucket,
 			metrics.ActionCreateBucket,
@@ -899,6 +913,20 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			services,
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketNotificationConfiguration, auth.GetBucketNotificationAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ParseAcl(be),
+		),
+	)
+	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("accelerate"),
+		controllers.ProcessHandlers(
+			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
+			metrics.ActionGetBucketAccelerateConfiguration,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAccelerateConfiguration, auth.GetAccelerateConfigurationAction, auth.PermissionRead),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
 			middlewares.VerifyV4Signature(root, iam, region, debug),
 			middlewares.VerifyMD5Body(),

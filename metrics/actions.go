@@ -110,6 +110,8 @@ var (
 	ActionDeletePublicAccessBlock                     = "s3_DeletePublicAccessBlock"
 	ActionPutBucketNotificationConfiguration          = "s3_PutBucketNotificationConfiguration"
 	ActionGetBucketNotificationConfiguration          = "s3_GetBucketNotificationConfiguration"
+	ActionPutBucketAccelerateConfiguration            = "s3_PutBucketAccelerateConfiguration"
+	ActionGetBucketAccelerateConfiguration            = "s3_GetBucketAccelerateConfiguration"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -466,6 +468,14 @@ func init() {
 	}
 	ActionMap[ActionGetBucketNotificationConfiguration] = Action{
 		Name:    "GetBucketNotificationConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionPutBucketAccelerateConfiguration] = Action{
+		Name:    "PutBucketAccelerateConfiguration",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketAccelerateConfiguration] = Action{
+		Name:    "GetBucketAccelerateConfiguration",
 		Service: "s3",
 	}
 }
