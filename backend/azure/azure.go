@@ -619,8 +619,7 @@ Pager:
 		}
 		for _, v := range resp.Segment.BlobItems {
 			if len(objects)+len(cPrefixes) >= int(maxKeys) {
-				nextMarker = objects[len(objects)-1].Key
-				isTruncated = true
+				// Use Azure's NextMarker for paging
 				break Pager
 			}
 			objects = append(objects, s3response.Object{
@@ -639,8 +638,7 @@ Pager:
 				continue
 			}
 			if len(objects)+len(cPrefixes) >= int(maxKeys) {
-				nextMarker = cPrefixes[len(cPrefixes)-1].Prefix
-				isTruncated = true
+				// Use Azure's NextMarker for paging
 				break Pager
 			}
 
@@ -653,6 +651,12 @@ Pager:
 			cPrefixes = append(cPrefixes, types.CommonPrefix{
 				Prefix: v.Name,
 			})
+		}
+		// If Azure returned a NextMarker, set it for the next request
+		if resp.NextMarker != nil && *resp.NextMarker != "" {
+			nextMarker = resp.NextMarker
+			isTruncated = true
+			break Pager
 		}
 	}
 
@@ -723,8 +727,9 @@ Pager:
 		}
 		for _, v := range resp.Segment.BlobItems {
 			if len(objects)+len(cPrefixes) >= int(maxKeys) {
-				nextMarker = objects[len(objects)-1].Key
-				isTruncated = true
+				// nextMarker = objects[len(objects)-1].Key
+				// isTruncated = true
+				// Use Azure's NextMarker for paging
 				break Pager
 			}
 
@@ -747,8 +752,9 @@ Pager:
 				continue
 			}
 			if len(objects)+len(cPrefixes) >= int(maxKeys) {
-				nextMarker = cPrefixes[len(cPrefixes)-1].Prefix
-				isTruncated = true
+				// nextMarker = cPrefixes[len(cPrefixes)-1].Prefix
+				// isTruncated = true
+				// Use Azure's NextMarker for paging
 				break Pager
 			}
 
@@ -761,6 +767,12 @@ Pager:
 			cPrefixes = append(cPrefixes, types.CommonPrefix{
 				Prefix: v.Name,
 			})
+		}
+		// If Azure returned a NextMarker, set it for the next request
+		if resp.NextMarker != nil && *resp.NextMarker != "" {
+			nextMarker = resp.NextMarker
+			isTruncated = true
+			break Pager
 		}
 	}
 
