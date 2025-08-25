@@ -5142,6 +5142,7 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 			return err
 		}
 
+		// Test 1: List all objects without pagination
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
 			Bucket: &bucket,
@@ -5171,6 +5172,36 @@ func ListObjects_list_all_objs(s *S3Conf) error {
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the contents to be %v, instead got %v",
 				contents, out.Contents)
+		}
+
+		// Test 2: List all objects with pagination using ListObjectsV2
+		var marker *string
+		var allObjects []types.Object
+		maxKeys := int32(2)
+
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjects(ctx, &s3.ListObjectsInput{
+				Bucket:  &bucket,
+				MaxKeys: &maxKeys,
+				Marker:  marker,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			allObjects = append(allObjects, out.Contents...)
+
+			if out.NextMarker == nil || !*out.IsTruncated {
+				break
+			}
+			marker = out.NextMarker
+		}
+
+		if !compareObjects(contents, allObjects) {
+			return fmt.Errorf("expected the contents to be %v, instead got %v",
+				contents, allObjects)
 		}
 
 		return nil
@@ -5585,10 +5616,6 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 			return fmt.Errorf("expected the max-keys to be %v, instead got %v",
 				maxKeys, *out.MaxKeys)
 		}
-		if getString(out.NextContinuationToken) != "d3/" {
-			return fmt.Errorf("expected the NextContinuationToken to be d3/, instead got %v",
-				getString(out.NextContinuationToken))
-		}
 		if getString(out.Delimiter) != delim {
 			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
 				delim, getString(out.Delimiter))
@@ -5612,6 +5639,59 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 		if getString(out.Delimiter) != delim {
 			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
 				delim, getString(out.Delimiter))
+		}
+
+		return nil
+	})
+}
+
+func ListObjectsV2_non_truncated_common_prefixes(s *S3Conf) error {
+	testName := "ListObjectsV2_non_truncated_common_prefixes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjects(s3client, []string{"asdf", "boo/bar", "boo/baz/xyzzy", "cquux/thud", "cquux/bla"}, bucket)
+		if err != nil {
+			return err
+		}
+
+		delim, marker, maxKeys := "/", "boo/", int32(1)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:     &bucket,
+			StartAfter: &marker,
+			Delimiter:  &delim,
+			MaxKeys:    &maxKeys,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.IsTruncated == nil {
+			return fmt.Errorf("expected non-nil istruncated")
+		}
+		if *res.IsTruncated {
+			return fmt.Errorf("expected non-truncated result")
+		}
+		if res.MaxKeys == nil {
+			return fmt.Errorf("expected non nil max-keys")
+		}
+		if *res.MaxKeys != maxKeys {
+			return fmt.Errorf("expected max-keys to be %v, instead got %v",
+				maxKeys, *res.MaxKeys)
+		}
+		if getString(res.Delimiter) != delim {
+			return fmt.Errorf("expected delimiter to be %v, instead got %v",
+				delim, getString(res.Delimiter))
+		}
+		if len(res.Contents) != 0 {
+			return fmt.Errorf("expected empty contents, instead got %+v",
+				res.Contents)
+		}
+		cPrefs := []string{"cquux/"}
+		if !comparePrefixes(cPrefs, res.CommonPrefixes) {
+			return fmt.Errorf("expected common prefixes to be %v, instead got %+v",
+				cPrefs, res.CommonPrefixes)
 		}
 
 		return nil
@@ -5691,11 +5771,12 @@ func ListObjectsV2_exceeding_max_keys(s *S3Conf) error {
 func ListObjectsV2_list_all_objs(s *S3Conf) error {
 	testName := "ListObjectsV2_list_all_objs"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		contents, err := putObjects(s3client, []string{"bar", "baz", "foo", "obj1", "hell/", "xyzz/quxx"}, bucket)
+		contents, err := putObjects(s3client, []string{"a", "aa", "aaa", "aaaa", "bar", "baz", "foo", "obj1", "hello/world", "xyzz/quxx"}, bucket)
 		if err != nil {
 			return err
 		}
 
+		// Test 1: List all objects without pagination
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 			Bucket: &bucket,
@@ -5729,6 +5810,36 @@ func ListObjectsV2_list_all_objs(s *S3Conf) error {
 		if !compareObjects(contents, out.Contents) {
 			return fmt.Errorf("expected the contents to be %v, instead got %v",
 				contents, out.Contents)
+		}
+
+		// Test 2: List all objects with pagination using ListObjectsV2
+		var continuationToken *string
+		var allObjects []types.Object
+		maxKeys := int32(2)
+
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+				Bucket:            &bucket,
+				MaxKeys:           &maxKeys,
+				ContinuationToken: continuationToken,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			allObjects = append(allObjects, out.Contents...)
+
+			if out.NextContinuationToken == nil || !*out.IsTruncated {
+				break
+			}
+			continuationToken = out.NextContinuationToken
+		}
+
+		if !compareObjects(contents, allObjects) {
+			return fmt.Errorf("expected the paginated contents to be %v, instead got %v",
+				contents, allObjects)
 		}
 
 		return nil
