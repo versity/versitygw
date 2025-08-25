@@ -738,6 +738,20 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.ParseAcl(be),
 		))
 	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("policyStatus"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketPolicyStatus,
+			metrics.ActionGetBucketPolicyStatus,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketPolicyStatus, auth.GetBucketPolicyStatusAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ApplyBucketCORS(be),
+			middlewares.ParseAcl(be),
+		))
+	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("analytics", "id"),
 		controllers.ProcessHandlers(
 			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),

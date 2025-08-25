@@ -238,6 +238,60 @@ func (c S3ApiController) GetBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
+func (c S3ApiController) GetBucketPolicyStatus(ctx *fiber.Ctx) (*Response, error) {
+	bucket := ctx.Params("bucket")
+	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
+	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
+	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:       c.readonly,
+		Acl:            parsedAcl,
+		AclPermission:  auth.PermissionRead,
+		IsRoot:         isRoot,
+		Acc:            acct,
+		Bucket:         bucket,
+		Action:         auth.GetBucketPolicyStatusAction,
+		IsBucketPublic: isPublicBucket,
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	policyRaw, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	policy, err := auth.ParsePolicyDocument(policyRaw)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+	isPublic := policy.IsPublic()
+
+	return &Response{
+		Data: types.PolicyStatus{
+			IsPublic: &isPublic,
+		},
+		MetaOpts: &MetaOptions{
+			BucketOwner: parsedAcl.Owner,
+		},
+	}, nil
+}
+
 func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 	// url values
 	bucket := ctx.Params("bucket")

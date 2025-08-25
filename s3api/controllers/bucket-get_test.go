@@ -505,6 +505,122 @@ func TestS3ApiController_GetBucketPolicy(t *testing.T) {
 	}
 }
 
+func TestS3ApiController_GetBucketPolicyStatus(t *testing.T) {
+	mockResp := `
+	{
+		"Statement": [
+			{
+			"Effect": "Allow",
+			"Principal": {
+				"AWS": "*"
+			},
+			"Action": ["s3:GetObject"],
+			"Resource": "arn:aws:s3:::test/*"
+			}
+		]
+	}
+	`
+	isPublic := true
+
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "verify access fails",
+			input: testInput{
+				beRes:  []byte{},
+				beErr:  s3err.GetAPIError(s3err.ErrAccessDenied),
+				locals: accessDeniedLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "fails to get bucket policy",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  []byte{},
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+		},
+		{
+			name: "fails to parse bucket policy",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  []byte("invalid policy"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.APIError{
+					Code:           "MalformedPolicy",
+					Description:    "This policy contains invalid Json",
+					HTTPStatusCode: http.StatusBadRequest,
+				},
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				locals: defaultLocals,
+				beRes:  []byte(mockResp),
+			},
+			output: testOutput{
+				response: &Response{
+					Data: types.PolicyStatus{
+						IsPublic: &isPublic,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := &BackendMock{
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return tt.input.beRes.([]byte), tt.input.beErr
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+			}
+
+			testController(
+				t,
+				ctrl.GetBucketPolicyStatus,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					locals: tt.input.locals,
+					body:   tt.input.body,
+				})
+		})
+	}
+}
+
 func TestS3ApiController_ListObjectVersions(t *testing.T) {
 	listVersionsResult := s3response.ListVersionsResult{
 		Name:      utils.GetStringPtr("name"),

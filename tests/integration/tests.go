@@ -13428,6 +13428,92 @@ func GetBucketPolicy_success(s *S3Conf) error {
 	})
 }
 
+func GetBucketPolicyStatus_non_existing_bucket(s *S3Conf) error {
+	testName := "GetBucketPolicyStatus_non_existing_bucket"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketPolicyStatus(ctx, &s3.GetBucketPolicyStatusInput{
+			Bucket: getPtr("non-existing-bucket"),
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket))
+	})
+}
+
+func GetBucketPolicyStatus_no_such_bucket_policy(s *S3Conf) error {
+	testName := "GetBucketPolicyStatus_no_such_bucket_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.GetBucketPolicyStatus(ctx, &s3.GetBucketPolicyStatusInput{
+			Bucket: &bucket,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy))
+	})
+}
+
+func GetBucketPolicyStatus_success(s *S3Conf) error {
+	testName := "GetBucketPolicyStatus_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{testuser1, testuser2})
+		if err != nil {
+			return err
+		}
+
+		for _, test := range []struct {
+			policy string
+			status bool
+		}{
+			{
+				policy: genPolicyDoc("Allow", `"grt1"`, `["s3:DeleteBucket", "s3:GetBucketTagging"]`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
+				status: false,
+			},
+			{
+				policy: genPolicyDoc("Allow", `"grt2"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%v/obj"`, bucket)),
+				status: false,
+			},
+			{
+				policy: genPolicyDoc("Allow", `"*"`, `"s3:PutObject"`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket)),
+				status: true,
+			},
+			{
+				policy: genPolicyDoc("Allow", `"*"`, `"s3:ListBucket"`, fmt.Sprintf(`"arn:aws:s3:::%v"`, bucket)),
+				status: true,
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &test.policy,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetBucketPolicyStatus(ctx, &s3.GetBucketPolicyStatusInput{
+				Bucket: &bucket,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+			if res.PolicyStatus.IsPublic == nil {
+				return fmt.Errorf("expected non nil policy status")
+			}
+
+			if *res.PolicyStatus.IsPublic != test.status {
+				return fmt.Errorf("expected the policy public status to be %v, instead got %v", test.status, *res.PolicyStatus.IsPublic)
+			}
+		}
+
+		return nil
+	})
+}
+
 func DeleteBucketPolicy_non_existing_bucket(s *S3Conf) error {
 	testName := "DeleteBucketPolicy_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -92,12 +92,12 @@ func (bp *BucketPolicy) isAllowed(principal string, action Action, resource stri
 	return isAllowed
 }
 
-// isPublic checks if the bucket policy statements contain
-// an entity granting public access
-func (bp *BucketPolicy) isPublic(resource string, action Action) bool {
+// IsPublicFor checks if the bucket policy statements contain
+// an entity granting public access to the given resource and action
+func (bp *BucketPolicy) isPublicFor(resource string, action Action) bool {
 	var isAllowed bool
 	for _, statement := range bp.Statement {
-		if statement.isPublic(resource, action) {
+		if statement.isPublicFor(resource, action) {
 			switch statement.Effect {
 			case BucketPolicyAccessTypeAllow:
 				isAllowed = true
@@ -108,6 +108,18 @@ func (bp *BucketPolicy) isPublic(resource string, action Action) bool {
 	}
 
 	return isAllowed
+}
+
+// IsPublic checks if one of bucket policy statments grant
+// public access to ALL users
+func (bp *BucketPolicy) IsPublic() bool {
+	for _, statement := range bp.Statement {
+		if statement.isPublic() {
+			return true
+		}
+	}
+
+	return false
 }
 
 type BucketPolicyItem struct {
@@ -155,9 +167,16 @@ func (bpi *BucketPolicyItem) findMatch(principal string, action Action, resource
 	return false
 }
 
-// isPublic checks if the bucket policy statemant grants public access
-func (bpi *BucketPolicyItem) isPublic(resource string, action Action) bool {
-	return bpi.Principals.IsPublic() && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource)
+// isPublicFor checks if the bucket policy statemant grants public access
+// for given resource and action
+func (bpi *BucketPolicyItem) isPublicFor(resource string, action Action) bool {
+	return bpi.Principals.isPublic() && bpi.Actions.FindMatch(action) && bpi.Resources.FindMatch(resource)
+}
+
+// isPublic checks if the statement grants public access
+// to ALL users
+func (bpi *BucketPolicyItem) isPublic() bool {
+	return bpi.Principals.isPublic()
 }
 
 func getMalformedPolicyError(err error) error {
@@ -168,17 +187,27 @@ func getMalformedPolicyError(err error) error {
 	}
 }
 
+// ParsePolicyDocument parses raw bytes to 'BucketPolicy'
+func ParsePolicyDocument(data []byte) (*BucketPolicy, error) {
+	var policy BucketPolicy
+	if err := json.Unmarshal(data, &policy); err != nil {
+		var pe policyErr
+		if errors.As(err, &pe) {
+			return nil, getMalformedPolicyError(err)
+		}
+		return nil, getMalformedPolicyError(policyErrInvalidPolicy)
+	}
+
+	return &policy, nil
+}
+
 func ValidatePolicyDocument(policyBin []byte, bucket string, iam IAMService) error {
 	if len(policyBin) == 0 || policyBin[0] != '{' {
 		return getMalformedPolicyError(policyErrInvalidFirstChar)
 	}
-	var policy BucketPolicy
-	if err := json.Unmarshal(policyBin, &policy); err != nil {
-		var pe policyErr
-		if errors.As(err, &pe) {
-			return getMalformedPolicyError(err)
-		}
-		return getMalformedPolicyError(policyErrInvalidPolicy)
+	policy, err := ParsePolicyDocument(policyBin)
+	if err != nil {
+		return err
 	}
 
 	if len(policy.Statement) == 0 {
@@ -222,7 +251,7 @@ func VerifyPublicBucketPolicy(policy []byte, bucket, object string, action Actio
 		resource += "/" + object
 	}
 
-	if !bucketPolicy.isPublic(resource, action) {
+	if !bucketPolicy.isPublicFor(resource, action) {
 		return ErrAccessDenied
 	}
 

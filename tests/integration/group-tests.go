@@ -520,6 +520,12 @@ func TestGetBucketPolicy(s *S3Conf) {
 	GetBucketPolicy_success(s)
 }
 
+func TestGetBucketPolicyStatus(s *S3Conf) {
+	GetBucketPolicyStatus_non_existing_bucket(s)
+	GetBucketPolicyStatus_no_such_bucket_policy(s)
+	GetBucketPolicyStatus_success(s)
+}
+
 func TestDeleteBucketPolicy(s *S3Conf) {
 	DeleteBucketPolicy_non_existing_bucket(s)
 	DeleteBucketPolicy_remove_before_setting(s)
@@ -1342,6 +1348,9 @@ func GetIntTests() IntTests {
 		"GetBucketPolicy_non_existing_bucket":                                     GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                 GetBucketPolicy_not_set,
 		"GetBucketPolicy_success":                                                 GetBucketPolicy_success,
+		"GetBucketPolicyStatus_non_existing_bucket":                               GetBucketPolicyStatus_non_existing_bucket,
+		"GetBucketPolicyStatus_no_such_bucket_policy":                             GetBucketPolicyStatus_no_such_bucket_policy,
+		"GetBucketPolicyStatus_success":                                           GetBucketPolicyStatus_success,
 		"DeleteBucketPolicy_non_existing_bucket":                                  DeleteBucketPolicy_non_existing_bucket,
 		"DeleteBucketPolicy_remove_before_setting":                                DeleteBucketPolicy_remove_before_setting,
 		"DeleteBucketPolicy_success":                                              DeleteBucketPolicy_success,
