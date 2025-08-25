@@ -41,7 +41,7 @@ source ./tests/setup.sh
   assert_success
 }
 
-@test "REST - HeadBucket - success" {
+@test "REST - HeadBucket - expected owner success" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 

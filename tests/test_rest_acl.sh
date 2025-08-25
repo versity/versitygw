@@ -109,9 +109,6 @@ fi
 }
 
 @test "REST - put invalid ACL" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/986"
-  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -204,16 +201,5 @@ fi
   assert_success
 
   run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_that_acl_xml_does_not_have_owner_permission"
-  assert_success
-}
-
-@test "GetBucketAcl - DisplayName" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1414"
-  fi
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run get_bucket_acl_rest "$BUCKET_ONE_NAME" "" "check_for_display_name"
   assert_success
 }

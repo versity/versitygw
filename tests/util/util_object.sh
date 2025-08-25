@@ -16,7 +16,6 @@
 
 source ./tests/util/util_bucket.sh
 source ./tests/util/util_create_bucket.sh
-source ./tests/util/util_head_object.sh
 source ./tests/util/util_mc.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_versioning.sh
@@ -46,6 +45,7 @@ source ./tests/commands/put_object_legal_hold.sh
 source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
+source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/util/util_users.sh
 
 # params: bucket, object name
@@ -243,7 +243,7 @@ check_checksum_invalid_or_incorrect() {
 
 put_object_rest_checksum() {
   log 6 "put_object_rest_checksum"
-  if ! check_param_count "put_object_rest_checksum" "data file, bucket name, key, checksum type" 4 $#; then
+  if ! check_param_count_v2 "data file, bucket name, key, checksum type" 4 $#; then
     return 1
   fi
   # shellcheck disable=SC2097,SC2098

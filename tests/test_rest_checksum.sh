@@ -18,7 +18,6 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/setup.sh
-source ./tests/util/util_head_object.sh
 source ./tests/util/util_setup.sh
 
 export RUN_USERS=true

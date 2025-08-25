@@ -22,6 +22,32 @@ source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 
+@test "REST - empty message" {
+  test_file="test_file"
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1249"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  echo -en "\r\n" > "$TEST_FILE_FOLDER/empty.txt"
+  run send_via_openssl_with_timeout "$TEST_FILE_FOLDER/empty.txt"
+  assert_success
+}
+
+@test "REST - deformed message" {
+  test_file="test_file"
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1364"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
+  run send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/deformed.txt" 400 "BadRequest" "An error occurred when parsing the HTTP request."
+  assert_success
+}
+
 @test "test_rest_list_buckets" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success

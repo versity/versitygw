@@ -74,9 +74,6 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - x-amz-grant-full-control - no ownership control change" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1387"
-  fi
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
   fi
