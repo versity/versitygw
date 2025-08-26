@@ -35,12 +35,21 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
+// ScoutfsOpts are the options for the ScoutFS backend
 type ScoutfsOpts struct {
-	ChownUID         bool
-	ChownGID         bool
-	GlacierMode      bool
-	BucketLinks      bool
-	NewDirPerm       fs.FileMode
+	// ChownUID sets the UID of the object to the UID of the user on PUT
+	ChownUID bool
+	// ChownGID sets the GID of the object to the GID of the user on PUT
+	ChownGID bool
+	// BucketLinks enables symlinks to directories to be treated as buckets
+	BucketLinks bool
+	//VersioningDir sets the version directory to enable object versioning
+	VersioningDir string
+	// NewDirPerm specifies the permission to set on newly created directories
+	NewDirPerm fs.FileMode
+	// GlacierMode enables glacier emulation for offline files
+	GlacierMode bool
+	// DisableNoArchive prevents setting noarchive on temporary files
 	DisableNoArchive bool
 }
 

@@ -72,6 +72,12 @@ move interfaces as well as support for tiered filesystems.`,
 				EnvVars:     []string{"VGW_BUCKET_LINKS"},
 				Destination: &bucketlinks,
 			},
+			&cli.StringFlag{
+				Name:        "versioning-dir",
+				Usage:       "the directory path to enable bucket versioning",
+				EnvVars:     []string{"VGW_VERSIONING_DIR"},
+				Destination: &versioningDir,
+			},
 			&cli.UintFlag{
 				Name:        "dir-perms",
 				Usage:       "default directory permissions for new directories",
@@ -106,6 +112,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.BucketLinks = bucketlinks
 	opts.NewDirPerm = fs.FileMode(dirPerms)
 	opts.DisableNoArchive = disableNoArchive
+	opts.VersioningDir = versioningDir
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
