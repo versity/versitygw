@@ -102,6 +102,7 @@ func (s S3ApiController) CORSOptions(ctx *fiber.Ctx) (*Response, error) {
 			"Access-Control-Allow-Methods":     &allowConfig.Methods,
 			"Access-Control-Expose-Headers":    &allowConfig.ExposedHeaders,
 			"Access-Control-Allow-Credentials": &allowConfig.AllowCredentials,
+			"Access-Control-Allow-Headers":     &allowConfig.AllowHeaders,
 			"Access-Control-Max-Age":           utils.ConvertPtrToStringPtr(allowConfig.MaxAge),
 			"Vary":                             &middlewares.VaryHdr,
 		},
