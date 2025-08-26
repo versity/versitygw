@@ -1685,6 +1685,7 @@ func compareCorsConfig(expected, got []types.CORSRule) error {
 type PreflightResult struct {
 	Origin           string
 	Methods          string
+	AllowHeaders     string
 	ExposeHeaders    string
 	MaxAge           string
 	AllowCredentials string
@@ -1715,6 +1716,7 @@ func extractCORSHeaders(resp *http.Response) (*PreflightResult, error) {
 		Methods:          resp.Header.Get("Access-Control-Allow-Methods"),
 		ExposeHeaders:    resp.Header.Get("Access-Control-Expose-Headers"),
 		MaxAge:           resp.Header.Get("Access-Control-Max-Age"),
+		AllowHeaders:     resp.Header.Get("Access-Control-Allow-Headers"),
 		AllowCredentials: resp.Header.Get("Access-Control-Allow-Credentials"),
 		Vary:             resp.Header.Get("Vary"),
 	}, nil
@@ -1768,6 +1770,9 @@ func comparePreflightResult(expected, got *PreflightResult) error {
 	}
 	if expected.Methods != got.Methods {
 		return fmt.Errorf("expected the allowed methods to be %v, instead got %v", expected.Methods, got.Methods)
+	}
+	if expected.AllowHeaders != got.AllowHeaders {
+		return fmt.Errorf("expected the allow headers to be %v, instead got %v", expected.AllowHeaders, got.AllowHeaders)
 	}
 	if expected.ExposeHeaders != got.ExposeHeaders {
 		return fmt.Errorf("expected the expose headers to be %v, instead got %v", expected.ExposeHeaders, got.ExposeHeaders)

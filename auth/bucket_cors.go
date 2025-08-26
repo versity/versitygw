@@ -45,11 +45,21 @@ func (ch CORSHeader) String() string {
 	return string(ch)
 }
 
+// ToLower converts the header to lower case
+func (ch CORSHeader) ToLower() string {
+	return strings.ToLower(string(ch))
+}
+
 // IsValid validates the cors http request method:
 // the methods are case sensitive
 func (cm CORSHTTPMethod) IsValid() bool {
-	return cm == http.MethodGet || cm == http.MethodHead || cm == http.MethodPut ||
+	return cm.IsEmpty() || cm == http.MethodGet || cm == http.MethodHead || cm == http.MethodPut ||
 		cm == http.MethodPost || cm == http.MethodDelete
+}
+
+// IsEmpty checks if the cors method is an empty string
+func (cm CORSHTTPMethod) IsEmpty() bool {
+	return cm == ""
 }
 
 // String converts the method value to 'string'
@@ -88,12 +98,19 @@ type CORSAllowanceConfig struct {
 	Methods          string
 	ExposedHeaders   string
 	AllowCredentials string
+	AllowHeaders     string
 	MaxAge           *int32
 }
 
 // IsAllowed walks through the CORS rules and finds the first one allowing access.
 // If no rule grants access, returns 'AccessForbidden'
 func (cc *CORSConfiguration) IsAllowed(origin string, method CORSHTTPMethod, headers []CORSHeader) (*CORSAllowanceConfig, error) {
+	// if method is empty, anyways cors is forbidden
+	// skip, without going through the rules
+	if method.IsEmpty() {
+		debuglogger.Logf("empty Access-Control-Request-Method")
+		return nil, s3err.GetAPIError(s3err.ErrCORSForbidden)
+	}
 	for _, rule := range cc.Rules {
 		// find the first rule granting access
 		if isAllowed, wilcardOrigin := rule.Match(origin, method, headers); isAllowed {
@@ -109,6 +126,7 @@ func (cc *CORSConfiguration) IsAllowed(origin string, method CORSHTTPMethod, hea
 				AllowCredentials: allowCredentials,
 				Methods:          rule.GetAllowedMethods(),
 				ExposedHeaders:   rule.GetExposeHeaders(),
+				AllowHeaders:     buildAllowedHeaders(headers),
 				MaxAge:           rule.MaxAgeSeconds,
 			}, nil
 		}
@@ -189,7 +207,7 @@ func (cr *CORSRule) Match(origin string, method CORSHTTPMethod, headers []CORSHe
 	for _, reqHeader := range headers {
 		match := false
 		for _, header := range cr.AllowedHeaders {
-			if wildcardMatch(header.String(), reqHeader.String()) {
+			if wildcardMatch(header.ToLower(), reqHeader.ToLower()) {
 				match = true
 				break
 			}
@@ -212,6 +230,20 @@ func (cr *CORSRule) GetExposeHeaders() string {
 			result.WriteString(", ")
 		}
 		result.WriteString(h.String())
+	}
+
+	return result.String()
+}
+
+// buildAllowedHeaders builds a comma separated string from []CORSHeader
+func buildAllowedHeaders(headers []CORSHeader) string {
+	var result strings.Builder
+
+	for i, h := range headers {
+		if i > 0 {
+			result.WriteString(", ")
+		}
+		result.WriteString(h.ToLower())
 	}
 
 	return result.String()

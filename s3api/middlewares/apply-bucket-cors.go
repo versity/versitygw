@@ -62,7 +62,7 @@ func ApplyBucketCORS(be backend.Backend) fiber.Handler {
 
 		// if request method is not specified with Access-Control-Request-Method
 		// override it with the actual request method
-		if method == "" {
+		if method.IsEmpty() {
 			method = auth.CORSHTTPMethod(ctx.Request().Header.Method())
 		} else if !method.IsValid() {
 			// check if allowed method is valid
@@ -92,6 +92,7 @@ func ApplyBucketCORS(be backend.Backend) fiber.Handler {
 			"Access-Control-Allow-Methods":     allowConfig.Methods,
 			"Access-Control-Expose-Headers":    allowConfig.ExposedHeaders,
 			"Access-Control-Allow-Credentials": allowConfig.AllowCredentials,
+			"Access-Control-Allow-Headers":     allowConfig.AllowHeaders,
 			"Vary":                             VaryHdr,
 		} {
 			if val != "" {

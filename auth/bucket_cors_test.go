@@ -50,6 +50,7 @@ func TestCORSHTTPMethod_IsValid(t *testing.T) {
 		method CORSHTTPMethod
 		want   bool
 	}{
+		{"empty valid", "", true},
 		{"GET valid", http.MethodGet, true},
 		{"HEAD valid", http.MethodHead, true},
 		{"PUT valid", http.MethodPut, true},
@@ -67,6 +68,83 @@ func TestCORSHTTPMethod_IsValid(t *testing.T) {
 			if got := tt.method.IsValid(); got != tt.want {
 				t.Errorf("IsValid() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestCORSHeader_ToLower(t *testing.T) {
+	tests := []struct {
+		name   string
+		header CORSHeader
+		want   string
+	}{
+		{
+			name:   "already lowercase",
+			header: CORSHeader("content-type"),
+			want:   "content-type",
+		},
+		{
+			name:   "mixed case",
+			header: CORSHeader("X-CuStOm-HeAdEr"),
+			want:   "x-custom-header",
+		},
+		{
+			name:   "uppercase",
+			header: CORSHeader("AUTHORIZATION"),
+			want:   "authorization",
+		},
+		{
+			name:   "empty string",
+			header: CORSHeader(""),
+			want:   "",
+		},
+		{
+			name:   "numeric and symbols",
+			header: CORSHeader("X-123-HEADER"),
+			want:   "x-123-header",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.header.ToLower()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCORSHTTPMethod_IsEmpty(t *testing.T) {
+	tests := []struct {
+		name   string
+		method CORSHTTPMethod
+		want   bool
+	}{
+		{
+			name:   "empty string is empty",
+			method: CORSHTTPMethod(""),
+			want:   true,
+		},
+		{
+			name:   "GET method is not empty",
+			method: CORSHTTPMethod("GET"),
+			want:   false,
+		},
+		{
+			name:   "random string is not empty",
+			method: CORSHTTPMethod("FOO"),
+			want:   false,
+		},
+		{
+			name:   "lowercase get is not empty (case sensitive)",
+			method: CORSHTTPMethod("get"),
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.method.IsEmpty()
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -130,6 +208,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 					Origin:           "http://allowed.com",
 					AllowCredentials: "true",
 					Methods:          http.MethodGet,
+					AllowHeaders:     "x-test",
 					ExposedHeaders:   "",
 					MaxAge:           nil,
 				},
@@ -152,6 +231,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 				result: &CORSAllowanceConfig{
 					Origin:           "*",
 					AllowCredentials: "false",
+					AllowHeaders:     "x-test",
 					Methods:          http.MethodGet,
 					ExposedHeaders:   "",
 					MaxAge:           nil,
@@ -410,6 +490,52 @@ func TestGetExposeHeaders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.rule.GetExposeHeaders()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBuildAllowedHeaders(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers []CORSHeader
+		want    string
+	}{
+		{
+			name:    "empty slice returns empty string",
+			headers: []CORSHeader{},
+			want:    "",
+		},
+		{
+			name:    "single header lowercase",
+			headers: []CORSHeader{"Content-Type"},
+			want:    "content-type",
+		},
+		{
+			name:    "multiple headers lowercased with commas",
+			headers: []CORSHeader{"Content-Type", "X-Custom-Header", "Authorization"},
+			want:    "content-type, x-custom-header, authorization",
+		},
+		{
+			name:    "already lowercase header",
+			headers: []CORSHeader{"accept"},
+			want:    "accept",
+		},
+		{
+			name:    "mixed case headers",
+			headers: []CORSHeader{"ACCEPT", "x-Powered-By"},
+			want:    "accept, x-powered-by",
+		},
+		{
+			name:    "empty header value",
+			headers: []CORSHeader{""},
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildAllowedHeaders(tt.headers)
 			assert.Equal(t, tt.want, got)
 		})
 	}
