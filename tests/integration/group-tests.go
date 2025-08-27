@@ -494,10 +494,7 @@ func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_statement_not_provided(s)
 	PutBucketPolicy_empty_statement(s)
 	PutBucketPolicy_invalid_effect(s)
-	PutBucketPolicy_empty_actions_string(s)
-	PutBucketPolicy_empty_actions_array(s)
 	PutBucketPolicy_invalid_action(s)
-	PutBucketPolicy_incorrect_action_wildcard_usage(s)
 	PutBucketPolicy_empty_principals_string(s)
 	PutBucketPolicy_empty_principals_array(s)
 	PutBucketPolicy_principals_aws_struct_empty_string(s)
@@ -510,8 +507,7 @@ func TestPutBucketPolicy(s *S3Conf) {
 	PutBucketPolicy_invalid_resource_with_starting_slash(s)
 	PutBucketPolicy_duplicate_resource(s)
 	PutBucketPolicy_incorrect_bucket_name(s)
-	PutBucketPolicy_object_action_on_bucket_resource(s)
-	PutBucketPolicy_bucket_action_on_object_resource(s)
+	PutBucketPolicy_action_resource_mismatch(s)
 	PutBucketPolicy_explicit_deny(s)
 	PutBucketPolicy_multi_wildcard_resource(s)
 	PutBucketPolicy_any_char_match(s)
@@ -1328,10 +1324,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_statement_not_provided":                                  PutBucketPolicy_statement_not_provided,
 		"PutBucketPolicy_empty_statement":                                         PutBucketPolicy_empty_statement,
 		"PutBucketPolicy_invalid_effect":                                          PutBucketPolicy_invalid_effect,
-		"PutBucketPolicy_empty_actions_string":                                    PutBucketPolicy_empty_actions_string,
-		"PutBucketPolicy_empty_actions_array":                                     PutBucketPolicy_empty_actions_array,
 		"PutBucketPolicy_invalid_action":                                          PutBucketPolicy_invalid_action,
-		"PutBucketPolicy_incorrect_action_wildcard_usage":                         PutBucketPolicy_incorrect_action_wildcard_usage,
 		"PutBucketPolicy_empty_principals_string":                                 PutBucketPolicy_empty_principals_string,
 		"PutBucketPolicy_empty_principals_array":                                  PutBucketPolicy_empty_principals_array,
 		"PutBucketPolicy_principals_aws_struct_empty_string":                      PutBucketPolicy_principals_aws_struct_empty_string,
@@ -1344,9 +1337,8 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_invalid_resource_with_starting_slash":                    PutBucketPolicy_invalid_resource_with_starting_slash,
 		"PutBucketPolicy_duplicate_resource":                                      PutBucketPolicy_duplicate_resource,
 		"PutBucketPolicy_incorrect_bucket_name":                                   PutBucketPolicy_incorrect_bucket_name,
-		"PutBucketPolicy_object_action_on_bucket_resource":                        PutBucketPolicy_object_action_on_bucket_resource,
+		"PutBucketPolicy_action_resource_mismatch":                                PutBucketPolicy_action_resource_mismatch,
 		"PutBucketPolicy_explicit_deny":                                           PutBucketPolicy_explicit_deny,
-		"PutBucketPolicy_bucket_action_on_object_resource":                        PutBucketPolicy_bucket_action_on_object_resource,
 		"PutBucketPolicy_multi_wildcard_resource":                                 PutBucketPolicy_multi_wildcard_resource,
 		"PutBucketPolicy_any_char_match":                                          PutBucketPolicy_any_char_match,
 		"PutBucketPolicy_success":                                                 PutBucketPolicy_success,
