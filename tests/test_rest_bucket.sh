@@ -21,6 +21,7 @@ source ./tests/commands/get_object_lock_configuration.sh
 source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
@@ -28,7 +29,6 @@ source ./tests/util/util_bucket.sh
 source ./tests/util/util_delete_object.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
-source ./tests/util/util_ownership.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_tags.sh
@@ -151,6 +151,9 @@ export RUN_USERS=true
 }
 
 @test "REST - put policy" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 

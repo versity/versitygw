@@ -39,142 +39,87 @@ source ./tests/drivers/get_bucket_acl/get_bucket_acl_s3api.sh
 
 export RUN_USERS=true
 
+if [ -n "$SKIP_POLICY" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
+  skip "Skipping ACL tests"
+  exit 0
+fi
+
 @test "test_policy_abort_multipart_upload" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_abort_multipart_upload
 }
 
 @test "test_policy_allow_deny" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_allow_deny
 }
 
 @test "test_policy_delete" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_delete
 }
 
 @test "test_policy_delete_bucket_policy" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_delete_bucket_policy
 }
 
 @test "test_policy_deny" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_deny
 }
 
 @test "test_policy_get_bucket_acl" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_bucket_acl
 }
 
 @test "test_policy_get_bucket_policy" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_bucket_policy
 }
 
 @test "test_policy_get_bucket_tagging" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_bucket_tagging
 }
 
 @test "test_policy_get_object_file_wildcard" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_object_file_wildcard
 }
 
 @test "test_policy_get_object_folder_wildcard" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_object_folder_wildcard
 }
 
 @test "test_policy_get_object_specific_file" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_object_specific_file
 }
 
 @test "test_policy_get_object_with_user" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_get_object_with_user
 }
 
 @test "test_policy_list_multipart_uploads" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_list_multipart_uploads
 }
 
 @test "test_policy_list_upload_parts" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_list_upload_parts
 }
 
 @test "test_policy_put_acl" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_put_acl
 }
 
 @test "test_policy_put_bucket_policy" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_put_bucket_policy
 }
 
 @test "test_policy_put_bucket_tagging" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_put_bucket_tagging
 }
 
 @test "test_policy_two_principals" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_two_principals
 }
 
 @test "test_policy_put_wildcard" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_put_wildcard
 }
 
 @test "test_put_policy_invalid_action" {
-  if [[ -n $SKIP_POLICY ]]; then
-    skip "will not test policy actions with SKIP_POLICY set"
-  fi
   test_s3api_policy_invalid_action
 }

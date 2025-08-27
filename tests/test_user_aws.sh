@@ -34,9 +34,11 @@ export RUN_USERS=true
 }
 
 @test "test_delete_user_no_access_key" {
-  if delete_user ""; then
-    fail "delete user with empty access key succeeded"
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
   fi
+  run delete_user ""
+  assert_failure
 }
 
 @test "test_user_user_aws" {
@@ -48,6 +50,9 @@ export RUN_USERS=true
 }
 
 @test "test_user_get_object" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
@@ -72,6 +77,9 @@ export RUN_USERS=true
 }
 
 @test "test_userplus_get_object" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "userplus" "$BUCKET_ONE_NAME"
@@ -96,6 +104,9 @@ export RUN_USERS=true
 }
 
 @test "test_user_delete_object" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
@@ -120,6 +131,9 @@ export RUN_USERS=true
 }
 
 @test "test_admin_put_get_object" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "admin" "$BUCKET_ONE_NAME"
@@ -148,6 +162,9 @@ export RUN_USERS=true
 }
 
 @test "test_user_create_multipart_upload" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
   test_file="test_file"
 
   run setup_user_versitygw_or_direct "$USERNAME_TWO" "$PASSWORD_TWO" "user" "$BUCKET_ONE_NAME"

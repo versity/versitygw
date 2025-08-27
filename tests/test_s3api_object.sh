@@ -24,7 +24,6 @@ source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
-source ./tests/util/util_users.sh
 source ./tests/test_s3api_root_inner.sh
 source ./tests/test_common.sh
 source ./tests/test_common_acl.sh

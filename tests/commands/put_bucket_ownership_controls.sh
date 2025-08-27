@@ -32,3 +32,19 @@ put_bucket_ownership_controls() {
     return 1
   fi
 }
+
+put_bucket_ownership_controls_rest() {
+  if [ $# -ne 2 ]; then
+    log 2 "'put_bucket_ownership_controls_rest' missing bucket name, ownership"
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OWNERSHIP="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_ownership_controls.sh); then
+    log 2 "error putting bucket ownership controls: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    log 2 "put bucket ownership controls returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
+    return 1
+  fi
+  return 0
+}
