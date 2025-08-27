@@ -17,7 +17,6 @@ package s3proxy
 import (
 	"bytes"
 	"context"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +39,7 @@ type metaPrefix string
 const (
 	metaPrefixAcl    metaPrefix = "vgw-meta-acl-"
 	metaPrefixPolicy metaPrefix = "vgw-meta-policy-"
+	metaPrefixCors   metaPrefix = "vgw-meta-cors-"
 )
 
 type S3Proxy struct {
@@ -1498,29 +1498,11 @@ func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string
 }
 
 func (s *S3Proxy) PutBucketCors(ctx context.Context, bucket string, cors []byte) error {
-	cfg, err := auth.ParseCORSOutput(cors)
-	if err != nil {
-		return handleError(err)
-	}
-
-	_, err = s.client.PutBucketCors(ctx, &s3.PutBucketCorsInput{
-		Bucket:            &bucket,
-		CORSConfiguration: parseGatewayCORSToSDKConfig(cfg),
-	})
-
-	return handleError(err)
+	return handleError(s.putMetaBucketObj(ctx, bucket, cors, metaPrefixCors))
 }
 
 func (s *S3Proxy) GetBucketCors(ctx context.Context, bucket string) ([]byte, error) {
-	resp, err := s.client.GetBucketCors(ctx, &s3.GetBucketCorsInput{
-		Bucket: &bucket,
-	})
-	if err != nil {
-		return nil, handleError(err)
-	}
-
-	config := parseSdkCORSToGatewayConfig(resp.CORSRules)
-	data, err := xml.Marshal(config)
+	data, err := s.getMetaBucketObjData(ctx, bucket, metaPrefixCors, false)
 	if err != nil {
 		return nil, handleError(err)
 	}
@@ -1529,11 +1511,16 @@ func (s *S3Proxy) GetBucketCors(ctx context.Context, bucket string) ([]byte, err
 }
 
 func (s *S3Proxy) DeleteBucketCors(ctx context.Context, bucket string) error {
-	_, err := s.client.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
-		Bucket: &bucket,
+	key := getMetaKey(bucket, metaPrefixCors)
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &s.metaBucket,
+		Key:    &key,
 	})
+	if err != nil && !areErrSame(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return handleError(err)
+	}
 
-	return handleError(err)
+	return nil
 }
 
 func (s *S3Proxy) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
@@ -1654,12 +1641,7 @@ func (s *S3Proxy) putMetaBucketObj(ctx context.Context, bucket string, data []by
 func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefix metaPrefix, checkExists bool) ([]byte, error) {
 	// return default bahviour of get bucket policy/acl, if meta bucket is not provided
 	if s.metaBucket == "" {
-		switch prefix {
-		case metaPrefixAcl:
-			return []byte{}, nil
-		case metaPrefixPolicy:
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
-		}
+		return handleMetaBucketObjectNotFoundErr(prefix)
 	}
 
 	key := getMetaKey(bucket, prefix)
@@ -1673,13 +1655,7 @@ func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefi
 			return nil, err
 		}
 
-		switch prefix {
-		case metaPrefixAcl:
-			// If bucket acl is not found, return default acl
-			return []byte{}, nil
-		case metaPrefixPolicy:
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
-		}
+		return handleMetaBucketObjectNotFoundErr(prefix)
 	}
 	if err != nil {
 		return nil, err
@@ -1691,6 +1667,23 @@ func (s *S3Proxy) getMetaBucketObjData(ctx context.Context, bucket string, prefi
 	}
 
 	return data, nil
+}
+
+// handles the case when an object with the given metprefix
+// is not found in meta bucket. Aggregates the not found errors
+// for each meta prefix
+func handleMetaBucketObjectNotFoundErr(prefix metaPrefix) ([]byte, error) {
+	switch prefix {
+	case metaPrefixAcl:
+		// If bucket acl is not found, return default acl
+		return []byte{}, nil
+	case metaPrefixPolicy:
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)
+	case metaPrefixCors:
+		return nil, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)
+	}
+
+	return []byte{}, nil
 }
 
 // Checks if the provided err is a type of smithy.APIError
@@ -1776,92 +1769,6 @@ func convertObjectVersions(versions []types.ObjectVersion) []s3response.ObjectVe
 			Size:              v.Size,
 			StorageClass:      v.StorageClass,
 			VersionId:         v.VersionId,
-		})
-	}
-
-	return result
-}
-
-func parseGatewayCORSToSDKConfig(config *auth.CORSConfiguration) *types.CORSConfiguration {
-	if config == nil {
-		return nil
-	}
-
-	result := &types.CORSConfiguration{
-		CORSRules: make([]types.CORSRule, 0, len(config.Rules)),
-	}
-
-	for _, cfg := range config.Rules {
-		result.CORSRules = append(result.CORSRules, types.CORSRule{
-			AllowedMethods: convertCORSMethodsToString(cfg.AllowedMethods),
-			AllowedHeaders: convertCORSHeadersToString(cfg.AllowedHeaders),
-			ExposeHeaders:  convertCORSHeadersToString(cfg.ExposeHeaders),
-			AllowedOrigins: cfg.AllowedOrigins,
-			ID:             cfg.ID,
-			MaxAgeSeconds:  cfg.MaxAgeSeconds,
-		})
-	}
-
-	return result
-}
-
-// convertCORSHeadersToString []auth.CORSHeader to []string
-func convertCORSHeadersToString(headers []auth.CORSHeader) []string {
-	result := make([]string, 0, len(headers))
-	for _, h := range headers {
-		result = append(result, h.String())
-	}
-
-	return result
-}
-
-// convertCORSMethodsToString converts []auth.CORSHTTPMethod to []string
-func convertCORSMethodsToString(methods []auth.CORSHTTPMethod) []string {
-	result := make([]string, 0, len(methods))
-	for _, m := range methods {
-		result = append(result, m.String())
-	}
-
-	return result
-}
-
-// convertCORSHeaders converts []string to []auth.CORSHeader
-func convertCORSHeaders(headers []string) []auth.CORSHeader {
-	result := make([]auth.CORSHeader, 0, len(headers))
-	for _, h := range headers {
-		result = append(result, auth.CORSHeader(h))
-	}
-
-	return result
-}
-
-// convertCORSMethods converts []string to []auth.CORSHTTPMethod
-func convertCORSMethods(methods []string) []auth.CORSHTTPMethod {
-	result := make([]auth.CORSHTTPMethod, 0, len(methods))
-	for _, m := range methods {
-		result = append(result, auth.CORSHTTPMethod(m))
-	}
-
-	return result
-}
-
-func parseSdkCORSToGatewayConfig(rules []types.CORSRule) *auth.CORSConfiguration {
-	if rules == nil {
-		return nil
-	}
-
-	result := &auth.CORSConfiguration{
-		Rules: make([]auth.CORSRule, 0, len(rules)),
-	}
-
-	for _, cfg := range rules {
-		result.Rules = append(result.Rules, auth.CORSRule{
-			AllowedMethods: convertCORSMethods(cfg.AllowedMethods),
-			AllowedHeaders: convertCORSHeaders(cfg.AllowedHeaders),
-			ExposeHeaders:  convertCORSHeaders(cfg.ExposeHeaders),
-			AllowedOrigins: cfg.AllowedOrigins,
-			ID:             cfg.ID,
-			MaxAgeSeconds:  cfg.MaxAgeSeconds,
 		})
 	}
 
