@@ -54,6 +54,7 @@ var (
 	healthPath                               string
 	virtualDomain                            string
 	debug                                    bool
+	keepAlive                                bool
 	pprof                                    string
 	quiet                                    bool
 	readonly                                 bool
@@ -222,6 +223,12 @@ func initFlags() []cli.Flag {
 			Usage:       "enable pprof debug on specified port",
 			EnvVars:     []string{"VGW_PPROF"},
 			Destination: &pprof,
+		},
+		&cli.BoolFlag{
+			Name:        "keep-alive",
+			Usage:       "enable keep-alive connections (for finnicky clients)",
+			EnvVars:     []string{"VGW_KEEP_ALIVE"},
+			Destination: &keepAlive,
 		},
 		&cli.BoolFlag{
 			Name:        "quiet",
@@ -604,7 +611,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		AppName:               "versitygw",
 		ServerHeader:          "VERSITYGW",
 		StreamRequestBody:     true,
-		DisableKeepalive:      true,
+		DisableKeepalive:      !keepAlive,
 		Network:               fiber.NetworkTCP,
 		DisableStartupMessage: true,
 	})
