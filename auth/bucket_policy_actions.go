@@ -192,26 +192,33 @@ func (a Action) IsValid() error {
 		return nil
 	}
 
-	if a[len(a)-1] == '*' {
-		pattern := strings.TrimSuffix(string(a), "*")
-		for act := range supportedActionList {
-			if strings.HasPrefix(string(act), pattern) {
-				return nil
-			}
+	// first check for an exact match
+	if _, ok := supportedActionList[a]; ok {
+		return nil
+	}
+
+	// walk through the supported actions and try wildcard match
+	for action := range supportedActionList {
+		if action.Match(a) {
+			return nil
 		}
-
-		return policyErrInvalidAction
 	}
 
-	_, found := supportedActionList[a]
-	if !found {
-		return policyErrInvalidAction
-	}
-	return nil
+	return policyErrInvalidAction
 }
 
 func getBoolPtr(bl bool) *bool {
 	return &bl
+}
+
+// String converts the action to string
+func (a Action) String() string {
+	return string(a)
+}
+
+// Match wildcard matches the given pattern to the action
+func (a Action) Match(pattern Action) bool {
+	return matchPattern(pattern.String(), a.String())
 }
 
 // Checks if the action is object action
@@ -220,27 +227,19 @@ func (a Action) IsObjectAction() *bool {
 	if a == AllActions {
 		return nil
 	}
-	if a[len(a)-1] == '*' {
-		pattern := strings.TrimSuffix(string(a), "*")
-		for act := range supportedObjectActionList {
-			if strings.HasPrefix(string(act), pattern) {
-				return getBoolPtr(true)
-			}
+
+	// first find an exact match
+	if _, ok := supportedObjectActionList[a]; ok {
+		return &ok
+	}
+
+	for action := range supportedObjectActionList {
+		if action.Match(a) {
+			return getBoolPtr(true)
 		}
-
-		return getBoolPtr(false)
 	}
 
-	_, found := supportedObjectActionList[a]
-	return &found
-}
-
-func (a Action) WildCardMatch(act Action) bool {
-	if strings.HasSuffix(string(a), "*") {
-		pattern := strings.TrimSuffix(string(a), "*")
-		return strings.HasPrefix(string(act), pattern)
-	}
-	return false
+	return getBoolPtr(false)
 }
 
 type Actions map[Action]struct{}
@@ -289,6 +288,7 @@ func (a Actions) Add(str string) error {
 	return nil
 }
 
+// FindMatch tries to match the given action to the actions list
 func (a Actions) FindMatch(action Action) bool {
 	_, ok := a[AllActions]
 	if ok {
@@ -300,8 +300,9 @@ func (a Actions) FindMatch(action Action) bool {
 		return true
 	}
 
+	// search for a wildcard match
 	for act := range a {
-		if strings.HasSuffix(string(act), "*") && act.WildCardMatch(action) {
+		if action.Match(act) {
 			return true
 		}
 	}

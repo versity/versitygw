@@ -257,3 +257,34 @@ func VerifyPublicBucketPolicy(policy []byte, bucket, object string, action Actio
 
 	return nil
 }
+
+// matchPattern checks if the input string matches the given pattern with wildcard(`*`) and any character(`?`).
+// - `?` matches exactly one occurrence of any character.
+// - `*` matches arbitrary many (including zero) occurrences of any character.
+func matchPattern(pattern, input string) bool {
+	pIdx, sIdx := 0, 0
+	starIdx, matchIdx := -1, 0
+
+	for sIdx < len(input) {
+		if pIdx < len(pattern) && (pattern[pIdx] == '?' || pattern[pIdx] == input[sIdx]) {
+			sIdx++
+			pIdx++
+		} else if pIdx < len(pattern) && pattern[pIdx] == '*' {
+			starIdx = pIdx
+			matchIdx = sIdx
+			pIdx++
+		} else if starIdx != -1 {
+			pIdx = starIdx + 1
+			matchIdx++
+			sIdx = matchIdx
+		} else {
+			return false
+		}
+	}
+
+	for pIdx < len(pattern) && pattern[pIdx] == '*' {
+		pIdx++
+	}
+
+	return pIdx == len(pattern)
+}
