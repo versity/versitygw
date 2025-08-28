@@ -42,6 +42,9 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with user permission - admin user" {
+  if [ "$SKIP_USERS_TEST" == "true" ]; then
+    skip "skipping versity-specific users tests"
+  fi
   run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
   assert_success
   username="${lines[${#lines[@]}-2]}"
@@ -53,6 +56,9 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with no permission - 'user' user" {
+  if [ "$SKIP_USERS_TEST" == "true" ]; then
+    skip "skipping versity-specific users tests"
+  fi
   run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
   username="${lines[${#lines[@]}-2]}"
@@ -97,7 +103,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/821"
   fi
-  test_file="test_file"
   run setup_bucket_and_add_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -110,7 +115,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/821"
   fi
-  test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -126,7 +130,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/821"
   fi
-  test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -139,7 +142,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/821"
   fi
-  test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -158,7 +160,6 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/821"
   fi
-  test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -185,7 +186,6 @@ export RUN_USERS=true
   uppercase_key="CAPITAL"
   uppercase_value="DUMMY"
 
-  test_file="test_file"
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -197,5 +197,18 @@ export RUN_USERS=true
   assert_success
 
   run check_metadata_key_case "$BUCKET_ONE_NAME" "$test_file" "$uppercase_key" "$uppercase_value"
+  assert_success
+}
+
+@test "REST - PutObject - user permission, bad signature" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
+  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
+  assert_success
+  username="${lines[${#lines[@]}-2]}"
+  password="${lines[${#lines[@]}-1]}"
+
+  run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }

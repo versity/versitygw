@@ -28,7 +28,7 @@ source ./tests/util/util_setup.sh
 
 export RUN_USERS=true
 
-if [ "$SKIP_ACL_TESTING" == "true" ]; then
+if [ "$SKIP_ACL_TESTING" == "true" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
   skip "Skipping ACL tests"
   exit 0
 fi

@@ -166,10 +166,22 @@ send_rest_command_expect_success_callback() {
 
 send_rest_go_command_expect_error() {
   if [ $# -lt 3 ] && [ $(($# % 2)) -ne 1 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (key/value pairs)"
+    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, key/value pairs)"
     return 1
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:4}" 2>&1); then
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
+    log 2 "error sending go command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_expect_error_callback() {
+  if [ $# -lt 4 ] && [ $(($# % 2)) -eq 1 ]; then
+    log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, key/value pairs)"
+    return 1
+  fi
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:5}" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
@@ -183,6 +195,10 @@ send_rest_go_command_expect_error() {
   echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
   if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/result.txt" "$1" "$2" "$3"; then
     log 2 "error checking expected header error"
+    return 1
+  fi
+  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/result.txt"; then
+    log 2 "callback error"
     return 1
   fi
   return 0

@@ -30,6 +30,7 @@ source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
+source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh
@@ -44,7 +45,6 @@ source ./tests/util/util_list_parts.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_multipart_before_completion.sh
 source ./tests/util/util_object.sh
-source ./tests/util/util_ownership.sh
 source ./tests/util/util_policy.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
@@ -279,16 +279,6 @@ test_file="test_file"
   assert_success
 
   run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_two"
-  assert_success
-}
-
-@test "REST - PutObject - user permission, bad signature" {
-  run setup_bucket_file_and_user "$BUCKET_ONE_NAME" "$test_file" "$USERNAME_ONE" "$PASSWORD_ONE" "admin"
-  assert_success
-  username="${lines[${#lines[@]}-2]}"
-  password="${lines[${#lines[@]}-1]}"
-
-  run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
 

@@ -14,7 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-if [ "$SKIP_ACL_TESTING" == "true" ]; then
+if [ "$SKIP_ACL_TESTING" == "true" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
   skip "Skipping ACL tests"
   exit 0
 fi

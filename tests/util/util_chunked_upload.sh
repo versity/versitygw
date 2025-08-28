@@ -257,7 +257,7 @@ chunked_upload_trailer_incorrect_checksum() {
     log 2 "error creating test file"
     return 1
   fi
-  if ! checksum=$(calculate_incorrect_checksum "$1" "$test_file"); then
+  if ! checksum=$(calculate_incorrect_checksum "$1" "$TEST_FILE_FOLDER/$test_file"); then
     log 2 "error calculating incorrect checksum"
     return 1
   fi

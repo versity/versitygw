@@ -70,7 +70,7 @@ export RUN_USERS=true
   local bucket_file="bucket-file"
 
   local expected_content_type="application/zip"
-  local expected_meta_key="testKey"
+  local expected_meta_key="testkey"
   local expected_meta_val="testValue"
   local expected_hold_status="ON"
   local expected_retention_mode="GOVERNANCE"

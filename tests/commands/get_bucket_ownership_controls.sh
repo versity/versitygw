@@ -61,6 +61,17 @@ get_bucket_ownership_controls_rest() {
   echo "$rule"
 }
 
+get_bucket_ownership_controls_expect_error_callback() {
+  if ! check_param_count_v2 "bucket name, expected HTTP error, expected S3 error, expected message, callback" 5 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_expect_error_callback "$2" "$3" "$4" "$5" "-bucketName" "$1" "-query" "ownershipControls="; then
+    log 2 "error checking ownership controls error and callback"
+    return 1
+  fi
+  return 0
+}
+
 get_object_ownership_rule() {
   if [[ -n "$SKIP_BUCKET_OWNERSHIP_CONTROLS" ]]; then
     log 5 "Skipping get bucket ownership controls"

@@ -46,6 +46,7 @@ source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/upload_part_copy.sh
 source ./tests/commands/upload_part.sh
 source ./tests/drivers/head_object/head_object_rest.sh
+source ./tests/drivers/openssl.sh
 source ./tests/util/util_users.sh
 
 # params: bucket, object name
@@ -286,7 +287,7 @@ check_checksum_rest_incorrect() {
   fi
   error_cs_str="$(echo "$1" | tr '[:lower:]' '[:upper:]')"
   error_message="The $error_cs_str you specified did not match the calculated checksum."
-  if ! calculate_incorrect_checksum "$1" "$(cat "$TEST_FILE_FOLDER/$test_file")"; then
+  if ! calculate_incorrect_checksum "$1" "$TEST_FILE_FOLDER/$test_file"; then
     log 2 "error calculating incorrect checksum"
     return 1
   fi
@@ -298,35 +299,18 @@ check_checksum_rest_incorrect() {
 }
 
 calculate_incorrect_checksum() {
-  if ! check_param_count "calculate_incorrect_checksum" "checksum type, data" 2 $#; then
+  if ! check_param_count "calculate_incorrect_checksum" "checksum type, data file" 2 $#; then
     return 1
   fi
-  case "$1" in
-  "sha1")
-    incorrect_checksum="$(echo -n "$2"a | sha1sum | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "sha256")
-    incorrect_checksum="$(echo -n "$2"a | sha256sum | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "crc32")
-    incorrect_checksum="$(echo -n "$2"a | gzip -c -1 | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64)"
-    ;;
-  "crc32c")
-    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc32c" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-      log 2 "error calculating checksum: $incorrect_checksum"
-      return 1
-    fi
-    ;;
-  "crc64nvme")
-    if ! incorrect_checksum=$(DATA_FILE=<(echo -n "$2"a) TEST_FILE_FOLDER="$TEST_FILE_FOLDER" CHECKSUM_TYPE="crc64nvme" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
-      log 2 "error calculating checksum: $incorrect_checksum"
-      return 1
-    fi
-    ;;
-  *)
-    log 2 "invalid checksum type: $1"
+  if ! checksum=$(DATA_FILE="$2" CHECKSUM_TYPE="$1" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
+    log 2 "error calculating checksum: $checksum"
     return 1
-  esac
+  fi
+  if [ "${checksum:0:1}" == "a" ]; then
+    incorrect_checksum="A${checksum:1}"
+  else
+    incorrect_checksum="a${checksum:1}"
+  fi
   echo "$incorrect_checksum"
   return 0
 }
