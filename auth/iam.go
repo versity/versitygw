@@ -119,7 +119,6 @@ type Opts struct {
 	LDAPRoleAtr            string
 	LDAPUserIdAtr          string
 	LDAPGroupIdAtr         string
-	LDAPDebug              bool
 	VaultEndpointURL       string
 	VaultSecretStoragePath string
 	VaultAuthMethod        string
@@ -159,7 +158,7 @@ func New(o *Opts) (IAMService, error) {
 	case o.LDAPServerURL != "":
 		svc, err = NewLDAPService(o.RootAccount, o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
 			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPUserIdAtr,
-			o.LDAPGroupIdAtr, o.LDAPObjClasses, o.LDAPDebug)
+			o.LDAPGroupIdAtr, o.LDAPObjClasses)
 		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
 	case o.S3Endpoint != "":
 		svc, err = NewS3(o.RootAccount, o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,
