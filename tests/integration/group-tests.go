@@ -135,6 +135,12 @@ func TestDeleteBucketTagging(s *S3Conf) {
 	DeleteBucketTagging_success(s)
 }
 
+func TestGetBucketLocation(s *S3Conf) {
+	GetBucketLocation_success(s)
+	GetBucketLocation_non_exist(s)
+	GetBucketLocation_no_access(s)
+}
+
 func TestPutObject(s *S3Conf) {
 	PutObject_non_existing_bucket(s)
 	PutObject_special_chars(s)
@@ -708,6 +714,7 @@ func TestFullFlow(s *S3Conf) {
 	TestPutBucketTagging(s)
 	TestGetBucketTagging(s)
 	TestDeleteBucketTagging(s)
+	TestGetBucketLocation(s)
 	TestPutObject(s)
 	TestHeadObject(s)
 	TestGetObjectAttributes(s)
@@ -791,6 +798,7 @@ func TestScoutfs(s *S3Conf) {
 	TestPutBucketTagging(s)
 	TestGetBucketTagging(s)
 	TestDeleteBucketTagging(s)
+	TestGetBucketLocation(s)
 	TestPutObject(s)
 	TestHeadObject(s)
 	TestGetObjectAttributes(s)
@@ -1092,6 +1100,9 @@ func GetIntTests() IntTests {
 		"DeleteBucketTagging_non_existing_object":                                 DeleteBucketTagging_non_existing_object,
 		"DeleteBucketTagging_success_status":                                      DeleteBucketTagging_success_status,
 		"DeleteBucketTagging_success":                                             DeleteBucketTagging_success,
+		"GetBucketLocation_success":                                               GetBucketLocation_success,
+		"GetBucketLocation_non_exist":                                             GetBucketLocation_non_exist,
+		"GetBucketLocation_no_access":                                             GetBucketLocation_no_access,
 		"PutObject_non_existing_bucket":                                           PutObject_non_existing_bucket,
 		"PutObject_special_chars":                                                 PutObject_special_chars,
 		"PutObject_tagging":                                                       PutObject_tagging,
