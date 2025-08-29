@@ -612,6 +612,21 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 
 	// GET bucket operations
 	bucketRouter.Get("",
+		middlewares.MatchQueryArgs("location"),
+		controllers.ProcessHandlers(
+			ctrl.GetBucketLocation,
+			metrics.ActionGetBucketLocation,
+			services,
+			middlewares.BucketObjectNameValidator(),
+			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketLocation, auth.GetBucketLocationAction, auth.PermissionRead),
+			middlewares.VerifyPresignedV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyMD5Body(),
+			middlewares.ApplyBucketCORS(be),
+			middlewares.ParseAcl(be),
+		),
+	)
+	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("tagging"),
 		controllers.ProcessHandlers(
 			ctrl.GetBucketTagging,

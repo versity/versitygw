@@ -1266,3 +1266,83 @@ func TestS3ApiController_ListObjects(t *testing.T) {
 		})
 	}
 }
+
+func TestS3ApiController_GetBucketLocation(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "verify access fails",
+			input: testInput{
+				locals: accessDeniedLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "backend returns error",
+			input: testInput{
+				locals: defaultLocals,
+				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				locals: defaultLocals,
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.LocationConstraint{
+						Value: "us-east-1",
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			be := &BackendMock{
+				HeadBucketFunc: func(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+					return &s3.HeadBucketOutput{}, tt.input.beErr
+				},
+				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+			}
+
+			ctrl := S3ApiController{
+				be: be,
+			}
+
+			testController(
+				t,
+				ctrl.GetBucketLocation,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					locals: tt.input.locals,
+					body:   tt.input.body,
+				})
+		})
+	}
+}
