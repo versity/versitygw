@@ -49,6 +49,7 @@ var (
 			Access: "root",
 			Role:   auth.RoleAdmin,
 		},
+		utils.ContextKeyRegion: "us-east-1",
 	}
 
 	accessDeniedLocals map[utils.ContextKey]any = map[utils.ContextKey]any{

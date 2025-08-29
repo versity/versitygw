@@ -116,6 +116,7 @@ var (
 	ActionGetBucketWebsite                            = "s3_GetBucketWebsite"
 	ActionDeleteBucketWebsite                         = "s3_DeleteBucketWebsite"
 	ActionGetBucketPolicyStatus                       = "s3_GetBucketPolicyStatus"
+	ActionGetBucketLocation                           = "s3_GetBucketLocation"
 
 	// Admin actions
 	ActionAdminCreateUser        = "admin_CreateUser"
@@ -496,6 +497,10 @@ func init() {
 	}
 	ActionMap[ActionGetBucketPolicyStatus] = Action{
 		Name:    "GetBucketPolicyStatus",
+		Service: "s3",
+	}
+	ActionMap[ActionGetBucketLocation] = Action{
+		Name:    "GetBucketLocation",
 		Service: "s3",
 	}
 }
