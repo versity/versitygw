@@ -129,15 +129,15 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	return nil
 }
 
-func (ld *LdapIAMService) BuildSearchFilter(access string) string {
-	searchFilter := ""
+func (ld *LdapIAMService) buildSearchFilter(access string) string {
+	var searchFilter strings.Builder
 	for _, el := range ld.objClasses {
-		searchFilter += fmt.Sprintf("(objectClass=%v)", el)
+		searchFilter.WriteString(fmt.Sprintf("(objectClass=%v)", el))
 	}
 	if access != "" {
-		searchFilter += fmt.Sprintf("(%v=%v)", ld.accessAtr, access)
+		searchFilter.WriteString(fmt.Sprintf("(%v=%v)", ld.accessAtr, access))
 	}
-	return fmt.Sprintf("(&%v)", searchFilter)
+	return fmt.Sprintf("(&%v)", searchFilter.String())
 }
 
 func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
@@ -152,12 +152,13 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 		0,
 		0,
 		false,
-		ld.BuildSearchFilter(access),
+		ld.buildSearchFilter(access),
 		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.userIdAtr, ld.groupIdAtr},
 		nil,
 	)
 
 	if ld.debug {
+		fmt.Println("LDAP Search Request")
 		spew.Dump(searchRequest)
 	}
 
@@ -168,6 +169,7 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	})
 
 	if ld.debug {
+		fmt.Println("LDAP Search Result")
 		spew.Dump(result)
 	}
 
@@ -246,7 +248,7 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 		0,
 		0,
 		false,
-		ld.BuildSearchFilter(""),
+		ld.buildSearchFilter(""),
 		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.groupIdAtr, ld.userIdAtr},
 		nil,
 	)
