@@ -63,6 +63,7 @@ var (
 	ldapQueryBase, ldapObjClasses            string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
 	ldapUserIdAtr, ldapGroupIdAtr            string
+	ldapDebug                                bool
 	vaultEndpointURL, vaultSecretStoragePath string
 	vaultAuthMethod, vaultMountPath          string
 	vaultRootToken, vaultRoleId              string
@@ -398,6 +399,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IAM_LDAP_GROUP_ID_ATR"},
 			Destination: &ldapGroupIdAtr,
 		},
+		&cli.BoolFlag{
+			Name:        "iam-ldap-debug",
+			Usage:       "ldap server debug output",
+			EnvVars:     []string{"VGW_IAM_LDAP_DEBUG"},
+			Destination: &ldapDebug,
+		},
 		&cli.StringFlag{
 			Name:        "iam-vault-endpoint-url",
 			Usage:       "vault server url",
@@ -668,6 +675,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		LDAPRoleAtr:            ldapRoleAtr,
 		LDAPUserIdAtr:          ldapUserIdAtr,
 		LDAPGroupIdAtr:         ldapGroupIdAtr,
+		LDAPDebug:              ldapDebug,
 		VaultEndpointURL:       vaultEndpointURL,
 		VaultSecretStoragePath: vaultSecretStoragePath,
 		VaultAuthMethod:        vaultAuthMethod,

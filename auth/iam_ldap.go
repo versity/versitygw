@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-ldap/ldap/v3"
 )
 
@@ -32,6 +33,7 @@ type LdapIAMService struct {
 	roleAtr    string
 	groupIdAtr string
 	userIdAtr  string
+	debug      bool
 	rootAcc    Account
 	url        string
 	bindDN     string
@@ -41,7 +43,7 @@ type LdapIAMService struct {
 
 var _ IAMService = &LdapIAMService{}
 
-func NewLDAPService(rootAcc Account, url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string) (IAMService, error) {
+func NewLDAPService(rootAcc Account, url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string, debug bool) (IAMService, error) {
 	if url == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" ||
 		secAtr == "" || roleAtr == "" || userIdAtr == "" || groupIdAtr == "" || objClasses == "" {
 		return nil, fmt.Errorf("required parameters list not fully provided")
@@ -63,6 +65,7 @@ func NewLDAPService(rootAcc Account, url, bindDN, pass, queryBase, accAtr, secAt
 		secretAtr:  secAtr,
 		roleAtr:    roleAtr,
 		userIdAtr:  userIdAtr,
+		debug:      debug,
 		groupIdAtr: groupIdAtr,
 		rootAcc:    rootAcc,
 		url:        url,
@@ -126,6 +129,17 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	return nil
 }
 
+func (ld *LdapIAMService) BuildSearchFilter(access string) string {
+	searchFilter := ""
+	for _, el := range ld.objClasses {
+		searchFilter += fmt.Sprintf("(objectClass=%v)", el)
+	}
+	if access != "" {
+		searchFilter += fmt.Sprintf("(%v=%v)", ld.accessAtr, access)
+	}
+	return fmt.Sprintf("(&%v)", searchFilter)
+}
+
 func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 	if access == ld.rootAcc.Access {
 		return ld.rootAcc, nil
@@ -138,16 +152,25 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 		0,
 		0,
 		false,
-		fmt.Sprintf("(%v=%v)", ld.accessAtr, access),
+		ld.BuildSearchFilter(access),
 		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.userIdAtr, ld.groupIdAtr},
 		nil,
 	)
+
+	if ld.debug {
+		spew.Dump(searchRequest)
+	}
 
 	err := ld.execute(func(c *ldap.Conn) error {
 		var err error
 		result, err = c.Search(searchRequest)
 		return err
 	})
+
+	if ld.debug {
+		spew.Dump(result)
+	}
+
 	if err != nil {
 		return Account{}, err
 	}
@@ -215,10 +238,6 @@ func (ld *LdapIAMService) DeleteUserAccount(access string) error {
 }
 
 func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
-	searchFilter := ""
-	for _, el := range ld.objClasses {
-		searchFilter += fmt.Sprintf("(objectClass=%v)", el)
-	}
 	var resp *ldap.SearchResult
 	searchRequest := ldap.NewSearchRequest(
 		ld.queryBase,
@@ -227,7 +246,7 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 		0,
 		0,
 		false,
-		fmt.Sprintf("(&%v)", searchFilter),
+		ld.BuildSearchFilter(""),
 		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.groupIdAtr, ld.userIdAtr},
 		nil,
 	)
