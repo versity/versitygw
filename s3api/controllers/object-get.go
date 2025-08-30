@@ -380,12 +380,41 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	versionId := ctx.Query("versionId")
 	acceptRange := ctx.Get("Range")
 	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
+
+	// Extract response override query parameters
+	responseOverrides := map[string]*string{
+		"Cache-Control":       utils.GetQueryParam(ctx, "response-cache-control"),
+		"Content-Disposition": utils.GetQueryParam(ctx, "response-content-disposition"),
+		"Content-Encoding":    utils.GetQueryParam(ctx, "response-content-encoding"),
+		"Content-Language":    utils.GetQueryParam(ctx, "response-content-language"),
+		"Content-Type":        utils.GetQueryParam(ctx, "response-content-type"),
+		"Expires":             utils.GetQueryParam(ctx, "response-expires"),
+	}
+
+	// Check if any response override parameters are present
+	hasResponseOverrides := false
+	for _, override := range responseOverrides {
+		if override != nil {
+			hasResponseOverrides = true
+			break
+		}
+	}
+
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 	utils.ContextKeySkipResBodyLog.Set(ctx, true)
+
+	// Validate that response override parameters are not used with anonymous requests
+	if hasResponseOverrides && ctx.Get("X-Amz-Signature") == "" {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders)
+	}
 
 	action := auth.GetObjectAction
 	if ctx.Request().URI().QueryArgs().Has("versionId") {
@@ -478,17 +507,17 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 			"x-amz-restore":                       res.Restore,
 			"accept-ranges":                       res.AcceptRanges,
 			"Content-Range":                       res.ContentRange,
-			"Content-Disposition":                 res.ContentDisposition,
-			"Content-Encoding":                    res.ContentEncoding,
-			"Content-Language":                    res.ContentLanguage,
-			"Cache-Control":                       res.CacheControl,
-			"Expires":                             res.ExpiresString,
+			"Content-Disposition":                 utils.ApplyOverride(res.ContentDisposition, responseOverrides["Content-Disposition"]),
+			"Content-Encoding":                    utils.ApplyOverride(res.ContentEncoding, responseOverrides["Content-Encoding"]),
+			"Content-Language":                    utils.ApplyOverride(res.ContentLanguage, responseOverrides["Content-Language"]),
+			"Cache-Control":                       utils.ApplyOverride(res.CacheControl, responseOverrides["Cache-Control"]),
+			"Expires":                             utils.ApplyOverride(res.ExpiresString, responseOverrides["Expires"]),
 			"x-amz-checksum-crc32":                res.ChecksumCRC32,
 			"x-amz-checksum-crc64nvme":            res.ChecksumCRC64NVME,
 			"x-amz-checksum-crc32c":               res.ChecksumCRC32C,
 			"x-amz-checksum-sha1":                 res.ChecksumSHA1,
 			"x-amz-checksum-sha256":               res.ChecksumSHA256,
-			"Content-Type":                        res.ContentType,
+			"Content-Type":                        utils.ApplyOverride(res.ContentType, responseOverrides["Content-Type"]),
 			"x-amz-version-id":                    res.VersionId,
 			"Content-Length":                      utils.ConvertPtrToStringPtr(res.ContentLength),
 			"x-amz-mp-parts-count":                utils.ConvertPtrToStringPtr(res.PartsCount),

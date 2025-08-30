@@ -64,6 +64,7 @@ const (
 	ErrAnonymousCopyObject
 	ErrAnonymousPutBucketOwnership
 	ErrAnonymousGetBucketOwnership
+	ErrAnonymousResponseHeaders
 	ErrMethodNotAllowed
 	ErrBucketNotEmpty
 	ErrVersionedBucketNotEmpty
@@ -224,6 +225,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessDenied",
 		Description:    "s3:GetBucketOwnershipControls does not support Anonymous requests!",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrAnonymousResponseHeaders: {
+		Code:           "InvalidRequest",
+		Description:    "Request specific response headers cannot be used for anonymous GET requests.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMethodNotAllowed: {
 		Code:           "MethodNotAllowed",
