@@ -671,7 +671,6 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 func TestS3ApiController_GetObject(t *testing.T) {
 	tm := time.Now()
 	cLength := int64(11)
-	rdr := io.NopCloser(strings.NewReader("hello world"))
 	delMarker := true
 
 	tests := []struct {
@@ -691,6 +690,195 @@ func TestS3ApiController_GetObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "response overrides with anonymous request fails",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"response-content-type": "application/json",
+				},
+				// No X-Amz-Signature header to simulate anonymous request
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+		},
+		{
+			name: "response overrides with signed request succeeds",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Signature": "some-signature",
+				},
+				queries: map[string]string{
+					"response-content-type":        "application/json",
+					"response-content-disposition": "attachment; filename=test.json",
+					"response-cache-control":       "no-cache",
+					"response-content-encoding":    "gzip",
+					"response-content-language":    "en-US",
+					"response-expires":             "Wed, 21 Oct 2015 07:28:00 GMT",
+				},
+				beRes: &s3.GetObjectOutput{
+					ETag:               utils.GetStringPtr("ETag"),
+					ContentType:        utils.GetStringPtr("application/xml"),
+					ContentDisposition: utils.GetStringPtr("inline"),
+					CacheControl:       utils.GetStringPtr("max-age=3600"),
+					ContentEncoding:    utils.GetStringPtr("deflate"),
+					ContentLanguage:    utils.GetStringPtr("fr-FR"),
+					ExpiresString:      utils.GetStringPtr("Thu, 01 Dec 1994 16:00:00 GMT"),
+					ContentLength:      &cLength,
+					Body:               io.NopCloser(strings.NewReader("hello world")),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"ETag":                                utils.GetStringPtr("ETag"),
+						"x-amz-restore":                       nil,
+						"accept-ranges":                       nil,
+						"Content-Range":                       nil,
+						"Content-Disposition":                 utils.GetStringPtr("attachment; filename=test.json"),
+						"Content-Encoding":                    utils.GetStringPtr("gzip"),
+						"Content-Language":                    utils.GetStringPtr("en-US"),
+						"Cache-Control":                       utils.GetStringPtr("no-cache"),
+						"Expires":                             utils.GetStringPtr("Wed, 21 Oct 2015 07:28:00 GMT"),
+						"x-amz-checksum-crc32":                nil,
+						"x-amz-checksum-crc64nvme":            nil,
+						"x-amz-checksum-crc32c":               nil,
+						"x-amz-checksum-sha1":                 nil,
+						"x-amz-checksum-sha256":               nil,
+						"x-amz-version-id":                    nil,
+						"x-amz-mp-parts-count":                nil,
+						"x-amz-object-lock-mode":              nil,
+						"x-amz-object-lock-legal-hold":        nil,
+						"x-amz-storage-class":                 nil,
+						"x-amz-checksum-type":                 nil,
+						"x-amz-object-lock-retain-until-date": nil,
+						"Last-Modified":                       nil,
+						"x-amz-tagging-count":                 nil,
+						"Content-Type":                        utils.GetStringPtr("application/json"),
+						"Content-Length":                      utils.GetStringPtr("11"),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner:   "root",
+						Status:        http.StatusOK,
+						ContentLength: cLength,
+					},
+				},
+			},
+		},
+		{
+			name: "partial response overrides",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Signature": "some-signature",
+				},
+				queries: map[string]string{
+					"response-content-type":  "text/plain",
+					"response-cache-control": "private",
+				},
+				beRes: &s3.GetObjectOutput{
+					ETag:            utils.GetStringPtr("ETag"),
+					ContentType:     utils.GetStringPtr("application/xml"),
+					ContentLanguage: utils.GetStringPtr("en-US"),
+					ContentLength:   &cLength,
+					Body:            io.NopCloser(strings.NewReader("hello world")),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"ETag":                                utils.GetStringPtr("ETag"),
+						"x-amz-restore":                       nil,
+						"accept-ranges":                       nil,
+						"Content-Range":                       nil,
+						"Content-Disposition":                 nil,
+						"Content-Encoding":                    nil,
+						"Content-Language":                    utils.GetStringPtr("en-US"),   // Original value preserved
+						"Cache-Control":                       utils.GetStringPtr("private"), // Override applied
+						"Expires":                             nil,
+						"x-amz-checksum-crc32":                nil,
+						"x-amz-checksum-crc64nvme":            nil,
+						"x-amz-checksum-crc32c":               nil,
+						"x-amz-checksum-sha1":                 nil,
+						"x-amz-checksum-sha256":               nil,
+						"x-amz-version-id":                    nil,
+						"x-amz-mp-parts-count":                nil,
+						"x-amz-object-lock-mode":              nil,
+						"x-amz-object-lock-legal-hold":        nil,
+						"x-amz-storage-class":                 nil,
+						"x-amz-checksum-type":                 nil,
+						"x-amz-object-lock-retain-until-date": nil,
+						"Last-Modified":                       nil,
+						"x-amz-tagging-count":                 nil,
+						"Content-Type":                        utils.GetStringPtr("text/plain"), // Override applied
+						"Content-Length":                      utils.GetStringPtr("11"),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner:   "root",
+						Status:        http.StatusOK,
+						ContentLength: cLength,
+					},
+				},
+			},
+		},
+		{
+			name: "no response overrides - original behavior",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Signature": "some-signature",
+				},
+				beRes: &s3.GetObjectOutput{
+					ETag:          utils.GetStringPtr("ETag"),
+					ContentType:   utils.GetStringPtr("application/xml"),
+					ContentLength: &cLength,
+					Body:          io.NopCloser(strings.NewReader("hello world")),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Headers: map[string]*string{
+						"ETag":                                utils.GetStringPtr("ETag"),
+						"x-amz-restore":                       nil,
+						"accept-ranges":                       nil,
+						"Content-Range":                       nil,
+						"Content-Disposition":                 nil,
+						"Content-Encoding":                    nil,
+						"Content-Language":                    nil,
+						"Cache-Control":                       nil,
+						"Expires":                             nil,
+						"x-amz-checksum-crc32":                nil,
+						"x-amz-checksum-crc64nvme":            nil,
+						"x-amz-checksum-crc32c":               nil,
+						"x-amz-checksum-sha1":                 nil,
+						"x-amz-checksum-sha256":               nil,
+						"x-amz-version-id":                    nil,
+						"x-amz-mp-parts-count":                nil,
+						"x-amz-object-lock-mode":              nil,
+						"x-amz-object-lock-legal-hold":        nil,
+						"x-amz-storage-class":                 nil,
+						"x-amz-checksum-type":                 nil,
+						"x-amz-object-lock-retain-until-date": nil,
+						"Last-Modified":                       nil,
+						"x-amz-tagging-count":                 nil,
+						"Content-Type":                        utils.GetStringPtr("application/xml"),
+						"Content-Length":                      utils.GetStringPtr("11"),
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner:   "root",
+						Status:        http.StatusOK,
+						ContentLength: cLength,
+					},
+				},
 			},
 		},
 		{
@@ -749,7 +937,7 @@ func TestS3ApiController_GetObject(t *testing.T) {
 					ETag:          utils.GetStringPtr("ETag"),
 					ContentType:   utils.GetStringPtr("application/xml"),
 					ContentLength: &cLength,
-					Body:          rdr,
+					Body:          io.NopCloser(strings.NewReader("hello world")),
 				},
 			},
 			output: testOutput{
