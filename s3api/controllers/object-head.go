@@ -48,15 +48,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionRead,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Object:         key,
-			Action:         action,
-			IsBucketPublic: isPublicBucket,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionRead,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Object:          key,
+			Action:          action,
+			IsPublicRequest: isPublicBucket,
 		})
 	if err != nil {
 		return &Response{

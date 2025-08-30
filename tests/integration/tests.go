@@ -4773,6 +4773,405 @@ func GetObject_non_existing_dir_object(s *S3Conf) error {
 	})
 }
 
+func GetObject_overrides_success(s *S3Conf) error {
+	testName := "GetObject_overrides_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Test data
+		objKey := "test-object"
+		objContent := "test content for response overrides"
+		exp := time.Now()
+
+		// Put an object first
+		_, err := s3client.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+			Body:   strings.NewReader(objContent),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		for _, test := range []PublicBucketTestCase{
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:               &bucket,
+						Key:                  &objKey,
+						ResponseCacheControl: getPtr("max-age=90"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                     &bucket,
+						Key:                        &objKey,
+						ResponseContentDisposition: getPtr("inline"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentEncoding: getPtr("txt"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentLanguage: getPtr("en"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:              &bucket,
+						Key:                 &objKey,
+						ResponseContentType: getPtr("application/json"),
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:          &bucket,
+						Key:             &objKey,
+						ResponseExpires: &exp,
+					})
+					return err
+				},
+				ExpectedErr: nil,
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := test.Call(ctx)
+			cancel()
+			if err == nil && test.ExpectedErr != nil {
+				return fmt.Errorf("%v: expected err %v, instead got successful response", test.Action, test.ExpectedErr)
+			}
+			if err != nil {
+				if test.ExpectedErr == nil {
+					return fmt.Errorf("%v: expected no error, instead got %v", test.Action, err)
+				}
+
+				apiErr, ok := test.ExpectedErr.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type provided in the test, expected s3err.APIError")
+				}
+
+				if err := checkApiErr(err, apiErr); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObject_overrides_presign_success(s *S3Conf) error {
+	testName := "GetObject_overrides_presign_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Test data
+		objKey := "test-object"
+		objContent := "test content for response overrides"
+
+		// Put an object first
+		_, err := s3client.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+			Body:   strings.NewReader(objContent),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		// Test cases for each response override parameter
+		testCases := []struct {
+			name           string
+			queryParam     string
+			expectedHeader string
+			expectedValue  string
+		}{
+			{
+				name:           "response-cache-control",
+				queryParam:     "response-cache-control=no-cache",
+				expectedHeader: "Cache-Control",
+				expectedValue:  "no-cache",
+			},
+			{
+				name:           "response-content-disposition",
+				queryParam:     "response-content-disposition=attachment%3B%20filename%3D%22test.txt%22",
+				expectedHeader: "Content-Disposition",
+				expectedValue:  "attachment; filename=\"test.txt\"",
+			},
+			{
+				name:           "response-content-encoding",
+				queryParam:     "response-content-encoding=txt",
+				expectedHeader: "Content-Encoding",
+				expectedValue:  "txt",
+			},
+			{
+				name:           "response-content-language",
+				queryParam:     "response-content-language=en-US",
+				expectedHeader: "Content-Language",
+				expectedValue:  "en-US",
+			},
+			{
+				name:           "response-content-type",
+				queryParam:     "response-content-type=text%2Fplain",
+				expectedHeader: "Content-Type",
+				expectedValue:  "text/plain",
+			},
+			{
+				name:           "response-expires",
+				queryParam:     "response-expires=Thu%2C%2001%20Dec%202024%2016%3A00%3A00%20GMT",
+				expectedHeader: "Expires",
+				expectedValue:  "Thu, 01 Dec 2024 16:00:00 GMT",
+			},
+		}
+
+		// Test each override parameter individually
+		for _, tc := range testCases {
+			// Create a signed request with the response override parameter
+			req, err := createSignedReq(
+				http.MethodGet,
+				s.endpoint,
+				fmt.Sprintf("%s/%s?%s", bucket, objKey, tc.queryParam),
+				s.awsID,
+				s.awsSecret,
+				"s3",
+				s.awsRegion,
+				nil,
+				time.Now(),
+				nil,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create signed request for %s: %v", tc.name, err)
+			}
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("failed to execute request for %s: %v", tc.name, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("expected status 200 for %s, got %d", tc.name, resp.StatusCode)
+			}
+
+			// Verify the response override header is set correctly
+			actualValue := resp.Header.Get(tc.expectedHeader)
+			if actualValue != tc.expectedValue {
+				return fmt.Errorf("expected %s header to be %q for %s, got %q",
+					tc.expectedHeader, tc.expectedValue, tc.name, actualValue)
+			}
+
+			// Verify content is still correct
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("failed to read response body for %s: %v", tc.name, err)
+			}
+
+			if string(body) != objContent {
+				return fmt.Errorf("expected content %q for %s, got %q", objContent, tc.name, string(body))
+			}
+		}
+
+		// Test multiple override parameters together
+		multiParam := "response-cache-control=max-age%3D3600&response-content-type=application%2Fjson&response-content-disposition=inline"
+		req, err := createSignedReq(
+			http.MethodGet,
+			s.endpoint,
+			fmt.Sprintf("%s/%s?%s", bucket, objKey, multiParam),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			nil,
+			time.Now(),
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create signed request for multiple overrides: %v", err)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to execute request for multiple overrides: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected status 200 for multiple overrides, got %d", resp.StatusCode)
+		}
+
+		// Verify all override headers are set correctly
+		expectedHeaders := map[string]string{
+			"Cache-Control":       "max-age=3600",
+			"Content-Type":        "application/json",
+			"Content-Disposition": "inline",
+		}
+
+		for headerName, expectedValue := range expectedHeaders {
+			actualValue := resp.Header.Get(headerName)
+			if actualValue != expectedValue {
+				return fmt.Errorf("expected %s header to be %q for multiple overrides, got %q",
+					headerName, expectedValue, actualValue)
+			}
+		}
+
+		return nil
+	})
+}
+
+func GetObject_overrides_fail_public(s *S3Conf) error {
+	testName := "GetObject_overrides_fail_public"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rootClient := s.GetClient()
+		// Grant public access to the bucket for bucket operations
+		err := grantPublicBucketPolicy(rootClient, bucket, policyTypeObject)
+		if err != nil {
+			return err
+		}
+
+		// Test data
+		objKey := "test-object"
+		objContent := "test content for response overrides"
+		exp := time.Now()
+
+		// Put an object first
+		_, err = rootClient.PutObject(context.Background(), &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+			Body:   strings.NewReader(objContent),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to put object: %v", err)
+		}
+
+		for _, test := range []PublicBucketTestCase{
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:               &bucket,
+						Key:                  &objKey,
+						ResponseCacheControl: getPtr("max-age=90"),
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                     &bucket,
+						Key:                        &objKey,
+						ResponseContentDisposition: getPtr("inline"),
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentEncoding: getPtr("txt"),
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:                  &bucket,
+						Key:                     &objKey,
+						ResponseContentLanguage: getPtr("en"),
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:              &bucket,
+						Key:                 &objKey,
+						ResponseContentType: getPtr("application/json"),
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+			{
+				Action: "GetObject",
+				Call: func(ctx context.Context) error {
+					_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+						Bucket:          &bucket,
+						Key:             &objKey,
+						ResponseExpires: &exp,
+					})
+					return err
+				},
+				ExpectedErr: s3err.GetAPIError(s3err.ErrAnonymousResponseHeaders),
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			err := test.Call(ctx)
+			cancel()
+			if err == nil && test.ExpectedErr != nil {
+				return fmt.Errorf("%v: expected err %v, instead got successful response", test.Action, test.ExpectedErr)
+			}
+			if err != nil {
+				if test.ExpectedErr == nil {
+					return fmt.Errorf("%v: expected no error, instead got %v", test.Action, err)
+				}
+
+				apiErr, ok := test.ExpectedErr.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type provided in the test, expected s3err.APIError")
+				}
+
+				if err := checkApiErr(err, apiErr); err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	}, withAnonymousClient())
+}
+
 func ListObjects_non_existing_bucket(s *S3Conf) error {
 	testName := "ListObjects_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -17194,8 +17593,8 @@ func AccessControl_copy_object_with_starting_slash_for_user(s *S3Conf) error {
 }
 
 // Public bucket tests
-func PublicBucket_default_privet_bucket(s *S3Conf) error {
-	testName := "PublicBucket_default_privet_bucket"
+func PublicBucket_default_private_bucket(s *S3Conf) error {
+	testName := "PublicBucket_default_private_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		partNumber := int32(1)
 

@@ -40,14 +40,14 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionWrite,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.PutBucketTaggingAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionWrite,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.PutBucketTaggingAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -136,14 +136,14 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionWrite,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.PutBucketVersioningAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionWrite,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.PutBucketVersioningAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -190,14 +190,14 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
 	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionWrite,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.PutBucketObjectLockConfigurationAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionWrite,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.PutBucketObjectLockConfigurationAction,
+		IsPublicRequest: isPublicBucket,
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -231,14 +231,14 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionWrite,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.PutBucketCorsAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionWrite,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.PutBucketCorsAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
