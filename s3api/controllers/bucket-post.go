@@ -39,14 +39,14 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Action:         auth.DeleteObjectAction,
-			IsBucketPublic: IsBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.DeleteObjectAction,
+			IsPublicRequest: IsBucketPublic,
 		})
 	if err != nil {
 		return &Response{

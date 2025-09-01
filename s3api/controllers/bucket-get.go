@@ -35,14 +35,14 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketTaggingAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketTaggingAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -87,14 +87,14 @@ func (c S3ApiController) GetBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketOwnershipControlsAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketOwnershipControlsAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -127,14 +127,14 @@ func (c S3ApiController) GetBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketVersioningAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketVersioningAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -169,14 +169,14 @@ func (c S3ApiController) GetBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketCorsAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketCorsAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -212,14 +212,14 @@ func (c S3ApiController) GetBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketPolicyAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketPolicyAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -246,14 +246,14 @@ func (c S3ApiController) GetBucketPolicyStatus(ctx *fiber.Ctx) (*Response, error
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketPolicyStatusAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketPolicyStatusAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -307,14 +307,14 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.ListBucketVersionsAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.ListBucketVersionsAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -362,14 +362,14 @@ func (c S3ApiController) GetObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketObjectLockConfigurationAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketObjectLockConfigurationAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -407,14 +407,14 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionReadAcp,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketAclAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionReadAcp,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketAclAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -458,14 +458,14 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.ListBucketMultipartUploadsAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.ListBucketMultipartUploadsAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -517,14 +517,14 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.ListBucketAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.ListBucketAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
@@ -576,14 +576,14 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.ListBucketAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.ListBucketAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{

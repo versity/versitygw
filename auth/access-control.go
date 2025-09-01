@@ -70,20 +70,20 @@ func VerifyObjectCopyAccess(ctx context.Context, be backend.Backend, copySource 
 }
 
 type AccessOptions struct {
-	Acl            ACL
-	AclPermission  Permission
-	IsRoot         bool
-	Acc            Account
-	Bucket         string
-	Object         string
-	Action         Action
-	Readonly       bool
-	IsBucketPublic bool
+	Acl             ACL
+	AclPermission   Permission
+	IsRoot          bool
+	Acc             Account
+	Bucket          string
+	Object          string
+	Action          Action
+	Readonly        bool
+	IsPublicRequest bool
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
-	// Skip the access check for public buckets
-	if opts.IsBucketPublic {
+	// Skip the access check for public bucket requests
+	if opts.IsPublicRequest {
 		return nil
 	}
 	if opts.Readonly {

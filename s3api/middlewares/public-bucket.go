@@ -30,7 +30,7 @@ import (
 // access to anonymous requesters
 func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
-		// skip for auhtneicated requests
+		// skip for authenticated requests
 		if ctx.Query("X-Amz-Algorithm") != "" || ctx.Get("Authorization") != "" {
 			return nil
 		}

@@ -31,14 +31,14 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionRead,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Action:         auth.ListBucketAction,
-			IsBucketPublic: isPublicBucket,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionRead,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.ListBucketAction,
+			IsPublicRequest: isPublicBucket,
 		})
 	if err != nil {
 		return &Response{

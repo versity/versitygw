@@ -217,6 +217,9 @@ func TestGetObject(s *S3Conf) {
 	GetObject_directory_success(s)
 	GetObject_by_range_resp_status(s)
 	GetObject_non_existing_dir_object(s)
+	GetObject_overrides_success(s)
+	GetObject_overrides_presign_success(s)
+	GetObject_overrides_fail_public(s)
 }
 
 func TestListObjects(s *S3Conf) {
@@ -904,7 +907,7 @@ func TestAccessControl(s *S3Conf) {
 }
 
 func TestPublicBuckets(s *S3Conf) {
-	PublicBucket_default_privet_bucket(s)
+	PublicBucket_default_private_bucket(s)
 	PublicBucket_public_bucket_policy(s)
 	PublicBucket_public_object_policy(s)
 	PublicBucket_public_acl(s)
@@ -1144,6 +1147,9 @@ func GetIntTests() IntTests {
 		"GetObject_directory_success":                                             GetObject_directory_success,
 		"GetObject_by_range_resp_status":                                          GetObject_by_range_resp_status,
 		"GetObject_non_existing_dir_object":                                       GetObject_non_existing_dir_object,
+		"GetObject_overrides_success":                                             GetObject_overrides_success,
+		"GetObject_overrides_presign_success":                                     GetObject_overrides_presign_success,
+		"GetObject_overrides_fail_public":                                         GetObject_overrides_fail_public,
 		"ListObjects_non_existing_bucket":                                         ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                 ListObjects_with_prefix,
 		"ListObjects_truncated":                                                   ListObjects_truncated,
@@ -1495,7 +1501,7 @@ func GetIntTests() IntTests {
 		"AccessControl_root_PutBucketAcl":                                         AccessControl_root_PutBucketAcl,
 		"AccessControl_user_PutBucketAcl_with_policy_access":                      AccessControl_user_PutBucketAcl_with_policy_access,
 		"AccessControl_copy_object_with_starting_slash_for_user":                  AccessControl_copy_object_with_starting_slash_for_user,
-		"PublicBucket_default_privet_bucket":                                      PublicBucket_default_privet_bucket,
+		"PublicBucket_default_private_bucket":                                     PublicBucket_default_private_bucket,
 		"PublicBucket_public_bucket_policy":                                       PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                       PublicBucket_public_object_policy,
 		"PublicBucket_public_acl":                                                 PublicBucket_public_acl,

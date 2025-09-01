@@ -31,14 +31,14 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Action:         auth.PutBucketTaggingAction,
-			IsBucketPublic: IsBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.PutBucketTaggingAction,
+			IsPublicRequest: IsBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -132,14 +132,14 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Action:         auth.PutBucketCorsAction,
-			IsBucketPublic: IsBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.PutBucketCorsAction,
+			IsPublicRequest: IsBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -167,14 +167,14 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Action:         auth.DeleteBucketAction,
-			IsBucketPublic: IsBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Action:          auth.DeleteBucketAction,
+			IsPublicRequest: IsBucketPublic,
 		})
 	if err != nil {
 		return &Response{

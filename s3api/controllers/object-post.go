@@ -41,15 +41,15 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Object:         key,
-			Action:         auth.RestoreObjectAction,
-			IsBucketPublic: isBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Object:          key,
+			Action:          auth.RestoreObjectAction,
+			IsPublicRequest: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -92,15 +92,15 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionRead,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Object:         key,
-			Action:         auth.GetObjectAction,
-			IsBucketPublic: isBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionRead,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Object:          key,
+			Action:          auth.GetObjectAction,
+			IsPublicRequest: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{
@@ -243,15 +243,15 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
-			Readonly:       c.readonly,
-			Acl:            parsedAcl,
-			AclPermission:  auth.PermissionWrite,
-			IsRoot:         isRoot,
-			Acc:            acct,
-			Bucket:         bucket,
-			Object:         key,
-			Action:         auth.PutObjectAction,
-			IsBucketPublic: isBucketPublic,
+			Readonly:        c.readonly,
+			Acl:             parsedAcl,
+			AclPermission:   auth.PermissionWrite,
+			IsRoot:          isRoot,
+			Acc:             acct,
+			Bucket:          bucket,
+			Object:          key,
+			Action:          auth.PutObjectAction,
+			IsPublicRequest: isBucketPublic,
 		})
 	if err != nil {
 		return &Response{

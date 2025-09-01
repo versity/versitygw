@@ -779,3 +779,20 @@ func ValidateCopySource(copysource string) error {
 
 	return nil
 }
+
+// GetQueryParam returns a pointer to the query parameter value if it exists
+func GetQueryParam(ctx *fiber.Ctx, key string) *string {
+	value := ctx.Query(key)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+// ApplyOverride returns the override value if it exists and status is 200, otherwise returns original
+func ApplyOverride(original, override *string) *string {
+	if override != nil {
+		return override
+	}
+	return original
+}
