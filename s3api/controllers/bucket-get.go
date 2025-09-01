@@ -619,3 +619,52 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 		},
 	}, err
 }
+
+// GetBucketLocation handles GET /:bucket?location
+func (c S3ApiController) GetBucketLocation(ctx *fiber.Ctx) (*Response, error) {
+	bucket := ctx.Params("bucket")
+	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
+	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
+	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
+
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+		Readonly:       c.readonly,
+		Acl:            parsedAcl,
+		AclPermission:  auth.PermissionRead,
+		IsRoot:         isRoot,
+		Acc:            acct,
+		Bucket:         bucket,
+		Action:         auth.GetBucketLocationAction,
+		IsBucketPublic: isPublicBucket,
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	// verify bucket existence/access via backend HeadBucket
+	_, err = c.be.HeadBucket(ctx.Context(), &s3.HeadBucketInput{Bucket: &bucket})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	// pick up configured region from locals (set by router middleware)
+	region, _ := ctx.Locals("region").(string)
+
+	return &Response{
+		Data: s3response.LocationConstraint{
+			Value: region,
+		},
+		MetaOpts: &MetaOptions{
+			BucketOwner: parsedAcl.Owner,
+		},
+	}, nil
+}

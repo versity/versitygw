@@ -1728,6 +1728,77 @@ func HeadBucket_success(s *S3Conf) error {
 	})
 }
 
+func GetBucketLocation_success(s *S3Conf) error {
+	testName := "GetBucketLocation_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if string(resp.LocationConstraint) != s.awsRegion {
+			return fmt.Errorf("expected bucket region to be %v, instead got %v",
+				s.awsRegion, resp.LocationConstraint)
+		}
+
+		return nil
+	})
+}
+
+func GetBucketLocation_non_exist(s *S3Conf) error {
+	testName := "GetBucketLocation_non_exist"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		invalidBucket := "bucket-no-exist"
+		resp, err := s3client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+			Bucket: &invalidBucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
+			return err
+		}
+
+		if resp != nil && resp.LocationConstraint != "" {
+			return fmt.Errorf("expected empty location constraint, instead got %v",
+				resp.LocationConstraint)
+		}
+
+		return nil
+	})
+}
+
+func GetBucketLocation_no_access(s *S3Conf) error {
+	testName := "GetBucketLocation_no_access"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := createUsers(s, []user{testuser1})
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser1)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := userClient.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+			return err
+		}
+
+		if resp != nil && resp.LocationConstraint != "" {
+			return fmt.Errorf("expected empty location constraint, instead got %v",
+				resp.LocationConstraint)
+		}
+
+		return nil
+	})
+}
+
 func ListBuckets_as_user(s *S3Conf) error {
 	testName := "ListBuckets_as_user"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
