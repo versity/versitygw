@@ -177,6 +177,7 @@ const (
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
+	ErrNotModified
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -785,6 +786,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "AccessForbidden",
 		Description:    "CORSResponse: CORS is not enabled for this bucket.",
 		HTTPStatusCode: http.StatusForbidden,
+	},
+	ErrNotModified: {
+		Code:           "NotModified",
+		Description:    "Not Modified",
+		HTTPStatusCode: http.StatusNotModified,
 	},
 
 	// non aws errors

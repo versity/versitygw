@@ -179,6 +179,7 @@ func TestHeadObject(s *S3Conf) {
 	HeadObject_with_range(s)
 	HeadObject_zero_len_with_range(s)
 	HeadObject_dir_with_range(s)
+	HeadObject_conditional_reads(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		HeadObject_not_enabled_checksum_mode(s)
@@ -209,6 +210,7 @@ func TestGetObject(s *S3Conf) {
 	GetObject_dir_with_range(s)
 	GetObject_invalid_parent(s)
 	GetObject_large_object(s)
+	GetObject_conditional_reads(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		GetObject_checksums(s)
@@ -1124,6 +1126,7 @@ func GetIntTests() IntTests {
 		"HeadObject_with_range":                                                   HeadObject_with_range,
 		"HeadObject_zero_len_with_range":                                          HeadObject_zero_len_with_range,
 		"HeadObject_dir_with_range":                                               HeadObject_dir_with_range,
+		"HeadObject_conditional_reads":                                            HeadObject_conditional_reads,
 		"HeadObject_not_enabled_checksum_mode":                                    HeadObject_not_enabled_checksum_mode,
 		"HeadObject_checksums":                                                    HeadObject_checksums,
 		"HeadObject_success":                                                      HeadObject_success,
@@ -1142,6 +1145,7 @@ func GetIntTests() IntTests {
 		"GetObject_dir_with_range":                                                GetObject_dir_with_range,
 		"GetObject_invalid_parent":                                                GetObject_invalid_parent,
 		"GetObject_large_object":                                                  GetObject_large_object,
+		"GetObject_conditional_reads":                                             GetObject_conditional_reads,
 		"GetObject_checksums":                                                     GetObject_checksums,
 		"GetObject_success":                                                       GetObject_success,
 		"GetObject_directory_success":                                             GetObject_directory_success,

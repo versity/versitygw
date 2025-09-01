@@ -88,6 +88,8 @@ func TrimEtag(etag *string) *string {
 var (
 	errInvalidRange           = s3err.GetAPIError(s3err.ErrInvalidRange)
 	errInvalidCopySourceRange = s3err.GetAPIError(s3err.ErrInvalidCopySourceRange)
+	errPreconditionFailed     = s3err.GetAPIError(s3err.ErrPreconditionFailed)
+	errNotModified            = s3err.GetAPIError(s3err.ErrNotModified)
 )
 
 // ParseObjectRange parses input range header and returns startoffset, length, isValid
@@ -421,4 +423,112 @@ func GenerateEtag(h hash.Hash) string {
 // AreEtagsSame compares 2 etags by ignoring quotes
 func AreEtagsSame(e1, e2 string) bool {
 	return strings.Trim(e1, `"`) == strings.Trim(e2, `"`)
+}
+
+func getBoolPtr(b bool) *bool {
+	return &b
+}
+
+type PreConditions struct {
+	IfMatch       *string
+	IfNoneMatch   *string
+	IfModSince    *time.Time
+	IfUnmodeSince *time.Time
+}
+
+// EvaluatePreconditions takes the object ETag, the last modified time and
+// evaluates the read preconditions:
+// - if-match,
+// - if-none-match
+// - if-modified-since
+// - if-unmodified-since
+// if-match and if-none-match are ETag comparisions
+// if-modified-since and if-unmodified-since are last modifed time comparisons
+func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreConditions) error {
+	if preconditions.IfMatch == nil && preconditions.IfNoneMatch == nil && preconditions.IfModSince == nil && preconditions.IfUnmodeSince == nil {
+		return nil
+	}
+
+	// convert all conditions to *bool to evaluate the conditions
+	var ifMatch, ifNoneMatch, ifModSince, ifUnmodeSince *bool
+	if preconditions.IfMatch != nil {
+		ifMatch = getBoolPtr(*preconditions.IfMatch == etag)
+	}
+	if preconditions.IfNoneMatch != nil {
+		ifNoneMatch = getBoolPtr(*preconditions.IfNoneMatch != etag)
+	}
+	if preconditions.IfModSince != nil {
+		ifModSince = getBoolPtr(preconditions.IfModSince.UTC().Before(modTime.UTC()))
+	}
+	if preconditions.IfUnmodeSince != nil {
+		ifUnmodeSince = getBoolPtr(preconditions.IfUnmodeSince.UTC().After(modTime.UTC()))
+	}
+
+	if ifMatch != nil {
+		// if `if-match` doesn't matches, return PreconditionFailed
+		if !*ifMatch {
+			return errPreconditionFailed
+		}
+
+		// if-match matches
+		if *ifMatch {
+			if ifNoneMatch != nil {
+				// if `if-none-match` doesn't match return NotModified
+				if !*ifNoneMatch {
+					return errNotModified
+				}
+
+				// if both `if-match` and `if-none-match` match, return no error
+				return nil
+			}
+
+			// if `if-match` matches but `if-modified-since` is false return NotModified
+			if ifModSince != nil && !*ifModSince {
+				return errNotModified
+			}
+
+			// ignore `if-unmodified-since` as `if-match` is true
+			return nil
+		}
+	}
+
+	if ifNoneMatch != nil {
+		if *ifNoneMatch {
+			// if `if-none-match` is true, but `if-unmodified-since` is false
+			// return PreconditionFailed
+			if ifUnmodeSince != nil && !*ifUnmodeSince {
+				return errPreconditionFailed
+			}
+
+			// ignore `if-modified-since` as `if-none-match` is true
+			return nil
+		} else {
+			// if `if-none-match` is false and `if-unmodified-since` is false
+			// return PreconditionFailed
+			if ifUnmodeSince != nil && !*ifUnmodeSince {
+				return errPreconditionFailed
+			}
+
+			// in all other cases when `if-none-match` is false return NotModified
+			return errNotModified
+		}
+	}
+
+	if ifModSince != nil && !*ifModSince {
+		// if both `if-modified-since` and `if-unmodified-since` are false
+		// return PreconditionFailed
+		if ifUnmodeSince != nil && !*ifUnmodeSince {
+			return errPreconditionFailed
+		}
+
+		// if only `if-modified-since` is false, return NotModified
+		return errNotModified
+	}
+
+	// if `if-unmodified-since` is false return PreconditionFailed
+	if ifUnmodeSince != nil && !*ifUnmodeSince {
+		return errPreconditionFailed
+	}
+
+	return nil
 }

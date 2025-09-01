@@ -450,12 +450,18 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetInvalidChecksumHeaderErr("x-amz-checksum-mode")
 	}
 
+	conditionalHeaders := utils.ParsePreconditionHeaders(ctx)
+
 	res, err := c.be.GetObject(ctx.Context(), &s3.GetObjectInput{
-		Bucket:       &bucket,
-		Key:          &key,
-		Range:        &acceptRange,
-		VersionId:    &versionId,
-		ChecksumMode: checksumMode,
+		Bucket:            &bucket,
+		Key:               &key,
+		Range:             &acceptRange,
+		IfMatch:           conditionalHeaders.IfMatch,
+		IfNoneMatch:       conditionalHeaders.IfNoneMatch,
+		IfModifiedSince:   conditionalHeaders.IfModSince,
+		IfUnmodifiedSince: conditionalHeaders.IfUnmodeSince,
+		VersionId:         &versionId,
+		ChecksumMode:      checksumMode,
 	})
 	if err != nil {
 		var headers map[string]*string
