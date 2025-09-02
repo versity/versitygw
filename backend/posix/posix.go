@@ -39,7 +39,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/backend/meta"
-	"github.com/versity/versitygw/s3api/debuglogger"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"

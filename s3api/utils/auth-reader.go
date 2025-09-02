@@ -27,6 +27,7 @@ import (
 	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v2"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -45,14 +46,13 @@ type AuthReader struct {
 	secret string
 	size   int
 	r      *HashReader
-	debug  bool
 }
 
 // NewAuthReader initializes an io.Reader that will verify the request
 // v4 auth when the underlying reader returns io.EOF. This postpones the
 // authorization check until the reader is consumed. So it is important that
 // the consumer of this reader checks for the auth errors while reading.
-func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string, debug bool) *AuthReader {
+func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string) *AuthReader {
 	var hr *HashReader
 	hashPayload := ctx.Get("X-Amz-Content-Sha256")
 	if !IsSpecialPayload(hashPayload) {
@@ -66,7 +66,6 @@ func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string, de
 		r:      hr,
 		auth:   auth,
 		secret: secret,
-		debug:  debug,
 	}
 }
 
@@ -107,7 +106,7 @@ func (ar *AuthReader) validateSignature() error {
 		return s3err.GetAPIError(s3err.ErrMalformedDate)
 	}
 
-	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size), ar.debug)
+	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size))
 }
 
 const (
@@ -115,7 +114,7 @@ const (
 )
 
 // CheckValidSignature validates the ctx v4 auth signature
-func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64, debug bool) error {
+func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	// Create a new http request instance from fasthttp request
@@ -134,7 +133,7 @@ func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string,
 		req, checksum, service, auth.Region, tdate, signedHdrs,
 		func(options *v4.SignerOptions) {
 			options.DisableURIPathEscaping = true
-			if debug {
+			if debuglogger.IsDebugEnabled() {
 				options.LogSigning = true
 				options.Logger = logging.NewStandardLogger(os.Stderr)
 			}

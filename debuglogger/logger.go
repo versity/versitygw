@@ -91,6 +91,11 @@ func SetDebugEnabled() {
 	debugEnabled.Store(true)
 }
 
+// IsDebugEnabled returns true if debugging is enabled
+func IsDebugEnabled() bool {
+	return debugEnabled.Load()
+}
+
 // Logf is the same as 'fmt.Printf' with debug prefix,
 // a color added and '\n' at the end
 func Logf(format string, v ...any) {
@@ -108,6 +113,28 @@ func Infof(format string, v ...any) {
 	}
 	debugPrefix := "[INFO]: "
 	fmt.Printf(string(green)+debugPrefix+format+reset+"\n", v...)
+}
+
+var debugIAMEnabled atomic.Bool
+
+// SetIAMDebugEnabled sets the IAM debug mode
+func SetIAMDebugEnabled() {
+	debugIAMEnabled.Store(true)
+}
+
+// IsDebugEnabled returns true if debugging enabled
+func IsIAMDebugEnabled() bool {
+	return debugEnabled.Load()
+}
+
+// IAMLogf is the same as 'fmt.Printf' with debug prefix,
+// a color added and '\n' at the end
+func IAMLogf(format string, v ...any) {
+	if !debugIAMEnabled.Load() {
+		return
+	}
+	debugPrefix := "[DEBUG]: "
+	fmt.Printf(string(yellow)+debugPrefix+format+reset+"\n", v...)
 }
 
 // PrintInsideHorizontalBorders prints the text inside horizontal

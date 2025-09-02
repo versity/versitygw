@@ -29,6 +29,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/logging"
 	"github.com/gofiber/fiber/v2"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -45,16 +46,14 @@ type PresignedAuthReader struct {
 	auth   AuthData
 	secret string
 	r      io.Reader
-	debug  bool
 }
 
-func NewPresignedAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string, debug bool) *PresignedAuthReader {
+func NewPresignedAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string) *PresignedAuthReader {
 	return &PresignedAuthReader{
 		ctx:    ctx,
 		r:      r,
 		auth:   auth,
 		secret: secret,
-		debug:  debug,
 	}
 }
 
@@ -63,7 +62,7 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 	n, err := pr.r.Read(p)
 
 	if errors.Is(err, io.EOF) {
-		cerr := CheckPresignedSignature(pr.ctx, pr.auth, pr.secret, pr.debug)
+		cerr := CheckPresignedSignature(pr.ctx, pr.auth, pr.secret)
 		if cerr != nil {
 			return n, cerr
 		}
@@ -73,7 +72,7 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 }
 
 // CheckPresignedSignature validates presigned request signature
-func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, debug bool) error {
+func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	var contentLength int64
@@ -100,7 +99,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, debug
 		SecretAccessKey: secret,
 	}, req, unsignedPayload, service, auth.Region, date, func(options *v4.SignerOptions) {
 		options.DisableURIPathEscaping = true
-		if debug {
+		if debuglogger.IsDebugEnabled() {
 			options.LogSigning = true
 			options.Logger = logging.NewStandardLogger(os.Stderr)
 		}

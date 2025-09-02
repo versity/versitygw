@@ -29,6 +29,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -63,7 +64,6 @@ var (
 	ldapQueryBase, ldapObjClasses            string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
 	ldapUserIdAtr, ldapGroupIdAtr            string
-	ldapDebug                                bool
 	vaultEndpointURL, vaultSecretStoragePath string
 	vaultAuthMethod, vaultMountPath          string
 	vaultRootToken, vaultRoleId              string
@@ -72,7 +72,7 @@ var (
 	s3IamAccess, s3IamSecret                 string
 	s3IamRegion, s3IamBucket                 string
 	s3IamEndpoint                            string
-	s3IamSslNoVerify, s3IamDebug             bool
+	s3IamSslNoVerify                         bool
 	iamCacheDisable                          bool
 	iamCacheTTL                              int
 	iamCachePrune                            int
@@ -81,7 +81,8 @@ var (
 	dogstatsServers                          string
 	ipaHost, ipaVaultName                    string
 	ipaUser, ipaPassword                     string
-	ipaInsecure, ipaDebug                    bool
+	ipaInsecure                              bool
+	iamDebug                                 bool
 )
 
 var (
@@ -399,12 +400,6 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IAM_LDAP_GROUP_ID_ATR"},
 			Destination: &ldapGroupIdAtr,
 		},
-		&cli.BoolFlag{
-			Name:        "iam-ldap-debug",
-			Usage:       "ldap server debug output",
-			EnvVars:     []string{"VGW_IAM_LDAP_DEBUG"},
-			Destination: &ldapDebug,
-		},
 		&cli.StringFlag{
 			Name:        "iam-vault-endpoint-url",
 			Usage:       "vault server url",
@@ -503,12 +498,6 @@ func initFlags() []cli.Flag {
 			Destination: &s3IamSslNoVerify,
 		},
 		&cli.BoolFlag{
-			Name:        "s3-iam-debug",
-			Usage:       "s3 IAM debug output",
-			EnvVars:     []string{"VGW_S3_IAM_DEBUG"},
-			Destination: &s3IamDebug,
-		},
-		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
 			EnvVars:     []string{"VGW_IAM_CACHE_DISABLE"},
@@ -527,6 +516,13 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IAM_CACHE_PRUNE"},
 			Value:       3600,
 			Destination: &iamCachePrune,
+		},
+		&cli.BoolFlag{
+			Name:        "iam-debug",
+			Usage:       "enable IAM debug output",
+			Value:       false,
+			EnvVars:     []string{"VGW_IAM_DEBUG"},
+			Destination: &iamDebug,
 		},
 		&cli.StringFlag{
 			Name: "health",
@@ -592,12 +588,6 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},
-		&cli.BoolFlag{
-			Name:        "ipa-debug",
-			Usage:       "FreeIPA IAM debug output",
-			EnvVars:     []string{"VGW_IPA_DEBUG"},
-			Destination: &ipaDebug,
-		},
 	}
 }
 
@@ -639,9 +629,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}
 		opts = append(opts, s3api.WithTLS(cert))
 	}
-	if debug {
-		opts = append(opts, s3api.WithDebug())
-	}
 	if admPort == "" {
 		opts = append(opts, s3api.WithAdminServer())
 	}
@@ -656,6 +643,14 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if virtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(virtualDomain))
+	}
+
+	if debug {
+		debuglogger.SetDebugEnabled()
+	}
+
+	if iamDebug {
+		debuglogger.SetIAMDebugEnabled()
 	}
 
 	iam, err := auth.New(&auth.Opts{
@@ -675,7 +670,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		LDAPRoleAtr:            ldapRoleAtr,
 		LDAPUserIdAtr:          ldapUserIdAtr,
 		LDAPGroupIdAtr:         ldapGroupIdAtr,
-		LDAPDebug:              ldapDebug,
 		VaultEndpointURL:       vaultEndpointURL,
 		VaultSecretStoragePath: vaultSecretStoragePath,
 		VaultAuthMethod:        vaultAuthMethod,
@@ -692,7 +686,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		S3Bucket:               s3IamBucket,
 		S3Endpoint:             s3IamEndpoint,
 		S3DisableSSlVerfiy:     s3IamSslNoVerify,
-		S3Debug:                s3IamDebug,
 		CacheDisable:           iamCacheDisable,
 		CacheTTL:               iamCacheTTL,
 		CachePrune:             iamCachePrune,
@@ -701,7 +694,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		IpaUser:                ipaUser,
 		IpaPassword:            ipaPassword,
 		IpaInsecure:            ipaInsecure,
-		IpaDebug:               ipaDebug,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)

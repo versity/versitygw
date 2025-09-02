@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -36,6 +35,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/versity/versitygw/debuglogger"
 )
 
 const IpaVersion = "2.254"
@@ -49,13 +50,12 @@ type IpaIAMService struct {
 	username        string
 	password        string
 	kraTransportKey *rsa.PublicKey
-	debug           bool
 	rootAcc         Account
 }
 
 var _ IAMService = &IpaIAMService{}
 
-func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure, debug bool) (*IpaIAMService, error) {
+func NewIpaIAMService(rootAcc Account, host, vaultName, username, password string, isInsecure bool) (*IpaIAMService, error) {
 	ipa := IpaIAMService{
 		id:        0,
 		version:   IpaVersion,
@@ -63,7 +63,6 @@ func NewIpaIAMService(rootAcc Account, host, vaultName, username, password strin
 		vaultName: vaultName,
 		username:  username,
 		password:  password,
-		debug:     debug,
 		rootAcc:   rootAcc,
 	}
 	jar, err := cookiejar.New(nil)
@@ -311,7 +310,7 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 		return rpcResponse{}, err
 	}
 
-	ipa.log(fmt.Sprintf("%v", req))
+	debuglogger.IAMLogf("IPA request: %v", req)
 	httpReq.Header.Set("referer", fmt.Sprintf("%s/ipa", ipa.host))
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -338,7 +337,7 @@ func (ipa *IpaIAMService) rpcInternal(req rpcRequest) (rpcResponse, error) {
 	defer httpResp.Body.Close()
 
 	bytes, err := io.ReadAll(httpResp.Body)
-	ipa.log(string(bytes))
+	debuglogger.IAMLogf("IPA response (%v): %v", err, string(bytes))
 	if err != nil {
 		return rpcResponse{}, err
 	}
@@ -494,10 +493,4 @@ func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
 	}
 	*b, err = base64.StdEncoding.DecodeString(intermediate)
 	return err
-}
-
-func (ipa *IpaIAMService) log(msg string) {
-	if ipa.debug {
-		log.Println(msg)
-	}
 }

@@ -119,7 +119,6 @@ type Opts struct {
 	LDAPRoleAtr            string
 	LDAPUserIdAtr          string
 	LDAPGroupIdAtr         string
-	LDAPDebug              bool
 	VaultEndpointURL       string
 	VaultSecretStoragePath string
 	VaultAuthMethod        string
@@ -136,7 +135,6 @@ type Opts struct {
 	S3Bucket               string
 	S3Endpoint             string
 	S3DisableSSlVerfiy     bool
-	S3Debug                bool
 	CacheDisable           bool
 	CacheTTL               int
 	CachePrune             int
@@ -145,7 +143,6 @@ type Opts struct {
 	IpaUser                string
 	IpaPassword            string
 	IpaInsecure            bool
-	IpaDebug               bool
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -159,11 +156,11 @@ func New(o *Opts) (IAMService, error) {
 	case o.LDAPServerURL != "":
 		svc, err = NewLDAPService(o.RootAccount, o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
 			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPUserIdAtr,
-			o.LDAPGroupIdAtr, o.LDAPObjClasses, o.LDAPDebug)
+			o.LDAPGroupIdAtr, o.LDAPObjClasses)
 		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
 	case o.S3Endpoint != "":
 		svc, err = NewS3(o.RootAccount, o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,
-			o.S3Endpoint, o.S3DisableSSlVerfiy, o.S3Debug)
+			o.S3Endpoint, o.S3DisableSSlVerfiy)
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
 	case o.VaultEndpointURL != "":
@@ -172,7 +169,7 @@ func New(o *Opts) (IAMService, error) {
 			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
 		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
 	case o.IpaHost != "":
-		svc, err = NewIpaIAMService(o.RootAccount, o.IpaHost, o.IpaVaultName, o.IpaUser, o.IpaPassword, o.IpaInsecure, o.IpaDebug)
+		svc, err = NewIpaIAMService(o.RootAccount, o.IpaHost, o.IpaVaultName, o.IpaUser, o.IpaPassword, o.IpaInsecure)
 		fmt.Printf("initializing IPA IAM with %q\n", o.IpaHost)
 	default:
 		// if no iam options selected, default to the single user mode

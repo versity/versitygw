@@ -31,7 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
-	"github.com/versity/versitygw/s3api/debuglogger"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )

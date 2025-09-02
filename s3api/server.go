@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -36,7 +37,6 @@ type S3ApiServer struct {
 	port          string
 	cert          *tls.Certificate
 	quiet         bool
-	debug         bool
 	readonly      bool
 	health        string
 	virtualDomain string
@@ -91,11 +91,11 @@ func New(
 	}
 
 	// initialize the debug logger in debug mode
-	if server.debug {
+	if debuglogger.IsDebugEnabled() {
 		app.Use(middlewares.DebugLogger())
 	}
 
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.debug, server.readonly, region, root)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, root)
 
 	return server, nil
 }
@@ -111,11 +111,6 @@ func WithTLS(cert tls.Certificate) Option {
 // WithAdminServer runs admin endpoints with the gateway in the same network
 func WithAdminServer() Option {
 	return func(s *S3ApiServer) { s.router.WithAdmSrv = true }
-}
-
-// WithDebug sets debug output
-func WithDebug() Option {
-	return func(s *S3ApiServer) { s.debug = true }
 }
 
 // WithQuiet silences default logging output
