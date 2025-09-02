@@ -24,19 +24,30 @@ var serviceName *string
 var debug *bool
 var signedParamsMap restParams
 var payloadFile *string
+var incorrectSignature *bool
+var incorrectCredential *string
+var authorizationScheme *string
+var incorrectYearMonthDay *bool
+var invalidYearMonthDay *bool
 
 type S3Command struct {
-	Method             string
-	Url                string
-	BucketName         string
-	ObjectKey          string
-	Query              string
-	AwsRegion          string
-	AwsAccessKeyId     string
-	AwsSecretAccessKey string
-	ServiceName        string
-	SignedParams       map[string]string
-	PayloadFile        string
+	Method                       string
+	Url                          string
+	BucketName                   string
+	ObjectKey                    string
+	Query                        string
+	AwsRegion                    string
+	AwsAccessKeyId               string
+	AwsSecretAccessKey           string
+	ServiceName                  string
+	SignedParams                 map[string]string
+	PayloadFile                  string
+	IncorrectSignature           bool
+	AuthorizationHeaderMalformed bool
+	AuthorizationScheme          string
+	IncorrectCredential          string
+	IncorrectYearMonthDay        bool
+	InvalidYearMonthDay          bool
 
 	currentDateTime      string
 	host                 string
@@ -76,17 +87,22 @@ func main() {
 	}
 
 	s3Command := &S3Command{
-		Method:             *method,
-		Url:                *url,
-		BucketName:         *bucketName,
-		ObjectKey:          *objectKey,
-		Query:              *query,
-		AwsRegion:          *awsRegion,
-		AwsAccessKeyId:     *awsAccessKeyId,
-		AwsSecretAccessKey: *awsSecretAccessKey,
-		ServiceName:        *serviceName,
-		SignedParams:       signedParamsMap,
-		PayloadFile:        *payloadFile,
+		Method:                *method,
+		Url:                   *url,
+		BucketName:            *bucketName,
+		ObjectKey:             *objectKey,
+		Query:                 *query,
+		AwsRegion:             *awsRegion,
+		AwsAccessKeyId:        *awsAccessKeyId,
+		AwsSecretAccessKey:    *awsSecretAccessKey,
+		ServiceName:           *serviceName,
+		SignedParams:          signedParamsMap,
+		PayloadFile:           *payloadFile,
+		IncorrectSignature:    *incorrectSignature,
+		AuthorizationScheme:   *authorizationScheme,
+		IncorrectCredential:   *incorrectCredential,
+		IncorrectYearMonthDay: *incorrectYearMonthDay,
+		InvalidYearMonthDay:   *invalidYearMonthDay,
 	}
 	curlShellCommand, err := s3Command.CurlShellCommand()
 	if err != nil {
@@ -108,6 +124,11 @@ func checkFlags() error {
 	debug = flag.Bool("debug", false, "Print debug statements")
 	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
 	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
+	incorrectSignature = flag.Bool("incorrectSignature", false, "Simulate an incorrect signature")
+	incorrectYearMonthDay = flag.Bool("incorrectYearMonthDay", false, "Simulate an incorrect year/month/day")
+	invalidYearMonthDay = flag.Bool("invalidYearMonthDay", false, "Simulate an invalid year/month/day")
+	incorrectCredential = flag.String("incorrectCredential", "", "Add an incorrect credential string")
+	authorizationScheme = flag.String("authorizationScheme", "AWS4-HMAC-SHA256", "Authorization Scheme")
 	// Parse the flags
 	flag.Parse()
 
@@ -133,7 +154,11 @@ func hmacSHA256(key []byte, data string) []byte {
 }
 
 func (s *S3Command) CurlShellCommand() (string, error) {
-	s.currentDateTime = time.Now().UTC().Format("20060102T150405Z")
+	if s.IncorrectYearMonthDay {
+		s.currentDateTime = time.Now().Add(-48 * time.Hour).UTC().Format("20060102T150405Z")
+	} else {
+		s.currentDateTime = time.Now().UTC().Format("20060102T150405Z")
+	}
 	protocolAndHost := strings.Split(s.Url, "://")
 	if len(protocolAndHost) != 2 {
 		return "", fmt.Errorf("invalid URL value: %s", s.Url)
@@ -141,6 +166,7 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 	s.host = protocolAndHost[1]
 	s.payloadHash = "UNSIGNED-PAYLOAD"
 	s.headerValues = [][]string{
+		{"host", s.host},
 		{"x-amz-content-sha256", s.payloadHash},
 		{"x-amz-date", s.currentDateTime},
 	}
@@ -158,6 +184,9 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 	s.generateCanonicalRequestString()
 
 	s.yearMonthDay = strings.Split(s.currentDateTime, "T")[0]
+	if s.InvalidYearMonthDay {
+		s.yearMonthDay = s.yearMonthDay[:len(s.yearMonthDay)-1]
+	}
 	s.getStsSignature()
 
 	return s.buildCurlShellCommand(), nil
@@ -168,9 +197,9 @@ func (s *S3Command) generateCanonicalRequestString() {
 
 	canonicalRequestLines = append(canonicalRequestLines, s.path)
 	canonicalRequestLines = append(canonicalRequestLines, s.Query)
-	canonicalRequestLines = append(canonicalRequestLines, "host:"+s.host)
+	//canonicalRequestLines = append(canonicalRequestLines, "host:"+s.host)
 
-	signedParams := []string{"host"}
+	var signedParams []string
 	for _, headerValue := range s.headerValues {
 		key := strings.ToLower(headerValue[0])
 		canonicalRequestLines = append(canonicalRequestLines, key+":"+headerValue[1])
@@ -191,7 +220,7 @@ func (s *S3Command) generateCanonicalRequestString() {
 func (s *S3Command) getStsSignature() {
 	thirdLine := fmt.Sprintf("%s/%s/%s/aws4_request", s.yearMonthDay, s.AwsRegion, s.ServiceName)
 	stsDataLines := []string{
-		"AWS4-HMAC-SHA256",
+		s.AuthorizationScheme,
 		s.currentDateTime,
 		thirdLine,
 		s.canonicalRequestHash,
@@ -206,6 +235,13 @@ func (s *S3Command) getStsSignature() {
 
 	// Generate signature
 	signatureBytes := hmacSHA256(signingKey, stsDataString)
+	if s.IncorrectSignature {
+		if signatureBytes[0] == 'a' {
+			signatureBytes[0] = 'A'
+		} else {
+			signatureBytes[0] = 'a'
+		}
+	}
 
 	// Print hex-encoded signature
 	s.signature = hex.EncodeToString(signatureBytes)
@@ -222,8 +258,14 @@ func (s *S3Command) buildCurlShellCommand() string {
 	}
 	fullPath += "\""
 	curlCommand = append(curlCommand, fullPath)
-	authorizationString := fmt.Sprintf("\"Authorization: AWS4-HMAC-SHA256 Credential=%s/%s/%s/%s/aws4_request,SignedHeaders=%s,Signature=%s\"",
-		s.AwsAccessKeyId, s.yearMonthDay, s.AwsRegion, s.ServiceName, s.signedParamString, s.signature)
+	var credentialString string
+	if s.IncorrectCredential == "" {
+		credentialString = fmt.Sprintf("%s/%s/%s/%s/aws4_request", s.AwsAccessKeyId, s.yearMonthDay, s.AwsRegion, s.ServiceName)
+	} else {
+		credentialString = s.IncorrectCredential
+	}
+	authorizationString := fmt.Sprintf("\"Authorization: %s Credential=%s,SignedHeaders=%s,Signature=%s\"",
+		s.AuthorizationScheme, credentialString, s.signedParamString, s.signature)
 	curlCommand = append(curlCommand, "-H", authorizationString)
 	for _, headerValue := range s.headerValues {
 		headerString := fmt.Sprintf("\"%s: %s\"", headerValue[0], headerValue[1])

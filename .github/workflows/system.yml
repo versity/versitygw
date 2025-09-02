@@ -33,9 +33,9 @@ jobs:
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
-          - set: "REST, posix, non-static, not implemented|rest-delete-bucket-ownership-controls, folder IAM"
+          - set: "REST, posix, non-static, not implemented|rest-delete-bucket-ownership-controls|rest-delete-bucket-tagging, folder IAM"
             IAM_TYPE: folder
-            RUN_SET: "rest-not-implemented,rest-delete-bucket-ownership-controls"
+            RUN_SET: "rest-not-implemented,rest-delete-bucket-ownership-controls,rest-delete-bucket-tagging"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"

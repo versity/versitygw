@@ -19,9 +19,9 @@ load ./bats-assert/load
 
 source ./tests/test_user_common.sh
 source ./tests/util/util_setup.sh
-source ./tests/util/util_users.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
+source ./tests/drivers/user.sh
 
 export RUN_USERS=true
 
