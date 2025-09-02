@@ -363,7 +363,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	if !cr.isFirstHeader {
 		err := readAndSkip(rdr, '\r', '\n')
 		if err != nil {
-			debuglogger.Logf("failed to read chunk header first 2 bytes: (should be): \\r\\n, (got): %q", header[:2])
+			debuglogger.Logf("failed to read chunk header first 2 bytes: (should be): \\r\\n, (got): %q", header[:min(2, len(header))])
 			return cr.handleRdrErr(err, header)
 		}
 	}
