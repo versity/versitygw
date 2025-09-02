@@ -72,7 +72,7 @@ var (
 	s3IamAccess, s3IamSecret                 string
 	s3IamRegion, s3IamBucket                 string
 	s3IamEndpoint                            string
-	s3IamSslNoVerify, s3IamDebug             bool
+	s3IamSslNoVerify                         bool
 	iamCacheDisable                          bool
 	iamCacheTTL                              int
 	iamCachePrune                            int
@@ -498,12 +498,6 @@ func initFlags() []cli.Flag {
 			Destination: &s3IamSslNoVerify,
 		},
 		&cli.BoolFlag{
-			Name:        "s3-iam-debug",
-			Usage:       "s3 IAM debug output",
-			EnvVars:     []string{"VGW_S3_IAM_DEBUG"},
-			Destination: &s3IamDebug,
-		},
-		&cli.BoolFlag{
 			Name:        "iam-cache-disable",
 			Usage:       "disable local iam cache",
 			EnvVars:     []string{"VGW_IAM_CACHE_DISABLE"},
@@ -692,7 +686,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		S3Bucket:               s3IamBucket,
 		S3Endpoint:             s3IamEndpoint,
 		S3DisableSSlVerfiy:     s3IamSslNoVerify,
-		S3Debug:                s3IamDebug,
 		CacheDisable:           iamCacheDisable,
 		CacheTTL:               iamCacheTTL,
 		CachePrune:             iamCachePrune,

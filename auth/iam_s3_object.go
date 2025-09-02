@@ -33,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/versity/versitygw/debuglogger"
 )
 
 // IAMServiceS3 stores user accounts in an S3 object
@@ -56,14 +57,13 @@ type IAMServiceS3 struct {
 	bucket        string
 	endpoint      string
 	sslSkipVerify bool
-	debug         bool
 	rootAcc       Account
 	client        *s3.Client
 }
 
 var _ IAMService = &IAMServiceS3{}
 
-func NewS3(rootAcc Account, access, secret, region, bucket, endpoint string, sslSkipVerify, debug bool) (*IAMServiceS3, error) {
+func NewS3(rootAcc Account, access, secret, region, bucket, endpoint string, sslSkipVerify bool) (*IAMServiceS3, error) {
 	if access == "" {
 		return nil, fmt.Errorf("must provide s3 IAM service access key")
 	}
@@ -87,7 +87,6 @@ func NewS3(rootAcc Account, access, secret, region, bucket, endpoint string, ssl
 		bucket:        bucket,
 		endpoint:      endpoint,
 		sslSkipVerify: sslSkipVerify,
-		debug:         debug,
 		rootAcc:       rootAcc,
 	}
 
@@ -235,7 +234,7 @@ func (s *IAMServiceS3) getConfig() (aws.Config, error) {
 		config.WithHTTPClient(client),
 	}
 
-	if s.debug {
+	if debuglogger.IsIAMDebugEnabled() {
 		opts = append(opts,
 			config.WithClientLogMode(aws.LogSigning|aws.LogRetries|aws.LogRequest|aws.LogResponse|aws.LogRequestEventMessage|aws.LogResponseEventMessage))
 	}

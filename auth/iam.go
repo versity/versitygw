@@ -135,7 +135,6 @@ type Opts struct {
 	S3Bucket               string
 	S3Endpoint             string
 	S3DisableSSlVerfiy     bool
-	S3Debug                bool
 	CacheDisable           bool
 	CacheTTL               int
 	CachePrune             int
@@ -161,7 +160,7 @@ func New(o *Opts) (IAMService, error) {
 		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
 	case o.S3Endpoint != "":
 		svc, err = NewS3(o.RootAccount, o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,
-			o.S3Endpoint, o.S3DisableSSlVerfiy, o.S3Debug)
+			o.S3Endpoint, o.S3DisableSSlVerfiy)
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
 	case o.VaultEndpointURL != "":
