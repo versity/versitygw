@@ -3945,6 +3945,151 @@ func HeadObject_dir_with_range(s *S3Conf) error {
 	return headObject_zero_len_with_range_helper(testName, "my-dir/", s)
 }
 
+func HeadObject_conditional_reads(s *S3Conf) error {
+	testName := "HeadObject_conditional_reads"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		obj, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		errMod := getPtr("NotModified")
+		errCond := getPtr("PreconditionFailed")
+
+		// sleep one second to get dates before and after
+		// the object creation
+		time.Sleep(time.Second * 1)
+
+		before := time.Now().AddDate(0, 0, -3)
+		after := time.Now()
+		etag := obj.res.ETag
+
+		for i, test := range []struct {
+			ifmatch           *string
+			ifnonematch       *string
+			ifmodifiedsince   *time.Time
+			ifunmodifiedsince *time.Time
+			err               *string
+		}{
+			// all the cases when preconditions are either empty, true or false
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errCond},
+
+			{getPtr("invalid_etag"), etag, &before, &before, errCond},
+			{getPtr("invalid_etag"), etag, &before, &after, errCond},
+			{getPtr("invalid_etag"), etag, &before, nil, errCond},
+			{getPtr("invalid_etag"), etag, &after, &before, errCond},
+			{getPtr("invalid_etag"), etag, &after, &after, errCond},
+			{getPtr("invalid_etag"), etag, &after, nil, errCond},
+			{getPtr("invalid_etag"), etag, nil, &before, errCond},
+			{getPtr("invalid_etag"), etag, nil, &after, errCond},
+			{getPtr("invalid_etag"), etag, nil, nil, errCond},
+
+			{getPtr("invalid_etag"), nil, &before, &before, errCond},
+			{getPtr("invalid_etag"), nil, &before, &after, errCond},
+			{getPtr("invalid_etag"), nil, &before, nil, errCond},
+			{getPtr("invalid_etag"), nil, &after, &before, errCond},
+			{getPtr("invalid_etag"), nil, &after, &after, errCond},
+			{getPtr("invalid_etag"), nil, &after, nil, errCond},
+			{getPtr("invalid_etag"), nil, nil, &before, errCond},
+			{getPtr("invalid_etag"), nil, nil, &after, errCond},
+			{getPtr("invalid_etag"), nil, nil, nil, errCond},
+
+			{etag, getPtr("invalid_etag"), &before, &before, nil},
+			{etag, getPtr("invalid_etag"), &before, &after, nil},
+			{etag, getPtr("invalid_etag"), &before, nil, nil},
+			{etag, getPtr("invalid_etag"), &after, &before, nil},
+			{etag, getPtr("invalid_etag"), &after, &after, nil},
+			{etag, getPtr("invalid_etag"), &after, nil, nil},
+			{etag, getPtr("invalid_etag"), nil, &before, nil},
+			{etag, getPtr("invalid_etag"), nil, &after, nil},
+			{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+			{etag, etag, &before, &before, errMod},
+			{etag, etag, &before, &after, errMod},
+			{etag, etag, &before, nil, errMod},
+			{etag, etag, &after, &before, errMod},
+			{etag, etag, &after, &after, errMod},
+			{etag, etag, &after, nil, errMod},
+			{etag, etag, nil, &before, errMod},
+			{etag, etag, nil, &after, errMod},
+			{etag, etag, nil, nil, errMod},
+
+			{etag, nil, &before, &before, nil},
+			{etag, nil, &before, &after, nil},
+			{etag, nil, &before, nil, nil},
+			{etag, nil, &after, &before, errMod},
+			{etag, nil, &after, &after, errMod},
+			{etag, nil, &after, nil, errMod},
+			{etag, nil, nil, &before, nil},
+			{etag, nil, nil, &after, nil},
+			{etag, nil, nil, nil, nil},
+
+			{nil, getPtr("invalid_etag"), &before, &before, errCond},
+			{nil, getPtr("invalid_etag"), &before, &after, nil},
+			{nil, getPtr("invalid_etag"), &before, nil, nil},
+			{nil, getPtr("invalid_etag"), &after, &before, errCond},
+			{nil, getPtr("invalid_etag"), &after, &after, nil},
+			{nil, getPtr("invalid_etag"), &after, nil, nil},
+			{nil, getPtr("invalid_etag"), nil, &before, errCond},
+			{nil, getPtr("invalid_etag"), nil, &after, nil},
+			{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+			{nil, etag, &before, &before, errCond},
+			{nil, etag, &before, &after, errMod},
+			{nil, etag, &before, nil, errMod},
+			{nil, etag, &after, &before, errCond},
+			{nil, etag, &after, &after, errMod},
+			{nil, etag, &after, nil, errMod},
+			{nil, etag, nil, &before, errCond},
+			{nil, etag, nil, &after, errMod},
+			{nil, etag, nil, nil, errMod},
+
+			{nil, nil, &before, &before, errCond},
+			{nil, nil, &before, &after, nil},
+			{nil, nil, &before, nil, nil},
+			{nil, nil, &after, &before, errCond},
+			{nil, nil, &after, &after, errMod},
+			{nil, nil, &after, nil, errMod},
+			{nil, nil, nil, &before, errCond},
+			{nil, nil, nil, &after, nil},
+			{nil, nil, nil, nil, nil},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket:            &bucket,
+				Key:               &key,
+				IfMatch:           test.ifmatch,
+				IfNoneMatch:       test.ifnonematch,
+				IfModifiedSince:   test.ifmodifiedsince,
+				IfUnmodifiedSince: test.ifunmodifiedsince,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
+			}
+			if test.err != nil {
+				if err := checkSdkApiErr(err, *test.err); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 func HeadObject_success(s *S3Conf) error {
 	testName := "HeadObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -4638,6 +4783,155 @@ func GetObject_large_object(s *S3Conf) error {
 			return fmt.Errorf("expected the output data checksum to be %v, instead got %v",
 				r.csum, outCsum)
 		}
+		return nil
+	})
+}
+
+func GetObject_conditional_reads(s *S3Conf) error {
+	testName := "GetObject_conditional_reads"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		obj, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		errMod := s3err.GetAPIError(s3err.ErrNotModified)
+		errCond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		// sleep one second to get dates before and after
+		// the object creation
+		time.Sleep(time.Second * 1)
+
+		before := time.Now().AddDate(0, 0, -3)
+		after := time.Now()
+		etag := obj.res.ETag
+
+		for i, test := range []struct {
+			ifmatch           *string
+			ifnonematch       *string
+			ifmodifiedsince   *time.Time
+			ifunmodifiedsince *time.Time
+			err               error
+		}{
+			// all the cases when preconditions are either empty, true or false
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errCond},
+
+			{getPtr("invalid_etag"), etag, &before, &before, errCond},
+			{getPtr("invalid_etag"), etag, &before, &after, errCond},
+			{getPtr("invalid_etag"), etag, &before, nil, errCond},
+			{getPtr("invalid_etag"), etag, &after, &before, errCond},
+			{getPtr("invalid_etag"), etag, &after, &after, errCond},
+			{getPtr("invalid_etag"), etag, &after, nil, errCond},
+			{getPtr("invalid_etag"), etag, nil, &before, errCond},
+			{getPtr("invalid_etag"), etag, nil, &after, errCond},
+			{getPtr("invalid_etag"), etag, nil, nil, errCond},
+
+			{getPtr("invalid_etag"), nil, &before, &before, errCond},
+			{getPtr("invalid_etag"), nil, &before, &after, errCond},
+			{getPtr("invalid_etag"), nil, &before, nil, errCond},
+			{getPtr("invalid_etag"), nil, &after, &before, errCond},
+			{getPtr("invalid_etag"), nil, &after, &after, errCond},
+			{getPtr("invalid_etag"), nil, &after, nil, errCond},
+			{getPtr("invalid_etag"), nil, nil, &before, errCond},
+			{getPtr("invalid_etag"), nil, nil, &after, errCond},
+			{getPtr("invalid_etag"), nil, nil, nil, errCond},
+
+			{etag, getPtr("invalid_etag"), &before, &before, nil},
+			{etag, getPtr("invalid_etag"), &before, &after, nil},
+			{etag, getPtr("invalid_etag"), &before, nil, nil},
+			{etag, getPtr("invalid_etag"), &after, &before, nil},
+			{etag, getPtr("invalid_etag"), &after, &after, nil},
+			{etag, getPtr("invalid_etag"), &after, nil, nil},
+			{etag, getPtr("invalid_etag"), nil, &before, nil},
+			{etag, getPtr("invalid_etag"), nil, &after, nil},
+			{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+			{etag, etag, &before, &before, errMod},
+			{etag, etag, &before, &after, errMod},
+			{etag, etag, &before, nil, errMod},
+			{etag, etag, &after, &before, errMod},
+			{etag, etag, &after, &after, errMod},
+			{etag, etag, &after, nil, errMod},
+			{etag, etag, nil, &before, errMod},
+			{etag, etag, nil, &after, errMod},
+			{etag, etag, nil, nil, errMod},
+
+			{etag, nil, &before, &before, nil},
+			{etag, nil, &before, &after, nil},
+			{etag, nil, &before, nil, nil},
+			{etag, nil, &after, &before, errMod},
+			{etag, nil, &after, &after, errMod},
+			{etag, nil, &after, nil, errMod},
+			{etag, nil, nil, &before, nil},
+			{etag, nil, nil, &after, nil},
+			{etag, nil, nil, nil, nil},
+
+			{nil, getPtr("invalid_etag"), &before, &before, errCond},
+			{nil, getPtr("invalid_etag"), &before, &after, nil},
+			{nil, getPtr("invalid_etag"), &before, nil, nil},
+			{nil, getPtr("invalid_etag"), &after, &before, errCond},
+			{nil, getPtr("invalid_etag"), &after, &after, nil},
+			{nil, getPtr("invalid_etag"), &after, nil, nil},
+			{nil, getPtr("invalid_etag"), nil, &before, errCond},
+			{nil, getPtr("invalid_etag"), nil, &after, nil},
+			{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+			{nil, etag, &before, &before, errCond},
+			{nil, etag, &before, &after, errMod},
+			{nil, etag, &before, nil, errMod},
+			{nil, etag, &after, &before, errCond},
+			{nil, etag, &after, &after, errMod},
+			{nil, etag, &after, nil, errMod},
+			{nil, etag, nil, &before, errCond},
+			{nil, etag, nil, &after, errMod},
+			{nil, etag, nil, nil, errMod},
+
+			{nil, nil, &before, &before, errCond},
+			{nil, nil, &before, &after, nil},
+			{nil, nil, &before, nil, nil},
+			{nil, nil, &after, &before, errCond},
+			{nil, nil, &after, &after, errMod},
+			{nil, nil, &after, nil, errMod},
+			{nil, nil, nil, &before, errCond},
+			{nil, nil, nil, &after, nil},
+			{nil, nil, nil, nil, nil},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:            &bucket,
+				Key:               &key,
+				IfMatch:           test.ifmatch,
+				IfNoneMatch:       test.ifnonematch,
+				IfModifiedSince:   test.ifmodifiedsince,
+				IfUnmodifiedSince: test.ifunmodifiedsince,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type: expected s3err.APIError")
+				}
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
+		}
+
 		return nil
 	})
 }

@@ -417,6 +417,19 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		return nil, azureErrToS3Err(err)
 	}
 
+	if resp.ETag != nil && resp.LastModified != nil {
+		err = backend.EvaluatePreconditions(convertAzureEtag(resp.ETag), *resp.LastModified,
+			backend.PreConditions{
+				IfMatch:       input.IfMatch,
+				IfNoneMatch:   input.IfNoneMatch,
+				IfModSince:    input.IfModifiedSince,
+				IfUnmodeSince: input.IfUnmodifiedSince,
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var opts *azblob.DownloadStreamOptions
 	if *input.Range != "" {
 		offset, count, isValid, err := backend.ParseObjectRange(*resp.ContentLength, *input.Range)
@@ -478,6 +491,19 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 			return nil, azureErrToS3Err(err)
 		}
 
+		if res.ETag != nil && res.LastModified != nil {
+			err = backend.EvaluatePreconditions(convertAzureEtag(res.ETag), *res.LastModified,
+				backend.PreConditions{
+					IfMatch:       input.IfMatch,
+					IfNoneMatch:   input.IfNoneMatch,
+					IfModSince:    input.IfModifiedSince,
+					IfUnmodeSince: input.IfUnmodifiedSince,
+				})
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		partsCount := int32(len(res.UncommittedBlocks))
 
 		for _, block := range res.UncommittedBlocks {
@@ -508,6 +534,20 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 	if err != nil {
 		return nil, azureErrToS3Err(err)
 	}
+
+	if resp.ETag != nil && resp.LastModified != nil {
+		err = backend.EvaluatePreconditions(convertAzureEtag(resp.ETag), *resp.LastModified,
+			backend.PreConditions{
+				IfMatch:       input.IfMatch,
+				IfNoneMatch:   input.IfNoneMatch,
+				IfModSince:    input.IfModifiedSince,
+				IfUnmodeSince: input.IfUnmodifiedSince,
+			})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var size int64
 	if resp.ContentLength != nil {
 		size = *resp.ContentLength

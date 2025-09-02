@@ -3484,6 +3484,23 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		}
 	}
 
+	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	etag := string(b)
+	if err != nil {
+		etag = ""
+	}
+
+	// evaluate preconditions
+	err = backend.EvaluatePreconditions(etag, fid.ModTime(), backend.PreConditions{
+		IfMatch:       input.IfMatch,
+		IfNoneMatch:   input.IfNoneMatch,
+		IfModSince:    input.IfModifiedSince,
+		IfUnmodeSince: input.IfUnmodifiedSince,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	if fid.IsDir() {
 		_, _, _, err := backend.ParseObjectRange(0, *input.Range)
 		if err != nil {
@@ -3493,11 +3510,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		userMetaData := make(map[string]string)
 
 		objMeta := p.loadObjectMetaData(nil, bucket, object, &fid, userMetaData)
-		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
-		etag := string(b)
-		if err != nil {
-			etag = ""
-		}
 
 		var tagCount *int32
 		tags, err := p.getAttrTags(bucket, object)
@@ -3578,12 +3590,6 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	userMetaData := make(map[string]string)
 
 	objMeta := p.loadObjectMetaData(f, bucket, object, &fi, userMetaData)
-
-	b, err := p.meta.RetrieveAttribute(f, bucket, object, etagkey)
-	etag := string(b)
-	if err != nil {
-		etag = ""
-	}
 
 	var tagCount *int32
 	tags, err := p.getAttrTags(bucket, object)
@@ -3689,17 +3695,30 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 			return nil, err
 		}
 
+		// retreive the part etag
+		b, err := p.meta.RetrieveAttribute(nil, bucket, partPath, etagkey)
+		etag := string(b)
+		if err != nil {
+			etag = ""
+		}
+
+		// evaluate preconditions
+		err = backend.EvaluatePreconditions(etag, part.ModTime(), backend.PreConditions{
+			IfMatch:       input.IfMatch,
+			IfNoneMatch:   input.IfNoneMatch,
+			IfModSince:    input.IfModifiedSince,
+			IfUnmodeSince: input.IfUnmodifiedSince,
+		})
+		if err != nil {
+			return nil, err
+		}
+
 		var contentRange string
 		if isValid {
 			contentRange = fmt.Sprintf("bytes %v-%v/%v",
 				startOffset, startOffset+length-1, size)
 		}
 
-		b, err := p.meta.RetrieveAttribute(nil, bucket, partPath, etagkey)
-		etag := string(b)
-		if err != nil {
-			etag = ""
-		}
 		partsCount := int32(len(ents))
 
 		return &s3.HeadObjectOutput{
@@ -3797,6 +3816,17 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	etag := string(b)
 	if err != nil {
 		etag = ""
+	}
+
+	// evaluate preconditions
+	err = backend.EvaluatePreconditions(etag, fi.ModTime(), backend.PreConditions{
+		IfMatch:       input.IfMatch,
+		IfNoneMatch:   input.IfNoneMatch,
+		IfModSince:    input.IfModifiedSince,
+		IfUnmodeSince: input.IfUnmodifiedSince,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	size := fi.Size()
