@@ -629,14 +629,14 @@ func (c S3ApiController) GetBucketLocation(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
-		Readonly:       c.readonly,
-		Acl:            parsedAcl,
-		AclPermission:  auth.PermissionRead,
-		IsRoot:         isRoot,
-		Acc:            acct,
-		Bucket:         bucket,
-		Action:         auth.GetBucketLocationAction,
-		IsBucketPublic: isPublicBucket,
+		Readonly:        c.readonly,
+		Acl:             parsedAcl,
+		AclPermission:   auth.PermissionRead,
+		IsRoot:          isRoot,
+		Acc:             acct,
+		Bucket:          bucket,
+		Action:          auth.GetBucketLocationAction,
+		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
 		return &Response{
