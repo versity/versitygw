@@ -81,7 +81,7 @@ var (
 	dogstatsServers                          string
 	ipaHost, ipaVaultName                    string
 	ipaUser, ipaPassword                     string
-	ipaInsecure, ipaDebug                    bool
+	ipaInsecure                              bool
 	iamDebug                                 bool
 )
 
@@ -594,12 +594,6 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},
-		&cli.BoolFlag{
-			Name:        "ipa-debug",
-			Usage:       "FreeIPA IAM debug output",
-			EnvVars:     []string{"VGW_IPA_DEBUG"},
-			Destination: &ipaDebug,
-		},
 	}
 }
 
@@ -707,7 +701,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		IpaUser:                ipaUser,
 		IpaPassword:            ipaPassword,
 		IpaInsecure:            ipaInsecure,
-		IpaDebug:               ipaDebug,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)
