@@ -29,6 +29,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -639,9 +640,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}
 		opts = append(opts, s3api.WithTLS(cert))
 	}
-	if debug {
-		opts = append(opts, s3api.WithDebug())
-	}
 	if admPort == "" {
 		opts = append(opts, s3api.WithAdminServer())
 	}
@@ -656,6 +654,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if virtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(virtualDomain))
+	}
+
+	if debug {
+		debuglogger.SetDebugEnabled()
 	}
 
 	iam, err := auth.New(&auth.Opts{

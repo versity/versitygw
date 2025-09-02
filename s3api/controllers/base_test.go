@@ -30,7 +30,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -158,48 +157,6 @@ func buildRequest(bucket, object string, body []byte, headers, queries map[strin
 	}
 
 	return req
-}
-
-func TestNew(t *testing.T) {
-	type args struct {
-		be       backend.Backend
-		iam      auth.IAMService
-		logger   s3log.AuditLogger
-		evs      s3event.S3EventSender
-		mm       metrics.Manager
-		debug    bool
-		readonly bool
-	}
-	tests := []struct {
-		name string
-		args args
-		want S3ApiController
-	}{
-		{
-			name: "debug enabled",
-			args: args{
-				debug: true,
-			},
-			want: S3ApiController{
-				debug: true,
-			},
-		},
-		{
-			name: "debug disabled",
-			args: args{
-				debug: false,
-			},
-			want: S3ApiController{
-				debug: false,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := New(tt.args.be, tt.args.iam, tt.args.logger, tt.args.evs, tt.args.mm, tt.args.debug, tt.args.readonly)
-			assert.Equal(t, got, tt.want)
-		})
-	}
 }
 
 func TestS3ApiController_HandleErrorRoute(t *testing.T) {

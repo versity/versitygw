@@ -23,7 +23,7 @@ import (
 	"github.com/versity/scoutfs-go"
 	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/backend/posix"
-	"github.com/versity/versitygw/s3api/debuglogger"
+	"github.com/versity/versitygw/debuglogger"
 )
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
@@ -68,7 +68,6 @@ func moveData(from *os.File, to *os.File) error {
 		return os.ErrInvalid
 	}
 
-	//
 	err = scoutfs.MoveData(from, to)
 	if err != nil {
 		debuglogger.Logf("ScoutFs MoveData failed: %v", err)

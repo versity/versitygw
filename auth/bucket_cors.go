@@ -21,7 +21,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/versity/versitygw/s3api/debuglogger"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 

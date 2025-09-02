@@ -23,8 +23,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/metrics"
-	"github.com/versity/versitygw/s3api/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
@@ -37,7 +37,6 @@ type S3ApiController struct {
 	logger   s3log.AuditLogger
 	evSender s3event.S3EventSender
 	mm       metrics.Manager
-	debug    bool
 	readonly bool
 }
 
@@ -59,17 +58,12 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, debug bool, readonly bool) S3ApiController {
-	if debug {
-		debuglogger.SetDebugEnabled()
-	}
-
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool) S3ApiController {
 	return S3ApiController{
 		be:       be,
 		iam:      iam,
 		logger:   logger,
 		evSender: evs,
-		debug:    debug,
 		readonly: readonly,
 		mm:       mm,
 	}

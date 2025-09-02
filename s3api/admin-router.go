@@ -35,42 +35,42 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// CreateUser admin api
 	app.Patch("/create-user",
 		controllers.ProcessHandlers(ctrl.CreateUser, metrics.ActionAdminCreateUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminCreateUser),
 		))
 
 	// DeleteUsers admin api
 	app.Patch("/delete-user",
 		controllers.ProcessHandlers(ctrl.DeleteUser, metrics.ActionAdminDeleteUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
 		))
 
 	// UpdateUser admin api
 	app.Patch("/update-user",
 		controllers.ProcessHandlers(ctrl.UpdateUser, metrics.ActionAdminUpdateUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
 		))
 
 	// ListUsers admin api
 	app.Patch("/list-users",
 		controllers.ProcessHandlers(ctrl.ListUsers, metrics.ActionAdminListUsers, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminListUsers),
 		))
 
 	// ChangeBucketOwner admin api
 	app.Patch("/change-bucket-owner",
 		controllers.ProcessHandlers(ctrl.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
 		))
 
 	// ListBucketsAndOwners admin api
 	app.Patch("/list-buckets",
 		controllers.ProcessHandlers(ctrl.ListBuckets, metrics.ActionAdminListBuckets, services,
-			middlewares.VerifyV4Signature(root, iam, region, debug),
+			middlewares.VerifyV4Signature(root, iam, region),
 			middlewares.IsAdmin(metrics.ActionAdminListBuckets),
 		))
 }

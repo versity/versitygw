@@ -24,7 +24,7 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
+func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -77,13 +77,13 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 				return s3err.GetAPIError(s3err.ErrEntityTooLarge)
 			}
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				return utils.NewPresignedAuthReader(ctx, r, authData, account.Secret, debug)
+				return utils.NewPresignedAuthReader(ctx, r, authData, account.Secret)
 			})
 
 			return nil
 		}
 
-		err = utils.CheckPresignedSignature(ctx, authData, account.Secret, debug)
+		err = utils.CheckPresignedSignature(ctx, authData, account.Secret)
 		if err != nil {
 			return err
 		}

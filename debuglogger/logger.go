@@ -91,6 +91,11 @@ func SetDebugEnabled() {
 	debugEnabled.Store(true)
 }
 
+// IsDebugEnabled returns true if debugging is enabled
+func IsDebugEnabled() bool {
+	return debugEnabled.Load()
+}
+
 // Logf is the same as 'fmt.Printf' with debug prefix,
 // a color added and '\n' at the end
 func Logf(format string, v ...any) {

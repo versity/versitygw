@@ -39,7 +39,7 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, debug bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -123,7 +123,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			// until end of stream due to need to get length and
 			// checksum of the stream to validate authorization
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
-				return utils.NewAuthReader(ctx, r, authData, account.Secret, debug)
+				return utils.NewAuthReader(ctx, r, authData, account.Secret)
 			})
 
 			// wrap the io.Reader with ChunkReader if x-amz-content-sha256
@@ -166,7 +166,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			}
 		}
 
-		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength, debug)
+		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength)
 		if err != nil {
 			return err
 		}
