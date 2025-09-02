@@ -1561,7 +1561,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			if err != nil {
 				// Fail back to standard copy
 				debuglogger.Logf("Custom data block move failed (%w), failing back to io.Copy()", err)
-				_, err = io.Copy(f.File(), rdr)
+				fw := f.File()
+				fw.Seek(0, io.SeekEnd)
+				_, err = io.Copy(fw, rdr)
 			}
 		} else {
 			_, err = io.Copy(f.File(), rdr)
