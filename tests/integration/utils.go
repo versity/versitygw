@@ -1798,3 +1798,29 @@ func testOPTIONSEdnpoint(s *S3Conf, bucket, origin, method string, headers strin
 
 	return comparePreflightResult(expected, result)
 }
+
+func sprintBuckets(buckets []types.Bucket) string {
+	if len(buckets) == 0 {
+		return ""
+	}
+
+	names := make([]string, len(buckets))
+	for i, bucket := range buckets {
+		names[i] = *bucket.Name
+	}
+
+	return strings.Join(names, ",")
+}
+
+func sprintPrefixes(cpfx []types.CommonPrefix) string {
+	if len(cpfx) == 0 {
+		return ""
+	}
+
+	names := make([]string, len(cpfx))
+	for i, pfx := range cpfx {
+		names[i] = *pfx.Prefix
+	}
+
+	return strings.Join(names, ",")
+}
