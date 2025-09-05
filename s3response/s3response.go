@@ -37,6 +37,7 @@ type PutObjectOutput struct {
 	ChecksumSHA1      *string
 	ChecksumSHA256    *string
 	ChecksumCRC64NVME *string
+	Size              *int64
 	ChecksumType      types.ChecksumType
 }
 

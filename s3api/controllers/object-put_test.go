@@ -1036,6 +1036,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 func TestS3ApiController_PutObject(t *testing.T) {
 	str := ""
 	emptyStringPtr := &str
+	objSize := int64(120)
 
 	tests := []struct {
 		name   string
@@ -1148,6 +1149,7 @@ func TestS3ApiController_PutObject(t *testing.T) {
 						"x-amz-checksum-sha256":    nil,
 						"x-amz-checksum-type":      nil,
 						"x-amz-version-id":         emptyStringPtr,
+						"x-amz-object-size":        nil,
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner:   "root",
@@ -1188,6 +1190,7 @@ func TestS3ApiController_PutObject(t *testing.T) {
 					ChecksumCRC64NVME: utils.GetStringPtr("crc64nvme"),
 					ChecksumType:      types.ChecksumTypeComposite,
 					VersionID:         "versionId",
+					Size:              &objSize,
 				},
 			},
 			output: testOutput{
@@ -1201,6 +1204,7 @@ func TestS3ApiController_PutObject(t *testing.T) {
 						"x-amz-checksum-sha256":    utils.GetStringPtr("sha256"),
 						"x-amz-checksum-type":      utils.GetStringPtr(string(types.ChecksumTypeComposite)),
 						"x-amz-version-id":         utils.GetStringPtr("versionId"),
+						"x-amz-object-size":        utils.ConvertToStringPtr(objSize),
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner:   "root",

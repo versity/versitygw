@@ -2796,6 +2796,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		// for directory object no version is created
 		return s3response.PutObjectOutput{
 			ETag: emptyMD5,
+			Size: &contentLength,
 		}, nil
 	}
 
@@ -2847,6 +2848,8 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		return s3response.PutObjectOutput{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
+
+	objsize := f.size
 
 	hash := md5.New()
 	rdr := io.TeeReader(po.Body, hash)
@@ -2984,7 +2987,6 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 			return s3response.PutObjectOutput{}, fmt.Errorf("set versionId attr: %w", err)
 		}
 	}
-
 	err = f.link()
 	if errors.Is(err, syscall.EEXIST) {
 		return s3response.PutObjectOutput{
@@ -3042,6 +3044,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 		ChecksumSHA1:      checksum.SHA1,
 		ChecksumSHA256:    checksum.SHA256,
 		ChecksumCRC64NVME: checksum.CRC64NVME,
+		Size:              &objsize,
 		ChecksumType:      checksum.Type,
 	}, nil
 }

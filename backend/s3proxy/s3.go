@@ -938,6 +938,7 @@ func (s *S3Proxy) PutObject(ctx context.Context, input s3response.PutObjectInput
 		ChecksumCRC64NVME: output.ChecksumCRC64NVME,
 		ChecksumSHA1:      output.ChecksumSHA1,
 		ChecksumSHA256:    output.ChecksumSHA256,
+		Size:              output.Size,
 	}, nil
 }
 

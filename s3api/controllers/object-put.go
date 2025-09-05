@@ -725,6 +725,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 			"x-amz-checksum-sha256":    res.ChecksumSHA256,
 			"x-amz-checksum-type":      utils.ConvertToStringPtr(res.ChecksumType),
 			"x-amz-version-id":         &res.VersionID,
+			"x-amz-object-size":        utils.ConvertPtrToStringPtr(res.Size),
 		},
 		MetaOpts: &MetaOptions{
 			ContentLength: contentLength,

@@ -367,6 +367,7 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 
 	return s3response.PutObjectOutput{
 		ETag: convertAzureEtag(uploadResp.ETag),
+		Size: po.ContentLength,
 	}, nil
 }
 
