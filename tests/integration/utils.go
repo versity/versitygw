@@ -17,6 +17,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -1797,4 +1798,14 @@ func testOPTIONSEdnpoint(s *S3Conf, bucket, origin, method string, headers strin
 	}
 
 	return comparePreflightResult(expected, result)
+}
+
+func calculateEtag(data []byte) (string, error) {
+	h := md5.New()
+	_, err := h.Write(data)
+	if err != nil {
+		return "", err
+	}
+	dataSum := h.Sum(nil)
+	return fmt.Sprintf("\"%s\"", hex.EncodeToString(dataSum[:])), nil
 }

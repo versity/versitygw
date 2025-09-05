@@ -3418,10 +3418,33 @@ func PutObject_racey_success(s *S3Conf) error {
 func PutObject_success(s *S3Conf) error {
 	testName := "PutObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		_, err := putObjects(s3client, []string{"my-obj"}, bucket)
+		lgth := int64(100)
+		res, err := putObjectWithData(lgth, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("my-obj"),
+		}, s3client)
 		if err != nil {
 			return err
 		}
+
+		// skip the ETag check for azure tests
+		if !s.azureTests {
+			etag, err := calculateEtag(res.data)
+			if err != nil {
+				return err
+			}
+
+			if getString(res.res.ETag) != etag {
+				return fmt.Errorf("expected ETag to be %s, intead got %s", getString(res.res.ETag), etag)
+			}
+		}
+		if res.res.Size == nil {
+			return fmt.Errorf("unexpected nil object Size")
+		}
+		if *res.res.Size != lgth {
+			return fmt.Errorf("expected the object size to be %v, instead got %v", lgth, *res.res.Size)
+		}
+
 		return nil
 	})
 }
