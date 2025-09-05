@@ -19,8 +19,11 @@ load ./bats-assert/load
 
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/user.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
+
+export RUN_USERS=true
 
 @test "REST - empty message" {
   test_file="test_file"
@@ -40,11 +43,67 @@ source ./tests/setup.sh
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1364"
   fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
-  assert_success
 
   echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
   run send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/deformed.txt" 400 "BadRequest" "An error occurred when parsing the HTTP request."
+  assert_success
+}
+
+@test "REST - invalid authorization scheme" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1512"
+  fi
+  run list_buckets_check_authorization_scheme_error
+  assert_success
+}
+
+@test "REST - very invalid credential string" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1513"
+  fi
+  run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "the Credential is mal-formed" "-incorrectCredential" "Credentials"
+  assert_success
+}
+
+@test "REST - nonexistent key ID" {
+  run send_rest_go_command_expect_error "403" "InvalidAccessKeyId" "does not exist" "-awsAccessKeyId" "dummy"
+  assert_success
+}
+
+@test "REST - invalid year/month/day" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1513"
+  fi
+  run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect date format" "-invalidYearMonthDay"
+  assert_success
+}
+
+@test "REST - incorrect year/month/day" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1514"
+  fi
+  run list_buckets_check_request_time_too_skewed_error
+  assert_success
+}
+
+@test "REST - invalid region" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1513"
+  fi
+  run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "the region 'us-eest-1' is wrong" "-awsRegion" "us-eest-1"
+  assert_success
+}
+
+@test "REST - invalid service name" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1513"
+  fi
+  run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect service" "-serviceName" "s2"
+  assert_success
+}
+
+@test "REST - incorrect signature" {
+  run send_rest_go_command_expect_error "403" "SignatureDoesNotMatch" "does not match" "-incorrectSignature"
   assert_success
 }
 
@@ -88,3 +147,27 @@ source ./tests/setup.sh
   run list_check_buckets_rest_with_prefix "$BUCKET_TWO_NAME"
   assert_success
 }
+
+@test "REST - ListBuckets - correct buckets show up" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    skip
+  fi
+  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  assert_success
+  username=${lines[${#lines[@]}-2]}
+  password=${lines[${#lines[@]}-1]}
+
+  run setup_bucket "$BUCKET_TWO_NAME"
+  assert_success
+
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$username"
+  assert_success
+
+  log 5 "username: $username, password: $password"
+  run list_check_buckets_user "$username" "$password" "$BUCKET_TWO_NAME"
+  assert_success
+}
+

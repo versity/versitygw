@@ -40,6 +40,7 @@ show_help() {
     echo "   rest-checksum                          Run REST checksum tests"
     echo "   rest-create-bucket                     Run REST create bucket tests"
     echo "   rest-delete-bucket-ownership-controls  Run REST delete bucket ownership controls tests"
+    echo "   rest-delete-bucket-tagging             Run REST delete bucket tagging tests"
     echo "   rest-head-bucket                       Run REST head bucket tests"
     echo "   rest-list-buckets                      Run REST list-buckets tests"
     echo "   rest-multipart                         Run REST multipart tests"
@@ -59,7 +60,8 @@ handle_param() {
       s3cmd-file-count|mc|mc-non-file-count|mc-file-count|s3api-user|rest|s3api-policy|\
       s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
-      rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls)
+      rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
+      rest-delete-bucket-tagging)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -213,6 +215,10 @@ run_suite() {
     rest-delete-bucket-ownership-controls)
       echo "Running REST delete bucket ownership controls tests ..."
       "$HOME"/bin/bats ./tests/test_rest_delete_bucket_ownership_controls.sh || exit_code=$?
+      ;;
+    rest-delete-bucket-tagging)
+      echo "Running REST delete bucket tagging tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_delete_bucket_tagging.sh || exit_code=$?
       ;;
     rest-head-bucket)
       echo "Running REST head bucket tests ..."

@@ -212,3 +212,15 @@ export RUN_USERS=true
   run put_object_rest_user_bad_signature "$username" "$password" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 }
+
+@test "REST - PutObject - expect continue - success" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1517"
+  fi
+  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run send_rest_go_command "200" "-bucketName" "$BUCKET_ONE_NAME" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+        "-signedParams" "Expect:100-continue"
+  assert_success
+}
