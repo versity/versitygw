@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/user.sh
+source ./tests/util/util_setup.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 
@@ -107,6 +108,14 @@ export RUN_USERS=true
   assert_success
 }
 
+@test "REST - missing host parameter" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1530"
+  fi
+  run send_openssl_go_command "400" "-missingHostParam"
+  assert_success
+}
+
 @test "test_rest_list_buckets" {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
@@ -170,4 +179,3 @@ export RUN_USERS=true
   run list_check_buckets_user "$username" "$password" "$BUCKET_TWO_NAME"
   assert_success
 }
-

@@ -23,6 +23,7 @@ source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_bucket.sh
@@ -176,5 +177,48 @@ export RUN_USERS=true
     skip "https://github.com/versity/versitygw/issues/1487"
   fi
   run delete_object_empty_bucket_check_error
+  assert_success
+}
+
+@test "REST - PutBucketTagging - no payload" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1521"
+  fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - invalid Content-MD5" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:dummy" \
+    "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1526"
+  fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_put_bucket_tagging_command_check_invalid_content_md5 "$BUCKET_ONE_NAME"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - incorrect Content-MD5" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1525"
+  fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "BadDigest" "did not match" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-incorrectContentMD5" \
+    "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }
