@@ -29,6 +29,7 @@ var incorrectCredential *string
 var authorizationScheme *string
 var incorrectYearMonthDay *bool
 var invalidYearMonthDay *bool
+var payload *string
 
 type S3Command struct {
 	Method                       string
@@ -48,6 +49,7 @@ type S3Command struct {
 	IncorrectCredential          string
 	IncorrectYearMonthDay        bool
 	InvalidYearMonthDay          bool
+	Payload                      string
 
 	currentDateTime      string
 	host                 string
@@ -103,6 +105,7 @@ func main() {
 		IncorrectCredential:   *incorrectCredential,
 		IncorrectYearMonthDay: *incorrectYearMonthDay,
 		InvalidYearMonthDay:   *invalidYearMonthDay,
+		Payload:               *payload,
 	}
 	curlShellCommand, err := s3Command.CurlShellCommand()
 	if err != nil {
@@ -129,6 +132,7 @@ func checkFlags() error {
 	invalidYearMonthDay = flag.Bool("invalidYearMonthDay", false, "Simulate an invalid year/month/day")
 	incorrectCredential = flag.String("incorrectCredential", "", "Add an incorrect credential string")
 	authorizationScheme = flag.String("authorizationScheme", "AWS4-HMAC-SHA256", "Authorization Scheme")
+	payload = flag.String("payload", "", "Message payload")
 	// Parse the flags
 	flag.Parse()
 

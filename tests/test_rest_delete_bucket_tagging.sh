@@ -36,3 +36,8 @@ export RUN_USERS=true
     "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging="
   assert_success
 }
+
+@test "REST - DeleteBucketTagging - success" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+}
