@@ -37,7 +37,11 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - DeleteBucketTagging - success" {
+@test "REST - DeleteBucketTagging - no payload" {
   run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_rest_go_command "200" "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-payload" \
+    "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }

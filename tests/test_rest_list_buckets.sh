@@ -115,6 +115,11 @@ export RUN_USERS=true
   assert_success
 }
 
+@test "REST - ListBuckets - payload" {
+  run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect service" "-payload" "<ListBuckets>dummy</ListBuckets>"
+  assert_success
+}
+
 @test "REST - list buckets - continuation token isn't bucket name" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1399"

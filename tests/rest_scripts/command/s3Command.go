@@ -1,35 +1,15 @@
-package main
+package command
 
 import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"flag"
 	"fmt"
-	"log"
+	logger "github.com/versity/versitygw/tests/rest_scripts/log"
 	"sort"
 	"strings"
 	"time"
 )
-
-var method *string
-var url *string
-var bucketName *string
-var objectKey *string
-var query *string
-var awsRegion *string
-var awsAccessKeyId *string
-var awsSecretAccessKey *string
-var serviceName *string
-var debug *bool
-var signedParamsMap restParams
-var payloadFile *string
-var incorrectSignature *bool
-var incorrectCredential *string
-var authorizationScheme *string
-var incorrectYearMonthDay *bool
-var invalidYearMonthDay *bool
-var payload *string
 
 type S3Command struct {
 	Method                       string
@@ -62,102 +42,10 @@ type S3Command struct {
 	signature            string
 }
 
-type restParams map[string]string
-
-func (r *restParams) String() string {
-	return fmt.Sprintf("%v", *r)
-}
-
-func (r *restParams) Set(value string) error {
-	*r = make(map[string]string)
-	pairs := strings.Split(value, ",")
-	for _, pair := range pairs {
-		kv := strings.SplitN(pair, ":", 2)
-		if len(kv) != 2 {
-		}
-		if len(kv) != 2 {
-			return fmt.Errorf("invalid key-value pair: %s", pair)
-		}
-		(*r)[kv[0]] = kv[1]
-	}
-	return nil
-}
-
-func main() {
-	if err := checkFlags(); err != nil {
-		log.Fatalf("Error checking flags: %v", err)
-	}
-
-	s3Command := &S3Command{
-		Method:                *method,
-		Url:                   *url,
-		BucketName:            *bucketName,
-		ObjectKey:             *objectKey,
-		Query:                 *query,
-		AwsRegion:             *awsRegion,
-		AwsAccessKeyId:        *awsAccessKeyId,
-		AwsSecretAccessKey:    *awsSecretAccessKey,
-		ServiceName:           *serviceName,
-		SignedParams:          signedParamsMap,
-		PayloadFile:           *payloadFile,
-		IncorrectSignature:    *incorrectSignature,
-		AuthorizationScheme:   *authorizationScheme,
-		IncorrectCredential:   *incorrectCredential,
-		IncorrectYearMonthDay: *incorrectYearMonthDay,
-		InvalidYearMonthDay:   *invalidYearMonthDay,
-		Payload:               *payload,
-	}
-	curlShellCommand, err := s3Command.CurlShellCommand()
-	if err != nil {
-		log.Fatalf("Error generating curl command: %v", err)
-	}
-	fmt.Println(curlShellCommand)
-}
-
-func checkFlags() error {
-	method = flag.String("method", "GET", "HTTP method to use")
-	url = flag.String("url", "https://localhost:7070", "S3 server URL")
-	bucketName = flag.String("bucketName", "", "Bucket name")
-	objectKey = flag.String("objectKey", "", "Object key")
-	query = flag.String("query", "", "S3 query")
-	awsAccessKeyId = flag.String("awsAccessKeyId", "", "AWS access key ID")
-	awsSecretAccessKey = flag.String("awsSecretAccessKey", "", "AWS secret access key")
-	awsRegion = flag.String("awsRegion", "us-east-1", "AWS region")
-	serviceName = flag.String("serviceName", "s3", "Service name")
-	debug = flag.Bool("debug", false, "Print debug statements")
-	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
-	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
-	incorrectSignature = flag.Bool("incorrectSignature", false, "Simulate an incorrect signature")
-	incorrectYearMonthDay = flag.Bool("incorrectYearMonthDay", false, "Simulate an incorrect year/month/day")
-	invalidYearMonthDay = flag.Bool("invalidYearMonthDay", false, "Simulate an invalid year/month/day")
-	incorrectCredential = flag.String("incorrectCredential", "", "Add an incorrect credential string")
-	authorizationScheme = flag.String("authorizationScheme", "AWS4-HMAC-SHA256", "Authorization Scheme")
-	payload = flag.String("payload", "", "Message payload")
-	// Parse the flags
-	flag.Parse()
-
-	if flag.Lookup("awsAccessKeyId").Value.String() == "" {
-		return fmt.Errorf("the 'awsAccessKeyId' value must be set")
-	}
-	if flag.Lookup("awsSecretAccessKey").Value.String() == "" {
-		return fmt.Errorf("the 'awsSecretAccessKey' value must be set")
-	}
-	return nil
-}
-
-func printDebug(format string, args ...any) {
-	if *debug {
-		log.Printf(format, args...)
-	}
-}
-
-func hmacSHA256(key []byte, data string) []byte {
-	h := hmac.New(sha256.New, key)
-	h.Write([]byte(data))
-	return h.Sum(nil)
-}
-
 func (s *S3Command) CurlShellCommand() (string, error) {
+	if s.PayloadFile != "" && s.Payload != "" {
+		return "", fmt.Errorf("cannot have both payload and payloadFile parameters set")
+	}
 	if s.IncorrectYearMonthDay {
 		s.currentDateTime = time.Now().Add(-48 * time.Hour).UTC().Format("20060102T150405Z")
 	} else {
@@ -197,7 +85,7 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 }
 
 func (s *S3Command) generateCanonicalRequestString() {
-	canonicalRequestLines := []string{*method}
+	canonicalRequestLines := []string{s.Method}
 
 	canonicalRequestLines = append(canonicalRequestLines, s.path)
 	canonicalRequestLines = append(canonicalRequestLines, s.Query)
@@ -215,7 +103,7 @@ func (s *S3Command) generateCanonicalRequestString() {
 	canonicalRequestLines = append(canonicalRequestLines, s.signedParamString, s.payloadHash)
 
 	canonicalRequestString := strings.Join(canonicalRequestLines, "\n")
-	printDebug("Canonical request string: %s\n", canonicalRequestString)
+	logger.PrintDebug("Canonical request string: %s\n", canonicalRequestString)
 
 	canonicalRequestHashBytes := sha256.Sum256([]byte(canonicalRequestString))
 	s.canonicalRequestHash = hex.EncodeToString(canonicalRequestHashBytes[:])
@@ -256,9 +144,9 @@ func (s *S3Command) buildCurlShellCommand() string {
 	if s.Method != "GET" {
 		curlCommand = append(curlCommand, fmt.Sprintf("-X %s ", s.Method))
 	}
-	fullPath := "\"" + *url + s.path
-	if *query != "" {
-		fullPath += "?" + *query
+	fullPath := "\"" + s.Url + s.path
+	if s.Query != "" {
+		fullPath += "?" + s.Query
 	}
 	fullPath += "\""
 	curlCommand = append(curlCommand, fullPath)
@@ -277,6 +165,14 @@ func (s *S3Command) buildCurlShellCommand() string {
 	}
 	if s.PayloadFile != "" {
 		curlCommand = append(curlCommand, "-T", s.PayloadFile)
+	} else if s.Payload != "" {
+		curlCommand = append(curlCommand, "-H", "\"Content-Type: application/xml\"", "-d", fmt.Sprintf("\"%s\"", s.Payload))
 	}
 	return strings.Join(curlCommand, " ")
+}
+
+func hmacSHA256(key []byte, data string) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(data))
+	return h.Sum(nil)
 }
