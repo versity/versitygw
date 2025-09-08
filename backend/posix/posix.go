@@ -1401,6 +1401,14 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", err
 	}
 
+	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if err == nil {
+		err = backend.EvaluateMatchPreconditions(string(b), input.IfMatch, input.IfNoneMatch)
+		if err != nil {
+			return res, "", err
+		}
+	}
+
 	objdir := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
 	checksums, err := p.retrieveChecksums(nil, bucket, filepath.Join(objdir, uploadID))
@@ -2009,9 +2017,15 @@ func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUp
 	sum := sha256.Sum256([]byte(object))
 	objdir := filepath.Join(bucket, MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
 
-	_, err = os.Stat(filepath.Join(objdir, uploadID))
+	f, err := os.Stat(filepath.Join(objdir, uploadID))
 	if err != nil {
 		return s3err.GetAPIError(s3err.ErrNoSuchUpload)
+	}
+
+	if mpu.IfMatchInitiatedTime != nil {
+		if mpu.IfMatchInitiatedTime.Unix() != f.ModTime().Unix() {
+			return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+		}
 	}
 
 	err = os.RemoveAll(filepath.Join(objdir, uploadID))
@@ -2600,6 +2614,32 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, err
 	}
 
+	srcf, err := os.Open(objPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if err != nil {
+		return s3response.CopyPartResult{}, fmt.Errorf("open object: %w", err)
+	}
+	defer srcf.Close()
+
+	// evaluate preconditions
+	b, err := p.meta.RetrieveAttribute(srcf, srcBucket, srcObject, etagkey)
+	srcEtag := string(b)
+	if err != nil {
+		srcEtag = ""
+	}
+
+	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+		IfMatch:       upi.CopySourceIfMatch,
+		IfNoneMatch:   upi.CopySourceIfNoneMatch,
+		IfModSince:    upi.CopySourceIfModifiedSince,
+		IfUnmodeSince: upi.CopySourceIfUnmodifiedSince,
+	})
+	if err != nil {
+		return s3response.CopyPartResult{}, err
+	}
+
 	f, err := p.openTmpFile(filepath.Join(*upi.Bucket, objdir),
 		*upi.Bucket, partPath, length, acct, doFalloc, p.forceNoTmpFile)
 	if err != nil {
@@ -2609,15 +2649,6 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 		return s3response.CopyPartResult{}, fmt.Errorf("open temp file: %w", err)
 	}
 	defer f.cleanup()
-
-	srcf, err := os.Open(objPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-	if err != nil {
-		return s3response.CopyPartResult{}, fmt.Errorf("open object: %w", err)
-	}
-	defer srcf.Close()
 
 	rdr := io.NewSectionReader(srcf, startOffset, length)
 	hash := md5.New()
@@ -2747,6 +2778,15 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	}
 
 	name := filepath.Join(*po.Bucket, *po.Key)
+
+	// evaluate preconditions
+	etagBytes, err := p.meta.RetrieveAttribute(nil, *po.Bucket, *po.Key, etagkey)
+	if err == nil {
+		err := backend.EvaluateMatchPreconditions(string(etagBytes), po.IfMatch, po.IfNoneMatch)
+		if err != nil {
+			return s3response.PutObjectOutput{}, err
+		}
+	}
 
 	uid, gid, doChown := p.getChownIDs(acct)
 
@@ -3073,6 +3113,30 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		return nil, err
 	}
 
+	evalPreconditions := func(f os.FileInfo, bucket, object string) error {
+		var err error
+		if f == nil {
+			f, err = os.Stat(filepath.Join(bucket, object))
+			if err != nil {
+				return nil
+			}
+		}
+
+		b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+		etag := string(b)
+		if err != nil {
+			etag = ""
+		}
+
+		// evaluate preconditions
+		return backend.EvaluateObjectDeletePreconditions(etag, f.ModTime(), f.Size(),
+			backend.ObjectDeletePreconditions{
+				IfMatch:            input.IfMatch,
+				IfMatchLastModTime: input.IfMatchLastModifiedTime,
+				IfMatchSize:        input.IfMatchSize,
+			})
+	}
+
 	// Directory objects can't have versions
 	if !isDir && p.versioningEnabled() && vStatus != "" {
 		if getString(input.VersionId) == "" {
@@ -3087,6 +3151,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 			if err != nil {
 				return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+			}
+
+			err = evalPreconditions(fi, bucket, object)
+			if err != nil {
+				return nil, err
 			}
 
 			acct, ok := ctx.Value("account").(auth.Account)
@@ -3148,6 +3217,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			}
 
 			if string(vId) == *input.VersionId {
+				// evaluate preconditions
+				err := evalPreconditions(nil, bucket, object)
+				if err != nil {
+					return nil, err
+				}
 				// if the specified VersionId is the same as in the latest version,
 				// remove the latest version, find the latest version from the versioning
 				// directory and move to the place of the deleted object, to make it the latest
@@ -3242,6 +3316,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 				}, nil
 			}
 
+			err = evalPreconditions(nil, versionPath, *input.VersionId)
+			if err != nil {
+				return nil, err
+			}
+
 			isDelMarker, _ := p.isObjDeleteMarker(versionPath, *input.VersionId)
 
 			err = os.Remove(filepath.Join(versionPath, *input.VersionId))
@@ -3287,6 +3366,11 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 		// directory. treat this as a non-existent object.
 		// AWS returns success if the object does not exist
 		return &s3.DeleteObjectOutput{}, nil
+	}
+
+	err = evalPreconditions(fi, bucket, object)
+	if err != nil {
+		return nil, err
 	}
 
 	err = os.Remove(objpath)
@@ -4029,6 +4113,22 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	}
 	if !strings.HasSuffix(srcObject, "/") && fi.IsDir() {
 		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	b, err := p.meta.RetrieveAttribute(f, srcBucket, srcObject, etagkey)
+	srcEtag := string(b)
+	if err != nil {
+		srcEtag = ""
+	}
+
+	err = backend.EvaluatePreconditions(srcEtag, fi.ModTime(), backend.PreConditions{
+		IfMatch:       input.CopySourceIfMatch,
+		IfNoneMatch:   input.CopySourceIfNoneMatch,
+		IfModSince:    input.CopySourceIfModifiedSince,
+		IfUnmodeSince: input.CopySourceIfUnmodifiedSince,
+	})
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
 	}
 
 	mdmap := make(map[string]string)

@@ -69,6 +69,7 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	uploadId := ctx.Query("uploadId")
+	ifMatchInitiatedTime := utils.ParsePreconditionDateHeader(ctx.Get("X-Amz-If-Match-Initiated-Time"))
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
@@ -96,9 +97,10 @@ func (c S3ApiController) AbortMultipartUpload(ctx *fiber.Ctx) (*Response, error)
 
 	err = c.be.AbortMultipartUpload(ctx.Context(),
 		&s3.AbortMultipartUploadInput{
-			UploadId: &uploadId,
-			Bucket:   &bucket,
-			Key:      &key,
+			UploadId:             &uploadId,
+			Bucket:               &bucket,
+			Key:                  &key,
+			IfMatchInitiatedTime: ifMatchInitiatedTime,
 		})
 	return &Response{
 		MetaOpts: &MetaOptions{
@@ -113,6 +115,9 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
 	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
+	ifMatch := utils.GetStringPtr(ctx.Get("If-Match"))
+	ifMatchLastModTime := utils.ParsePreconditionDateHeader(ctx.Get("X-Amz-If-Match-Last-Modified-Time"))
+	ifMatchSize := utils.ParseIfMatchSize(ctx)
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -165,9 +170,12 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 
 	res, err := c.be.DeleteObject(ctx.Context(),
 		&s3.DeleteObjectInput{
-			Bucket:    &bucket,
-			Key:       &key,
-			VersionId: &versionId,
+			Bucket:                  &bucket,
+			Key:                     &key,
+			VersionId:               &versionId,
+			IfMatch:                 ifMatch,
+			IfMatchLastModifiedTime: ifMatchLastModTime,
+			IfMatchSize:             ifMatchSize,
 		})
 	if err != nil {
 		return &Response{

@@ -149,6 +149,7 @@ func TestPutObject(s *S3Conf) {
 	PutObject_with_object_lock(s)
 	PutObject_invalid_legal_hold(s)
 	PutObject_invalid_object_lock_mode(s)
+	PutObject_conditional_writes(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		PutObject_checksum_algorithm_and_header_mismatch(s)
@@ -279,6 +280,7 @@ func TestDeleteObject(s *S3Conf) {
 	DeleteObject_non_existing_dir_object(s)
 	DeleteObject_directory_object(s)
 	DeleteObject_non_empty_dir_obj(s)
+	DeleteObject_conditional_writes(s)
 	DeleteObject_success(s)
 	DeleteObject_success_status_code(s)
 }
@@ -307,6 +309,7 @@ func TestCopyObject(s *S3Conf) {
 	CopyObject_invalid_object_lock_mode(s)
 	CopyObject_with_legal_hold(s)
 	CopyObject_with_retention_lock(s)
+	CopyObject_conditional_reads(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		CopyObject_invalid_checksum_algorithm(s)
@@ -398,6 +401,7 @@ func TestUploadPartCopy(s *S3Conf) {
 		UploadPartCopy_should_copy_the_checksum(s)
 		UploadPartCopy_should_not_copy_the_checksum(s)
 		UploadPartCopy_should_calculate_the_checksum(s)
+		UploadPartCopy_conditional_reads(s)
 	}
 }
 
@@ -437,6 +441,7 @@ func TestAbortMultipartUpload(s *S3Conf) {
 	AbortMultipartUpload_incorrect_object_key(s)
 	AbortMultipartUpload_success(s)
 	AbortMultipartUpload_success_status_code(s)
+	AbortMultipartUpload_if_match_initiated_time(s)
 }
 
 func TestCompleteMultipartUpload(s *S3Conf) {
@@ -448,6 +453,7 @@ func TestCompleteMultipartUpload(s *S3Conf) {
 	CompleteMultipartUpload_empty_parts(s)
 	CompleteMultipartUpload_incorrect_parts_order(s)
 	CompleteMultipartUpload_mpu_object_size(s)
+	CompleteMultipartUpload_conditional_writes(s)
 	//TODO: remove the condition after implementing checksums in azure
 	if !s.azureTests {
 		CompleteMultipartUpload_invalid_checksum_type(s)
@@ -1053,6 +1059,7 @@ func GetIntTests() IntTests {
 		"PutObject_with_object_lock":                                              PutObject_with_object_lock,
 		"PutObject_invalid_legal_hold":                                            PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                      PutObject_invalid_object_lock_mode,
+		"PutObject_conditional_writes":                                            PutObject_conditional_writes,
 		"PutObject_invalid_credentials":                                           PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                        PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
@@ -1184,6 +1191,7 @@ func GetIntTests() IntTests {
 		"DeleteObject_non_existing_object":                                        DeleteObject_non_existing_object,
 		"DeleteObject_directory_object_noslash":                                   DeleteObject_directory_object_noslash,
 		"DeleteObject_non_empty_dir_obj":                                          DeleteObject_non_empty_dir_obj,
+		"DeleteObject_conditional_writes":                                         DeleteObject_conditional_writes,
 		"DeleteObject_name_too_long":                                              DeleteObject_name_too_long,
 		"CopyObject_overwrite_same_dir_object":                                    CopyObject_overwrite_same_dir_object,
 		"CopyObject_overwrite_same_file_object":                                   CopyObject_overwrite_same_file_object,
@@ -1211,6 +1219,7 @@ func GetIntTests() IntTests {
 		"CopyObject_invalid_object_lock_mode":                                     CopyObject_invalid_object_lock_mode,
 		"CopyObject_with_legal_hold":                                              CopyObject_with_legal_hold,
 		"CopyObject_with_retention_lock":                                          CopyObject_with_retention_lock,
+		"CopyObject_conditional_reads":                                            CopyObject_conditional_reads,
 		"CopyObject_invalid_checksum_algorithm":                                   CopyObject_invalid_checksum_algorithm,
 		"CopyObject_create_checksum_on_copy":                                      CopyObject_create_checksum_on_copy,
 		"CopyObject_should_copy_the_existing_checksum":                            CopyObject_should_copy_the_existing_checksum,
@@ -1270,6 +1279,7 @@ func GetIntTests() IntTests {
 		"UploadPartCopy_exceeding_copy_source_range":                              UploadPartCopy_exceeding_copy_source_range,
 		"UploadPartCopy_greater_range_than_obj_size":                              UploadPartCopy_greater_range_than_obj_size,
 		"UploadPartCopy_by_range_success":                                         UploadPartCopy_by_range_success,
+		"UploadPartCopy_conditional_reads":                                        UploadPartCopy_conditional_reads,
 		"UploadPartCopy_should_copy_the_checksum":                                 UploadPartCopy_should_copy_the_checksum,
 		"UploadPartCopy_should_not_copy_the_checksum":                             UploadPartCopy_should_not_copy_the_checksum,
 		"UploadPartCopy_should_calculate_the_checksum":                            UploadPartCopy_should_calculate_the_checksum,
@@ -1295,6 +1305,7 @@ func GetIntTests() IntTests {
 		"AbortMultipartUpload_incorrect_object_key":                               AbortMultipartUpload_incorrect_object_key,
 		"AbortMultipartUpload_success":                                            AbortMultipartUpload_success,
 		"AbortMultipartUpload_success_status_code":                                AbortMultipartUpload_success_status_code,
+		"AbortMultipartUpload_if_match_initiated_time":                            AbortMultipartUpload_if_match_initiated_time,
 		"CompletedMultipartUpload_non_existing_bucket":                            CompletedMultipartUpload_non_existing_bucket,
 		"CompleteMultipartUpload_invalid_part_number":                             CompleteMultipartUpload_invalid_part_number,
 		"CompleteMultipartUpload_invalid_ETag":                                    CompleteMultipartUpload_invalid_ETag,
@@ -1302,6 +1313,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_empty_parts":                                     CompleteMultipartUpload_empty_parts,
 		"CompleteMultipartUpload_incorrect_parts_order":                           CompleteMultipartUpload_incorrect_parts_order,
 		"CompleteMultipartUpload_mpu_object_size":                                 CompleteMultipartUpload_mpu_object_size,
+		"CompleteMultipartUpload_conditional_writes":                              CompleteMultipartUpload_conditional_writes,
 		"CompleteMultipartUpload_invalid_checksum_type":                           CompleteMultipartUpload_invalid_checksum_type,
 		"CompleteMultipartUpload_invalid_checksum_part":                           CompleteMultipartUpload_invalid_checksum_part,
 		"CompleteMultipartUpload_multiple_checksum_part":                          CompleteMultipartUpload_multiple_checksum_part,

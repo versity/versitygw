@@ -837,42 +837,6 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid copy source modified since",
-			input: testInput{
-				locals: defaultLocals,
-				headers: map[string]string{
-					"X-Amz-Copy-Source":                   "bucket/object",
-					"X-Amz-Copy-Source-If-Modified-Since": "invalid_date",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
-			},
-		},
-		{
-			name: "invalid copy source unmodified since",
-			input: testInput{
-				locals: defaultLocals,
-				headers: map[string]string{
-					"X-Amz-Copy-Source":                     "bucket/object",
-					"X-Amz-Copy-Source-If-Unmodified-Since": "invalid_date",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
-			},
-		},
-		{
 			name: "invalid metadata directive",
 			input: testInput{
 				locals: defaultLocals,

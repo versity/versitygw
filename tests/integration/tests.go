@@ -3043,6 +3043,7 @@ func PutObject_invalid_legal_hold(s *S3Conf) error {
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
 	}, withLock())
 }
+
 func PutObject_invalid_object_lock_mode(s *S3Conf) error {
 	testName := "PutObject_invalid_object_lock_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3055,6 +3056,78 @@ func PutObject_invalid_object_lock_mode(s *S3Conf) error {
 		}, s3client)
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
 	}, withLock())
+}
+
+func PutObject_conditional_writes(s *S3Conf) error {
+	testName := "PutObject_conditional_writes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		res, err := putObjectWithData(0, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Body:   bytes.NewReader([]byte("dummy")),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		etag := res.res.ETag
+		incorrectEtag := getPtr("incorrect_etag")
+		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		for i, test := range []struct {
+			obj         string
+			ifMatch     *string
+			ifNoneMatch *string
+			err         error
+		}{
+			{obj, etag, nil, nil},
+			{obj, etag, etag, errPrecond},
+			{obj, etag, incorrectEtag, nil},
+			{obj, incorrectEtag, incorrectEtag, errPrecond},
+			{obj, incorrectEtag, etag, errPrecond},
+			{obj, incorrectEtag, nil, errPrecond},
+			{obj, nil, incorrectEtag, nil},
+			{obj, nil, etag, errPrecond},
+			{obj, nil, nil, nil},
+			// should ignore the precondition headers if
+			// an object with the given name doesn't exist
+			{"obj-1", incorrectEtag, etag, nil},
+			{"obj-2", etag, etag, nil},
+			{"obj-3", etag, incorrectEtag, nil},
+			{"obj-4", incorrectEtag, nil, nil},
+			{"obj-5", nil, etag, nil},
+		} {
+			res, err := putObjectWithData(0, &s3.PutObjectInput{
+				Bucket:      &bucket,
+				Key:         &test.obj,
+				Body:        bytes.NewReader([]byte("dummy")),
+				IfMatch:     test.ifMatch,
+				IfNoneMatch: test.ifNoneMatch,
+			}, s3client)
+			if err == nil {
+				// azure blob storage generates different ETags for
+				// the exact same data.
+				// to avoid ETag collision reassign the etag value
+				*etag = *res.res.ETag
+			}
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %v: expected no error, instead got %w", i, err)
+			}
+			if test.err != nil {
+				apierr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test case %v: invalid error type: %w", i, test.err)
+				}
+
+				if err := checkApiErr(err, apierr); err != nil {
+					return fmt.Errorf("test case %v: %w", i, err)
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
@@ -6895,6 +6968,98 @@ func DeleteObject_non_empty_dir_obj(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_conditional_writes(s *S3Conf) error {
+	testName := "DeleteObject_conditional_writes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		var etag *string = getPtr("")
+		var size *int64 = getPtr(int64(0))
+		var modTime *time.Time = getPtr(time.Now())
+
+		createObj := func() error {
+			res, err := putObjectWithData(0, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Body:   bytes.NewReader([]byte("dummy")),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+
+			// get the exact LastModified time
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			*etag = *res.res.ETag
+			*size = *res.res.Size
+			*modTime = *out.LastModified
+
+			return nil
+		}
+
+		err := createObj()
+		if err != nil {
+			return err
+		}
+
+		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		for i, test := range []struct {
+			ifMatch *string
+			size    *int64
+			modTime *time.Time
+			err     error
+		}{
+			// no error cases
+			{etag, size, modTime, nil},
+			{etag, nil, nil, nil},
+			{nil, size, nil, nil},
+			{nil, nil, modTime, nil},
+			{etag, size, nil, nil},
+			{etag, nil, modTime, nil},
+			{nil, size, modTime, nil},
+			// error cases
+			{getPtr("incorrect_etag"), nil, nil, errPrecond},
+			{nil, getPtr(int64(23234)), nil, errPrecond},
+			{nil, nil, getPtr(time.Now().AddDate(-1, -1, -1)), errPrecond},
+			{getPtr("incorrect_etag"), getPtr(int64(23234)), nil, errPrecond},
+			{getPtr("incorrect_etag"), getPtr(int64(23234)), getPtr(time.Now().AddDate(-1, -1, -1)), errPrecond},
+		} {
+			err := createObj()
+			if err != nil {
+				return err
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:                  &bucket,
+				Key:                     &obj,
+				IfMatch:                 test.ifMatch,
+				IfMatchSize:             test.size,
+				IfMatchLastModifiedTime: test.modTime,
+			})
+			cancel()
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type: expected s3err.APIError")
+				}
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 func DeleteObject_directory_not_empty(s *S3Conf) error {
 	testName := "DeleteObject_directory_not_empty"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -8020,6 +8185,156 @@ func CopyObject_with_retention_lock(s *S3Conf) error {
 
 		return nil
 	}, withLock())
+}
+
+func CopyObject_conditional_reads(s *S3Conf) error {
+	testName := "CopyObject_conditional_reads"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		obj, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		errMod := s3err.GetAPIError(s3err.ErrNotModified)
+		errCond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		// sleep one second to get dates before and after
+		// the object creation
+		time.Sleep(time.Second * 1)
+
+		before := time.Now().AddDate(0, 0, -3)
+		after := time.Now()
+		etag := obj.res.ETag
+
+		for i, test := range []struct {
+			ifmatch           *string
+			ifnonematch       *string
+			ifmodifiedsince   *time.Time
+			ifunmodifiedsince *time.Time
+			err               error
+		}{
+			// all the cases when preconditions are either empty, true or false
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errCond},
+
+			{getPtr("invalid_etag"), etag, &before, &before, errCond},
+			{getPtr("invalid_etag"), etag, &before, &after, errCond},
+			{getPtr("invalid_etag"), etag, &before, nil, errCond},
+			{getPtr("invalid_etag"), etag, &after, &before, errCond},
+			{getPtr("invalid_etag"), etag, &after, &after, errCond},
+			{getPtr("invalid_etag"), etag, &after, nil, errCond},
+			{getPtr("invalid_etag"), etag, nil, &before, errCond},
+			{getPtr("invalid_etag"), etag, nil, &after, errCond},
+			{getPtr("invalid_etag"), etag, nil, nil, errCond},
+
+			{getPtr("invalid_etag"), nil, &before, &before, errCond},
+			{getPtr("invalid_etag"), nil, &before, &after, errCond},
+			{getPtr("invalid_etag"), nil, &before, nil, errCond},
+			{getPtr("invalid_etag"), nil, &after, &before, errCond},
+			{getPtr("invalid_etag"), nil, &after, &after, errCond},
+			{getPtr("invalid_etag"), nil, &after, nil, errCond},
+			{getPtr("invalid_etag"), nil, nil, &before, errCond},
+			{getPtr("invalid_etag"), nil, nil, &after, errCond},
+			{getPtr("invalid_etag"), nil, nil, nil, errCond},
+
+			{etag, getPtr("invalid_etag"), &before, &before, nil},
+			{etag, getPtr("invalid_etag"), &before, &after, nil},
+			{etag, getPtr("invalid_etag"), &before, nil, nil},
+			{etag, getPtr("invalid_etag"), &after, &before, nil},
+			{etag, getPtr("invalid_etag"), &after, &after, nil},
+			{etag, getPtr("invalid_etag"), &after, nil, nil},
+			{etag, getPtr("invalid_etag"), nil, &before, nil},
+			{etag, getPtr("invalid_etag"), nil, &after, nil},
+			{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+			{etag, etag, &before, &before, errMod},
+			{etag, etag, &before, &after, errMod},
+			{etag, etag, &before, nil, errMod},
+			{etag, etag, &after, &before, errMod},
+			{etag, etag, &after, &after, errMod},
+			{etag, etag, &after, nil, errMod},
+			{etag, etag, nil, &before, errMod},
+			{etag, etag, nil, &after, errMod},
+			{etag, etag, nil, nil, errMod},
+
+			{etag, nil, &before, &before, nil},
+			{etag, nil, &before, &after, nil},
+			{etag, nil, &before, nil, nil},
+			{etag, nil, &after, &before, errMod},
+			{etag, nil, &after, &after, errMod},
+			{etag, nil, &after, nil, errMod},
+			{etag, nil, nil, &before, nil},
+			{etag, nil, nil, &after, nil},
+			{etag, nil, nil, nil, nil},
+
+			{nil, getPtr("invalid_etag"), &before, &before, errCond},
+			{nil, getPtr("invalid_etag"), &before, &after, nil},
+			{nil, getPtr("invalid_etag"), &before, nil, nil},
+			{nil, getPtr("invalid_etag"), &after, &before, errCond},
+			{nil, getPtr("invalid_etag"), &after, &after, nil},
+			{nil, getPtr("invalid_etag"), &after, nil, nil},
+			{nil, getPtr("invalid_etag"), nil, &before, errCond},
+			{nil, getPtr("invalid_etag"), nil, &after, nil},
+			{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+			{nil, etag, &before, &before, errCond},
+			{nil, etag, &before, &after, errMod},
+			{nil, etag, &before, nil, errMod},
+			{nil, etag, &after, &before, errCond},
+			{nil, etag, &after, &after, errMod},
+			{nil, etag, &after, nil, errMod},
+			{nil, etag, nil, &before, errCond},
+			{nil, etag, nil, &after, errMod},
+			{nil, etag, nil, nil, errMod},
+
+			{nil, nil, &before, &before, errCond},
+			{nil, nil, &before, &after, nil},
+			{nil, nil, &before, nil, nil},
+			{nil, nil, &after, &before, errCond},
+			{nil, nil, &after, &after, errMod},
+			{nil, nil, &after, nil, errMod},
+			{nil, nil, nil, &before, errCond},
+			{nil, nil, nil, &after, nil},
+			{nil, nil, nil, nil, nil},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:                      &bucket,
+				Key:                         getPtr("dst-obj"),
+				CopySource:                  getPtr(fmt.Sprintf("%s/%s", bucket, key)),
+				CopySourceIfMatch:           test.ifmatch,
+				CopySourceIfNoneMatch:       test.ifnonematch,
+				CopySourceIfModifiedSince:   test.ifmodifiedsince,
+				CopySourceIfUnmodifiedSince: test.ifunmodifiedsince,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type: expected s3err.APIError")
+				}
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 func CopyObject_invalid_checksum_algorithm(s *S3Conf) error {
@@ -10476,6 +10791,164 @@ func UploadPartCopy_by_range_success(s *S3Conf) error {
 	})
 }
 
+func UploadPartCopy_conditional_reads(s *S3Conf) error {
+	testName := "UploadPartCopy_conditional_reads"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-obj"
+		obj, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		errMod := s3err.GetAPIError(s3err.ErrNotModified)
+		errCond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		// sleep one second to get dates before and after
+		// the object creation
+		time.Sleep(time.Second * 1)
+
+		before := time.Now().AddDate(0, 0, -3)
+		after := time.Now()
+		etag := obj.res.ETag
+
+		for i, test := range []struct {
+			ifmatch           *string
+			ifnonematch       *string
+			ifmodifiedsince   *time.Time
+			ifunmodifiedsince *time.Time
+			err               error
+		}{
+			// all the cases when preconditions are either empty, true or false
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &before, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), &after, nil, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &before, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, &after, errCond},
+			{getPtr("invalid_etag"), getPtr("invalid_etag"), nil, nil, errCond},
+
+			{getPtr("invalid_etag"), etag, &before, &before, errCond},
+			{getPtr("invalid_etag"), etag, &before, &after, errCond},
+			{getPtr("invalid_etag"), etag, &before, nil, errCond},
+			{getPtr("invalid_etag"), etag, &after, &before, errCond},
+			{getPtr("invalid_etag"), etag, &after, &after, errCond},
+			{getPtr("invalid_etag"), etag, &after, nil, errCond},
+			{getPtr("invalid_etag"), etag, nil, &before, errCond},
+			{getPtr("invalid_etag"), etag, nil, &after, errCond},
+			{getPtr("invalid_etag"), etag, nil, nil, errCond},
+
+			{getPtr("invalid_etag"), nil, &before, &before, errCond},
+			{getPtr("invalid_etag"), nil, &before, &after, errCond},
+			{getPtr("invalid_etag"), nil, &before, nil, errCond},
+			{getPtr("invalid_etag"), nil, &after, &before, errCond},
+			{getPtr("invalid_etag"), nil, &after, &after, errCond},
+			{getPtr("invalid_etag"), nil, &after, nil, errCond},
+			{getPtr("invalid_etag"), nil, nil, &before, errCond},
+			{getPtr("invalid_etag"), nil, nil, &after, errCond},
+			{getPtr("invalid_etag"), nil, nil, nil, errCond},
+
+			{etag, getPtr("invalid_etag"), &before, &before, nil},
+			{etag, getPtr("invalid_etag"), &before, &after, nil},
+			{etag, getPtr("invalid_etag"), &before, nil, nil},
+			{etag, getPtr("invalid_etag"), &after, &before, nil},
+			{etag, getPtr("invalid_etag"), &after, &after, nil},
+			{etag, getPtr("invalid_etag"), &after, nil, nil},
+			{etag, getPtr("invalid_etag"), nil, &before, nil},
+			{etag, getPtr("invalid_etag"), nil, &after, nil},
+			{etag, getPtr("invalid_etag"), nil, nil, nil},
+
+			{etag, etag, &before, &before, errMod},
+			{etag, etag, &before, &after, errMod},
+			{etag, etag, &before, nil, errMod},
+			{etag, etag, &after, &before, errMod},
+			{etag, etag, &after, &after, errMod},
+			{etag, etag, &after, nil, errMod},
+			{etag, etag, nil, &before, errMod},
+			{etag, etag, nil, &after, errMod},
+			{etag, etag, nil, nil, errMod},
+
+			{etag, nil, &before, &before, nil},
+			{etag, nil, &before, &after, nil},
+			{etag, nil, &before, nil, nil},
+			{etag, nil, &after, &before, errMod},
+			{etag, nil, &after, &after, errMod},
+			{etag, nil, &after, nil, errMod},
+			{etag, nil, nil, &before, nil},
+			{etag, nil, nil, &after, nil},
+			{etag, nil, nil, nil, nil},
+
+			{nil, getPtr("invalid_etag"), &before, &before, errCond},
+			{nil, getPtr("invalid_etag"), &before, &after, nil},
+			{nil, getPtr("invalid_etag"), &before, nil, nil},
+			{nil, getPtr("invalid_etag"), &after, &before, errCond},
+			{nil, getPtr("invalid_etag"), &after, &after, nil},
+			{nil, getPtr("invalid_etag"), &after, nil, nil},
+			{nil, getPtr("invalid_etag"), nil, &before, errCond},
+			{nil, getPtr("invalid_etag"), nil, &after, nil},
+			{nil, getPtr("invalid_etag"), nil, nil, nil},
+
+			{nil, etag, &before, &before, errCond},
+			{nil, etag, &before, &after, errMod},
+			{nil, etag, &before, nil, errMod},
+			{nil, etag, &after, &before, errCond},
+			{nil, etag, &after, &after, errMod},
+			{nil, etag, &after, nil, errMod},
+			{nil, etag, nil, &before, errCond},
+			{nil, etag, nil, &after, errMod},
+			{nil, etag, nil, nil, errMod},
+
+			{nil, nil, &before, &before, errCond},
+			{nil, nil, &before, &after, nil},
+			{nil, nil, &before, nil, nil},
+			{nil, nil, &after, &before, errCond},
+			{nil, nil, &after, &after, errMod},
+			{nil, nil, &after, nil, errMod},
+			{nil, nil, nil, &before, errCond},
+			{nil, nil, nil, &after, nil},
+			{nil, nil, nil, nil, nil},
+		} {
+			mpKey := "mp-key"
+			mp, err := createMp(s3client, bucket, mpKey)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+				Bucket:                      &bucket,
+				Key:                         &mpKey,
+				UploadId:                    mp.UploadId,
+				PartNumber:                  getPtr(int32(1)),
+				CopySource:                  getPtr(fmt.Sprintf("%s/%s", bucket, key)),
+				CopySourceIfMatch:           test.ifmatch,
+				CopySourceIfNoneMatch:       test.ifnonematch,
+				CopySourceIfModifiedSince:   test.ifmodifiedsince,
+				CopySourceIfUnmodifiedSince: test.ifunmodifiedsince,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type: expected s3err.APIError")
+				}
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 func UploadPartCopy_should_copy_the_checksum(s *S3Conf) error {
 	testName := "UploadPartCopy_should_copy_the_checksum"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -11421,6 +11894,87 @@ func AbortMultipartUpload_success_status_code(s *S3Conf) error {
 		if resp.StatusCode != http.StatusNoContent {
 			return fmt.Errorf("expected response status to be %v, instead got %v",
 				http.StatusNoContent, resp.StatusCode)
+		}
+
+		return nil
+	})
+}
+
+func AbortMultipartUpload_if_match_initiated_time(s *S3Conf) error {
+	testName := "AbortMultipartUpload_if_match_initiated_time"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		var initiated *time.Time = getPtr(time.Now())
+
+		// createMpUpload creates a multipart uplod
+		// and retruns the uploadId and creation date
+		abortMp := func(date *time.Time) error {
+			mpObj := "my-obj"
+			mp, err := createMp(s3client, bucket, mpObj)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{
+				Bucket: &bucket,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			var initiatedTime *time.Time
+
+			for _, up := range res.Uploads {
+				if getString(up.UploadId) == getString(mp.UploadId) {
+					initiatedTime = up.Initiated
+					break
+				}
+			}
+
+			if initiatedTime == nil {
+				return fmt.Errorf("unexpected err: the multipart upload is not found")
+			}
+
+			*initiated = *initiatedTime
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+				Bucket:               &bucket,
+				Key:                  &mpObj,
+				UploadId:             mp.UploadId,
+				IfMatchInitiatedTime: date,
+			})
+			cancel()
+
+			return err
+		}
+
+		for i, test := range []struct {
+			date *time.Time
+			err  error
+		}{
+			{nil, nil},
+			// match: success case
+			{initiated, nil},
+			// should ignore future dates
+			{getPtr(initiated.AddDate(1, 0, 0)), nil},
+			// should fail if the initation date doesn't match
+			{getPtr(initiated.AddDate(-1, 0, 1)), s3err.GetAPIError(s3err.ErrPreconditionFailed)},
+		} {
+			err := abortMp(test.date)
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %d failed: expected no error, but got %v", i, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("invalid error type: expected s3err.APIError")
+				}
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test case %d failed: %w", i, err)
+				}
+			}
 		}
 
 		return nil
@@ -12587,6 +13141,100 @@ func CompleteMultipartUpload_mpu_object_size(s *S3Conf) error {
 		if *res.ContentLength != mpuSize {
 			return fmt.Errorf("expected the uploaded object size to be %v, instead got %v",
 				mpuSize, *res.ContentLength)
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_conditional_writes"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		etag := getPtr("")
+		incorrectEtag := getPtr("incorrect_etag")
+		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+
+		for i, test := range []struct {
+			obj         string
+			ifMatch     *string
+			ifNoneMatch *string
+			err         error
+		}{
+			{obj, etag, nil, nil},
+			{obj, etag, etag, errPrecond},
+			{obj, etag, incorrectEtag, nil},
+			{obj, incorrectEtag, incorrectEtag, errPrecond},
+			{obj, incorrectEtag, etag, errPrecond},
+			{obj, incorrectEtag, nil, errPrecond},
+			{obj, nil, incorrectEtag, nil},
+			{obj, nil, etag, errPrecond},
+			{obj, nil, nil, nil},
+			// should ignore the precondition headers if
+			// an object with the given name doesn't exist
+			{"obj-1", incorrectEtag, etag, nil},
+			{"obj-2", etag, etag, nil},
+			{"obj-3", etag, incorrectEtag, nil},
+			{"obj-4", incorrectEtag, nil, nil},
+			{"obj-5", nil, etag, nil},
+		} {
+			res, err := putObjectWithData(0, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Body:   bytes.NewReader([]byte("dummy")),
+			}, s3client)
+			if err != nil {
+				return err
+			}
+			// azure blob storage generates different ETags for
+			// the exact same data.
+			// to avoid ETag collision reassign the etag value
+			*etag = *res.res.ETag
+
+			mp, err := createMp(s3client, bucket, test.obj)
+			if err != nil {
+				return err
+			}
+
+			parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, test.obj, *mp.UploadId)
+			if err != nil {
+				return err
+			}
+
+			part := parts[0]
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+				Bucket:   &bucket,
+				Key:      &test.obj,
+				UploadId: mp.UploadId,
+				MultipartUpload: &types.CompletedMultipartUpload{
+					Parts: []types.CompletedPart{
+						{
+							ETag:              part.ETag,
+							PartNumber:        getPtr(int32(1)),
+							ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+						},
+					},
+				},
+				IfMatch:     test.ifMatch,
+				IfNoneMatch: test.ifNoneMatch,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test case %v: expected no error, instead got %w", i, err)
+			}
+			if test.err != nil {
+				apierr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test case %v: invalid error type: %w", i, test.err)
+				}
+
+				if err := checkApiErr(err, apierr); err != nil {
+					return fmt.Errorf("test case %v: %w", i, err)
+				}
+			}
 		}
 
 		return nil
