@@ -711,6 +711,23 @@ func TestS3ApiController_GetObject(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid part number",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"partNumber": "-2",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidPartNumber),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
@@ -733,8 +750,6 @@ func TestS3ApiController_GetObject(t *testing.T) {
 				err: s3err.GetAPIError(s3err.ErrInvalidAccessKeyID),
 			},
 		},
-		// TODO: add a test case for overflowing content-length
-		// simulate a 32 bit arch to test the case
 		{
 			name: "successful response",
 			input: testInput{

@@ -1853,18 +1853,6 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
-func (p *Posix) retrieveUploadId(bucket, object string) (string, [32]byte, error) {
-	sum := sha256.Sum256([]byte(object))
-	objdir := filepath.Join(bucket, MetaTmpMultipartDir, fmt.Sprintf("%x", sum))
-
-	entries, err := os.ReadDir(objdir)
-	if err != nil || len(entries) == 0 {
-		return "", [32]byte{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
-	}
-
-	return entries[0].Name(), sum, nil
-}
-
 type objectMetadata struct {
 	ContentType        *string
 	ContentEncoding    *string
@@ -3413,6 +3401,11 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		versionId = *input.VersionId
 	}
 
+	if input.PartNumber != nil {
+		// querying an object by part number is not supported
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	if !p.versioningEnabled() && versionId != "" {
 		//TODO: Maybe we need to return our custom error here?
 		return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
@@ -3658,6 +3651,11 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 	versionId := backend.GetStringFromPtr(input.VersionId)
 
+	if input.PartNumber != nil {
+		// querying an object by part number is not supported
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	if !p.versioningEnabled() && versionId != "" {
 		//TODO: Maybe we need to return our custom error here?
 		return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
@@ -3665,77 +3663,6 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	bucket := *input.Bucket
 	object := *input.Key
-
-	if input.PartNumber != nil {
-		uploadId, sum, err := p.retrieveUploadId(bucket, object)
-		if err != nil {
-			return nil, err
-		}
-
-		ents, err := os.ReadDir(filepath.Join(bucket, MetaTmpMultipartDir, fmt.Sprintf("%x", sum), uploadId))
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read parts: %w", err)
-		}
-
-		partPath := filepath.Join(MetaTmpMultipartDir, fmt.Sprintf("%x", sum), uploadId, fmt.Sprintf("%v", *input.PartNumber))
-
-		part, err := os.Stat(filepath.Join(bucket, partPath))
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidPart)
-		}
-		if errors.Is(err, syscall.ENAMETOOLONG) {
-			return nil, s3err.GetAPIError(s3err.ErrKeyTooLong)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("stat part: %w", err)
-		}
-
-		size := part.Size()
-
-		startOffset, length, isValid, err := backend.ParseObjectRange(size, getString(input.Range))
-		if err != nil {
-			return nil, err
-		}
-
-		// retreive the part etag
-		b, err := p.meta.RetrieveAttribute(nil, bucket, partPath, etagkey)
-		etag := string(b)
-		if err != nil {
-			etag = ""
-		}
-
-		// evaluate preconditions
-		err = backend.EvaluatePreconditions(etag, part.ModTime(), backend.PreConditions{
-			IfMatch:       input.IfMatch,
-			IfNoneMatch:   input.IfNoneMatch,
-			IfModSince:    input.IfModifiedSince,
-			IfUnmodeSince: input.IfUnmodifiedSince,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		var contentRange string
-		if isValid {
-			contentRange = fmt.Sprintf("bytes %v-%v/%v",
-				startOffset, startOffset+length-1, size)
-		}
-
-		partsCount := int32(len(ents))
-
-		return &s3.HeadObjectOutput{
-			AcceptRanges:  backend.GetPtrFromString("bytes"),
-			LastModified:  backend.GetTimePtr(part.ModTime()),
-			ETag:          &etag,
-			PartsCount:    &partsCount,
-			ContentLength: &length,
-			StorageClass:  types.StorageClassStandard,
-			ContentRange:  &contentRange,
-		}, nil
-	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {

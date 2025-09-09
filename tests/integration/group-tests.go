@@ -171,8 +171,7 @@ func TestPutObject(s *S3Conf) {
 func TestHeadObject(s *S3Conf) {
 	HeadObject_non_existing_object(s)
 	HeadObject_invalid_part_number(s)
-	HeadObject_non_existing_mp(s)
-	HeadObject_mp_success(s)
+	HeadObject_part_number_not_supported(s)
 	HeadObject_directory_object_noslash(s)
 	HeadObject_non_existing_dir_object(s)
 	HeadObject_invalid_parent_dir(s)
@@ -222,6 +221,8 @@ func TestGetObject(s *S3Conf) {
 	GetObject_overrides_success(s)
 	GetObject_overrides_presign_success(s)
 	GetObject_overrides_fail_public(s)
+	GetObject_invalid_part_number(s)
+	GetObject_part_number_not_supported(s)
 }
 
 func TestListObjects(s *S3Conf) {
@@ -1117,8 +1118,7 @@ func GetIntTests() IntTests {
 		"PutObject_racey_success":                                                 PutObject_racey_success,
 		"HeadObject_non_existing_object":                                          HeadObject_non_existing_object,
 		"HeadObject_invalid_part_number":                                          HeadObject_invalid_part_number,
-		"HeadObject_non_existing_mp":                                              HeadObject_non_existing_mp,
-		"HeadObject_mp_success":                                                   HeadObject_mp_success,
+		"HeadObject_part_number_not_supported":                                    HeadObject_part_number_not_supported,
 		"HeadObject_directory_object_noslash":                                     HeadObject_directory_object_noslash,
 		"HeadObject_non_existing_dir_object":                                      HeadObject_non_existing_dir_object,
 		"HeadObject_name_too_long":                                                HeadObject_name_too_long,
@@ -1154,6 +1154,8 @@ func GetIntTests() IntTests {
 		"GetObject_overrides_success":                                             GetObject_overrides_success,
 		"GetObject_overrides_presign_success":                                     GetObject_overrides_presign_success,
 		"GetObject_overrides_fail_public":                                         GetObject_overrides_fail_public,
+		"GetObject_invalid_part_number":                                           GetObject_invalid_part_number,
+		"GetObject_part_number_not_supported":                                     GetObject_part_number_not_supported,
 		"ListObjects_non_existing_bucket":                                         ListObjects_non_existing_bucket,
 		"ListObjects_with_prefix":                                                 ListObjects_with_prefix,
 		"ListObjects_truncated":                                                   ListObjects_truncated,

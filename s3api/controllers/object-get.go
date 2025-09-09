@@ -380,6 +380,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	versionId := ctx.Query("versionId")
 	acceptRange := ctx.Get("Range")
 	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
+	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
 
 	// Extract response override query parameters
 	responseOverrides := map[string]*string{
@@ -440,6 +441,20 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	var partNumber *int32
+	if ctx.Request().URI().QueryArgs().Has("partNumber") {
+		if partNumberQuery < minPartNumber || partNumberQuery > maxPartNumber {
+			debuglogger.Logf("invalid part number: %d", partNumberQuery)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: parsedAcl.Owner,
+				},
+			}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
+		}
+
+		partNumber = &partNumberQuery
+	}
+
 	// validate the checksum mode
 	if checksumMode != "" && checksumMode != types.ChecksumModeEnabled {
 		debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
@@ -462,6 +477,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		IfUnmodifiedSince: conditionalHeaders.IfUnmodeSince,
 		VersionId:         &versionId,
 		ChecksumMode:      checksumMode,
+		PartNumber:        partNumber,
 	})
 	if err != nil {
 		var headers map[string]*string
