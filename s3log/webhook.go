@@ -32,7 +32,7 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-// WebhookLogger is a webhook URL audit log
+// WebhookLogger is a webhook URL audit logger
 type WebhookLogger struct {
 	mu  sync.Mutex
 	url string
@@ -56,7 +56,7 @@ func InitWebhookLogger(url string) (AuditLogger, error) {
 	}, nil
 }
 
-// Log sends log message to webhook
+// Log sends logger message to webhook
 func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	wl.mu.Lock()
 	defer wl.mu.Unlock()
@@ -129,7 +129,7 @@ func (wl *WebhookLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMet
 func (wl *WebhookLogger) sendLog(lf LogFields) {
 	jsonLog, err := json.Marshal(lf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse the log data: %v\n", err.Error())
+		fmt.Fprintf(os.Stderr, "failed to parse the logger data: %v\n", err.Error())
 	}
 
 	req, err := http.NewRequest(http.MethodPost, wl.url, bytes.NewReader(jsonLog))
@@ -148,7 +148,7 @@ func makeRequest(req *http.Request) {
 	_, err := client.Do(req)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && !err.Timeout() {
-			fmt.Fprintf(os.Stderr, "error sending webhook log: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error sending webhook logger: %v\n", err)
 		}
 	}
 }

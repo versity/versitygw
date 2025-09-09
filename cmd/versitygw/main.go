@@ -234,7 +234,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.BoolFlag{
 			Name:        "quiet",
-			Usage:       "silence stdout request logging output",
+			Usage:       "silence stdout request logger output",
 			EnvVars:     []string{"VGW_QUIET"},
 			Destination: &quiet,
 			Aliases:     []string{"q"},
@@ -247,19 +247,19 @@ func initFlags() []cli.Flag {
 			Aliases:     []string{"vd"},
 		},
 		&cli.StringFlag{
-			Name:        "access-log",
-			Usage:       "enable server access logging to specified file",
+			Name:        "access-logger",
+			Usage:       "enable server access logger to specified file",
 			EnvVars:     []string{"LOGFILE", "VGW_ACCESS_LOG"},
 			Destination: &accessLog,
 		},
 		&cli.StringFlag{
-			Name:        "admin-access-log",
-			Usage:       "enable admin server access logging to specified file",
+			Name:        "admin-access-logger",
+			Usage:       "enable admin server access logger to specified file",
 			EnvVars:     []string{"LOGFILE", "VGW_ADMIN_ACCESS_LOG"},
 			Destination: &adminLogFile,
 		},
 		&cli.StringFlag{
-			Name:        "log-webhook-url",
+			Name:        "logger-webhook-url",
 			Usage:       "webhook url to send the audit logs",
 			EnvVars:     []string{"WEBHOOK", "VGW_LOG_WEBHOOK_URL"},
 			Destination: &logWebhookURL,

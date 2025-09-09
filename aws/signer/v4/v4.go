@@ -100,11 +100,11 @@ type SignerOptions struct {
 	// http://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
 	DisableURIPathEscaping bool
 
-	// The logger to send log messages to.
+	// The logger to send logger messages to.
 	Logger logging.Logger
 
-	// Enable logging of signed requests.
-	// This will enable logging of the canonical request, the string to sign, and for presigning the subsequent
+	// Enable logger of signed requests.
+	// This will enable logger of the canonical request, the string to sign, and for presigning the subsequent
 	// presigned URL.
 	LogSigning bool
 

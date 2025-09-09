@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/versity/versitygw/tests/rest_scripts/command"
-	logger "github.com/versity/versitygw/tests/rest_scripts/log"
+	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 	"log"
 	"strings"
 )
@@ -27,6 +27,8 @@ var authorizationScheme *string
 var incorrectYearMonthDay *bool
 var invalidYearMonthDay *bool
 var payload *string
+var contentMD5 *bool
+var incorrectContentMD5 *bool
 
 type restParams map[string]string
 
@@ -72,6 +74,8 @@ func main() {
 		IncorrectYearMonthDay: *incorrectYearMonthDay,
 		InvalidYearMonthDay:   *invalidYearMonthDay,
 		Payload:               *payload,
+		ContentMD5:            *contentMD5,
+		IncorrectContentMD5:   *incorrectContentMD5,
 	}
 	curlShellCommand, err := s3Command.CurlShellCommand()
 	if err != nil {
@@ -99,6 +103,8 @@ func checkFlags() error {
 	incorrectCredential = flag.String("incorrectCredential", "", "Add an incorrect credential string")
 	authorizationScheme = flag.String("authorizationScheme", "AWS4-HMAC-SHA256", "Authorization Scheme")
 	payload = flag.String("payload", "", "Message payload")
+	contentMD5 = flag.Bool("contentMD5", false, "Include content-md5 hash")
+	incorrectContentMD5 = flag.Bool("incorrectContentMD5", false, "Include incorrect content-md5 hash")
 	// Parse the flags
 	flag.Parse()
 

@@ -30,14 +30,14 @@ check_env_vars() {
   fi
   if [[ $RUN_S3CMD == "true" ]]; then
     if [ -z "$S3CMD_CONFIG" ]; then
-      log 1 "S3CMD_CONFIG param missing"
+      logging 1 "S3CMD_CONFIG param missing"
       exit 1
     fi
     export S3CMD_CONFIG
   fi
   if [[ $RUN_MC == "true" ]]; then
     if [ -z "$MC_ALIAS" ]; then
-      log 1 "MC_ALIAS param missing"
+      logging 1 "MC_ALIAS param missing"
       exit 1
     fi
     export MC_ALIAS
@@ -50,7 +50,7 @@ source_config_file() {
     if [ -r tests/.env ]; then
       source tests/.env
     else
-      log 3 "Warning: no .env file found in tests folder"
+      logging 3 "Warning: no .env file found in tests folder"
     fi
   else
     # shellcheck source=./tests/.env.default
@@ -60,24 +60,24 @@ source_config_file() {
 
 check_aws_vars() {
   if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-    log 1 "AWS_ACCESS_KEY_ID missing"
+    logging 1 "AWS_ACCESS_KEY_ID missing"
     exit 1
   fi
   if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-    log 1 "AWS_SECRET_ACCESS_KEY missing"
+    logging 1 "AWS_SECRET_ACCESS_KEY missing"
     exit 1
   fi
   if [ -z "$AWS_REGION" ]; then
-    log 1 "AWS_REGION missing"
+    logging 1 "AWS_REGION missing"
     exit 1
   fi
   if [ -z "$AWS_PROFILE" ]; then
-    log 1 "AWS_PROFILE missing"
+    logging 1 "AWS_PROFILE missing"
     exit 1
   fi
   if [ "$DIRECT" != "true" ]; then
     if [ -z "$AWS_ENDPOINT_URL" ]; then
-      log 1 "AWS_ENDPOINT_URL missing"
+      logging 1 "AWS_ENDPOINT_URL missing"
       exit 1
     fi
   fi
@@ -90,23 +90,23 @@ check_aws_vars() {
 
 check_bucket_vars() {
   if [ -z "$BUCKET_ONE_NAME" ]; then
-    log 1 "BUCKET_ONE_NAME missing"
+    logging 1 "BUCKET_ONE_NAME missing"
     exit 1
   fi
   if [ -z "$BUCKET_TWO_NAME" ]; then
-    log 1 "BUCKET_TWO_NAME missing"
+    logging 1 "BUCKET_TWO_NAME missing"
     exit 1
   fi
   if [ "$RECREATE_BUCKETS" != "true" ] && [ "$RECREATE_BUCKETS" != "false" ]; then
-    log 1 "RECREATE_BUCKETS must be 'true' or 'false'"
+    logging 1 "RECREATE_BUCKETS must be 'true' or 'false'"
     exit 1
   fi
   if [ "$DELETE_BUCKETS_AFTER_TEST" != "true" ] && [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
-    log 1 "DELETE_BUCKETS_AFTER_TEST must be 'true' or 'false'"
+    logging 1 "DELETE_BUCKETS_AFTER_TEST must be 'true' or 'false'"
     exit 1
   fi
   if [ "$RECREATE_BUCKETS" == "false" ] && [ "$DELETE_BUCKETS_AFTER_TEST" == "true" ]; then
-    log 1 "cannot set DELETE_BUCKETS_AFTER_TEST to 'true' if RECREATE_BUCKETS is 'false'"
+    logging 1 "cannot set DELETE_BUCKETS_AFTER_TEST to 'true' if RECREATE_BUCKETS is 'false'"
     exit 1
   fi
 }
@@ -122,11 +122,11 @@ check_universal_vars() {
     # shellcheck source=./tests/.secrets
     source "$SECRETS_FILE"
   else
-    log 3 "Warning: no secrets file found"
+    logging 3 "Warning: no secrets file found"
   fi
   if [[ -n "$LOG_LEVEL" ]]; then
     if [[ $LOG_LEVEL -lt 2 ]]; then
-      log 1 "log level must be 2 or greater"
+      logging 1 "log level must be 2 or greater"
       exit 1
     fi
     export LOG_LEVEL_INT=$LOG_LEVEL
@@ -144,19 +144,19 @@ check_universal_vars() {
   check_aws_vars
 
   if [ "$RUN_VERSITYGW" != "true" ] && [ "$RUN_VERSITYGW" != "false" ]; then
-    log 1 "RUN_VERSITYGW must be 'true' or 'false'"
+    logging 1 "RUN_VERSITYGW must be 'true' or 'false'"
     exit 1
   fi
 
   check_bucket_vars
 
   if [ -z "$TEST_FILE_FOLDER" ]; then
-    log 1 "TEST_FILE_FOLDER missing"
+    logging 1 "TEST_FILE_FOLDER missing"
     exit 1
   fi
   if [ ! -d "$TEST_FILE_FOLDER" ]; then
     if ! error=$(mkdir -p "$TEST_FILE_FOLDER" 2>&1); then
-      log 1 "error creating test folder: $error"
+      logging 1 "error creating test folder: $error"
       exit 1
     fi
   fi
@@ -166,7 +166,7 @@ check_universal_vars() {
 delete_command_log() {
   if [ -e "$COMMAND_LOG" ]; then
     if ! error=$(rm "$COMMAND_LOG"); then
-      log 2 "error removing command log: $error"
+      logging 2 "error removing command log: $error"
       return 1
     fi
   fi
@@ -181,38 +181,38 @@ init_command_log() {
 
 check_versity_vars() {
   if [ -z "$LOCAL_FOLDER" ]; then
-    log 1 "LOCAL_FOLDER missing"
+    logging 1 "LOCAL_FOLDER missing"
     exit 1
   fi
   if [ ! -d "$LOCAL_FOLDER" ]; then
     if ! error=$(mkdir -p "$LOCAL_FOLDER"); then
-      log 2 "error creating local posix folder: $error"
+      logging 2 "error creating local posix folder: $error"
       exit 1
     fi
   fi
   if [ -n "$VERSIONING_DIR" ] && [ ! -d "$VERSIONING_DIR" ]; then
     if ! error=$(mkdir -p "$VERSIONING_DIR"); then
-      log 2 "error creating versioning folder: $error"
+      logging 2 "error creating versioning folder: $error"
       return 1
     fi
   fi
   if [ -z "$VERSITY_EXE" ]; then
-    log 1 "VERSITY_EXE missing"
+    logging 1 "VERSITY_EXE missing"
     exit 1
   fi
   if [ -z "$BACKEND" ]; then
-    log 1 "BACKEND missing"
+    logging 1 "BACKEND missing"
     exit 1
   fi
   export LOCAL_FOLDER VERSITY_EXE BACKEND
 
   if [ "$BACKEND" == 's3' ]; then
     if [ -z "$AWS_ACCESS_KEY_ID_TWO" ]; then
-      log 1 "AWS_ACCESS_KEY_ID_TWO missing"
+      logging 1 "AWS_ACCESS_KEY_ID_TWO missing"
       exit 1
     fi
     if [ -z "$AWS_SECRET_ACCESS_KEY_TWO" ]; then
-      log 1 "AWS_SECRET_ACCESS_KEY_TWO missing"
+      logging 1 "AWS_SECRET_ACCESS_KEY_TWO missing"
       exit 1
     fi
     export AWS_ACCESS_KEY_ID_TWO AWS_SECRET_ACCESS_KEY_TWO
@@ -229,31 +229,31 @@ check_versity_vars() {
 
 check_user_vars() {
   if [ -z "$USERNAME_ONE" ]; then
-    log 1 "USERNAME_ONE missing"
+    logging 1 "USERNAME_ONE missing"
     exit 1
   fi
   if [ -z "$PASSWORD_ONE" ]; then
-    log 1 "PASSWORD_ONE missing"
+    logging 1 "PASSWORD_ONE missing"
     exit 1
   fi
   if [ -z "$USERNAME_TWO" ]; then
-    log 1 "USERNAME_TWO missing"
+    logging 1 "USERNAME_TWO missing"
     exit 1
   fi
   if [ -z "$PASSWORD_TWO" ]; then
-    log 1 "PASSWORD_TWO missing"
+    logging 1 "PASSWORD_TWO missing"
     exit 1
   fi
   if [ "$AUTOGENERATE_USERS" != "true" ] && [ "$AUTOGENERATE_USERS" != "false" ]; then
-    log 1 "AUTOGENERATE_USERS must be 'true' or 'false'"
+    logging 1 "AUTOGENERATE_USERS must be 'true' or 'false'"
     return 1
   fi
   if [ "$AUTOGENERATE_USERS" == "true" ] && [ "$USER_AUTOGENERATION_PREFIX" == "" ]; then
-    log 1 "USER_AUTOGENERATION_PREFIX is required if AUTOGENERATE_USERS is 'true'"
+    logging 1 "USER_AUTOGENERATION_PREFIX is required if AUTOGENERATE_USERS is 'true'"
     return 1
   fi
   if [ "$AUTOGENERATE_USERS" == "false" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" != "true" ] && [ "$CREATE_STATIC_USERS_IF_NONEXISTENT" != "false" ]; then
-    log 1 "If AUTOGENERATE_USERS is 'false', 'CREATE_STATIC_USERS_IF_NONEXISTENT' must be true or false"
+    logging 1 "If AUTOGENERATE_USERS is 'false', 'CREATE_STATIC_USERS_IF_NONEXISTENT' must be true or false"
     return 1
   fi
 
@@ -262,12 +262,12 @@ check_user_vars() {
   fi
   if [[ "$IAM_TYPE" == "folder" ]]; then
     if [ -z "$USERS_FOLDER" ]; then
-      log 1 "USERS_FOLDER missing"
+      logging 1 "USERS_FOLDER missing"
       exit 1
     fi
     if [ ! -d "$USERS_FOLDER" ]; then
       if ! mkdir_error=$(mkdir "$USERS_FOLDER" 2>&1); then
-        log 1 "error creating users folder: $mkdir_error"
+        logging 1 "error creating users folder: $mkdir_error"
         exit 1
       fi
     fi
@@ -277,7 +277,7 @@ check_user_vars() {
   fi
   if [[ $IAM_TYPE == "s3" ]]; then
     if [ -z "$USERS_BUCKET" ]; then
-      log 1 "error creating USERS_BUCKET"
+      logging 1 "error creating USERS_BUCKET"
       exit 1
     fi
     IAM_PARAMS="--s3-iam-access $AWS_ACCESS_KEY_ID --s3-iam-secret $AWS_SECRET_ACCESS_KEY \
@@ -286,6 +286,6 @@ check_user_vars() {
     export IAM_PARAMS
     return 0
   fi
-  log 1 "unrecognized IAM_TYPE value: $IAM_TYPE"
+  logging 1 "unrecognized IAM_TYPE value: $IAM_TYPE"
   exit 1
 }

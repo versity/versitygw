@@ -44,7 +44,7 @@ func ApplyBucketCORS(be backend.Backend) fiber.Handler {
 		data, err := be.GetBucketCors(ctx.Context(), bucket)
 		if err != nil {
 			// If CORS is not configured, S3Error will have code NoSuchCORSConfiguration.
-			// In this case, we can safely continue. For any other error, we should log it.
+			// In this case, we can safely continue. For any other error, we should logger it.
 			s3Err, ok := err.(s3err.APIError)
 			if !ok || s3Err.Code != "NoSuchCORSConfiguration" {
 				debuglogger.Logf("failed to get bucket cors for bucket %q: %v", bucket, err)

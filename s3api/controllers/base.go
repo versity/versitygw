@@ -187,7 +187,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	}
 	// Handle the error case
 	if err != nil {
-		// Audit the error log
+		// Audit the error logger
 		if svc.Logger != nil {
 			svc.Logger.Log(ctx, err, nil, s3log.LogMeta{
 				Action:      s3action,

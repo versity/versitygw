@@ -2,10 +2,13 @@ package command
 
 import (
 	"crypto/hmac"
+	"crypto/md5"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	logger "github.com/versity/versitygw/tests/rest_scripts/log"
+	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +33,8 @@ type S3Command struct {
 	IncorrectYearMonthDay        bool
 	InvalidYearMonthDay          bool
 	Payload                      string
+	ContentMD5                   bool
+	IncorrectContentMD5          bool
 
 	currentDateTime      string
 	host                 string
@@ -40,6 +45,11 @@ type S3Command struct {
 	signedParamString    string
 	yearMonthDay         string
 	signature            string
+}
+
+type PutS3Command struct {
+	s3Command  *S3Command
+	ContentMD5 bool
 }
 
 func (s *S3Command) CurlShellCommand() (string, error) {
@@ -57,18 +67,9 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 	}
 	s.host = protocolAndHost[1]
 	s.payloadHash = "UNSIGNED-PAYLOAD"
-	s.headerValues = [][]string{
-		{"host", s.host},
-		{"x-amz-content-sha256", s.payloadHash},
-		{"x-amz-date", s.currentDateTime},
+	if err := s.addHeaderValues(); err != nil {
+		return "", fmt.Errorf("error adding header values: %w", err)
 	}
-	for key, value := range s.SignedParams {
-		s.headerValues = append(s.headerValues, []string{key, value})
-	}
-	sort.Slice(s.headerValues,
-		func(i, j int) bool {
-			return s.headerValues[i][0] < s.headerValues[j][0]
-		})
 	s.path = "/" + s.BucketName
 	if s.ObjectKey != "" {
 		s.path += "/" + s.ObjectKey
@@ -82,6 +83,55 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 	s.getStsSignature()
 
 	return s.buildCurlShellCommand(), nil
+}
+
+func (s *S3Command) addHeaderValues() error {
+	s.headerValues = [][]string{
+		{"host", s.host},
+		{"x-amz-content-sha256", s.payloadHash},
+		{"x-amz-date", s.currentDateTime},
+	}
+	for key, value := range s.SignedParams {
+		s.headerValues = append(s.headerValues, []string{key, value})
+	}
+	if s.ContentMD5 || s.IncorrectContentMD5 {
+		if err := s.addContentMD5Header(); err != nil {
+			return fmt.Errorf("error adding Content-MD5 header: %w", err)
+		}
+	}
+	sort.Slice(s.headerValues,
+		func(i, j int) bool {
+			return s.headerValues[i][0] < s.headerValues[j][0]
+		})
+	return nil
+}
+
+func (s *S3Command) addContentMD5Header() error {
+	var payloadData []byte
+	var err error
+	if s.PayloadFile != "" {
+		if payloadData, err = os.ReadFile(s.PayloadFile); err != nil {
+			return fmt.Errorf("error reading file %s: %w", s.PayloadFile, err)
+		}
+	} else {
+		logger.PrintDebug("Payload: %s", s.Payload)
+		payloadData = []byte(strings.Replace(s.Payload, "\\", "", -1))
+	}
+
+	hasher := md5.New()
+	hasher.Write(payloadData)
+	md5Hash := hasher.Sum(nil)
+	if s.IncorrectContentMD5 {
+		if md5Hash[0] == 'a' {
+			md5Hash[0] = 'A'
+		} else {
+			md5Hash[0] = 'a'
+		}
+	}
+	contentMD5 := base64.StdEncoding.EncodeToString(md5Hash)
+
+	s.headerValues = append(s.headerValues, []string{"Content-MD5", contentMD5})
+	return nil
 }
 
 func (s *S3Command) generateCanonicalRequestString() {

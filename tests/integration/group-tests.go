@@ -668,7 +668,7 @@ func TestNotImplementedActions(s *S3Conf) {
 	PutBucketLifecycleConfiguration_not_implemented(s)
 	GetBucketLifecycleConfiguration_not_implemented(s)
 	DeleteBucketLifecycle_not_implemented(s)
-	// bucket logging actions
+	// bucket logger actions
 	PutBucketLogging_not_implemented(s)
 	GetBucketLogging_not_implemented(s)
 	// bucket request payment actions

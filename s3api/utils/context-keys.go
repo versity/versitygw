@@ -32,7 +32,7 @@ const (
 	ContextKeyAuthenticated  ContextKey = "authenticated"
 	ContextKeyPublicBucket   ContextKey = "public-bucket"
 	ContextKeyParsedAcl      ContextKey = "parsed-acl"
-	ContextKeySkipResBodyLog ContextKey = "skip-res-body-log"
+	ContextKeySkipResBodyLog ContextKey = "skip-res-body-logger"
 	ContextKeyBodyReader     ContextKey = "body-reader"
 	ContextKeySkip           ContextKey = "__skip"
 )

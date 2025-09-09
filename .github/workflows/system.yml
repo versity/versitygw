@@ -202,8 +202,8 @@ jobs:
           TEST_FILE_FOLDER: ${{ github.workspace }}/versity-gwtest-files
           REMOVE_TEST_FILE_FOLDER: true
           VERSIONING_DIR: ${{ github.workspace }}/versioning
-          COMMAND_LOG: command.log
-          TIME_LOG: time.log
+          COMMAND_LOG: command.logger
+          TIME_LOG: time.logger
           PYTHON_ENV_FOLDER: ${{ github.workspace }}/env
           AUTOGENERATE_USERS: true
           USER_AUTOGENERATION_PREFIX: github-actions-test-
@@ -229,7 +229,7 @@ jobs:
           BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/run.sh $RUN_SET
 
       - name: Time report
-        run: cat ${{ github.workspace }}/time.log
+        run: cat ${{ github.workspace }}/time.logger
 
       - name: Coverage report
         run: |
