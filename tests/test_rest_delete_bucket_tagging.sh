@@ -17,24 +17,22 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/test_user_common.sh
+source ./tests/drivers/user.sh
+source ./tests/setup.sh
 source ./tests/drivers/user.sh
 
-export RUN_S3CMD=true
 export RUN_USERS=true
 
-@test "test_admin_user_s3cmd" {
-  test_admin_user "s3cmd"
-}
+@test "REST - DeleteBucketTagging - lack permission" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
+  run setup_bucket_and_user_v2 "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  username=${lines[${#lines[@]}-2]}
+  password=${lines[${#lines[@]}-1]}
 
-@test "test_create_user_already_exists_s3cmd" {
-  test_create_user_already_exists "s3cmd"
-}
-
-@test "test_user_user_s3cmd" {
-  test_user_user "s3cmd"
-}
-
-@test "test_userplus_operation_s3cmd" {
-  test_userplus_operation "s3cmd"
+  run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
+    "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging="
+  assert_success
 }

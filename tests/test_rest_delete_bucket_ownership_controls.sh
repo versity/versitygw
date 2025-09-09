@@ -27,18 +27,28 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  run setup_bucket_and_user_v2 "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE"
   assert_success
   username=${lines[2]}
   password=${lines[3]}
-
-  run put_bucket_ownership_controls_rest "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
-  assert_success
+  log 5 "username: $username, password: $password"
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
+    "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "ownershipControls="
+  assert_success
+}
+
+@test "REST - DeleteBucketOwnershipControls - invalid username" {
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
+    skip
+  fi
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  username="invalid with spaces"
+  password="dummy"
+
+  run send_rest_go_command_expect_error "403" "InvalidAccessKeyId" "does not exist in our records" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
     "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "ownershipControls="
   assert_success
 }

@@ -35,8 +35,11 @@ check_rest_go_expected_error() {
   if ! check_param_count_v2 "response file, expected http code, expected error code, expected error" 4 $#; then
     return 1
   fi
-  status_line=$(head -n 1 "$1")
-  status_code=$(echo "$status_line" | awk '{print $2}')
+  result="$(cat "$1")"
+  if ! bypass_continues; then
+    log 2 "error bypassing continues"
+    return 1
+  fi
   if [ "$2" != "$status_code" ]; then
     log 2 "expected curl response '$2', was '$status_code'"
     return 1
@@ -91,10 +94,12 @@ check_rest_expected_header_error() {
   if ! check_param_count_v2 "file, expected response, expected error" 3 $#; then
     return 1
   fi
-  status_line=$(head -n 1 "$1")
-
-  # Parse the status code and message
-  status_code=$(echo "$status_line" | awk '{print $2}')
+  result="$(cat "$1")"
+  if ! bypass_continues; then
+    log 2 "error bypassing continues"
+    return 1
+  fi
+  log 5 "status line: $status_line"
   status_message=$(echo "$status_line" | cut -d' ' -f3- | tr -d '\r')
   log 5 "status code: $status_code, status message: $status_message"
   if [ "$2" != "$status_code" ]; then
@@ -164,24 +169,8 @@ send_rest_command_expect_success_callback() {
   return 0
 }
 
-send_rest_go_command_expect_error() {
-  if [ $# -lt 3 ] && [ $(($# % 2)) -ne 1 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, key/value pairs)"
-    return 1
-  fi
-  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
-    log 2 "error sending go command and checking error"
-    return 1
-  fi
-  return 0
-}
-
-send_rest_go_command_expect_error_callback() {
-  if [ $# -lt 4 ] && [ $(($# % 2)) -eq 1 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, key/value pairs)"
-    return 1
-  fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:5}" 2>&1); then
+rest_go_command_perform_send() {
+  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "$@" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
@@ -192,6 +181,29 @@ send_rest_go_command_expect_error_callback() {
     return 1
   fi
   log 5 "result: $result"
+}
+
+send_rest_go_command_expect_error() {
+  if [ $# -lt 3 ]; then
+    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, go params)"
+    return 1
+  fi
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
+    log 2 "error sending go command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_expect_error_callback() {
+  if [ $# -lt 4 ]; then
+    log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, go params)"
+    return 1
+  fi
+  if ! rest_go_command_perform_send "${@:5}"; then
+    log 2 "error sending rest go command"
+    return 1
+  fi
   echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
   if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/result.txt" "$1" "$2" "$3"; then
     log 2 "error checking expected header error"
@@ -204,26 +216,57 @@ send_rest_go_command_expect_error_callback() {
   return 0
 }
 
+bypass_continues() {
+  status_line_idx=1
+  status_code=""
+  continue_count=0
+  while ((continue_count<10)); do
+    status_line=$(sed -n "${status_line_idx}p" <<< "$result")
+    status_code=$(echo "$status_line" | awk '{print $2}')
+    if [ "$status_code" != "100" ]; then
+      break
+    fi
+    ((status_line_idx+=2))
+    ((continue_count++))
+  done
+  if [ "$continue_count" -ge 10 ]; then
+    log 2 "too many continues"
+    return 1
+  fi
+  return 0
+}
+
 send_rest_go_command() {
-  if [ $# -lt 1 ] && [ $(($# % 2)) -ne 1 ]; then
-    log 2 "'send_rest_go_command_expect_failure' param count must be 1 or greater, odd (key/value pairs)"
+  if [ $# -lt 1 ]; then
+    log 2 "'send_rest_go_command_expect_failure' param count must be 1 or greater (expected response code, params)"
     return 1
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generate_command.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "${@:2}" 2>&1); then
-    log 2 "error: $curl_command"
+  if ! send_rest_go_command_callback "$1" "" "${@:2}"; then
+    log 2 "error sending rest go command"
     return 1
   fi
-  local full_command="send_command $curl_command"
-  log 5 "curl command: $curl_command"
-  if ! result=$(eval "${full_command[*]}" 2>&1); then
-    log 3 "error sending command: $result"
+  return 0
+}
+
+send_rest_go_command_callback() {
+  if ! check_param_count_gt "response code, callback, params" 2 $#; then
     return 1
   fi
-  log 5 "result: $result"
-  status_line=$(sed -n 1p <<< "$result")
-  status_code=$(echo "$status_line" | awk '{print $2}')
+  if ! rest_go_command_perform_send "${@:3}"; then
+    log 2 "error sending rest go command"
+    return 1
+  fi
+  if ! bypass_continues; then
+    log 2 "error bypassing continues"
+    return 1
+  fi
   if [ "$1" != "$status_code" ]; then
     log 2 "expected curl response '$1', was '$status_code'"
+    return 1
+  fi
+  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
+  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/result.txt"; then
+    log 2 "error in callback"
     return 1
   fi
   return 0
