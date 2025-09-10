@@ -413,6 +413,11 @@ func (az *Azure) DeleteBucketTagging(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
+	if input.PartNumber != nil {
+		// querying an object with part number is not supported
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
 		return nil, err
@@ -487,48 +492,8 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 
 func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.HeadObjectOutput, error) {
 	if input.PartNumber != nil {
-		client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := client.GetBlockList(ctx, blockblob.BlockListTypeUncommitted, nil)
-		if err != nil {
-			return nil, azureErrToS3Err(err)
-		}
-
-		if res.ETag != nil && res.LastModified != nil {
-			err = backend.EvaluatePreconditions(convertAzureEtag(res.ETag), *res.LastModified,
-				backend.PreConditions{
-					IfMatch:       input.IfMatch,
-					IfNoneMatch:   input.IfNoneMatch,
-					IfModSince:    input.IfModifiedSince,
-					IfUnmodeSince: input.IfUnmodifiedSince,
-				})
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		partsCount := int32(len(res.UncommittedBlocks))
-
-		for _, block := range res.UncommittedBlocks {
-			partNumber, err := decodeBlockId(*block.Name)
-			if err != nil {
-				return nil, err
-			}
-
-			if partNumber == int(*input.PartNumber) {
-				return &s3.HeadObjectOutput{
-					ContentLength: block.Size,
-					ETag:          block.Name,
-					PartsCount:    &partsCount,
-					StorageClass:  types.StorageClassStandard,
-				}, nil
-			}
-		}
-
-		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		// querying an object with part number is not supported
+		return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 	}
 
 	client, err := az.getBlobClient(*input.Bucket, *input.Key)
