@@ -1459,7 +1459,7 @@ func CreateBucket_existing_bucket(s *S3Conf) error {
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 	passF(testName)
@@ -1567,7 +1567,7 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 		{"grt3", "grt3secret", "user"},
 	})
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1615,7 +1615,7 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	})
 	cancel()
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1634,7 +1634,7 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1658,7 +1658,7 @@ func CreateBucket_default_object_lock(s *S3Conf) error {
 	})
 	cancel()
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1668,7 +1668,7 @@ func CreateBucket_default_object_lock(s *S3Conf) error {
 	})
 	cancel()
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1679,7 +1679,7 @@ func CreateBucket_default_object_lock(s *S3Conf) error {
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -1909,7 +1909,7 @@ func ListBuckets_as_admin(s *S3Conf) error {
 		}
 		if !compareBuckets(out.Buckets, buckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				buckets, out.Buckets)
+				sprintBuckets(buckets), sprintBuckets(out.Buckets))
 		}
 
 		for _, elem := range buckets[1:] {
@@ -2047,7 +2047,7 @@ func ListBuckets_truncated(s *S3Conf) error {
 		}
 		if !compareBuckets(out.Buckets, buckets[:maxBuckets]) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				buckets[:maxBuckets], out.Buckets)
+				sprintBuckets(buckets[:maxBuckets]), sprintBuckets(out.Buckets))
 		}
 		if getString(out.ContinuationToken) != getString(buckets[maxBuckets-1].Name) {
 			return fmt.Errorf("expected ContinuationToken to be %v, instead got %v",
@@ -2065,7 +2065,7 @@ func ListBuckets_truncated(s *S3Conf) error {
 
 		if !compareBuckets(out.Buckets, buckets[maxBuckets:]) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				buckets[maxBuckets:], out.Buckets)
+				sprintBuckets(buckets[:maxBuckets]), sprintBuckets(out.Buckets))
 		}
 		if out.ContinuationToken != nil {
 			return fmt.Errorf("expected nil continuation token, instead got %v",
@@ -2098,7 +2098,7 @@ func ListBuckets_empty_success(s *S3Conf) error {
 
 		if len(out.Buckets) > 0 {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				[]types.Bucket{}, out.Buckets)
+				[]types.Bucket{}, sprintBuckets(out.Buckets))
 		}
 
 		return nil
@@ -2136,7 +2136,7 @@ func ListBuckets_success(s *S3Conf) error {
 		}
 		if !compareBuckets(out.Buckets, buckets) {
 			return fmt.Errorf("expected list buckets result to be %v, instead got %v",
-				buckets, out.Buckets)
+				sprintBuckets(buckets), sprintBuckets(out.Buckets))
 		}
 
 		for _, elem := range buckets[1:] {
@@ -2157,14 +2157,14 @@ func CreateDeleteBucket_success(s *S3Conf) error {
 
 	err := setup(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 
 	}
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -3018,13 +3018,13 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	}
 
 	if err := changeBucketObjectLockStatus(client, bucket, false); err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -3480,7 +3480,7 @@ func PutObject_racey_success(s *S3Conf) error {
 
 	err = teardown(s, bucket)
 	if err != nil {
-		failF("%v: %v", err)
+		failF("%v: %v", testName, err)
 		return fmt.Errorf("%v: %w", testName, err)
 	}
 
@@ -6161,7 +6161,7 @@ func ListObjects_non_truncated_common_prefixes(s *S3Conf) error {
 		cPrefs := []string{"cquux/"}
 		if !comparePrefixes(cPrefs, res.CommonPrefixes) {
 			return fmt.Errorf("expected common prefixes to be %v, instead got %+v",
-				cPrefs, res.CommonPrefixes)
+				cPrefs, sprintPrefixes(res.CommonPrefixes))
 		}
 
 		return nil
@@ -6438,7 +6438,8 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 		}
 
 		if !comparePrefixes([]string{"d1/", "d2/", "d3/"}, out.CommonPrefixes) {
-			return fmt.Errorf("expected the common prefixes to be %v, instead got %v", []string{"d1/", "d2/", "d3/"}, out.CommonPrefixes)
+			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
+				[]string{"d1/", "d2/", "d3/"}, sprintPrefixes(out.CommonPrefixes))
 		}
 
 		if out.MaxKeys == nil {
@@ -6466,7 +6467,7 @@ func ListObjectsV2_truncated_common_prefixes(s *S3Conf) error {
 
 		if !comparePrefixes([]string{"d4/"}, out.CommonPrefixes) {
 			return fmt.Errorf("expected the common prefixes to be %v, instead got %v",
-				[]string{"d4/"}, out.CommonPrefixes)
+				[]string{"d4/"}, sprintPrefixes(out.CommonPrefixes))
 		}
 		if getString(out.Delimiter) != delim {
 			return fmt.Errorf("expected the delimiter to be %v, instead got %v",
@@ -6523,7 +6524,7 @@ func ListObjectsV2_non_truncated_common_prefixes(s *S3Conf) error {
 		cPrefs := []string{"cquux/"}
 		if !comparePrefixes(cPrefs, res.CommonPrefixes) {
 			return fmt.Errorf("expected common prefixes to be %v, instead got %+v",
-				cPrefs, res.CommonPrefixes)
+				cPrefs, sprintPrefixes(res.CommonPrefixes))
 		}
 
 		return nil
