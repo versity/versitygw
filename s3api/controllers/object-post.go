@@ -323,6 +323,8 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 		}, err
 	}
 
+	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
+
 	res, versid, err := c.be.CompleteMultipartUpload(ctx.Context(),
 		&s3.CompleteMultipartUploadInput{
 			Bucket:   &bucket,
@@ -338,6 +340,8 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			ChecksumSHA256:    utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
 			ChecksumCRC64NVME: utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
 			ChecksumType:      checksumType,
+			IfMatch:           ifMatch,
+			IfNoneMatch:       ifNoneMatch,
 		})
 	return &Response{
 		Data: res,

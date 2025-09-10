@@ -642,59 +642,6 @@ func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, type
 	return algo, chType, nil
 }
 
-// ConditionalHeaders holds the conditional header values
-type ConditionalHeaders struct {
-	IfMatch       *string
-	IfNoneMatch   *string
-	IfModSince    *time.Time
-	IfUnmodeSince *time.Time
-}
-
-// ParsePreconditionHeaders parses the precondition headers:
-// - If-Match
-// - If-None-Match
-// - If-Modified-Since
-// - If-Unmodified-Since
-func ParsePreconditionHeaders(ctx *fiber.Ctx) ConditionalHeaders {
-	ifMatch, ifNoneMatch := ParsePreconditionMatchHeaders(ctx)
-	ifModSince, ifUnmodeSince := ParsePreconditionDateHeaders(ctx)
-
-	return ConditionalHeaders{
-		IfMatch:       ifMatch,
-		IfNoneMatch:   ifNoneMatch,
-		IfModSince:    ifModSince,
-		IfUnmodeSince: ifUnmodeSince,
-	}
-}
-
-// ParsePreconditionMatchHeaders extracts "If-Match" and "If-None-Match" headers from fiber Ctx
-func ParsePreconditionMatchHeaders(ctx *fiber.Ctx) (*string, *string) {
-	return GetStringPtr(ctx.Get("If-Match")), GetStringPtr(ctx.Get("If-None-Match"))
-}
-
-// ParsePreconditionDateHeaders parses the "If-Modified-Since" and "If-Unmodified-Since"
-// headers from fiber context to *time.Time
-func ParsePreconditionDateHeaders(ctx *fiber.Ctx) (*time.Time, *time.Time) {
-	ifModSince := ctx.Get("If-Modified-Since")
-	ifUnmodSince := ctx.Get("If-Unmodified-Since")
-
-	var ifModSinceParsed, ifUnmodSinceParsed *time.Time
-
-	// the time format should be a valid RFC1123
-	// if parsing fails, ignore the error and leave the value as nil
-	modParsed, err := time.Parse(time.RFC1123, ifModSince)
-	if err == nil {
-		ifModSinceParsed = &modParsed
-	}
-
-	unmodParsed, err := time.Parse(time.RFC1123, ifUnmodSince)
-	if err == nil {
-		ifUnmodSinceParsed = &unmodParsed
-	}
-
-	return ifModSinceParsed, ifUnmodSinceParsed
-}
-
 // TagLimit specifies the allowed tag count in a tag set
 type TagLimit int
 

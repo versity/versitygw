@@ -518,11 +518,15 @@ type putObjectOutput struct {
 }
 
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (*putObjectOutput, error) {
-	data := make([]byte, lgth)
-	rand.Read(data)
-	csum := sha256.Sum256(data)
-	r := bytes.NewReader(data)
-	input.Body = r
+	var csum [32]byte
+	var data []byte
+	if input.Body == nil {
+		data = make([]byte, lgth)
+		rand.Read(data)
+		csum = sha256.Sum256(data)
+		r := bytes.NewReader(data)
+		input.Body = r
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	res, err := client.PutObject(ctx, input)

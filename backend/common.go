@@ -532,3 +532,41 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 
 	return nil
 }
+
+// EvaluateMatchPreconditions evaluates if-match and if-none-match preconditions
+func EvaluateMatchPreconditions(etag string, ifMatch, ifNoneMatch *string) error {
+	if ifMatch != nil && *ifMatch != etag {
+		return errPreconditionFailed
+	}
+	if ifNoneMatch != nil && *ifNoneMatch == etag {
+		return errPreconditionFailed
+	}
+
+	return nil
+}
+
+type ObjectDeletePreconditions struct {
+	IfMatch            *string
+	IfMatchLastModTime *time.Time
+	IfMatchSize        *int64
+}
+
+// EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
+func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
+	ifMatch := preconditions.IfMatch
+	if ifMatch != nil && *ifMatch != etag {
+		return errPreconditionFailed
+	}
+
+	ifMatchTime := preconditions.IfMatchLastModTime
+	if ifMatchTime != nil && ifMatchTime.Unix() != modTime.Unix() {
+		return errPreconditionFailed
+	}
+
+	ifMatchSize := preconditions.IfMatchSize
+	if ifMatchSize != nil && *ifMatchSize != size {
+		return errPreconditionFailed
+	}
+
+	return nil
+}

@@ -21,7 +21,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -355,14 +354,20 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidPartNumber)
 	}
 
+	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
+
 	resp, err := c.be.UploadPartCopy(ctx.Context(),
 		&s3.UploadPartCopyInput{
-			Bucket:          &bucket,
-			Key:             &key,
-			CopySource:      &copySource,
-			PartNumber:      &partNumber,
-			UploadId:        &uploadId,
-			CopySourceRange: &copySrcRange,
+			Bucket:                      &bucket,
+			Key:                         &key,
+			CopySource:                  &copySource,
+			PartNumber:                  &partNumber,
+			UploadId:                    &uploadId,
+			CopySourceRange:             &copySrcRange,
+			CopySourceIfMatch:           preconditionHdrs.IfMatch,
+			CopySourceIfNoneMatch:       preconditionHdrs.IfNoneMatch,
+			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
+			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
 		})
 	var headers map[string]*string
 	if err == nil && resp.CopySourceVersionId != "" {
@@ -434,10 +439,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
-	copySrcIfMatch := ctx.Get("X-Amz-Copy-Source-If-Match")
-	copySrcIfNoneMatch := ctx.Get("X-Amz-Copy-Source-If-None-Match")
-	copySrcModifSince := ctx.Get("X-Amz-Copy-Source-If-Modified-Since")
-	copySrcUnmodifSince := ctx.Get("X-Amz-Copy-Source-If-Unmodified-Since")
 	metaDirective := types.MetadataDirective(ctx.Get("X-Amz-Metadata-Directive", string(types.MetadataDirectiveCopy)))
 	taggingDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive", string(types.TaggingDirectiveCopy)))
 	contentType := ctx.Get("Content-Type")
@@ -480,35 +481,6 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	var mtime *time.Time
-	if copySrcModifSince != "" {
-		tm, err := time.Parse(iso8601Format, copySrcModifSince)
-		if err != nil {
-			debuglogger.Logf("error parsing copy source modified since %q: %v", copySrcModifSince, err)
-			// TODO: check the error type for invalid values
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
-		}
-		mtime = &tm
-	}
-	var umtime *time.Time
-	if copySrcUnmodifSince != "" {
-		tm, err := time.Parse(iso8601Format, copySrcUnmodifSince)
-		if err != nil {
-			debuglogger.Logf("error parsing copy source unmodified since %q: %v", copySrcUnmodifSince, err)
-			// TODO: check the error type for invalid values
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
-		}
-		umtime = &tm
-	}
-
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
 	if metaDirective != "" && metaDirective != types.MetadataDirectiveCopy && metaDirective != types.MetadataDirectiveReplace {
@@ -548,6 +520,8 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
+
 	res, err := c.be.CopyObject(ctx.Context(),
 		s3response.CopyObjectInput{
 			Bucket:                      &bucket,
@@ -561,10 +535,10 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 			Tagging:                     &tagging,
 			TaggingDirective:            taggingDirective,
 			CopySource:                  &copySource,
-			CopySourceIfMatch:           &copySrcIfMatch,
-			CopySourceIfNoneMatch:       &copySrcIfNoneMatch,
-			CopySourceIfModifiedSince:   mtime,
-			CopySourceIfUnmodifiedSince: umtime,
+			CopySourceIfMatch:           preconditionHdrs.IfMatch,
+			CopySourceIfNoneMatch:       preconditionHdrs.IfNoneMatch,
+			CopySourceIfModifiedSince:   preconditionHdrs.IfModSince,
+			CopySourceIfUnmodifiedSince: preconditionHdrs.IfUnmodeSince,
 			ExpectedBucketOwner:         &acct.Access,
 			Metadata:                    metadata,
 			MetadataDirective:           metaDirective,
@@ -691,6 +665,8 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		body = bytes.NewReader([]byte{})
 	}
 
+	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
+
 	res, err := c.be.PutObject(ctx.Context(),
 		s3response.PutObjectInput{
 			Bucket:                    &bucket,
@@ -714,6 +690,8 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 			ChecksumSHA1:              utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha1]),
 			ChecksumSHA256:            utils.GetStringPtr(checksums[types.ChecksumAlgorithmSha256]),
 			ChecksumCRC64NVME:         utils.GetStringPtr(checksums[types.ChecksumAlgorithmCrc64nvme]),
+			IfMatch:                   ifMatch,
+			IfNoneMatch:               ifNoneMatch,
 		})
 	return &Response{
 		Headers: map[string]*string{

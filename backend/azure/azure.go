@@ -301,6 +301,11 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 		return s3response.PutObjectOutput{}, err
 	}
 
+	err = az.evaluateWritePreconditions(ctx, po.Bucket, po.Key, po.IfMatch, po.IfNoneMatch)
+	if err != nil {
+		return s3response.PutObjectOutput{}, err
+	}
+
 	metadata := parseMetadata(po.Metadata)
 
 	// Store the "Expires" property in the object metadata
@@ -850,6 +855,42 @@ func (az *Azure) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input
 }
 
 func (az *Azure) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
+	if input.IfMatch != nil || input.IfMatchLastModifiedTime != nil || input.IfMatchSize != nil {
+		// evaluate the preconditions before deleting the object
+		props, err := az.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: input.Bucket,
+			Key:    input.Key,
+		})
+		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+			// if object doesn't exist, skip preconditions
+			// if unexpected error shows up, return the error
+			return nil, err
+		}
+		if err == nil {
+			var etag string
+			if props.ETag != nil {
+				etag = *props.ETag
+			}
+			var lastMod time.Time
+			if props.LastModified != nil {
+				lastMod = *props.LastModified
+			}
+			var size int64
+			if props.ContentLength != nil {
+				size = *props.ContentLength
+			}
+			err := backend.EvaluateObjectDeletePreconditions(etag, lastMod, size,
+				backend.ObjectDeletePreconditions{
+					IfMatch:            input.IfMatch,
+					IfMatchLastModTime: input.IfMatchLastModifiedTime,
+					IfMatchSize:        input.IfMatchSize,
+				})
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, *input.Key, nil)
 	if err != nil {
 		azerr, ok := err.(*azcore.ResponseError)
@@ -899,6 +940,26 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
 	}
+
+	srcBucket, srcObj, _, err := backend.ParseCopySource(*input.CopySource)
+	if err != nil {
+		return s3response.CopyObjectOutput{}, err
+	}
+
+	if !areNils(input.CopySourceIfMatch, input.CopySourceIfNoneMatch) || !areNils(input.CopySourceIfModifiedSince, input.CopySourceIfUnmodifiedSince) {
+		_, err = az.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:            &srcBucket,
+			Key:               &srcObj,
+			IfMatch:           input.CopySourceIfMatch,
+			IfNoneMatch:       input.CopySourceIfNoneMatch,
+			IfModifiedSince:   input.CopySourceIfModifiedSince,
+			IfUnmodifiedSince: input.CopySourceIfUnmodifiedSince,
+		})
+		if err != nil {
+			return s3response.CopyObjectOutput{}, err
+		}
+	}
+
 	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource {
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
@@ -975,11 +1036,6 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 				ETag:         backend.GetPtrFromString(convertAzureEtag(res.ETag)),
 			},
 		}, nil
-	}
-
-	srcBucket, srcObj, _, err := backend.ParseCopySource(*input.CopySource)
-	if err != nil {
-		return s3response.CopyObjectOutput{}, err
 	}
 
 	// Get the source object
@@ -1210,7 +1266,7 @@ func (az *Azure) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3
 func (az *Azure) UploadPartCopy(ctx context.Context, input *s3.UploadPartCopyInput) (s3response.CopyPartResult, error) {
 	client, err := az.getBlockBlobClient(*input.Bucket, *input.Key)
 	if err != nil {
-		return s3response.CopyPartResult{}, nil
+		return s3response.CopyPartResult{}, err
 	}
 
 	if err := az.checkIfMpExists(ctx, *input.Bucket, *input.Key, *input.UploadId); err != nil {
@@ -1413,6 +1469,22 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 // Cleans up the initiated multipart upload in .sgwtmp namespace
 func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput) error {
 	tmpPath := createMetaTmpPath(*input.Key, *input.UploadId)
+
+	if input.IfMatchInitiatedTime != nil {
+		client, err := az.getBlobClient(*input.Bucket, tmpPath)
+		if err != nil {
+			return err
+		}
+
+		resp, err := client.GetProperties(ctx, nil)
+		if err != nil {
+			return azureErrToS3Err(err)
+		}
+
+		if resp.LastModified != nil && resp.LastModified.Unix() != input.IfMatchInitiatedTime.Unix() {
+			return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+		}
+	}
 	_, err := az.client.DeleteBlob(ctx, *input.Bucket, tmpPath, nil)
 	if err != nil {
 		return parseMpError(err)
@@ -1439,6 +1511,11 @@ func (az *Azure) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultip
 // It indicates the end of the multipart upload
 func (az *Azure) CompleteMultipartUpload(ctx context.Context, input *s3.CompleteMultipartUploadInput) (s3response.CompleteMultipartUploadResult, string, error) {
 	var res s3response.CompleteMultipartUploadResult
+
+	err := az.evaluateWritePreconditions(ctx, input.Bucket, input.Key, input.IfMatch, input.IfNoneMatch)
+	if err != nil {
+		return s3response.CompleteMultipartUploadResult{}, "", err
+	}
 
 	tmpPath := createMetaTmpPath(*input.Key, *input.UploadId)
 	blobClient, err := az.getBlobClient(*input.Bucket, tmpPath)
@@ -2058,6 +2135,29 @@ func (az *Azure) deleteContainerMetaData(ctx context.Context, bucket, key string
 	return nil
 }
 
+func (az *Azure) evaluateWritePreconditions(ctx context.Context, bucket, object, ifMatch, ifNoneMatch *string) error {
+	if areNils(ifMatch, ifNoneMatch) {
+		return nil
+	}
+	// call HeadObject to evaluate preconditions
+	// if object doesn't exist, move forward with the object creation
+	// otherwise return the error
+	_, err := az.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket:      bucket,
+		Key:         object,
+		IfMatch:     ifMatch,
+		IfNoneMatch: ifNoneMatch,
+	})
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
+		return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+	}
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return err
+	}
+
+	return nil
+}
+
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
 	data, ok := meta[string(key)]
 	if !ok {
@@ -2104,4 +2204,14 @@ func convertAzureEtag(etag *azcore.ETag) string {
 	str := (*string)(etag)
 
 	return *backend.TrimEtag(str) + "-1"
+}
+
+func areNils[T any](args ...*T) bool {
+	for _, arg := range args {
+		if arg != nil {
+			return false
+		}
+	}
+
+	return true
 }
