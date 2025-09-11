@@ -113,6 +113,9 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 					"partNumber": "4",
 				},
 				locals: defaultLocals,
+				headers: map[string]string{
+					"x-amz-checksum-mode": "enabled",
+				},
 				beRes: &s3.HeadObjectOutput{
 					ETag:          utils.GetStringPtr("ETag"),
 					ContentType:   utils.GetStringPtr("application/xml"),
