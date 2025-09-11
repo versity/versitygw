@@ -23,6 +23,7 @@ source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/util/util_bucket.sh
@@ -194,6 +195,14 @@ export RUN_USERS=true
 
   run send_rest_go_command_expect_error "400" "InvalidDigest" "is not valid" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:dummy" \
     "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
+  run setup_bucket "$BUCKET_ONE_NAME"
+  assert_success
+
+  run send_put_bucket_tagging_command_check_invalid_content_md5 "$BUCKET_ONE_NAME"
   assert_success
 }
 

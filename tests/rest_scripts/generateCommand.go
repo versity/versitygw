@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+const (
+	CURL    = "curl"
+	OPENSSL = "openssl"
+)
+
 var method *string
 var url *string
 var bucketName *string
@@ -29,6 +34,9 @@ var invalidYearMonthDay *bool
 var payload *string
 var contentMD5 *bool
 var incorrectContentMD5 *bool
+var missingHostParam *bool
+var filePath *string
+var client *string
 
 type restParams map[string]string
 
@@ -76,12 +84,24 @@ func main() {
 		Payload:               *payload,
 		ContentMD5:            *contentMD5,
 		IncorrectContentMD5:   *incorrectContentMD5,
+		MissingHostParam:      *missingHostParam,
+		FilePath:              *filePath,
 	}
-	curlShellCommand, err := s3Command.CurlShellCommand()
-	if err != nil {
-		log.Fatalf("Error generating curl command: %v", err)
+	switch *client {
+	case CURL:
+		curlShellCommand, err := s3Command.CurlShellCommand()
+		if err != nil {
+			log.Fatalf("Error generating curl command: %v", err)
+		}
+		fmt.Println(curlShellCommand)
+	case OPENSSL:
+		if err := s3Command.OpenSSLCommand(); err != nil {
+			log.Fatalf("Error generating and writing openssl command: %v", err)
+		}
+	default:
+		log.Fatalln("Invalid client type: ", *client)
 	}
-	fmt.Println(curlShellCommand)
+
 }
 
 func checkFlags() error {
@@ -105,6 +125,9 @@ func checkFlags() error {
 	payload = flag.String("payload", "", "Message payload")
 	contentMD5 = flag.Bool("contentMD5", false, "Include content-md5 hash")
 	incorrectContentMD5 = flag.Bool("incorrectContentMD5", false, "Include incorrect content-md5 hash")
+	missingHostParam = flag.Bool("missingHostParam", false, "Missing host parameter")
+	filePath = flag.String("filePath", "", "Path to write command (stdout if none)")
+	client = flag.String("client", CURL, "Command-line client to use")
 	// Parse the flags
 	flag.Parse()
 
