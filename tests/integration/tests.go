@@ -23080,7 +23080,7 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 
 		if !compareVersions(versions[:maxKeys], out.Versions) {
 			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v",
-				versions[:maxKeys], out.Versions)
+				sprintVersions(versions[:maxKeys]), sprintVersions(out.Versions))
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
@@ -23116,7 +23116,7 @@ func ListObjectVersions_multiple_object_versions_truncated(s *S3Conf) error {
 
 		if !compareVersions(versions[maxKeys:], out.Versions) {
 			return fmt.Errorf("expected the resulting object versions to be %v, instead got %v",
-				versions[maxKeys:], out.Versions)
+				sprintVersions(versions[:maxKeys]), sprintVersions(out.Versions))
 		}
 
 		return nil

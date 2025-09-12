@@ -1839,3 +1839,16 @@ func sprintPrefixes(cpfx []types.CommonPrefix) string {
 
 	return strings.Join(names, ",")
 }
+
+func sprintVersions(objects []types.ObjectVersion) string {
+	if len(objects) == 0 {
+		return ""
+	}
+
+	names := make([]string, len(objects))
+	for i, obj := range objects {
+		names[i] = fmt.Sprintf("%v/%v", *obj.Key, obj.VersionId)
+	}
+
+	return strings.Join(names, ",")
+}

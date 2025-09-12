@@ -419,30 +419,14 @@ func TestOrderWalk(t *testing.T) {
 					prefix:  "dir1/",
 					expected: backend.WalkResults{
 						Objects: []s3response.Object{
-							{
-								Key: backend.GetPtrFromString("dir1/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/file1"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/file2"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file1"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file2"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file3"),
-							},
+							{Key: backend.GetPtrFromString("dir1/")},
+							{Key: backend.GetPtrFromString("dir1/a.b/")},
+							{Key: backend.GetPtrFromString("dir1/a.b/file1")},
+							{Key: backend.GetPtrFromString("dir1/a.b/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/")},
+							{Key: backend.GetPtrFromString("dir1/a/file1")},
+							{Key: backend.GetPtrFromString("dir1/a/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/file3")},
 						},
 					},
 				},
@@ -800,4 +784,310 @@ func comparePrefixesOrdered(a, b []types.CommonPrefix) bool {
 		}
 	}
 	return true
+}
+
+// ---- Versioning Tests ----
+
+// getVersionsTestFunc is a simple GetVersionsFunc implementation for tests that
+// returns a single latest version for each file or directory encountered.
+// Directories are reported with a trailing delimiter in the key to match the
+// behavior of the non-versioned Walk tests where directory objects are listed.
+func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	// If we have no available slots left, signal truncation (should be rare in these tests)
+	if availableObjCount <= 0 {
+		return &backend.ObjVersionFuncResult{Truncated: true, NextVersionIdMarker: ""}, nil
+	}
+
+	key := path
+	if d.IsDir() {
+		key = key + "/"
+	}
+	ver := "v1"
+	latest := true
+	ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
+	return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
+}
+
+// TestWalkVersions mirrors TestWalk but exercises WalkVersions and validates
+// common prefixes and object versions for typical delimiter/prefix scenarios.
+func TestWalkVersions(t *testing.T) {
+	fsys := fstest.MapFS{
+		"dir1/a/file1": {},
+		"dir1/a/file2": {},
+		"dir1/b/file3": {},
+		"rootfile":     {},
+	}
+
+	// Without a delimiter, every directory and file becomes an object version
+	// via the test GetVersionsFunc (directories have trailing '/').
+	expected := backend.WalkVersioningResults{
+		ObjectVersions: []s3response.ObjectVersion{
+			{Key: backend.GetPtrFromString("dir1/")},
+			{Key: backend.GetPtrFromString("dir1/a/")},
+			{Key: backend.GetPtrFromString("dir1/a/file1")},
+			{Key: backend.GetPtrFromString("dir1/a/file2")},
+			{Key: backend.GetPtrFromString("dir1/b/")},
+			{Key: backend.GetPtrFromString("dir1/b/file3")},
+			{Key: backend.GetPtrFromString("rootfile")},
+		},
+	}
+
+	res, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("walk versions: %v", err)
+	}
+	compareVersionResultsOrdered("simple versions no delimiter", res, expected, t)
+}
+
+// TestOrderWalkVersions mirrors TestOrderWalk, exercising ordering semantics for
+// version listings (lexicographic ordering of directory and file version keys).
+func TestOrderWalkVersions(t *testing.T) {
+	fsys := fstest.MapFS{
+		"dir1/a/file1":   {},
+		"dir1/a/file2":   {},
+		"dir1/a/file3":   {},
+		"dir1/a.b/file1": {},
+		"dir1/a.b/file2": {},
+	}
+
+	// Expect lexicographic ordering similar to non-version walk when no delimiter.
+	expected := backend.WalkVersioningResults{
+		ObjectVersions: []s3response.ObjectVersion{
+			{Key: backend.GetPtrFromString("dir1/")},
+			{Key: backend.GetPtrFromString("dir1/a.b/")},
+			{Key: backend.GetPtrFromString("dir1/a.b/file1")},
+			{Key: backend.GetPtrFromString("dir1/a.b/file2")},
+			{Key: backend.GetPtrFromString("dir1/a/")},
+			{Key: backend.GetPtrFromString("dir1/a/file1")},
+			{Key: backend.GetPtrFromString("dir1/a/file2")},
+			{Key: backend.GetPtrFromString("dir1/a/file3")},
+		},
+	}
+
+	res, err := backend.WalkVersions(context.Background(), fsys, "dir1/", "", "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("order walk versions: %v", err)
+	}
+	compareVersionResultsOrdered("order versions no delimiter", res, expected, t)
+}
+
+// compareVersionResults compares unordered sets of common prefixes and object versions
+// compareVersionResultsOrdered compares ordered slices
+func compareVersionResultsOrdered(name string, got, wanted backend.WalkVersioningResults, t *testing.T) {
+	if !compareObjectVersionsOrdered(got.ObjectVersions, wanted.ObjectVersions) {
+		t.Errorf("%v: unexpected object versions, got %v wanted %v", name, printVersionObjects(got.ObjectVersions), printVersionObjects(wanted.ObjectVersions))
+	}
+	if !comparePrefixesOrdered(got.CommonPrefixes, wanted.CommonPrefixes) {
+		t.Errorf("%v: unexpected prefix, got %v wanted %v", name, printCommonPrefixes(got.CommonPrefixes), printCommonPrefixes(wanted.CommonPrefixes))
+	}
+}
+
+func compareObjectVersionsOrdered(a, b []s3response.ObjectVersion) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for i, ov := range a {
+		if ov.Key == nil || b[i].Key == nil {
+			return false
+		}
+		if *ov.Key != *b[i].Key {
+			return false
+		}
+	}
+	return true
+}
+
+func printVersionObjects(list []s3response.ObjectVersion) string {
+	res := "["
+	for _, ov := range list {
+		var key string
+		if ov.Key == nil {
+			key = "<nil>"
+		} else {
+			key = *ov.Key
+		}
+		if res == "[" {
+			res = res + key
+		} else {
+			res = res + ", " + key
+		}
+	}
+	return res + "]"
+}
+
+// multiVersionGetVersionsFunc is a more sophisticated test function that simulates
+// multiple versions per object, similar to the integration test behavior.
+// It creates multiple versions for each file with deterministic version IDs.
+func createMultiVersionFunc(files map[string]int) backend.GetVersionsFunc {
+	// Pre-generate all versions for deterministic testing
+	versionedFiles := make(map[string][]s3response.ObjectVersion)
+
+	for path, versionCount := range files {
+		versions := make([]s3response.ObjectVersion, versionCount)
+		for i := range versionCount {
+			versionId := fmt.Sprintf("v%d", i+1)
+			isLatest := i == versionCount-1 // Last version is latest
+			key := path
+
+			versions[i] = s3response.ObjectVersion{
+				Key:       &key,
+				VersionId: &versionId,
+				IsLatest:  &isLatest,
+			}
+		}
+		// Reverse slice so latest comes first (reverse chronological order)
+		for i, j := 0, len(versions)-1; i < j; i, j = i+1, j-1 {
+			versions[i], versions[j] = versions[j], versions[i]
+		}
+		versionedFiles[path] = versions
+	}
+
+	return func(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+		if availableObjCount <= 0 {
+			return &backend.ObjVersionFuncResult{Truncated: true}, nil
+		}
+
+		// Handle directories - just return a single directory version
+		if d.IsDir() {
+			key := path + "/"
+			ver := "v1"
+			latest := true
+			ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
+			return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
+		}
+
+		// Get versions for this file
+		versions, exists := versionedFiles[path]
+		if !exists {
+			// No versions for this file, skip it
+			return &backend.ObjVersionFuncResult{}, backend.ErrSkipObj
+		}
+
+		// Handle version ID marker pagination
+		startIdx := 0
+		if versionIdMarker != "" && !*pastVersionIdMarker {
+			// Find the starting position after the marker
+			for i, version := range versions {
+				if *version.VersionId == versionIdMarker {
+					startIdx = i + 1
+					*pastVersionIdMarker = true
+					break
+				}
+			}
+		}
+
+		// Return available versions up to the limit
+		endIdx := min(startIdx+availableObjCount, len(versions))
+
+		result := &backend.ObjVersionFuncResult{
+			ObjectVersions: versions[startIdx:endIdx],
+		}
+
+		// Check if we need to truncate
+		if endIdx < len(versions) {
+			result.Truncated = true
+			result.NextVersionIdMarker = *versions[endIdx-1].VersionId
+		}
+
+		return result, nil
+	}
+}
+
+// TestWalkVersionsTruncated tests the pagination behavior of WalkVersions
+// when there are multiple versions per object and the result is truncated.
+// This mirrors the integration test ListObjectVersions_multiple_object_versions_truncated.
+func TestWalkVersionsTruncated(t *testing.T) {
+	// Create filesystem with the same files as integration test
+	fsys := fstest.MapFS{
+		"foo": {},
+		"bar": {},
+		"baz": {},
+	}
+
+	// Define version counts per file (matching integration test)
+	versionCounts := map[string]int{
+		"foo": 4, // 4 versions
+		"bar": 3, // 3 versions
+		"baz": 5, // 5 versions
+	}
+
+	getVersionsFunc := createMultiVersionFunc(versionCounts)
+
+	// Test first page with limit of 5 (should be truncated)
+	maxKeys := 5
+	res1, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", maxKeys, getVersionsFunc, []string{})
+	if err != nil {
+		t.Fatalf("walk versions first page: %v", err)
+	}
+
+	// Verify first page results
+	if !res1.Truncated {
+		t.Error("expected first page to be truncated")
+	}
+
+	if len(res1.ObjectVersions) != maxKeys {
+		t.Errorf("expected %d versions in first page, got %d", maxKeys, len(res1.ObjectVersions))
+	}
+
+	// Expected order: bar (3 versions), baz (2 versions) - lexicographic order
+	expectedFirstPage := []string{"bar", "bar", "bar", "baz", "baz"}
+	if len(res1.ObjectVersions) != len(expectedFirstPage) {
+		t.Fatalf("first page length mismatch: expected %d, got %d", len(expectedFirstPage), len(res1.ObjectVersions))
+	}
+
+	for i, expected := range expectedFirstPage {
+		if res1.ObjectVersions[i].Key == nil || *res1.ObjectVersions[i].Key != expected {
+			t.Errorf("first page[%d]: expected key %s, got %v", i, expected, res1.ObjectVersions[i].Key)
+		}
+	}
+
+	// Verify next markers are set
+	if res1.NextMarker == "" {
+		t.Error("expected NextMarker to be set on truncated result")
+	}
+	if res1.NextVersionIdMarker == "" {
+		t.Error("expected NextVersionIdMarker to be set on truncated result")
+	}
+
+	// Test second page using markers
+	res2, err := backend.WalkVersions(context.Background(), fsys, "", "", res1.NextMarker, res1.NextVersionIdMarker, maxKeys, getVersionsFunc, []string{})
+	if err != nil {
+		t.Fatalf("walk versions second page: %v", err)
+	}
+
+	t.Logf("Second page: ObjectVersions=%d, Truncated=%v, NextMarker=%s, NextVersionIdMarker=%s",
+		len(res2.ObjectVersions), res2.Truncated, res2.NextMarker, res2.NextVersionIdMarker)
+
+	for i, ov := range res2.ObjectVersions {
+		t.Logf("  [%d] Key=%s, VersionId=%s", i, *ov.Key, *ov.VersionId)
+	}
+
+	// Verify second page results
+	// With maxKeys=5, we should have 3 pages total: 5 + 5 + 2 = 12
+
+	// Test third page if needed
+	var res3 backend.WalkVersioningResults
+	if res2.Truncated {
+		res3, err = backend.WalkVersions(context.Background(), fsys, "", "", res2.NextMarker, res2.NextVersionIdMarker, maxKeys, getVersionsFunc, []string{})
+		if err != nil {
+			t.Fatalf("walk versions third page: %v", err)
+		}
+
+		t.Logf("Third page: ObjectVersions=%d, Truncated=%v, NextMarker=%s, NextVersionIdMarker=%s",
+			len(res3.ObjectVersions), res3.Truncated, res3.NextMarker, res3.NextVersionIdMarker)
+
+		for i, ov := range res3.ObjectVersions {
+			t.Logf("  [%d] Key=%s, VersionId=%s", i, *ov.Key, *ov.VersionId)
+		}
+	}
+
+	// Verify total count across all pages
+	totalVersions := len(res1.ObjectVersions) + len(res2.ObjectVersions) + len(res3.ObjectVersions)
+	expectedTotal := versionCounts["foo"] + versionCounts["bar"] + versionCounts["baz"]
+	if totalVersions != expectedTotal {
+		t.Errorf("total versions mismatch: expected %d, got %d", expectedTotal, totalVersions)
+	}
 }
