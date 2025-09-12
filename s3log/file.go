@@ -33,7 +33,7 @@ const (
 	timeFormat  = "02/January/2006:15:04:05 -0700"
 )
 
-// FileLogger is a local file audit log
+// FileLogger is a local file audit logger
 type FileLogger struct {
 	logfile string
 	f       *os.File
@@ -47,15 +47,15 @@ var _ AuditLogger = &FileLogger{}
 func InitFileLogger(logname string) (AuditLogger, error) {
 	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("open log: %w", err)
+		return nil, fmt.Errorf("open logger: %w", err)
 	}
 
-	f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+	f.WriteString(fmt.Sprintf("logger starts %v\n", time.Now()))
 
 	return &FileLogger{logfile: logname, f: f}, nil
 }
 
-// Log sends log message to file logger
+// Log sends logger message to file logger
 func (f *FileLogger) Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -211,27 +211,27 @@ func (f *FileLogger) writeLog(lf LogFields) {
 
 	_, err := f.f.WriteString(log)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error writing to log file: %v\n", err)
-		// TODO: do we need to terminate on log error?
+		fmt.Fprintf(os.Stderr, "error writing to logger file: %v\n", err)
+		// TODO: do we need to terminate on logger error?
 		// set err for now so that we don't spew errors
 		f.gotErr = true
 	}
 }
 
 // HangUp closes current logfile handle and opens a new one
-// typically needed for log rotations
+// typically needed for logger rotations
 func (f *FileLogger) HangUp() error {
 	err := f.f.Close()
 	if err != nil {
-		return fmt.Errorf("close log: %w", err)
+		return fmt.Errorf("close logger: %w", err)
 	}
 
 	f.f, err = os.OpenFile(f.logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("open log: %w", err)
+		return fmt.Errorf("open logger: %w", err)
 	}
 
-	f.f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+	f.f.WriteString(fmt.Sprintf("logger starts %v\n", time.Now()))
 
 	return nil
 }

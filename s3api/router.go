@@ -273,7 +273,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		),
 	)
 	bucketRouter.Put("",
-		middlewares.MatchQueryArgs("logging"),
+		middlewares.MatchQueryArgs("logger"),
 		controllers.ProcessHandlers(
 			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
 			metrics.ActionPutBucketLogging,
@@ -879,7 +879,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		),
 	)
 	bucketRouter.Get("",
-		middlewares.MatchQueryArgs("logging"),
+		middlewares.MatchQueryArgs("logger"),
 		controllers.ProcessHandlers(
 			ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrNotImplemented)),
 			metrics.ActionGetBucketLogging,

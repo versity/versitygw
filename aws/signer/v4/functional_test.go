@@ -45,8 +45,8 @@ func TestStandaloneSign_CustomURIEscape(t *testing.T) {
 		t.Fatalf("expect no error, got %v", err)
 	}
 
-	req.URL.Path = `/log-*/_search`
-	req.URL.Opaque = "//subdomain.us-east-1.es.amazonaws.com/log-%2A/_search"
+	req.URL.Path = `/logger-*/_search`
+	req.URL.Opaque = "//subdomain.us-east-1.es.amazonaws.com/logger-%2A/_search"
 
 	err = signer.SignHTTP(context.Background(), creds, req, v4Internal.EmptyStringSHA256, "es", "us-east-1", time.Unix(0, 0))
 	if err != nil {

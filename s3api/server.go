@@ -113,7 +113,7 @@ func WithAdminServer() Option {
 	return func(s *S3ApiServer) { s.router.WithAdmSrv = true }
 }
 
-// WithQuiet silences default logging output
+// WithQuiet silences default logger output
 func WithQuiet() Option {
 	return func(s *S3ApiServer) { s.quiet = true }
 }

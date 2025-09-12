@@ -68,12 +68,12 @@ func WithAdminSrvTLS(cert tls.Certificate) AdminOpt {
 	return func(s *S3AdminServer) { s.cert = &cert }
 }
 
-// WithQuiet silences default logging output
+// WithQuiet silences default logger output
 func WithAdminQuiet() AdminOpt {
 	return func(s *S3AdminServer) { s.quiet = true }
 }
 
-// WithAdminDebug enables the debug logging
+// WithAdminDebug enables the debug logger
 func WithAdminDebug() AdminOpt {
 	return func(s *S3AdminServer) { s.debug = true }
 }

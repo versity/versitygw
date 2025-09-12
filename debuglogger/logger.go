@@ -43,13 +43,13 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 	fullURL := ctx.Protocol() + "://" + ctx.Hostname() + ctx.OriginalURL()
 	fmt.Printf("%s[URL]: %s%s\n", green, fullURL, reset)
 
-	// log request headers
+	// logger request headers
 	wrapInBox(green, "REQUEST HEADERS", boxWidth, func() {
 		for key, value := range ctx.Request().Header.All() {
 			printWrappedLine(yellow, string(key), string(value))
 		}
 	})
-	// skip request body log for PutObject and UploadPart
+	// skip request body logger for PutObject and UploadPart
 	skipBodyLog := isLargeDataAction(ctx)
 	if !skipBodyLog {
 		body := ctx.Request().Body()
@@ -75,7 +75,7 @@ func LogFiberResponseDetails(ctx *fiber.Ctx) {
 		}
 	})
 
-	_, ok := ctx.Locals("skip-res-body-log").(bool)
+	_, ok := ctx.Locals("skip-res-body-logger").(bool)
 	if !ok {
 		body := ctx.Response().Body()
 		if len(body) != 0 {
