@@ -48,6 +48,9 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"X-Amz-Bucket-Region": utils.GetStringPtr(region),
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 					},
