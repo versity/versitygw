@@ -38,6 +38,8 @@ type S3Command struct {
 	IncorrectContentMD5          bool
 	MissingHostParam             bool
 	FilePath                     string
+	CustomHostParam              string
+	CustomHostParamSet           bool
 
 	currentDateTime      string
 	host                 string
@@ -111,6 +113,8 @@ func (s *S3Command) addHeaderValues() error {
 	s.headerValues = [][]string{}
 	if s.MissingHostParam {
 		s.headerValues = append(s.headerValues, []string{"host", ""})
+	} else if s.CustomHostParamSet {
+		s.headerValues = append(s.headerValues, []string{"host", s.CustomHostParam})
 	} else {
 		s.headerValues = append(s.headerValues, []string{"host", s.host})
 	}
@@ -258,9 +262,9 @@ func (s *S3Command) buildOpenSSLCommand() error {
 	openSSLCommand := []string{fmt.Sprintf("%s %s HTTP/1.1", s.Method, s.path)}
 	openSSLCommand = append(openSSLCommand, s.buildAuthorizationString())
 	for _, headerValue := range s.headerValues {
-		/*if headerValue[0] == "host" && s.MissingHostParam {
+		if headerValue[0] == "host" && s.MissingHostParam {
 			continue
-		}*/
+		}
 		openSSLCommand = append(openSSLCommand, fmt.Sprintf("%s:%s", headerValue[0], headerValue[1]))
 	}
 	openSSLCommand = append(openSSLCommand, "\r\n")

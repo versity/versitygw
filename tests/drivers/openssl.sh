@@ -98,7 +98,7 @@ send_openssl_go_command_expect_error() {
     log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, go params)"
     return 1
   fi
-  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
+  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
     log 2 "error sending go command and checking error"
     return 1
   fi

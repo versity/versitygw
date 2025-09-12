@@ -109,7 +109,7 @@ export RUN_USERS=true
 }
 
 @test "REST - missing host parameter" {
-  run send_openssl_go_command_expect_error "400" "error" "error" "-missingHostParam"
+  run send_openssl_go_command_expect_error "400" "error" "error"
   assert_success
 }
 

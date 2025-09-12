@@ -37,6 +37,8 @@ var incorrectContentMD5 *bool
 var missingHostParam *bool
 var filePath *string
 var client *string
+var customHostParam *string
+var customHostParamSet bool = false
 
 type restParams map[string]string
 
@@ -86,6 +88,8 @@ func main() {
 		IncorrectContentMD5:   *incorrectContentMD5,
 		MissingHostParam:      *missingHostParam,
 		FilePath:              *filePath,
+		CustomHostParam:       *customHostParam,
+		CustomHostParamSet:    customHostParamSet,
 	}
 	switch *client {
 	case CURL:
@@ -126,10 +130,17 @@ func checkFlags() error {
 	contentMD5 = flag.Bool("contentMD5", false, "Include content-md5 hash")
 	incorrectContentMD5 = flag.Bool("incorrectContentMD5", false, "Include incorrect content-md5 hash")
 	missingHostParam = flag.Bool("missingHostParam", false, "Missing host parameter")
+	customHostParam = flag.String("customHostParam", "", "Custom host parameter")
 	filePath = flag.String("filePath", "", "Path to write command (stdout if none)")
 	client = flag.String("client", CURL, "Command-line client to use")
 	// Parse the flags
 	flag.Parse()
+
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "customHostParam" {
+			customHostParamSet = true
+		}
+	})
 
 	if flag.Lookup("awsAccessKeyId").Value.String() == "" {
 		return fmt.Errorf("the 'awsAccessKeyId' value must be set")
