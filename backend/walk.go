@@ -625,178 +625,319 @@ type GetVersionsFunc func(path, versionIdMarker string, pastVersionIdMarker *boo
 // WalkVersions walks the supplied fs.FS and returns results compatible with
 // ListObjectVersions action response
 func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyMarker, versionIdMarker string, max int, getObj GetVersionsFunc, skipdirs []string) (WalkVersioningResults, error) {
-	cpmap := cpMap{}
-	var objects []s3response.ObjectVersion
-	var delMarkers []types.DeleteMarkerEntry
-
-	var pastMarker bool
-	if keyMarker == "" {
-		pastMarker = true
+	// Early return for zero max
+	if max == 0 {
+		return WalkVersioningResults{}, nil
 	}
-	var nextMarker string
-	var nextVersionIdMarker string
-	var truncated bool
 
-	pastVersionIdMarker := versionIdMarker == ""
+	// Reuse the same lexicographic traversal strategy as Walk() to guarantee
+	// ordering of directory "objects" (dir/) vs files (dir/file) where the
+	// filesystem readdir order may differ from full-path lexical ordering.
 
-	err := fs.WalkDir(fileSystem, pathDot, func(path string, d fs.DirEntry, err error) error {
+	type versionWalkState struct {
+		ctx                 context.Context
+		fileSystem          fs.FS
+		prefix              string
+		delimiter           string
+		keyMarker           string
+		versionIdMarker     string
+		max                 int
+		getVersions         GetVersionsFunc
+		skipdirs            []string
+		cpmap               cpMap
+		objectVersions      []s3response.ObjectVersion
+		delMarkers          []types.DeleteMarkerEntry
+		pastMarker          bool
+		pastVersionIdMarker bool
+		pastMax             bool
+		newMarker           string
+		newVersionIdMarker  string
+		truncated           bool
+	}
+
+	state := &versionWalkState{
+		ctx:                 ctx,
+		fileSystem:          fileSystem,
+		prefix:              prefix,
+		delimiter:           delimiter,
+		keyMarker:           keyMarker,
+		versionIdMarker:     versionIdMarker,
+		max:                 max,
+		getVersions:         getObj,
+		skipdirs:            skipdirs,
+		cpmap:               cpMap{},
+		pastMarker:          keyMarker == "",
+		pastVersionIdMarker: versionIdMarker == "",
+	}
+
+	// Helper methods
+	available := func() int { return state.max - (len(state.objectVersions) + len(state.delMarkers) + state.cpmap.Len()) }
+	checkLimits := func() bool { return state.pastMax || state.ctx.Err() != nil }
+	isBeforeMarker := func(path string) bool { return !state.pastMarker && path < state.keyMarker }
+	isAtMarker := func(path string) bool { return !state.pastMarker && path == state.keyMarker }
+	addVersions := func(path string, d fs.DirEntry) error {
+		if available() <= 0 {
+			state.pastMax = true
+			return nil
+		}
+		res, err := state.getVersions(path, state.versionIdMarker, &state.pastVersionIdMarker, available(), d)
+		if err == ErrSkipObj {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("version object for %q: %w", path, err)
+		}
+		state.objectVersions = append(state.objectVersions, res.ObjectVersions...)
+		state.delMarkers = append(state.delMarkers, res.DelMarkers...)
+		if res.Truncated {
+			state.truncated = true
+			state.newMarker = path
+			state.newVersionIdMarker = res.NextVersionIdMarker
+			state.pastMax = true
+			return nil
+		}
+		if available() <= 0 {
+			state.newMarker = path
+			state.pastMax = true
+		}
+		return nil
+	}
+	addCommonPrefix := func(cpref string) {
+		if state.pastMax {
+			return
+		}
+		state.cpmap.Add(cpref)
+		if available() <= 0 {
+			state.newMarker = cpref
+			state.pastMax = true
+		}
+	}
+
+	var walkLexSort func(dir string) error
+
+	walkLexSort = func(dir string) error {
+		if state.ctx.Err() != nil {
+			return state.ctx.Err()
+		}
+		entries, err := buildSortedEntries(state.fileSystem, dir, state.skipdirs)
 		if err != nil {
 			return err
 		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		// Ignore the root directory
-		if path == pathDot {
-			return nil
-		}
-		if slices.Contains(skipdirs, d.Name()) {
-			return fs.SkipDir
-		}
-
-		if !pastMarker {
-			if path == keyMarker {
-				pastMarker = true
+		for i, entry := range entries {
+			if checkLimits() {
+				if state.pastMax {
+					// There are more entries -> truncated
+					if i < len(entries)-1 || len(entries) > 0 {
+						state.truncated = true
+					}
+				}
+				return state.ctx.Err()
 			}
-			if path < keyMarker {
+			if state.pastMax {
+				state.truncated = true
+				return nil
+			}
+			path := entry.path
+			d := entry.d
+			if d.IsDir() {
+				// Directory processing
+				dirPath := path + pathSeparator
+				if shouldSkipDirectory(dirPath, state.prefix) {
+					continue
+				}
+				if isBeforeMarker(path) { // marker comparisons use raw path (without trailing slash)
+					// Only recurse if marker could be inside
+					if strings.HasPrefix(state.keyMarker, dirPath) {
+						if err := walkLexSort(path); err != nil {
+							return err
+						}
+					}
+					continue
+				}
+				if isAtMarker(path) {
+					state.pastMarker = true
+					if err := walkLexSort(path); err != nil {
+						return err
+					}
+					continue
+				}
+				// Prefix logic
+				if state.prefix != "" && !strings.HasPrefix(dirPath, state.prefix) {
+					if err := walkLexSort(path); err != nil {
+						return err
+					}
+					continue
+				}
+				if state.delimiter != "" {
+					// Delimiter mode
+					if dirPath == state.prefix { // include the prefix dir itself as an object
+						if err := addVersions(path, d); err != nil {
+							return err
+						}
+						if state.pastMax {
+							state.truncated = true
+							return nil
+						}
+					}
+					suffix := strings.TrimPrefix(dirPath, state.prefix)
+					before, _, found := strings.Cut(suffix, state.delimiter)
+					if found { // forms common prefix
+						cprefNoDelim := state.prefix + before
+						cpref := cprefNoDelim + state.delimiter
+						if isBeforeMarker(cpref) {
+							if state.keyMarker != "" && strings.HasPrefix(state.keyMarker, cprefNoDelim) {
+								if err := walkLexSort(path); err != nil {
+									return err
+								}
+							}
+							continue
+						}
+						if isAtMarker(cpref) {
+							state.pastMarker = true
+							if err := walkLexSort(path); err != nil {
+								return err
+							}
+							continue
+						}
+						if state.keyMarker != "" && cpref <= state.keyMarker {
+							if err := walkLexSort(path); err != nil {
+								return err
+							}
+							continue
+						}
+						addCommonPrefix(cpref)
+						if state.pastMax {
+							state.truncated = true
+							return nil
+						}
+						if err := walkLexSort(path); err != nil {
+							return err
+						}
+						continue
+					}
+					// Recurse deeper
+					if err := walkLexSort(path); err != nil {
+						return err
+					}
+					continue
+				}
+				// No delimiter: include directory as object version
+				if err := addVersions(path, d); err != nil {
+					return err
+				}
+				if state.pastMax {
+					state.truncated = true
+					return nil
+				}
+				if err := walkLexSort(path); err != nil {
+					return err
+				}
+				continue
+			}
+			// File processing
+			if isBeforeMarker(path) {
+				continue
+			}
+			if isAtMarker(path) {
+				state.pastMarker = true
+				continue
+			}
+			if state.prefix != "" && !strings.HasPrefix(path, state.prefix) {
+				continue
+			}
+			if state.delimiter != "" {
+				suffix := strings.TrimPrefix(path, state.prefix)
+				before, _, found := strings.Cut(suffix, state.delimiter)
+				if !found { // include file
+					if err := addVersions(path, d); err != nil {
+						return err
+					}
+					if state.pastMax {
+						state.truncated = true
+						return nil
+					}
+				} else { // add common prefix
+					cprefNoDelim := state.prefix + before
+					cpref := cprefNoDelim + state.delimiter
+					if isBeforeMarker(cpref) {
+						continue
+					}
+					if isAtMarker(cpref) {
+						state.pastMarker = true
+						continue
+					}
+					if state.keyMarker != "" && cpref <= state.keyMarker {
+						continue
+					}
+					addCommonPrefix(cpref)
+					if state.pastMax {
+						state.truncated = true
+						return nil
+					}
+				}
+				continue
+			}
+			// No delimiter
+			if err := addVersions(path, d); err != nil {
+				return err
+			}
+			if state.pastMax {
+				state.truncated = true
 				return nil
 			}
 		}
-
-		if d.IsDir() {
-			// If prefix is defined and the directory does not match prefix,
-			// do not descend into the directory because nothing will
-			// match this prefix. Make sure to append the / at the end of
-			// directories since this is implied as a directory path name.
-			// If path is a prefix of prefix, then path could still be
-			// building to match. So only skip if path isn't a prefix of prefix
-			// and prefix isn't a prefix of path.
-			if prefix != "" &&
-				!strings.HasPrefix(path+pathSeparator, prefix) &&
-				!strings.HasPrefix(prefix, path+pathSeparator) {
-				return fs.SkipDir
-			}
-
-			// Don't recurse into subdirectories when listing with delimiter.
-			if delimiter == pathSeparator &&
-				prefix != path+pathSeparator &&
-				strings.HasPrefix(path+pathSeparator, prefix) {
-				cpmap.Add(path + pathSeparator)
-				return fs.SkipDir
-			}
-
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("directory to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
-		}
-
-		// If object doesn't have prefix, don't include in results.
-		if prefix != "" && !strings.HasPrefix(path, prefix) {
-			return nil
-		}
-
-		if delimiter == "" {
-			// If no delimiter specified, then all files with matching
-			// prefix are included in results
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-
-			return nil
-		}
-
-		// Since delimiter is specified, we only want results that
-		// do not contain the delimiter beyond the prefix.  If the
-		// delimiter exists past the prefix, then the substring
-		// between the prefix and delimiter is part of common prefixes.
-		//
-		// For example:
-		// prefix = A/
-		// delimiter = /
-		// and objects:
-		// A/file
-		// A/B/file
-		// B/C
-		// would return:
-		// objects: A/file
-		// common prefix: A/B/
-		//
-		// Note: No objects are included past the common prefix since
-		// these are all rolled up into the common prefix.
-		// Note: The delimiter can be anything, so we have to operate on
-		// the full path without any assumptions on posix directory hierarchy
-		// here.  Usually the delimiter will be pathSeparator, but thats not required.
-		suffix := strings.TrimPrefix(path, prefix)
-		before, _, found := strings.Cut(suffix, delimiter)
-		if !found {
-			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
-			if err == ErrSkipObj {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("file to object %q: %w", path, err)
-			}
-			objects = append(objects, res.ObjectVersions...)
-			delMarkers = append(delMarkers, res.DelMarkers...)
-
-			if res.Truncated {
-				truncated = true
-				nextMarker = path
-				nextVersionIdMarker = res.NextVersionIdMarker
-				return fs.SkipAll
-			}
-			return nil
-		}
-
-		// Common prefixes are a set, so should not have duplicates.
-		// These are abstractly a "directory", so need to include the
-		// delimiter at the end.
-		cpmap.Add(prefix + before + delimiter)
-		if (len(objects) + cpmap.Len()) == int(max) {
-			nextMarker = path
-			truncated = true
-
-			return fs.SkipAll
-		}
-
 		return nil
-	})
-	if err != nil {
+	}
+
+	root := pathDot
+	if strings.Contains(prefix, pathSeparator) {
+		if idx := strings.LastIndex(prefix, pathSeparator); idx > 0 {
+			root = prefix[:idx]
+		}
+	}
+
+	// Special handling: if no delimiter and prefix ends with a separator, include the
+	// directory object for that prefix before traversing children (mirrors Walk()).
+	if state.delimiter == "" && state.prefix != "" && strings.HasSuffix(state.prefix, pathSeparator) {
+		prefixDir := strings.TrimSuffix(state.prefix, pathSeparator)
+		// Determine entry name (last element)
+		name := prefixDir
+		if idx := strings.LastIndex(prefixDir, pathSeparator); idx >= 0 {
+			name = prefixDir[idx+1:]
+		}
+		// Marker logic similar to Walk.handlePrefixDirectory
+		if state.pastMarker || state.keyMarker == "" || prefixDir <= state.keyMarker {
+			if state.keyMarker == "" || prefixDir < state.keyMarker || prefixDir == state.keyMarker {
+				if prefixDir != state.keyMarker {
+					// Use fakeDirEntry to represent the directory
+					if err := addVersions(prefixDir, &fakeDirEntry{name: name, isDir: true}); err != nil {
+						return WalkVersioningResults{}, err
+					}
+				}
+				if prefixDir == state.keyMarker {
+					state.pastMarker = true
+				}
+			}
+		}
+	}
+
+	if err := walkLexSort(root); err != nil {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return WalkVersioningResults{}, nil
+		}
 		return WalkVersioningResults{}, err
 	}
 
+	if !state.truncated {
+		state.newMarker = ""
+	}
+
 	return WalkVersioningResults{
-		CommonPrefixes:      cpmap.CpArray(),
-		ObjectVersions:      objects,
-		DelMarkers:          delMarkers,
-		Truncated:           truncated,
-		NextMarker:          nextMarker,
-		NextVersionIdMarker: nextVersionIdMarker,
+		CommonPrefixes:      state.cpmap.CpArray(),
+		ObjectVersions:      state.objectVersions,
+		DelMarkers:          state.delMarkers,
+		Truncated:           state.truncated,
+		NextMarker:          state.newMarker,
+		NextVersionIdMarker: state.newVersionIdMarker,
 	}, nil
 }

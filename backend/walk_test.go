@@ -419,30 +419,14 @@ func TestOrderWalk(t *testing.T) {
 					prefix:  "dir1/",
 					expected: backend.WalkResults{
 						Objects: []s3response.Object{
-							{
-								Key: backend.GetPtrFromString("dir1/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/file1"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a.b/file2"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file1"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file2"),
-							},
-							{
-								Key: backend.GetPtrFromString("dir1/a/file3"),
-							},
+							{Key: backend.GetPtrFromString("dir1/")},
+							{Key: backend.GetPtrFromString("dir1/a.b/")},
+							{Key: backend.GetPtrFromString("dir1/a.b/file1")},
+							{Key: backend.GetPtrFromString("dir1/a.b/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/")},
+							{Key: backend.GetPtrFromString("dir1/a/file1")},
+							{Key: backend.GetPtrFromString("dir1/a/file2")},
+							{Key: backend.GetPtrFromString("dir1/a/file3")},
 						},
 					},
 				},
@@ -800,4 +784,136 @@ func comparePrefixesOrdered(a, b []types.CommonPrefix) bool {
 		}
 	}
 	return true
+}
+
+// ---- Versioning Tests ----
+
+// getVersionsTestFunc is a simple GetVersionsFunc implementation for tests that
+// returns a single latest version for each file or directory encountered.
+// Directories are reported with a trailing delimiter in the key to match the
+// behavior of the non-versioned Walk tests where directory objects are listed.
+func getVersionsTestFunc(path, versionIdMarker string, pastVersionIdMarker *bool, availableObjCount int, d fs.DirEntry) (*backend.ObjVersionFuncResult, error) {
+	// If we have no available slots left, signal truncation (should be rare in these tests)
+	if availableObjCount <= 0 {
+		return &backend.ObjVersionFuncResult{Truncated: true, NextVersionIdMarker: ""}, nil
+	}
+
+	key := path
+	if d.IsDir() {
+		key = key + "/"
+	}
+	ver := "v1"
+	latest := true
+	ov := s3response.ObjectVersion{Key: &key, VersionId: &ver, IsLatest: &latest}
+	return &backend.ObjVersionFuncResult{ObjectVersions: []s3response.ObjectVersion{ov}}, nil
+}
+
+// TestWalkVersions mirrors TestWalk but exercises WalkVersions and validates
+// common prefixes and object versions for typical delimiter/prefix scenarios.
+func TestWalkVersions(t *testing.T) {
+	fsys := fstest.MapFS{
+		"dir1/a/file1": {},
+		"dir1/a/file2": {},
+		"dir1/b/file3": {},
+		"rootfile":     {},
+	}
+
+	// Without a delimiter, every directory and file becomes an object version
+	// via the test GetVersionsFunc (directories have trailing '/').
+	expected := backend.WalkVersioningResults{
+		ObjectVersions: []s3response.ObjectVersion{
+			{Key: backend.GetPtrFromString("dir1/")},
+			{Key: backend.GetPtrFromString("dir1/a/")},
+			{Key: backend.GetPtrFromString("dir1/a/file1")},
+			{Key: backend.GetPtrFromString("dir1/a/file2")},
+			{Key: backend.GetPtrFromString("dir1/b/")},
+			{Key: backend.GetPtrFromString("dir1/b/file3")},
+			{Key: backend.GetPtrFromString("rootfile")},
+		},
+	}
+
+	res, err := backend.WalkVersions(context.Background(), fsys, "", "", "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("walk versions: %v", err)
+	}
+	compareVersionResultsOrdered("simple versions no delimiter", res, expected, t)
+}
+
+// TestOrderWalkVersions mirrors TestOrderWalk, exercising ordering semantics for
+// version listings (lexicographic ordering of directory and file version keys).
+func TestOrderWalkVersions(t *testing.T) {
+	fsys := fstest.MapFS{
+		"dir1/a/file1":   {},
+		"dir1/a/file2":   {},
+		"dir1/a/file3":   {},
+		"dir1/a.b/file1": {},
+		"dir1/a.b/file2": {},
+	}
+
+	// Expect lexicographic ordering similar to non-version walk when no delimiter.
+	expected := backend.WalkVersioningResults{
+		ObjectVersions: []s3response.ObjectVersion{
+			{Key: backend.GetPtrFromString("dir1/")},
+			{Key: backend.GetPtrFromString("dir1/a.b/")},
+			{Key: backend.GetPtrFromString("dir1/a.b/file1")},
+			{Key: backend.GetPtrFromString("dir1/a.b/file2")},
+			{Key: backend.GetPtrFromString("dir1/a/")},
+			{Key: backend.GetPtrFromString("dir1/a/file1")},
+			{Key: backend.GetPtrFromString("dir1/a/file2")},
+			{Key: backend.GetPtrFromString("dir1/a/file3")},
+		},
+	}
+
+	res, err := backend.WalkVersions(context.Background(), fsys, "dir1/", "", "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("order walk versions: %v", err)
+	}
+	compareVersionResultsOrdered("order versions no delimiter", res, expected, t)
+}
+
+// compareVersionResults compares unordered sets of common prefixes and object versions
+// compareVersionResultsOrdered compares ordered slices
+func compareVersionResultsOrdered(name string, got, wanted backend.WalkVersioningResults, t *testing.T) {
+	if !compareObjectVersionsOrdered(got.ObjectVersions, wanted.ObjectVersions) {
+		t.Errorf("%v: unexpected object versions, got %v wanted %v", name, printVersionObjects(got.ObjectVersions), printVersionObjects(wanted.ObjectVersions))
+	}
+	if !comparePrefixesOrdered(got.CommonPrefixes, wanted.CommonPrefixes) {
+		t.Errorf("%v: unexpected prefix, got %v wanted %v", name, printCommonPrefixes(got.CommonPrefixes), printCommonPrefixes(wanted.CommonPrefixes))
+	}
+}
+
+func compareObjectVersionsOrdered(a, b []s3response.ObjectVersion) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for i, ov := range a {
+		if ov.Key == nil || b[i].Key == nil {
+			return false
+		}
+		if *ov.Key != *b[i].Key {
+			return false
+		}
+	}
+	return true
+}
+
+func printVersionObjects(list []s3response.ObjectVersion) string {
+	res := "["
+	for _, ov := range list {
+		var key string
+		if ov.Key == nil {
+			key = "<nil>"
+		} else {
+			key = *ov.Key
+		}
+		if res == "[" {
+			res = res + key
+		} else {
+			res = res + ", " + key
+		}
+	}
+	return res + "]"
 }
