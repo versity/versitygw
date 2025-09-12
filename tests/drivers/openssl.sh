@@ -94,8 +94,7 @@ send_via_openssl_with_timeout() {
 }
 
 send_openssl_go_command_expect_error() {
-  if [ $# -lt 3 ]; then
-    log 2 "'send_rest_go_command_expect_error' param count must be 3 or greater, odd (expected HTTP code, expected error code, expected message, go params)"
+  if ! check_param_count_gt "expected HTTP code, expected error code, expected message, params" 4 $#; then
     return 1
   fi
   if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
@@ -104,6 +103,21 @@ send_openssl_go_command_expect_error() {
   fi
   if ! send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then
     log 2 "error sending via openssl"
+    return 1
+  fi
+  return 0
+}
+
+send_openssl_go_command() {
+  if ! check_param_count_gt "expected HTTP code, params" 2 $#; then
+    return 1
+  fi
+  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:2}"; then
+    log 2 "error sending go command and checking error"
+    return 1
+  fi
+  if ! result=$(send_via_openssl_and_check_code "$TEST_FILE_FOLDER/openssl_command.txt" "$1" 2>&1); then
+    log 2 "error sending via openssl and checking code: $result"
     return 1
   fi
   return 0
