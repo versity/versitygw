@@ -379,7 +379,7 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
 	acceptRange := ctx.Get("Range")
-	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
+	checksumMode := types.ChecksumMode(strings.ToUpper(ctx.Get("x-amz-checksum-mode")))
 	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
 
 	// Extract response override query parameters

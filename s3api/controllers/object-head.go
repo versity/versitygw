@@ -80,7 +80,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		partNumber = &partNumberQuery
 	}
 
-	checksumMode := types.ChecksumMode(ctx.Get("x-amz-checksum-mode"))
+	checksumMode := types.ChecksumMode(strings.ToUpper(ctx.Get("x-amz-checksum-mode")))
 	if checksumMode != "" && checksumMode != types.ChecksumModeEnabled {
 		debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)
 		return &Response{
