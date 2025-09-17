@@ -31,7 +31,7 @@ import (
 func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// skip for authenticated requests
-		if ctx.Query("X-Amz-Algorithm") != "" || ctx.Get("Authorization") != "" {
+		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
 			return nil
 		}
 

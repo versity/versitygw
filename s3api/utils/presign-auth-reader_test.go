@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -37,7 +38,7 @@ func Test_validateExpiration(t *testing.T) {
 				str:  "",
 				date: time.Now(),
 			},
-			err: s3err.GetAPIError(s3err.ErrInvalidQueryParams),
+			err: s3err.QueryAuthErrors.MissingRequiredParams(),
 		},
 		{
 			name: "invalid-expiration",
@@ -45,7 +46,7 @@ func Test_validateExpiration(t *testing.T) {
 				str:  "invalid_expiration",
 				date: time.Now(),
 			},
-			err: s3err.GetAPIError(s3err.ErrMalformedExpires),
+			err: s3err.QueryAuthErrors.ExpiresNumber(),
 		},
 		{
 			name: "negative-expiration",
@@ -53,7 +54,7 @@ func Test_validateExpiration(t *testing.T) {
 				str:  "-320",
 				date: time.Now(),
 			},
-			err: s3err.GetAPIError(s3err.ErrNegativeExpires),
+			err: s3err.QueryAuthErrors.ExpiresNegative(),
 		},
 		{
 			name: "exceeding-expiration",
@@ -61,7 +62,7 @@ func Test_validateExpiration(t *testing.T) {
 				str:  "6048000",
 				date: time.Now(),
 			},
-			err: s3err.GetAPIError(s3err.ErrMaximumExpires),
+			err: s3err.QueryAuthErrors.ExpiresTooLarge(),
 		},
 		{
 			name: "expired value",
@@ -95,6 +96,25 @@ func Test_validateExpiration(t *testing.T) {
 			if err.Error() != tt.err.Error() {
 				t.Errorf("Expected error: %v, got: %v", tt.err, err)
 			}
+		})
+	}
+}
+
+func Test_validateAlgorithm(t *testing.T) {
+	tests := []struct {
+		name string
+		algo string
+		err  error
+	}{
+		{"empty", "", s3err.QueryAuthErrors.MissingRequiredParams()},
+		{"AWS4-HMAC-SHA256", "AWS4-HMAC-SHA256", nil},
+		{"AWS4-ECDSA-P256-SHA256", "AWS4-ECDSA-P256-SHA256", s3err.QueryAuthErrors.OnlyHMACSupported()},
+		{"invalid", "invalid algo", s3err.QueryAuthErrors.UnsupportedAlgorithm()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAlgorithm(tt.algo)
+			assert.EqualValues(t, tt.err, err)
 		})
 	}
 }

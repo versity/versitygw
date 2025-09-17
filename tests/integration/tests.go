@@ -68,11 +68,7 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingFields)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAuthHeader))
 	})
 }
 
@@ -94,16 +90,117 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationType))
 	})
 }
 
-func Authentication_malformed_credentials(s *S3Conf) error {
-	testName := "Authentication_malformed_credentials"
+func Authentication_missing_components(s *S3Conf) error {
+	testName := "Authentication_missing_components"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		// missing SignedHeaders component
+		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=access/20250912/us-east-1/s3/aws4_request,Signature=5fb279ae552098ea7c5c807df54cdb159e74939e19449b29831552639ec34b29")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingComponents())
+	})
+}
+
+func Authentication_malformed_component(s *S3Conf) error {
+	testName := "Authentication_malformed_component"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		// malformed SignedHeaders
+		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=access/20250912/us-east-1/s3/aws4_request,SignedHeaders-Content-Length,Signature=signature")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MalformedComponent("SignedHeaders-Content-Length"))
+	})
+}
+
+func Authentication_missing_credentials(s *S3Conf) error {
+	testName := "Authentication_missing_credentials"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		// missing Credentials
+		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 missing_creds=access/20250912/us-east-1/s3/aws4_request,SignedHeaders=content-length;x-amz-date,Signature=5fb279ae552098ea7c5c807df54cdb159e74939e19449b29831552639ec34b29")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingCredential())
+	})
+}
+
+func Authentication_missing_signedheaders(s *S3Conf) error {
+	testName := "Authentication_missing_signedheaders"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		// missing SignedHeaders
+		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=access/20250912/us-east-1/s3/aws4_request,missing=content-length;x-amz-date,Signature=5fb279ae552098ea7c5c807df54cdb159e74939e19449b29831552639ec34b29")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingSignedHeaders())
+	})
+}
+
+func Authentication_missing_signature(s *S3Conf) error {
+	testName := "Authentication_missing_signature"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodGet,
+		body:     nil,
+		service:  "s3",
+		date:     time.Now(),
+	}, func(req *http.Request) error {
+		// missing Signature
+		req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=access/20250912/us-east-1/s3/aws4_request,SignedHeaders=content-length;x-amz-date,missing=5fb279ae552098ea7c5c807df54cdb159e74939e19449b29831552639ec34b29")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingSignature())
+	})
+}
+
+func Authentication_malformed_credential(s *S3Conf) error {
+	testName := "Authentication_malformed_credential"
 	return authHandler(s, &authConfig{
 		testName: testName,
 		method:   http.MethodGet,
@@ -113,7 +210,7 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 	}, func(req *http.Request) error {
 		authHdr := req.Header.Get("Authorization")
 		regExp := regexp.MustCompile("Credential=[^,]+,")
-		hdr := regExp.ReplaceAllString(authHdr, "Credential-access/32234/us-east-1/s3/aws4_request,")
+		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/32234/us-east-1/s3/extra/things,")
 		req.Header.Set("Authorization", hdr)
 
 		resp, err := s.httpClient.Do(req)
@@ -121,43 +218,12 @@ func Authentication_malformed_credentials(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MalformedCredential())
 	})
 }
 
-func Authentication_malformed_credentials_invalid_parts(s *S3Conf) error {
-	testName := "Authentication_malformed_credentials_invalid_parts"
-	return authHandler(s, &authConfig{
-		testName: testName,
-		method:   http.MethodGet,
-		body:     nil,
-		service:  "s3",
-		date:     time.Now(),
-	}, func(req *http.Request) error {
-		authHdr := req.Header.Get("Authorization")
-		regExp := regexp.MustCompile("Credential=[^,]+,")
-		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/32234/us-east-1/s3,")
-		req.Header.Set("Authorization", hdr)
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-func Authentication_credentials_terminated_string(s *S3Conf) error {
-	testName := "Authentication_credentials_terminated_string"
+func Authentication_credentials_invalid_terminal(s *S3Conf) error {
+	testName := "Authentication_credentials_invalid_terminal"
 	return authHandler(s, &authConfig{
 		testName: testName,
 		method:   http.MethodGet,
@@ -175,11 +241,7 @@ func Authentication_credentials_terminated_string(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.InvalidTerminal("aws_request"))
 	})
 }
 
@@ -189,20 +251,20 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 		testName: testName,
 		method:   http.MethodGet,
 		body:     nil,
-		service:  "ec2",
+		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
+		authHdr := req.Header.Get("Authorization")
+		regExp := regexp.MustCompile("Credential=[^,]+,")
+		hdr := regExp.ReplaceAllString(authHdr, "Credential=access/32234/us-east-1/ec2/aws4_request,")
+		req.Header.Set("Authorization", hdr)
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.IncorrectService("ec2"))
 	})
 }
 
@@ -221,22 +283,12 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		apiErr := s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
-			HTTPStatusCode: http.StatusForbidden,
-		}
-
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, apiErr); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.IncorrectRegion(s.awsRegion, cfg.awsRegion))
 	})
 }
 
@@ -259,11 +311,7 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.InvalidDateFormat("3223423234"))
 	})
 }
 
@@ -360,38 +408,7 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-func Authentication_invalid_signed_headers(s *S3Conf) error {
-	testName := "Authentication_invalid_signed_headers"
-	return authHandler(s, &authConfig{
-		testName: testName,
-		method:   http.MethodGet,
-		body:     nil,
-		service:  "s3",
-		date:     time.Now(),
-	}, func(req *http.Request) error {
-		authHdr := req.Header.Get("Authorization")
-		regExp := regexp.MustCompile("SignedHeaders=[^,]+,")
-		hdr := regExp.ReplaceAllString(authHdr, "SignedHeaders-host;x-amz-content-sha256;x-amz-date,")
-		req.Header.Set("Authorization", hdr)
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
 	})
 }
 
@@ -411,11 +428,7 @@ func Authentication_missing_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader))
 	})
 }
 
@@ -435,11 +448,7 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedDate)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader))
 	})
 }
 
@@ -452,18 +461,22 @@ func Authentication_date_mismatch(s *S3Conf) error {
 		service:  "s3",
 		date:     time.Now(),
 	}, func(req *http.Request) error {
-		req.Header.Set("X-Amz-Date", "20220830T095525Z")
+		err := createUsers(s, []user{testuser1})
+		if err != nil {
+			return err
+		}
+
+		authHdr := req.Header.Get("Authorization")
+		regExp := regexp.MustCompile("Credential=[^,]+,")
+		hdr := regExp.ReplaceAllString(authHdr, "Credential=grt1/20250912/us-east-1/s3/aws4_request,")
+		req.Header.Set("Authorization", hdr)
 
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.DateMismatch())
 	})
 }
 
@@ -483,11 +496,7 @@ func Authentication_invalid_sha256_payload_hash(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod))
 	})
 }
 
@@ -508,11 +517,7 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
 	})
 }
 
@@ -533,11 +538,7 @@ func Authentication_incorrect_md5(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest))
 	})
 }
 
@@ -558,11 +559,33 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 			return err
 		}
 		defer resp.Body.Close()
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch)); err != nil {
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
+	})
+}
+
+func PresignedAuth_security_token_not_supported(s *S3Conf) error {
+	testName := "PresignedAuth_security_token_not_supported"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
+		cancel()
+		if err != nil {
 			return err
 		}
 
-		return nil
+		uri := v4req.URL + "&X-Amz-Security-Token=my_token"
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.SecurityTokenNotSupported())
 	})
 }
 
@@ -588,11 +611,66 @@ func PresignedAuth_unsupported_algorithm(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)); err != nil {
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.UnsupportedAlgorithm())
+	})
+}
+
+func PresignedAuth_ECDSA_not_supported(s *S3Conf) error {
+	testName := "PresignedAuth_ECDSA_not_supported"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
+		cancel()
+		if err != nil {
 			return err
 		}
 
-		return nil
+		uri := strings.Replace(v4req.URL, "AWS4-HMAC-SHA256", "AWS4-ECDSA-P256-SHA256", 1)
+
+		req, err := http.NewRequest(v4req.Method, uri, nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.OnlyHMACSupported())
+	})
+}
+
+func PresignedAuth_missing_signature_query_param(s *S3Conf) error {
+	testName := "PresignedAuth_missing_signature_query_param"
+	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		queries := urlParsed.Query()
+		queries.Del("X-Amz-Signature")
+		urlParsed.RawQuery = queries.Encode()
+
+		req, err := http.NewRequest(v4req.Method, urlParsed.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MissingRequiredParams())
 	})
 }
 
@@ -625,11 +703,7 @@ func PresignedAuth_missing_credentials_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MissingRequiredParams())
 	})
 }
 
@@ -662,16 +736,12 @@ func PresignedAuth_malformed_creds_invalid_parts(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCredMalformed)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MalformedCredential())
 	})
 }
 
-func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
-	testName := "PresignedAuth_creds_invalid_terminator"
+func PresignedAuth_creds_invalid_terminal(s *S3Conf) error {
+	testName := "PresignedAuth_creds_invalid_terminal"
 	return presignedAuthHandler(s, testName, func(client *s3.PresignClient, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		v4req, err := client.PresignDeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: &bucket})
@@ -695,11 +765,7 @@ func PresignedAuth_creds_invalid_terminator(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectTerminal("aws5_request"))
 	})
 }
 
@@ -728,11 +794,7 @@ func PresignedAuth_creds_incorrect_service(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureIncorrService)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectService("sns"))
 	})
 }
 
@@ -766,15 +828,7 @@ func PresignedAuth_creds_incorrect_region(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", cfg.awsRegion),
-			HTTPStatusCode: http.StatusForbidden,
-		}); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.IncorrectRegion(s.awsRegion, cfg.awsRegion))
 	})
 }
 
@@ -803,11 +857,7 @@ func PresignedAuth_creds_invalid_date(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.InvalidDateFormat("32234Z34"))
 	})
 }
 
@@ -836,11 +886,7 @@ func PresignedAuth_non_existing_access_key_id(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
 	})
 }
 
@@ -873,11 +919,7 @@ func PresignedAuth_missing_date_query(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MissingRequiredParams())
 	})
 }
 
@@ -890,6 +932,14 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
+
+		urlParsed, err := url.Parse(v4req.URL)
+		if err != nil {
+			return err
+		}
+
+		tDate := urlParsed.Query().Get("X-Amz-Date")
+		date := tDate[:8]
 
 		uri, err := changeAuthCred(v4req.URL, "20060102", credDate)
 		if err != nil {
@@ -906,11 +956,7 @@ func PresignedAuth_dates_mismatch(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.DateMismatch("20060102", date))
 	})
 }
 
@@ -943,11 +989,7 @@ func PresignedAuth_missing_signed_headers_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MissingRequiredParams())
 	})
 }
 
@@ -980,11 +1022,7 @@ func PresignedAuth_missing_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidQueryParams)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.MissingRequiredParams())
 	})
 }
 
@@ -1017,11 +1055,7 @@ func PresignedAuth_invalid_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedExpires)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.ExpiresNumber())
 	})
 }
 
@@ -1054,11 +1088,7 @@ func PresignedAuth_negative_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrNegativeExpires)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.ExpiresNegative())
 	})
 }
 
@@ -1091,11 +1121,7 @@ func PresignedAuth_exceeding_expiration_query_param(s *S3Conf) error {
 			return err
 		}
 
-		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMaximumExpires)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkHTTPResponseApiErr(resp, s3err.QueryAuthErrors.ExpiresTooLarge())
 	})
 }
 

@@ -32,8 +32,13 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 		if utils.ContextKeyPublicBucket.IsSet(ctx) {
 			return nil
 		}
-		if ctx.Query("X-Amz-Signature") == "" {
+		if !utils.IsPresignedURLAuth(ctx) {
 			return nil
+		}
+
+		if ctx.Request().URI().QueryArgs().Has("X-Amz-Security-Token") {
+			// OIDC Authorization with X-Amz-Security-Token is not supported
+			return s3err.QueryAuthErrors.SecurityTokenNotSupported()
 		}
 
 		// Set in the context the "authenticated" key, in case the authentication succeeds,

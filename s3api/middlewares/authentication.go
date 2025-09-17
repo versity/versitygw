@@ -17,9 +17,7 @@ package middlewares
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -52,9 +50,27 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) 
 			return nil
 		}
 
+		// Check X-Amz-Date header
+		date := ctx.Get("X-Amz-Date")
+		if date == "" {
+			return s3err.GetAPIError(s3err.ErrMissingDateHeader)
+		}
+
+		// Parse the date and check the date validity
+		tdate, err := time.Parse(iso8601Format, date)
+		if err != nil {
+			return s3err.GetAPIError(s3err.ErrMissingDateHeader)
+		}
+
+		// Validate the dates difference
+		err = utils.ValidateDate(tdate)
+		if err != nil {
+			return err
+		}
+
 		authorization := ctx.Get("Authorization")
 		if authorization == "" {
-			return s3err.GetAPIError(s3err.ErrAuthHeaderEmpty)
+			return s3err.GetAPIError(s3err.ErrInvalidAuthHeader)
 		}
 
 		authData, err := utils.ParseAuthorization(authorization)
@@ -63,11 +79,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) 
 		}
 
 		if authData.Region != region {
-			return s3err.APIError{
-				Code:           "SignatureDoesNotMatch",
-				Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", authData.Region),
-				HTTPStatusCode: http.StatusForbidden,
-			}
+			return s3err.MalformedAuth.IncorrectRegion(region, authData.Region)
 		}
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
@@ -80,29 +92,11 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) 
 			return err
 		}
 
-		utils.ContextKeyAccount.Set(ctx, account)
-
-		// Check X-Amz-Date header
-		date := ctx.Get("X-Amz-Date")
-		if date == "" {
-			return s3err.GetAPIError(s3err.ErrMissingDateHeader)
-		}
-
-		// Parse the date and check the date validity
-		tdate, err := time.Parse(iso8601Format, date)
-		if err != nil {
-			return s3err.GetAPIError(s3err.ErrMalformedDate)
-		}
-
 		if date[:8] != authData.Date {
-			return s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
+			return s3err.MalformedAuth.DateMismatch()
 		}
 
-		// Validate the dates difference
-		err = utils.ValidateDate(tdate)
-		if err != nil {
-			return err
-		}
+		utils.ContextKeyAccount.Set(ctx, account)
 
 		var contentLength int64
 		contentLengthStr := ctx.Get("Content-Length")
