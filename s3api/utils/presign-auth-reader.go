@@ -64,7 +64,7 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 	n, err := pr.r.Read(p)
 
 	if errors.Is(err, io.EOF) {
-		cerr := CheckPresignedSignature(pr.ctx, pr.auth, pr.secret)
+		cerr := CheckPresignedSignature(pr.ctx, pr.auth, pr.secret, true)
 		if cerr != nil {
 			return n, cerr
 		}
@@ -74,7 +74,7 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 }
 
 // CheckPresignedSignature validates presigned request signature
-func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error {
+func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, streamBody bool) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	var contentLength int64
@@ -88,7 +88,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string) error
 	}
 
 	// Create a new http request instance from fasthttp request
-	req, err := createPresignedHttpRequestFromCtx(ctx, signedHdrs, contentLength)
+	req, err := createPresignedHttpRequestFromCtx(ctx, signedHdrs, contentLength, streamBody)
 	if err != nil {
 		return fmt.Errorf("create http request from context: %w", err)
 	}

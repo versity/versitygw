@@ -75,6 +75,7 @@ const (
 	ErrNoSuchUpload
 	ErrInvalidBucketName
 	ErrInvalidDigest
+	ErrBadDigest
 	ErrInvalidMaxKeys
 	ErrInvalidMaxBuckets
 	ErrInvalidMaxUploads
@@ -254,6 +255,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidDigest: {
 		Code:           "InvalidDigest",
 		Description:    "The Content-Md5 you specified is not valid.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrBadDigest: {
+		Code:           "BadDigest",
+		Description:    "The Content-MD5 you specified did not match what we received.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidMaxBuckets: {

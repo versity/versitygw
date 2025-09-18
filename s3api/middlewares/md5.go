@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"io"
 
 	"github.com/gofiber/fiber/v2"
@@ -23,14 +24,18 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func VerifyMD5Body() fiber.Handler {
+func VerifyMD5Body(streamBody bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		incomingSum := ctx.Get("Content-Md5")
 		if incomingSum == "" {
 			return nil
 		}
 
-		if utils.IsBigDataAction(ctx) {
+		if !isValidMD5(incomingSum) {
+			return s3err.GetAPIError(s3err.ErrInvalidDigest)
+		}
+
+		if streamBody {
 			var err error
 			wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 				r, err = utils.NewHashReader(r, incomingSum, utils.HashTypeMd5)
@@ -46,9 +51,18 @@ func VerifyMD5Body() fiber.Handler {
 		calculatedSum := utils.Base64SumString(sum[:])
 
 		if incomingSum != calculatedSum {
-			return s3err.GetAPIError(s3err.ErrInvalidDigest)
+			return s3err.GetAPIError(s3err.ErrBadDigest)
 		}
 
 		return nil
 	}
+}
+
+func isValidMD5(s string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return false
+	}
+
+	return len(decoded) == 16
 }
