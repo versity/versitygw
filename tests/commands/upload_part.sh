@@ -96,7 +96,7 @@ upload_part_rest_without_upload_id() {
     log 2 "error uploading part $i: $result"
     return 1
   fi
-  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/response.txt" "405" "MethodNotAllowed" "method is not allowed"; then
+  if ! check_rest_expected_error "$result" "$TEST_FILE_FOLDER/response.txt" "400" "InvalidArgument" "does not accept partNumber without uploadId"; then
     log 2 "error checking error"
     return 1
   fi

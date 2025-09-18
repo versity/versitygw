@@ -23,11 +23,13 @@ source ./tests/commands/put_object.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/util/util_rest.sh
-source ./tests/util/util_setup.sh
 
 test_file="test_file"
 
 @test "REST - check, enable, suspend versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot change versioning status for static buckets"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -52,6 +54,9 @@ test_file="test_file"
 }
 
 @test "test_rest_versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot change versioning status for static buckets"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -79,6 +84,9 @@ test_file="test_file"
 }
 
 @test "versioning - add version, then delete and check for marker" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot change versioning status for static buckets"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
