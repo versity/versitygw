@@ -404,7 +404,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrEmptyParts),
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
 			},
 		},
 		{
