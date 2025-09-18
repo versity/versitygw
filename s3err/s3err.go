@@ -82,7 +82,6 @@ const (
 	ErrInvalidPartNumberMarker
 	ErrInvalidObjectAttributes
 	ErrInvalidPart
-	ErrEmptyParts
 	ErrInvalidPartNumber
 	ErrInvalidPartOrder
 	ErrInvalidCompleteMpPartNumber
@@ -309,11 +308,6 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidPart: {
 		Code:           "InvalidPart",
 		Description:    "One or more of the specified parts could not be found.  The part may not have been uploaded, or the specified entity tag may not match the part's entity tag.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrEmptyParts: {
-		Code:           "InvalidRequest",
-		Description:    "You must specify at least one part",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPartNumber: {

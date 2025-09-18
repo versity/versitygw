@@ -278,7 +278,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrEmptyParts)
+		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	var mpuObjectSize *int64
