@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
+
 if [ "$SKIP_ACL_TESTING" == "true" ] || [ "$SKIP_USERS_TESTS" == "true" ]; then
   skip "Skipping ACL tests"
   exit 0
@@ -62,15 +64,20 @@ test_common_put_bucket_acl() {
   run check_param_count "test_common_put_bucket_acl" "client type" 1 "$#"
   assert_success
 
-  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  # shellcheck disable=SC2154
+  bucket_name="$output"
+
+  run setup_bucket_and_user "$bucket_name" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
   # shellcheck disable=SC2154
   username="${lines[${#lines[@]}-2]}"
 
-  run put_bucket_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  run put_bucket_ownership_controls "$bucket_name" "BucketOwnerPreferred"
   assert_success
 
-  run get_check_acl_id "$1" "$BUCKET_ONE_NAME"
+  run get_check_acl_id "$1" "$bucket_name"
   assert_success
 
   acl_file="test-acl"
@@ -82,18 +89,18 @@ test_common_put_bucket_acl() {
   assert_success
 
   log 5 "acl: $(cat "$TEST_FILE_FOLDER/$acl_file")"
-  run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
+  run put_bucket_acl_s3api "$bucket_name" "$TEST_FILE_FOLDER"/"$acl_file"
   assert_success
 
-  run get_check_acl_after_first_put "$1" "$BUCKET_ONE_NAME"
+  run get_check_acl_after_first_put "$1" "$bucket_name"
   assert_success
 
   run setup_acl_json "$TEST_FILE_FOLDER/$acl_file" "CanonicalUser" "$username" "FULL_CONTROL" "$AWS_ACCESS_KEY_ID"
   assert_success
 
-  run put_bucket_acl_s3api "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$acl_file"
+  run put_bucket_acl_s3api "$bucket_name" "$TEST_FILE_FOLDER"/"$acl_file"
   assert_success
 
-  run get_check_acl_after_second_put "$1" "$BUCKET_ONE_NAME"
+  run get_check_acl_after_second_put "$1" "$bucket_name"
   assert_success
 }

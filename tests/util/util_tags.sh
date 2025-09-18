@@ -283,7 +283,7 @@ add_verify_bucket_tags_rest() {
     log 2 "expected response code of '204', was '$result' (error: $(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/bucket_tagging.txt" ./tests/rest_scripts/get_bucket_tagging.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/bucket_tagging.txt" ./tests/rest_scripts/get_bucket_tagging.sh); then
     log 2 "error listing bucket tags: $result"
     return 1
   fi

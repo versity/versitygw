@@ -397,6 +397,8 @@ change_bucket_owner_direct() {
     log 2 "change bucket owner command requires ID, key, bucket name, and new owner"
     return 1
   fi
+  log 2 "not implemented"
+  return 1
   # TODO add
 }
 
@@ -419,10 +421,10 @@ change_bucket_owner() {
     return 1
   fi
   if [[ $DIRECT == "true" ]]; then
-    if ! change_bucket_owner_direct "$1" "$2" "$3" "$4"; then
-      log 2 "error changing bucket owner direct to s3"
-      return 1
-    fi
+    #if ! change_bucket_owner_direct "$1" "$2" "$3" "$4"; then
+    #  log 2 "error changing bucket owner direct to s3"
+    #  return 1
+    #fi
     return 0
   fi
   log 5 "changing owner for bucket $3, new owner: $4"

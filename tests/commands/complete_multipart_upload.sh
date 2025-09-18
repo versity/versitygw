@@ -92,6 +92,7 @@ complete_multipart_upload_rest_invalid_checksum() {
   if ! check_param_count_v2 "bucket, key, upload ID, parts payload, type, algorithm, correct hash" 7 $#; then
     return 1
   fi
+  log 5 "bucket name: $1"
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" UPLOAD_ID="$3" PARTS="$4" CHECKSUM_TYPE="$5" CHECKSUM_ALGORITHM="$6" CHECKSUM_HASH="$7" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/complete_multipart_upload.sh 2>&1); then
     log 2 "error completing multipart upload: $result"
     return 1

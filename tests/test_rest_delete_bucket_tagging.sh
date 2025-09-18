@@ -17,9 +17,9 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/drivers/user.sh
 source ./tests/setup.sh
 source ./tests/drivers/user.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
 export RUN_USERS=true
 
@@ -27,12 +27,16 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip
   fi
-  run setup_bucket_and_user_v2 "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_acl_user "$bucket_name" "$USERNAME_ONE" "$PASSWORD_ONE"
   assert_success
   username=${lines[${#lines[@]}-2]}
   password=${lines[${#lines[@]}-1]}
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
-    "-method" "DELETE" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging="
+    "-method" "DELETE" "-bucketName" "$bucket_name" "-query" "tagging="
   assert_success
 }

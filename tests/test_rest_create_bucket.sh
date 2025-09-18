@@ -28,13 +28,14 @@ export RUN_USERS=true
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run create_bucket_rest "$BUCKET_ONE_NAME"
-  assert_success
-
-  run list_check_buckets_rest "$BUCKET_ONE_NAME"
+  run list_check_buckets_rest "$bucket_name"
   assert_success
 }
 
@@ -45,11 +46,15 @@ export RUN_USERS=true
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run bucket_cleanup_if_bucket_exists_v2 "$BUCKET_ONE_NAME"
   assert_success
 
   envs="ACL=public-reads OBJECT_OWNERSHIP=BucketOwnerPreferred"
-  run create_bucket_rest_expect_error "$BUCKET_ONE_NAME" "$envs" "400" "InvalidArgument" ""
+  run create_bucket_rest_expect_error "$bucket_name" "$envs" "400" "InvalidArgument" ""
   assert_success
 }
 
@@ -77,7 +82,7 @@ export RUN_USERS=true
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "skip bucket create tests for static buckets"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists_v2 "$BUCKET_ONE_NAME"
   assert_success
 
   if [ "$DIRECT" == "true" ]; then
@@ -86,7 +91,12 @@ export RUN_USERS=true
     id="$AWS_ACCESS_KEY_ID"
   fi
   envs="GRANT_FULL_CONTROL=$id"
-  run create_bucket_rest_expect_error "$BUCKET_ONE_NAME" "$envs" "400" "InvalidBucketAclWithObjectOwnership" "Bucket cannot have ACLs set"
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run create_bucket_rest_expect_error "$bucket_name" "$envs" "400" "InvalidBucketAclWithObjectOwnership" "Bucket cannot have ACLs set"
   assert_success
 }
 

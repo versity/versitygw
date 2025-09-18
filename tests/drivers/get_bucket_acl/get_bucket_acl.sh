@@ -49,7 +49,7 @@ get_check_acl_after_first_put() {
     log 2 "'get_check_acl_after_first_put' requires client, bucket"
     return 1
   fi
-  if ! get_bucket_acl "$1" "$BUCKET_ONE_NAME"; then
+  if ! get_bucket_acl "$1" "$2"; then
     log 2 "error retrieving second ACL"
     return 1
   fi
@@ -74,7 +74,7 @@ get_check_acl_after_second_put() {
     log 2 "'get_check_acl_after_second_put' requires client, bucket"
     return 1
   fi
-  if ! get_bucket_acl "$1" "$BUCKET_ONE_NAME"; then
+  if ! get_bucket_acl "$1" "$2"; then
     log 2 "error retrieving third ACL"
     return 1
   fi
@@ -99,15 +99,4 @@ get_check_acl_after_second_put() {
     return 1
   fi
   return 0
-}
-
-check_direct_display_name() {
-  if ! display_name=$(echo "$owner" | xmllint --xpath '//*[local-name()="DisplayName"]/text()' - 2>&1); then
-    log 2 "error getting display name: $display_name"
-    return 1
-  fi
-  if [ "$display_name" != "$DIRECT_DISPLAY_NAME" ]; then
-    log 2 "display name mismatch (expected '$DIRECT_DISPLAY_NAME', actual '$display_name')"
-    return 1
-  fi
 }

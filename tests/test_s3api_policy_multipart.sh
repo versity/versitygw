@@ -14,8 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/file.sh
 source ./tests/util/util_multipart_abort.sh
-source ./tests/util/util_setup.sh
 
 test_s3api_policy_abort_multipart_upload() {
   policy_file="policy_file"
