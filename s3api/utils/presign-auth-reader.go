@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -35,6 +34,9 @@ import (
 
 const (
 	unsignedPayload string = "UNSIGNED-PAYLOAD"
+
+	algoHMAC  string = "AWS4-HMAC-SHA256"
+	algoECDSA string = "AWS4-ECDSA-P256-SHA256"
 )
 
 // PresignedAuthReader is an io.Reader that validates presigned request authorization
@@ -136,65 +138,70 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 
 	// Get and verify algorithm query parameter
 	algo := ctx.Query("X-Amz-Algorithm")
-	if algo == "" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
-	}
-	if algo != "AWS4-HMAC-SHA256" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQuerySignatureAlgo)
+	err := validateAlgorithm(algo)
+	if err != nil {
+		return a, err
 	}
 
 	// Parse and validate credentials query parameter
 	credsQuery := ctx.Query("X-Amz-Credential")
 	if credsQuery == "" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+		return a, s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
 	creds := strings.Split(credsQuery, "/")
 	if len(creds) != 5 {
-		return a, s3err.GetAPIError(s3err.ErrCredMalformed)
+		return a, s3err.QueryAuthErrors.MalformedCredential()
 	}
+
+	// validate the service
 	if creds[3] != "s3" {
-		return a, s3err.GetAPIError(s3err.ErrSignatureIncorrService)
+		return a, s3err.QueryAuthErrors.IncorrectService(creds[3])
 	}
+
+	// validate the terminal
 	if creds[4] != "aws4_request" {
-		return a, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)
+		return a, s3err.QueryAuthErrors.IncorrectTerminal(creds[4])
 	}
-	_, err := time.Parse(yyyymmdd, creds[1])
+
+	// validate the date
+	_, err = time.Parse(yyyymmdd, creds[1])
 	if err != nil {
-		return a, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
+		return a, s3err.QueryAuthErrors.InvalidDateFormat(creds[1])
+	}
+
+	region, ok := ContextKeyRegion.Get(ctx).(string)
+	if !ok {
+		region = ""
+	}
+	// validate the region
+	if creds[2] != region {
+		return a, s3err.QueryAuthErrors.IncorrectRegion(region, creds[2])
 	}
 
 	// Parse and validate Date query param
 	date := ctx.Query("X-Amz-Date")
 	if date == "" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+		return a, s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
 	tdate, err := time.Parse(iso8601Format, date)
 	if err != nil {
-		return a, s3err.GetAPIError(s3err.ErrMalformedDate)
+		return a, s3err.QueryAuthErrors.InvalidXAmzDateFormat()
 	}
 
 	if date[:8] != creds[1] {
-		return a, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
-	}
-
-	if ContextKeyRegion.Get(ctx) != creds[2] {
-		return a, s3err.APIError{
-			Code:           "SignatureDoesNotMatch",
-			Description:    fmt.Sprintf("Credential should be scoped to a valid Region, not %v", creds[2]),
-			HTTPStatusCode: http.StatusForbidden,
-		}
+		return a, s3err.QueryAuthErrors.DateMismatch(creds[1], date[:8])
 	}
 
 	signature := ctx.Query("X-Amz-Signature")
 	if signature == "" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+		return a, s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
 	signedHdrs := ctx.Query("X-Amz-SignedHeaders")
 	if signedHdrs == "" {
-		return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+		return a, s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
 	// Validate X-Amz-Expires query param and check if request is expired
@@ -215,20 +222,20 @@ func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
 
 func validateExpiration(str string, date time.Time) error {
 	if str == "" {
-		return s3err.GetAPIError(s3err.ErrInvalidQueryParams)
+		return s3err.QueryAuthErrors.MissingRequiredParams()
 	}
 
 	exp, err := strconv.Atoi(str)
 	if err != nil {
-		return s3err.GetAPIError(s3err.ErrMalformedExpires)
+		return s3err.QueryAuthErrors.ExpiresNumber()
 	}
 
 	if exp < 0 {
-		return s3err.GetAPIError(s3err.ErrNegativeExpires)
+		return s3err.QueryAuthErrors.ExpiresNegative()
 	}
 
 	if exp > 604800 {
-		return s3err.GetAPIError(s3err.ErrMaximumExpires)
+		return s3err.QueryAuthErrors.ExpiresTooLarge()
 	}
 
 	now := time.Now()
@@ -239,4 +246,44 @@ func validateExpiration(str string, date time.Time) error {
 	}
 
 	return nil
+}
+
+// validateAlgorithm validates the algorithm
+// for AWS4-ECDSA-P256-SHA256 it returns a custom non AWS error
+// currently only AWS4-HMAC-SHA256 algorithm is supported
+func validateAlgorithm(algo string) error {
+	switch algo {
+	case "":
+		return s3err.QueryAuthErrors.MissingRequiredParams()
+	case algoHMAC:
+		return nil
+	case algoECDSA:
+		return s3err.QueryAuthErrors.OnlyHMACSupported()
+	default:
+		// all other algorithms are considerd as invalid
+		return s3err.QueryAuthErrors.UnsupportedAlgorithm()
+	}
+}
+
+// IsPresignedURLAuth determines if the request is presigned:
+// which is authorization with query params
+func IsPresignedURLAuth(ctx *fiber.Ctx) bool {
+	algo := ctx.Query("X-Amz-Algorithm")
+	creds := ctx.Query("X-Amz-Credential")
+	signature := ctx.Query("X-Amz-Signature")
+	signedHeaders := ctx.Query("X-Amz-SignedHeaders")
+	expires := ctx.Query("X-Amz-Expires")
+
+	return !isEmpty(algo, creds, signature, signedHeaders, expires)
+}
+
+// isEmpty checks if all the given strings are empty
+func isEmpty(args ...string) bool {
+	for _, a := range args {
+		if a != "" {
+			return false
+		}
+	}
+
+	return true
 }

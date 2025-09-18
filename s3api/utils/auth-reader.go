@@ -103,7 +103,7 @@ func (ar *AuthReader) validateSignature() error {
 	// Parse the date and check the date validity
 	tdate, err := time.Parse(iso8601Format, date)
 	if err != nil {
-		return s3err.GetAPIError(s3err.ErrMalformedDate)
+		return s3err.GetAPIError(s3err.ErrMissingDateHeader)
 	}
 
 	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size))
@@ -184,54 +184,61 @@ func ParseAuthorization(authorization string) (AuthData, error) {
 	}
 
 	if len(authParts) < 2 {
-		return a, s3err.GetAPIError(s3err.ErrMissingFields)
+		return a, s3err.GetAPIError(s3err.ErrInvalidAuthHeader)
 	}
 
 	algo := authParts[0]
 
 	if algo != "AWS4-HMAC-SHA256" {
-		return a, s3err.GetAPIError(s3err.ErrSignatureVersionNotSupported)
+		return a, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationType)
 	}
 
 	kvData := authParts[1]
 	kvPairs := strings.Split(kvData, ",")
 	// we are expecting at least Credential, SignedHeaders, and Signature
 	// key value pairs here
-	if len(kvPairs) < 3 {
-		return a, s3err.GetAPIError(s3err.ErrMissingFields)
+	if len(kvPairs) != 3 {
+		return a, s3err.MalformedAuth.MissingComponents()
 	}
 
 	var access, region, signedHeaders, signature, date string
 
-	for _, kv := range kvPairs {
+	for i, kv := range kvPairs {
 		keyValue := strings.Split(kv, "=")
 		if len(keyValue) != 2 {
-			switch {
-			case strings.HasPrefix(kv, "Credential"):
-				return a, s3err.GetAPIError(s3err.ErrCredMalformed)
-			case strings.HasPrefix(kv, "SignedHeaders"):
-				return a, s3err.GetAPIError(s3err.ErrInvalidQueryParams)
-			}
-			return a, s3err.GetAPIError(s3err.ErrMissingFields)
+			return a, s3err.MalformedAuth.MalformedComponent(kv)
 		}
-		key := strings.TrimSpace(keyValue[0])
-		value := strings.TrimSpace(keyValue[1])
+		key, value := keyValue[0], keyValue[1]
+		switch i {
+		case 0:
+			if key != "Credential" {
+				return a, s3err.MalformedAuth.MissingCredential()
+			}
+		case 1:
+			if key != "SignedHeaders" {
+				return a, s3err.MalformedAuth.MissingSignedHeaders()
+			}
+		case 2:
+			if key != "Signature" {
+				return a, s3err.MalformedAuth.MissingSignature()
+			}
+		}
 
 		switch key {
 		case "Credential":
 			creds := strings.Split(value, "/")
 			if len(creds) != 5 {
-				return a, s3err.GetAPIError(s3err.ErrCredMalformed)
+				return a, s3err.MalformedAuth.MalformedCredential()
 			}
 			if creds[3] != "s3" {
-				return a, s3err.GetAPIError(s3err.ErrSignatureIncorrService)
+				return a, s3err.MalformedAuth.IncorrectService(creds[3])
 			}
 			if creds[4] != "aws4_request" {
-				return a, s3err.GetAPIError(s3err.ErrSignatureTerminationStr)
+				return a, s3err.MalformedAuth.InvalidTerminal(creds[4])
 			}
 			_, err := time.Parse(yyyymmdd, creds[1])
 			if err != nil {
-				return a, s3err.GetAPIError(s3err.ErrSignatureDateDoesNotMatch)
+				return a, s3err.MalformedAuth.InvalidDateFormat(creds[1])
 			}
 			access = creds[0]
 			date = creds[1]

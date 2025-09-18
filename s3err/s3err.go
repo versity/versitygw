@@ -98,8 +98,8 @@ const (
 	ErrBucketTaggingLimited
 	ErrObjectTaggingLimited
 	ErrInvalidURLEncodedTagging
-	ErrAuthHeaderEmpty
-	ErrSignatureVersionNotSupported
+	ErrInvalidAuthHeader
+	ErrUnsupportedAuthorizationType
 	ErrMalformedPOSTRequest
 	ErrPOSTFileRequired
 	ErrPostPolicyConditionInvalidFormat
@@ -107,24 +107,13 @@ const (
 	ErrEntityTooLarge
 	ErrMissingFields
 	ErrMissingCredTag
-	ErrCredMalformed
 	ErrMalformedXML
-	ErrMalformedDate
-	ErrMalformedPresignedDate
 	ErrMalformedCredentialDate
 	ErrMissingSignHeadersTag
 	ErrMissingSignTag
 	ErrUnsignedHeaders
-	ErrInvalidQueryParams
-	ErrInvalidQuerySignatureAlgo
 	ErrExpiredPresignRequest
-	ErrMalformedExpires
-	ErrNegativeExpires
-	ErrMaximumExpires
 	ErrSignatureDoesNotMatch
-	ErrSignatureDateDoesNotMatch
-	ErrSignatureTerminationStr
-	ErrSignatureIncorrService
 	ErrContentSHA256Mismatch
 	ErrInvalidSHA256Paylod
 	ErrMissingContentLength
@@ -402,14 +391,14 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "The XML you provided was not well-formed or did not validate against our published schema.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrAuthHeaderEmpty: {
+	ErrInvalidAuthHeader: {
 		Code:           "InvalidArgument",
 		Description:    "Authorization header is invalid -- one and only one ' ' (space) required.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrSignatureVersionNotSupported: {
-		Code:           "InvalidRequest",
-		Description:    "The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.",
+	ErrUnsupportedAuthorizationType: {
+		Code:           "InvalidArgument",
+		Description:    "Unsupported Authorization Type",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMalformedPOSTRequest: {
@@ -447,21 +436,6 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Missing Credential field for this request.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrCredMalformed: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "Error parsing the X-Amz-Credential parameter; the Credential is mal-formed; expecting \"<YOUR-AKID>/YYYYMMDD/REGION/SERVICE/aws4_request\".",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrMalformedDate: {
-		Code:           "MalformedDate",
-		Description:    "Invalid date format header, expected to be in ISO8601, RFC1123 or RFC1123Z time format.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrMalformedPresignedDate: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Date must be in the ISO8601 Long Format \"yyyyMMdd'T'HHmmss'Z'\".",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
 	ErrMissingSignHeadersTag: {
 		Code:           "InvalidArgument",
 		Description:    "Signature header missing SignedHeaders field.",
@@ -477,35 +451,10 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "There were headers present in the request which were not signed.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidQueryParams: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "Query-string authentication version 4 requires the X-Amz-Algorithm, X-Amz-Credential, X-Amz-Signature, X-Amz-Date, X-Amz-SignedHeaders, and X-Amz-Expires parameters.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrInvalidQuerySignatureAlgo: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Algorithm only supports \"AWS4-HMAC-SHA256\".",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
 	ErrExpiredPresignRequest: {
 		Code:           "AccessDenied",
 		Description:    "Request has expired.",
 		HTTPStatusCode: http.StatusForbidden,
-	},
-	ErrMalformedExpires: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires should be a number.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrNegativeExpires: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires must be non-negative.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrMaximumExpires: {
-		Code:           "AuthorizationQueryParametersError",
-		Description:    "X-Amz-Expires must be less than a week (in seconds); that is, the given X-Amz-Expires must be less than 604800 seconds.",
-		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidAccessKeyID: {
 		Code:           "InvalidAccessKeyId",
@@ -520,21 +469,6 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrSignatureDoesNotMatch: {
 		Code:           "SignatureDoesNotMatch",
 		Description:    "The request signature we calculated does not match the signature you provided. Check your key and signing method.",
-		HTTPStatusCode: http.StatusForbidden,
-	},
-	ErrSignatureDateDoesNotMatch: {
-		Code:           "SignatureDoesNotMatch",
-		Description:    "Date in Credential scope does not match YYYYMMDD from ISO-8601 version of date from HTTP.",
-		HTTPStatusCode: http.StatusForbidden,
-	},
-	ErrSignatureTerminationStr: {
-		Code:           "SignatureDoesNotMatch",
-		Description:    "Credential should be scoped with a valid terminator: 'aws4_request'.",
-		HTTPStatusCode: http.StatusForbidden,
-	},
-	ErrSignatureIncorrService: {
-		Code:           "SignatureDoesNotMatch",
-		Description:    "Credential should be scoped to correct service: s3.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrContentSHA256Mismatch: {
@@ -659,7 +593,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrRequestTimeTooSkewed: {
 		Code:           "RequestTimeTooSkewed",
-		Description:    "The difference between the request time and the server's time is too large.",
+		Description:    "The difference between the request time and the current time is too large.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrInvalidBucketAclWithObjectOwnership: {
