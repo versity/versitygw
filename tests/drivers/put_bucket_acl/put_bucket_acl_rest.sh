@@ -64,7 +64,7 @@ check_ownership_rule_and_reset_acl() {
     return 1
   fi
   if ! object_ownership_rule=$(get_bucket_ownership_controls_rest "$1" 2>&1); then
-    log 2 "error getting bucket ownership controls"
+    log 2 "error getting bucket ownership controls: $object_ownership_rule"
     return 1
   fi
   log 5 "ownership rule: $object_ownership_rule"

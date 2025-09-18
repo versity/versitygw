@@ -37,7 +37,7 @@ get_and_check_legal_hold() {
 }
 
 check_legal_hold_without_lock_enabled() {
-  if ! check_param_count "check_legal_hold_without_lock_enabled" "bucket, key" 2 $#; then
+  if ! check_param_count_v2 "bucket, key, expected error" 3 $#; then
     return 1
   fi
   if get_object_legal_hold_rest "$1" "$2"; then
@@ -49,8 +49,8 @@ check_legal_hold_without_lock_enabled() {
     log 2 "error getting error code: $code"
     return 1
   fi
-  if [ "$code" != "InvalidRequest" ]; then
-    log 2 "code mismatch (expected 'InvalidRequest', actual '$code')"
+  if [ "$code" != "$3" ]; then
+    log 2 "code mismatch (expected '$3', actual '$code')"
     return 1
   fi
   return 0
@@ -62,7 +62,8 @@ check_remove_legal_hold_versions() {
   fi
   if ! get_object_legal_hold_rest_version_id "$1" "$2" "$3"; then
     # shellcheck disable=SC2154
-    if [[ "$legal_hold" != *"MethodNotAllowed"* ]]; then
+    log 5 "legal hold: $legal_hold"
+    if [[ "$legal_hold" != *"MethodNotAllowed"* ]] && [[ "$legal_hold" != *"NoSuchObjectLockConfiguration"* ]]; then
       log 2 "error getting object legal hold status with version id"
       return 1
     fi

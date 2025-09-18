@@ -61,7 +61,7 @@ handle_param() {
       s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
       rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
-      rest-delete-bucket-tagging)
+      rest-delete-bucket-tagging|setup-remove-static)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -247,8 +247,13 @@ run_suite() {
     s3api-user)
       echo "Running s3api user tests ..."
       "$HOME"/bin/bats ./tests/test_user_aws.sh || exit_code=$?
+      ;;
+    setup-remove-static)
+      echo "Testing setup/remove static bucket scripts ..."
+      VERSITYGW_TEST_ENV="$VERSITYGW_TEST_ENV" ./tests/test_setup_remove_static.sh || exit_code=$?
+      ;;
   esac
-  if [ $exit_code -ne 0 ]; then
+  if [ "$exit_code" -ne 0 ]; then
     exit 1
   fi
 }

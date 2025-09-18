@@ -16,6 +16,7 @@ reset_bucket() {
   if ! check_param_count "reset_bucket" "bucket" 1 $#; then
     return 1
   fi
+  log 6 "reset bucket '$1'"
 
   if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
     log 3 "error logging bucket policy"
@@ -66,7 +67,7 @@ reset_bucket() {
 # params:  bucket name
 # return 0 if able to delete recursively, 1 if not
 delete_bucket_recursive() {
-  log 6 "delete_bucket_recursive_s3api"
+  log 6 "delete_bucket_recursive"
   if ! check_param_count "delete_bucket_recursive_s3api" "bucket" 1 $#; then
     return 1
   fi
@@ -108,8 +109,26 @@ direct_wait_for_bucket() {
   if ! check_param_count "direct_wait_for_bucket" "bucket" 1 $#; then
     return 1
   fi
+  sleep 5
   bucket_verification_start_time=$(date +%s)
   while ! bucket_exists "$1"; do
+    bucket_verification_end_time=$(date +%s)
+    if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
+      log 2 "bucket existence check timeout"
+      return 1
+    fi
+    sleep 5
+  done
+  return 0
+}
+
+direct_wait_for_bucket_deletion() {
+  if ! check_param_count "direct_wait_for_bucket" "bucket" 1 $#; then
+    return 1
+  fi
+  sleep 5
+  bucket_verification_start_time=$(date +%s)
+  while bucket_exists "$1"; do
     bucket_verification_end_time=$(date +%s)
     if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
       log 2 "bucket existence check timeout"
@@ -207,6 +226,10 @@ setup_bucket() {
 
   log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
+    if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket_deletion "$1"; then
+      log 2 "bucket not successfully deleted"
+      return 1
+    fi
     if ! create_bucket "s3api" "$1"; then
       log 2 "error creating bucket"
       return 1
@@ -217,6 +240,7 @@ setup_bucket() {
 
   # bucket creation and resets take longer to propagate in direct mode
   if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$1"; then
+    log 2 "bucket not found after creation"
     return 1
   fi
 
