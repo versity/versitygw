@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/file.sh
 source ./tests/util/util_users.sh
 
 create_versitygw_acl_user_or_get_direct_user() {
@@ -49,10 +50,10 @@ create_versitygw_acl_user_or_get_direct_user() {
 }
 
 setup_bucket_and_user() {
-  if ! check_param_count "setup_bucket_and_user" "bucket, username, password, user type" 4 $#; then
+  if ! check_param_count_v2 "bucket or prefix, username, password, user type" 4 $#; then
     return 1
   fi
-  if ! setup_bucket "$1"; then
+  if ! setup_bucket_v2 "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -64,16 +65,48 @@ setup_bucket_and_user() {
   return 0
 }
 
-setup_bucket_and_user_v2() {
+setup_bucket_and_acl_user() {
   if ! check_param_count_v2 "bucket, username, password" 3 $#; then
     return 1
   fi
-  if ! setup_bucket "$1"; then
+  if ! setup_bucket_v2 "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
   if ! result=$(create_versitygw_acl_user_or_get_direct_user "$2" "$3"); then
     log 2 "error creating or getting user"
+    return 1
+  fi
+  echo "$result"
+  return 0
+}
+
+setup_bucket_file_and_user() {
+  if ! check_param_count "setup_bucket_file_and_user" "bucket, file, username, password, user type" 5 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_files "$1" "$2"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+  if ! result=$(setup_user_versitygw_or_direct "$3" "$4" "$5" "$1"); then
+    log 2 "error setting up user"
+    return 1
+  fi
+  echo "$result"
+  return 0
+}
+
+setup_bucket_file_and_user_v2() {
+  if ! check_param_count_v2 "bucket name or prefix, file, username, password, user type" 5 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_files_v2 "$1" "$2"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+  if ! result=$(setup_user_versitygw_or_direct "$3" "$4" "$5" "$1"); then
+    log 2 "error setting up user"
     return 1
   fi
   echo "$result"

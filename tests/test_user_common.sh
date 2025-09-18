@@ -15,10 +15,10 @@
 # under the License.
 
 source ./tests/setup.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh
-source ./tests/util/util_setup.sh
 source ./tests/util/util_users.sh
 source ./tests/commands/list_buckets.sh
 
@@ -121,7 +121,11 @@ test_userplus_operation() {
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
 
-  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$username" "$password" "userplus"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_user "$bucket_name" "$username" "$password" "userplus"
   assert_success
 
   if [ "$RECREATE_BUCKETS" == "true" ]; then
@@ -134,7 +138,7 @@ test_userplus_operation() {
     assert_success
   fi
 
-  run list_and_check_buckets_omit_without_permission "$username" "$password" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run list_and_check_buckets_omit_without_permission "$username" "$password" "$bucket_name" "$BUCKET_TWO_NAME"
   assert_success
 
   run change_bucket_owner "$username" "$password" "$BUCKET_TWO_NAME" "admin"

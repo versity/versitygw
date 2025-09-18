@@ -141,8 +141,12 @@ get_xml_data() {
   xml_start=$(grep -n "<?xml" "$1" | head -n 1 | cut -d: -f1)
 
   if [ -z "$xml_start" ]; then
-    log 2 "No XML declaration found."
-    return 1
+    # Try any tag
+    xml_start=$(grep -n "<[^>]*>" "$1" | head -n 1 | cut -d: -f1)
+    if [ -z "$xml_start" ]; then
+      log 2 "No XML declaration found."
+      return 1
+    fi
   fi
   log 5 "xml start: $xml_start"
 

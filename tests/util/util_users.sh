@@ -391,15 +391,6 @@ delete_user() {
   fi
 }
 
-change_bucket_owner_direct() {
-  log 6 "change_bucket_owner_direct"
-  if [[ $# -ne 4 ]]; then
-    log 2 "change bucket owner command requires ID, key, bucket name, and new owner"
-    return 1
-  fi
-  # TODO add
-}
-
 reset_bucket_owner() {
   if [ $# -ne 1 ]; then
     log 2 "'reset_bucket_owner' requires bucket name"
@@ -419,11 +410,7 @@ change_bucket_owner() {
     return 1
   fi
   if [[ $DIRECT == "true" ]]; then
-    if ! change_bucket_owner_direct "$1" "$2" "$3" "$4"; then
-      log 2 "error changing bucket owner direct to s3"
-      return 1
-    fi
-    return 0
+    skip "any direct commands requiring bucket ownership change not yet implemented"
   fi
   log 5 "changing owner for bucket $3, new owner: $4"
   error=$(send_command "$VERSITY_EXE" admin --allow-insecure --access "$1" --secret "$2" --endpoint-url "$AWS_ENDPOINT_URL" change-bucket-owner --bucket "$3" --owner "$4" 2>&1) || local change_result=$?

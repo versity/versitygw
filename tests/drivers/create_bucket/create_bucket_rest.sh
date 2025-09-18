@@ -48,8 +48,14 @@ setup_and_create_bucket_and_check_acl() {
   log 5 "username=$username, password=$password"
   envs="$1=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
   log 5 "envs: $envs"
+
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error retrieving bucket name: $bucket_name"
+    return 1
+  fi
+
   # shellcheck disable=SC2154
-  if ! create_bucket_and_check_acl "$BUCKET_ONE_NAME" "$envs" "$username" "$password" "$user_canonical_id" "$owner_canonical_id"; then
+  if ! create_bucket_and_check_acl "$bucket_name" "$envs" "$username" "$password" "$user_canonical_id" "$owner_canonical_id"; then
     log 2 "error creating bucket and checking ACL"
     return 1
   fi
@@ -128,6 +134,7 @@ get_bucket_prefix() {
 }
 
 setup_bucket_v2() {
+  log 6 "setup_bucket_v2 '$1'"
   if ! check_param_count_v2 "bucket prefix or name" 1 $#; then
     return 1
   fi
@@ -135,6 +142,7 @@ setup_bucket_v2() {
     log 2 "error getting prefix: $prefix"
     return 1
   fi
+  log 5 "bucket prefix: $prefix"
   if ! bucket_cleanup_if_bucket_exists_v2 "$prefix"; then
     log 2 "error cleaning up bucket(s), if it/they exist(s)"
     return 1
@@ -149,12 +157,41 @@ setup_bucket_v2() {
   return 0
 }
 
+# params:  client, bucket name(s)
+# return 0 for success, 1 for failure
+setup_buckets() {
+  if ! check_param_count_gt "minimum of 1 bucket name" 1 $#; then
+    return 1
+  fi
+  for name in "$@"; do
+    if ! setup_bucket "$name"; then
+      log 2 "error setting up bucket $name"
+      return 1
+    fi
+  done
+  return 0
+}
+
+setup_buckets_v2() {
+  if ! check_param_count_gt "minimum of 1 bucket name" 1 $#; then
+    return 1
+  fi
+  for name in "$@"; do
+    if ! setup_bucket_v2 "$name"; then
+      log 2 "error setting up bucket $name"
+      return 1
+    fi
+  done
+  return 0
+}
+
 get_bucket_name() {
   if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     echo "$1"
+    return 0
   fi
   echo "$1-$(date +%Y%m%d%H%M%S)"
 }
@@ -188,10 +225,6 @@ setup_bucket_object_lock_enabled() {
     log 2 "error cleaning up bucket"
     return 1
   fi
-  if [ "$DIRECT" == "true" ] && [ "$RECREATE_BUCKETS" == "true" ]; then
-    log 2 "bucket not confirmed as deleted"
-    return 1
-  fi
 
   # in static bucket config, bucket will still exist
   if ! bucket_exists "$1"; then
@@ -199,10 +232,6 @@ setup_bucket_object_lock_enabled() {
       log 2 "error creating bucket with object lock enabled"
       return 1
     fi
-  fi
-  if [ "$DIRECT" == "true" ]; then
-    log 2 "bucket not confirmed as created"
-    return 1
   fi
   return 0
 }

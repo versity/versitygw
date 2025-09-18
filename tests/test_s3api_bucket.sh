@@ -18,15 +18,9 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/setup.sh
-source ./tests/util/util_create_bucket.sh
-source ./tests/util/util_file.sh
-source ./tests/util/util_head_bucket.sh
-source ./tests/util/util_lock_config.sh
-source ./tests/util/util_object.sh
-source ./tests/util/util_tags.sh
-source ./tests/test_s3api_root_inner.sh
 source ./tests/test_common.sh
 source ./tests/test_common_acl.sh
+source ./tests/test_s3api_root_inner.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/delete_object_tagging.sh
@@ -49,8 +43,15 @@ source ./tests/commands/put_object_lock_configuration.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_public_access_block.sh
 source ./tests/commands/select_object_content.sh
-source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
+source ./tests/drivers/file.sh
 source ./tests/drivers/user.sh
+source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_head_bucket.sh
+source ./tests/util/util_lock_config.sh
+source ./tests/util/util_object.sh
+source ./tests/util/util_tags.sh
 
 export RUN_USERS=true
 

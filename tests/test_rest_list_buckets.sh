@@ -18,9 +18,9 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/commands/list_buckets.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/user.sh
-source ./tests/util/util_setup.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
 
@@ -31,7 +31,11 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1249"
   fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
   echo -en "\r\n" > "$TEST_FILE_FOLDER/empty.txt"
@@ -117,10 +121,14 @@ export RUN_USERS=true
 }
 
 @test "test_rest_list_buckets" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
   assert_success
 
-  run list_check_buckets_rest "$BUCKET_ONE_NAME"
+  run list_check_buckets_rest "$bucket_name"
   assert_success
 }
 
@@ -128,7 +136,15 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1399"
   fi
-  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_bucket_name "$BUCKET_TWO_NAME"
+  assert_success
+  bucket_two_name="$output"
+
+  run setup_buckets_v2 "$bucket_name" "$bucket_two_name"
   assert_success
 
   run check_continuation_token
@@ -136,24 +152,40 @@ export RUN_USERS=true
 }
 
 @test "REST - list buckets - success (multiple pages)" {
-  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_bucket_name "$BUCKET_TWO_NAME"
+  assert_success
+  bucket_two_name="$output"
+
+  run setup_buckets_v2 "$bucket_name" "$bucket_two_name"
   assert_success
 
-  run check_for_buckets_with_multiple_pages "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run check_for_buckets_with_multiple_pages "$bucket_name" "$bucket_two_name"
   assert_success
 }
 
 @test "REST - list buckets w/prefix" {
-  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_bucket_name "$BUCKET_TWO_NAME"
+  assert_success
+  bucket_two_name="$output"
+
+  run setup_buckets_v2 "$bucket_name" "$bucket_two_name"
   assert_success
 
-  run list_check_buckets_rest "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run list_check_buckets_rest "$bucket_name" "$bucket_two_name"
   assert_success
 
-  run list_check_buckets_rest_with_prefix "$BUCKET_ONE_NAME"
+  run list_check_buckets_rest_with_prefix "$bucket_name"
   assert_success
 
-  run list_check_buckets_rest_with_prefix "$BUCKET_TWO_NAME"
+  run list_check_buckets_rest_with_prefix "$bucket_two_name"
   assert_success
 }
 
@@ -164,18 +196,26 @@ export RUN_USERS=true
   if [ "$DIRECT" == "true" ]; then
     skip
   fi
-  run setup_bucket_and_user "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_user "$bucket_name" "$USERNAME_ONE" "$PASSWORD_ONE" "user"
   assert_success
   username=${lines[${#lines[@]}-2]}
   password=${lines[${#lines[@]}-1]}
 
-  run setup_bucket "$BUCKET_TWO_NAME"
+  run get_bucket_name "$BUCKET_TWO_NAME"
+  assert_success
+  bucket_two_name="$output"
+
+  run setup_bucket "$bucket_two_name"
   assert_success
 
-  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_TWO_NAME" "$username"
+  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$bucket_two_name" "$username"
   assert_success
 
   log 5 "username: $username, password: $password"
-  run list_check_buckets_user "$username" "$password" "$BUCKET_TWO_NAME"
+  run list_check_buckets_user "$username" "$password" "$bucket_two_name"
   assert_success
 }

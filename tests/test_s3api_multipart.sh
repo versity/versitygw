@@ -19,16 +19,17 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/test_s3api_root_inner.sh
+source ./tests/commands/get_object.sh
+source ./tests/commands/list_multipart_uploads.sh
+source ./tests/commands/put_object.sh
+source ./tests/drivers/file.sh
+source ./tests/drivers/head_object/head_object_s3api.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
-source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
-source ./tests/commands/get_object.sh
-source ./tests/commands/put_object.sh
-source ./tests/commands/list_multipart_uploads.sh
-source ./tests/drivers/head_object/head_object_s3api.sh
 
 export RUN_USERS=true
 

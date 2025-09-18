@@ -116,3 +116,14 @@ get_and_check_acl_rest() {
   fi
   return 0
 }
+
+check_direct_display_name() {
+  if ! display_name=$(echo "$owner" | xmllint --xpath '//*[local-name()="DisplayName"]/text()' - 2>&1); then
+    log 2 "error getting display name: $display_name"
+    return 1
+  fi
+  if [ "$display_name" != "$DIRECT_DISPLAY_NAME" ]; then
+    log 2 "display name mismatch (expected '$DIRECT_DISPLAY_NAME', actual '$display_name')"
+    return 1
+  fi
+}
