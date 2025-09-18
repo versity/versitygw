@@ -102,7 +102,7 @@ check_versioning_status_rest() {
 }
 
 echo_versions() {
-  if ! check_param_count "echo_versions" "'Version' or 'DeleteMarker', 'Key' or 'VersionId'" 2 $#; then
+  if ! check_param_count_v2 "'Version' or 'DeleteMarker', 'Key' or 'VersionId', file" 3 $#; then
     return 1
   fi
   if ! keys=$(echo -n "$versions" | xmllint --xpath "//*[local-name()=\"$1\"]/*[local-name()=\"$2\"]/text()" - | xmlstarlet unesc 2>&1); then
@@ -113,32 +113,64 @@ echo_versions() {
     return 1
   fi
   log 5 "keys to append: ${keys[*]}"
+  if ! result=$(truncate -s 0 "$3" 2>&1); then
+    log 2 "error truncating file: $result"
+  fi
+  for key in "${keys[@]}"; do
+    echo "$key" >> "$3"
+  done
   echo "${keys[*]}"
 }
 
-parse_versions_rest() {
-  if ! check_param_count "parse_versions_rest" "versions variable" 1 $#; then
+get_base64_version_keys_and_ids() {
+  if ! check_param_count_v2 "'Version' or 'DeleteMarker'" 1 $#; then
     return 1
   fi
-  if ! keys=$(echo_versions "Version" "Key"); then
+  while IFS= read -r key && IFS= read -r vid; do
+    log 5 "key: $key, vid: $vid"
+    b_key="$(printf '%s' "$key" | base64 -w0)"
+    b_vid="$(printf '%s' "$vid" | base64 -w0)"
+    base64_pairs+=("$b_key:$b_vid")
+  done < <(xmlstarlet sel -t \
+               -m '//*[local-name()='"\"$1\""']' \
+               -v '*[local-name()="Key"]' -n \
+               -v '*[local-name()="VersionId"]' -n \
+               <<<"$versions" | xmlstarlet unesc)
+}
+
+parse_base64_versions_rest() {
+  base64_pairs=()
+  if ! get_base64_version_keys_and_ids "Version"; then
+    log 2 "error getting version base64 keys and IDs"
+    return 1
+  fi
+  if ! get_base64_version_keys_and_ids "DeleteMarker"; then
+    log 2 "error getting version base64 keys and IDs"
+    return 1
+  fi
+}
+
+parse_versions_rest() {
+  base64_pairs=()
+  if ! keys=$(echo_versions "Version" "Key" "$TEST_FILE_FOLDER/version_keys.txt"); then
     log 2 "error getting Version Key values: $keys"
     return 1
   fi
   # shellcheck disable=SC2206
   version_keys+=($keys)
-  if ! ids=$(echo_versions "Version" "VersionId"); then
+  if ! ids=$(echo_versions "Version" "VersionId" "$TEST_FILE_FOLDER/version_ids.txt"); then
     log 2 "error getting Version VersionId values: $ids"
     return 1
   fi
   # shellcheck disable=SC2206
   version_ids+=($ids)
-  if ! keys=$(echo_versions "DeleteMarker" "Key"); then
+  if ! keys=$(echo_versions "DeleteMarker" "Key" "$TEST_FILE_FOLDER/delete_marker_keys.txt"); then
     log 2 "error getting DeleteMarker Key values: $keys"
     return 1
   fi
   # shellcheck disable=SC2206
   version_keys+=($keys)
-  if ! ids=$(echo_versions "DeleteMarker" "VersionId"); then
+  if ! ids=$(echo_versions "DeleteMarker" "VersionId" "$TEST_FILE_FOLDER/delete_marker_ids.txt"); then
     log 2 "error getting DeleteMarker VersionId values: $ids"
     return 1
   fi
@@ -146,6 +178,7 @@ parse_versions_rest() {
   version_ids+=($ids)
   log 5 "version keys: ${version_keys[*]}"
   log 5 "version IDs: ${version_ids[*]}"
+  log 5 "base64 pairs: ${base64_pairs[*]}"
   return 0
 }
 

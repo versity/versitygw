@@ -67,6 +67,10 @@ setup_bucket_object_lock_enabled() {
     log 2 "error cleaning up bucket"
     return 1
   fi
+  if [ "$DIRECT" == "true" ] && [ "$RECREATE_BUCKETS" == "true" ] && ! direct_wait_for_bucket_deletion "$1"; then
+    log 2 "bucket not confirmed as deleted"
+    return 1
+  fi
 
   # in static bucket config, bucket will still exist
   if ! bucket_exists "$1"; then
@@ -74,6 +78,10 @@ setup_bucket_object_lock_enabled() {
       log 2 "error creating bucket with object lock enabled"
       return 1
     fi
+  fi
+  if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$1"; then
+    log 2 "bucket not confirmed as created"
+    return 1
   fi
   return 0
 }
