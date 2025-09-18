@@ -22,6 +22,9 @@ RUN apt-get update && \
     bc \
     libxml2-utils \
     xmlstarlet \
+    python3-pip \
+    python3-venv \
+    xxd \
     ca-certificates && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
@@ -62,6 +65,15 @@ ENV HOME=/home/tester
 RUN git clone https://github.com/bats-core/bats-core.git && \
     cd bats-core && \
     ./install.sh /home/tester
+
+# Create a shared venv & install Python deps there
+ENV VENV=/opt/venv
+RUN python3 -m venv "$VENV" \
+ && "$VENV/bin/python" -m pip install --upgrade pip \
+ && "$VENV/bin/pip" install --no-cache-dir awscrt
+
+# Make the venv the default Python for all subsequent RUN/CMD/ENTRYPOINT
+ENV PATH="$VENV/bin:${PATH}"
 
 USER tester
 COPY --chown=tester:tester . /home/tester

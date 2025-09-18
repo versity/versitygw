@@ -64,7 +64,7 @@ check_part_list_rest() {
 
 perform_multipart_upload_rest() {
   if [ $# -ne 6 ]; then
-    log 2 "'upload_check_parts' requires bucket, key, part list"
+    log 2 "'upload_check_parts' requires bucket, key, part list (4 parts)"
     return 1
   fi
   if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
@@ -93,7 +93,7 @@ perform_multipart_upload_rest() {
     return 1
   fi
   parts_payload+="<Part><ETag>$etag</ETag><PartNumber>4</PartNumber></Part>"
-  if ! complete_multipart_upload_rest "$1" "$2" "$3" "$4"; then
+  if ! complete_multipart_upload_rest "$1" "$2" "$upload_id" "$parts_payload"; then
     log 2 "error completing multipart upload"
     return 1
   fi
