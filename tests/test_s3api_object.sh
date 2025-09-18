@@ -50,6 +50,7 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_public_access_block.sh
 source ./tests/commands/select_object_content.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
+source ./tests/drivers/list_buckets/list_buckets_rest.sh
 
 export RUN_USERS=true
 

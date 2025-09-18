@@ -66,10 +66,10 @@ get_object_legal_hold_rest_version_id() {
     log 2 "error getting object legal hold: $result"
     return 1
   fi
+  legal_hold=$(cat "$TEST_FILE_FOLDER/legal_hold.txt")
   if [ "$result" != "200" ]; then
-    log 2 "get-object-legal-hold returned code $result: $(cat "$TEST_FILE_FOLDER/legal_hold.txt")"
+    log 2 "get-object-legal-hold returned code $result: $legal_hold)"
     return 1
   fi
-  legal_hold=$(cat "$TEST_FILE_FOLDER/legal_hold.txt")
   return 0
 }

@@ -29,6 +29,7 @@ source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
@@ -111,13 +112,8 @@ test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
   assert_success
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
 
   run create_test_files "$test_file"
   assert_success
@@ -135,13 +131,30 @@ test_file="test_file"
 }
 
 @test "REST - legal hold, get without config" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "test requires object lock not to be enabled"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
-  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file"
+  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file" "InvalidRequest"
+  assert_success
+}
+
+@test "REST - legal hold, object lock enabled w/o specific object lock set" {
+  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  assert_success
+
+  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file" "NoSuchObjectLockConfiguration"
   assert_success
 }
 
