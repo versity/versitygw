@@ -29,8 +29,9 @@ export RUN_USERS=true
   fi
   run setup_bucket_and_user_v2 "$BUCKET_ONE_NAME" "$USERNAME_ONE" "$PASSWORD_ONE"
   assert_success
-  username=${lines[2]}
-  password=${lines[3]}
+  username=${lines[${#lines[@]}-2]}
+  password=${lines[${#lines[@]}-1]}
+  log 5 "output: $output"
   log 5 "username: $username, password: $password"
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
