@@ -97,7 +97,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListAllMyBuckets, "", auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 		))
 
 	bucketRouter := app.Group("/:bucket")
@@ -408,7 +407,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionHeadBucket, auth.ListBucketAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -424,7 +422,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -438,7 +435,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -452,7 +448,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -466,7 +461,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -480,7 +474,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketAnalyticsConfiguration, auth.PutAnalyticsConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -494,7 +487,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketEncryption, auth.PutEncryptionConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -508,7 +500,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketIntelligentTieringConfiguration, auth.PutIntelligentTieringConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -522,7 +513,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketInventoryConfiguration, auth.PutInventoryConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -536,7 +526,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketLifecycle, auth.PutLifecycleConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -550,7 +539,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketMetricsConfiguration, auth.PutMetricsConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -564,7 +552,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketReplication, auth.PutReplicationConfigurationAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -578,7 +565,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeletePublicAccessBlock, auth.PutBucketPublicAccessBlockAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -592,7 +578,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucketWebsite, auth.PutBucketWebsiteAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -605,7 +590,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteBucket, auth.DeleteBucketAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -621,7 +605,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketLocation, auth.GetBucketLocationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		),
@@ -636,7 +619,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketTagging, auth.GetBucketTaggingAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -650,7 +632,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketOwnershipControls, auth.GetBucketOwnershipControlsAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -664,7 +645,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketVersioning, auth.GetBucketVersioningAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -678,7 +658,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketPolicy, auth.GetBucketPolicyAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -692,7 +671,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketCors, auth.GetBucketCorsAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -706,7 +684,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectLockConfiguration, auth.GetBucketObjectLockConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -720,7 +697,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAcl, auth.GetBucketAclAction, auth.PermissionReadAcp, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -734,7 +710,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListMultipartUploads, auth.ListBucketMultipartUploadsAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -748,7 +723,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjectVersions, auth.ListBucketVersionsAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -762,7 +736,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketPolicyStatus, auth.GetBucketPolicyStatusAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -776,7 +749,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAnalyticsConfiguration, auth.GetAnalyticsConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -790,7 +762,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListBucketAnalyticsConfigurations, auth.GetAnalyticsConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -804,7 +775,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketEncryption, auth.GetEncryptionConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -818,7 +788,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketIntelligentTieringConfiguration, auth.GetIntelligentTieringConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -832,7 +801,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListBucketIntelligentTieringConfigurations, auth.GetIntelligentTieringConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -846,7 +814,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketInventoryConfiguration, auth.GetInventoryConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -860,7 +827,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListBucketInventoryConfigurations, auth.GetInventoryConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -874,7 +840,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketLifecycleConfiguration, auth.GetLifecycleConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -888,7 +853,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketLogging, auth.GetBucketLoggingAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -902,7 +866,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketRequestPayment, auth.GetBucketRequestPaymentAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -916,7 +879,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketMetricsConfiguration, auth.GetMetricsConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -930,7 +892,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListBucketMetricsConfigurations, auth.GetMetricsConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -944,7 +905,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketReplication, auth.GetReplicationConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -958,7 +918,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetPublicAccessBlock, auth.GetBucketPublicAccessBlockAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -972,7 +931,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketNotificationConfiguration, auth.GetBucketNotificationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -986,7 +944,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketAccelerateConfiguration, auth.GetAccelerateConfigurationAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -1000,7 +957,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetBucketWebsite, auth.GetBucketWebsiteAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -1014,7 +970,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjectsV2, auth.ListBucketAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1027,7 +982,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListObjects, auth.ListBucketAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1058,7 +1012,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionHeadObject, auth.GetObjectAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1074,7 +1027,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectTagging, auth.GetObjectTaggingAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1088,7 +1040,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectRetention, auth.GetObjectRetentionAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1102,7 +1053,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectLegalHold, auth.GetObjectLegalHoldAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1116,7 +1066,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectAcl, auth.GetObjectAclAction, auth.PermissionReadAcp, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1130,7 +1079,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObjectAttributes, auth.GetObjectAttributesAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1144,7 +1092,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionListParts, auth.ListMultipartUploadPartsAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1157,7 +1104,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionGetObject, auth.GetObjectAction, auth.PermissionRead, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1173,7 +1119,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteObjectTagging, auth.DeleteObjectTaggingAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1187,7 +1132,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionAbortMultipartUpload, auth.AbortMultipartUploadAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1200,7 +1144,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionDeleteObject, auth.DeleteObjectAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1244,7 +1187,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCompleteMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1258,7 +1200,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCreateMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1331,7 +1272,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionUploadPartCopy, auth.PutObjectAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
@@ -1371,7 +1311,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionCopyObject, auth.PutObjectAction, auth.PermissionWrite, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false),
-			middlewares.VerifyMD5Body(false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
