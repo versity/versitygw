@@ -36,7 +36,7 @@ func TestAuthentication(s *S3Conf) {
 	Authentication_date_mismatch(s)
 	Authentication_incorrect_payload_hash(s)
 	Authentication_invalid_sha256_payload_hash(s)
-	Authentication_incorrect_md5(s)
+	Authentication_md5(s)
 	Authentication_signature_error_incorrect_secret_key(s)
 }
 
@@ -562,8 +562,7 @@ func TestPutBucketCors(s *S3Conf) {
 	PutBucketCors_empty_cors_rules(s)
 	PutBucketCors_invalid_method(s)
 	PutBucketCors_invalid_header(s)
-	PutBucketCors_invalid_content_md5(s)
-	PutBucketCors_incorrect_content_md5(s)
+	PutBucketCors_md5(s)
 	PutBucketCors_success(s)
 }
 
@@ -1045,7 +1044,7 @@ func GetIntTests() IntTests {
 		"Authentication_date_mismatch":                                            Authentication_date_mismatch,
 		"Authentication_incorrect_payload_hash":                                   Authentication_incorrect_payload_hash,
 		"Authentication_invalid_sha256_payload_hash":                              Authentication_invalid_sha256_payload_hash,
-		"Authentication_incorrect_md5":                                            Authentication_incorrect_md5,
+		"Authentication_md5":                                                      Authentication_md5,
 		"Authentication_signature_error_incorrect_secret_key":                     Authentication_signature_error_incorrect_secret_key,
 		"PresignedAuth_security_token_not_supported":                              PresignedAuth_security_token_not_supported,
 		"PresignedAuth_unsupported_algorithm":                                     PresignedAuth_unsupported_algorithm,
@@ -1403,8 +1402,7 @@ func GetIntTests() IntTests {
 		"PutBucketCors_empty_cors_rules":                                          PutBucketCors_empty_cors_rules,
 		"PutBucketCors_invalid_method":                                            PutBucketCors_invalid_method,
 		"PutBucketCors_invalid_header":                                            PutBucketCors_invalid_header,
-		"PutBucketCors_invalid_content_md5":                                       PutBucketCors_invalid_content_md5,
-		"PutBucketCors_incorrect_content_md5":                                     PutBucketCors_incorrect_content_md5,
+		"PutBucketCors_md5":                                                       PutBucketCors_md5,
 		"GetBucketCors_non_existing_bucket":                                       GetBucketCors_non_existing_bucket,
 		"GetBucketCors_no_such_bucket_cors":                                       GetBucketCors_no_such_bucket_cors,
 		"GetBucketCors_success":                                                   GetBucketCors_success,

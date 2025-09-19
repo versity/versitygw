@@ -28,7 +28,7 @@ import (
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
 // access to anonymous requesters
-func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission) fiber.Handler {
+func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, streamBody bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// skip for authenticated requests
 		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
@@ -60,7 +60,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 			return err
 		}
 
-		if utils.IsBigDataAction(ctx) {
+		if streamBody {
 			payloadType := ctx.Get("X-Amz-Content-Sha256")
 			if utils.IsUnsignedStreamingPayload(payloadType) {
 				checksumType, err := utils.ExtractChecksumType(ctx)

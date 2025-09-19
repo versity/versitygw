@@ -371,6 +371,8 @@ func checkHTTPResponseApiErr(resp *http.Response, apiErr s3err.APIError) error {
 		return err
 	}
 
+	resp.Body.Close()
+
 	var errResp s3err.APIErrorResponse
 	err = xml.Unmarshal(body, &errResp)
 	if err != nil {

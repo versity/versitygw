@@ -106,7 +106,7 @@ func (ar *AuthReader) validateSignature() error {
 		return s3err.GetAPIError(s3err.ErrMissingDateHeader)
 	}
 
-	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size))
+	return CheckValidSignature(ar.ctx, ar.auth, ar.secret, hashPayload, tdate, int64(ar.size), true)
 }
 
 const (
@@ -114,11 +114,11 @@ const (
 )
 
 // CheckValidSignature validates the ctx v4 auth signature
-func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64) error {
+func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64, streamBody bool) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	// Create a new http request instance from fasthttp request
-	req, err := createHttpRequestFromCtx(ctx, signedHdrs, contentLen)
+	req, err := createHttpRequestFromCtx(ctx, signedHdrs, contentLen, streamBody)
 	if err != nil {
 		return fmt.Errorf("create http request from context: %w", err)
 	}

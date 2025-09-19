@@ -37,7 +37,7 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -112,7 +112,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) 
 		if !utils.IsValidSh256PayloadHeader(hashPayload) {
 			return s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)
 		}
-		if utils.IsBigDataAction(ctx) {
+		if streamBody {
 			// for streaming PUT actions, authorization is deferred
 			// until end of stream due to need to get length and
 			// checksum of the stream to validate authorization
@@ -160,7 +160,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string) 
 			}
 		}
 
-		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength)
+		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength, false)
 		if err != nil {
 			return err
 		}
