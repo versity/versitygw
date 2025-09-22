@@ -32,6 +32,10 @@ func HostStyleParser(virtualDomain string) fiber.Handler {
 			return ctx.Next()
 		}
 		path := ctx.Path()
+		if path == "/" {
+			// omit the trailing / for bucket operations
+			path = ""
+		}
 		pathStyleUrl := fmt.Sprintf("/%v%v", bucket, path)
 		ctx.Path(pathStyleUrl)
 
