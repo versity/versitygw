@@ -115,7 +115,7 @@ func (hr *HashReader) Read(p []byte) (int, error) {
 		case HashTypeMd5:
 			sum := hr.Sum()
 			if sum != hr.sum {
-				return n, s3err.GetAPIError(s3err.ErrInvalidDigest)
+				return n, s3err.GetAPIError(s3err.ErrBadDigest)
 			}
 		case HashTypeSha256Hex:
 			sum := hr.Sum()

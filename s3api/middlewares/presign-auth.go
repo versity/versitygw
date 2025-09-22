@@ -24,7 +24,7 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string) fiber.Handler {
+func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -71,7 +71,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			}
 		}
 
-		if utils.IsBigDataAction(ctx) {
+		if streamBody {
 			// Content-Length has to be set for data uploads: PutObject, UploadPart
 			if contentLengthStr == "" {
 				return s3err.GetAPIError(s3err.ErrMissingContentLength)
@@ -88,7 +88,7 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 			return nil
 		}
 
-		err = utils.CheckPresignedSignature(ctx, authData, account.Secret)
+		err = utils.CheckPresignedSignature(ctx, authData, account.Secret, streamBody)
 		if err != nil {
 			return err
 		}

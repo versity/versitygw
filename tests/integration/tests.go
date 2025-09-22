@@ -67,7 +67,7 @@ func Authentication_invalid_auth_header(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAuthHeader))
 	})
 }
@@ -89,7 +89,7 @@ func Authentication_unsupported_signature_version(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrUnsupportedAuthorizationType))
 	})
 }
@@ -110,7 +110,7 @@ func Authentication_missing_components(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingComponents())
 	})
 }
@@ -131,7 +131,7 @@ func Authentication_malformed_component(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MalformedComponent("SignedHeaders-Content-Length"))
 	})
 }
@@ -152,7 +152,7 @@ func Authentication_missing_credentials(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingCredential())
 	})
 }
@@ -173,7 +173,7 @@ func Authentication_missing_signedheaders(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingSignedHeaders())
 	})
 }
@@ -194,7 +194,7 @@ func Authentication_missing_signature(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MissingSignature())
 	})
 }
@@ -217,7 +217,7 @@ func Authentication_malformed_credential(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.MalformedCredential())
 	})
 }
@@ -240,7 +240,7 @@ func Authentication_credentials_invalid_terminal(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.InvalidTerminal("aws_request"))
 	})
 }
@@ -263,7 +263,7 @@ func Authentication_credentials_incorrect_service(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.IncorrectService("ec2"))
 	})
 }
@@ -287,7 +287,7 @@ func Authentication_credentials_incorrect_region(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.IncorrectRegion(s.awsRegion, cfg.awsRegion))
 	})
 }
@@ -310,7 +310,7 @@ func Authentication_credentials_invalid_date(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.InvalidDateFormat("3223423234"))
 	})
 }
@@ -407,7 +407,7 @@ func Authentication_credentials_non_existing_access_key(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidAccessKeyID))
 	})
 }
@@ -427,7 +427,7 @@ func Authentication_missing_date_header(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader))
 	})
 }
@@ -447,7 +447,7 @@ func Authentication_invalid_date_header(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMissingDateHeader))
 	})
 }
@@ -475,7 +475,7 @@ func Authentication_date_mismatch(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.MalformedAuth.DateMismatch())
 	})
 }
@@ -495,7 +495,7 @@ func Authentication_invalid_sha256_payload_hash(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod))
 	})
 }
@@ -516,29 +516,55 @@ func Authentication_incorrect_payload_hash(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
 	})
 }
 
-func Authentication_incorrect_md5(s *S3Conf) error {
-	testName := "Authentication_incorrect_md5"
+func Authentication_md5(s *S3Conf) error {
+	testName := "Authentication_md5"
+	bucket := getBucketName()
 	return authHandler(s, &authConfig{
 		testName: testName,
-		method:   http.MethodGet,
+		method:   http.MethodPut,
 		body:     nil,
 		service:  "s3",
 		date:     time.Now(),
+		path:     fmt.Sprintf("%s/obj", bucket),
 	}, func(req *http.Request) error {
-
-		req.Header.Set("Content-Md5", "sadfasdf87sad6f87==")
-
-		resp, err := s.httpClient.Do(req)
+		err := setup(s, bucket)
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
-		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidDigest))
+
+		for i, test := range []struct {
+			md5 string
+			err s3err.APIError
+		}{
+			{"invalid_md5", s3err.GetAPIError(s3err.ErrInvalidDigest)},
+			// valid base64, but invalid md5
+			{"aGVsbCBzLGRham5mamFuc2Y=", s3err.GetAPIError(s3err.ErrInvalidDigest)},
+			// valid md5, but incorrect
+			{"XrY7u+Ae7tCTyyK7j1rNww==", s3err.GetAPIError(s3err.ErrBadDigest)},
+		} {
+			req.Header.Set("Content-Md5", test.md5)
+
+			resp, err := s.httpClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			if err := checkHTTPResponseApiErr(resp, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %v", i+1, err)
+			}
+		}
+
+		err = teardown(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	})
 }
 
@@ -558,7 +584,7 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 	})
 }
@@ -15212,17 +15238,53 @@ func PutBucketCors_invalid_header(s *S3Conf) error {
 	})
 }
 
-// TODO: report a bug for this case
-func PutBucketCors_invalid_content_md5(s *S3Conf) error {
-	testName := "PutBucketCors_invalid_content_md5"
+func PutBucketCors_md5(s *S3Conf) error {
+	testName := "PutBucketCors_md5"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		return nil
-	})
-}
+		cfg := &types.CORSConfiguration{
+			CORSRules: []types.CORSRule{
+				{
+					AllowedOrigins: []string{"http://origin.com", "something.net"},
+					AllowedMethods: []string{http.MethodPost, http.MethodPut, http.MethodHead},
+					AllowedHeaders: []string{"X-Amz-Date", "X-Amz-Meta-Something", "Content-Type"},
+					ExposeHeaders:  []string{"Authorization", "Content-Disposition"},
+					MaxAgeSeconds:  getPtr(int32(125)),
+					ID:             getPtr("my-id"),
+				},
+			},
+		}
 
-func PutBucketCors_incorrect_content_md5(s *S3Conf) error {
-	testName := "PutBucketCors_incorrect_content_md5"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			md5 string
+			err error
+		}{
+			// invalid content-md5
+			{"invalid", s3err.GetAPIError(s3err.ErrInvalidDigest)},
+			// incorrect content-md5
+			{"uU0nuZNNPgilLlLX2n2r+s==", s3err.GetAPIError(s3err.ErrBadDigest)},
+			// correct content-md5
+			{"liZChnDYdpG46exsGGaBhg==", nil},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket:            &bucket,
+				CORSConfiguration: cfg,
+				ContentMD5:        &test.md5,
+			})
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test %v failed: expected no error but got %v", i+1, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test %v failed: expected s3err.APIError", i+1)
+				}
+
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test %v failed: %v", i+1, err)
+				}
+			}
+		}
+
 		return nil
 	})
 }
