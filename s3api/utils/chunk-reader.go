@@ -133,6 +133,25 @@ func IsUnsignedStreamingPayload(str string) bool {
 	return payloadType(str) == payloadTypeStreamingUnsignedTrailer
 }
 
+// IsAnonymousPayloadHashSupported returns error if payload hash
+// is streaming signed.
+// e.g.
+// "STREAMING-AWS4-HMAC-SHA256-PAYLOAD", "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD" ...
+func IsAnonymousPayloadHashSupported(hash string) error {
+	switch payloadType(hash) {
+	case payloadTypeStreamingEcdsa, payloadTypeStreamingEcdsaTrailer, payloadTypeStreamingSigned, payloadTypeStreamingSignedTrailer:
+		return s3err.GetAPIError(s3err.ErrUnsupportedAnonymousSignedStreaming)
+	}
+
+	return nil
+}
+
+// IsUnsignedPaylod checks if the provided payload hash type
+// is "UNSIGNED-PAYLOAD"
+func IsUnsignedPaylod(hash string) bool {
+	return hash == string(payloadTypeUnsigned)
+}
+
 // IsChunkEncoding checks for streaming/unsigned authorization types
 func IsStreamingPayload(str string) bool {
 	pt := payloadType(str)

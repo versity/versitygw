@@ -21103,6 +21103,57 @@ func PublicBucket_public_acl(s *S3Conf) error {
 	}, withAnonymousClient(), withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
+func PublicBucket_signed_streaming_payload(s *S3Conf) error {
+	testName := "PublicBucket_signed_streaming_payload"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := grantPublicBucketPolicy(s3client, bucket, policyTypeFull)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, "obj"), nil)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Add("x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrUnsupportedAnonymousSignedStreaming))
+	})
+}
+
+func PublicBucket_incorrect_sha256_hash(s *S3Conf) error {
+	testName := "PublicBucket_incorrect_sha256_hash"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		err := grantPublicBucketPolicy(s3client, bucket, policyTypeFull)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, "obj"), nil)
+		if err != nil {
+			return err
+		}
+
+		// in anonymous requests the sha256 hash validity is not checked
+		// so for any invalid values, the server calculates the hash
+		// and compares with the provided one
+		req.Header.Add("x-amz-content-sha256", "incorrect_hash")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrContentSHA256Mismatch))
+	})
+}
+
 // IAM related tests
 // multi-user iam tests
 func IAM_user_access_denied(s *S3Conf) error {

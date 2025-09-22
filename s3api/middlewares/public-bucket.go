@@ -15,6 +15,8 @@
 package middlewares
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"strings"
 
@@ -60,9 +62,19 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 			return err
 		}
 
+		// at this point the bucket is considered as public
+		// as public access is granted
+		utils.ContextKeyPublicBucket.Set(ctx, true)
+
+		payloadHash := ctx.Get("X-Amz-Content-Sha256")
+		err = utils.IsAnonymousPayloadHashSupported(payloadHash)
+		if err != nil {
+			return err
+		}
+
 		if streamBody {
-			payloadType := ctx.Get("X-Amz-Content-Sha256")
-			if utils.IsUnsignedStreamingPayload(payloadType) {
+			if utils.IsUnsignedStreamingPayload(payloadHash) {
+				// stack an unsigned streaming payload reader
 				checksumType, err := utils.ExtractChecksumType(ctx)
 				if err != nil {
 					return err
@@ -73,16 +85,32 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 					cr, err = utils.NewUnsignedChunkReader(r, checksumType)
 					return cr
 				})
-				if err != nil {
-					return err
-				}
-			} else {
-				utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
-			}
 
+				return err
+			} else if utils.IsUnsignedPaylod(payloadHash) {
+				// for UNSIGNED-PAYLOD simply store the body reader in context locals
+				utils.ContextKeyBodyReader.Set(ctx, ctx.Request().BodyStream())
+				return nil
+			} else {
+				// stack a hash reader to calculated the payload sha256 hash
+				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
+					var cr io.Reader
+					cr, err = utils.NewHashReader(r, payloadHash, utils.HashTypeSha256Hex)
+					return cr
+				})
+
+				return err
+			}
 		}
 
-		utils.ContextKeyPublicBucket.Set(ctx, true)
+		// Calculate the hash of the request payload
+		hashedPayload := sha256.Sum256(ctx.Body())
+		hexPayload := hex.EncodeToString(hashedPayload[:])
+
+		// Compare the calculated hash with the hash provided
+		if payloadHash != hexPayload {
+			return s3err.GetAPIError(s3err.ErrContentSHA256Mismatch)
+		}
 
 		return nil
 	}
