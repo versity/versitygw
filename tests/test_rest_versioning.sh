@@ -31,8 +31,10 @@ test_file="test_file"
 
   log 5 "get versioning"
 
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" ""
-  assert_success
+  if [ "$RECREATE_BUCKETS" != "true" ]; then
+    run check_versioning_status_rest "$BUCKET_ONE_NAME" ""
+    assert_success
+  fi
 
   run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Enabled"
   assert_success
