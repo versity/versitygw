@@ -116,6 +116,7 @@ const (
 	ErrSignatureDoesNotMatch
 	ErrContentSHA256Mismatch
 	ErrInvalidSHA256Paylod
+	ErrUnsupportedAnonymousSignedStreaming
 	ErrMissingContentLength
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
@@ -479,6 +480,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidSHA256Paylod: {
 		Code:           "InvalidArgument",
 		Description:    "x-amz-content-sha256 must be UNSIGNED-PAYLOAD, STREAMING-UNSIGNED-PAYLOAD-TRAILER, STREAMING-AWS4-HMAC-SHA256-PAYLOAD, STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD, STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER or a valid sha256 value.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrUnsupportedAnonymousSignedStreaming: {
+		Code:           "InvalidRequest",
+		Description:    "Anonymous requests don't support this x-amz-content-sha256 value. Please use UNSIGNED-PAYLOAD or STREAMING-UNSIGNED-PAYLOAD-TRAILER.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingContentLength: {

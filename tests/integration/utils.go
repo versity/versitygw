@@ -1064,8 +1064,7 @@ func grantPublicBucketPolicy(client *s3.Client, bucket string, tp policyType) er
 	case policyTypeObject:
 		doc = genPolicyDoc("Allow", `"*"`, `"s3:*"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
 	case policyTypeFull:
-		template := `
-		{
+		template := `{
 			"Statement": [
 				{
 					"Effect":  "Allow",

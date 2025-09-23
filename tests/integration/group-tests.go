@@ -926,6 +926,8 @@ func TestPublicBuckets(s *S3Conf) {
 	PublicBucket_public_bucket_policy(s)
 	PublicBucket_public_object_policy(s)
 	PublicBucket_public_acl(s)
+	PublicBucket_signed_streaming_payload(s)
+	PublicBucket_incorrect_sha256_hash(s)
 }
 
 func TestVersioning(s *S3Conf) {
@@ -1534,6 +1536,8 @@ func GetIntTests() IntTests {
 		"PublicBucket_public_bucket_policy":                                       PublicBucket_public_bucket_policy,
 		"PublicBucket_public_object_policy":                                       PublicBucket_public_object_policy,
 		"PublicBucket_public_acl":                                                 PublicBucket_public_acl,
+		"PublicBucket_signed_streaming_payload":                                   PublicBucket_signed_streaming_payload,
+		"PublicBucket_incorrect_sha256_hash":                                      PublicBucket_incorrect_sha256_hash,
 		"PutBucketVersioning_non_existing_bucket":                                 PutBucketVersioning_non_existing_bucket,
 		"PutBucketVersioning_invalid_status":                                      PutBucketVersioning_invalid_status,
 		"PutBucketVersioning_success_enabled":                                     PutBucketVersioning_success_enabled,
