@@ -19,6 +19,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/controllers"
@@ -36,9 +37,8 @@ type S3AdminServer struct {
 	debug   bool
 }
 
-func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
+func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
 	server := &S3AdminServer{
-		app:     app,
 		backend: be,
 		router:  new(S3AdminRouter),
 		port:    port,
@@ -47,6 +47,22 @@ func NewAdminServer(app *fiber.App, be backend.Backend, root middlewares.RootUse
 	for _, opt := range opts {
 		opt(server)
 	}
+
+	app := fiber.New(fiber.Config{
+		AppName:               "versitygw",
+		ServerHeader:          "VERSITYGW",
+		Network:               fiber.NetworkTCP,
+		DisableStartupMessage: true,
+		ErrorHandler:          globalErrorHandler,
+	})
+
+	server.app = app
+
+	app.Use(recover.New(
+		recover.Config{
+			EnableStackTrace:  true,
+			StackTraceHandler: stackTraceHandler,
+		}))
 
 	// Logging middlewares
 	if !server.quiet {

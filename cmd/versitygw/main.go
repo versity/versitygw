@@ -25,7 +25,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -604,15 +603,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}()
 	}
 
-	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		StreamRequestBody:     true,
-		DisableKeepalive:      !keepAlive,
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-	})
-
 	var opts []s3api.Option
 
 	if certFile != "" || keyFile != "" {
@@ -644,11 +634,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if virtualDomain != "" {
 		opts = append(opts, s3api.WithHostStyle(virtualDomain))
 	}
-
+	if keepAlive {
+		opts = append(opts, s3api.WithKeepAlive())
+	}
 	if debug {
 		debuglogger.SetDebugEnabled()
 	}
-
 	if iamDebug {
 		debuglogger.SetIAMDebugEnabled()
 	}
@@ -733,7 +724,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("init bucket event notifications: %w", err)
 	}
 
-	srv, err := s3api.New(app, be, middlewares.RootUserConfig{
+	srv, err := s3api.New(be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
 	}, port, region, iam, loggers.S3Logger, loggers.AdminLogger, evSender, metricsManager, opts...)
@@ -744,13 +735,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	var admSrv *s3api.S3AdminServer
 
 	if admPort != "" {
-		admApp := fiber.New(fiber.Config{
-			AppName:               "versitygw",
-			ServerHeader:          "VERSITYGW",
-			Network:               fiber.NetworkTCP,
-			DisableStartupMessage: true,
-		})
-
 		var opts []s3api.AdminOpt
 
 		if admCertFile != "" || admKeyFile != "" {
@@ -774,7 +758,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			opts = append(opts, s3api.WithAdminDebug())
 		}
 
-		admSrv = s3api.NewAdminServer(admApp, be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, opts...)
+		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, opts...)
 	}
 
 	if !quiet {
