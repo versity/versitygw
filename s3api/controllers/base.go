@@ -18,7 +18,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
@@ -201,7 +200,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		fmt.Fprintf(os.Stderr, "Internal Error, %v\n", err)
+		debuglogger.InernalError(err)
 		ctx.Status(http.StatusInternalServerError)
 
 		// If the error is not 's3err.APIError' return 'InternalError'

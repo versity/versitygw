@@ -20,12 +20,15 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
@@ -38,12 +41,12 @@ type S3ApiServer struct {
 	cert          *tls.Certificate
 	quiet         bool
 	readonly      bool
+	keepAlive     bool
 	health        string
 	virtualDomain string
 }
 
 func New(
-	app *fiber.App,
 	be backend.Backend,
 	root middlewares.RootUserConfig,
 	port, region string,
@@ -55,7 +58,6 @@ func New(
 	opts ...Option,
 ) (*S3ApiServer, error) {
 	server := &S3ApiServer{
-		app:     app,
 		backend: be,
 		router:  new(S3ApiRouter),
 		port:    port,
@@ -64,6 +66,25 @@ func New(
 	for _, opt := range opts {
 		opt(server)
 	}
+
+	app := fiber.New(fiber.Config{
+		AppName:               "versitygw",
+		ServerHeader:          "VERSITYGW",
+		StreamRequestBody:     true,
+		DisableKeepalive:      !server.keepAlive,
+		Network:               fiber.NetworkTCP,
+		DisableStartupMessage: true,
+		ErrorHandler:          globalErrorHandler,
+	})
+
+	server.app = app
+
+	// initialize the panic recovery middleware
+	app.Use(recover.New(
+		recover.Config{
+			EnableStackTrace:  true,
+			StackTraceHandler: stackTraceHandler,
+		}))
 
 	// Logging middlewares
 	if !server.quiet {
@@ -132,9 +153,39 @@ func WithHostStyle(virtualDomain string) Option {
 	return func(s *S3ApiServer) { s.virtualDomain = virtualDomain }
 }
 
+// WithKeepAlive enables the server keep alive
+func WithKeepAlive() Option {
+	return func(s *S3ApiServer) { s.keepAlive = true }
+}
+
 func (sa *S3ApiServer) Serve() (err error) {
 	if sa.cert != nil {
 		return sa.app.ListenTLSWithCertificate(sa.port, *sa.cert)
 	}
 	return sa.app.Listen(sa.port)
+}
+
+// stackTraceHandler stores the system panics
+// in the context locals
+func stackTraceHandler(ctx *fiber.Ctx, e any) {
+	utils.ContextKeyStack.Set(ctx, e)
+}
+
+// globalErrorHandler catches the errors before reaching to
+// the handlers and any system panics
+func globalErrorHandler(ctx *fiber.Ctx, er error) error {
+	if utils.ContextKeyStack.IsSet(ctx) {
+		// if stack is set, it means the stack trace
+		// has caught a panic
+		// log it as a panic log
+		debuglogger.Panic(er)
+	} else {
+		// otherwise log it as an internal error
+		debuglogger.InernalError(er)
+	}
+
+	ctx.Status(http.StatusInternalServerError)
+
+	return ctx.Send(s3err.GetAPIErrorResponse(
+		s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 }

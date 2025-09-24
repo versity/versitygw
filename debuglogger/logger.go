@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -25,17 +26,38 @@ import (
 )
 
 type Color string
+type prefix string
 
 const (
 	green  Color = "\033[32m"
 	yellow Color = "\033[33m"
 	blue   Color = "\033[34m"
+	red    Color = "\033[31m"
 	Purple Color = "\033[0;35m"
+
+	prefixPanic        prefix = "[PANIC]: "
+	prefixInernalError prefix = "[INTERNAL ERROR]: "
+	prefixInfo         prefix = "[INFO]: "
+	prefixDebug        prefix = "[DEBUG]: "
 
 	reset      = "\033[0m"
 	borderChar = "─"
 	boxWidth   = 120
 )
+
+// Panic prints the panics out in the console
+func Panic(er error) {
+	printError(prefixPanic, er)
+}
+
+// InernalError prints the internal error out in the console
+func InernalError(er error) {
+	printError(prefixInernalError, er)
+}
+
+func printError(prefix prefix, er error) {
+	fmt.Fprintf(os.Stderr, string(red)+string(prefix)+"%v"+reset+"\n", er)
+}
 
 // Logs http request details: headers, body, params, query args
 func LogFiberRequestDetails(ctx *fiber.Ctx) {
@@ -102,8 +124,8 @@ func Logf(format string, v ...any) {
 	if !debugEnabled.Load() {
 		return
 	}
-	debugPrefix := "[DEBUG]: "
-	fmt.Printf(string(yellow)+debugPrefix+format+reset+"\n", v...)
+
+	fmt.Printf(string(yellow)+string(prefixDebug)+format+reset+"\n", v...)
 }
 
 // Infof prints out green info block with [INFO]: prefix
@@ -111,8 +133,8 @@ func Infof(format string, v ...any) {
 	if !debugEnabled.Load() {
 		return
 	}
-	debugPrefix := "[INFO]: "
-	fmt.Printf(string(green)+debugPrefix+format+reset+"\n", v...)
+
+	fmt.Printf(string(green)+string(prefixInfo)+format+reset+"\n", v...)
 }
 
 var debugIAMEnabled atomic.Bool
@@ -133,8 +155,8 @@ func IAMLogf(format string, v ...any) {
 	if !debugIAMEnabled.Load() {
 		return
 	}
-	debugPrefix := "[DEBUG]: "
-	fmt.Printf(string(yellow)+debugPrefix+format+reset+"\n", v...)
+
+	fmt.Printf(string(yellow)+string(prefixDebug)+format+reset+"\n", v...)
 }
 
 // PrintInsideHorizontalBorders prints the text inside horizontal

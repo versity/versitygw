@@ -19,7 +19,7 @@ import (
 )
 
 // Region, StartTime, IsRoot, Account, AccessKey context locals
-// are set to defualut values in middlewares.SetDefaultValues
+// are set to default values in middlewares.SetDefaultValues
 // to avoid the nil interface conversions
 type ContextKey string
 
@@ -35,6 +35,7 @@ const (
 	ContextKeySkipResBodyLog ContextKey = "skip-res-body-log"
 	ContextKeyBodyReader     ContextKey = "body-reader"
 	ContextKeySkip           ContextKey = "__skip"
+	ContextKeyStack          ContextKey = "stack"
 )
 
 func (ck ContextKey) Values() []ContextKey {
