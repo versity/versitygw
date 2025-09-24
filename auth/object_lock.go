@@ -24,6 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
@@ -92,28 +93,101 @@ func ParseBucketLockConfigurationOutput(input []byte) (*types.ObjectLockConfigur
 	return result, nil
 }
 
-func ParseObjectLockRetentionInput(input []byte) ([]byte, error) {
+func ParseObjectLockRetentionInput(input []byte) (*s3response.PutObjectRetentionInput, error) {
 	var retention s3response.PutObjectRetentionInput
 	if err := xml.Unmarshal(input, &retention); err != nil {
+		debuglogger.Logf("invalid object lock retention request body: %v", err)
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
 	if retention.RetainUntilDate.Before(time.Now()) {
+		debuglogger.Logf("object lock retain until date must be in the future")
 		return nil, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate)
 	}
 	switch retention.Mode {
 	case types.ObjectLockRetentionModeCompliance:
 	case types.ObjectLockRetentionModeGovernance:
 	default:
+		debuglogger.Logf("invalid object lock retention mode: %s", retention.Mode)
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	return json.Marshal(retention)
+	return &retention, nil
+}
+
+func ParseObjectLockRetentionInputToJSON(input *s3response.PutObjectRetentionInput) ([]byte, error) {
+	data, err := json.Marshal(input)
+	if err != nil {
+		debuglogger.Logf("parse object lock retention to JSON: %v", err)
+		return nil, fmt.Errorf("parse object lock retention: %w", err)
+	}
+
+	return data, nil
+}
+
+// IsObjectLockRetentionPutAllowed checks if the object lock retention PUT request
+// is allowed against the current state of the object lock
+func IsObjectLockRetentionPutAllowed(ctx context.Context, be backend.Backend, bucket, object, versionId, userAccess string, input *s3response.PutObjectRetentionInput, bypass bool) error {
+	ret, err := be.GetObjectRetention(ctx, bucket, object, versionId)
+	if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
+		// if object lock configuration is not set
+		// allow the retention modification without any checks
+		return nil
+	}
+	if err != nil {
+		debuglogger.Logf("failed to get object retention: %v", err)
+		return err
+	}
+
+	retention, err := ParseObjectLockRetentionOutput(ret)
+	if err != nil {
+		return err
+	}
+
+	if retention.Mode == input.Mode {
+		// if retention mode is the same
+		// the operation is allowed
+		return nil
+	}
+
+	if retention.Mode == types.ObjectLockRetentionModeCompliance {
+		// COMPLIANCE mode is by definition not allowed to modify
+		debuglogger.Logf("object lock retention change request from 'COMPLIANCE' to 'GOVERNANCE' is not allowed")
+		return s3err.GetAPIError(s3err.ErrObjectLocked)
+	}
+
+	if !bypass {
+		// if x-amz-bypass-governance-retention is not provided
+		// return error: object is locked
+		debuglogger.Logf("object lock retention mode change is not allowed and bypass governence is not forced")
+		return s3err.GetAPIError(s3err.ErrObjectLocked)
+	}
+
+	// the last case left, when user tries to chenge
+	// from 'GOVERNANCE' to 'COMPLIANCE' with
+	// 'x-amz-bypass-governance-retention' header
+	// first we need to check if user has 's3:BypassGovernanceRetention'
+	policy, err := be.GetBucketPolicy(ctx, bucket)
+	if err != nil {
+		// if it fails to get the policy, return object is locked
+		debuglogger.Logf("failed to get the bucket policy: %v", err)
+		return s3err.GetAPIError(s3err.ErrObjectLocked)
+	}
+	err = VerifyBucketPolicy(policy, userAccess, bucket, object, BypassGovernanceRetentionAction)
+	if err != nil {
+		// if user doesn't have "s3:BypassGovernanceRetention" permission
+		// return object is locked
+		debuglogger.Logf("the user is missing 's3:BypassGovernanceRetention' permission")
+		return s3err.GetAPIError(s3err.ErrObjectLocked)
+	}
+
+	return nil
 }
 
 func ParseObjectLockRetentionOutput(input []byte) (*types.ObjectLockRetention, error) {
 	var retention types.ObjectLockRetention
 	if err := json.Unmarshal(input, &retention); err != nil {
+		debuglogger.Logf("parse object lock retention output: %v", err)
 		return nil, fmt.Errorf("parse object lock retention: %w", err)
 	}
 

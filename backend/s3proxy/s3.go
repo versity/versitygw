@@ -1558,7 +1558,7 @@ func (s *S3Proxy) GetObjectLockConfiguration(ctx context.Context, bucket string)
 	return nil, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)
 }
 
-func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
+func (s *S3Proxy) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 

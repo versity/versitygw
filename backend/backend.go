@@ -90,7 +90,7 @@ type Backend interface {
 	// object lock operations
 	PutObjectLockConfiguration(_ context.Context, bucket string, config []byte) error
 	GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error)
-	PutObjectRetention(_ context.Context, bucket, object, versionId string, bypass bool, retention []byte) error
+	PutObjectRetention(_ context.Context, bucket, object, versionId string, retention []byte) error
 	GetObjectRetention(_ context.Context, bucket, object, versionId string) ([]byte, error)
 	PutObjectLegalHold(_ context.Context, bucket, object, versionId string, status bool) error
 	GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*bool, error)
@@ -267,7 +267,7 @@ func (BackendUnsupported) PutObjectLockConfiguration(_ context.Context, bucket s
 func (BackendUnsupported) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutObjectRetention(_ context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
+func (BackendUnsupported) PutObjectRetention(_ context.Context, bucket, object, versionId string, retention []byte) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 func (BackendUnsupported) GetObjectRetention(_ context.Context, bucket, object, versionId string) ([]byte, error) {

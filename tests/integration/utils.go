@@ -1139,15 +1139,9 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 		Key:    &object,
 	})
 	cancel()
-	if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
 	}
-	// client sdk regression issue prevents getting full error message,
-	// change back to below once this is fixed:
-	// https://github.com/aws/aws-sdk-go-v2/issues/2921
-	// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-	// 	return err
-	// }
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -1155,15 +1149,9 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 		Key:    &object,
 	})
 	cancel()
-	if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
 	}
-	// client sdk regression issue prevents getting full error message,
-	// change back to below once this is fixed:
-	// https://github.com/aws/aws-sdk-go-v2/issues/2921
-	// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-	// 	return err
-	// }
 
 	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 	_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
@@ -1177,15 +1165,9 @@ func checkWORMProtection(client *s3.Client, bucket, object string) error {
 		},
 	})
 	cancel()
-	if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+	if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 		return err
 	}
-	// client sdk regression issue prevents getting full error message,
-	// change back to below once this is fixed:
-	// https://github.com/aws/aws-sdk-go-v2/issues/2921
-	// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-	// 	return err
-	// }
 
 	return nil
 }

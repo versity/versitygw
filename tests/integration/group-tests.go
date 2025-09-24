@@ -619,6 +619,8 @@ func TestPutObjectRetention(s *S3Conf) {
 	PutObjectRetention_expired_retain_until_date(s)
 	PutObjectRetention_invalid_mode(s)
 	PutObjectRetention_overwrite_compliance_mode(s)
+	PutObjectRetention_overwrite_compliance_with_compliance(s)
+	PutObjectRetention_overwrite_governance_with_governance(s)
 	PutObjectRetention_overwrite_governance_without_bypass_specified(s)
 	PutObjectRetention_overwrite_governance_with_permission(s)
 	PutObjectRetention_success(s)
@@ -1440,6 +1442,8 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_expired_retain_until_date":                            PutObjectRetention_expired_retain_until_date,
 		"PutObjectRetention_invalid_mode":                                         PutObjectRetention_invalid_mode,
 		"PutObjectRetention_overwrite_compliance_mode":                            PutObjectRetention_overwrite_compliance_mode,
+		"PutObjectRetention_overwrite_compliance_with_compliance":                 PutObjectRetention_overwrite_compliance_with_compliance,
+		"PutObjectRetention_overwrite_governance_with_governance":                 PutObjectRetention_overwrite_governance_with_governance,
 		"PutObjectRetention_overwrite_governance_without_bypass_specified":        PutObjectRetention_overwrite_governance_without_bypass_specified,
 		"PutObjectRetention_overwrite_governance_with_permission":                 PutObjectRetention_overwrite_governance_with_permission,
 		"PutObjectRetention_success":                                              PutObjectRetention_success,

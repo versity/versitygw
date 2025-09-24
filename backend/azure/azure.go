@@ -364,7 +364,7 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 		if err != nil {
 			return s3response.PutObjectOutput{}, fmt.Errorf("parse object lock retention: %w", err)
 		}
-		err = az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", true, retParsed)
+		err = az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed)
 		if err != nil {
 			return s3response.PutObjectOutput{}, err
 		}
@@ -977,7 +977,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 			if err != nil {
 				return s3response.CopyObjectOutput{}, fmt.Errorf("parse object retention: %w", err)
 			}
-			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", true, retParsed)
+			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", retParsed)
 			if err != nil {
 				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
@@ -1678,7 +1678,7 @@ func (az *Azure) GetObjectLockConfiguration(ctx context.Context, bucket string) 
 	return cfg, nil
 }
 
-func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
+func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, versionId string, retention []byte) error {
 	err := az.isBucketObjectLockEnabled(ctx, bucket)
 	if err != nil {
 		return err
@@ -1700,28 +1700,7 @@ func (az *Azure) PutObjectRetention(ctx context.Context, bucket, object, version
 			string(keyObjRetention): backend.GetPtrFromString(string(retention)),
 		}
 	} else {
-		objLockCfg, ok := meta[string(keyObjRetention)]
-		if !ok {
-			meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
-		} else {
-			var lockCfg types.ObjectLockRetention
-			if err := json.Unmarshal([]byte(*objLockCfg), &lockCfg); err != nil {
-				return fmt.Errorf("unmarshal object lock config: %w", err)
-			}
-
-			switch lockCfg.Mode {
-			// Compliance mode can't be overridden
-			case types.ObjectLockRetentionModeCompliance:
-				return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-			// To override governance mode user should have "s3:BypassGovernanceRetention" permission
-			case types.ObjectLockRetentionModeGovernance:
-				if !bypass {
-					return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
-				}
-			}
-
-			meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
-		}
+		meta[string(keyObjRetention)] = backend.GetPtrFromString(string(retention))
 	}
 
 	_, err = blobClient.SetMetadata(ctx, meta, nil)
