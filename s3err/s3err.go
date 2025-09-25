@@ -553,9 +553,9 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrObjectLocked: {
-		Code:           "InvalidRequest",
-		Description:    "Object is WORM protected and cannot be overwritten.",
-		HTTPStatusCode: http.StatusBadRequest,
+		Code:           "AccessDenied",
+		Description:    "Access Denied because object protected by object lock.",
+		HTTPStatusCode: http.StatusForbidden,
 	},
 	ErrPastObjectLockRetainDate: {
 		Code:           "InvalidRequest",

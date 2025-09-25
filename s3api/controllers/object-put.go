@@ -106,20 +106,9 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	if bypass {
-		policy, err := c.be.GetBucketPolicy(ctx.Context(), bucket)
-		if err != nil {
-			bypass = false
-		} else {
-			if err := auth.VerifyBucketPolicy(policy, acct.Access, bucket, key, auth.BypassGovernanceRetentionAction); err != nil {
-				bypass = false
-			}
-		}
-	}
-
+	// parse the request body bytes into a go struct and validate
 	retention, err := auth.ParseObjectLockRetentionInput(ctx.Body())
 	if err != nil {
-		debuglogger.Logf("failed to parse object lock configuration input: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
@@ -127,7 +116,27 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutObjectRetention(ctx.Context(), bucket, key, versionId, bypass, retention)
+	// check if the operation is allowed
+	err = auth.IsObjectLockRetentionPutAllowed(ctx.Context(), c.be, bucket, key, versionId, acct.Access, retention, bypass)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	// parse the retention to JSON
+	data, err := auth.ParseObjectLockRetentionInputToJSON(retention)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = c.be.PutObjectRetention(ctx.Context(), bucket, key, versionId, data)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,

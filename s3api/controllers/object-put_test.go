@@ -187,11 +187,28 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 			},
 		},
 		{
+			name: "retention put not allowed",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         validRetentionBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
-				locals: defaultLocals,
-				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
-				body:   validRetentionBody,
+				locals:       defaultLocals,
+				beErr:        s3err.GetAPIError(s3err.ErrNoSuchBucket),
+				body:         validRetentionBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration),
 			},
 			output: testOutput{
 				response: &Response{
@@ -203,46 +220,11 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 			},
 		},
 		{
-			name: "success bypass GetBucketPolicy fails",
+			name: "successful response",
 			input: testInput{
 				locals:       defaultLocals,
 				body:         validRetentionBody,
-				extraMockErr: s3err.GetAPIError(s3err.ErrAccessDenied),
-				headers: map[string]string{
-					"X-Amz-Bypass-Governance-Retention": "true",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-			},
-		},
-		{
-			name: "success bypass VerifyBucketPolicy fails",
-			input: testInput{
-				locals:        defaultLocals,
-				body:          validRetentionBody,
-				extraMockResp: []byte("invalid_policy"),
-				headers: map[string]string{
-					"X-Amz-Bypass-Governance-Retention": "true",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-			},
-		},
-		{
-			name: "successful response",
-			input: testInput{
-				locals: defaultLocals,
-				body:   validRetentionBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration),
 			},
 			output: testOutput{
 				response: &Response{
@@ -256,15 +238,14 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
-				PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, bypass bool, retention []byte) error {
+				PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string, retention []byte) error {
 					return tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
-					if tt.input.extraMockResp == nil {
-						return nil, tt.input.extraMockErr
-					} else {
-						return tt.input.extraMockResp.([]byte), tt.input.extraMockErr
-					}
+					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+				GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket, object, versionId string) ([]byte, error) {
+					return nil, tt.input.extraMockErr
 				},
 			}
 
