@@ -16,7 +16,9 @@ package s3api
 
 import (
 	"crypto/tls"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -180,7 +182,16 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 		// log it as a panic log
 		debuglogger.Panic(er)
 	} else {
-		// otherwise log it as an internal error
+		// handle the fiber specific errors
+		var fiberErr *fiber.Error
+		if errors.As(er, &fiberErr) {
+			if strings.Contains(fiberErr.Message, "cannot parse Content-Length") {
+				ctx.Status(http.StatusBadRequest)
+				return nil
+			}
+		}
+
+		// additionally log the internal error
 		debuglogger.InernalError(er)
 	}
 
