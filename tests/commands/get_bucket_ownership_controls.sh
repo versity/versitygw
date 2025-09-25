@@ -41,7 +41,7 @@ get_bucket_ownership_controls_rest() {
   if ! check_param_count "get_bucket_ownership_controls_rest" "bucket" 1 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/ownershipControls.txt" ./tests/rest_scripts/get_bucket_ownership_controls.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/ownershipControls.txt" ./tests/rest_scripts/get_bucket_ownership_controls.sh); then
     log 2 "error getting bucket ownership controls: $result"
     return 1
   fi

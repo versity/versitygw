@@ -26,6 +26,9 @@ source ./tests/util/util_setup.sh
 test_file="test_file"
 
 @test "REST - check, enable, suspend versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot test versioning changes in static mode"
+  fi
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
@@ -48,6 +51,9 @@ test_file="test_file"
 }
 
 @test "test_rest_versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot test versioning changes in static mode"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
@@ -71,6 +77,9 @@ test_file="test_file"
 }
 
 @test "versioning - add version, then delete and check for marker" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot test versioning changes in static mode"
+  fi
   run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
   assert_success
 
