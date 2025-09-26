@@ -45,6 +45,9 @@ export RUN_USERS=true
 }
 
 @test "REST - HeadBucket - doesn't exist" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "skip test when RECREATE_BUCKETS is set to false"
+  fi
   run head_bucket_rest "$BUCKET_ONE_NAME"
   assert_failure 1
 }
