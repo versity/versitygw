@@ -144,22 +144,12 @@ setup_bucket() {
 
   log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if [ "$DIRECT" == "true" ]; then
-      log 2 "bucket not successfully deleted"
-      return 1
-    fi
     if ! create_bucket "s3api" "$1"; then
       log 2 "error creating bucket"
       return 1
     fi
   else
     log 5 "skipping bucket re-creation"
-  fi
-
-  # bucket creation and resets take longer to propagate in direct mode
-  if [ "$DIRECT" == "true" ]; then
-    log 2 "bucket not found after creation"
-    return 1
   fi
 
   if [[ $1 == "s3cmd" ]]; then
