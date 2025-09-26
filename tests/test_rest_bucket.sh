@@ -37,10 +37,11 @@ source ./tests/util/util_tags.sh
 export RUN_USERS=true
 
 @test "REST - HeadBucket" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v2 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name="${lines[${#lines[@]} - 1]}"
 
-  run head_bucket_rest "$BUCKET_ONE_NAME"
+  run head_bucket_rest "$bucket_name"
   assert_success
 }
 

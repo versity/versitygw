@@ -74,7 +74,7 @@ check_versioning_status_rest() {
   if ! check_param_count "check_versioning_status_rest" "bucket, expected value" 2 $#; then
     return 1
   fi
-  if ! get_bucket_versioning_rest "$BUCKET_ONE_NAME"; then
+  if ! get_bucket_versioning_rest "$1"; then
     log 2 "error getting bucket versioning"
     return 1
   fi

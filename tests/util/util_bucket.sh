@@ -105,88 +105,6 @@ bucket_exists() {
   return 1
 }
 
-direct_wait_for_bucket() {
-  if ! check_param_count "direct_wait_for_bucket" "bucket" 1 $#; then
-    return 1
-  fi
-  sleep 5
-  bucket_verification_start_time=$(date +%s)
-  while ! bucket_exists "$1"; do
-    bucket_verification_end_time=$(date +%s)
-    if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
-      log 2 "bucket existence check timeout"
-      return 1
-    fi
-    sleep 5
-  done
-  return 0
-}
-
-direct_wait_for_bucket_deletion() {
-  if ! check_param_count "direct_wait_for_bucket" "bucket" 1 $#; then
-    return 1
-  fi
-  sleep 5
-  bucket_verification_start_time=$(date +%s)
-  while bucket_exists "$1"; do
-    bucket_verification_end_time=$(date +%s)
-    if [ $((bucket_verification_end_time-bucket_verification_start_time)) -ge 60 ]; then
-      log 2 "bucket existence check timeout"
-      return 1
-    fi
-    sleep 5
-  done
-  return 0
-}
-
-# params:  client, bucket name
-# return 0 for success, 1 for error
-bucket_cleanup() {
-  log 6 "bucket_cleanup"
-  if ! check_param_count "bucket_cleanup" "bucket name" 1 $#; then
-    return 1
-  fi
-  if [[ $RECREATE_BUCKETS == "false" ]]; then
-    if ! reset_bucket "$1"; then
-      log 2 "error deleting bucket contents"
-      return 1
-    fi
-
-    log 5 "bucket contents, policy, ACL deletion success"
-    return 0
-  fi
-  if ! delete_bucket_recursive "$1"; then
-    log 2 "error with recursive bucket delete"
-    return 1
-  fi
-  log 5 "bucket deletion success"
-  return 0
-}
-
-# params: client, bucket name
-# return 0 for success, 1 for error
-bucket_cleanup_if_bucket_exists() {
-  log 6 "bucket_cleanup_if_bucket_exists"
-  if ! check_param_count_gt "bucket name, bucket known to exist (optional)" 1 $#; then
-    return 1
-  fi
-
-  if [ "$2" == "false" ]; then
-    log 5 "skipping cleanup, since bucket doesn't exist"
-    return 0
-  fi
-
-  if [ "$2" == "true" ] || bucket_exists "$1"; then
-    if ! bucket_cleanup "$1"; then
-      log 2 "error deleting bucket and/or contents"
-      return 1
-    fi
-    log 5 "bucket and/or bucket data deletion success"
-    return 0
-  fi
-  return 0
-}
-
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
@@ -226,7 +144,7 @@ setup_bucket() {
 
   log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket_deletion "$1"; then
+    if [ "$DIRECT" == "true" ]; then
       log 2 "bucket not successfully deleted"
       return 1
     fi
@@ -239,7 +157,7 @@ setup_bucket() {
   fi
 
   # bucket creation and resets take longer to propagate in direct mode
-  if [ "$DIRECT" == "true" ] && ! direct_wait_for_bucket "$1"; then
+  if [ "$DIRECT" == "true" ]; then
     log 2 "bucket not found after creation"
     return 1
   fi

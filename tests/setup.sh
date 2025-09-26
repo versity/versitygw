@@ -17,6 +17,7 @@
 source ./tests/env.sh
 source ./tests/report.sh
 source ./tests/setup_mc.sh
+source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 source ./tests/util/util_object.sh
 source ./tests/versity.sh
 
@@ -146,14 +147,9 @@ post_versity_cleanup() {
 teardown() {
   # shellcheck disable=SC2154
   log 4 "********** BEGIN TEARDOWN **********"
-  if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ]; then
-    log 5 "deleting or clearing buckets"
-    if ! bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"; then
-      log 3 "error deleting bucket $BUCKET_ONE_NAME or contents"
-    fi
-    if ! bucket_cleanup_if_bucket_exists "$BUCKET_TWO_NAME"; then
-      log 3 "error deleting bucket $BUCKET_TWO_NAME or contents"
-    fi
+  if [ "$DELETE_BUCKETS_AFTER_TEST" != "false" ] && ! cleanup_buckets; then
+    log 3 "error cleaning up buckets after test"
+    return 1
   fi
   if [ "$SKIP_USERS_TESTS" != "true" ]; then
     if [ -n "$USERNAME_ONE" ]; then

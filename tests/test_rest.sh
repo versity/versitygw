@@ -29,6 +29,7 @@ source ./tests/commands/put_bucket_versioning.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh

@@ -3,10 +3,32 @@
 source ./tests/drivers/params.sh
 
 setup_bucket_and_file() {
-  if ! check_param_count "setup_bucket_and_file" "bucket, file name" 2 $#; then
+  if ! check_param_count_v2 "bucket, file name" 2 $#; then
     return 1
   fi
-  if ! setup_bucket_and_files "$1" "$2"; then
+  if ! setup_bucket_and_file_base "$1" "setup_bucket_and_files" "$2"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+  return 0
+}
+
+setup_bucket_and_file_v2() {
+  if ! check_param_count_v2 "bucket, file name" 2 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_file_base "$1" "setup_bucket_and_files_v2" "$2"; then
+    log 2 "error setting up bucket and files"
+    return 1
+  fi
+  return 0
+}
+
+setup_bucket_and_file_base() {
+  if ! check_param_count_v2 "bucket, function, file name" 3 $#; then
+    return 1
+  fi
+  if ! "$2" "$1" "$3"; then
     log 2 "error setting up bucket and file"
     return 1
   fi
@@ -17,11 +39,33 @@ setup_bucket_and_files() {
   if ! check_param_count_gt "bucket, file name" 2 $#; then
     return 1
   fi
-  if ! setup_bucket "$1"; then
+  if ! setup_bucket_and_files_base "$1" "setup_bucket" "${@:2}"; then
+    log 2 "error setting up bucket and files"
+    return 1
+  fi
+  return 0
+}
+
+setup_bucket_and_files_v2() {
+  if ! check_param_count_gt "bucket, file name" 2 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_files_base "$1" "setup_bucket_v2" "${@:2}"; then
+    log 2 "error setting up bucket and files"
+    return 1
+  fi
+  return 0
+}
+
+setup_bucket_and_files_base() {
+  if ! check_param_count_gt "bucket, setup bucket function, file name" 3 $#; then
+    return 1
+  fi
+  if ! "$2" "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
-  if ! create_test_files "${@:2}"; then
+  if ! create_test_files "${@:3}"; then
     log 2 "error creating test files"
     return 1
   fi
