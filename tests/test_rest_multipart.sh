@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/drivers/rest.sh
 source ./tests/drivers/complete_multipart_upload/complete_multipart_upload_rest.sh
+source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/upload_part/upload_part_rest.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_list_parts.sh

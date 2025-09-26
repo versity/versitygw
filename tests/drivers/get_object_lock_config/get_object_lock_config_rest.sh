@@ -22,6 +22,7 @@ check_object_lock_config() {
   lock_config_exists=true
   if ! get_object_lock_configuration "rest" "$1"; then
     # shellcheck disable=SC2154
+    log 5 "lock config error: $get_object_lock_config_err"
     if [[ "$get_object_lock_config_err" == *"does not exist"* ]]; then
       # shellcheck disable=SC2034
       lock_config_exists=false

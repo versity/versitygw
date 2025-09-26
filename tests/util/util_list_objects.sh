@@ -350,7 +350,7 @@ get_delete_marker_and_verify_405() {
   fi
   log 5 "xml val: $version_id"
 
-  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="$2" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
+  if ! result=$(OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" VERSION_ID="$version_id" ./tests/rest_scripts/head_object.sh); then
     log 2 "error getting result: $result"
     return 1
   fi

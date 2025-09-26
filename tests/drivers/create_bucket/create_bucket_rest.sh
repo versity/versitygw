@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/drivers/get_object/get_object_rest.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl_rest.sh
@@ -108,6 +109,99 @@ create_bucket_and_check_acl() {
   log 5 "acl file: $(cat "$TEST_FILE_FOLDER/acl-file.txt")"
   if ! put_bucket_acl_success_or_access_denied "$1" "$TEST_FILE_FOLDER/acl-file.txt" "$3" "$4" "$write_acp"; then
     log 2 "put ACL permissions mismatch"
+    return 1
+  fi
+  return 0
+}
+
+get_bucket_prefix() {
+  if ! check_param_count_v2 "bucket prefix or name" 1 $#; then
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    # remove date/time suffix
+    prefix="$(echo "$1" | awk '{print substr($0, 1, length($0)-15)}')"
+  else
+    prefix="$1"
+  fi
+  echo "$prefix"
+}
+
+setup_bucket_v2() {
+  if ! check_param_count_v2 "bucket prefix or name" 1 $#; then
+    return 1
+  fi
+  if ! prefix=$(get_bucket_prefix "$1" 2>&1); then
+    log 2 "error getting prefix: $prefix"
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists_v2 "$prefix"; then
+    log 2 "error cleaning up bucket(s), if it/they exist(s)"
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    return 0
+  fi
+  if ! create_bucket_rest_expect_success "$1" ""; then
+    log 2 "error creating bucket '$1'"
+    return 1
+  fi
+  return 0
+}
+
+get_bucket_name() {
+  if ! check_param_count_v2 "bucket" 1 $#; then
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    echo "$1"
+  fi
+  echo "$1-$(date +%Y%m%d%H%M%S)"
+}
+
+setup_bucket_object_lock_enabled_v2() {
+  if ! check_param_count_v2 "bucket" 1 $#; then
+    return 1
+  fi
+  if ! prefix=$(get_bucket_prefix "$1" 2>&1); then
+    log 2 "error getting prefix: $prefix"
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists_v2 "$prefix"; then
+    log 2 "error cleaning up bucket"
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    if ! create_bucket_object_lock_enabled "$1"; then
+      log 2 "error creating bucket '$1' with object lock enabled"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+setup_bucket_object_lock_enabled() {
+  if ! check_param_count "setup_bucket_object_lock_enabled" "bucket" 1 $#; then
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists "$1"; then
+    log 2 "error cleaning up bucket"
+    return 1
+  fi
+  if [ "$DIRECT" == "true" ] && [ "$RECREATE_BUCKETS" == "true" ]; then
+    log 2 "bucket not confirmed as deleted"
+    return 1
+  fi
+
+  # in static bucket config, bucket will still exist
+  if ! bucket_exists "$1"; then
+    if ! create_bucket_object_lock_enabled "$1"; then
+      log 2 "error creating bucket with object lock enabled"
+      return 1
+    fi
+  fi
+  if [ "$DIRECT" == "true" ]; then
+    log 2 "bucket not confirmed as created"
     return 1
   fi
   return 0
