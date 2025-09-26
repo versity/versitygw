@@ -46,10 +46,7 @@ export RUN_USERS=true
 }
 
 @test "REST - HeadBucket - doesn't exist" {
-  if [ "$RECREATE_BUCKETS" == "false" ]; then
-    skip "skip test when RECREATE_BUCKETS is set to false"
-  fi
-  run head_bucket_rest "$BUCKET_ONE_NAME"
+  run head_bucket_rest "$BUCKET_ONE_NAME-$(uuidgen)"
   assert_failure 1
 }
 
@@ -87,22 +84,18 @@ export RUN_USERS=true
 }
 
 @test "test_rest_set_get_lock_config" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v2 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="${lines[${#lines[@]} - 1]}"
+
+  run check_no_object_lock_config_rest "$bucket_name"
   assert_success
 
-  run check_no_object_lock_config_rest "$BUCKET_ONE_NAME"
+  run setup_bucket_object_lock_enabled_v2 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_two_name="${lines[${#lines[@]} - 1]}"
 
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
-  assert_success
-
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run check_object_lock_config_enabled_rest "$BUCKET_ONE_NAME"
+  run check_object_lock_config_enabled_rest "$bucket_two_name"
   assert_success
 }
 
