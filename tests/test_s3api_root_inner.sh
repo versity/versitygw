@@ -128,12 +128,12 @@ test_get_put_object_legal_hold_s3api_root() {
   echo "fdkljafajkfs" > "$TEST_FILE_FOLDER/$bucket_file"
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
   assert_failure
-  assert_output --partial "Object is WORM protected and cannot be overwritten"
+  assert_output --partial "object protected by object lock"
 
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
   assert_failure 1
   # shellcheck disable=SC2154
-  assert_output --partial "Object is WORM protected and cannot be overwritten"
+  assert_output --partial "object protected by object lock"
 
   run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
   assert_success
@@ -173,12 +173,12 @@ test_get_put_object_retention_s3api_root() {
   run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
   assert_failure
   # shellcheck disable=SC2154
-  assert_output --partial "Object is WORM protected and cannot be overwritten"
+  assert_output --partial "object protected by object lock"
 
   run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
   assert_failure
   # shellcheck disable=SC2154
-  assert_output --partial "Object is WORM protected and cannot be overwritten"
+  assert_output --partial "object protected by object lock"
 }
 
 test_retention_bypass_s3api_root() {

@@ -51,7 +51,7 @@ check_for_and_remove_worm_protection() {
     return 2
   fi
 
-  if [[ $3 == *"WORM"* ]]; then
+  if [[ $3 == *"WORM"* ]] || [[ "$3" == *"object protected by object lock"* ]]; then
     log 5 "WORM protection found"
     if ! put_object_legal_hold "rest" "$1" "$2" "OFF"; then
       log 2 "error removing object legal hold"

@@ -28,11 +28,12 @@ source ./tests/util/util_setup.sh
 test_file="test_file"
 
 @test "REST - check, enable, suspend versioning" {
-  run setup_bucket_v2 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
 
-  log 5 "get versioning"
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
 
   run check_versioning_status_rest "$bucket_name" ""
   assert_success
@@ -51,9 +52,12 @@ test_file="test_file"
 }
 
 @test "test_rest_versioning" {
-  run setup_bucket_and_file_v2 "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -75,9 +79,12 @@ test_file="test_file"
 }
 
 @test "versioning - add version, then delete and check for marker" {
-  run setup_bucket_and_file_v2 "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -93,9 +100,12 @@ test_file="test_file"
 }
 
 @test "versioning - retrieve after delete" {
-  run setup_bucket_and_file_v2 "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
 
   run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
@@ -114,9 +124,12 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run setup_bucket_object_lock_enabled_v2 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
 
   run create_test_files "$test_file"
   assert_success
@@ -135,9 +148,12 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run setup_bucket_object_lock_enabled_v2 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
 
   run create_test_files "$test_file"
   assert_success

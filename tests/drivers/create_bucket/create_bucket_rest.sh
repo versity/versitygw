@@ -114,43 +114,69 @@ create_bucket_and_check_acl() {
   return 0
 }
 
+get_bucket_prefix() {
+  if ! check_param_count_v2 "bucket prefix or name" 1 $#; then
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "true" ]; then
+    # remove date/time suffix
+    prefix="$(echo "$1" | awk '{print substr($0, 1, length($0)-15)}')"
+  else
+    prefix="$1"
+  fi
+  echo "$prefix"
+}
+
 setup_bucket_v2() {
   if ! check_param_count_v2 "bucket prefix or name" 1 $#; then
     return 1
   fi
-  if ! bucket_cleanup_if_bucket_exists_v2 "$1"; then
+  if ! prefix=$(get_bucket_prefix "$1" 2>&1); then
+    log 2 "error getting prefix: $prefix"
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists_v2 "$prefix"; then
     log 2 "error cleaning up bucket(s), if it/they exist(s)"
     return 1
   fi
   if [ "$RECREATE_BUCKETS" == "false" ]; then
-    echo "$1"
     return 0
   fi
-  bucket_name="$1-$(date +%Y%m%d%H%M%S)"
-  if ! create_bucket_rest_expect_success "$bucket_name" ""; then
-    log 2 "error creating bucket '$bucket_name'"
+  if ! create_bucket_rest_expect_success "$1" ""; then
+    log 2 "error creating bucket '$1'"
     return 1
   fi
-  echo "$bucket_name"
   return 0
+}
+
+get_bucket_name() {
+  if ! check_param_count_v2 "bucket" 1 $#; then
+    return 1
+  fi
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    echo "$1"
+  fi
+  echo "$1-$(date +%Y%m%d%H%M%S)"
 }
 
 setup_bucket_object_lock_enabled_v2() {
   if ! check_param_count_v2 "bucket" 1 $#; then
     return 1
   fi
-  if ! bucket_cleanup_if_bucket_exists_v2 "$1"; then
+  if ! prefix=$(get_bucket_prefix "$1" 2>&1); then
+    log 2 "error getting prefix: $prefix"
+    return 1
+  fi
+  if ! bucket_cleanup_if_bucket_exists_v2 "$prefix"; then
     log 2 "error cleaning up bucket"
     return 1
   fi
   if [ "$RECREATE_BUCKETS" == "true" ]; then
-    bucket_name="$1-$(date +%Y%m%d%H%M%S)"
-    if ! create_bucket_object_lock_enabled "$bucket_name"; then
-      log 2 "error creating bucket '$bucket_name' with object lock enabled"
+    if ! create_bucket_object_lock_enabled "$1"; then
+      log 2 "error creating bucket '$1' with object lock enabled"
       return 1
     fi
   fi
-  echo "$bucket_name"
   return 0
 }
 

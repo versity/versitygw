@@ -3017,71 +3017,44 @@ func PutObject_missing_object_lock_retention_config(s *S3Conf) error {
 
 func PutObject_with_object_lock(s *S3Conf) error {
 	testName := "PutObject_with_object_lock"
-	runF(testName)
-	bucket, obj, lockStatus := getBucketName(), "my-obj", true
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		retainUntilDate := time.Now().AddDate(1, 0, 0)
 
-	client := s.GetClient()
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket:                     &bucket,
-		ObjectLockEnabledForBucket: &lockStatus,
-	})
-	cancel()
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+			ObjectLockMode:            types.ObjectLockModeCompliance,
+			ObjectLockRetainUntilDate: &retainUntilDate,
+		}, s3client)
+		if err != nil {
+			return err
+		}
 
-	retainDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
 
-	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:                    &bucket,
-		Key:                       &obj,
-		ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
-		ObjectLockMode:            types.ObjectLockModeCompliance,
-		ObjectLockRetainUntilDate: &retainDate,
-	})
+		if out.ObjectLockMode != types.ObjectLockModeCompliance {
+			return fmt.Errorf("expected object lock mode to be %v, instead got %v", types.ObjectLockModeCompliance, out.ObjectLockMode)
+		}
+		if out.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
+			return fmt.Errorf("expected object lock legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
+		}
 
-	cancel()
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
 
-	ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-	out, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &bucket,
-		Key:    &obj,
-	})
-	cancel()
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	if out.ObjectLockMode != types.ObjectLockModeCompliance {
-		failF("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockModeCompliance, out.ObjectLockMode)
-		return fmt.Errorf("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockModeCompliance, out.ObjectLockMode)
-	}
-	if out.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
-		failF("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
-		return fmt.Errorf("%v: expected object lock mode to be %v, instead got %v", testName, types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
-	}
-
-	if err := changeBucketObjectLockStatus(client, bucket, false); err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	err = teardown(s, bucket)
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	passF(testName)
-	return nil
+		return nil
+	}, withLock())
 }
 
 func PutObject_invalid_legal_hold(s *S3Conf) error {
@@ -16420,7 +16393,103 @@ func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
+func PutObjectRetention_overwrite_compliance_with_compliance(s *S3Conf) error {
+	testName := "PutObjectRetention_overwrite_compliance_with_compliance"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(time.Hour * 200)
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		newDate := date.AddDate(2, 0, 0)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: &newDate,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
+			return err
+		}
+
+		return nil
+	}, withLock())
+}
+
+func PutObjectRetention_overwrite_governance_with_governance(s *S3Conf) error {
+	testName := "PutObjectRetention_overwrite_governance_with_governance"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		date := time.Now().Add(time.Hour * 200)
+		obj := "my-obj"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &date,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		newDate := date.AddDate(2, 0, 0)
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &newDate,
+			},
+		})
+		cancel()
+		if err != nil {
 			return err
 		}
 
@@ -16466,7 +16535,7 @@ func PutObjectRetention_overwrite_governance_without_bypass_specified(s *S3Conf)
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
 
@@ -18195,15 +18264,9 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 		}
 
 		_, err = putObjects(s3client, []string{object}, bucket)
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
-		// client sdk regression issue prevents getting full error message,
-		// change back to below once this is fixed:
-		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-		// 	return err
-		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -24068,15 +24131,9 @@ func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
-		// client sdk regression issue prevents getting full error message,
-		// change back to below once this is fixed:
-		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-		// 	return err
-		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -24119,15 +24176,9 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
-		// client sdk regression issue prevents getting full error message,
-		// change back to below once this is fixed:
-		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-		// 	return err
-		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
@@ -24170,15 +24221,9 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 			VersionId: version.VersionId,
 		})
 		cancel()
-		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
 			return err
 		}
-		// client sdk regression issue prevents getting full error message,
-		// change back to below once this is fixed:
-		// https://github.com/aws/aws-sdk-go-v2/issues/2921
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
-		// 	return err
-		// }
 
 		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
 			return err
