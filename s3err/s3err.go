@@ -549,7 +549,7 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	},
 	ErrObjectLockConfigurationNotAllowed: {
 		Code:           "InvalidBucketState",
-		Description:    "Object Lock configuration cannot be enabled on existing buckets.",
+		Description:    "Versioning must be 'Enabled' on the bucket to apply a Object Lock configuration",
 		HTTPStatusCode: http.StatusConflict,
 	},
 	ErrObjectLocked: {

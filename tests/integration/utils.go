@@ -48,6 +48,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/versity/versitygw/s3err"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 var (
@@ -1100,25 +1102,6 @@ func getMalformedPolicyError(msg string) s3err.APIError {
 	}
 }
 
-// if true enables, otherwise disables
-func changeBucketObjectLockStatus(client *s3.Client, bucket string, status bool) error {
-	cfg := types.ObjectLockConfiguration{}
-	if status {
-		cfg.ObjectLockEnabled = types.ObjectLockEnabledEnabled
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-	_, err := client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-		Bucket:                  &bucket,
-		ObjectLockConfiguration: &cfg,
-	})
-	cancel()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func putBucketVersioningStatus(client *s3.Client, bucket string, status types.BucketVersioningStatus) error {
 	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 	_, err := client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
@@ -1834,4 +1817,127 @@ func sprintVersions(objects []types.ObjectVersion) string {
 	}
 
 	return strings.Join(names, ",")
+}
+
+// objToDelete represents the metadata of an object that needs to be deleted.
+// It holds details like the key, version, and legal/compliance lock flags.
+type objToDelete struct {
+	key                string // Object key (name) in the bucket
+	versionId          string // Specific object version ID
+	removeLegalHold    bool   // Whether to remove legal hold before deletion
+	removeOnlyLeglHold bool   // Whether to only remove legal hold, without deletion
+	isCompliance       bool   // Whether the object is under Compliance mode retention
+}
+
+// Worker and retry configuration for deleting locked objects
+const (
+	maxDelObjWorkers int64         = 20              // Maximum number of concurrent delete workers
+	maxRetryAttempts int           = 3               // Maximum retries for object deletion
+	lockWaitTime     time.Duration = time.Second * 3 // Wait time for lock expiration before retrying delete
+)
+
+// cleanupLockedObjects removes objects from a bucket that may be protected by
+// Object Lock (legal hold or retention).
+// It handles both Governance and Compliance retention modes and retries deletions
+// when necessary.
+func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) error {
+	eg, ctx := errgroup.WithContext(context.Background())
+
+	// Semaphore to limit the number of concurrent workers
+	sem := semaphore.NewWeighted(maxDelObjWorkers)
+
+	for _, obj := range objs {
+		obj := obj // capture loop variable
+
+		// Acquire worker slot before processing an object
+		if err := sem.Acquire(ctx, 1); err != nil {
+			return fmt.Errorf("failed to acquire worker space: %w", err)
+		}
+
+		eg.Go(func() error {
+			// Remove legal hold if required
+			if obj.removeLegalHold || obj.removeOnlyLeglHold {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err := client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+					Bucket:    &bucket,
+					Key:       &obj.key,
+					VersionId: getPtr(obj.versionId),
+					LegalHold: &types.ObjectLockLegalHold{
+						Status: types.ObjectLockLegalHoldStatusOff, // Disable legal hold
+					},
+				})
+				cancel()
+				// If object was already deleted, ignore the error
+				if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+
+				// If only the legal hold needs to be removed, stop here
+				if obj.removeOnlyLeglHold {
+					return nil
+				}
+			}
+
+			// Apply temporary retention policy to allow deletion
+			// RetainUntilDate is set a few seconds in the future to handle network delays
+			retDate := time.Now().Add(lockWaitTime)
+			mode := types.ObjectLockRetentionModeGovernance
+			if obj.isCompliance {
+				mode = types.ObjectLockRetentionModeCompliance
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+				Bucket:    &bucket,
+				Key:       &obj.key,
+				VersionId: getPtr(obj.versionId),
+				Retention: &types.ObjectLockRetention{
+					Mode:            mode,
+					RetainUntilDate: &retDate,
+				},
+			})
+			cancel()
+
+			// If object was already deleted, ignore the error
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+
+			// Wait until retention lock expires before attempting delete
+			time.Sleep(lockWaitTime)
+
+			// Attempt deletion with retries
+			attempts := 0
+			for attempts != maxRetryAttempts {
+				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+				_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+					Bucket:    &bucket,
+					Key:       &obj.key,
+					VersionId: getPtr(obj.versionId),
+				})
+				cancel()
+				if err != nil {
+					// Retry after a short delay if delete fails
+					time.Sleep(time.Second)
+					attempts++
+					continue
+				}
+
+				// Success, no more retries needed
+				return nil
+			}
+
+			// Return last error if all retries failed
+			return err
+		})
+	}
+
+	// Wait for all goroutines to finish, return any error encountered
+	return eg.Wait()
 }

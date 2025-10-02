@@ -41,7 +41,7 @@ func ParseBucketLockConfigurationInput(input []byte) ([]byte, error) {
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	if lockConfig.ObjectLockEnabled != "" && lockConfig.ObjectLockEnabled != types.ObjectLockEnabledEnabled {
+	if lockConfig.ObjectLockEnabled != types.ObjectLockEnabledEnabled {
 		return nil, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
@@ -272,31 +272,35 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 			}
 
 			if retention.Mode != "" && retention.RetainUntilDate != nil {
-				if retention.RetainUntilDate.After(time.Now()) {
-					switch retention.Mode {
-					case types.ObjectLockRetentionModeGovernance:
-						if !bypass {
-							return s3err.GetAPIError(s3err.ErrObjectLocked)
-						} else {
-							policy, err := be.GetBucketPolicy(ctx, bucket)
-							if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
-								return s3err.GetAPIError(s3err.ErrObjectLocked)
-							}
-							if err != nil {
-								return err
-							}
-							if isBucketPublic {
-								err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
-							} else {
-								err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
-							}
-							if err != nil {
-								return s3err.GetAPIError(s3err.ErrObjectLocked)
-							}
-						}
-					case types.ObjectLockRetentionModeCompliance:
+				if retention.RetainUntilDate.Before(time.Now()) {
+					// if the object retention is expired, the object
+					// is allowed for write operations(delete, modify)
+					return nil
+				}
+
+				switch retention.Mode {
+				case types.ObjectLockRetentionModeGovernance:
+					if !bypass {
 						return s3err.GetAPIError(s3err.ErrObjectLocked)
+					} else {
+						policy, err := be.GetBucketPolicy(ctx, bucket)
+						if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
+							return s3err.GetAPIError(s3err.ErrObjectLocked)
+						}
+						if err != nil {
+							return err
+						}
+						if isBucketPublic {
+							err = VerifyPublicBucketPolicy(policy, bucket, key, BypassGovernanceRetentionAction)
+						} else {
+							err = VerifyBucketPolicy(policy, userAccess, bucket, key, BypassGovernanceRetentionAction)
+						}
+						if err != nil {
+							return s3err.GetAPIError(s3err.ErrObjectLocked)
+						}
 					}
+				case types.ObjectLockRetentionModeCompliance:
+					return s3err.GetAPIError(s3err.ErrObjectLocked)
 				}
 			}
 		}
