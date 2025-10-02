@@ -48,8 +48,14 @@ setup_and_create_bucket_and_check_acl() {
   log 5 "username=$username, password=$password"
   envs="$1=$id OBJECT_OWNERSHIP=BucketOwnerPreferred"
   log 5 "envs: $envs"
+
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error retrieving bucket name: $bucket_name"
+    return 1
+  fi
+
   # shellcheck disable=SC2154
-  if ! create_bucket_and_check_acl "$BUCKET_ONE_NAME" "$envs" "$username" "$password" "$user_canonical_id" "$owner_canonical_id"; then
+  if ! create_bucket_and_check_acl "$bucket_name" "$envs" "$username" "$password" "$user_canonical_id" "$owner_canonical_id"; then
     log 2 "error creating bucket and checking ACL"
     return 1
   fi

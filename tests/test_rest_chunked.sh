@@ -19,101 +19,131 @@ load ./bats-assert/load
 
 source ./tests/logger.sh
 source ./tests/setup.sh
+source ./tests/drivers/file.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/util/util_bucket.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_setup.sh
 
 @test "REST - chunked upload, no content length" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   test_file="test-file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run attempt_seed_signature_without_content_length "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run attempt_seed_signature_without_content_length "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - chunked upload, signature error" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_test_file "$test_file" 8192
   assert_success
 
-  run attempt_chunked_upload_with_bad_first_signature "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run attempt_chunked_upload_with_bad_first_signature "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - chunked upload, final signature error" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_test_file "$test_file" 0
   assert_success
 
-  run attempt_chunked_upload_with_bad_final_signature "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run attempt_chunked_upload_with_bad_final_signature "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - chunked upload, success (file with just a's)" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_file_single_char "$test_file" 8192 'a'
   assert_success
 
-  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
 @test "REST - chunked upload, success (null bytes)" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_file_single_char "$test_file" 8192 '\0'
   assert_success
 
-  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
 @test "REST - chunked upload, success (random bytes)" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_test_file "$test_file" 10000
   assert_success
 
-  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
 @test "REST - chunked upload, success (zero-byte file)" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_test_file "$test_file" 0
   assert_success
 
-  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run chunked_upload_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }
 
@@ -143,11 +173,15 @@ source ./tests/util/util_setup.sh
 }
 
 @test "test - REST chunked upload - invalid trailer" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   test_file="test-file"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run setup_bucket_and_file "$bucket_name" "$test_file"
   assert_success
 
-  run put_chunked_upload_trailer_invalid "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_chunked_upload_trailer_invalid "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -202,16 +236,20 @@ source ./tests/util/util_setup.sh
 }
 
 @test "REST chunked upload - smaller chunk size" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
   assert_success
 
   test_file="test-file"
   run create_test_file "$test_file" 200000
   assert_success
 
-  run chunked_upload_trailer_different_chunk_size "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha256"
+  run chunked_upload_trailer_different_chunk_size "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "sha256"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 }

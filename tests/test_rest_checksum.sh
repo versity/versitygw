@@ -17,6 +17,8 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/drivers/file.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/setup.sh
 source ./tests/util/util_setup.sh
 
@@ -24,10 +26,14 @@ export RUN_USERS=true
 test_file="test_file"
 
 @test "REST - invalid checksum type" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run check_invalid_checksum_type "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run check_invalid_checksum_type "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -47,13 +53,17 @@ test_file="test_file"
 }
 
 @test "REST - HeadObject returns x-amz-checksum-sha256" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "sha256"
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "sha256"
   assert_success
 
-  run check_checksum_rest_sha256 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run check_checksum_rest_sha256 "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
 
@@ -73,13 +83,17 @@ test_file="test_file"
 }
 
 @test "REST - crc32 checksum - HeadObject" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "crc32"
+  run put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "crc32"
   assert_success
 
-  run check_checksum_rest_crc32 "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run check_checksum_rest_crc32 "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
 
@@ -129,23 +143,31 @@ test_file="test_file"
 }
 
 @test "REST - attempt to get checksum without checksum mode" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run add_correct_checksum "sha256"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run head_object_without_and_with_checksum "$BUCKET_ONE_NAME" "$test_file"
+  run head_object_without_and_with_checksum "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - HeadObject - default crc64nvme checksum" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_default_checksum "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run check_default_checksum "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }

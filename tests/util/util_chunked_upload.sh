@@ -44,28 +44,31 @@ attempt_chunked_upload_with_bad_first_signature() {
     log 2 "error sending command via openssl"
     return 1
   fi
-  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
-  log 5 "response code: $response_code"
-  if [ "$response_code" != "403" ]; then
-    log 2 "expected code '403', was '$response_code'"
-    return 1
-  fi
   log 5 "result: $result"
-  response_data="$(echo "$result" | grep "<Error>")"
-  response_data="${response_data/---/}"
-  log 5 "response data: $response_data"
-  log 5 "END"
-  echo -n "$response_data" > "$TEST_FILE_FOLDER/response_data.txt"
-  if ! check_xml_element "$TEST_FILE_FOLDER/response_data.txt" "SignatureDoesNotMatch" "Error" "Code"; then
-    log 2 "error checking XML element"
+  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
+  if ! get_xml_data "$TEST_FILE_FOLDER/result.txt" "$TEST_FILE_FOLDER/error_data.txt"; then
+    log 2 "error parsing XML data from result"
     return 1
   fi
+  response_code="$(echo "$result" | grep "HTTP" | awk '{print $2}')"
+  if ! check_rest_expected_error "$response_code" "$TEST_FILE_FOLDER/error_data.txt" "403" "SignatureDoesNotMatch" "does not match"; then
+    log 2 "error checking expected REST error"
+    return 1
+  fi
+  #response_data="$(echo "$result" | grep "<Error>")"
+  #response_data="${response_data/---/}"
+  #log 5 "response data: $response_data"
+  #log 5 "END"
+  #echo -n "$response_data" > "$TEST_FILE_FOLDER/response_data.txt"
+  #if ! check_xml_element "$TEST_FILE_FOLDER/response_data.txt" "SignatureDoesNotMatch" "Error" "Code"; then
+  #  log 2 "error checking XML element"
+  #  return 1
+  #fi
   return 0
 }
 
 chunked_upload_success() {
-  if [ $# -ne 3 ]; then
-    log 2 "'chunked_upload_success_as' requires data file, bucket name, key"
+  if ! check_param_count_v2 "data file, bucket name, key" 3 $#; then
     return 1
   fi
   if ! result=$(COMMAND_LOG="$COMMAND_LOG" \
@@ -191,7 +194,11 @@ chunked_upload_trailer_success() {
     log 2 "'chunked_upload_trailer_success' requires checksum"
     return 1
   fi
-  if ! setup_bucket "$BUCKET_ONE_NAME"; then
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket "$bucket_name"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -200,11 +207,11 @@ chunked_upload_trailer_success() {
     log 2 "error creating test file"
     return 1
   fi
-  if ! put_object_chunked_trailer_success "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1"; then
+  if ! put_object_chunked_trailer_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$1"; then
     log 2 "error performing chunked upload w/trailer"
     return 1
   fi
-  if ! download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
+  if ! download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
     log 2 "error downloading and comparing file"
     return 1
   fi
@@ -216,7 +223,11 @@ chunked_upload_trailer_invalid_checksum() {
     log 2 "'chunked_upload_trailer_invalid_checksum' requires checksum"
     return 1
   fi
-  if ! setup_bucket "$BUCKET_ONE_NAME"; then
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket "$bucket_name"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -231,7 +242,7 @@ chunked_upload_trailer_invalid_checksum() {
          AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
          AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
          DATA_FILE="$TEST_FILE_FOLDER/$test_file" \
-         BUCKET_NAME="$BUCKET_ONE_NAME" \
+         BUCKET_NAME="$bucket_name" \
          OBJECT_KEY="$test_file" CHUNK_SIZE=8192 TEST_MODE=false TRAILER="x-amz-checksum-$1" CHECKSUM="a" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
     log 2 "error creating command: $result"
     return 1
@@ -248,7 +259,11 @@ chunked_upload_trailer_incorrect_checksum() {
     log 2 "'chunked_upload_trailer_invalid_checksum' requires checksum"
     return 1
   fi
-  if ! setup_bucket "$BUCKET_ONE_NAME"; then
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket "$bucket_name"; then
     log 2 "error setting up bucket"
     return 1
   fi
@@ -267,7 +282,7 @@ chunked_upload_trailer_incorrect_checksum() {
          AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
          AWS_ENDPOINT_URL="$AWS_ENDPOINT_URL" \
          DATA_FILE="$TEST_FILE_FOLDER/$test_file" \
-         BUCKET_NAME="$BUCKET_ONE_NAME" \
+         BUCKET_NAME="$bucket_name" \
          OBJECT_KEY="$test_file" CHUNK_SIZE=8192 TEST_MODE=false TRAILER="x-amz-checksum-$1" CHECKSUM="$checksum" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" COMMAND_FILE="$TEST_FILE_FOLDER/command.txt" ./tests/rest_scripts/put_object_openssl_chunked_trailer_example.sh 2>&1); then
     log 2 "error creating command: $result"
     return 1

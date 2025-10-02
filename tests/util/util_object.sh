@@ -264,12 +264,18 @@ check_checksum_rest_invalid() {
   if ! check_param_count "check_checksum_rest_invalid" "checksum type" 1 $#; then
     return 1
   fi
+
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+
   test_file="test_file"
-  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+  if ! setup_bucket_and_file_v2 "$bucket_name" "$test_file"; then
     log 2 "error setting up bucket and file"
     return 1
   fi
-  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1" "dummy" "Value for x-amz-checksum-$1 header is invalid."; then
+  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$1" "dummy" "Value for x-amz-checksum-$1 header is invalid."; then
     log 2 "error checking checksum"
     return 1
   fi
@@ -280,8 +286,14 @@ check_checksum_rest_incorrect() {
   if ! check_param_count "check_checksum_rest_incorrect" "checksum type" 1 $#; then
     return 1
   fi
+
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+
   test_file="test_file"
-  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+  if ! setup_bucket_and_file "$bucket_name" "$test_file"; then
     log 2 "error setting up bucket and file"
     return 1
   fi
@@ -291,7 +303,7 @@ check_checksum_rest_incorrect() {
     log 2 "error calculating incorrect checksum"
     return 1
   fi
-  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1" "$incorrect_checksum" "$error_message"; then
+  if ! check_checksum_invalid_or_incorrect "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$1" "$incorrect_checksum" "$error_message"; then
     log 2 "error checking checksum"
     return 1
   fi
@@ -302,6 +314,7 @@ calculate_incorrect_checksum() {
   if ! check_param_count "calculate_incorrect_checksum" "checksum type, data file" 2 $#; then
     return 1
   fi
+
   if ! checksum=$(DATA_FILE="$2" CHECKSUM_TYPE="$1" TEST_FILE_FOLDER="$TEST_FILE_FOLDER" ./tests/rest_scripts/calculate_checksum.sh 2>&1); then
     log 2 "error calculating checksum: $checksum"
     return 1
@@ -334,13 +347,18 @@ add_correct_checksum() {
   if ! check_param_count "add_correct_checksum" "checksum type" 1 $#; then
     return 1
   fi
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+
   test_file="test_file"
-  if ! setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"; then
+  if ! setup_bucket_and_file "$bucket_name" "$test_file"; then
     log 2 "error setting up bucket and file"
     return 1
   fi
 
-  if ! put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$1"; then
+  if ! put_object_rest_checksum "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$1"; then
     log 2 "error adding file with checksum to s3"
     return 1
   fi

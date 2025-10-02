@@ -64,26 +64,6 @@ reset_bucket() {
   fi
 }
 
-# params:  bucket name
-# return 0 if able to delete recursively, 1 if not
-delete_bucket_recursive() {
-  log 6 "delete_bucket_recursive '$1'"
-  if ! check_param_count "delete_bucket_recursive_s3api" "bucket" 1 $#; then
-    return 1
-  fi
-
-  if ! reset_bucket "$1"; then
-    log 2 "error clearing bucket (s3api)"
-    return 1
-  fi
-
-  if ! delete_bucket_rest "$1"; then
-    log 2 "error deleting bucket"
-    return 1
-  fi
-  return 0
-}
-
 # check if bucket exists
 # param:  bucket name
 # return 0 for true, 1 for false, 2 for error
@@ -144,10 +124,6 @@ setup_bucket() {
 
   log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if [ "$DIRECT" == "true" ]; then
-      log 2 "bucket not successfully deleted"
-      return 1
-    fi
     if ! create_bucket "s3api" "$1"; then
       log 2 "error creating bucket"
       return 1

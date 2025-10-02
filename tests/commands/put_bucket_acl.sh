@@ -69,7 +69,7 @@ reset_bucket_acl() {
     log 2 "error resetting direct ACL"
     return 1
   fi
-  if ! put_bucket_acl_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$acl_file"; then
+  if ! put_bucket_acl_rest "$1" "$TEST_FILE_FOLDER/$acl_file"; then
     log 2 "error putting bucket acl (s3api)"
     return 1
   fi

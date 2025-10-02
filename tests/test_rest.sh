@@ -31,12 +31,13 @@ source ./tests/commands/put_object_retention.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
+source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
+source ./tests/drivers/file.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_attributes.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_delete_object.sh
 source ./tests/util/util_legal_hold.sh
@@ -58,30 +59,38 @@ export RUN_USERS=true
 test_file="test_file"
 
 @test "test_rest_list_objects" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run list_check_objects_rest "$BUCKET_ONE_NAME"
+  run list_check_objects_rest "$bucket_name"
   assert_success
 }
 
 @test "test_rest_delete_object" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_success
 
-  run delete_object "rest" "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object "rest" "$bucket_name" "$test_file"
   assert_success
 
-  run get_object "rest" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run get_object "rest" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_failure
 }
 
@@ -89,22 +98,26 @@ test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_object_tagging "rest" "$BUCKET_ONE_NAME" "$test_file" "$test_key" "$test_value"
+  run put_object_tagging "rest" "$bucket_name" "$test_file" "$test_key" "$test_value"
   assert_success
 
-  run check_verify_object_tags "rest" "$BUCKET_ONE_NAME" "$test_file" "$test_key" "$test_value"
+  run check_verify_object_tags "rest" "$bucket_name" "$test_file" "$test_key" "$test_value"
   assert_success
 
-  run delete_object_tagging "rest" "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object_tagging "rest" "$bucket_name" "$test_file"
   assert_success
 
-  run verify_no_object_tags "rest" "$BUCKET_ONE_NAME" "$test_file"
+  run verify_no_object_tags "rest" "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -112,13 +125,17 @@ test_file="test_file"
   test_key="TestKey"
   test_value="TestValue"
 
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_files "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
   if ! five_seconds_later=$(get_time_seconds_in_future 5 "%z"); then
@@ -126,7 +143,7 @@ test_file="test_file"
     return 1
   fi
   log 5 "later: $five_seconds_later"
-  run put_object_retention_rest "$BUCKET_ONE_NAME" "$test_file" "GOVERNANCE" "$five_seconds_later"
+  run put_object_retention_rest "$bucket_name" "$test_file" "GOVERNANCE" "$five_seconds_later"
   assert_success
 }
 
@@ -134,27 +151,35 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "test requires object lock not to be enabled"
   fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file" "InvalidRequest"
+  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "InvalidRequest"
   assert_success
 }
 
 @test "REST - legal hold, object lock enabled w/o specific object lock set" {
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_file "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_lock_enabled "$BUCKET_ONE_NAME" "$test_file" "NoSuchObjectLockConfiguration"
+  run check_legal_hold_without_lock_enabled "$bucket_name" "$test_file" "NoSuchObjectLockConfiguration"
   assert_success
 }
 
@@ -162,7 +187,11 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
   fi
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
   assert_success
 
   # shellcheck disable=SC2034
@@ -171,7 +200,7 @@ test_file="test_file"
   run split_file "$TEST_FILE_FOLDER/$test_file" 4
   assert_success
 
-  run upload_and_check_attributes "$test_file" "$file_size"
+  run upload_and_check_attributes "$bucket_name" "$test_file" "$file_size"
   assert_success
 }
 
@@ -179,21 +208,29 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1001"
   fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_attributes_invalid_param "$test_file"
+  run check_attributes_invalid_param "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - attributes - checksum" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$test_file"
+  run add_and_check_checksum "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -201,26 +238,30 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/993"
   fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   test_file_two="test_file_2"
   test_file_three="test_file_3"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "$test_file_three"
+  run setup_bucket_and_files_v2 "$bucket_name" "$test_file" "$test_file_two" "$test_file_three"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$bucket_name" "$test_file_two"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_three" "$BUCKET_ONE_NAME" "$test_file_three"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_three" "$bucket_name" "$test_file_three"
   assert_success
 
-  run list_objects_check_params_get_token "$BUCKET_ONE_NAME" "$test_file" "$test_file_two" "TRUE"
+  run list_objects_check_params_get_token "$bucket_name" "$test_file" "$test_file_two" "TRUE"
   assert_success
   continuation_token=$output
 
   # interestingly, AWS appears to accept continuation tokens that are a few characters off, so have to remove three chars
-  run list_objects_check_continuation_error "$BUCKET_ONE_NAME" "${continuation_token:0:${#continuation_token}-3}"
+  run list_objects_check_continuation_error "$bucket_name" "${continuation_token:0:${#continuation_token}-3}"
   assert_success
 }
 
@@ -228,32 +269,40 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"
   fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   test_file_two="test_file_2"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run setup_bucket_and_files_v2 "$bucket_name" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$bucket_name" "$test_file_two"
   assert_success
 
-  run list_objects_v1_check_nextmarker_empty "$BUCKET_ONE_NAME"
+  run list_objects_v1_check_nextmarker_empty "$bucket_name"
   assert_success
 }
 
 @test "REST - head object" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run get_etag_rest "$BUCKET_ONE_NAME" "$test_file"
+  run get_etag_rest "$bucket_name" "$test_file"
   assert_success
   expected_etag=$output
 
-  run get_etag_attribute_rest "$BUCKET_ONE_NAME" "$test_file" "$expected_etag"
+  run get_etag_attribute_rest "$bucket_name" "$test_file" "$expected_etag"
   assert_success
 }
 
@@ -261,51 +310,63 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1040"
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run delete_objects_no_content_md5_header "$BUCKET_ONE_NAME"
+  run delete_objects_no_content_md5_header "$bucket_name"
   assert_success
 }
 
 @test "REST - delete objects command" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   test_file_two="test_file_two"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run setup_bucket_and_files_v2 "$bucket_name" "$test_file" "$test_file_two"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$BUCKET_ONE_NAME" "$test_file_two"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file_two" "$bucket_name" "$test_file_two"
   assert_success
 
-  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file"
+  run verify_object_exists "$bucket_name" "$test_file"
   assert_success
 
-  run verify_object_exists "$BUCKET_ONE_NAME" "$test_file_two"
+  run verify_object_exists "$bucket_name" "$test_file_two"
   assert_success
 
-  run delete_objects_verify_success "$BUCKET_ONE_NAME" "$test_file" "$test_file_two"
+  run delete_objects_verify_success "$bucket_name" "$test_file" "$test_file_two"
   assert_success
 
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
+  run verify_object_not_found "$bucket_name" "$test_file"
   assert_success
 
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file_two"
+  run verify_object_not_found "$bucket_name" "$test_file_two"
   assert_success
 }
 
 @test "REST - PutObjectRetention - w/o request body" {
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_file "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run retention_rest_without_request_body "$BUCKET_ONE_NAME" "$test_file"
+  run retention_rest_without_request_body "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -313,55 +374,71 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1311"
   fi
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_file "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_content_md5 "$BUCKET_ONE_NAME" "$test_file"
+  run check_legal_hold_without_content_md5 "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - PutObjectLegalHold w/o payload" {
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_file "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run check_legal_hold_without_payload "$BUCKET_ONE_NAME" "$test_file"
+  run check_legal_hold_without_payload "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - PutObjectLegalHold - success" {
-  run setup_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
   run create_test_file "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run rest_check_legal_hold "$BUCKET_ONE_NAME" "$test_file"
+  run rest_check_legal_hold "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "REST - copy object w/invalid copy source" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run copy_object_invalid_copy_source "$BUCKET_ONE_NAME"
+  run copy_object_invalid_copy_source "$bucket_name"
   assert_success
 }
 
@@ -369,52 +446,68 @@ test_file="test_file"
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1242"
   fi
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run copy_object_copy_source_and_payload "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file"
+  run copy_object_copy_source_and_payload "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file"
   assert_success
 }
 
 @test "REST - range download and compare" {
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" 2000000
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy" 2000000
   assert_success
 }
 
 @test "REST - put, get object, encoded name" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   file_name=" \"<>\\^\`{}|+&?%"
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$file_name"
+  run setup_bucket_and_file_v2 "$bucket_name" "$file_name"
   assert_success
 
-  run put_object_rest_special_chars "$TEST_FILE_FOLDER/$file_name" "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  run put_object_rest_special_chars "$TEST_FILE_FOLDER/$file_name" "$bucket_name" "$file_name/$file_name"
   assert_success
 
-  run list_check_single_object "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  run list_check_single_object "$bucket_name" "$file_name/$file_name"
   assert_success
 
-  run get_object_rest_special_chars "$BUCKET_ONE_NAME" "$file_name/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
+  run get_object_rest_special_chars "$bucket_name" "$file_name/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 
   run compare_files "$TEST_FILE_FOLDER/$file_name" "$TEST_FILE_FOLDER/${file_name}-copy"
   assert_success
 
-  run delete_object_rest "$BUCKET_ONE_NAME" "$file_name/$file_name"
+  run delete_object_rest "$bucket_name" "$file_name/$file_name"
   assert_success
 }
 
 @test "REST - GetObject w/STREAMING-AWS4-HMAC-SHA256-PAYLOAD type" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run get_object_rest_with_invalid_streaming_type "$BUCKET_ONE_NAME" "$test_file"
+  run get_object_rest_with_invalid_streaming_type "$bucket_name" "$test_file"
   assert_success
 }

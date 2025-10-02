@@ -43,7 +43,6 @@ export RUN_USERS=true
 
   run setup_bucket_v2 "$bucket_name"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
 
   run head_bucket_rest "$bucket_name"
   assert_success
@@ -55,10 +54,14 @@ export RUN_USERS=true
 }
 
 @test "REST - bucket tagging - no tags" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run verify_no_bucket_tags_rest "$BUCKET_ONE_NAME"
+  run verify_no_bucket_tags_rest "$bucket_name"
   assert_success
 }
 
@@ -66,38 +69,52 @@ export RUN_USERS=true
   test_key="testKey"
   test_value="testValue"
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run add_verify_bucket_tags_rest "$BUCKET_ONE_NAME" "$test_key" "$test_value"
+  run add_verify_bucket_tags_rest "$bucket_name" "$test_key" "$test_value"
   assert_success
 }
 
 @test "REST - get, put bucket ownership controls" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerEnforced"
+  run get_and_check_ownership_controls "$bucket_name" "BucketOwnerEnforced"
   assert_success
 
-  run put_bucket_ownership_controls_rest "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  run put_bucket_ownership_controls_rest "$bucket_name" "BucketOwnerPreferred"
   assert_success
 
-  run get_and_check_ownership_controls "$BUCKET_ONE_NAME" "BucketOwnerPreferred"
+  run get_and_check_ownership_controls "$bucket_name" "BucketOwnerPreferred"
   assert_success
 }
 
 @test "test_rest_set_get_lock_config" {
-  run setup_bucket_v2 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_name="${lines[${#lines[@]} - 1]}"
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
 
   run check_no_object_lock_config_rest "$bucket_name"
   assert_success
 
-  run setup_bucket_object_lock_enabled_v2 "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
-  bucket_two_name="${lines[${#lines[@]} - 1]}"
+  bucket_two_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_two_name"
+  assert_success
 
   run check_object_lock_config_enabled_rest "$bucket_two_name"
   assert_success
@@ -107,14 +124,18 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1300"
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Enabled"
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
 
   # this enables object lock without a specific retention policy
-  run remove_retention_policy_rest "$BUCKET_ONE_NAME"
+  run remove_retention_policy_rest "$bucket_name"
   assert_success
 }
 
@@ -122,21 +143,15 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1301"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
   assert_success
 
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  if [ "$DIRECT" == "true" ]; then
-    sleep 5
-  fi
-
   # this enables object lock without a specific retention policy
-  run put_object_lock_config_without_content_md5 "$BUCKET_ONE_NAME"
+  run put_object_lock_config_without_content_md5 "$bucket_name"
   assert_success
 }
 
@@ -144,11 +159,14 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/959"
   fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run get_and_check_no_policy_error "$BUCKET_ONE_NAME"
+  run get_and_check_no_policy_error "$bucket_name"
   assert_success
 }
 
@@ -156,20 +174,24 @@ export RUN_USERS=true
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$BUCKET_ONE_NAME"
+  run setup_user_versitygw_or_direct "$USERNAME_ONE" "$PASSWORD_ONE" "user" "$bucket_name"
   assert_success
   log 5 "username: ${lines[1]}"
   log 5 "password: ${lines[2]}"
 
   sleep 5
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/policy_file.txt" "2012-10-17" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$bucket_name"
   assert_success
 
-  run put_and_check_policy_rest "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$BUCKET_ONE_NAME"
+  run put_and_check_policy_rest "$bucket_name" "$TEST_FILE_FOLDER/policy_file.txt" "Allow" "$USERNAME_ONE" "s3:PutBucketTagging" "arn:aws:s3:::$bucket_name"
   assert_success
 }
 
@@ -185,18 +207,26 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1521"
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT"
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT"
   assert_success
 }
 
 @test "REST - PutBucketTagging - invalid Content-MD5" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:dummy" \
+  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:dummy" \
     "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }
@@ -205,10 +235,14 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1526"
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
   assert_success
 
-  run send_put_bucket_tagging_command_check_invalid_content_md5 "$BUCKET_ONE_NAME"
+  run send_put_bucket_tagging_command_check_invalid_content_md5 "$bucket_name"
   assert_success
 }
 
@@ -216,10 +250,14 @@ export RUN_USERS=true
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/1525"
   fi
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
   assert_success
 
-  run send_rest_go_command_expect_error "400" "BadDigest" "did not match" "-bucketName" "$BUCKET_ONE_NAME" "-query" "tagging=" "-method" "PUT" "-incorrectContentMD5" \
+  run send_rest_go_command_expect_error "400" "BadDigest" "did not match" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-incorrectContentMD5" \
     "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }
