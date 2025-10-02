@@ -597,7 +597,9 @@ func TestCORSMiddleware(s *S3Conf) {
 func TestPutObjectLockConfiguration(s *S3Conf) {
 	PutObjectLockConfiguration_non_existing_bucket(s)
 	PutObjectLockConfiguration_empty_config(s)
-	PutObjectLockConfiguration_not_enabled_on_bucket_creation(s)
+	if !s.versioningEnabled {
+		PutObjectLockConfiguration_not_enabled_on_bucket_creation(s)
+	}
 	PutObjectLockConfiguration_invalid_status(s)
 	PutObjectLockConfiguration_invalid_mode(s)
 	PutObjectLockConfiguration_both_years_and_days(s)
@@ -615,7 +617,6 @@ func TestPutObjectRetention(s *S3Conf) {
 	PutObjectRetention_non_existing_bucket(s)
 	PutObjectRetention_non_existing_object(s)
 	PutObjectRetention_unset_bucket_object_lock_config(s)
-	PutObjectRetention_disabled_bucket_object_lock_config(s)
 	PutObjectRetention_expired_retain_until_date(s)
 	PutObjectRetention_invalid_mode(s)
 	PutObjectRetention_overwrite_compliance_mode(s)
@@ -640,7 +641,6 @@ func TestPutObjectLegalHold(s *S3Conf) {
 	PutObjectLegalHold_invalid_body(s)
 	PutObjectLegalHold_invalid_status(s)
 	PutObjectLegalHold_unset_bucket_object_lock_config(s)
-	PutObjectLegalHold_disabled_bucket_object_lock_config(s)
 	PutObjectLegalHold_success(s)
 }
 
@@ -773,7 +773,9 @@ func TestFullFlow(s *S3Conf) {
 	TestGetObjectRetention(s)
 	TestPutObjectLegalHold(s)
 	TestGetObjectLegalHold(s)
-	TestWORMProtection(s)
+	if !s.versioningEnabled {
+		TestWORMProtection(s)
+	}
 	TestAccessControl(s)
 	TestRouter(s)
 	// FIXME: The tests should pass for azure as well
@@ -926,7 +928,14 @@ func TestAccessControl(s *S3Conf) {
 func TestPublicBuckets(s *S3Conf) {
 	PublicBucket_default_private_bucket(s)
 	PublicBucket_public_bucket_policy(s)
-	PublicBucket_public_object_policy(s)
+	if !s.versioningEnabled {
+		// This test targets gateway actions when bucket grants
+		// public access to object operations: no specific
+		// bucket versioning operations. As object version cleanup
+		// is hard to perform, run the test only on the versioning-disabled
+		// gateway instance
+		PublicBucket_public_object_policy(s)
+	}
 	PublicBucket_public_acl(s)
 	PublicBucket_signed_streaming_payload(s)
 	PublicBucket_incorrect_sha256_hash(s)
@@ -993,6 +1002,7 @@ func TestVersioning(s *S3Conf) {
 	Versioning_UploadPartCopy_non_existing_versionId(s)
 	Versioning_UploadPartCopy_from_an_object_version(s)
 	// Object lock configuration
+	Versioning_object_lock_not_enabled_on_bucket_creation(s)
 	Versioning_Enable_object_lock(s)
 	Versioning_status_switch_to_suspended_with_object_lock(s)
 	// Object-Lock Retention
@@ -1438,7 +1448,6 @@ func GetIntTests() IntTests {
 		"PutObjectRetention_non_existing_bucket":                                  PutObjectRetention_non_existing_bucket,
 		"PutObjectRetention_non_existing_object":                                  PutObjectRetention_non_existing_object,
 		"PutObjectRetention_unset_bucket_object_lock_config":                      PutObjectRetention_unset_bucket_object_lock_config,
-		"PutObjectRetention_disabled_bucket_object_lock_config":                   PutObjectRetention_disabled_bucket_object_lock_config,
 		"PutObjectRetention_expired_retain_until_date":                            PutObjectRetention_expired_retain_until_date,
 		"PutObjectRetention_invalid_mode":                                         PutObjectRetention_invalid_mode,
 		"PutObjectRetention_overwrite_compliance_mode":                            PutObjectRetention_overwrite_compliance_mode,
@@ -1457,7 +1466,6 @@ func GetIntTests() IntTests {
 		"PutObjectLegalHold_invalid_body":                                         PutObjectLegalHold_invalid_body,
 		"PutObjectLegalHold_invalid_status":                                       PutObjectLegalHold_invalid_status,
 		"PutObjectLegalHold_unset_bucket_object_lock_config":                      PutObjectLegalHold_unset_bucket_object_lock_config,
-		"PutObjectLegalHold_disabled_bucket_object_lock_config":                   PutObjectLegalHold_disabled_bucket_object_lock_config,
 		"PutObjectLegalHold_success":                                              PutObjectLegalHold_success,
 		"GetObjectLegalHold_non_existing_bucket":                                  GetObjectLegalHold_non_existing_bucket,
 		"GetObjectLegalHold_non_existing_object":                                  GetObjectLegalHold_non_existing_object,
@@ -1590,6 +1598,7 @@ func GetIntTests() IntTests {
 		"Versioning_Multipart_Upload_overwrite_an_object":                         Versioning_Multipart_Upload_overwrite_an_object,
 		"Versioning_UploadPartCopy_non_existing_versionId":                        Versioning_UploadPartCopy_non_existing_versionId,
 		"Versioning_UploadPartCopy_from_an_object_version":                        Versioning_UploadPartCopy_from_an_object_version,
+		"Versioning_object_lock_not_enabled_on_bucket_creation":                   Versioning_object_lock_not_enabled_on_bucket_creation,
 		"Versioning_Enable_object_lock":                                           Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":                  Versioning_status_switch_to_suspended_with_object_lock,
 		"Versioning_PutObjectRetention_invalid_versionId":                         Versioning_PutObjectRetention_invalid_versionId,

@@ -624,7 +624,7 @@ func (p *Posix) getBucketVersioningStatus(ctx context.Context, bucket string) (t
 	if errors.Is(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)) {
 		return "", nil
 	}
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)) {
+	if err != nil {
 		return "", err
 	}
 
@@ -4805,21 +4805,21 @@ func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, c
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
-	cfg, err := p.meta.RetrieveAttribute(nil, bucket, "", bucketLockKey)
-	if errors.Is(err, meta.ErrNoSuchKey) {
-		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
-	}
-	if err != nil {
-		return fmt.Errorf("get object lock config: %w", err)
-	}
+	if p.versioningEnabled() {
+		// if versioning is enabled on gateway level and bucket versioning
+		// status is not `Enabled`, object lock can't be enabled.
+		// if object lock has been enabled on bucket creation
+		// it means the versioning has been enabled alongside with object lock
+		// and it can't be suspended ever again
+		status, err := p.getBucketVersioningStatus(ctx, bucket)
+		if err != nil {
+			return err
+		}
 
-	var bucketLockCfg auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockCfg); err != nil {
-		return fmt.Errorf("unmarshal object lock config: %w", err)
-	}
-
-	if !bucketLockCfg.Enabled {
-		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+		if status != types.BucketVersioningStatusEnabled {
+			// if versioning is enabled on gateway level
+			return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
+		}
 	}
 
 	err = p.meta.StoreAttribute(nil, bucket, "", bucketLockKey, config)

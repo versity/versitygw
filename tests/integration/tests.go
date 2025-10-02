@@ -3046,14 +3046,10 @@ func PutObject_with_object_lock(s *S3Conf) error {
 			return fmt.Errorf("expected object lock mode to be %v, instead got %v", types.ObjectLockModeCompliance, out.ObjectLockMode)
 		}
 		if out.ObjectLockLegalHoldStatus != types.ObjectLockLegalHoldStatusOn {
-			return fmt.Errorf("expected object lock legal hold status to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
+			return fmt.Errorf("expected object lock mode to be %v, instead got %v", types.ObjectLockLegalHoldStatusOn, out.ObjectLockLegalHoldStatus)
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, removeLegalHold: true, isCompliance: true}})
 	}, withLock())
 }
 
@@ -8121,12 +8117,7 @@ func CopyObject_with_legal_hold(s *S3Conf) error {
 				types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
 		}
 
-		err = changeBucketObjectLockStatus(s3client, bucket, false)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: dstObj, removeOnlyLeglHold: true}})
 	}, withLock())
 }
 
@@ -8176,12 +8167,7 @@ func CopyObject_with_retention_lock(s *S3Conf) error {
 				retDate.Format(time.RFC1123), res.Retention.RetainUntilDate.Format(time.RFC1123))
 		}
 
-		err = changeBucketObjectLockStatus(s3client, bucket, false)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: dstObj}})
 	}, withLock())
 }
 
@@ -9177,11 +9163,7 @@ func CreateMultipartUpload_with_object_lock(s *S3Conf) error {
 				types.ObjectLockModeGovernance, resp.ObjectLockMode)
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, removeLegalHold: true}})
 	}, withLock())
 }
 
@@ -15962,10 +15944,11 @@ func PutObjectLockConfiguration_not_enabled_on_bucket_creation(s *S3Conf) error 
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)); err != nil {
-			return err
-		}
-		return nil
+		// this test cases address the successful object lock status upload
+		// on versioning-disabled gateway mode, where versioning is not supported
+		// and object lock may be enabled without bucket versioning status check
+		// Note: this is not S3 compatible feature.
+		return err
 	})
 }
 
@@ -16219,10 +16202,6 @@ func PutObjectRetention_non_existing_bucket(s *S3Conf) error {
 func PutObjectRetention_non_existing_object(s *S3Conf) error {
 	testName := "PutObjectRetention_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		date := time.Now().Add(time.Hour * 3)
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
@@ -16271,52 +16250,9 @@ func PutObjectRetention_unset_bucket_object_lock_config(s *S3Conf) error {
 	})
 }
 
-func PutObjectRetention_disabled_bucket_object_lock_config(s *S3Conf) error {
-	testName := "PutObjectRetention_disabled_bucket_object_lock_config"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-			Bucket:                  &bucket,
-			ObjectLockConfiguration: &types.ObjectLockConfiguration{},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		date := time.Now().Add(time.Hour * 3)
-		key := "my-obj"
-
-		_, err = putObjects(s3client, []string{key}, bucket)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &key,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeCompliance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
-			return err
-		}
-
-		return nil
-	}, withLock())
-}
-
 func PutObjectRetention_expired_retain_until_date(s *S3Conf) error {
 	testName := "PutObjectRetention_expired_retain_until_date"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		date := time.Now().Add(-time.Hour * 3)
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -16397,11 +16333,7 @@ func PutObjectRetention_overwrite_compliance_mode(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, isCompliance: true}})
 	}, withLock())
 }
 
@@ -16445,11 +16377,7 @@ func PutObjectRetention_overwrite_compliance_with_compliance(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, isCompliance: true}})
 	}, withLock())
 }
 
@@ -16493,11 +16421,7 @@ func PutObjectRetention_overwrite_governance_with_governance(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj}})
 	}, withLock())
 }
 
@@ -16539,11 +16463,7 @@ func PutObjectRetention_overwrite_governance_without_bypass_specified(s *S3Conf)
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj}})
 	}, withLock())
 }
 
@@ -16599,21 +16519,13 @@ func PutObjectRetention_overwrite_governance_with_permission(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: obj, isCompliance: true}})
 	}, withLock())
 }
 
 func PutObjectRetention_success(s *S3Conf) error {
 	testName := "PutObjectRetention_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		date := time.Now().Add(time.Hour * 3)
 		key := "my-obj"
 
@@ -16636,11 +16548,7 @@ func PutObjectRetention_success(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, isCompliance: true}})
 	}, withLock())
 }
 
@@ -16727,9 +16635,6 @@ func GetObjectRetention_unset_config(s *S3Conf) error {
 func GetObjectRetention_success(s *S3Conf) error {
 	testName := "GetObjectRetention_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
 		key := "my-obj"
 		_, err := putObjects(s3client, []string{key}, bucket)
 		if err != nil {
@@ -16777,11 +16682,7 @@ func GetObjectRetention_success(s *S3Conf) error {
 		// 	return fmt.Errorf("expected retain until date to be %v, instead got %v", retention.RetainUntilDate.Format(iso8601Format), ret.RetainUntilDate.Format(iso8601Format))
 		// }
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, isCompliance: true}})
 	}, withLock())
 }
 
@@ -16805,10 +16706,6 @@ func PutObjectLegalHold_non_existing_bucket(s *S3Conf) error {
 func PutObjectLegalHold_non_existing_object(s *S3Conf) error {
 	testName := "PutObjectLegalHold_non_existing_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 			Bucket: &bucket,
@@ -16890,50 +16787,9 @@ func PutObjectLegalHold_unset_bucket_object_lock_config(s *S3Conf) error {
 	})
 }
 
-func PutObjectLegalHold_disabled_bucket_object_lock_config(s *S3Conf) error {
-	testName := "PutObjectLegalHold_disabled_bucket_object_lock_config"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
-			Bucket:                  &bucket,
-			ObjectLockConfiguration: &types.ObjectLockConfiguration{},
-		})
-		cancel()
-		if err != nil {
-			return err
-		}
-
-		key := "my-obj"
-
-		_, err = putObjects(s3client, []string{key}, bucket)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
-			Bucket: &bucket,
-			Key:    &key,
-			LegalHold: &types.ObjectLockLegalHold{
-				Status: types.ObjectLockLegalHoldStatusOn,
-			},
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
-			return err
-		}
-
-		return nil
-	}, withLock())
-}
-
 func PutObjectLegalHold_success(s *S3Conf) error {
 	testName := "PutObjectLegalHold_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		key := "my-obj"
 
 		_, err := putObjects(s3client, []string{key}, bucket)
@@ -16954,11 +16810,7 @@ func PutObjectLegalHold_success(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeOnlyLeglHold: true}})
 	}, withLock())
 }
 
@@ -17045,9 +16897,6 @@ func GetObjectLegalHold_unset_config(s *S3Conf) error {
 func GetObjectLegalHold_success(s *S3Conf) error {
 	testName := "GetObjectLegalHold_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
 		key := "my-obj"
 		_, err := putObjects(s3client, []string{key}, bucket)
 		if err != nil {
@@ -17082,11 +16931,7 @@ func GetObjectLegalHold_success(s *S3Conf) error {
 				resp.LegalHold.Status)
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: key, removeOnlyLeglHold: true}})
 	}, withLock())
 }
 
@@ -17801,11 +17646,7 @@ func WORMProtection_bucket_object_lock_configuration_compliance_mode(s *S3Conf) 
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object, isCompliance: true}})
 	}, withLock())
 }
 
@@ -17840,11 +17681,7 @@ func WORMProtection_bucket_object_lock_configuration_governance_mode(s *S3Conf) 
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object}})
 	}, withLock())
 }
 
@@ -17896,15 +17733,7 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete(s *S3Conf) error
 			BypassGovernanceRetention: &bypass,
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
@@ -17968,15 +17797,7 @@ func WORMProtection_bucket_object_lock_governance_bypass_delete_multiple(s *S3Co
 			},
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
@@ -18008,11 +17829,8 @@ func WORMProtection_object_lock_retention_compliance_locked(s *S3Conf) error {
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
 
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object, isCompliance: true}})
 	}, withLock())
 }
 
@@ -18044,11 +17862,7 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 		if err := checkWORMProtection(s3client, bucket, object); err != nil {
 			return err
 		}
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object}})
 	}, withLock())
 }
 
@@ -18095,15 +17909,7 @@ func WORMProtection_object_lock_retention_governance_bypass_overwrite(s *S3Conf)
 			Key:    &object,
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
@@ -18152,15 +17958,7 @@ func WORMProtection_object_lock_retention_governance_bypass_delete(s *S3Conf) er
 			BypassGovernanceRetention: &bypass,
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
@@ -18224,25 +18022,13 @@ func WORMProtection_object_lock_retention_governance_bypass_delete_mul(s *S3Conf
 			},
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
 func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 	testName := "WORMProtection_object_lock_legal_hold_locked"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		if err := changeBucketObjectLockStatus(s3client, bucket, true); err != nil {
-			return err
-		}
-
 		object := "my-obj"
 
 		_, err := putObjects(s3client, []string{object}, bucket)
@@ -18268,11 +18054,7 @@ func WORMProtection_object_lock_legal_hold_locked(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: object, removeOnlyLeglHold: true}})
 	}, withLock())
 }
 
@@ -18324,15 +18106,7 @@ func WORMProtection_root_bypass_governance_retention_delete_object(s *S3Conf) er
 			BypassGovernanceRetention: &bypass,
 		})
 		cancel()
-		if err != nil {
-			return err
-		}
-
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	}, withLock())
 }
 
@@ -20522,12 +20296,6 @@ func PublicBucket_public_object_policy(s *S3Conf) error {
 					return err
 				}
 			}
-		}
-
-		// disable object lock on the bucket
-		err = changeBucketObjectLockStatus(rootClient, bucket, false)
-		if err != nil {
-			return err
 		}
 
 		return nil
@@ -23886,6 +23654,27 @@ func Versioning_Enable_object_lock(s *S3Conf) error {
 	}, withLock())
 }
 
+func Versioning_object_lock_not_enabled_on_bucket_creation(s *S3Conf) error {
+	testName := "Versioning_not_enabled_on_bucket_creation"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeCompliance,
+						Days: getPtr(int32(10)),
+					},
+				},
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed))
+	})
+}
+
 func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 	testName := "Versioning_status_switch_to_suspended_with_object_lock"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -23993,11 +23782,7 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 				types.ObjectLockRetentionModeGovernance, res.Retention.Mode)
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{{key: getString(objVersion.Key), versionId: getString(objVersion.VersionId)}})
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -24092,11 +23877,13 @@ func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
 				types.ObjectLockLegalHoldStatusOn, res.LegalHold.Status)
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                getString(objVersion.Key),
+				versionId:          getString(objVersion.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -24135,11 +23922,13 @@ func Versioning_WORM_obj_version_locked_with_legal_hold(s *S3Conf) error {
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                obj,
+				versionId:          getString(version.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -24180,11 +23969,12 @@ func Versioning_WORM_obj_version_locked_with_governance_retention(s *S3Conf) err
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:       obj,
+				versionId: getString(version.VersionId),
+			},
+		})
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -24225,11 +24015,13 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 			return err
 		}
 
-		if err := changeBucketObjectLockStatus(s3client, bucket, false); err != nil {
-			return err
-		}
-
-		return nil
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:          obj,
+				versionId:    getString(version.VersionId),
+				isCompliance: true,
+			},
+		})
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 

@@ -1644,24 +1644,6 @@ func (az *Azure) DeleteBucketCors(ctx context.Context, bucket string) error {
 }
 
 func (az *Azure) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
-	cfg, err := az.getContainerMetaData(ctx, bucket, string(keyBucketLock))
-	if err != nil {
-		return err
-	}
-
-	if len(cfg) == 0 {
-		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
-	}
-
-	var bucketLockCfg auth.BucketLockConfig
-	if err := json.Unmarshal(cfg, &bucketLockCfg); err != nil {
-		return fmt.Errorf("unmarshal object lock config: %w", err)
-	}
-
-	if !bucketLockCfg.Enabled {
-		return s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotAllowed)
-	}
-
 	return az.setContainerMetaData(ctx, bucket, string(keyBucketLock), config)
 }
 
