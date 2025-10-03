@@ -107,42 +107,45 @@ var (
 )
 
 type Opts struct {
-	RootAccount            Account
-	Dir                    string
-	LDAPServerURL          string
-	LDAPBindDN             string
-	LDAPPassword           string
-	LDAPQueryBase          string
-	LDAPObjClasses         string
-	LDAPAccessAtr          string
-	LDAPSecretAtr          string
-	LDAPRoleAtr            string
-	LDAPUserIdAtr          string
-	LDAPGroupIdAtr         string
-	VaultEndpointURL       string
-	VaultSecretStoragePath string
-	VaultAuthMethod        string
-	VaultMountPath         string
-	VaultRootToken         string
-	VaultRoleId            string
-	VaultRoleSecret        string
-	VaultServerCert        string
-	VaultClientCert        string
-	VaultClientCertKey     string
-	S3Access               string
-	S3Secret               string
-	S3Region               string
-	S3Bucket               string
-	S3Endpoint             string
-	S3DisableSSlVerfiy     bool
-	CacheDisable           bool
-	CacheTTL               int
-	CachePrune             int
-	IpaHost                string
-	IpaVaultName           string
-	IpaUser                string
-	IpaPassword            string
-	IpaInsecure            bool
+	RootAccount                 Account
+	Dir                         string
+	LDAPServerURL               string
+	LDAPBindDN                  string
+	LDAPPassword                string
+	LDAPQueryBase               string
+	LDAPObjClasses              string
+	LDAPAccessAtr               string
+	LDAPSecretAtr               string
+	LDAPRoleAtr                 string
+	LDAPUserIdAtr               string
+	LDAPGroupIdAtr              string
+	VaultEndpointURL            string
+	VaultNamespace              string
+	VaultSecretStoragePath      string
+	VaultSecretStorageNamespace string
+	VaultAuthMethod             string
+	VaultAuthNamespace          string
+	VaultMountPath              string
+	VaultRootToken              string
+	VaultRoleId                 string
+	VaultRoleSecret             string
+	VaultServerCert             string
+	VaultClientCert             string
+	VaultClientCertKey          string
+	S3Access                    string
+	S3Secret                    string
+	S3Region                    string
+	S3Bucket                    string
+	S3Endpoint                  string
+	S3DisableSSlVerfiy          bool
+	CacheDisable                bool
+	CacheTTL                    int
+	CachePrune                  int
+	IpaHost                     string
+	IpaVaultName                string
+	IpaUser                     string
+	IpaPassword                 string
+	IpaInsecure                 bool
 }
 
 func New(o *Opts) (IAMService, error) {
@@ -164,8 +167,8 @@ func New(o *Opts) (IAMService, error) {
 		fmt.Printf("initializing S3 IAM with '%v/%v'\n",
 			o.S3Endpoint, o.S3Bucket)
 	case o.VaultEndpointURL != "":
-		svc, err = NewVaultIAMService(o.RootAccount, o.VaultEndpointURL, o.VaultSecretStoragePath,
-			o.VaultAuthMethod, o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
+		svc, err = NewVaultIAMService(o.RootAccount, o.VaultEndpointURL, o.VaultNamespace, o.VaultSecretStoragePath, o.VaultSecretStorageNamespace,
+			o.VaultAuthMethod, o.VaultAuthNamespace, o.VaultMountPath, o.VaultRootToken, o.VaultRoleId, o.VaultRoleSecret,
 			o.VaultServerCert, o.VaultClientCert, o.VaultClientCertKey)
 		fmt.Printf("initializing Vault IAM with %q\n", o.VaultEndpointURL)
 	case o.IpaHost != "":
