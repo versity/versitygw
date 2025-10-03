@@ -21,7 +21,7 @@ source ./tests/rest_scripts/rest.sh
 # shellcheck disable=SC2153
 bucket_name="$BUCKET_NAME"
 # shellcheck disable=SC2154
-key="$OBJECT_KEY"
+key="$(echo -n "$OBJECT_KEY" | jq -sRr 'split("/") | map(@uri) | join("/")')"
 # shellcheck disable=SC2153,SC2154
 version_id="$VERSION_ID"
 
@@ -48,4 +48,5 @@ curl_command+=(-H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_
 curl_command+=("${header_fields[@]}")
 curl_command+=(-o "$OUTPUT_FILE")
 # shellcheck disable=SC2154
+log_rest 5 "curl command: ${curl_command[*]}"
 eval "${curl_command[*]}" 2>&1

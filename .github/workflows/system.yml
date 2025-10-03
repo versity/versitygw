@@ -128,6 +128,12 @@ jobs:
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+          - set: "setup/remove static buckets scripts"
+            IAM_TYPE: folder
+            RUN_SET: "setup-remove-static"
+            RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
+            BACKEND: "posix"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -229,7 +235,10 @@ jobs:
           BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/run.sh $RUN_SET
 
       - name: Time report
-        run: cat ${{ github.workspace }}/time.log
+        run: | 
+          if [ -e ${{ github.workspace }}/time.log ]; then
+            cat ${{ github.workspace }}/time.log
+          fi
 
       - name: Coverage report
         run: |

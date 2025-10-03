@@ -158,8 +158,9 @@ send_rest_command_expect_success_callback() {
     log 2 "error sending command: $result"
     return 1
   fi
-  if [ "$result" != "$3" ]; then
-    log 2 "expected '$3', was '$result' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
+  response_code="$(echo "$result" | tail -n 1)"
+  if [ "$response_code" != "$3" ]; then
+    log 2 "expected '$3', was '$response_code' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
     return 1
   fi
   if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then

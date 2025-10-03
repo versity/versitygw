@@ -20,87 +20,103 @@ load ./bats-assert/load
 source ./tests/setup.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/util/util_rest.sh
 source ./tests/util/util_setup.sh
 
 test_file="test_file"
 
 @test "REST - check, enable, suspend versioning" {
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  log 5 "get versioning"
-
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" ""
+  run check_versioning_status_rest "$bucket_name" ""
   assert_success
 
-  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Enabled"
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
 
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" "Enabled"
+  run check_versioning_status_rest "$bucket_name" "Enabled"
   assert_success
 
-  run put_bucket_versioning_rest "$BUCKET_ONE_NAME" "Suspended"
+  run put_bucket_versioning_rest "$bucket_name" "Suspended"
   assert_success
 
-  run check_versioning_status_rest "$BUCKET_ONE_NAME" "Suspended"
+  run check_versioning_status_rest "$bucket_name" "Suspended"
   assert_success
 }
 
 @test "test_rest_versioning" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "1" "true" "true"
+  run get_and_check_versions_rest "$bucket_name" "$test_file" "1" "true" "true"
   assert_success
 
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
 
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "1" "true" "true"
+  run get_and_check_versions_rest "$bucket_name" "$test_file" "1" "true" "true"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run get_and_check_versions_rest "$BUCKET_ONE_NAME" "$test_file" "2" "true" "false" "false" "true"
+  run get_and_check_versions_rest "$bucket_name" "$test_file" "2" "true" "false" "false" "true"
   assert_success
 }
 
 @test "versioning - add version, then delete and check for marker" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
 
-  run delete_object_rest "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object_rest "$bucket_name" "$test_file"
   assert_success
 
-  run check_versions_after_file_deletion "$BUCKET_ONE_NAME" "$test_file"
+  run check_versions_after_file_deletion "$bucket_name" "$test_file"
   assert_success
 }
 
 @test "versioning - retrieve after delete" {
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$test_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run put_object "s3api" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run put_bucket_versioning "s3api" "$BUCKET_ONE_NAME" "Enabled"
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
   assert_success
 
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object "s3api" "$bucket_name" "$test_file"
   assert_success
 
-  run get_object "s3api" "$BUCKET_ONE_NAME" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  run get_object "s3api" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
   assert_failure
 }
 
@@ -108,25 +124,23 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name="$output"
 
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
 
   run create_test_files "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object "s3api" "$bucket_name" "$test_file"
   assert_success
 
-  run verify_object_not_found "$BUCKET_ONE_NAME" "$test_file"
+  run verify_object_not_found "$bucket_name" "$test_file"
   assert_success
 }
 
@@ -134,24 +148,22 @@ test_file="test_file"
   if [ "$RECREATE_BUCKETS" == "false" ] || [[ ( -z "$VERSIONING_DIR" ) && ( "$DIRECT" != "true" ) ]]; then
     skip "test isn't valid for this configuration"
   fi
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name="$output"
 
-  # in static bucket config, bucket will still exist
-  if ! bucket_exists "$BUCKET_ONE_NAME"; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
 
   run create_test_files "$test_file"
   assert_success
 
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file"
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
   assert_success
 
-  run delete_object "s3api" "$BUCKET_ONE_NAME" "$test_file"
+  run delete_object "s3api" "$bucket_name" "$test_file"
   assert_success
 
-  run get_delete_marker_and_verify_405 "$BUCKET_ONE_NAME" "$test_file"
+  run get_delete_marker_and_verify_405 "$bucket_name" "$test_file"
   assert_success
 }

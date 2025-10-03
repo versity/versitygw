@@ -53,5 +53,6 @@ get_object_lock_configuration_rest() {
     return 1
   fi
   lock_config="$(cat "$TEST_FILE_FOLDER/object-lock-config.txt")"
+  log 5 "lock config: $lock_config"
   return 0
 }

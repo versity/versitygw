@@ -64,9 +64,13 @@ parse_bucket_list() {
   bucket_list=$(xmllint --xpath '//*[local-name()="Bucket"]/*[local-name()="Name"]/text()' "$1")
   bucket_array=()
   while read -r bucket; do
-    bucket_array+=("$bucket")
+    if [ -n "$bucket" ]; then
+      log 5 "reading bucket '$bucket'"
+      bucket_array+=("$bucket")
+    fi
   done <<< "$bucket_list"
   log 5 "bucket array: ${bucket_array[*]}"
+  log 5 "bucket array length: ${#bucket_array[@]}"
 }
 
 parse_buckets_and_continuation_token() {
