@@ -23,13 +23,16 @@ RUN go build -ldflags "-X=main.Build=${BUILD} -X=main.BuildTime=${TIME} -X=main.
 
 FROM alpine:latest
 
-# These arguments can be overriden when building the image
+# These arguments can be overridden when building the image
 ARG IAM_DIR=/tmp/vgw
 ARG SETUP_DIR=/tmp/vgw
 
 RUN mkdir -p $IAM_DIR
 RUN mkdir -p $SETUP_DIR
 
-COPY --from=0 /app/cmd/versitygw/versitygw /app/versitygw
+COPY --from=0 /app/cmd/versitygw/versitygw /usr/local/bin/versitygw
 
-ENTRYPOINT [ "/app/versitygw" ]
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT [ "/usr/local/bin/docker-entrypoint.sh" ]

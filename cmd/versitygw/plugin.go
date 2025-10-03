@@ -32,8 +32,9 @@ func pluginCommand() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
-				Usage:   "location of the config file",
+				Usage:   "location of the plugin config file",
 				Aliases: []string{"c"},
+				EnvVars: []string{"VGW_PLUGIN_CONFIG"},
 			},
 		},
 	}
