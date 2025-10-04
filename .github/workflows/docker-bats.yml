@@ -14,7 +14,6 @@ jobs:
         run: |
           cp tests/.env.docker.default tests/.env.docker
           cp tests/.secrets.default tests/.secrets
-          # see https://github.com/versity/versitygw/issues/1034
           docker build \
             --build-arg="GO_LIBRARY=go1.23.1.linux-amd64.tar.gz" \
             --build-arg="AWS_CLI=awscli-exe-linux-x86_64.zip" \

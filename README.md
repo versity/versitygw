@@ -70,6 +70,29 @@ versitygw [global options] command [command options] [arguments...]
 ```
 The [global options](https://github.com/versity/versitygw/wiki/Global-Options) are specified before the backend type and the backend options are specified after.
 
+### Run the gateway in Docker
+
+Use the published image like the native binary by passing CLI arguments:
+
+```bash
+docker run --rm versity/versitygw:latest --version
+```
+
+When no command arguments are supplied, the container looks for `VGW_BACKEND` and optional `VGW_BACKEND_ARG`/`VGW_BACKEND_ARGS` environment variables to determine which backend to start. Backend-specific configuration continues to come from the existing environment flags (for example `ROOT_ACCESS_KEY`, `VGW_PORT`, and others).
+
+```bash
+docker run --rm \
+  -e ROOT_ACCESS_KEY=testuser \
+  -e ROOT_SECRET_KEY=secret \
+  -e VGW_BACKEND=posix \
+  -e VGW_BACKEND_ARG=/data \
+  -p 10000:7070 \
+  -v $(pwd)/data:/data \
+  versity/versitygw:latest
+```
+
+If you need to pass additional CLI options, set `VGW_ARGS` with a space-delimited list, or continue passing arguments directly to `docker run`.
+
 ***
 
 #### Versity gives you clarity and control over your archival storage, so you can allocate more resources to your core mission.
