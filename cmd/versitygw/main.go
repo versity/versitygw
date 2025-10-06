@@ -37,51 +37,54 @@ import (
 )
 
 var (
-	port, admPort                            string
-	rootUserAccess                           string
-	rootUserSecret                           string
-	region                                   string
-	admCertFile, admKeyFile                  string
-	certFile, keyFile                        string
-	kafkaURL, kafkaTopic, kafkaKey           string
-	natsURL, natsTopic                       string
-	rabbitmqURL, rabbitmqExchange            string
-	rabbitmqRoutingKey                       string
-	eventWebhookURL                          string
-	eventConfigFilePath                      string
-	logWebhookURL, accessLog                 string
-	adminLogFile                             string
-	healthPath                               string
-	virtualDomain                            string
-	debug                                    bool
-	keepAlive                                bool
-	pprof                                    string
-	quiet                                    bool
-	readonly                                 bool
-	iamDir                                   string
-	ldapURL, ldapBindDN, ldapPassword        string
-	ldapQueryBase, ldapObjClasses            string
-	ldapAccessAtr, ldapSecAtr, ldapRoleAtr   string
-	ldapUserIdAtr, ldapGroupIdAtr            string
-	vaultEndpointURL, vaultSecretStoragePath string
-	vaultAuthMethod, vaultMountPath          string
-	vaultRootToken, vaultRoleId              string
-	vaultRoleSecret, vaultServerCert         string
-	vaultClientCert, vaultClientCertKey      string
-	s3IamAccess, s3IamSecret                 string
-	s3IamRegion, s3IamBucket                 string
-	s3IamEndpoint                            string
-	s3IamSslNoVerify                         bool
-	iamCacheDisable                          bool
-	iamCacheTTL                              int
-	iamCachePrune                            int
-	metricsService                           string
-	statsdServers                            string
-	dogstatsServers                          string
-	ipaHost, ipaVaultName                    string
-	ipaUser, ipaPassword                     string
-	ipaInsecure                              bool
-	iamDebug                                 bool
+	port, admPort                          string
+	rootUserAccess                         string
+	rootUserSecret                         string
+	region                                 string
+	admCertFile, admKeyFile                string
+	certFile, keyFile                      string
+	kafkaURL, kafkaTopic, kafkaKey         string
+	natsURL, natsTopic                     string
+	rabbitmqURL, rabbitmqExchange          string
+	rabbitmqRoutingKey                     string
+	eventWebhookURL                        string
+	eventConfigFilePath                    string
+	logWebhookURL, accessLog               string
+	adminLogFile                           string
+	healthPath                             string
+	virtualDomain                          string
+	debug                                  bool
+	keepAlive                              bool
+	pprof                                  string
+	quiet                                  bool
+	readonly                               bool
+	iamDir                                 string
+	ldapURL, ldapBindDN, ldapPassword      string
+	ldapQueryBase, ldapObjClasses          string
+	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
+	ldapUserIdAtr, ldapGroupIdAtr          string
+	vaultEndpointURL, vaultNamespace       string
+	vaultSecretStoragePath                 string
+	vaultSecretStorageNamespace            string
+	vaultAuthMethod, vaultAuthNamespace    string
+	vaultMountPath                         string
+	vaultRootToken, vaultRoleId            string
+	vaultRoleSecret, vaultServerCert       string
+	vaultClientCert, vaultClientCertKey    string
+	s3IamAccess, s3IamSecret               string
+	s3IamRegion, s3IamBucket               string
+	s3IamEndpoint                          string
+	s3IamSslNoVerify                       bool
+	iamCacheDisable                        bool
+	iamCacheTTL                            int
+	iamCachePrune                          int
+	metricsService                         string
+	statsdServers                          string
+	dogstatsServers                        string
+	ipaHost, ipaVaultName                  string
+	ipaUser, ipaPassword                   string
+	ipaInsecure                            bool
+	iamDebug                               bool
 )
 
 var (
@@ -406,16 +409,34 @@ func initFlags() []cli.Flag {
 			Destination: &vaultEndpointURL,
 		},
 		&cli.StringFlag{
+			Name:        "iam-vault-namespace",
+			Usage:       "vault server namespace",
+			EnvVars:     []string{"VGW_IAM_VAULT_NAMESPACE"},
+			Destination: &vaultNamespace,
+		},
+		&cli.StringFlag{
 			Name:        "iam-vault-secret-storage-path",
 			Usage:       "vault server secret storage path",
 			EnvVars:     []string{"VGW_IAM_VAULT_SECRET_STORAGE_PATH"},
 			Destination: &vaultSecretStoragePath,
 		},
 		&cli.StringFlag{
+			Name:        "iam-vault-secret-storage-namespace",
+			Usage:       "vault server secret storage namespace",
+			EnvVars:     []string{"VGW_IAM_VAULT_SECRET_STORAGE_NAMESPACE"},
+			Destination: &vaultSecretStorageNamespace,
+		},
+		&cli.StringFlag{
 			Name:        "iam-vault-auth-method",
 			Usage:       "vault server auth method",
 			EnvVars:     []string{"VGW_IAM_VAULT_AUTH_METHOD"},
 			Destination: &vaultAuthMethod,
+		},
+		&cli.StringFlag{
+			Name:        "iam-vault-auth-namespace",
+			Usage:       "vault server auth namespace",
+			EnvVars:     []string{"VGW_IAM_VAULT_AUTH_NAMESPACE"},
+			Destination: &vaultAuthNamespace,
 		},
 		&cli.StringFlag{
 			Name:        "iam-vault-mount-path",
@@ -650,41 +671,44 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			Secret: rootUserSecret,
 			Role:   auth.RoleAdmin,
 		},
-		Dir:                    iamDir,
-		LDAPServerURL:          ldapURL,
-		LDAPBindDN:             ldapBindDN,
-		LDAPPassword:           ldapPassword,
-		LDAPQueryBase:          ldapQueryBase,
-		LDAPObjClasses:         ldapObjClasses,
-		LDAPAccessAtr:          ldapAccessAtr,
-		LDAPSecretAtr:          ldapSecAtr,
-		LDAPRoleAtr:            ldapRoleAtr,
-		LDAPUserIdAtr:          ldapUserIdAtr,
-		LDAPGroupIdAtr:         ldapGroupIdAtr,
-		VaultEndpointURL:       vaultEndpointURL,
-		VaultSecretStoragePath: vaultSecretStoragePath,
-		VaultAuthMethod:        vaultAuthMethod,
-		VaultMountPath:         vaultMountPath,
-		VaultRootToken:         vaultRootToken,
-		VaultRoleId:            vaultRoleId,
-		VaultRoleSecret:        vaultRoleSecret,
-		VaultServerCert:        vaultServerCert,
-		VaultClientCert:        vaultClientCert,
-		VaultClientCertKey:     vaultClientCertKey,
-		S3Access:               s3IamAccess,
-		S3Secret:               s3IamSecret,
-		S3Region:               s3IamRegion,
-		S3Bucket:               s3IamBucket,
-		S3Endpoint:             s3IamEndpoint,
-		S3DisableSSlVerfiy:     s3IamSslNoVerify,
-		CacheDisable:           iamCacheDisable,
-		CacheTTL:               iamCacheTTL,
-		CachePrune:             iamCachePrune,
-		IpaHost:                ipaHost,
-		IpaVaultName:           ipaVaultName,
-		IpaUser:                ipaUser,
-		IpaPassword:            ipaPassword,
-		IpaInsecure:            ipaInsecure,
+		Dir:                         iamDir,
+		LDAPServerURL:               ldapURL,
+		LDAPBindDN:                  ldapBindDN,
+		LDAPPassword:                ldapPassword,
+		LDAPQueryBase:               ldapQueryBase,
+		LDAPObjClasses:              ldapObjClasses,
+		LDAPAccessAtr:               ldapAccessAtr,
+		LDAPSecretAtr:               ldapSecAtr,
+		LDAPRoleAtr:                 ldapRoleAtr,
+		LDAPUserIdAtr:               ldapUserIdAtr,
+		LDAPGroupIdAtr:              ldapGroupIdAtr,
+		VaultEndpointURL:            vaultEndpointURL,
+		VaultNamespace:              vaultNamespace,
+		VaultSecretStoragePath:      vaultSecretStoragePath,
+		VaultSecretStorageNamespace: vaultSecretStorageNamespace,
+		VaultAuthMethod:             vaultAuthMethod,
+		VaultAuthNamespace:          vaultAuthNamespace,
+		VaultMountPath:              vaultMountPath,
+		VaultRootToken:              vaultRootToken,
+		VaultRoleId:                 vaultRoleId,
+		VaultRoleSecret:             vaultRoleSecret,
+		VaultServerCert:             vaultServerCert,
+		VaultClientCert:             vaultClientCert,
+		VaultClientCertKey:          vaultClientCertKey,
+		S3Access:                    s3IamAccess,
+		S3Secret:                    s3IamSecret,
+		S3Region:                    s3IamRegion,
+		S3Bucket:                    s3IamBucket,
+		S3Endpoint:                  s3IamEndpoint,
+		S3DisableSSlVerfiy:          s3IamSslNoVerify,
+		CacheDisable:                iamCacheDisable,
+		CacheTTL:                    iamCacheTTL,
+		CachePrune:                  iamCachePrune,
+		IpaHost:                     ipaHost,
+		IpaVaultName:                ipaVaultName,
+		IpaUser:                     ipaUser,
+		IpaPassword:                 ipaPassword,
+		IpaInsecure:                 ipaInsecure,
 	})
 	if err != nil {
 		return fmt.Errorf("setup iam: %w", err)

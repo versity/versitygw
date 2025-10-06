@@ -38,15 +38,39 @@ type VaultIAMService struct {
 	creds             schema.AppRoleLoginRequest
 }
 
+type VaultIAMNamespace struct {
+	Auth          string
+	SecretStorage string
+}
+
+// Resolve empty specific namespaces to the fallback.
+// Empty result means root namespace.
+func resolveVaultNamespaces(authNamespace, secretStorageNamespace, fallback string) VaultIAMNamespace {
+	ns := VaultIAMNamespace{
+		Auth:          authNamespace,
+		SecretStorage: secretStorageNamespace,
+	}
+
+	if ns.Auth == "" {
+		ns.Auth = fallback
+	}
+	if ns.SecretStorage == "" {
+		ns.SecretStorage = fallback
+	}
+
+	return ns
+}
+
 var _ IAMService = &VaultIAMService{}
 
-func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath,
-	authMethod, mountPath, rootToken, roleID, roleSecret, serverCert,
+func NewVaultIAMService(rootAcc Account, endpoint, namespace, secretStoragePath, secretStorageNamespace,
+	authMethod, authNamespace, mountPath, rootToken, roleID, roleSecret, serverCert,
 	clientCert, clientCertKey string) (IAMService, error) {
 	opts := []vault.ClientOption{
 		vault.WithAddress(endpoint),
 		vault.WithRequestTimeout(requestTimeout),
 	}
+
 	if serverCert != "" {
 		tls := vault.TLSConfiguration{}
 
@@ -78,6 +102,28 @@ func NewVaultIAMService(rootAcc Account, endpoint, secretStoragePath,
 	// if mount path is not specified, it defaults to "kv-v2"
 	if mountPath != "" {
 		kvReqOpts = append(kvReqOpts, vault.WithMountPath(mountPath))
+	}
+
+	// Resolve namespaces using optional generic fallback "namespace"
+	ns := resolveVaultNamespaces(authNamespace, secretStorageNamespace, namespace)
+
+	// Guard: AppRole tokens are namespace scoped. If using AppRole and namespaces differ, error early.
+	// Root token can span namespaces because each request carries X-Vault-Namespace.
+	if rootToken == "" && ns.Auth != "" && ns.SecretStorage != "" && ns.Auth != ns.SecretStorage {
+		return nil, fmt.Errorf(
+			"approle tokens are namespace scoped. auth namespace %q and secret storage namespace %q differ. "+
+				"use the same namespace or authenticate with a root token",
+			ns.Auth, ns.SecretStorage,
+		)
+	}
+
+	// Apply namespaces to the correct request option sets.
+	// For root token we do not need an auth namespace since we are not logging in via auth.
+	if rootToken == "" && ns.Auth != "" {
+		authReqOpts = append(authReqOpts, vault.WithNamespace(ns.Auth))
+	}
+	if ns.SecretStorage != "" {
+		kvReqOpts = append(kvReqOpts, vault.WithNamespace(ns.SecretStorage))
 	}
 
 	creds := schema.AppRoleLoginRequest{
@@ -178,6 +224,10 @@ func (vt *VaultIAMService) CreateAccount(account Account) error {
 		if err != nil {
 			if strings.Contains(err.Error(), "check-and-set") {
 				return ErrUserExists
+			}
+			if vault.IsErrorStatus(err, http.StatusForbidden) {
+				return fmt.Errorf("vault 403 permission denied on path %q. check KV mount path and policy. original: %w",
+					vt.secretStoragePath+"/"+account.Access, err)
 			}
 			return err
 		}
