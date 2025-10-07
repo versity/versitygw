@@ -14,7 +14,10 @@
 
 package integration
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 var (
 	colorReset = "\033[0m"
@@ -24,22 +27,22 @@ var (
 )
 
 var (
-	RunCount  = 0
-	PassCount = 0
-	FailCount = 0
+	RunCount  atomic.Uint32
+	PassCount atomic.Uint32
+	FailCount atomic.Uint32
 )
 
 func runF(format string, a ...interface{}) {
-	RunCount++
+	RunCount.Add(1)
 	fmt.Printf(colorCyan+"RUN  "+colorReset+format+"\n", a...)
 }
 
 func failF(format string, a ...interface{}) {
-	FailCount++
+	FailCount.Add(1)
 	fmt.Printf(colorRed+"FAIL "+colorReset+format+"\n", a...)
 }
 
 func passF(format string, a ...interface{}) {
-	PassCount++
+	PassCount.Add(1)
 	fmt.Printf(colorGreen+"PASS "+colorReset+format+"\n", a...)
 }

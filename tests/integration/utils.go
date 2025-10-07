@@ -39,6 +39,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -53,7 +54,7 @@ import (
 )
 
 var (
-	bcktCount        = 0
+	bcktCount        atomic.Uint64
 	adminErrorPrefix = "XAdmin"
 )
 
@@ -63,32 +64,17 @@ type user struct {
 	role   string
 }
 
-var (
-	testuser1 user = user{
-		access: "grt1",
-		secret: "grt1secret",
-		role:   "user",
-	}
-	testuser2 user = user{
-		access: "grt2",
-		secret: "grt2secret",
-		role:   "user",
-	}
-	testuserplus user = user{
-		access: "grtplus",
-		secret: "grt1plussecret",
-		role:   "userplus",
-	}
-	testadmin user = user{
-		access: "admin",
-		secret: "adminsecret",
-		role:   "admin",
-	}
-)
-
 func getBucketName() string {
-	bcktCount++
-	return fmt.Sprintf("test-bucket-%v", bcktCount)
+	bcktCount.Add(1)
+	return fmt.Sprintf("test-bucket-%v", bcktCount.Load())
+}
+
+func getUser(role string) user {
+	return user{
+		access: fmt.Sprintf("test-user-%v", genRandString(16)),
+		secret: fmt.Sprintf("test-secret-%v", genRandString(16)),
+		role:   role,
+	}
 }
 
 func setup(s *S3Conf, bucket string, opts ...setupOpt) error {
@@ -945,10 +931,6 @@ func uploadParts(client *s3.Client, size, partCount int64, bucket, key, uploadId
 
 func createUsers(s *S3Conf, users []user) error {
 	for _, usr := range users {
-		err := deleteUser(s, usr.access)
-		if err != nil {
-			return err
-		}
 		out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "create-user", "-a", usr.access, "-s", usr.secret, "-r", usr.role)...)
 		if err != nil {
 			return err
@@ -957,18 +939,6 @@ func createUsers(s *S3Conf, users []user) error {
 			return fmt.Errorf("failed to create user account: %s", out)
 		}
 	}
-	return nil
-}
-
-func deleteUser(s *S3Conf, access string) error {
-	out, err := execCommand(s.getAdminCommand("-a", s.awsID, "-s", s.awsSecret, "-er", s.endpoint, "delete-user", "-a", access)...)
-	if err != nil {
-		return err
-	}
-	if strings.Contains(string(out), adminErrorPrefix) {
-		return fmt.Errorf("failed to delete the user account, %s", out)
-	}
-
 	return nil
 }
 
@@ -1853,6 +1823,8 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 		if err := sem.Acquire(ctx, 1); err != nil {
 			return fmt.Errorf("failed to acquire worker space: %w", err)
 		}
+
+		defer sem.Release(1)
 
 		eg.Go(func() error {
 			// Remove legal hold if required
