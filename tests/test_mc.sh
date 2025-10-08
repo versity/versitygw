@@ -23,9 +23,11 @@ source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_head_bucket.sh
-source ./tests/util/util_tags.sh
 
 export RUN_MC=true
 

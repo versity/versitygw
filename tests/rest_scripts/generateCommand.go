@@ -14,6 +14,10 @@ const (
 	OPENSSL = "openssl"
 )
 
+const (
+	PutBucketTagging = "putBucketTagging"
+)
+
 var method *string
 var url *string
 var bucketName *string
@@ -39,6 +43,13 @@ var filePath *string
 var client *string
 var customHostParam *string
 var customHostParamSet bool = false
+var commandType *string
+
+type arrayFlags []string
+
+var tagCount *int
+var tagKeys arrayFlags
+var tagValues arrayFlags
 
 type restParams map[string]string
 
@@ -52,12 +63,19 @@ func (r *restParams) Set(value string) error {
 	for _, pair := range pairs {
 		kv := strings.SplitN(pair, ":", 2)
 		if len(kv) != 2 {
-		}
-		if len(kv) != 2 {
 			return fmt.Errorf("invalid key-value pair: %s", pair)
 		}
 		(*r)[kv[0]] = kv[1]
 	}
+	return nil
+}
+
+func (a *arrayFlags) String() string {
+	return fmt.Sprintf("%v", *a)
+}
+
+func (a *arrayFlags) Set(value string) error {
+	*a = append(*a, value)
 	return nil
 }
 
@@ -66,7 +84,7 @@ func main() {
 		log.Fatalf("Error checking flags: %v", err)
 	}
 
-	s3Command := &command.S3Command{
+	baseCommand := &command.S3Command{
 		Method:                *method,
 		Url:                   *url,
 		BucketName:            *bucketName,
@@ -91,6 +109,21 @@ func main() {
 		CustomHostParam:       *customHostParam,
 		CustomHostParamSet:    customHostParamSet,
 	}
+	var s3Command command.S3CommandConverter
+	var err error
+	switch *commandType {
+	case PutBucketTagging:
+		fields := command.PutBucketTaggingFields{
+			TagCount:  *tagCount,
+			TagKeys:   tagKeys,
+			TagValues: tagValues,
+		}
+		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
+			log.Fatalf("Error setting up PutBucketTagging command: %v", err)
+		}
+	default:
+		s3Command = baseCommand
+	}
 	switch *client {
 	case CURL:
 		curlShellCommand, err := s3Command.CurlShellCommand()
@@ -105,7 +138,6 @@ func main() {
 	default:
 		log.Fatalln("Invalid client type: ", *client)
 	}
-
 }
 
 func checkFlags() error {
@@ -133,6 +165,10 @@ func checkFlags() error {
 	customHostParam = flag.String("customHostParam", "", "Custom host parameter")
 	filePath = flag.String("filePath", "", "Path to write command (stdout if none)")
 	client = flag.String("client", CURL, "Command-line client to use")
+	commandType = flag.String("commandType", "", "Command template to use, if any")
+	tagCount = flag.Int("tagCount", 0, "Autogenerate this amount of tags for commands with tags")
+	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
+	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	// Parse the flags
 	flag.Parse()
 

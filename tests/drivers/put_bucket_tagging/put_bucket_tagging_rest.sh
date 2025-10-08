@@ -42,3 +42,29 @@ check_invalid_content_md5() {
   fi
   return 0
 }
+
+put_bucket_tagging_check_invalid_key_fields() {
+  if ! check_param_count_v2 "bucket, invalid key" 2 $#; then
+    return 1
+  fi
+  if ! setup_bucket_v2 "$1"; then
+    log 2 "error setting up bucket '$1'"
+    return 1
+  fi
+  invalid_tag_key="$2"
+  run send_rest_go_command_expect_error_callback "400" "InvalidTag" "The TagKey you have provided is invalid" \
+    "check_invalid_key_field" "-commandType" "putBucketTagging" "-bucketName" "$1" "-tagKey" "$invalid_tag_key" \
+    "-tagValue" "value" "-contentMD5"
+  assert_success
+}
+
+check_invalid_key_field() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_error_parameter "$1" "TagKey" "$invalid_tag_key"; then
+    log 2 "error checking 'TagKey' value"
+    return 1
+  fi
+  return 0
+}

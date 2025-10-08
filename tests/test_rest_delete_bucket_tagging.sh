@@ -18,8 +18,11 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/setup.sh
+source ./tests/drivers/rest.sh
 source ./tests/drivers/user.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/delete_bucket_tagging/delete_bucket_tagging_rest.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 
 export RUN_USERS=true
 
@@ -38,5 +41,20 @@ export RUN_USERS=true
 
   run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
     "-method" "DELETE" "-bucketName" "$bucket_name" "-query" "tagging="
+  assert_success
+}
+
+@test "REST - DeleteBucketTagging - success" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run add_verify_bucket_tags_rest "$bucket_name" "key" "value"
+  assert_success
+
+  run delete_tags_and_verify_deletion "$bucket_name"
   assert_success
 }
