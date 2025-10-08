@@ -46,12 +46,13 @@ source ./tests/commands/select_object_content.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/user.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_head_bucket.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
-source ./tests/util/util_tags.sh
 
 export RUN_USERS=true
 

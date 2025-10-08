@@ -39,7 +39,7 @@ UNSIGNED-PAYLOAD"
 # shellcheck disable=SC2119
 create_canonical_hash_sts_and_signature
 
-curl_command+=(curl -ks -w "\"%{http_code}\"" "https://$host/$bucket_name/$key?uploads="
+curl_command+=(curl -ks -w "\"%{http_code}\"" "$AWS_ENDPOINT_URL/$bucket_name/$key?uploads="
 -H "\"Authorization: AWS4-HMAC-SHA256 Credential=$aws_access_key_id/$year_month_day/$aws_region/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=$signature\""
 -H "\"x-amz-content-sha256: UNSIGNED-PAYLOAD\""
 -H "\"x-amz-date: $current_date_time\""

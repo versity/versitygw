@@ -27,7 +27,6 @@ source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_policy.sh
-source ./tests/util/util_tags.sh
 source ./tests/util/util_users.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/get_bucket_tagging.sh
@@ -36,6 +35,7 @@ source ./tests/commands/put_bucket_policy.sh
 source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_s3api.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 
 export RUN_USERS=true
 
