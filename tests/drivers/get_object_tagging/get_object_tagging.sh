@@ -113,7 +113,7 @@ check_verify_object_tags() {
 
 check_object_tags_empty() {
   if ! check_param_count_v2 "command type, bucket, key" 3 $#; then
-    return 1
+    return 2
   fi
   if ! get_object_tagging "$1" "$2" "$3"; then
     log 2 "failed to get tags"

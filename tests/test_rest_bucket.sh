@@ -209,8 +209,9 @@ export RUN_USERS=true
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-signedParams" "Content-MD5:dummy" \
-    "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
+  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" \
+    "-customContentMD5" "dummy" \
+    "-payload" "<Tagging xmlms=\"http://s3.amazonaws.com/doc/2006-03-01/\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }
 

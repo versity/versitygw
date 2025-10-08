@@ -145,22 +145,28 @@ test_file="test_file"
   assert_success
 }
 
-# @test "REST - UploadPart w/o part number" {
-#   run get_bucket_name "$BUCKET_ONE_NAME"
-#   assert_success
-#   bucket_name="$output"
+@test "REST - UploadPart w/o part number" {
 
-#   run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
-#   assert_success
+  skip "versitygw/curl/fasthttp issue"
 
-#   run split_file "$TEST_FILE_FOLDER/$test_file" 4
-#   assert_success
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
 
-#   run upload_part_rest_without_part_number "$bucket_name" "$test_file"
-#   assert_success
-# }
+  run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run split_file "$TEST_FILE_FOLDER/$test_file" 4
+  assert_success
+
+  run upload_part_rest_without_part_number "$bucket_name" "$test_file"
+  assert_success
+}
 
 @test "REST - UploadPart w/o upload ID" {
+
+  skip "versitygw/curl/fasthttp issue"
+
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

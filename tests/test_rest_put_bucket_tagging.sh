@@ -119,3 +119,21 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   run add_verify_bucket_tags_rest "$bucket_name" "$test_key" "$test_value"
   assert_success
 }
+
+@test "REST - PutBucketTagging - STREAMING-UNSIGNED-PAYLOAD-TRAILER fails" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1601"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_expect_error "400" "InvalidRequest" "The value of x-amz-content-sha256 header is invalid" \
+    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+    "-debug" "-logFile" "tagging.log" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-tagKey" "key" "-tagValue" "value"
+  assert_success
+}

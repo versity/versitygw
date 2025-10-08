@@ -54,3 +54,13 @@ setup_bucket_and_add_file() {
   fi
   return 0
 }
+
+send_openssl_go_command_chunked_no_content_length() {
+  if ! check_param_count_gt "bucket name, key" 2 $#; then
+    return 1
+  fi
+  run send_openssl_go_command_expect_error "400" "IncompleteBody" "The request body terminated unexpectedly" \
+      "-client" "openssl" "-commandType" "putObject" "-bucketName" "$1" "-payload" "abcdefg" "-omitContentLength" \
+      "-payloadType" "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" "-chunkSize" "8192" "-objectKey" "$2"
+    assert_success
+}
