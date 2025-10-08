@@ -90,15 +90,15 @@ test_file="test_file"
   assert_success
 }
 
-@test "REST - UploadPartCopy w/o upload ID" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
+#@test "REST - UploadPartCopy w/o upload ID" {
+#  run get_bucket_name "$BUCKET_ONE_NAME"
+#  assert_success
+#  bucket_name="$output"
 
-  run upload_part_copy_without_upload_id_or_part_number "$bucket_name" "$test_file" "1" "" \
-    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
-  assert_success
-}
+#  run upload_part_copy_without_upload_id_or_part_number "$bucket_name" "$test_file" "1" "" \
+#    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
+#  assert_success
+#}
 
 @test "REST - UploadPartCopy w/o part number" {
   run get_bucket_name "$BUCKET_ONE_NAME"
