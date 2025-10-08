@@ -51,6 +51,10 @@ type ScoutfsOpts struct {
 	GlacierMode bool
 	// DisableNoArchive prevents setting noarchive on temporary files
 	DisableNoArchive bool
+	// ValidateBucketNames enables minimal bucket name validation to prevent
+	// incorrect access to the filesystem. This is only needed if the
+	// frontend is not already validating bucket names.
+	ValidateBucketNames bool
 }
 
 type ScoutFS struct {
@@ -73,6 +77,10 @@ type ScoutFS struct {
 	// on mutlipart parts. This is enabled by default to prevent archive
 	// copies of temporary multipart parts.
 	disableNoArchive bool
+
+	// enable posix level bucket name validations, not needed if the
+	// frontend handlers are already validating bucket names
+	validateBucketName bool
 }
 
 var _ backend.Backend = &ScoutFS{}
@@ -195,9 +203,21 @@ func (s *ScoutFS) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s
 	return res, nil
 }
 
+func (s *ScoutFS) isBucketValid(bucket string) bool {
+	if !s.validateBucketName {
+		return true
+	}
+
+	return backend.IsValidDirectoryName(bucket)
+}
+
 func (s *ScoutFS) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.GetObjectOutput, error) {
 	bucket := *input.Bucket
 	object := *input.Key
+
+	if !s.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -289,6 +309,10 @@ func (s *ScoutFS) glacierFileToObj(bucket string, fetchOwner bool) backend.GetOb
 func (s *ScoutFS) RestoreObject(_ context.Context, input *s3.RestoreObjectInput) error {
 	bucket := *input.Bucket
 	object := *input.Key
+
+	if !s.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {

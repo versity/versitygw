@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -40,6 +41,16 @@ var (
 	bucketNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]+[a-z0-9]$`)
 	bucketNameIpRegexp = regexp.MustCompile(`^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$`)
 )
+
+var strictBucketNameValidation atomic.Bool
+
+func init() {
+	strictBucketNameValidation.Store(true)
+}
+
+func SetBucketNameValidationStrict(strict bool) {
+	strictBucketNameValidation.Store(strict)
+}
 
 func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
 	metadata = make(map[string]string)
@@ -209,6 +220,10 @@ func StreamResponseBody(ctx *fiber.Ctx, rdr io.ReadCloser, bodysize int) {
 }
 
 func IsValidBucketName(bucket string) bool {
+	if !strictBucketNameValidation.Load() {
+		return true
+	}
+
 	if len(bucket) < 3 || len(bucket) > 63 {
 		debuglogger.Logf("bucket name length should be in 3-63 range, got: %v\n", len(bucket))
 		return false

@@ -570,3 +570,19 @@ func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int6
 
 	return nil
 }
+
+// IsValidDirectoryName returns true if the string is a valid name
+// for a directory
+func IsValidDirectoryName(name string) bool {
+	// directories may not contain a path separator
+	if strings.ContainsRune(name, '/') {
+		return false
+	}
+
+	// directories may not contain null character
+	if strings.ContainsRune(name, 0) {
+		return false
+	}
+
+	return true
+}
