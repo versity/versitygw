@@ -39,6 +39,7 @@ var (
 	versioningEnabled bool
 	azureTests        bool
 	tlsStatus         bool
+	parallel          bool
 )
 
 func testCommand() *cli.Command {
@@ -114,6 +115,12 @@ func initTestCommands() []*cli.Command {
 					Usage:       "Skips tests that are not supported by Azure",
 					Destination: &azureTests,
 					Aliases:     []string{"azure"},
+				},
+				&cli.BoolFlag{
+					Name:        "parallel",
+					Usage:       "executes the tests concurrently",
+					Destination: &parallel,
+					Aliases:     []string{"p"},
 				},
 			},
 		},
@@ -304,9 +311,9 @@ func initTestCommands() []*cli.Command {
 	}, extractIntTests()...)
 }
 
-type testFunc func(*integration.S3Conf)
+type testFunc func(*integration.TestState)
 
-func getAction(tf testFunc) func(*cli.Context) error {
+func getAction(tf testFunc) func(ctx *cli.Context) error {
 	return func(ctx *cli.Context) error {
 		opts := []integration.Option{
 			integration.WithAccess(awsID),
@@ -329,12 +336,14 @@ func getAction(tf testFunc) func(*cli.Context) error {
 		}
 
 		s := integration.NewS3Conf(opts...)
-		tf(s)
+		ts := integration.NewTestState(ctx.Context, s, parallel)
+		tf(ts)
+		ts.Wait()
 
 		fmt.Println()
-		fmt.Println("RAN:", integration.RunCount, "PASS:", integration.PassCount, "FAIL:", integration.FailCount)
-		if integration.FailCount > 0 {
-			return fmt.Errorf("test failed with %v errors", integration.FailCount)
+		fmt.Println("RAN:", integration.RunCount.Load(), "PASS:", integration.PassCount.Load(), "FAIL:", integration.FailCount.Load())
+		if integration.FailCount.Load() > 0 {
+			return fmt.Errorf("test failed with %v errors", integration.FailCount.Load())
 		}
 		return nil
 	}

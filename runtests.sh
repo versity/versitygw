@@ -16,7 +16,6 @@ ECHO "Generating TLS certificate and key in the cert.pem and key.pem files"
 openssl genpkey -algorithm RSA -out key.pem -pkeyopt rsa_keygen_bits:2048
 openssl req -new -x509 -key key.pem -out cert.pem -days 365 -subj "/C=US/ST=California/L=San Francisco/O=Versity/OU=Software/CN=versity.com"
 
-
 ECHO "Running the sdk test over http"
 # run server in background not versioning-enabled
 # port: 7070(default)
@@ -33,7 +32,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7070 full-flow --parallel; then
 	echo "full flow tests failed"
 	kill $GW_PID
 	exit 1
@@ -70,7 +69,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7071 full-flow --parallel; then
 	echo "full flow tests failed"
 	kill $GW_HTTPS_PID
 	exit 1
@@ -90,7 +89,6 @@ fi
 
 kill $GW_HTTPS_PID
 
-
 ECHO "Running the sdk test over http against the versioning-enabled gateway"
 # run server in background versioning-enabled
 # port: 7072
@@ -108,7 +106,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs; then
+if ! ./versitygw test -a user -s pass -e http://127.0.0.1:7072 full-flow -vs --parallel; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_PID
 	exit 1
@@ -140,7 +138,7 @@ fi
 
 # run tests
 # full flow tests
-if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs; then
+if ! ./versitygw test --allow-insecure -a user -s pass -e https://127.0.0.1:7073 full-flow -vs --parallel; then
 	echo "versioning-enabled full-flow tests failed"
 	kill $GW_VS_HTTPS_PID
 	exit 1
@@ -162,4 +160,3 @@ exit 0
 # go tool covdata percent -i=/tmp/covdata
 # go tool covdata textfmt -i=/tmp/covdata -o profile.txt
 # go tool cover -html=profile.txt
-
