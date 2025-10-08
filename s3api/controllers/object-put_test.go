@@ -1174,6 +1174,9 @@ func TestS3ApiController_PutObject(t *testing.T) {
 				GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 					return nil, tt.input.extraMockErr
 				},
+				GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+				},
 			}
 
 			ctrl := S3ApiController{

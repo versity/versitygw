@@ -629,7 +629,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, IsBucketPublic, c.be)
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, IsBucketPublic, c.be, true)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
