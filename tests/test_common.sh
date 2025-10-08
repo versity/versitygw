@@ -361,7 +361,7 @@ test_common_get_bucket_location() {
   run setup_bucket "$BUCKET_ONE_NAME"
   assert_success
 
-  run get_check_bucket_location "$1" "$BUCKET_ONE_NAME"
+  run get_check_bucket_location_various "$1" "$BUCKET_ONE_NAME"
   assert_success
 }
 

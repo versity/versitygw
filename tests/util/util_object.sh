@@ -14,7 +14,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-source ./tests/util/util_bucket.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_mc.sh
 source ./tests/util/util_multipart.sh

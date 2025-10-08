@@ -68,15 +68,17 @@ get_element_text() {
 
   log 5 "data: $(cat "$1")"
   log 5 "xpath: $xpath"
-  xml_data="$(grep '<[^/][^ >]*>' "$1")"
-  log 5 "XML data: $xml_data"
-  log 5 "result: $(echo -n "$xml_data" | xmllint --xpath "boolean($xpath)" - 2>&1)"
-  result=$(echo -n "$xml_data" | xmllint --xpath "boolean($xpath)" - 2>&1)
+  if ! get_xml_data "$1" "$1.xml"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  log 5 "result: $(xmllint --xpath "boolean($xpath)" "$1.xml" 2>&1)"
+  result=$(xmllint --xpath "boolean($xpath)" "$1.xml" 2>&1)
   if [ "$result" == "false" ]; then
     log 2 "element matching '$xpath' doesn't exist"
     return 1
   fi
-  if ! xml_val=$(echo -n "$xml_data" | xmllint --xpath "${xpath}/text()" - 2>/dev/null); then
+  if ! xml_val=$(xmllint --xpath "${xpath}/text()" "$1.xml" 2>/dev/null); then
     echo ""
     return 0
   fi

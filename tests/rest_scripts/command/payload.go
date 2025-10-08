@@ -38,11 +38,15 @@ func GetBase64ChecksumLength(checksumType string) (int64, error) {
 
 func (p *Payload) GetDataSize() (int64, error) {
 	if !p.dataSizeCalculated {
-		dataSize, err := p.dataSource.SourceDataByteSize()
-		if err != nil {
-			return 0, fmt.Errorf("error getting payload data size: %w", err)
+		if p.dataSource != nil {
+			dataSize, err := p.dataSource.SourceDataByteSize()
+			if err != nil {
+				return 0, fmt.Errorf("error getting payload data size: %w", err)
+			}
+			p.dataSize = dataSize
+		} else {
+			p.dataSize = 0
 		}
-		p.dataSize = dataSize
 		p.dataSizeCalculated = true
 	}
 	return p.dataSize, nil

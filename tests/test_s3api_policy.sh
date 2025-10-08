@@ -36,6 +36,7 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_s3api.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 export RUN_USERS=true
 

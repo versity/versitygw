@@ -17,6 +17,7 @@
 source ./tests/env.sh
 source ./tests/util/util_object.sh
 source ./tests/commands/create_bucket.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 create_bucket_if_not_exists() {
   if ! check_param_count "create_bucket_if_not_exists" "bucket name" 1 $#; then

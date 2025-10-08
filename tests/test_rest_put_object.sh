@@ -214,9 +214,6 @@ export RUN_USERS=true
 }
 
 @test "PutObject - metadata keys are made lowercase" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1482"
-  fi
   uppercase_key="CAPITAL"
   uppercase_value="DUMMY"
 

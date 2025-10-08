@@ -17,6 +17,7 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/test_common.sh
 
 export RUN_S3CMD=true

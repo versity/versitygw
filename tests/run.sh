@@ -41,6 +41,7 @@ show_help() {
     echo "   rest-create-bucket                     Run REST create bucket tests"
     echo "   rest-delete-bucket-ownership-controls  Run REST delete bucket ownership controls tests"
     echo "   rest-delete-bucket-tagging             Run REST delete bucket tagging tests"
+    echo "   rest-get-bucket-location               Run REST get bucket location tests"
     echo "   rest-head-bucket                       Run REST head bucket tests"
     echo "   rest-list-buckets                      Run REST list-buckets tests"
     echo "   rest-multipart                         Run REST multipart tests"
@@ -62,7 +63,7 @@ handle_param() {
       s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
       rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
-      rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging)
+      rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging|rest-get-bucket-location)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -173,6 +174,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_delete_bucket_ownership_controls.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh; then
@@ -222,6 +225,10 @@ run_suite() {
     rest-delete-bucket-tagging)
       echo "Running REST delete bucket tagging tests ..."
       "$HOME"/bin/bats ./tests/test_rest_delete_bucket_tagging.sh || exit_code=$?
+      ;;
+    rest-get-bucket-location)
+      echo "Running REST get bucket location tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh || exit_code=$?
       ;;
     rest-head-bucket)
       echo "Running REST head bucket tests ..."
