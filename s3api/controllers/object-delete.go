@@ -159,6 +159,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 		bypass,
 		isBucketPublic,
 		c.be,
+		false,
 	)
 	if err != nil {
 		return &Response{

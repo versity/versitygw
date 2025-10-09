@@ -24060,6 +24060,255 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_WORM_PutObject_overwrite_locked_object(s *S3Conf) error {
+	testName := "Versioning_WORM_PutObject_overwrite_locked_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		v := versions[0]
+		v.IsLatest = getPtr(false)
+
+		// lock the object with legal hold
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		dataLen := int64(10)
+
+		// overwrite the locked object with a new version
+		r, err := putObjectWithData(dataLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		version := types.ObjectVersion{
+			ETag:         r.res.ETag,
+			IsLatest:     getPtr(true),
+			Key:          &obj,
+			Size:         &dataLen,
+			VersionId:    r.res.VersionId,
+			StorageClass: types.ObjectVersionStorageClassStandard,
+			ChecksumType: r.res.ChecksumType,
+		}
+
+		result := []types.ObjectVersion{version, v}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(result, out.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", result, out.Versions)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                obj,
+				versionId:          getString(v.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func Versioning_WORM_CopyObject_overwrite_locked_object(s *S3Conf) error {
+	testName := "Versioning_WORM_CopyObject_overwrite_locked_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		v := versions[0]
+		v.IsLatest = getPtr(false)
+
+		// lock the object with legal hold
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// create a source object version
+		srcObj := "source-object"
+		srcVersions, err := createObjVersions(s3client, bucket, srcObj, 1)
+		if err != nil {
+			return err
+		}
+
+		srcVersion := srcVersions[0]
+
+		// overwrite the locked object with a new version with CopyObject
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		copyResult, err := s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &obj,
+			CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		version := types.ObjectVersion{
+			ETag:         copyResult.CopyObjectResult.ETag,
+			IsLatest:     getPtr(true),
+			Key:          &obj,
+			Size:         srcVersion.Size,
+			VersionId:    copyResult.VersionId,
+			StorageClass: types.ObjectVersionStorageClassStandard,
+			ChecksumType: copyResult.CopyObjectResult.ChecksumType,
+		}
+
+		result := []types.ObjectVersion{version, v, srcVersion}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(result, out.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", result, out.Versions)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                obj,
+				versionId:          getString(v.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object(s *S3Conf) error {
+	testName := "Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		versions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		v := versions[0]
+		v.IsLatest = getPtr(false)
+
+		// lock the object with legal hold
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		dataLen := int64(5 * 1024 * 1024)
+
+		// overwrite the locked object with a new version
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, dataLen, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		part := parts[0]
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:              part.ETag,
+						PartNumber:        part.PartNumber,
+						ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+					},
+				},
+			},
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		version := types.ObjectVersion{
+			ETag:         res.ETag,
+			IsLatest:     getPtr(true),
+			Key:          &obj,
+			Size:         &dataLen,
+			VersionId:    res.VersionId,
+			StorageClass: types.ObjectVersionStorageClassStandard,
+			ChecksumType: res.ChecksumType,
+		}
+
+		result := []types.ObjectVersion{version, v}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(result, out.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", result, out.Versions)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                obj,
+				versionId:          getString(v.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
 func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {
 	testName := "Versioning_AccessControl_GetObjectVersion"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

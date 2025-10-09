@@ -210,7 +210,16 @@ func ParseObjectLegalHoldOutput(status *bool) *s3response.GetObjectLegalHoldResu
 	}
 }
 
-func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []types.ObjectIdentifier, bypass, isBucketPublic bool, be backend.Backend) error {
+func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects []types.ObjectIdentifier, bypass, isBucketPublic bool, be backend.Backend, isOverwrite bool) error {
+	if isOverwrite {
+		// if bucket versioning is enabled, any overwrite request
+		// should be enabled, as it leads to a new object version
+		// creation
+		res, err := be.GetBucketVersioning(ctx, bucket)
+		if err == nil && res.Status != nil && *res.Status == types.BucketVersioningStatusEnabled {
+			return nil
+		}
+	}
 	data, err := be.GetObjectLockConfiguration(ctx, bucket)
 	if err != nil {
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound)) {
