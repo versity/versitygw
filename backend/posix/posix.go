@@ -78,6 +78,10 @@ type Posix struct {
 	// if the filesystem supports it. This is needed for cases where
 	// there are different filesystems mounted below the bucket level.
 	forceNoTmpFile bool
+
+	// enable posix level bucket name validations, not needed if the
+	// frontend handlers are already validating bucket names
+	validateBucketName bool
 }
 
 var _ backend.Backend = &Posix{}
@@ -131,6 +135,10 @@ type PosixOpts struct {
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
+	// ValidateBucketNames enables minimal bucket name validation to prevent
+	// incorrect access to the filesystem. This is only needed if the
+	// frontend is not already validating bucket names.
+	ValidateBucketNames bool
 }
 
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
@@ -180,17 +188,18 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 	}
 
 	return &Posix{
-		meta:           meta,
-		rootfd:         f,
-		rootdir:        rootdir,
-		euid:           os.Geteuid(),
-		egid:           os.Getegid(),
-		chownuid:       opts.ChownUID,
-		chowngid:       opts.ChownGID,
-		bucketlinks:    opts.BucketLinks,
-		versioningDir:  verioningdirAbs,
-		newDirPerm:     opts.NewDirPerm,
-		forceNoTmpFile: opts.ForceNoTmpFile,
+		meta:               meta,
+		rootfd:             f,
+		rootdir:            rootdir,
+		euid:               os.Geteuid(),
+		egid:               os.Getegid(),
+		chownuid:           opts.ChownUID,
+		chowngid:           opts.ChownGID,
+		bucketlinks:        opts.BucketLinks,
+		versioningDir:      verioningdirAbs,
+		newDirPerm:         opts.NewDirPerm,
+		forceNoTmpFile:     opts.ForceNoTmpFile,
+		validateBucketName: opts.ValidateBucketNames,
 	}, nil
 }
 
@@ -335,7 +344,18 @@ func (p *Posix) ListBuckets(_ context.Context, input s3response.ListBucketsInput
 	}, nil
 }
 
+func (p *Posix) isBucketValid(bucket string) bool {
+	if !p.validateBucketName {
+		return true
+	}
+
+	return backend.IsValidDirectoryName(bucket)
+}
+
 func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
+	if !p.isBucketValid(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Lstat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -356,6 +376,10 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	uid, gid, doChown := p.getChownIDs(acct)
 
 	bucket := *input.Bucket
+
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	err := os.Mkdir(bucket, p.newDirPerm)
 	if err != nil && os.IsExist(err) {
@@ -459,6 +483,9 @@ func (p *Posix) isBucketEmpty(bucket string) error {
 }
 
 func (p *Posix) DeleteBucket(_ context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	// Check if the bucket is empty
 	err := p.isBucketEmpty(bucket)
 	if err != nil {
@@ -482,6 +509,9 @@ func (p *Posix) DeleteBucket(_ context.Context, bucket string) error {
 }
 
 func (p *Posix) PutBucketOwnershipControls(_ context.Context, bucket string, ownership types.ObjectOwnership) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -499,6 +529,9 @@ func (p *Posix) PutBucketOwnershipControls(_ context.Context, bucket string, own
 }
 func (p *Posix) GetBucketOwnershipControls(_ context.Context, bucket string) (types.ObjectOwnership, error) {
 	var ownship types.ObjectOwnership
+	if !p.isBucketValid(bucket) {
+		return ownship, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return ownship, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -518,6 +551,9 @@ func (p *Posix) GetBucketOwnershipControls(_ context.Context, bucket string) (ty
 	return types.ObjectOwnership(ownership), nil
 }
 func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -539,6 +575,9 @@ func (p *Posix) DeleteBucketOwnershipControls(_ context.Context, bucket string) 
 }
 
 func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status types.BucketVersioningStatus) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	if !p.versioningEnabled() {
 		return s3err.GetAPIError(s3err.ErrVersioningNotConfigured)
 	}
@@ -586,6 +625,10 @@ func (p *Posix) PutBucketVersioning(ctx context.Context, bucket string, status t
 func (p *Posix) GetBucketVersioning(_ context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
 	if !p.versioningEnabled() {
 		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrVersioningNotConfigured)
+	}
+
+	if !p.isBucketValid(bucket) {
+		return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
 	_, err := os.Stat(bucket)
@@ -739,6 +782,10 @@ func (p *Posix) ListObjectVersions(ctx context.Context, input *s3.ListObjectVers
 	bucket := *input.Bucket
 	var prefix, delim, keyMarker, versionIdMarker string
 	var max int
+
+	if !p.isBucketValid(bucket) {
+		return s3response.ListVersionsResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	if input.Prefix != nil {
 		prefix = *input.Prefix
@@ -1186,6 +1233,10 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	bucket := *mpu.Bucket
 	object := *mpu.Key
 
+	if !p.isBucketValid(bucket) {
+		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -1387,6 +1438,10 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	object := *input.Key
 	uploadID := *input.UploadId
 	parts := input.MultipartUpload.Parts
+
+	if !p.isBucketValid(bucket) {
+		return res, "", s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1994,6 +2049,10 @@ func (p *Posix) AbortMultipartUpload(_ context.Context, mpu *s3.AbortMultipartUp
 	object := *mpu.Key
 	uploadID := *mpu.UploadId
 
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -2030,6 +2089,10 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 
 	bucket := *mpu.Bucket
 	var delimiter string
+
+	if !p.isBucketValid(bucket) {
+		return lmu, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	if mpu.Delimiter != nil {
 		delimiter = *mpu.Delimiter
 	}
@@ -2190,6 +2253,10 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
+
+	if !p.isBucketValid(bucket) {
+		return lpr, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	stringMarker := ""
 	if input.PartNumberMarker != nil {
 		stringMarker = *input.PartNumberMarker
@@ -2340,6 +2407,10 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 	bucket := *input.Bucket
 	object := *input.Key
 	uploadID := *input.UploadId
+
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	part := input.PartNumber
 	length := int64(0)
 	if input.ContentLength != nil {
@@ -2519,6 +2590,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	if upi.Key == nil {
 		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	if !p.isBucketValid(*upi.Bucket) {
+		return s3response.CopyPartResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
 	_, err := os.Stat(*upi.Bucket)
@@ -2751,6 +2826,9 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 	// Override the checksum algorithm with default: CRC64NVME
 	if po.ChecksumAlgorithm == "" {
 		po.ChecksumAlgorithm = types.ChecksumAlgorithmCrc64nvme
+	}
+	if !p.isBucketValid(*po.Bucket) {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 	_, err := os.Stat(*po.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -3085,6 +3163,10 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 	bucket := *input.Bucket
 	object := *input.Key
 	isDir := strings.HasSuffix(object, "/")
+
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -3496,6 +3578,9 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	}
 
 	bucket := *input.Bucket
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -3748,6 +3833,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	bucket := *input.Bucket
 	object := *input.Key
 
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -3972,8 +4061,15 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 	if err != nil {
 		return s3response.CopyObjectOutput{}, err
 	}
+	if !p.isBucketValid(srcBucket) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	dstBucket := *input.Bucket
 	dstObject := *input.Key
+
+	if !p.isBucketValid(dstBucket) {
+		return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 
 	_, err = os.Stat(srcBucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -4308,6 +4404,10 @@ func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjec
 		maxkeys = *input.MaxKeys
 	}
 
+	if !p.isBucketValid(bucket) {
+		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.ListObjectsResult{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4337,6 +4437,12 @@ func (p *Posix) ListObjectsParametrized(ctx context.Context, input *s3.ListObjec
 }
 
 func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
+	if !p.isBucketValid(bucket) {
+		return func(string, fs.DirEntry) (s3response.Object, error) {
+			return s3response.Object{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+		}
+	}
+
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
 		var owner *types.Owner
 		// Retreive the object owner data from bucket ACL, if fetchOwner is true
@@ -4469,6 +4575,10 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 		fetchOwner = *input.FetchOwner
 	}
 
+	if !p.isBucketValid(bucket) {
+		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3response.ListObjectsV2Result{}, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4502,6 +4612,9 @@ func (p *Posix) ListObjectsV2Parametrized(ctx context.Context, input *s3.ListObj
 }
 
 func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4519,6 +4632,9 @@ func (p *Posix) PutBucketAcl(_ context.Context, bucket string, data []byte) erro
 }
 
 func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]byte, error) {
+	if !p.isBucketValid(*input.Bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(*input.Bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4538,6 +4654,9 @@ func (p *Posix) GetBucketAcl(_ context.Context, input *s3.GetBucketAclInput) ([]
 }
 
 func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[string]string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4569,6 +4688,9 @@ func (p *Posix) PutBucketTagging(_ context.Context, bucket string, tags map[stri
 }
 
 func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]string, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4586,10 +4708,16 @@ func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]s
 }
 
 func (p *Posix) DeleteBucketTagging(ctx context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	return p.PutBucketTagging(ctx, bucket, nil)
 }
 
 func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4623,6 +4751,9 @@ func (p *Posix) getAttrTags(bucket, object string) (map[string]string, error) {
 }
 
 func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4662,10 +4793,16 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 }
 
 func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	return p.PutObjectTagging(ctx, bucket, object, nil)
 }
 
 func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4696,6 +4833,9 @@ func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byt
 }
 
 func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4719,10 +4859,16 @@ func (p *Posix) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, err
 }
 
 func (p *Posix) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	return p.PutBucketPolicy(ctx, bucket, nil)
 }
 
 func (p *Posix) PutBucketCors(_ context.Context, bucket string, cors []byte) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4749,6 +4895,9 @@ func (p *Posix) PutBucketCors(_ context.Context, bucket string, cors []byte) err
 }
 
 func (p *Posix) GetBucketCors(_ context.Context, bucket string) ([]byte, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4769,6 +4918,9 @@ func (p *Posix) GetBucketCors(_ context.Context, bucket string) ([]byte, error) 
 }
 
 func (p *Posix) DeleteBucketCors(ctx context.Context, bucket string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	return p.PutBucketCors(ctx, bucket, nil)
 }
 
@@ -4797,6 +4949,9 @@ func (p *Posix) isBucketObjectLockEnabled(bucket string) error {
 }
 
 func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, config []byte) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4831,6 +4986,9 @@ func (p *Posix) PutObjectLockConfiguration(ctx context.Context, bucket string, c
 }
 
 func (p *Posix) GetObjectLockConfiguration(_ context.Context, bucket string) ([]byte, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchBucket)
@@ -4851,6 +5009,9 @@ func (p *Posix) GetObjectLockConfiguration(_ context.Context, bucket string) ([]
 }
 
 func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId string, status bool) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
 		return err
@@ -4901,6 +5062,9 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId string) (*bool, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
 		return nil, err
@@ -4949,6 +5113,9 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId string, retention []byte) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
 		return err
@@ -4986,6 +5153,9 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId string) ([]byte, error) {
+	if !p.isBucketValid(bucket) {
+		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	err := p.doesBucketAndObjectExist(bucket, object)
 	if err != nil {
 		return nil, err
@@ -5032,6 +5202,9 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 }
 
 func (p *Posix) ChangeBucketOwner(ctx context.Context, bucket, owner string) error {
+	if !p.isBucketValid(bucket) {
+		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
 	return auth.UpdateBucketACLOwner(ctx, p, bucket, owner)
 }
 

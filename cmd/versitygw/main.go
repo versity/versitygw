@@ -32,6 +32,7 @@ import (
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
 )
@@ -58,6 +59,7 @@ var (
 	pprof                                  string
 	quiet                                  bool
 	readonly                               bool
+	disableStrictBucketNames               bool
 	iamDir                                 string
 	ldapURL, ldapBindDN, ldapPassword      string
 	ldapQueryBase, ldapObjClasses          string
@@ -557,6 +559,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_READ_ONLY"},
 			Destination: &readonly,
 		},
+		&cli.BoolFlag{
+			Name:        "disable-strict-bucket-names",
+			Usage:       "allow relaxed bucket naming (disables strict validation checks)",
+			EnvVars:     []string{"VGW_DISABLE_STRICT_BUCKET_NAMES"},
+			Destination: &disableStrictBucketNames,
+		},
 		&cli.StringFlag{
 			Name:        "metrics-service-name",
 			Usage:       "service name tag for metrics, hostname if blank",
@@ -615,6 +623,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if rootUserAccess == "" || rootUserSecret == "" {
 		return fmt.Errorf("root user access and secret key must be provided")
 	}
+
+	utils.SetBucketNameValidationStrict(!disableStrictBucketNames)
 
 	if pprof != "" {
 		// listen on specified port for pprof debug

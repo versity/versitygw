@@ -231,6 +231,28 @@ func TestIsValidBucketName(t *testing.T) {
 	}
 }
 
+func TestSetBucketNameValidationStrict(t *testing.T) {
+	SetBucketNameValidationStrict(true)
+	t.Cleanup(func() {
+		SetBucketNameValidationStrict(true)
+	})
+
+	invalidBucket := "Invalid_Bucket"
+	if IsValidBucketName(invalidBucket) {
+		t.Fatalf("expected %q to be invalid with strict validation", invalidBucket)
+	}
+
+	SetBucketNameValidationStrict(false)
+	if !IsValidBucketName(invalidBucket) {
+		t.Fatalf("expected %q to be accepted when strict validation disabled", invalidBucket)
+	}
+
+	SetBucketNameValidationStrict(true)
+	if IsValidBucketName(invalidBucket) {
+		t.Fatalf("expected %q to be invalid after re-enabling strict validation", invalidBucket)
+	}
+}
+
 func TestParseUint(t *testing.T) {
 	type args struct {
 		str string

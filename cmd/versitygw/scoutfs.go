@@ -113,6 +113,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.NewDirPerm = fs.FileMode(dirPerms)
 	opts.DisableNoArchive = disableNoArchive
 	opts.VersioningDir = versioningDir
+	opts.ValidateBucketNames = disableStrictBucketNames
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {
