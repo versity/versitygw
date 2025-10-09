@@ -174,7 +174,7 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 	}
 
 	if decContLength > maxObjSizeLimit {
-		debuglogger.Logf("the object size exceeds the allowed limit: (size): %v, (limit): %v", decContLength, maxObjSizeLimit)
+		debuglogger.Logf("the object size exceeds the allowed limit: (size): %v, (limit): %v", decContLength, int64(maxObjSizeLimit))
 		return nil, s3err.GetAPIError(s3err.ErrEntityTooLarge)
 	}
 

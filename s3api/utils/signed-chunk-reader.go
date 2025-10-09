@@ -39,7 +39,6 @@ import (
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
 
 const (
-	chunkHdrDelim            = "\r\n"
 	zeroLenSig               = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	awsV4                    = "AWS4"
 	awsS3Service             = "s3"

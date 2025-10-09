@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	logFileMode = 0600
+	logFileMode = 0644
 	timeFormat  = "02/January/2006:15:04:05 -0700"
 )
 
@@ -45,12 +45,12 @@ var _ AuditLogger = &FileLogger{}
 
 // InitFileLogger initializes audit logs to local file
 func InitFileLogger(logname string) (AuditLogger, error) {
-	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, logFileMode)
 	if err != nil {
 		return nil, fmt.Errorf("open log: %w", err)
 	}
 
-	f.WriteString(fmt.Sprintf("log starts %v\n", time.Now()))
+	fmt.Fprintf(f, "log starts %v\n", time.Now())
 
 	return &FileLogger{logfile: logname, f: f}, nil
 }
