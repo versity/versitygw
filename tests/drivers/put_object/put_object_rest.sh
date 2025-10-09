@@ -40,7 +40,7 @@ setup_bucket_and_add_file() {
   if ! check_param_count_v2 "bucket, filename" 2 $#; then
     return 1
   fi
-  if ! setup_bucket "$1"; then
+  if ! setup_bucket_v2 "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
