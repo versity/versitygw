@@ -531,6 +531,15 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
 
+	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, false, c.be, true)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	res, err := c.be.CopyObject(ctx.Context(),
 		s3response.CopyObjectInput{
 			Bucket:                      &bucket,

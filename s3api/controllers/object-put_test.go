@@ -892,6 +892,24 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			},
 		},
 		{
+			name: "object is locked",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
@@ -900,6 +918,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 				headers: map[string]string{
 					"X-Amz-Copy-Source": "bucket/object",
 				},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 			},
 			output: testOutput{
 				response: &Response{
@@ -930,6 +949,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 						ETag: utils.GetStringPtr("ETag"),
 					},
 				},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 			},
 			output: testOutput{
 				response: &Response{
@@ -958,6 +978,12 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+				GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
+				},
+				GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return nil, tt.input.extraMockErr
 				},
 			}
 

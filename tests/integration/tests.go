@@ -17881,8 +17881,8 @@ func WORMProtection_object_lock_retention_governance_locked(s *S3Conf) error {
 	}, withLock())
 }
 
-func WORMProtection_object_lock_retention_governance_bypass_overwrite(s *S3Conf) error {
-	testName := "WORMProtection_object_lock_retention_governance_bypass_overwrite"
+func WORMProtection_object_lock_retention_governance_bypass_overwrite_put(s *S3Conf) error {
+	testName := "WORMProtection_object_lock_retention_governance_bypass_overwrite_put"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		object := "my-obj"
 
@@ -17891,24 +17891,14 @@ func WORMProtection_object_lock_retention_governance_bypass_overwrite(s *S3Conf)
 			return err
 		}
 
-		date := time.Now().Add(time.Hour * 3)
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
-			Bucket: &bucket,
-			Key:    &object,
-			Retention: &types.ObjectLockRetention{
-				Mode:            types.ObjectLockRetentionModeGovernance,
-				RetainUntilDate: &date,
-			},
-		})
-		cancel()
+		err = lockObject(s3client, objectLockModeGovernance, bucket, object, "")
 		if err != nil {
 			return err
 		}
 
-		policy := genPolicyDoc("Allow", `"*"`, `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
 
-		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 			Bucket: &bucket,
 			Policy: &policy,
@@ -17925,6 +17915,239 @@ func WORMProtection_object_lock_retention_governance_bypass_overwrite(s *S3Conf)
 		})
 		cancel()
 		return err
+	}, withLock())
+}
+
+func WORMProtection_object_lock_retention_governance_bypass_overwrite_mp(s *S3Conf) error {
+	testName := "WORMProtection_object_lock_retention_governance_bypass_overwrite_mp"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeGovernance, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// overwrite the locked object with a new object with mp
+		mp, err := createMp(s3client, bucket, object)
+		if err != nil {
+			return err
+		}
+
+		dataLen := int64(10)
+
+		parts, _, err := uploadParts(s3client, dataLen, 1, bucket, object, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		part := parts[0]
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &object,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:              part.ETag,
+						PartNumber:        part.PartNumber,
+						ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+					},
+				},
+			},
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		return err
+	}, withLock())
+}
+
+func WORMProtection_object_lock_retention_governance_bypass_overwrite_copy(s *S3Conf) error {
+	testName := "WORMProtection_object_lock_retention_governance_bypass_overwrite_copy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeGovernance, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, s.awsID), `["s3:BypassGovernanceRetention"]`, fmt.Sprintf(`"arn:aws:s3:::%v/*"`, bucket))
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+			Bucket: &bucket,
+			Policy: &policy,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		srcObj := "source-object"
+		_, err = putObjects(s3client, []string{srcObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// overwrite the locked object with a new object with CopyObject
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &object,
+			CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		return err
+	}, withLock())
+}
+
+func WORMProtection_unable_to_overwrite_locked_object_put(s *S3Conf) error {
+	testName := "WORMProtection_unable_to_overwrite_locked_object_put"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeLegalHold, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjects(s3client, []string{object}, bucket)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                object,
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func WORMProtection_unable_to_overwrite_locked_object_copy(s *S3Conf) error {
+	testName := "WORMProtection_unable_to_overwrite_locked_object_copy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeLegalHold, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		srcObj := "source-object"
+		_, err = putObjects(s3client, []string{srcObj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		// overwrite the locked object with a new object with CopyObject
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &object,
+			CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                object,
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func WORMProtection_unable_to_overwrite_locked_object_mp(s *S3Conf) error {
+	testName := "WORMProtection_unable_to_overwrite_locked_object_mp"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-obj"
+
+		_, err := putObjects(s3client, []string{object}, bucket)
+		if err != nil {
+			return err
+		}
+
+		err = lockObject(s3client, objectLockModeLegalHold, bucket, object, "")
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, object)
+		if err != nil {
+			return err
+		}
+
+		dataLen := int64(10)
+
+		parts, _, err := uploadParts(s3client, dataLen, 1, bucket, object, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+		part := parts[0]
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    &object,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:              part.ETag,
+						PartNumber:        part.PartNumber,
+						ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+					},
+				},
+			},
+			UploadId: mp.UploadId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrObjectLocked)); err != nil {
+			return err
+		}
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                object,
+				removeOnlyLeglHold: true,
+			},
+		})
 	}, withLock())
 }
 
