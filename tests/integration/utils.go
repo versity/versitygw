@@ -1913,3 +1913,47 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 	// Wait for all goroutines to finish, return any error encountered
 	return eg.Wait()
 }
+
+type objectLockMode string
+
+const (
+	objectLockModeLegalHold  = "legal-hold"
+	objectLockModeGovernance = "governance"
+	objectLockModeCompliance = "compliance"
+)
+
+func lockObject(client *s3.Client, mode objectLockMode, bucket, object, versionId string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	defer cancel()
+	var m types.ObjectLockRetentionMode
+	switch mode {
+	case objectLockModeLegalHold:
+		_, err := client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &object,
+			VersionId: getPtr(versionId),
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		return err
+	case objectLockModeCompliance:
+		m = types.ObjectLockRetentionModeCompliance
+	case objectLockModeGovernance:
+		m = types.ObjectLockRetentionModeGovernance
+	default:
+		return fmt.Errorf("invalid object lock mode: %s", mode)
+	}
+
+	date := time.Now().Add(time.Hour * 3)
+	_, err := client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: getPtr(versionId),
+		Retention: &types.ObjectLockRetention{
+			Mode:            m,
+			RetainUntilDate: &date,
+		},
+	})
+	return err
+}

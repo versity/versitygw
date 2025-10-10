@@ -480,12 +480,29 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 			},
 		},
 		{
+			name: "object is locked",
+			input: testInput{
+				locals:       defaultLocals,
+				body:         validMpBody,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrObjectLocked),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
-				locals: defaultLocals,
-				body:   validMpBody,
-				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
-				beRes:  s3response.CompleteMultipartUploadResult{},
+				locals:       defaultLocals,
+				body:         validMpBody,
+				beErr:        s3err.GetAPIError(s3err.ErrNoSuchBucket),
+				beRes:        s3response.CompleteMultipartUploadResult{},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 			},
 			output: testOutput{
 				response: &Response{
@@ -514,6 +531,7 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 				headers: map[string]string{
 					"X-Amz-Mp-Object-Size": "3",
 				},
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
 			},
 			output: testOutput{
 				response: &Response{
@@ -541,6 +559,12 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
 					return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
+				},
+				GetObjectLockConfigurationFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {
+					return nil, tt.input.extraMockErr
+				},
+				GetBucketVersioningFunc: func(contextMoqParam context.Context, bucket string) (s3response.GetBucketVersioningOutput, error) {
+					return s3response.GetBucketVersioningOutput{}, s3err.GetAPIError(s3err.ErrNotImplemented)
 				},
 			}
 
