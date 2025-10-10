@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -33,6 +34,10 @@ import (
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+)
+
+const (
+	shutDownDuration = time.Second * 10
 )
 
 type S3ApiServer struct {
@@ -165,6 +170,11 @@ func (sa *S3ApiServer) Serve() (err error) {
 		return sa.app.ListenTLSWithCertificate(sa.port, *sa.cert)
 	}
 	return sa.app.Listen(sa.port)
+}
+
+// ShutDown gracefully shuts down the server with a context timeout
+func (sa *S3ApiServer) ShutDown() error {
+	return sa.app.ShutdownWithTimeout(shutDownDuration)
 }
 
 // stackTraceHandler stores the system panics
