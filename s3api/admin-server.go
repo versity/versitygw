@@ -100,3 +100,8 @@ func (sa *S3AdminServer) Serve() (err error) {
 	}
 	return sa.app.Listen(sa.port)
 }
+
+// ShutDown gracefully shuts down the server with a context timeout
+func (sa S3AdminServer) Shutdown() error {
+	return sa.app.ShutdownWithTimeout(shutDownDuration)
+}

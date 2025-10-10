@@ -832,31 +832,36 @@ Loop:
 	}
 	saveErr := err
 
+	// first shut down the s3api and admin servers
+	// as they have dependecy from other modules
+	err = srv.ShutDown()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "shutdown api server: %v\n", err)
+	}
+
+	if admSrv != nil {
+		err := admSrv.Shutdown()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown admin server: %v\n", err)
+		}
+	}
+
 	be.Shutdown()
 
 	err = iam.Shutdown()
 	if err != nil {
-		if saveErr == nil {
-			saveErr = err
-		}
 		fmt.Fprintf(os.Stderr, "shutdown iam: %v\n", err)
 	}
 
 	if loggers.S3Logger != nil {
 		err := loggers.S3Logger.Shutdown()
 		if err != nil {
-			if saveErr == nil {
-				saveErr = err
-			}
 			fmt.Fprintf(os.Stderr, "shutdown s3 logger: %v\n", err)
 		}
 	}
 	if loggers.AdminLogger != nil {
 		err := loggers.AdminLogger.Shutdown()
 		if err != nil {
-			if saveErr == nil {
-				saveErr = err
-			}
 			fmt.Fprintf(os.Stderr, "shutdown admin logger: %v\n", err)
 		}
 	}
@@ -864,9 +869,6 @@ Loop:
 	if evSender != nil {
 		err := evSender.Close()
 		if err != nil {
-			if saveErr == nil {
-				saveErr = err
-			}
 			fmt.Fprintf(os.Stderr, "close event sender: %v\n", err)
 		}
 	}
