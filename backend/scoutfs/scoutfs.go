@@ -94,9 +94,7 @@ const (
 const (
 	// ScoutFS special xattr types
 	systemPrefix = "scoutfs.hide."
-	onameAttr    = systemPrefix + "objname"
 	flagskey     = systemPrefix + "sam_flags"
-	stagecopykey = systemPrefix + "sam_stagereq"
 )
 
 const (
