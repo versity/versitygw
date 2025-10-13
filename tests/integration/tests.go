@@ -12970,7 +12970,7 @@ func CompleteMultipartUpload_should_ignore_the_final_checksum(s *S3Conf) error {
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: cParts,
 			},
-			ChecksumSHA1: getPtr("Kq5sNclPz7QV2+lfQIuc6R7oRu0="), // should ignore this
+			ChecksumCRC64NVME: getPtr("vqf3hRLTlJw="), // should ignore this
 		})
 		cancel()
 		if err != nil {
@@ -12993,9 +12993,10 @@ func CompleteMultipartUpload_should_ignore_the_final_checksum(s *S3Conf) error {
 			return fmt.Errorf("expected nil sha256 checksum, insted got %v",
 				*res.ChecksumSHA256)
 		}
-		if res.ChecksumCRC64NVME != nil {
-			return fmt.Errorf("expected nil crc64nvme checksum, insted got %v",
-				*res.ChecksumSHA256)
+		// If no checksum is specified on mp creation, it should default
+		// to crc64nvme
+		if res.ChecksumCRC64NVME == nil {
+			return fmt.Errorf("expected non nil crc64nvme checksum")
 		}
 
 		return nil
@@ -24659,9 +24660,8 @@ func Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object(s *S3Conf) 
 			MultipartUpload: &types.CompletedMultipartUpload{
 				Parts: []types.CompletedPart{
 					{
-						ETag:              part.ETag,
-						PartNumber:        part.PartNumber,
-						ChecksumCRC64NVME: part.ChecksumCRC64NVME,
+						ETag:       part.ETag,
+						PartNumber: part.PartNumber,
 					},
 				},
 			},
@@ -24679,7 +24679,6 @@ func Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object(s *S3Conf) 
 			Size:         &dataLen,
 			VersionId:    res.VersionId,
 			StorageClass: types.ObjectVersionStorageClassStandard,
-			ChecksumType: res.ChecksumType,
 		}
 
 		result := []types.ObjectVersion{version, v}

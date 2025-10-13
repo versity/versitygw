@@ -518,7 +518,7 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 		input.Body = r
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
 	res, err := client.PutObject(ctx, input)
 	cancel()
 	if err != nil {
