@@ -14830,6 +14830,60 @@ func PutBucketPolicy_any_char_match(s *S3Conf) error {
 	})
 }
 
+func PutBucketPolicy_version(s *S3Conf) error {
+	testName := "PutBucketPolicy_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		invalidVersionErr := getMalformedPolicyError("The policy must contain a valid version string")
+		for i, test := range []struct {
+			version string
+			err     error
+		}{
+			{"2008-10-17", nil},
+			{"2012-10-17", nil},
+			{"", invalidVersionErr},
+			{"invalid", invalidVersionErr},
+			{"2000-10-17", invalidVersionErr},
+			{"2012-10-16", invalidVersionErr},
+		} {
+			policy := fmt.Sprintf(
+				`{
+				"Version": "%s",
+				"Statement": [
+					{
+						"Effect":  "Deny",
+						"Principal": "%s",
+						"Action":  "s3:GetObject",
+						"Resource":  "arn:aws:s3:::%s/obj"
+					}
+				]
+			}
+			`, test.version, s.awsID, bucket)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+				Bucket: &bucket,
+				Policy: &policy,
+			})
+			cancel()
+			if test.err == nil && err != nil {
+				return fmt.Errorf("test %v failed: expected no error but got %v", i+1, err)
+			}
+			if test.err != nil {
+				apiErr, ok := test.err.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test %v failed: expected s3err.APIError", i+1)
+				}
+
+				if err := checkApiErr(err, apiErr); err != nil {
+					return fmt.Errorf("test %v failed: %v", i+1, err)
+				}
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutBucketPolicy_success(s *S3Conf) error {
 	testName := "PutBucketPolicy_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

@@ -40,14 +40,17 @@ const (
 	policyErrInvalidFirstChar     = policyErr("Policies must be valid JSON and the first byte must be '{'")
 	policyErrEmptyStatement       = policyErr("Could not parse the policy: Statement is empty!")
 	policyErrMissingStatmentField = policyErr("Missing required field Statement")
+	policyErrInvalidVersion       = policyErr("The policy must contain a valid version string")
 )
 
 type BucketPolicy struct {
+	Version   PolicyVersion      `json:"Version"`
 	Statement []BucketPolicyItem `json:"Statement"`
 }
 
 func (bp *BucketPolicy) UnmarshalJSON(data []byte) error {
 	var tmp struct {
+		Version   *PolicyVersion
 		Statement *[]BucketPolicyItem `json:"Statement"`
 	}
 
@@ -60,12 +63,22 @@ func (bp *BucketPolicy) UnmarshalJSON(data []byte) error {
 		return policyErrMissingStatmentField
 	}
 
-	// Assign the parsed value to the actual struct
+	if tmp.Version == nil {
+		// bucket policy version should defualt to '2008-10-17'
+		bp.Version = PolicyVersion2008
+	} else {
+		bp.Version = *tmp.Version
+	}
+
 	bp.Statement = *tmp.Statement
 	return nil
 }
 
 func (bp *BucketPolicy) Validate(bucket string, iam IAMService) error {
+	if !bp.Version.isValid() {
+		return policyErrInvalidVersion
+	}
+
 	for _, statement := range bp.Statement {
 		err := statement.Validate(bucket, iam)
 		if err != nil {
