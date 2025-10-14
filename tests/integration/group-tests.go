@@ -536,6 +536,7 @@ func TestPutBucketPolicy(ts *TestState) {
 	ts.Run(PutBucketPolicy_explicit_deny)
 	ts.Run(PutBucketPolicy_multi_wildcard_resource)
 	ts.Run(PutBucketPolicy_any_char_match)
+	ts.Run(PutBucketPolicy_version)
 	ts.Run(PutBucketPolicy_success)
 }
 
@@ -1412,6 +1413,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_explicit_deny":                                           PutBucketPolicy_explicit_deny,
 		"PutBucketPolicy_multi_wildcard_resource":                                 PutBucketPolicy_multi_wildcard_resource,
 		"PutBucketPolicy_any_char_match":                                          PutBucketPolicy_any_char_match,
+		"PutBucketPolicy_version":                                                 PutBucketPolicy_version,
 		"PutBucketPolicy_success":                                                 PutBucketPolicy_success,
 		"GetBucketPolicy_non_existing_bucket":                                     GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                 GetBucketPolicy_not_set,
