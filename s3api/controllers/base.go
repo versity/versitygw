@@ -285,6 +285,8 @@ func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]*string) {
 	if headers == nil {
 		return
 	}
+
+	ctx.Response().Header.DisableNormalizing()
 	for key, val := range headers {
 		if val == nil || *val == "" {
 			continue

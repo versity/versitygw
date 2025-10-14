@@ -98,8 +98,8 @@ func TestS3ApiController_HeadBucket(t *testing.T) {
 			output: testOutput{
 				response: &Response{
 					Headers: map[string]*string{
-						"X-Amz-Access-Point-Alias": utils.GetStringPtr("false"),
-						"X-Amz-Bucket-Region":      utils.GetStringPtr(region),
+						"x-amz-access-point-alias": utils.GetStringPtr("false"),
+						"x-amz-bucket-region":      utils.GetStringPtr(region),
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
