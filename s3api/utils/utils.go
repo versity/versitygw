@@ -177,7 +177,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 	ctx.Response().Header.DisableNormalizing()
 	for key, val := range meta {
-		ctx.Response().Header.Set(fmt.Sprintf("X-Amz-Meta-%s", key), val)
+		ctx.Response().Header.Set(fmt.Sprintf("x-amz-meta-%s", key), val)
 	}
 	ctx.Response().Header.EnableNormalizing()
 }

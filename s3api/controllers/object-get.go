@@ -81,7 +81,7 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},
-	}, err
+	}, nil
 }
 
 func (c S3ApiController) GetObjectRetention(ctx *fiber.Ctx) (*Response, error) {
