@@ -368,6 +368,7 @@ func TestCreateMultipartUpload(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(CreateMultipartUpload_invalid_checksum_algorithm)
 		ts.Run(CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type)
+		ts.Run(CreateMultipartUpload_type_algo_mismatch)
 		ts.Run(CreateMultipartUpload_invalid_checksum_type)
 		ts.Run(CreateMultipartUpload_valid_algo_type)
 	}
@@ -1296,6 +1297,7 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_invalid_object_lock_mode":                          CreateMultipartUpload_invalid_object_lock_mode,
 		"CreateMultipartUpload_invalid_checksum_algorithm":                        CreateMultipartUpload_invalid_checksum_algorithm,
 		"CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type":       CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type,
+		"CreateMultipartUpload_type_algo_mismatch":                                CreateMultipartUpload_type_algo_mismatch,
 		"CreateMultipartUpload_invalid_checksum_type":                             CreateMultipartUpload_invalid_checksum_type,
 		"CreateMultipartUpload_valid_algo_type":                                   CreateMultipartUpload_valid_algo_type,
 		"CreateMultipartUpload_success":                                           CreateMultipartUpload_success,

@@ -866,7 +866,7 @@ func GetChecksumBadDigestErr(algo types.ChecksumAlgorithm) APIError {
 func GetChecksumSchemaMismatchErr(algo types.ChecksumAlgorithm, t types.ChecksumType) APIError {
 	return APIError{
 		Code:           "InvalidRequest",
-		Description:    fmt.Sprintf("The %v checksum type cannot be used with the %v checksum algorithm.", algo, strings.ToLower(string(t))),
+		Description:    fmt.Sprintf("The %v checksum type cannot be used with the %v checksum algorithm.", strings.ToUpper(string(t)), strings.ToLower(string(algo))),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
