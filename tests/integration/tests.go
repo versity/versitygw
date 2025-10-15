@@ -2300,6 +2300,19 @@ func DeleteBucket_success_status_code(s *S3Conf) error {
 	return nil
 }
 
+func DeleteBucket_incorrect_expected_bucket_owner(s *S3Conf) error {
+	testName := "DeleteBucket_incorrect_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+			Bucket:              &bucket,
+			ExpectedBucketOwner: getPtr(s.awsID + "something"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
 func PutBucketOwnershipControls_non_existing_bucket(s *S3Conf) error {
 	testName := "PutBucketOwnershipControls_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -7191,6 +7204,38 @@ func DeleteObject_success_status_code(s *S3Conf) error {
 	})
 }
 
+func DeleteObject_incorrect_expected_bucket_owner(s *S3Conf) error {
+	testName := "DeleteObject_incorrect_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			// anyways if object doesn't exist, a 200 response should be received
+			Key:                 getPtr("my-obj"),
+			ExpectedBucketOwner: getPtr(s.awsID + "something"),
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+	})
+}
+
+func DeleteObject_expected_bucket_owner(s *S3Conf) error {
+	testName := "DeleteObject_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			// anyways if object doesn't exist, a 200 response should be received
+			Key:                 getPtr("my-obj"),
+			ExpectedBucketOwner: &s.awsID,
+		})
+		cancel()
+
+		return err
+	})
+}
+
 func DeleteObjects_empty_input(s *S3Conf) error {
 	testName := "DeleteObjects_empty_input"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -8980,6 +9025,61 @@ func DeleteObjectTagging_success(s *S3Conf) error {
 		out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 			Bucket: &bucket,
 			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		if len(out.TagSet) > 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", out.TagSet)
+		}
+
+		return nil
+	})
+}
+
+func DeleteObjectTagging_expected_bucket_owner(s *S3Conf) error {
+	testName := "DeleteObjectTagging_expected_bucket_owner"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		tagging := types.Tagging{TagSet: []types.Tag{
+			{Key: getPtr("key1"), Value: getPtr("val2")},
+			{Key: getPtr("key2"), Value: getPtr("val2")},
+		}}
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:              &bucket,
+			Key:                 &obj,
+			Tagging:             &tagging,
+			ExpectedBucketOwner: &s.awsID,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+			Bucket:              &bucket,
+			Key:                 &obj,
+			ExpectedBucketOwner: &s.awsID,
+		})
+		cancel()
+		if err != nil {
+			return nil
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:              &bucket,
+			Key:                 &obj,
+			ExpectedBucketOwner: &s.awsID,
 		})
 		cancel()
 		if err != nil {
