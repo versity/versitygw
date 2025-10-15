@@ -9319,6 +9319,27 @@ func CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type(s *S3Conf
 	})
 }
 
+func CreateMultipartUpload_type_algo_mismatch(s *S3Conf) error {
+	testName := "CreateMultipartUpload_type_algo_mismatch"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			chType types.ChecksumType
+			algo   types.ChecksumAlgorithm
+		}{
+			{types.ChecksumTypeComposite, types.ChecksumAlgorithmCrc64nvme},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmSha1},
+			{types.ChecksumTypeFullObject, types.ChecksumAlgorithmSha256},
+		} {
+			_, err := createMp(s3client, bucket, "my-obj", withChecksum(test.algo), withChecksumType(test.chType))
+			if err := checkApiErr(err, s3err.GetChecksumSchemaMismatchErr(test.algo, test.chType)); err != nil {
+				return fmt.Errorf("test %v failed: %w", i, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func CreateMultipartUpload_valid_algo_type(s *S3Conf) error {
 	testName := "CreateMultipartUpload_valid_algo_type"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
