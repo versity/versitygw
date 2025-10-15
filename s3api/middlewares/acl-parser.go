@@ -20,6 +20,7 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
+	"github.com/versity/versitygw/s3err"
 )
 
 // ParseAcl retreives the bucket acl and stores in the context locals
@@ -40,6 +41,16 @@ func ParseAcl(be backend.Backend) fiber.Handler {
 		// if owner is not set, set default owner to root account
 		if parsedAcl.Owner == "" {
 			parsedAcl.Owner = utils.ContextKeyRootAccessKey.Get(ctx).(string)
+		}
+
+		// if expected bucket owner doesn't match the bucket owner
+		// the gateway should return AccessDenied.
+		// This header appears in all actions except 'CreateBucket' and 'ListBuckets'.
+		// 'ParseACL' is also applied to all actions except for 'CreateBucket' and 'ListBuckets',
+		// so it's a perfect place to check the expected bucket owner
+		bucketOwner := ctx.Get("X-Amz-Expected-Bucket-Owner")
+		if bucketOwner != "" && bucketOwner != parsedAcl.Owner {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
 
 		utils.ContextKeyParsedAcl.Set(ctx, parsedAcl)

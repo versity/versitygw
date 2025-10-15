@@ -101,6 +101,7 @@ func TestDeleteBucket(ts *TestState) {
 	ts.Run(DeleteBucket_non_existing_bucket)
 	ts.Run(DeleteBucket_non_empty_bucket)
 	ts.Run(DeleteBucket_success_status_code)
+	ts.Run(DeleteBucket_incorrect_expected_bucket_owner)
 }
 
 func TestPutBucketOwnershipControls(ts *TestState) {
@@ -291,6 +292,8 @@ func TestDeleteObject(ts *TestState) {
 	ts.Run(DeleteObject_conditional_writes)
 	ts.Run(DeleteObject_success)
 	ts.Run(DeleteObject_success_status_code)
+	ts.Run(DeleteObject_incorrect_expected_bucket_owner)
+	ts.Run(DeleteObject_expected_bucket_owner)
 }
 
 func TestDeleteObjects(ts *TestState) {
@@ -348,6 +351,7 @@ func TestDeleteObjectTagging(ts *TestState) {
 	ts.Run(DeleteObjectTagging_non_existing_object)
 	ts.Run(DeleteObjectTagging_success_status)
 	ts.Run(DeleteObjectTagging_success)
+	ts.Run(DeleteObjectTagging_expected_bucket_owner)
 }
 
 func TestCreateMultipartUpload(ts *TestState) {
@@ -1128,6 +1132,7 @@ func GetIntTests() IntTests {
 		"ListBuckets_success":                                                     ListBuckets_success,
 		"DeleteBucket_non_existing_bucket":                                        DeleteBucket_non_existing_bucket,
 		"DeleteBucket_non_empty_bucket":                                           DeleteBucket_non_empty_bucket,
+		"DeleteBucket_incorrect_expected_bucket_owner":                            DeleteBucket_incorrect_expected_bucket_owner,
 		"DeleteBucket_success_status_code":                                        DeleteBucket_success_status_code,
 		"PutBucketOwnershipControls_non_existing_bucket":                          PutBucketOwnershipControls_non_existing_bucket,
 		"PutBucketOwnershipControls_multiple_rules":                               PutBucketOwnershipControls_multiple_rules,
@@ -1238,6 +1243,8 @@ func GetIntTests() IntTests {
 		"DeleteObject_directory_object":                                           DeleteObject_directory_object,
 		"DeleteObject_success":                                                    DeleteObject_success,
 		"DeleteObject_success_status_code":                                        DeleteObject_success_status_code,
+		"DeleteObject_incorrect_expected_bucket_owner":                            DeleteObject_incorrect_expected_bucket_owner,
+		"DeleteObject_expected_bucket_owner":                                      DeleteObject_expected_bucket_owner,
 		"DeleteObjects_empty_input":                                               DeleteObjects_empty_input,
 		"DeleteObjects_non_existing_objects":                                      DeleteObjects_non_existing_objects,
 		"DeleteObjects_success":                                                   DeleteObjects_success,
@@ -1277,6 +1284,7 @@ func GetIntTests() IntTests {
 		"DeleteObjectTagging_non_existing_object":                                 DeleteObjectTagging_non_existing_object,
 		"DeleteObjectTagging_success_status":                                      DeleteObjectTagging_success_status,
 		"DeleteObjectTagging_success":                                             DeleteObjectTagging_success,
+		"DeleteObjectTagging_expected_bucket_owner":                               DeleteObjectTagging_expected_bucket_owner,
 		"CreateMultipartUpload_non_existing_bucket":                               CreateMultipartUpload_non_existing_bucket,
 		"CreateMultipartUpload_with_metadata":                                     CreateMultipartUpload_with_metadata,
 		"CreateMultipartUpload_with_tagging":                                      CreateMultipartUpload_with_tagging,
