@@ -461,6 +461,41 @@ func ParseCalculatedChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 	return checksums, nil
 }
 
+// ParseCompleteMpChecksumHeaders parses and validates
+// the 'CompleteMultipartUpload' x-amz-checksum-x headers
+// by supporting both 'checksum' and 'checksum-<part_length>' formats
+func ParseCompleteMpChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
+	// first parse/validate 'x-amz-checksum-x' headers
+	checksums, err := ParseCalculatedChecksumHeaders(ctx)
+	if err != nil {
+		return checksums, err
+	}
+
+	for al, val := range checksums {
+		algo := strings.ToLower(string(al))
+		if al != types.ChecksumAlgorithmCrc64nvme {
+			chParts := strings.Split(val, "-")
+			if len(chParts) > 2 {
+				debuglogger.Logf("invalid checksum header: x-amz-checksum-%s: %s", algo, val)
+				return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", algo))
+			}
+			if len(chParts) == 2 {
+				_, err := strconv.ParseInt(chParts[1], 10, 32)
+				if err != nil {
+					debuglogger.Logf("invalid checksum header: x-amz-checksum-%s: %s", algo, val)
+					return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", algo))
+				}
+				val = chParts[0]
+			}
+		}
+		if !IsValidChecksum(val, al) {
+			return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", algo))
+		}
+	}
+
+	return checksums, nil
+}
+
 // ParseChecksumHeaders parses/validates x-amz-checksum-x headers key/values
 func ParseChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 	// first parse/validate 'x-amz-checksum-x' headers

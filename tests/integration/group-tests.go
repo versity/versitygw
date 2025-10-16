@@ -217,7 +217,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_zero_len_with_range)
 	ts.Run(GetObject_dir_with_range)
 	ts.Run(GetObject_invalid_parent)
-	ts.Run(GetObject_large_object)
+	ts.Sync(GetObject_large_object)
 	ts.Run(GetObject_conditional_reads)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
@@ -480,6 +480,8 @@ func TestCompleteMultipartUpload(ts *TestState) {
 		ts.Run(CompleteMultipartUpload_incorrect_final_checksums)
 		ts.Run(CompleteMultipartUpload_should_calculate_the_final_checksum_full_object)
 		ts.Run(CompleteMultipartUpload_should_verify_the_final_checksum)
+		ts.Run(CompleteMultipartUpload_should_verify_final_composite_checksum)
+		ts.Run(CompleteMultipartUpload_invalid_final_composite_checksum)
 		ts.Run(CompleteMultipartUpload_checksum_type_mismatch)
 		ts.Run(CompleteMultipartUpload_should_ignore_the_final_checksum)
 		ts.Run(CompleteMultipartUpload_should_succeed_without_final_checksum_type)
@@ -1374,6 +1376,8 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_incorrect_final_checksums":                       CompleteMultipartUpload_incorrect_final_checksums,
 		"CompleteMultipartUpload_should_calculate_the_final_checksum_full_object": CompleteMultipartUpload_should_calculate_the_final_checksum_full_object,
 		"CompleteMultipartUpload_should_verify_the_final_checksum":                CompleteMultipartUpload_should_verify_the_final_checksum,
+		"CompleteMultipartUpload_should_verify_final_composite_checksum":          CompleteMultipartUpload_should_verify_final_composite_checksum,
+		"CompleteMultipartUpload_invalid_final_composite_checksum":                CompleteMultipartUpload_invalid_final_composite_checksum,
 		"CompleteMultipartUpload_checksum_type_mismatch":                          CompleteMultipartUpload_checksum_type_mismatch,
 		"CompleteMultipartUpload_should_ignore_the_final_checksum":                CompleteMultipartUpload_should_ignore_the_final_checksum,
 		"CompleteMultipartUpload_should_succeed_without_final_checksum_type":      CompleteMultipartUpload_should_succeed_without_final_checksum_type,
