@@ -15,13 +15,6 @@
 # under the License.
 
 source ./tests/setup.sh
-source ./tests/util/util_bucket_location.sh
-source ./tests/util/util_file.sh
-source ./tests/util/util_list_buckets.sh
-source ./tests/util/util_object.sh
-source ./tests/util/util_policy.sh
-source ./tests/util/util_presigned_url.sh
-source ./tests/util/util_setup.sh
 source ./tests/commands/copy_object.sh
 source ./tests/commands/delete_bucket_tagging.sh
 source ./tests/commands/delete_object_tagging.sh
@@ -36,7 +29,14 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
+source ./tests/drivers/file.sh
 source ./tests/drivers/params.sh
+source ./tests/util/util_bucket_location.sh
+source ./tests/util/util_file.sh
+source ./tests/util/util_list_buckets.sh
+source ./tests/util/util_object.sh
+source ./tests/util/util_policy.sh
+source ./tests/util/util_presigned_url.sh
 
 # param:  command type
 # fail on test failure

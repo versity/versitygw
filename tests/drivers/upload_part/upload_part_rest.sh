@@ -78,16 +78,20 @@ perform_full_multipart_upload_with_checksum_before_completion() {
   if ! check_param_count_v2 "bucket, filename, checksum type, algorithm" 4 $#; then
     return 1
   fi
-  if ! setup_bucket_and_large_file "$1" "$2"; then
+  if ! bucket_name=$(get_bucket_name "$1" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket_and_large_file_v2 "$bucket_name" "$2"; then
     log 2 "error setting up bucket and large file"
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id"; then
+  if ! create_multipart_upload_rest "$bucket_name" "$2" "CHECKSUM_TYPE=$3 CHECKSUM_ALGORITHM=$4" "parse_upload_id"; then
     log 2 "error creating multipart upload"
     return 1
   fi
   lowercase_checksum_algorithm=$(echo -n "$4" | tr '[:upper:]' '[:lower:]')
-  if ! upload_parts_rest_with_checksum_before_completion "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
+  if ! upload_parts_rest_with_checksum_before_completion "$bucket_name" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$lowercase_checksum_algorithm"; then
     log 2 "error uploading parts"
     return 1
   fi

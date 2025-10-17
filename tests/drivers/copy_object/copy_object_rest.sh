@@ -39,7 +39,7 @@ copy_object_invalid_copy_source() {
     log 2 "'copy_object_invalid_copy_source' requires bucket name"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OBJECT_KEY="dummy-copy" COPY_SOURCE="dummy" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/copy_object.sh); then
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="dummy-copy" COPY_SOURCE="dummy" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/copy_object.sh); then
     log 2 "error copying object: $result"
     return 1
   fi
