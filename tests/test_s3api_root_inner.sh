@@ -22,7 +22,6 @@ source ./tests/util/util_get_object_attributes.sh
 source ./tests/util/util_get_object_retention.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_objects.sh
-source ./tests/util/util_setup.sh
 
 test_delete_objects_s3api_root() {
   local object_one="test-file-one"

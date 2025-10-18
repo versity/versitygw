@@ -110,7 +110,7 @@ test_multipart_upload_with_checksum() {
     log 2 "error calculating multipart checksum"
     return 1
   fi
-  if ! complete_multipart_upload_with_checksum "$1" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$3" "$4"; then
+  if ! complete_multipart_upload_with_checksum "$bucket_name" "$2" "$TEST_FILE_FOLDER/$2" "$upload_id" 2 "$3" "$4"; then
     log 2 "error completing multipart upload"
     return 1
   fi
@@ -125,7 +125,7 @@ test_complete_multipart_upload_unneeded_algorithm_parameter() {
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! complete_multipart_upload_rest_nonexistent_param "$1" "$2" "$upload_id" "$parts_payload"; then
+  if ! complete_multipart_upload_rest_nonexistent_param "$bucket_name" "$2" "$upload_id" "$parts_payload"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi
@@ -144,7 +144,7 @@ test_complete_multipart_upload_incorrect_checksum() {
     log 2 "error calculating multipart checksum"
     return 1
   fi
-  if ! complete_multipart_upload_rest_incorrect_checksum "$1" "$2" "$upload_id" "$parts_payload" "$3" "$4" "$checksum"; then
+  if ! complete_multipart_upload_rest_incorrect_checksum "$bucket_name" "$2" "$upload_id" "$parts_payload" "$3" "$4" "$checksum"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi
@@ -159,7 +159,7 @@ test_complete_multipart_upload_invalid_checksum() {
     log 2 "error performing multipart upload with checksum before completion"
     return 1
   fi
-  if ! complete_multipart_upload_rest_invalid_checksum "$1" "$2" "$upload_id" "$parts_payload" "$3" "$4" "wrong"; then
+  if ! complete_multipart_upload_rest_invalid_checksum "$bucket_name" "$2" "$upload_id" "$parts_payload" "$3" "$4" "wrong"; then
     log 2 "error completing multipart upload with nonexistent param"
     return 1
   fi

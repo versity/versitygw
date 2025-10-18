@@ -22,7 +22,6 @@ source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_object.sh
-source ./tests/util/util_setup.sh
 source ./tests/util/util_tags.sh
 source ./tests/test_s3api_root_inner.sh
 source ./tests/test_common.sh

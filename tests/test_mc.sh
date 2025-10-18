@@ -17,14 +17,15 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/test_common.sh
 source ./tests/setup.sh
-source ./tests/util/util_create_bucket.sh
-source ./tests/util/util_head_bucket.sh
-source ./tests/util/util_tags.sh
+source ./tests/test_common.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/util/util_create_bucket.sh
+source ./tests/util/util_head_bucket.sh
+source ./tests/util/util_tags.sh
 
 export RUN_MC=true
 

@@ -15,7 +15,6 @@
 # under the License.
 
 source ./tests/util/util_delete_object.sh
-source ./tests/util/util_setup.sh
 
 test_s3api_policy_allow_deny() {
   policy_file="policy_file"

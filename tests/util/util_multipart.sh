@@ -272,11 +272,10 @@ create_upload_finish_wrong_etag() {
     log 2 "complete multipart upload returned code $result: $(cat "$TEST_FILE_FOLDER/result.txt")"
     return 1
   fi
-  if ! error=$(xmllint --xpath '//*[local-name()="Error"]' "$TEST_FILE_FOLDER/result.txt" 2>&1); then
-    log 2 "error retrieving error info: $error"
+  if ! get_xml_data "$TEST_FILE_FOLDER/result.txt" "$TEST_FILE_FOLDER/error.txt"; then
+    log 2 "error getting XML data"
     return 1
   fi
-  echo -n "$error" > "$TEST_FILE_FOLDER/error.txt"
   if ! check_xml_element "$TEST_FILE_FOLDER/error.txt" "InvalidPart" "Code"; then
     log 2 "code mismatch"
     return 1
