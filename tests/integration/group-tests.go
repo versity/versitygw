@@ -217,7 +217,7 @@ func TestGetObject(ts *TestState) {
 	ts.Run(GetObject_zero_len_with_range)
 	ts.Run(GetObject_dir_with_range)
 	ts.Run(GetObject_invalid_parent)
-	ts.Run(GetObject_large_object)
+	ts.Sync(GetObject_large_object)
 	ts.Run(GetObject_conditional_reads)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {

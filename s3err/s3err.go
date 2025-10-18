@@ -97,6 +97,7 @@ const (
 	ErrDuplicateTagKey
 	ErrBucketTaggingLimited
 	ErrObjectTaggingLimited
+	ErrCannotParseHTTPRequest
 	ErrInvalidURLEncodedTagging
 	ErrInvalidAuthHeader
 	ErrUnsupportedAuthorizationType
@@ -380,6 +381,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrObjectTaggingLimited: {
 		Code:           "BadRequest",
 		Description:    "Object tags cannot be greater than 10",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrCannotParseHTTPRequest: {
+		Code:           "BadRequest",
+		Description:    "An error occurred when parsing the HTTP request.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidURLEncodedTagging: {

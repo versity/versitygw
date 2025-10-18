@@ -199,6 +199,13 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 				ctx.Status(http.StatusBadRequest)
 				return nil
 			}
+			if strings.Contains(fiberErr.Message, "error when reading request headers") {
+				// This error means fiber failed to parse the incoming request
+				// which is a malfoedmed one. Return a BadRequest in this case
+				err := s3err.GetAPIError(s3err.ErrCannotParseHTTPRequest)
+				ctx.Status(err.HTTPStatusCode)
+				return ctx.Send(s3err.GetAPIErrorResponse(err, "", "", ""))
+			}
 		}
 
 		// additionally log the internal error
