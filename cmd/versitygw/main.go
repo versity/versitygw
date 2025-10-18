@@ -65,6 +65,7 @@ var (
 	ldapQueryBase, ldapObjClasses          string
 	ldapAccessAtr, ldapSecAtr, ldapRoleAtr string
 	ldapUserIdAtr, ldapGroupIdAtr          string
+	ldapTLSSkipVerify                      bool
 	vaultEndpointURL, vaultNamespace       string
 	vaultSecretStoragePath                 string
 	vaultSecretStorageNamespace            string
@@ -404,6 +405,12 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IAM_LDAP_GROUP_ID_ATR"},
 			Destination: &ldapGroupIdAtr,
 		},
+		&cli.BoolFlag{
+			Name:        "iam-ldap-tls-skip-verify",
+			Usage:       "disable TLS certificate verification for LDAP connections (insecure, for self-signed certificates)",
+			EnvVars:     []string{"VGW_IAM_LDAP_TLS_SKIP_VERIFY"},
+			Destination: &ldapTLSSkipVerify,
+		},
 		&cli.StringFlag{
 			Name:        "iam-vault-endpoint-url",
 			Usage:       "vault server url",
@@ -692,6 +699,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		LDAPRoleAtr:                 ldapRoleAtr,
 		LDAPUserIdAtr:               ldapUserIdAtr,
 		LDAPGroupIdAtr:              ldapGroupIdAtr,
+		LDAPTLSSkipVerify:           ldapTLSSkipVerify,
 		VaultEndpointURL:            vaultEndpointURL,
 		VaultNamespace:              vaultNamespace,
 		VaultSecretStoragePath:      vaultSecretStoragePath,

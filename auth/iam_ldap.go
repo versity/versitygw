@@ -15,7 +15,9 @@
 package auth
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,57 +28,80 @@ import (
 )
 
 type LdapIAMService struct {
-	conn       *ldap.Conn
-	queryBase  string
-	objClasses []string
-	accessAtr  string
-	secretAtr  string
-	roleAtr    string
-	groupIdAtr string
-	userIdAtr  string
-	rootAcc    Account
-	url        string
-	bindDN     string
-	pass       string
-	mu         sync.Mutex
+	conn          *ldap.Conn
+	queryBase     string
+	objClasses    []string
+	accessAtr     string
+	secretAtr     string
+	roleAtr       string
+	groupIdAtr    string
+	userIdAtr     string
+	rootAcc       Account
+	url           string
+	bindDN        string
+	pass          string
+	tlsSkipVerify bool
+	mu            sync.Mutex
 }
 
 var _ IAMService = &LdapIAMService{}
 
-func NewLDAPService(rootAcc Account, url, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string) (IAMService, error) {
-	if url == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" ||
+func NewLDAPService(rootAcc Account, ldapURL, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string, tlsSkipVerify bool) (IAMService, error) {
+	if ldapURL == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" ||
 		secAtr == "" || roleAtr == "" || userIdAtr == "" || groupIdAtr == "" || objClasses == "" {
 		return nil, fmt.Errorf("required parameters list not fully provided")
 	}
-	conn, err := ldap.DialURL(url)
+
+	conn, err := dialLDAP(ldapURL, tlsSkipVerify)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to LDAP server: %w", err)
 	}
 
 	err = conn.Bind(bindDN, pass)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("failed to bind to LDAP server %w", err)
 	}
 	return &LdapIAMService{
-		conn:       conn,
-		queryBase:  queryBase,
-		objClasses: strings.Split(objClasses, ","),
-		accessAtr:  accAtr,
-		secretAtr:  secAtr,
-		roleAtr:    roleAtr,
-		userIdAtr:  userIdAtr,
-		groupIdAtr: groupIdAtr,
-		rootAcc:    rootAcc,
-		url:        url,
-		bindDN:     bindDN,
-		pass:       pass,
+		conn:          conn,
+		queryBase:     queryBase,
+		objClasses:    strings.Split(objClasses, ","),
+		accessAtr:     accAtr,
+		secretAtr:     secAtr,
+		roleAtr:       roleAtr,
+		userIdAtr:     userIdAtr,
+		groupIdAtr:    groupIdAtr,
+		rootAcc:       rootAcc,
+		url:           ldapURL,
+		bindDN:        bindDN,
+		pass:          pass,
+		tlsSkipVerify: tlsSkipVerify,
 	}, nil
+}
+
+// dialLDAP establishes an LDAP connection with optional TLS configuration
+func dialLDAP(ldapURL string, tlsSkipVerify bool) (*ldap.Conn, error) {
+	u, err := url.Parse(ldapURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid LDAP URL: %w", err)
+	}
+
+	// For ldaps:// URLs, use DialURL with custom TLS config if needed
+	if u.Scheme == "ldaps" && tlsSkipVerify {
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: tlsSkipVerify,
+		}
+		return ldap.DialURL(ldapURL, ldap.DialWithTLSConfig(tlsConfig))
+	}
+
+	// For ldap:// or when TLS verification is enabled, use standard DialURL
+	return ldap.DialURL(ldapURL)
 }
 
 func (ld *LdapIAMService) reconnect() error {
 	ld.conn.Close()
 
-	conn, err := ldap.DialURL(ld.url)
+	conn, err := dialLDAP(ld.url, ld.tlsSkipVerify)
 	if err != nil {
 		return fmt.Errorf("failed to reconnect to LDAP server: %w", err)
 	}
