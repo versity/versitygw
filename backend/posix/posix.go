@@ -1470,7 +1470,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 		return res, "", fmt.Errorf("get mp checksums: %w", err)
 	}
-	var checksumAlgorithm types.ChecksumAlgorithm
+
+	// The checksum algorithm should default to CRC64NVME
+	// just for data integrity. It isn't going to be saved
+	// in the final object metadata
+	checksumAlgorithm := types.ChecksumAlgorithmCrc64nvme
 	if checksums.Algorithm != "" {
 		checksumAlgorithm = checksums.Algorithm
 	}
@@ -1483,6 +1487,15 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 
 		return res, "", s3err.GetChecksumTypeMismatchOnMpErr(checksumType)
+	}
+
+	// The checksum type should default to FULL_OBJECT(crc64nvme)
+	checksumType := checksums.Type
+	if checksums.Type == "" {
+		// do not modify checksums.Type to further not save the checksum
+		// in the final object. As if no checksum has been specified on mp
+		// creation, the final object shouldn't contain the checksum metadata
+		checksumType = types.ChecksumTypeFullObject
 	}
 
 	// check all parts ok
@@ -1551,7 +1564,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	var hashRdr *utils.HashReader
 	var compositeChecksumRdr *utils.CompositeChecksumReader
-	switch checksums.Type {
+	switch checksumType {
 	case types.ChecksumTypeFullObject:
 		if !composableCRC {
 			hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksumAlgorithm))))
@@ -1591,7 +1604,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 
 		var rdr io.Reader = pf
-		switch checksums.Type {
+		switch checksumType {
 		case types.ChecksumTypeFullObject:
 			if composableCRC {
 				if i == 0 {
@@ -1778,6 +1791,14 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		if err != nil {
 			return res, "", fmt.Errorf("store object checksum: %w", err)
 		}
+	} else {
+		// in this case no checksum has been specified on mp creation
+		// and the complete request checksum is defaulted to crc64nvem
+		// simply calculated the sum to further retrun in the response
+		if hashRdr != nil {
+			sum := hashRdr.Sum()
+			crc64nvme = &sum
+		}
 	}
 
 	// load and set retention
@@ -1820,7 +1841,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		ChecksumSHA1:      sha1,
 		ChecksumSHA256:    sha256,
 		ChecksumCRC64NVME: crc64nvme,
-		ChecksumType:      &checksums.Type,
+		ChecksumType:      &checksumType,
 	}, versionID, nil
 }
 
