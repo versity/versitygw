@@ -125,6 +125,7 @@ func TestDeleteBucketOwnershipControls(ts *TestState) {
 func TestPutBucketTagging(ts *TestState) {
 	ts.Run(PutBucketTagging_non_existing_bucket)
 	ts.Run(PutBucketTagging_long_tags)
+	ts.Run(PutBucketTagging_invalid_tags)
 	ts.Run(PutBucketTagging_duplicate_keys)
 	ts.Run(PutBucketTagging_tag_count_limit)
 	ts.Run(PutBucketTagging_success)
@@ -337,6 +338,7 @@ func TestPutObjectTagging(ts *TestState) {
 	ts.Run(PutObjectTagging_long_tags)
 	ts.Run(PutObjectTagging_duplicate_keys)
 	ts.Run(PutObjectTagging_tag_count_limit)
+	ts.Run(PutObjectTagging_invalid_tags)
 	ts.Run(PutObjectTagging_success)
 }
 
@@ -1146,6 +1148,7 @@ func GetIntTests() IntTests {
 		"DeleteBucketOwnershipControls_success":                                   DeleteBucketOwnershipControls_success,
 		"PutBucketTagging_non_existing_bucket":                                    PutBucketTagging_non_existing_bucket,
 		"PutBucketTagging_long_tags":                                              PutBucketTagging_long_tags,
+		"PutBucketTagging_invalid_tags":                                           PutBucketTagging_invalid_tags,
 		"PutBucketTagging_duplicate_keys":                                         PutBucketTagging_duplicate_keys,
 		"PutBucketTagging_tag_count_limit":                                        PutBucketTagging_tag_count_limit,
 		"PutBucketTagging_success":                                                PutBucketTagging_success,
@@ -1277,6 +1280,7 @@ func GetIntTests() IntTests {
 		"PutObjectTagging_long_tags":                                              PutObjectTagging_long_tags,
 		"PutObjectTagging_duplicate_keys":                                         PutObjectTagging_duplicate_keys,
 		"PutObjectTagging_tag_count_limit":                                        PutObjectTagging_tag_count_limit,
+		"PutObjectTagging_invalid_tags":                                           PutObjectTagging_invalid_tags,
 		"PutObjectTagging_success":                                                PutObjectTagging_success,
 		"GetObjectTagging_non_existing_object":                                    GetObjectTagging_non_existing_object,
 		"GetObjectTagging_unset_tags":                                             GetObjectTagging_unset_tags,

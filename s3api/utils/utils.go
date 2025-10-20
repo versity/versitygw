@@ -658,6 +658,11 @@ const (
 	TagLimitObject TagLimit = 10
 )
 
+// The tag key/value validation pattern comes from
+// AWS S3 docs
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_Tag.html
+var tagRule = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)
+
 // Parses and validates tagging
 func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
 	var tagging s3response.TaggingInput
@@ -682,15 +687,27 @@ func ParseTagging(data []byte, limit TagLimit) (map[string]string, error) {
 	tagSet := make(map[string]string, tLen)
 
 	for _, tag := range tagging.TagSet.Tags {
-		// validate tag key
+		// validate tag key length
 		if len(tag.Key) == 0 || len(tag.Key) > 128 {
 			debuglogger.Logf("tag key should 0 < tag.Key <= 128, key: %v", tag.Key)
 			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
 		}
 
-		// validate tag value
+		// validate tag key string chars
+		if !tagRule.MatchString(tag.Key) {
+			debuglogger.Logf("invalid tag key: %s", tag.Key)
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// validate tag value length
 		if len(tag.Value) > 256 {
 			debuglogger.Logf("invalid long tag value: (length): %v, (value): %v", len(tag.Value), tag.Value)
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+		}
+
+		// validate tag value string chars
+		if !tagRule.MatchString(tag.Value) {
+			debuglogger.Logf("invalid tag value: %s", tag.Value)
 			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
 		}
 

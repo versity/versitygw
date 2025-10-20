@@ -317,14 +317,12 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 	return tagSet, nil
 }
 
-var validTagComponent = regexp.MustCompile(`^[a-zA-Z0-9:/_.\-+ ]+$`)
+// tag component (key/value) name rule regexp
+// https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_Tag.html
+var validTagComponent = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)
 
-// isValidTagComponent matches strings which contain letters, decimal digits,
-// and special chars: '/', '_', '-', '+', '.', ' ' (space)
+// isValidTagComponent validates the tag component(key/value) name
 func isValidTagComponent(str string) bool {
-	if str == "" {
-		return true
-	}
 	return validTagComponent.Match([]byte(str))
 }
 
