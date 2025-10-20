@@ -2573,6 +2573,58 @@ func PutBucketTagging_long_tags(s *S3Conf) error {
 	})
 }
 
+func PutBucketTagging_invalid_tags(s *S3Conf) error {
+	testName := "PutBucketTagging_invalid_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			tags []types.Tag
+			err  s3err.APIError
+		}{
+			// invalid tag key tests
+			{[]types.Tag{{Key: getPtr("user!name"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{{Key: getPtr("foo#bar"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("validkey"), Value: getPtr("validvalue")},
+				{Key: getPtr("data%20"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("abcd"), Value: getPtr("xyz123")},
+				{Key: getPtr("a*b"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag value tests
+			{[]types.Tag{
+				{Key: getPtr("hello"), Value: getPtr("world")},
+				{Key: getPtr("key"), Value: getPtr("name?test")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{
+				{Key: getPtr("foo"), Value: getPtr("bar")},
+				{Key: getPtr("key"), Value: getPtr("`path")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("comma,separated")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("semicolon;test")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("(parentheses)")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+				Bucket: &bucket,
+				Tagging: &types.Tagging{
+					TagSet: test.tags,
+				},
+			})
+			cancel()
+			if err == nil {
+				return fmt.Errorf("test %v failed: expected err %w, instead got nil", i+1, test.err)
+			}
+
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutBucketTagging_duplicate_keys(s *S3Conf) error {
 	testName := "PutBucketTagging_duplicate_keys"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2935,7 +2987,7 @@ func PutObject_tagging(s *S3Conf) error {
 			return nil
 		}
 
-		for _, el := range []struct {
+		for i, el := range []struct {
 			tagging     string
 			result      map[string]string
 			expectedErr error
@@ -2949,6 +3001,7 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key=val&", map[string]string{"key": "val"}, nil},
 			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
 			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
 			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
@@ -2960,7 +3013,6 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
-			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			// invalid tag values
 			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
@@ -2968,7 +3020,6 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
-			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			// success special chars
 			{"key-key_key.key/key=value-value_value.value/value", map[string]string{"key-key_key.key/key": "value-value_value.value/value"}, nil},
@@ -2979,9 +3030,15 @@ func PutObject_tagging(s *S3Conf) error {
 			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
 			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
 		} {
+			if s.azureTests {
+				// azure doesn't support '@' character
+				if strings.Contains(el.tagging, "@") {
+					continue
+				}
+			}
 			err := testTagging(el.tagging, el.result, el.expectedErr)
 			if err != nil {
-				return err
+				return fmt.Errorf("test case %v failed: %w", i+1, err)
 			}
 		}
 		return nil
@@ -7627,7 +7684,7 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			return nil
 		}
 
-		for _, el := range []struct {
+		for i, el := range []struct {
 			tagging     string
 			result      map[string]string
 			expectedErr error
@@ -7641,6 +7698,7 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key=val&", map[string]string{"key": "val"}, nil},
 			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
 			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
 			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
@@ -7652,7 +7710,6 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
-			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			// invalid tag values
 			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
@@ -7660,7 +7717,6 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
-			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			// success special chars
 			{"key-key_key.key/key=value-value_value.value/value",
@@ -7673,9 +7729,15 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
 			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
 		} {
+			if s.azureTests {
+				// azure doesn't support '@' character
+				if strings.Contains(el.tagging, "@") {
+					continue
+				}
+			}
 			err := testTagging(el.tagging, el.result, el.expectedErr)
 			if err != nil {
-				return err
+				return fmt.Errorf("test case %v failed: %w", i+1, err)
 			}
 		}
 		return nil
@@ -8794,6 +8856,65 @@ func PutObjectTagging_tag_count_limit(s *S3Conf) error {
 	})
 }
 
+func PutObjectTagging_invalid_tags(s *S3Conf) error {
+	testName := "PutObjectTagging_invalid_tags"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjects(s3client, []string{obj}, bucket)
+		if err != nil {
+			return err
+		}
+
+		for i, test := range []struct {
+			tags []types.Tag
+			err  s3err.APIError
+		}{
+			// invalid tag key tests
+			{[]types.Tag{{Key: getPtr("user!name"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{{Key: getPtr("foo#bar"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("validkey"), Value: getPtr("validvalue")},
+				{Key: getPtr("data%20"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("abcd"), Value: getPtr("xyz123")},
+				{Key: getPtr("a*b"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag value tests
+			{[]types.Tag{
+				{Key: getPtr("hello"), Value: getPtr("world")},
+				{Key: getPtr("key"), Value: getPtr("name?test")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{
+				{Key: getPtr("foo"), Value: getPtr("bar")},
+				{Key: getPtr("key"), Value: getPtr("`path")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("comma,separated")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("semicolon;test")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("(parentheses)")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+				Bucket: &bucket,
+				Key:    &obj,
+				Tagging: &types.Tagging{
+					TagSet: test.tags,
+				},
+			})
+			cancel()
+			if err == nil {
+				return fmt.Errorf("test %v failed: expected err %w, instead got nil", i+1, test.err)
+			}
+
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutObjectTagging_success(s *S3Conf) error {
 	testName := "PutObjectTagging_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -9561,7 +9682,7 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			return nil
 		}
 
-		for _, el := range []struct {
+		for i, el := range []struct {
 			tagging     string
 			result      map[string]string
 			expectedErr error
@@ -9575,6 +9696,7 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key=val&", map[string]string{"key": "val"}, nil},
 			{"key1&key2", map[string]string{"key1": "", "key2": ""}, nil},
 			{"key1=val1&key2=val2", map[string]string{"key1": "val1", "key2": "val2"}, nil},
+			{"key@=val@", map[string]string{"key@": "val@"}, nil},
 			// invalid url-encoded
 			{"=", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
 			{"key%", nil, s3err.GetAPIError(s3err.ErrInvalidURLEncodedTagging)},
@@ -9586,7 +9708,6 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key*=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key$=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key#=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
-			{"key@=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			{"key!=val", nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
 			// invalid tag values
 			{"key=val?", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
@@ -9594,7 +9715,6 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key=val*", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val$", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val#", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
-			{"key=val@", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			{"key=val!", nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
 			// success special chars
 			{"key-key_key.key/key=value-value_value.value/value",
@@ -9607,9 +9727,15 @@ func CreateMultipartUpload_with_tagging(s *S3Conf) error {
 			{"key%20key=value%20value", map[string]string{"key key": "value value"}, nil},
 			{"key%5Fkey=value%5Fvalue", map[string]string{"key_key": "value_value"}, nil},
 		} {
+			if s.azureTests {
+				// azure doesn't support '@' character
+				if strings.Contains(el.tagging, "@") {
+					continue
+				}
+			}
 			err := testTagging(el.tagging, el.result, el.expectedErr)
 			if err != nil {
-				return err
+				return fmt.Errorf("test case %v faild: %w", i+1, err)
 			}
 		}
 		return nil
