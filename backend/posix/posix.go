@@ -1746,7 +1746,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		var sum string
 		switch checksums.Type {
 		case types.ChecksumTypeComposite:
-			sum = compositeChecksumRdr.Sum()
+			sum = fmt.Sprintf("%s-%v", compositeChecksumRdr.Sum(), len(parts))
 		case types.ChecksumTypeFullObject:
 			if !composableCRC {
 				sum = hashRdr.Sum()
@@ -1755,38 +1755,45 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			}
 		}
 
+		var gotSum *string
+
 		switch checksumAlgorithm {
 		case types.ChecksumAlgorithmCrc32:
-			if input.ChecksumCRC32 != nil && *input.ChecksumCRC32 != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
+			gotSum = input.ChecksumCRC32
 			checksum.CRC32 = &sum
 			crc32 = &sum
 		case types.ChecksumAlgorithmCrc32c:
-			if input.ChecksumCRC32C != nil && *input.ChecksumCRC32C != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
+			gotSum = input.ChecksumCRC32C
 			checksum.CRC32C = &sum
 			crc32c = &sum
 		case types.ChecksumAlgorithmSha1:
-			if input.ChecksumSHA1 != nil && *input.ChecksumSHA1 != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
+			gotSum = input.ChecksumSHA1
 			checksum.SHA1 = &sum
 			sha1 = &sum
 		case types.ChecksumAlgorithmSha256:
-			if input.ChecksumSHA256 != nil && *input.ChecksumSHA256 != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
+			gotSum = input.ChecksumSHA256
 			checksum.SHA256 = &sum
 			sha256 = &sum
 		case types.ChecksumAlgorithmCrc64nvme:
-			if input.ChecksumCRC64NVME != nil && *input.ChecksumCRC64NVME != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
+			gotSum = input.ChecksumCRC64NVME
 			checksum.CRC64NVME = &sum
 			crc64nvme = &sum
 		}
+
+		// Check if the provided checksum and the calculated one are the same
+		if gotSum != nil {
+			s := *gotSum
+			if checksums.Type == types.ChecksumTypeComposite && !strings.Contains(s, "-") {
+				// if number of parts is not specified in the final checksum
+				// make sure to add, to not fail in the final comparison
+				s = fmt.Sprintf("%s-%v", s, len(parts))
+			}
+
+			if s != sum {
+				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
+			}
+		}
+
 		err := p.storeChecksums(f.File(), bucket, object, checksum)
 		if err != nil {
 			return res, "", fmt.Errorf("store object checksum: %w", err)

@@ -1957,3 +1957,35 @@ func lockObject(client *s3.Client, mode objectLockMode, bucket, object, versionI
 	})
 	return err
 }
+
+func NewHasher(algo types.ChecksumAlgorithm) (hash.Hash, error) {
+	var hasher hash.Hash
+	switch algo {
+	case types.ChecksumAlgorithmSha256:
+		hasher = sha256.New()
+	case types.ChecksumAlgorithmSha1:
+		hasher = sha1.New()
+	case types.ChecksumAlgorithmCrc32:
+		hasher = crc32.NewIEEE()
+	case types.ChecksumAlgorithmCrc32c:
+		hasher = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	default:
+		return nil, fmt.Errorf("unsupported hash algorithm: %s", algo)
+	}
+
+	return hasher, nil
+}
+
+func processCompositeChecksum(hasher hash.Hash, checksum string) error {
+	data, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil {
+		return fmt.Errorf("base64 decode: %w", err)
+	}
+
+	_, err = hasher.Write(data)
+	if err != nil {
+		return fmt.Errorf("hash write: %w", err)
+	}
+
+	return nil
+}
