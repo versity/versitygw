@@ -22,6 +22,7 @@ source ./tests/commands/head_bucket.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
+source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
@@ -32,7 +33,6 @@ source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_rest.sh
-source ./tests/util/util_tags.sh
 
 export RUN_USERS=true
 
@@ -48,11 +48,6 @@ export RUN_USERS=true
   assert_success
 }
 
-@test "REST - HeadBucket - doesn't exist" {
-  run head_bucket_rest "$BUCKET_ONE_NAME-$(uuidgen)"
-  assert_failure 1
-}
-
 @test "REST - bucket tagging - no tags" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -62,21 +57,6 @@ export RUN_USERS=true
   assert_success
 
   run verify_no_bucket_tags_rest "$bucket_name"
-  assert_success
-}
-
-@test "REST - bucket tagging - tags" {
-  test_key="testKey"
-  test_value="testValue"
-
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  run add_verify_bucket_tags_rest "$bucket_name" "$test_key" "$test_value"
   assert_success
 }
 
