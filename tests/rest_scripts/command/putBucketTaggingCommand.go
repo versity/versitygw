@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type Tag struct {
@@ -66,7 +65,6 @@ func NewPutBucketTaggingCommand(s3Command *S3Command, fields *PutBucketTaggingFi
 		return nil, fmt.Errorf("error marshalling XML: %w", err)
 	}
 	command.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + string(xmlData)
-	command.Payload = strings.Replace(command.Payload, "\"", "\\\"", -1)
 	return command, nil
 }
 

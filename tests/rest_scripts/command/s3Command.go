@@ -9,10 +9,20 @@ import (
 	"errors"
 	"fmt"
 	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
+	"io"
 	"os"
 	"sort"
 	"strings"
 	"time"
+)
+
+const (
+	UnsignedPayload                            = "UNSIGNED-PAYLOAD"
+	StreamingAWS4HMACSHA256Payload             = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+	StreamingAWS4HMACSHA256PayloadTrailer      = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
+	StreamingUnsignedPayloadTrailer            = "STREAMING-UNSIGNED-PAYLOAD-TRAILER"
+	StreamingAWS4ECDSAP256SHA256Payload        = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD"
+	StreamingAWS4ECDSAP256SHA256PayloadTrailer = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER"
 )
 
 type S3Command struct {
@@ -40,6 +50,8 @@ type S3Command struct {
 	FilePath                     string
 	CustomHostParam              string
 	CustomHostParamSet           bool
+	PayloadType                  string
+	ChunkSize                    int
 
 	currentDateTime      string
 	host                 string
@@ -86,7 +98,15 @@ func (s *S3Command) prepareForBuild() error {
 		return fmt.Errorf("invalid URL value: %s", s.Url)
 	}
 	s.host = protocolAndHost[1]
-	s.payloadHash = "UNSIGNED-PAYLOAD"
+	if s.PayloadType != "" {
+		s.payloadHash = s.PayloadType
+	} else {
+		var err error
+		s.payloadHash, err = s.calculatePayloadSHA256()
+		if err != nil {
+			return fmt.Errorf("error calculating payload hash: %w", err)
+		}
+	}
 	if err := s.addHeaderValues(); err != nil {
 		return fmt.Errorf("error adding header values: %w", err)
 	}
@@ -102,6 +122,25 @@ func (s *S3Command) prepareForBuild() error {
 	}
 	s.getStsSignature()
 	return nil
+}
+
+func (s *S3Command) calculatePayloadSHA256() (string, error) {
+	if s.PayloadFile != "" {
+		file, err := os.Open(s.PayloadFile)
+		if err != nil {
+			return "", fmt.Errorf("error opening payload file '%s': %w", s.PayloadFile, err)
+		}
+
+		hasher := sha256.New()
+		if _, err := io.Copy(hasher, file); err != nil {
+			return "", fmt.Errorf("error copying file data of '%s' to hasher: %w", s.PayloadFile, err)
+		}
+
+		hash := hasher.Sum(nil)
+		return hex.EncodeToString(hash), nil
+	}
+	hash := sha256.Sum256([]byte(s.Payload))
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func (s *S3Command) addHeaderValues() error {
@@ -237,6 +276,7 @@ func (s *S3Command) buildCurlShellCommand() (string, error) {
 	if s.PayloadFile != "" {
 		curlCommand = append(curlCommand, "-T", s.PayloadFile)
 	} else if s.Payload != "" {
+		s.Payload = strings.Replace(s.Payload, "\"", "\\\"", -1)
 		curlCommand = append(curlCommand, "-H", "\"Content-Type: application/xml\"", "-d", fmt.Sprintf("\"%s\"", s.Payload))
 	}
 	return strings.Join(curlCommand, " "), nil
@@ -254,6 +294,9 @@ func (s *S3Command) buildAuthorizationString() string {
 }
 
 func (s *S3Command) buildOpenSSLCommand() error {
+	if s.Query != "" {
+		s.path += "?" + s.Query
+	}
 	openSSLCommand := []string{fmt.Sprintf("%s %s HTTP/1.1", s.Method, s.path)}
 	openSSLCommand = append(openSSLCommand, s.buildAuthorizationString())
 	for _, headerValue := range s.headerValues {
@@ -262,10 +305,16 @@ func (s *S3Command) buildOpenSSLCommand() error {
 		}
 		openSSLCommand = append(openSSLCommand, fmt.Sprintf("%s:%s", headerValue[0], headerValue[1]))
 	}
-	openSSLCommand = append(openSSLCommand, "\r\n")
-	var file *os.File
-	var err error
-	if file, err = os.Create(s.FilePath); err != nil {
+	if s.PayloadFile != "" || s.Payload != "" {
+		payload, err := s.getWholeOrChunkedPayloadData()
+		if err != nil {
+			return fmt.Errorf("error getting payload data: %w", err)
+		}
+		openSSLCommand = append(openSSLCommand, payload...)
+	}
+
+	file, err := os.Create(s.FilePath)
+	if err != nil {
 		return fmt.Errorf("error opening file: %w", err)
 	}
 	openSSLCommandBytes := []byte(strings.Join(openSSLCommand, "\r\n"))
@@ -273,6 +322,83 @@ func (s *S3Command) buildOpenSSLCommand() error {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
 	return nil
+}
+
+func (s *S3Command) getWholeOrChunkedPayloadData() ([]string, error) {
+	payloadBytes, err := s.getFileOrStringPayloadData()
+	payloadLength := len(payloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("error writing OpenSSL payload: %w", err)
+	}
+
+	var payloadStringArray []string
+	if s.PayloadType == "" || s.PayloadType == UnsignedPayload {
+		payloadStringArray = []string{fmt.Sprintf("Content-Length:%d", payloadLength)}
+		payloadStringArray = append(payloadStringArray, "\r\n"+string(payloadBytes))
+
+	} else {
+		if s.ChunkSize <= 0 {
+			return nil, errors.New("chunkSize must be greater than 0")
+		}
+		logger.PrintDebug("Chunked payload type: %s", s.PayloadType)
+		payload := s.getOpenSSLChunkedPayload(payloadBytes, payloadLength, s.signature)
+		payloadStringArray = []string{"Content-Encoding:aws-chunked"}
+		payloadStringArray = append(payloadStringArray, fmt.Sprintf("x-amz-decoded-content-length:%d", payloadLength))
+		payloadStringArray = append(payloadStringArray, fmt.Sprintf("Content-Length:%d", len(payload)))
+		payloadStringArray = append(payloadStringArray, "\r\n"+string(payload))
+	}
+	return payloadStringArray, nil
+}
+
+func (s *S3Command) getFileOrStringPayloadData() ([]byte, error) {
+	if s.PayloadFile != "" {
+		data, err := os.ReadFile(s.PayloadFile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading file '%s': %w", s.PayloadFile, err)
+		}
+		return data, nil
+	}
+	return []byte(s.Payload), nil
+}
+
+func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, firstSignature string) []byte {
+	var chunkedPayload []byte
+	lastSignature := firstSignature
+	for startingByteIdx := 0; startingByteIdx < payloadLength; startingByteIdx += s.ChunkSize {
+		var endingByteIdx int
+		if startingByteIdx+s.ChunkSize < payloadLength {
+			endingByteIdx = startingByteIdx + s.ChunkSize
+		} else {
+			endingByteIdx = payloadLength
+		}
+		payloadHash := sha256.Sum256(payload[startingByteIdx:endingByteIdx])
+		hashString := hex.EncodeToString(payloadHash[:])
+		newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hashString)
+		chunkedPayload = append(chunkedPayload, payload[startingByteIdx:endingByteIdx]...)
+		chunkedPayload = append(chunkedPayload, '\r', '\n')
+		chunkLength := fmt.Sprintf("%x;chunk-signature=", endingByteIdx-startingByteIdx)
+		chunkedPayload = append(chunkedPayload, []byte(chunkLength)...)
+		chunkedPayload = append(chunkedPayload, []byte(newSignature)...)
+		chunkedPayload = append(chunkedPayload, '\r', '\n')
+		lastSignature = newSignature
+	}
+	emptyHash := sha256.Sum256(nil)
+	newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hex.EncodeToString(emptyHash[:]))
+	chunkedPayload = append(chunkedPayload, []byte("0;chunk-signature="+newSignature)...)
+	return chunkedPayload
+}
+
+func (s *S3Command) getChunkedCanonicalRequestHash(lastSignature, chunkSignature string) string {
+	hash := sha256.Sum256([]byte(s.Payload))
+	serviceString := fmt.Sprintf("%s/%s/%s/%s/aws4_request", s.AwsAccessKeyId, s.yearMonthDay, s.AwsRegion, s.ServiceName)
+	request := strings.Join([]string{"AWS4-HMAC-SHA256-PAYLOAD",
+		s.currentDateTime,
+		serviceString,
+		lastSignature,
+		hex.EncodeToString(hash[:]),
+		chunkSignature}, "\n")
+	canonicalRequestHashBytes := sha256.Sum256([]byte(request))
+	return hex.EncodeToString(canonicalRequestHashBytes[:])
 }
 
 func hmacSHA256(key []byte, data string) []byte {

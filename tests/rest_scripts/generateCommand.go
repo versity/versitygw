@@ -51,6 +51,9 @@ var tagCount *int
 var tagKeys arrayFlags
 var tagValues arrayFlags
 
+var payloadType *string
+var chunkSize *int
+
 type restParams map[string]string
 
 func (r *restParams) String() string {
@@ -108,6 +111,8 @@ func main() {
 		FilePath:              *filePath,
 		CustomHostParam:       *customHostParam,
 		CustomHostParamSet:    customHostParamSet,
+		PayloadType:           *payloadType,
+		ChunkSize:             *chunkSize,
 	}
 	var s3Command command.S3CommandConverter
 	var err error
@@ -151,6 +156,7 @@ func checkFlags() error {
 	awsRegion = flag.String("awsRegion", "us-east-1", "AWS region")
 	serviceName = flag.String("serviceName", "s3", "Service name")
 	logger.Debug = flag.Bool("debug", false, "Print debug statements")
+	logger.LogFile = flag.String("logFile", "", "Log file, if any")
 	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
 	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
 	incorrectSignature = flag.Bool("incorrectSignature", false, "Simulate an incorrect signature")
@@ -167,6 +173,8 @@ func checkFlags() error {
 	client = flag.String("client", CURL, "Command-line client to use")
 	commandType = flag.String("commandType", "", "Command template to use, if any")
 	tagCount = flag.Int("tagCount", 0, "Autogenerate this amount of tags for commands with tags")
+	payloadType = flag.String("payloadType", "", "Payload type")
+	chunkSize = flag.Int("chunkSize", 0, "Chunk size for chunked uploads (0 for non-chunked upload)")
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	// Parse the flags
