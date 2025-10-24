@@ -37,7 +37,7 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool, requireContentSha256 bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -109,6 +109,9 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		}
 
 		hashPayload := ctx.Get("X-Amz-Content-Sha256")
+		if requireContentSha256 && hashPayload == "" {
+			return s3err.GetAPIError(s3err.ErrMissingContentSha256)
+		}
 		if !utils.IsValidSh256PayloadHeader(hashPayload) {
 			return s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)
 		}

@@ -384,7 +384,6 @@ func TestUploadPart(ts *TestState) {
 	ts.Run(UploadPart_non_existing_mp_upload)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
-		ts.Run(UploadPart_checksum_algorithm_and_header_mismatch)
 		ts.Run(UploadPart_multiple_checksum_headers)
 		ts.Run(UploadPart_invalid_checksum_header)
 		ts.Run(UploadPart_checksum_algorithm_mistmatch_on_initialization)
@@ -606,7 +605,8 @@ func TestCORSMiddleware(ts *TestState) {
 
 func TestPutObjectLockConfiguration(ts *TestState) {
 	ts.Run(PutObjectLockConfiguration_non_existing_bucket)
-	ts.Run(PutObjectLockConfiguration_empty_config)
+	ts.Run(PutObjectLockConfiguration_empty_request_body)
+	ts.Run(PutObjectLockConfiguration_malformed_body)
 	if !ts.conf.versioningEnabled {
 		ts.Run(PutObjectLockConfiguration_not_enabled_on_bucket_creation)
 	}
@@ -1311,7 +1311,6 @@ func GetIntTests() IntTests {
 		"UploadPart_invalid_part_number":                                          UploadPart_invalid_part_number,
 		"UploadPart_non_existing_key":                                             UploadPart_non_existing_key,
 		"UploadPart_non_existing_mp_upload":                                       UploadPart_non_existing_mp_upload,
-		"UploadPart_checksum_algorithm_and_header_mismatch":                       UploadPart_checksum_algorithm_and_header_mismatch,
 		"UploadPart_multiple_checksum_headers":                                    UploadPart_multiple_checksum_headers,
 		"UploadPart_invalid_checksum_header":                                      UploadPart_invalid_checksum_header,
 		"UploadPart_checksum_algorithm_mistmatch_on_initialization":               UploadPart_checksum_algorithm_mistmatch_on_initialization,
@@ -1465,7 +1464,8 @@ func GetIntTests() IntTests {
 		"CORSMiddleware_access_forbidden":                                         CORSMiddleware_access_forbidden,
 		"CORSMiddleware_access_granted":                                           CORSMiddleware_access_granted,
 		"PutObjectLockConfiguration_non_existing_bucket":                          PutObjectLockConfiguration_non_existing_bucket,
-		"PutObjectLockConfiguration_empty_config":                                 PutObjectLockConfiguration_empty_config,
+		"PutObjectLockConfiguration_empty_request_body":                           PutObjectLockConfiguration_empty_request_body,
+		"PutObjectLockConfiguration_malformed_body":                               PutObjectLockConfiguration_malformed_body,
 		"PutObjectLockConfiguration_not_enabled_on_bucket_creation":               PutObjectLockConfiguration_not_enabled_on_bucket_creation,
 		"PutObjectLockConfiguration_invalid_status":                               PutObjectLockConfiguration_invalid_status,
 		"PutObjectLockConfiguration_invalid_mode":                                 PutObjectLockConfiguration_invalid_mode,

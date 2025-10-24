@@ -496,24 +496,6 @@ func ParseCompleteMpChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 	return checksums, nil
 }
 
-// ParseChecksumHeaders parses/validates x-amz-checksum-x headers key/values
-func ParseChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
-	// first parse/validate 'x-amz-checksum-x' headers
-	checksums, err := ParseCalculatedChecksumHeaders(ctx)
-	if err != nil {
-		return checksums, err
-	}
-
-	// check if the values are valid
-	for al, val := range checksums {
-		if !IsValidChecksum(val, al) {
-			return checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
-		}
-	}
-
-	return checksums, nil
-}
-
 // ParseChecksumHeadersAndSdkAlgo parses/validates 'x-amz-sdk-checksum-algorithm' and
 // 'x-amz-checksum-x' precalculated request headers
 func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValues, error) {
@@ -529,14 +511,25 @@ func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, Ch
 		return sdkAlgorithm, checksums, err
 	}
 
-	for al, val := range checksums {
-		if !IsValidChecksum(val, al) {
-			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+	if len(checksums) == 0 && sdkAlgorithm != "" {
+		if ctx.Get("X-Amz-Trailer") == "" {
+			// This is a special case when x-amz-trailer is there
+			// it means the upload is done with chunked encoding
+			// where the checksum verification is handled in the chunk reader
+			debuglogger.Logf("'x-amz-sdk-checksum-algorithm : %s' is used without corresponding x-amz-checksum-* header", sdkAlgorithm)
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrChecksumSDKAlgoMismatch)
 		}
+	}
+
+	for al, val := range checksums {
 		// If any other checksum value is provided,
 		// rather than x-amz-sdk-checksum-algorithm
 		if sdkAlgorithm != "" && sdkAlgorithm != al {
-			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrChecksumSDKAlgoMismatch)
+		}
+
+		if !IsValidChecksum(val, al) {
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
 		}
 		sdkAlgorithm = al
 	}

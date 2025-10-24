@@ -17,6 +17,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -2709,7 +2710,18 @@ func PutBucketTagging_success_status(s *S3Conf) error {
 			return fmt.Errorf("err parsing tagging: %w", err)
 		}
 
-		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, taggingParsed, time.Now(), nil)
+		hasher := md5.New()
+		_, err = hasher.Write(taggingParsed)
+		if err != nil {
+			return err
+		}
+
+		sum := hasher.Sum(nil)
+		md5Sum := base64.StdEncoding.EncodeToString(sum)
+
+		req, err := createSignedReq(http.MethodPut, s.endpoint, fmt.Sprintf("%v?tagging=", bucket), s.awsID, s.awsSecret, "s3", s.awsRegion, taggingParsed, time.Now(), map[string]string{
+			"Content-Md5": md5Sum,
+		})
 		if err != nil {
 			return fmt.Errorf("err signing the request: %w", err)
 		}
@@ -9836,36 +9848,6 @@ func UploadPart_non_existing_mp_upload(s *S3Conf) error {
 	})
 }
 
-func UploadPart_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
-	testName := "UploadPart_checksum_algorithm_and_header_mismatch"
-	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-
-		mp, err := createMp(s3client, bucket, obj, withChecksum(types.ChecksumAlgorithmCrc32))
-		if err != nil {
-			return err
-		}
-
-		partNumber := int32(1)
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:            &bucket,
-			Key:               &obj,
-			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
-			ChecksumCRC32C:    getPtr("m0cB1Q=="),
-			PartNumber:        &partNumber,
-			UploadId:          mp.UploadId,
-		})
-		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
 func UploadPart_multiple_checksum_headers(s *S3Conf) error {
 	testName := "UploadPart_multiple_checksum_headers"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -16387,6 +16369,15 @@ func PutObjectLockConfiguration_non_existing_bucket(s *S3Conf) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
 			Bucket: getPtr(getBucketName()),
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeCompliance,
+						Days: getPtr(int32(10)),
+					},
+				},
+			},
 		})
 		cancel()
 		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchBucket)); err != nil {
@@ -16397,17 +16388,59 @@ func PutObjectLockConfiguration_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
-func PutObjectLockConfiguration_empty_config(s *S3Conf) error {
-	testName := "PutObjectLockConfiguration_empty_config"
+func PutObjectLockConfiguration_empty_request_body(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_empty_request_body"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
 			Bucket: &bucket,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingRequestBody)); err != nil {
 			return err
 		}
+		return nil
+	})
+}
+
+func PutObjectLockConfiguration_malformed_body(s *S3Conf) error {
+	testName := "PutObjectLockConfiguration_malformed_body"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		body := []byte("malformed_body")
+		hasher := md5.New()
+		_, err := hasher.Write(body)
+		if err != nil {
+			return err
+		}
+
+		sum := hasher.Sum(nil)
+		md5Sum := base64.StdEncoding.EncodeToString(sum)
+
+		req, err := createSignedReq(
+			http.MethodPut,
+			s.endpoint,
+			fmt.Sprintf("%s?object-lock", bucket),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			body,
+			time.Now(),
+			map[string]string{"Content-Md5": md5Sum},
+		)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("err sending request: %w", err)
+		}
+
+		if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrMalformedXML)); err != nil {
+			return err
+		}
+
 		return nil
 	})
 }

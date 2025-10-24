@@ -156,7 +156,11 @@ const (
 	ErrInvalidVersionId
 	ErrNoSuchVersion
 	ErrSuspendedVersioningNotAllowed
+	ErrMissingRequestBody
 	ErrMultipleChecksumHeaders
+	ErrChecksumSDKAlgoMismatch
+	ErrChecksumRequired
+	ErrMissingContentSha256
 	ErrInvalidChecksumAlgorithm
 	ErrInvalidChecksumPart
 	ErrChecksumTypeWithAlgo
@@ -671,6 +675,26 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrSuspendedVersioningNotAllowed: {
 		Code:           "InvalidBucketState",
 		Description:    "An Object Lock configuration is present on this bucket, so the versioning state cannot be changed.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMissingRequestBody: {
+		Code:           "MissingRequestBodyError",
+		Description:    "Request Body is empty",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrChecksumSDKAlgoMismatch: {
+		Code:           "InvalidRequest",
+		Description:    "x-amz-sdk-checksum-algorithm specified, but no corresponding x-amz-checksum-* or x-amz-trailer headers were found.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrChecksumRequired: {
+		Code:           "InvalidRequest",
+		Description:    "Missing required header for this request: Content-MD5 OR x-amz-checksum-*",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMissingContentSha256: {
+		Code:           "InvalidRequest",
+		Description:    "Missing required header for this request: x-amz-content-sha256",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMultipleChecksumHeaders: {
