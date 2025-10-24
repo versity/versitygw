@@ -16,6 +16,7 @@ const (
 
 const (
 	PutBucketTagging = "putBucketTagging"
+	PutObject        = "putObject"
 )
 
 var method *string
@@ -53,6 +54,7 @@ var tagValues arrayFlags
 
 var payloadType *string
 var chunkSize *int
+var contentType *string
 
 type restParams map[string]string
 
@@ -124,6 +126,10 @@ func main() {
 			TagValues: tagValues,
 		}
 		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
+			log.Fatalf("Error setting up PutBucketTagging command: %v", err)
+		}
+	case PutObject:
+		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
 			log.Fatalf("Error setting up PutBucketTagging command: %v", err)
 		}
 	default:

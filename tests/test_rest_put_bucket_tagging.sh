@@ -132,7 +132,12 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 
   run send_openssl_go_command_expect_error "400" "InvalidTag" "The TagValue you have provided is invalid" \
-    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" "-tagKey" "test" "-tagValue" "val\tue" \
-    "-payloadType" "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" "-debug" "-logFile" "tagging.log" "-chunkSize" "8192"
+    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" \
+    "-debug" "-logFile" "tagging.log" "-tagKey" "key" "-tagValue" "value" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-signedParams" "Content-Type:application/xml"
+  #run send_openssl_go_command_expect_error "400" "InvalidTag" "The TagValue you have provided is invalid" \
+  #  "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+  #  "-debug" "-logFile" "tagging.log" \
+  #  "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
   assert_success
 }

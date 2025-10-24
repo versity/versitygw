@@ -62,6 +62,7 @@ type S3Command struct {
 	signedParamString    string
 	yearMonthDay         string
 	signature            string
+	signingKey           []byte
 }
 
 func (s *S3Command) OpenSSLCommand() error {
@@ -156,6 +157,14 @@ func (s *S3Command) addHeaderValues() error {
 		[]string{"x-amz-content-sha256", s.payloadHash},
 		[]string{"x-amz-date", s.currentDateTime},
 	)
+	if s.PayloadType != "" && s.PayloadType != UnsignedPayload {
+		payloadSize, err := s.getPayloadSize()
+		if err != nil {
+			return fmt.Errorf("error getting payload size: %w", err)
+		}
+		s.headerValues = append(s.headerValues,
+			[]string{"x-amz-decoded-content-length", fmt.Sprintf("%d", payloadSize)})
+	}
 	for key, value := range s.SignedParams {
 		s.headerValues = append(s.headerValues, []string{key, value})
 	}
@@ -169,6 +178,17 @@ func (s *S3Command) addHeaderValues() error {
 			return s.headerValues[i][0] < s.headerValues[j][0]
 		})
 	return nil
+}
+
+func (s *S3Command) getPayloadSize() (int64, error) {
+	if s.PayloadFile != "" {
+		fileInfo, err := os.Stat(s.PayloadFile)
+		if err != nil {
+			return 0, fmt.Errorf("error getting fileinfo: %w", err)
+		}
+		return fileInfo.Size(), nil
+	}
+	return int64(len(s.Payload)), nil
 }
 
 func (s *S3Command) addContentMD5Header() error {
@@ -237,10 +257,10 @@ func (s *S3Command) getStsSignature() {
 	dateKey := hmacSHA256([]byte("AWS4"+s.AwsSecretAccessKey), s.yearMonthDay)
 	dateRegionKey := hmacSHA256(dateKey, s.AwsRegion)
 	dateRegionServiceKey := hmacSHA256(dateRegionKey, s.ServiceName)
-	signingKey := hmacSHA256(dateRegionServiceKey, "aws4_request")
+	s.signingKey = hmacSHA256(dateRegionServiceKey, "aws4_request")
 
 	// Generate signature
-	signatureBytes := hmacSHA256(signingKey, stsDataString)
+	signatureBytes := hmacSHA256(s.signingKey, stsDataString)
 	if s.IncorrectSignature {
 		if signatureBytes[0] == 'a' {
 			signatureBytes[0] = 'A'
@@ -343,8 +363,9 @@ func (s *S3Command) getWholeOrChunkedPayloadData() ([]string, error) {
 		logger.PrintDebug("Chunked payload type: %s", s.PayloadType)
 		payload := s.getOpenSSLChunkedPayload(payloadBytes, payloadLength, s.signature)
 		payloadStringArray = []string{"Content-Encoding:aws-chunked"}
-		payloadStringArray = append(payloadStringArray, fmt.Sprintf("x-amz-decoded-content-length:%d", payloadLength))
+		//payloadStringArray = append(payloadStringArray, fmt.Sprintf("x-amz-decoded-content-length:%d", payloadLength))
 		payloadStringArray = append(payloadStringArray, fmt.Sprintf("Content-Length:%d", len(payload)))
+		//payloadStringArray = append(payloadStringArray, fmt.Sprintf("Content-Length:%d", 400))
 		payloadStringArray = append(payloadStringArray, "\r\n"+string(payload))
 	}
 	return payloadStringArray, nil
@@ -365,6 +386,7 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 	var chunkedPayload []byte
 	lastSignature := firstSignature
 	for startingByteIdx := 0; startingByteIdx < payloadLength; startingByteIdx += s.ChunkSize {
+		logger.PrintDebug("last signature: " + lastSignature)
 		var endingByteIdx int
 		if startingByteIdx+s.ChunkSize < payloadLength {
 			endingByteIdx = startingByteIdx + s.ChunkSize
@@ -373,31 +395,40 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 		}
 		payloadHash := sha256.Sum256(payload[startingByteIdx:endingByteIdx])
 		hashString := hex.EncodeToString(payloadHash[:])
+		logger.PrintDebug("payload signature: " + hashString)
 		newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hashString)
-		chunkedPayload = append(chunkedPayload, payload[startingByteIdx:endingByteIdx]...)
-		chunkedPayload = append(chunkedPayload, '\r', '\n')
-		chunkLength := fmt.Sprintf("%x;chunk-signature=", endingByteIdx-startingByteIdx)
+		logger.PrintDebug("new signature: " + newSignature)
+		chunkLength := fmt.Sprintf("%x", endingByteIdx-startingByteIdx)
 		chunkedPayload = append(chunkedPayload, []byte(chunkLength)...)
-		chunkedPayload = append(chunkedPayload, []byte(newSignature)...)
+		if s.PayloadType != StreamingUnsignedPayloadTrailer {
+			chunkedPayload = append(chunkedPayload, []byte(";chunk-signature="+newSignature)...)
+		}
+		chunkedPayload = append(chunkedPayload, '\r', '\n')
+		chunkedPayload = append(chunkedPayload, payload[startingByteIdx:endingByteIdx]...)
 		chunkedPayload = append(chunkedPayload, '\r', '\n')
 		lastSignature = newSignature
 	}
 	emptyHash := sha256.Sum256(nil)
 	newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hex.EncodeToString(emptyHash[:]))
-	chunkedPayload = append(chunkedPayload, []byte("0;chunk-signature="+newSignature)...)
+	chunkedPayload = append(chunkedPayload, '0')
+	if s.PayloadType != StreamingUnsignedPayloadTrailer {
+		chunkedPayload = append(chunkedPayload, []byte(";chunk-signature="+newSignature)...)
+	}
+	chunkedPayload = append(chunkedPayload, '\r', '\n', '\r', '\n')
 	return chunkedPayload
 }
 
 func (s *S3Command) getChunkedCanonicalRequestHash(lastSignature, chunkSignature string) string {
-	hash := sha256.Sum256([]byte(s.Payload))
-	serviceString := fmt.Sprintf("%s/%s/%s/%s/aws4_request", s.AwsAccessKeyId, s.yearMonthDay, s.AwsRegion, s.ServiceName)
+	hash := sha256.Sum256(nil)
+	serviceString := fmt.Sprintf("%s/%s/%s/aws4_request", s.yearMonthDay, s.AwsRegion, s.ServiceName)
 	request := strings.Join([]string{"AWS4-HMAC-SHA256-PAYLOAD",
 		s.currentDateTime,
 		serviceString,
 		lastSignature,
 		hex.EncodeToString(hash[:]),
 		chunkSignature}, "\n")
-	canonicalRequestHashBytes := sha256.Sum256([]byte(request))
+	logger.PrintDebug("request: %s", request)
+	canonicalRequestHashBytes := hmacSHA256(s.signingKey, request)
 	return hex.EncodeToString(canonicalRequestHashBytes[:])
 }
 
