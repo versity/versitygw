@@ -386,6 +386,7 @@ func TestUploadPart(ts *TestState) {
 	if !ts.conf.azureTests {
 		ts.Run(UploadPart_multiple_checksum_headers)
 		ts.Run(UploadPart_invalid_checksum_header)
+		ts.Run(UploadPart_checksum_header_and_algo_mismatch)
 		ts.Run(UploadPart_checksum_algorithm_mistmatch_on_initialization)
 		ts.Run(UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value)
 		ts.Run(UploadPart_incorrect_checksums)
@@ -1313,6 +1314,7 @@ func GetIntTests() IntTests {
 		"UploadPart_non_existing_mp_upload":                                       UploadPart_non_existing_mp_upload,
 		"UploadPart_multiple_checksum_headers":                                    UploadPart_multiple_checksum_headers,
 		"UploadPart_invalid_checksum_header":                                      UploadPart_invalid_checksum_header,
+		"UploadPart_checksum_header_and_algo_mismatch":                            UploadPart_checksum_header_and_algo_mismatch,
 		"UploadPart_checksum_algorithm_mistmatch_on_initialization":               UploadPart_checksum_algorithm_mistmatch_on_initialization,
 		"UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value":    UploadPart_checksum_algorithm_mistmatch_on_initialization_with_value,
 		"UploadPart_incorrect_checksums":                                          UploadPart_incorrect_checksums,

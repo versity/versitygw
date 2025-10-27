@@ -522,14 +522,14 @@ func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, Ch
 	}
 
 	for al, val := range checksums {
+		if !IsValidChecksum(val, al) {
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+		}
+
 		// If any other checksum value is provided,
 		// rather than x-amz-sdk-checksum-algorithm
 		if sdkAlgorithm != "" && sdkAlgorithm != al {
-			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrChecksumSDKAlgoMismatch)
-		}
-
-		if !IsValidChecksum(val, al) {
-			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(al))))
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr("x-amz-sdk-checksum-algorithm")
 		}
 		sdkAlgorithm = al
 	}

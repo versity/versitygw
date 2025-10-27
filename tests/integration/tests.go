@@ -3254,7 +3254,7 @@ func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
 		// FIXME: The error message for PutObject is not properly serialized by the sdk
 		// References to aws sdk issue https://github.com/aws/aws-sdk-go-v2/issues/2921
 
-		// if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)); err != nil {
+		// if err := checkApiErr(err, s3err.GetInvalidChecksumHeaderErr("x-amz-sdk-checksum-algorithm"); err != nil {
 		// 	return err
 		// }
 		if err := checkSdkApiErr(err, "InvalidRequest"); err != nil {
@@ -9998,6 +9998,30 @@ func UploadPart_invalid_checksum_header(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func UploadPart_checksum_header_and_algo_mismatch(s *S3Conf) error {
+	testName := "UploadPart_checksum_header_and_algo_mismatch"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:            &bucket,
+			Key:               &obj,
+			UploadId:          mp.UploadId,
+			PartNumber:        getPtr(int32(1)),
+			Body:              strings.NewReader("dummy"),
+			ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
+			ChecksumCRC32C:    getPtr("muDarg=="),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetInvalidChecksumHeaderErr("x-amz-sdk-checksum-algorithm"))
 	})
 }
 
