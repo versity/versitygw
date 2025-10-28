@@ -30,7 +30,7 @@ import (
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
 // access to anonymous requesters
-func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, streamBody bool) fiber.Handler {
+func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, region string, streamBody bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		// skip for authenticated requests
 		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
@@ -59,6 +59,11 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		bucket, object := parsePath(ctx.Path())
 		err := auth.VerifyPublicAccess(ctx.Context(), be, policyPermission, permission, bucket, object)
 		if err != nil {
+			if s3action == metrics.ActionHeadBucket {
+				// add the bucket region header for HeadBucket
+				// if anonymous access is denied
+				ctx.Response().Header.Add("x-amz-bucket-region", region)
+			}
 			return err
 		}
 
