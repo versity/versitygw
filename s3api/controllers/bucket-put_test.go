@@ -529,22 +529,6 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid checksum algo",
-			input: testInput{
-				locals: defaultLocals,
-				body:   validBody,
-				headers: map[string]string{
-					"X-Amz-Sdk-Checksum-Algorithm": "invalid_algo",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{BucketOwner: "root"},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidChecksumAlgorithm),
-			},
-		},
-		{
 			name: "backend error",
 			input: testInput{
 				locals: defaultLocals,
