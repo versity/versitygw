@@ -65,6 +65,14 @@ type S3Command struct {
 	signingKey           []byte
 }
 
+type S3PayloadChunkParams struct {
+	payload        []byte
+	startIdx       int
+	endIdx         int
+	lastSignature  *string
+	emptySignature *string
+}
+
 func (s *S3Command) OpenSSLCommand() error {
 	if s.FilePath == "" {
 		return errors.New("for openssl command, filePath must be set")
@@ -361,11 +369,12 @@ func (s *S3Command) getWholeOrChunkedPayloadData() ([]string, error) {
 			return nil, errors.New("chunkSize must be greater than 0")
 		}
 		logger.PrintDebug("Chunked payload type: %s", s.PayloadType)
-		payload := s.getOpenSSLChunkedPayload(payloadBytes, payloadLength, s.signature)
+		payload, err := s.getOpenSSLChunkedPayload(payloadBytes, payloadLength, s.signature)
+		if err != nil {
+			return nil, fmt.Errorf("error getting chunked payload: %w", err)
+		}
 		payloadStringArray = []string{"Content-Encoding:aws-chunked"}
-		//payloadStringArray = append(payloadStringArray, fmt.Sprintf("x-amz-decoded-content-length:%d", payloadLength))
 		payloadStringArray = append(payloadStringArray, fmt.Sprintf("Content-Length:%d", len(payload)))
-		//payloadStringArray = append(payloadStringArray, fmt.Sprintf("Content-Length:%d", 400))
 		payloadStringArray = append(payloadStringArray, "\r\n"+string(payload))
 	}
 	return payloadStringArray, nil
@@ -382,8 +391,9 @@ func (s *S3Command) getFileOrStringPayloadData() ([]byte, error) {
 	return []byte(s.Payload), nil
 }
 
-func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, firstSignature string) []byte {
+func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, firstSignature string) ([]byte, error) {
 	var chunkedPayload []byte
+	emptyByteSignature := getSHA256HashString(nil)
 	lastSignature := firstSignature
 	for startingByteIdx := 0; startingByteIdx < payloadLength; startingByteIdx += s.ChunkSize {
 		logger.PrintDebug("last signature: " + lastSignature)
@@ -393,43 +403,70 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 		} else {
 			endingByteIdx = payloadLength
 		}
-		payloadHash := sha256.Sum256(payload[startingByteIdx:endingByteIdx])
-		hashString := hex.EncodeToString(payloadHash[:])
-		logger.PrintDebug("payload signature: " + hashString)
-		newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hashString)
-		logger.PrintDebug("new signature: " + newSignature)
-		chunkLength := fmt.Sprintf("%x", endingByteIdx-startingByteIdx)
-		chunkedPayload = append(chunkedPayload, []byte(chunkLength)...)
-		if s.PayloadType != StreamingUnsignedPayloadTrailer {
-			chunkedPayload = append(chunkedPayload, []byte(";chunk-signature="+newSignature)...)
+		segment, newSignature, err := s.getPayloadSegment(&S3PayloadChunkParams{
+			payload:        payload,
+			startIdx:       startingByteIdx,
+			endIdx:         endingByteIdx,
+			emptySignature: &emptyByteSignature,
+			lastSignature:  &lastSignature,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("error adding segment to payload: %w", err)
 		}
-		chunkedPayload = append(chunkedPayload, '\r', '\n')
-		chunkedPayload = append(chunkedPayload, payload[startingByteIdx:endingByteIdx]...)
-		chunkedPayload = append(chunkedPayload, '\r', '\n')
+		chunkedPayload = append(chunkedPayload, segment...)
 		lastSignature = newSignature
 	}
-	emptyHash := sha256.Sum256(nil)
-	newSignature := s.getChunkedCanonicalRequestHash(lastSignature, hex.EncodeToString(emptyHash[:]))
-	chunkedPayload = append(chunkedPayload, '0')
-	if s.PayloadType != StreamingUnsignedPayloadTrailer {
-		chunkedPayload = append(chunkedPayload, []byte(";chunk-signature="+newSignature)...)
+	segment, _, err := s.getPayloadSegment(&S3PayloadChunkParams{
+		payload:        nil,
+		startIdx:       0,
+		endIdx:         0,
+		emptySignature: &emptyByteSignature,
+		lastSignature:  &emptyByteSignature,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error adding final segment to payload: %w", err)
 	}
-	chunkedPayload = append(chunkedPayload, '\r', '\n', '\r', '\n')
-	return chunkedPayload
+	chunkedPayload = append(chunkedPayload, segment...)
+	chunkedPayload = append(chunkedPayload, '\r', '\n')
+	return chunkedPayload, nil
 }
 
-func (s *S3Command) getChunkedCanonicalRequestHash(lastSignature, chunkSignature string) string {
-	hash := sha256.Sum256(nil)
+func (s *S3Command) getChunkedCanonicalRequestHash(lastSignature, emptyByteSignature, chunkSignature string) string {
 	serviceString := fmt.Sprintf("%s/%s/%s/aws4_request", s.yearMonthDay, s.AwsRegion, s.ServiceName)
 	request := strings.Join([]string{"AWS4-HMAC-SHA256-PAYLOAD",
 		s.currentDateTime,
 		serviceString,
 		lastSignature,
-		hex.EncodeToString(hash[:]),
+		emptyByteSignature,
 		chunkSignature}, "\n")
 	logger.PrintDebug("request: %s", request)
 	canonicalRequestHashBytes := hmacSHA256(s.signingKey, request)
 	return hex.EncodeToString(canonicalRequestHashBytes[:])
+}
+
+func (s *S3Command) getPayloadSegment(params *S3PayloadChunkParams) ([]byte, string, error) {
+	var newSignature string
+	if s.PayloadType != StreamingUnsignedPayloadTrailer {
+		payloadSignature := getSHA256HashString(params.payload[params.startIdx:params.endIdx])
+		if params.lastSignature == nil || params.emptySignature == nil {
+			return nil, "", errors.New("lastSignature and/or emptySignature params cannot be nil")
+		}
+		newSignature = s.getChunkedCanonicalRequestHash(*params.lastSignature, *params.emptySignature, payloadSignature)
+	}
+	chunkLength := fmt.Sprintf("%x", params.endIdx-params.startIdx)
+	segmentBytes := []byte(chunkLength)
+	if s.PayloadType != StreamingUnsignedPayloadTrailer {
+		segmentBytes = append(segmentBytes, []byte(";chunk-signature="+newSignature)...)
+	}
+	segmentBytes = append(segmentBytes, '\r', '\n')
+	segmentBytes = append(segmentBytes, params.payload[params.startIdx:params.endIdx]...)
+	segmentBytes = append(segmentBytes, '\r', '\n')
+	return segmentBytes, newSignature, nil
+}
+
+func getSHA256HashString(bytes []byte) string {
+	hash := sha256.Sum256(bytes)
+	return hex.EncodeToString(hash[:])
 }
 
 func hmacSHA256(key []byte, data string) []byte {

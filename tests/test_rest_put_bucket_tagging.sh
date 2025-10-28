@@ -120,6 +120,21 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 }
 
+@test "REST - PutBucketTagging - STREAMING-UNSIGNED-PAYLOAD-TRAILER fails" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_expect_error "400" "InvalidRequest" "The value of x-amz-content-sha256 header is invalid" \
+    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+    "-debug" "-logFile" "tagging.log" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-tagKey" "key" "-tagValue" "value"
+  assert_success
+}
+
 @test "REST - PutBucketTagging w/chunked payload" {
   test_key="testKey"
   test_value="testValue"
@@ -131,13 +146,13 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run send_openssl_go_command_expect_error "400" "InvalidTag" "The TagValue you have provided is invalid" \
-    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" \
-    "-debug" "-logFile" "tagging.log" "-tagKey" "key" "-tagValue" "value" \
-    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-signedParams" "Content-Type:application/xml"
   #run send_openssl_go_command_expect_error "400" "InvalidTag" "The TagValue you have provided is invalid" \
-  #  "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
-  #  "-debug" "-logFile" "tagging.log" \
-  #  "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
+  #  "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" \
+  #  "-debug" "-logFile" "tagging.log" "-tagKey" "key" "-tagValue" "value" \
+  #  "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-signedParams" "Content-Type:application/xml"
+  run send_openssl_go_command_expect_error "400" "InvalidTag" "The TagValue you have provided is invalid" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+    "-debug" "-logFile" "tagging.log" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
   assert_success
 }

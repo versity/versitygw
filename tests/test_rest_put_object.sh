@@ -267,3 +267,18 @@ export RUN_USERS=true
         "-signedParams" "Expect:100-continue"
   assert_success
 }
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer missing" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_expect_error "400" "MalformedTrailerError" "The request contained trailing data that was not well-formed" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+    "-debug" "-logFile" "tagging.log" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
+  assert_success
+}

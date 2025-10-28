@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/versity/versitygw/tests/rest_scripts/command"
@@ -116,6 +117,17 @@ func main() {
 		PayloadType:           *payloadType,
 		ChunkSize:             *chunkSize,
 	}
+
+	s3Command, err := getS3CommandType(baseCommand)
+	if err != nil {
+		log.Fatalf("Error getting command subtype: %v", err)
+	}
+	if err := buildCommand(s3Command); err != nil {
+		log.Fatalf("Error building command: %v", err)
+	}
+}
+
+func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverter, error) {
 	var s3Command command.S3CommandConverter
 	var err error
 	switch *commandType {
@@ -126,29 +138,34 @@ func main() {
 			TagValues: tagValues,
 		}
 		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
-			log.Fatalf("Error setting up PutBucketTagging command: %v", err)
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
 		}
 	case PutObject:
 		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
-			log.Fatalf("Error setting up PutBucketTagging command: %v", err)
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
 		}
 	default:
 		s3Command = baseCommand
 	}
+	return s3Command, nil
+}
+
+func buildCommand(s3Command command.S3CommandConverter) error {
 	switch *client {
 	case CURL:
 		curlShellCommand, err := s3Command.CurlShellCommand()
 		if err != nil {
-			log.Fatalf("Error generating curl command: %v", err)
+			return fmt.Errorf("error generating curl command: %w", err)
 		}
 		fmt.Println(curlShellCommand)
 	case OPENSSL:
 		if err := s3Command.OpenSSLCommand(); err != nil {
-			log.Fatalf("Error generating and writing openssl command: %v", err)
+			return fmt.Errorf("error generating and writing openssl command: %w", err)
 		}
 	default:
-		log.Fatalln("Invalid client type: ", *client)
+		return errors.New("Invalid client type: " + *client)
 	}
+	return nil
 }
 
 func checkFlags() error {
