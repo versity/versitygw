@@ -346,6 +346,9 @@ func (s *S3Command) buildOpenSSLCommand() error {
 		return fmt.Errorf("error opening file: %w", err)
 	}
 	openSSLCommandBytes := []byte(strings.Join(openSSLCommand, "\r\n"))
+	//if s.PayloadType != "" && s.PayloadType != UnsignedPayload {
+	//	openSSLCommandBytes = append(openSSLCommandBytes, '\r', '\n', '\r', '\n')
+	//}
 	if _, err = file.Write(openSSLCommandBytes); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
@@ -427,7 +430,6 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 		return nil, fmt.Errorf("error adding final segment to payload: %w", err)
 	}
 	chunkedPayload = append(chunkedPayload, segment...)
-	chunkedPayload = append(chunkedPayload, '\r', '\n')
 	return chunkedPayload, nil
 }
 
