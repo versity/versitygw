@@ -169,6 +169,8 @@ func TestPutObject(ts *TestState) {
 		ts.Run(PutObject_checksums_success)
 		// azure applies some encoding mechanisms.
 		ts.Run(PutObject_false_negative_object_names)
+		// azure doesn't support these metadata characters
+		ts.Run(PutObject_with_metadata)
 	}
 	ts.Run(PutObject_success)
 	if !ts.conf.versioningEnabled {
@@ -329,6 +331,8 @@ func TestCopyObject(ts *TestState) {
 		ts.Run(CopyObject_should_copy_the_existing_checksum)
 		ts.Run(CopyObject_should_replace_the_existing_checksum)
 		ts.Run(CopyObject_to_itself_by_replacing_the_checksum)
+		// azure doesn't support these metadata characters
+		ts.Run(CopyObject_with_metadata)
 	}
 	ts.Run(CopyObject_success)
 }
@@ -487,6 +491,8 @@ func TestCompleteMultipartUpload(ts *TestState) {
 		ts.Run(CompleteMultipartUpload_checksum_type_mismatch)
 		ts.Run(CompleteMultipartUpload_should_ignore_the_final_checksum)
 		ts.Run(CompleteMultipartUpload_should_succeed_without_final_checksum_type)
+		// azure doesn't support these metadata characters
+		ts.Run(CompleteMultipartUpload_with_metadata)
 	}
 	ts.Run(CompleteMultipartUpload_success)
 	if !ts.conf.azureTests {
@@ -1108,6 +1114,7 @@ func GetIntTests() IntTests {
 		"PutObject_invalid_legal_hold":                                            PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                      PutObject_invalid_object_lock_mode,
 		"PutObject_conditional_writes":                                            PutObject_conditional_writes,
+		"PutObject_with_metadata":                                                 PutObject_with_metadata,
 		"PutObject_invalid_credentials":                                           PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                        PutObject_checksum_algorithm_and_header_mismatch,
 		"PutObject_multiple_checksum_headers":                                     PutObject_multiple_checksum_headers,
@@ -1273,6 +1280,7 @@ func GetIntTests() IntTests {
 		"CopyObject_with_legal_hold":                                              CopyObject_with_legal_hold,
 		"CopyObject_with_retention_lock":                                          CopyObject_with_retention_lock,
 		"CopyObject_conditional_reads":                                            CopyObject_conditional_reads,
+		"CopyObject_with_metadata":                                                CopyObject_with_metadata,
 		"CopyObject_invalid_checksum_algorithm":                                   CopyObject_invalid_checksum_algorithm,
 		"CopyObject_create_checksum_on_copy":                                      CopyObject_create_checksum_on_copy,
 		"CopyObject_should_copy_the_existing_checksum":                            CopyObject_should_copy_the_existing_checksum,
@@ -1370,6 +1378,7 @@ func GetIntTests() IntTests {
 		"CompleteMultipartUpload_incorrect_parts_order":                           CompleteMultipartUpload_incorrect_parts_order,
 		"CompleteMultipartUpload_mpu_object_size":                                 CompleteMultipartUpload_mpu_object_size,
 		"CompleteMultipartUpload_conditional_writes":                              CompleteMultipartUpload_conditional_writes,
+		"CompleteMultipartUpload_with_metadata":                                   CompleteMultipartUpload_with_metadata,
 		"CompleteMultipartUpload_invalid_checksum_type":                           CompleteMultipartUpload_invalid_checksum_type,
 		"CompleteMultipartUpload_invalid_checksum_part":                           CompleteMultipartUpload_invalid_checksum_part,
 		"CompleteMultipartUpload_multiple_checksum_part":                          CompleteMultipartUpload_multiple_checksum_part,

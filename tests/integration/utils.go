@@ -535,6 +535,7 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 type mpCfg struct {
 	checksumAlgorithm types.ChecksumAlgorithm
 	checksumType      types.ChecksumType
+	metadata          map[string]string
 }
 
 type mpOpt func(*mpCfg)
@@ -544,6 +545,9 @@ func withChecksum(algo types.ChecksumAlgorithm) mpOpt {
 }
 func withChecksumType(t types.ChecksumType) mpOpt {
 	return func(mc *mpCfg) { mc.checksumType = t }
+}
+func withMetadata(m map[string]string) mpOpt {
+	return func(mc *mpCfg) { mc.metadata = m }
 }
 
 func createMp(s3client *s3.Client, bucket, key string, opts ...mpOpt) (*s3.CreateMultipartUploadOutput, error) {
@@ -557,6 +561,7 @@ func createMp(s3client *s3.Client, bucket, key string, opts ...mpOpt) (*s3.Creat
 		Key:               &key,
 		ChecksumAlgorithm: cfg.checksumAlgorithm,
 		ChecksumType:      cfg.checksumType,
+		Metadata:          cfg.metadata,
 	})
 	cancel()
 	return out, err
@@ -710,7 +715,7 @@ func areMapsSame(mp1, mp2 map[string]string) bool {
 		return false
 	}
 	for key, val := range mp2 {
-		if mp1[strings.ToLower(key)] != val {
+		if mp1[key] != val {
 			return false
 		}
 	}

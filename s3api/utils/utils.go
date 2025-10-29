@@ -58,7 +58,7 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 	for key, value := range headers.AllInOrder() {
 		hKey := string(key)
 		if strings.HasPrefix(strings.ToLower(hKey), "x-amz-meta-") {
-			trimmedKey := hKey[11:]
+			trimmedKey := strings.ToLower(hKey[11:])
 			headerValue := string(value)
 			metadata[trimmedKey] = headerValue
 		}

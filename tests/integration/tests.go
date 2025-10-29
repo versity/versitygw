@@ -3238,6 +3238,69 @@ func PutObject_conditional_writes(s *S3Conf) error {
 	})
 }
 
+func PutObject_with_metadata(s *S3Conf) error {
+	testName := "PutObject_with_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		meta := map[string]string{
+			"Key":                 "Val",
+			"X-Test":              "Example",
+			"UPPERCASE":           "should-remain",
+			"MiXeD-CaSe":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"KeyURL":              "https://example.com/test?query=1",
+			"EmptyValue":          "",
+			"LongKeyNameThatShouldStillBeValidButQuiteLongToTestLimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"WhitespaceKey ": " trailing-key",
+		}
+
+		obj := "my-object"
+		_, err := putObjectWithData(3, &s3.PutObjectInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			Metadata: meta,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedMeta := map[string]string{
+			"key":                 "Val",
+			"x-test":              "Example",
+			"uppercase":           "should-remain",
+			"mixed-case":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"keyurl":              "https://example.com/test?query=1",
+			"emptyvalue":          "",
+			"longkeynamethatshouldstillbevalidbutquitelongtotestlimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"whitespacekey": "trailing-key",
+		}
+
+		if !areMapsSame(expectedMeta, res.Metadata) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", expectedMeta, res.Metadata)
+		}
+
+		return nil
+	})
+}
+
 func PutObject_checksum_algorithm_and_header_mismatch(s *S3Conf) error {
 	testName := "PutObject_checksum_algorithm_and_header_mismatch"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -7792,6 +7855,10 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 			return err
 		}
 
+		meta = map[string]string{
+			"hello": "World",
+		}
+
 		if !areMapsSame(resp.Metadata, meta) {
 			return fmt.Errorf("expected uploaded object metadata to be %v, instead got %v",
 				meta, resp.Metadata)
@@ -7799,7 +7866,7 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 
 		// verify updating metadata has correct meta
 		meta = map[string]string{
-			"New": "Metadata",
+			"new": "Metadata",
 		}
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
@@ -8441,6 +8508,85 @@ func CopyObject_conditional_reads(s *S3Conf) error {
 					return fmt.Errorf("test case %d failed: %w", i, err)
 				}
 			}
+		}
+
+		return nil
+	})
+}
+
+func CopyObject_with_metadata(s *S3Conf) error {
+	testName := "CopyObject_with_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "src-obj", "dst-obj"
+
+		_, err := putObjectWithData(2, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+			Metadata: map[string]string{
+				"key": "value",
+			},
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		meta := map[string]string{
+			"Key":                 "Val",
+			"X-Test":              "Example",
+			"UPPERCASE":           "should-remain",
+			"MiXeD-CaSe":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"KeyURL":              "https://example.com/test?query=1",
+			"EmptyValue":          "",
+			"LongKeyNameThatShouldStillBeValidButQuiteLongToTestLimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"WhitespaceKey ": " trailing-key",
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            &bucket,
+			Key:               &dstObj,
+			Metadata:          meta,
+			CopySource:        getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+			MetadataDirective: types.MetadataDirectiveReplace,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedMeta := map[string]string{
+			"key":                 "Val",
+			"x-test":              "Example",
+			"uppercase":           "should-remain",
+			"mixed-case":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"keyurl":              "https://example.com/test?query=1",
+			"emptyvalue":          "",
+			"longkeynamethatshouldstillbevalidbutquitelongtotestlimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"whitespacekey": "trailing-key",
+		}
+
+		if !areMapsSame(expectedMeta, res.Metadata) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", expectedMeta, res.Metadata)
 		}
 
 		return nil
@@ -13645,6 +13791,93 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 					return fmt.Errorf("test case %v: %w", i, err)
 				}
 			}
+		}
+
+		return nil
+	})
+}
+
+func CompleteMultipartUpload_with_metadata(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_with_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		meta := map[string]string{
+			"Key":                 "Val",
+			"X-Test":              "Example",
+			"UPPERCASE":           "should-remain",
+			"MiXeD-CaSe":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"KeyURL":              "https://example.com/test?query=1",
+			"EmptyValue":          "",
+			"LongKeyNameThatShouldStillBeValidButQuiteLongToTestLimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"WhitespaceKey ": " trailing-key",
+		}
+
+		obj := "my-object"
+
+		mp, err := createMp(s3client, bucket, obj, withMetadata(meta))
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 5*1024*1024, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		compParts := []types.CompletedPart{}
+		for _, el := range parts {
+			compParts = append(compParts, types.CompletedPart{
+				ETag:       el.ETag,
+				PartNumber: el.PartNumber,
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: compParts,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedMeta := map[string]string{
+			"key":                 "Val",
+			"x-test":              "Example",
+			"uppercase":           "should-remain",
+			"mixed-case":          "normalize-to-lower",
+			"with-number-123":     "numeric-test",
+			"123numeric-prefix":   "value123",
+			"key_with_underscore": "underscore-ok",
+			"key-with-dash":       "dash-ok",
+			"key.with.dot":        "dot-ok",
+			"keyurl":              "https://example.com/test?query=1",
+			"emptyvalue":          "",
+			"longkeynamethatshouldstillbevalidbutquitelongtotestlimits": "some long metadata value to ensure nothing breaks at higher header sizes",
+			"whitespacekey": "trailing-key",
+		}
+
+		if !areMapsSame(expectedMeta, res.Metadata) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", expectedMeta, res.Metadata)
 		}
 
 		return nil
