@@ -21,3 +21,8 @@ func PrintDebug(format string, args ...interface{}) {
 		log.Printf(format, args...)
 	}
 }
+
+func LogFatal(format string, args ...interface{}) {
+	PrintDebug(format, args)
+	os.Exit(1)
+}

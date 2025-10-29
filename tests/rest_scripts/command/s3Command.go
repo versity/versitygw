@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
+	"hash/crc32"
 	"io"
 	"os"
 	"sort"
@@ -23,6 +24,14 @@ const (
 	StreamingUnsignedPayloadTrailer            = "STREAMING-UNSIGNED-PAYLOAD-TRAILER"
 	StreamingAWS4ECDSAP256SHA256Payload        = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD"
 	StreamingAWS4ECDSAP256SHA256PayloadTrailer = "STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER"
+)
+
+const (
+	ChecksumCRC32     = "crc32"
+	ChecksumCRC32C    = "crc32c"
+	ChecksumCRC64NVME = "crc64nvme"
+	ChecksumSHA1      = "sha1"
+	ChecksumSHA256    = "sha256"
 )
 
 type S3Command struct {
@@ -52,6 +61,7 @@ type S3Command struct {
 	CustomHostParamSet           bool
 	PayloadType                  string
 	ChunkSize                    int
+	ChecksumType                 string
 
 	currentDateTime      string
 	host                 string
@@ -346,9 +356,6 @@ func (s *S3Command) buildOpenSSLCommand() error {
 		return fmt.Errorf("error opening file: %w", err)
 	}
 	openSSLCommandBytes := []byte(strings.Join(openSSLCommand, "\r\n"))
-	//if s.PayloadType != "" && s.PayloadType != UnsignedPayload {
-	//	openSSLCommandBytes = append(openSSLCommandBytes, '\r', '\n', '\r', '\n')
-	//}
 	if _, err = file.Write(openSSLCommandBytes); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
@@ -430,7 +437,31 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 		return nil, fmt.Errorf("error adding final segment to payload: %w", err)
 	}
 	chunkedPayload = append(chunkedPayload, segment...)
+	if s.PayloadType == StreamingUnsignedPayloadTrailer || s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer {
+		logger.PrintDebug("adding trailer with checksum")
+		var trailerBytes []byte
+		trailerBytes, err = s.getPayloadTrailer(payload)
+		logger.PrintDebug("after getting trailer")
+		if err != nil {
+			return nil, fmt.Errorf("error getting payload trailer: %w", err)
+		}
+		chunkedPayload = append(chunkedPayload, trailerBytes...)
+		logger.PrintDebug("Trailer addition success")
+	}
 	return chunkedPayload, nil
+}
+
+func (s *S3Command) getPayloadTrailer(rawPayloadBytes []byte) ([]byte, error) {
+	var trailerBytes []byte
+	checksum, err := s.calculateChecksum(rawPayloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("error calculating payload checksum: %w", err)
+	}
+	if s.PayloadType == StreamingUnsignedPayloadTrailer {
+		checksumString := "x-amz-checksum-" + s.ChecksumType + ":" + checksum + "\r\n\r\n"
+		trailerBytes = []byte(checksumString)
+	}
+	return trailerBytes, nil
 }
 
 func (s *S3Command) getChunkedCanonicalRequestHash(lastSignature, emptyByteSignature, chunkSignature string) string {
@@ -461,9 +492,41 @@ func (s *S3Command) getPayloadSegment(params *S3PayloadChunkParams) ([]byte, str
 		segmentBytes = append(segmentBytes, []byte(";chunk-signature="+newSignature)...)
 	}
 	segmentBytes = append(segmentBytes, '\r', '\n')
-	segmentBytes = append(segmentBytes, params.payload[params.startIdx:params.endIdx]...)
-	segmentBytes = append(segmentBytes, '\r', '\n')
+	if chunkLength != "0" || s.PayloadType != StreamingUnsignedPayloadTrailer {
+		segmentBytes = append(segmentBytes, params.payload[params.startIdx:params.endIdx]...)
+		segmentBytes = append(segmentBytes, '\r', '\n')
+	}
 	return segmentBytes, newSignature, nil
+}
+
+func calculateCRC32Checksum(bytes []byte) string {
+	// We use the IEEE polynomial
+	tablePolynomial := crc32.MakeTable(crc32.IEEE)
+
+	// Calculate checksum using crc32.Checksum function
+	checksum := crc32.Checksum(bytes, tablePolynomial)
+	checksumBytes := make([]byte, 4)
+	for i := uint(0); i < 4; i++ {
+		checksumBytes[i] = byte((checksum >> (8 * i)) & 0xFF)
+	}
+	checksumBase64 := base64.StdEncoding.EncodeToString(checksumBytes)
+	return checksumBase64
+}
+
+func (s *S3Command) calculateChecksum(bytes []byte) (string, error) {
+	var checksum string
+	switch s.ChecksumType {
+	case ChecksumSHA256:
+		hasher := sha256.New()
+		hasher.Write(bytes)
+		hashValue := hasher.Sum(nil)
+		checksum = base64.StdEncoding.EncodeToString(hashValue)
+		return checksum, nil
+	case ChecksumCRC32:
+		checksum = calculateCRC32Checksum(bytes)
+		return checksum, nil
+	}
+	return "", errors.New("unrecognized checksum type: '" + s.ChecksumType + "'")
 }
 
 func getSHA256HashString(bytes []byte) string {

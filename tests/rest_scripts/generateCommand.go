@@ -46,6 +46,7 @@ var client *string
 var customHostParam *string
 var customHostParamSet bool = false
 var commandType *string
+var checksumType *string
 
 type arrayFlags []string
 
@@ -116,14 +117,15 @@ func main() {
 		CustomHostParamSet:    customHostParamSet,
 		PayloadType:           *payloadType,
 		ChunkSize:             *chunkSize,
+		ChecksumType:          *checksumType,
 	}
 
 	s3Command, err := getS3CommandType(baseCommand)
 	if err != nil {
-		log.Fatalf("Error getting command subtype: %v", err)
+		logger.LogFatal("Error getting command subtype: %v", err)
 	}
 	if err := buildCommand(s3Command); err != nil {
-		log.Fatalf("Error building command: %v", err)
+		logger.LogFatal("Error building command: %v", err)
 	}
 }
 
@@ -198,6 +200,7 @@ func checkFlags() error {
 	tagCount = flag.Int("tagCount", 0, "Autogenerate this amount of tags for commands with tags")
 	payloadType = flag.String("payloadType", "", "Payload type")
 	chunkSize = flag.Int("chunkSize", 0, "Chunk size for chunked uploads (0 for non-chunked upload)")
+	checksumType = flag.String("checksumType", "", "Checksum type for additional or trailing checksum")
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	// Parse the flags
