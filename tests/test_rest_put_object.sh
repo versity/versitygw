@@ -278,11 +278,24 @@ export RUN_USERS=true
 
   run send_openssl_go_command_expect_error "400" "MalformedTrailerError" "The request contained trailing data that was not well-formed" \
     "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
-    "-debug" "-logFile" "tagging.log" "-omitTrailer" \
+    "-omitTrailer" \
     "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
   assert_success
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - 200 header returns correct checksum type" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
 
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  checksum="$(sha256sum "$TEST_FILE_FOLDER/$test_file" | awk '{print $1}' | xxd -r -p | base64)"
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-sha256" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "sha256" \
+    "-debug" "-logFile" "tagging.log" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-sha256"
+  assert_success
 }
