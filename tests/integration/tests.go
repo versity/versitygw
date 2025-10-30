@@ -1741,6 +1741,165 @@ func CreateBucket_default_object_lock(s *S3Conf) error {
 	return nil
 }
 
+func CreateBucket_invalid_location_constraint(s *S3Conf) error {
+	testName := "CreateBucket_invalid_location_constraint"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		var region types.BucketLocationConstraint
+		if types.BucketLocationConstraint(s.awsID) == types.BucketLocationConstraintUsWest1 {
+			region = types.BucketLocationConstraintUsWest2
+		} else {
+			region = types.BucketLocationConstraintUsWest1
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				LocationConstraint: region,
+			},
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint))
+	})
+}
+
+func CreateBucket_long_tags(s *S3Conf) error {
+	testName := "CreateBucket_long_tags"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := []types.Tag{{Key: getPtr(genRandString(200)), Value: getPtr("val")}}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				Tags: tagging,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagKey)); err != nil {
+			return err
+		}
+
+		tagging = []types.Tag{{Key: getPtr("key"), Value: getPtr(genRandString(300))}}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				Tags: tagging,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidTagValue)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateBucket_invalid_tags(s *S3Conf) error {
+	testName := "CreateBucket_invalid_tags"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			tags []types.Tag
+			err  s3err.APIError
+		}{
+			// invalid tag key tests
+			{[]types.Tag{{Key: getPtr("user!name"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{{Key: getPtr("foo#bar"), Value: getPtr("value")}}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("validkey"), Value: getPtr("validvalue")},
+				{Key: getPtr("data%20"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			{[]types.Tag{
+				{Key: getPtr("abcd"), Value: getPtr("xyz123")},
+				{Key: getPtr("a*b"), Value: getPtr("value")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagKey)},
+			// invalid tag value tests
+			{[]types.Tag{
+				{Key: getPtr("hello"), Value: getPtr("world")},
+				{Key: getPtr("key"), Value: getPtr("name?test")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{
+				{Key: getPtr("foo"), Value: getPtr("bar")},
+				{Key: getPtr("key"), Value: getPtr("`path")},
+			}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("comma,separated")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("semicolon;test")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+			{[]types.Tag{{Key: getPtr("valid"), Value: getPtr("(parentheses)")}}, s3err.GetAPIError(s3err.ErrInvalidTagValue)},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+				Bucket: &bucket,
+				CreateBucketConfiguration: &types.CreateBucketConfiguration{
+					Tags: test.tags,
+				},
+			})
+			cancel()
+			if err == nil {
+				return fmt.Errorf("test %v failed: expected err %w, instead got nil", i+1, test.err)
+			}
+
+			if err := checkApiErr(err, test.err); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func CreateBucket_duplicate_keys(s *S3Conf) error {
+	testName := "CreateBucket_duplicate_keys"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagging := []types.Tag{
+			{Key: getPtr("key"), Value: getPtr("value")},
+			{Key: getPtr("key"), Value: getPtr("value-1")},
+			{Key: getPtr("key-1"), Value: getPtr("value-2")},
+			{Key: getPtr("key-2"), Value: getPtr("value-3")},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				Tags: tagging,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrDuplicateTagKey)); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func CreateBucket_tag_count_limit(s *S3Conf) error {
+	testName := "CreateBucket_tag_count_limit"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		tagSet := []types.Tag{}
+
+		for i := range 51 {
+			tagSet = append(tagSet, types.Tag{
+				Key:   getPtr(fmt.Sprintf("key-%v", i)),
+				Value: getPtr(genRandString(10)),
+			})
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			CreateBucketConfiguration: &types.CreateBucketConfiguration{
+				Tags: tagSet,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingLimited))
+	})
+}
+
 func HeadBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "HeadBucket_non_existing_bucket"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

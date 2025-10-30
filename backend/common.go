@@ -317,6 +317,54 @@ func ParseObjectTags(tagging string) (map[string]string, error) {
 	return tagSet, nil
 }
 
+// ParseCreateBucketTags parses and validates the bucket
+// tagging from CreateBucket input
+func ParseCreateBucketTags(tagging []types.Tag) (map[string]string, error) {
+	if len(tagging) == 0 {
+		return nil, nil
+	}
+
+	tagset := make(map[string]string, len(tagging))
+
+	if len(tagging) > 50 {
+		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingLimited)
+	}
+
+	for _, tag := range tagging {
+		// validate tag key length
+		key := GetStringFromPtr(tag.Key)
+		if len(key) == 0 || len(key) > 128 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// validate tag key string chars
+		if !isValidTagComponent(key) {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagKey)
+		}
+
+		// validate tag value length
+		value := GetStringFromPtr(tag.Value)
+		if len(value) > 256 {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+		}
+
+		// validate tag value string chars
+		if !isValidTagComponent(value) {
+			return nil, s3err.GetAPIError(s3err.ErrInvalidTagValue)
+		}
+
+		// make sure there are no duplicate keys
+		_, ok := tagset[key]
+		if ok {
+			return nil, s3err.GetAPIError(s3err.ErrDuplicateTagKey)
+		}
+
+		tagset[key] = value
+	}
+
+	return tagset, nil
+}
+
 // tag component (key/value) name rule regexp
 // https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_Tag.html
 var validTagComponent = regexp.MustCompile(`^([\p{L}\p{Z}\p{N}_.:/=+\-@]*)$`)

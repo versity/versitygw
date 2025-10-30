@@ -177,7 +177,21 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		meta[string(keyBucketLock)] = backend.GetPtrFromString(encodeBytes(defaultLockParsed))
 	}
 
-	_, err := az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
+	tagging, err := backend.ParseCreateBucketTags(input.CreateBucketConfiguration.Tags)
+	if err != nil {
+		return err
+	}
+
+	if tagging != nil {
+		tags, err := json.Marshal(tagging)
+		if err != nil {
+			return fmt.Errorf("marshal tags: %w", err)
+		}
+
+		meta[string(keyTags)] = backend.GetPtrFromString(encodeBytes(tags))
+	}
+
+	_, err = az.client.CreateContainer(ctx, *input.Bucket, &container.CreateOptions{Metadata: meta})
 	if errors.Is(s3err.GetAPIError(s3err.ErrBucketAlreadyExists), azureErrToS3Err(err)) {
 		aclBytes, err := az.getContainerMetaData(ctx, *input.Bucket, string(keyAclCapital))
 		if err != nil {
