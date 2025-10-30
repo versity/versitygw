@@ -61,16 +61,24 @@ get_element_text() {
     return 1
   fi
 
-  if ! build_xpath_string "${@:2}"; then
+  if ! build_xpath_string_for_element "${@:2}"; then
     log 2 "error building XPath search string"
     return 1
   fi
 
   log 5 "data: $(cat "$1")"
-  log 5 "xml data: $(grep '<[^/][^ >]*>' "$1")"
-  if ! xml_val=$(grep '<[^/][^ >]*>' "$1" | xmllint --xpath "$xpath" - 2>&1); then
-    log 2 "error getting XML value matching $xpath: $xml_val (file data: $(cat "$1"))"
+  log 5 "xpath: $xpath"
+  xml_data="$(grep '<[^/][^ >]*>' "$1")"
+  log 5 "XML data: $xml_data"
+  log 5 "result: $(echo -n "$xml_data" | xmllint --xpath "boolean($xpath)" - 2>&1)"
+  result=$(echo -n "$xml_data" | xmllint --xpath "boolean($xpath)" - 2>&1)
+  if [ "$result" == "false" ]; then
+    log 2 "element matching '$xpath' doesn't exist"
     return 1
+  fi
+  if ! xml_val=$(echo -n "$xml_data" | xmllint --xpath "${xpath}/text()" - 2>/dev/null); then
+    echo ""
+    return 0
   fi
   echo "$xml_val"
 }
@@ -163,4 +171,19 @@ get_xml_data() {
          /<\/[^>]+>/{lastline=NR}
          END{exit}')
   echo -n "$truncated" > "$2"
+}
+
+check_error_parameter() {
+  if ! check_param_count_v2 "data file, XML parameter, expected value" 3 $#; then
+    return 1
+  fi
+  if ! value=$(get_element_text "$1" "Error" "$2" 2>&1); then
+    log 2 "error getting argument name: $value"
+    return 1
+  fi
+  unescaped_value="$(xmlstarlet unesc "$value")"
+  if [ "$unescaped_value" != "$3" ]; then
+    log 2 "expected '$3', was '$unescaped_value'"
+    return 1
+  fi
 }

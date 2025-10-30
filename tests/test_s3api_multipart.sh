@@ -25,11 +25,11 @@ source ./tests/commands/put_object.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/head_object/head_object_s3api.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_multipart.sh
 source ./tests/util/util_multipart_abort.sh
 source ./tests/util/util_multipart_before_completion.sh
-source ./tests/util/util_tags.sh
 
 export RUN_USERS=true
 

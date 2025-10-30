@@ -48,6 +48,27 @@ send_via_openssl_and_check_code() {
   echo "$result"
 }
 
+send_via_openssl_and_check_code_header() {
+  if ! check_param_count_v2 "command file, expected code, header key, expected value" 4 $#; then
+    return 1
+  fi
+  if ! send_via_openssl_and_check_code "$1" "$2"; then
+    log 2 "error sending via openssl and checking code"
+    return 1
+  fi
+  header_line="$(echo "$result" | grep "$3")"
+  if [ "$header_line" == "" ]; then
+    log 2 "header key '$3' not found in header data"
+    return 1
+  fi
+  header_value="$(echo "$header_line" | awk '{print $2}' | tr -d '\r')"
+  if [ "$header_value" != "$4" ]; then
+    log 2 "expected header value of '$4', was '$header_value'"
+    return 1
+  fi
+  return 0
+}
+
 send_via_openssl_check_code_error_contains() {
   if ! check_param_count_v2 "command file, expected code, error, message" 4 $#; then
     return 1
@@ -97,8 +118,8 @@ send_openssl_go_command_expect_error() {
   if ! check_param_count_gt "expected HTTP code, expected error code, expected message, params" 4 $#; then
     return 1
   fi
-  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
-    log 2 "error sending go command and checking error"
+  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}" 2>&1); then
+    log 2 "error sending go command and checking error: $result"
     return 1
   fi
   if ! send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then
@@ -118,6 +139,21 @@ send_openssl_go_command() {
   fi
   if ! result=$(send_via_openssl_and_check_code "$TEST_FILE_FOLDER/openssl_command.txt" "$1" 2>&1); then
     log 2 "error sending via openssl and checking code: $result"
+    return 1
+  fi
+  return 0
+}
+
+send_openssl_go_command_check_header() {
+  if ! check_param_count_gt "expected HTTP code, header key, value, params" 4 $#; then
+    return 1
+  fi
+  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
+    log 2 "error sending go command and checking error"
+    return 1
+  fi
+  if ! send_via_openssl_and_check_code_header "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then
+    log 2 "error sending command, checking code and header value"
     return 1
   fi
   return 0

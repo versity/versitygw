@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/versity/versitygw/tests/rest_scripts/command"
@@ -12,6 +13,11 @@ import (
 const (
 	CURL    = "curl"
 	OPENSSL = "openssl"
+)
+
+const (
+	PutBucketTagging = "putBucketTagging"
+	PutObject        = "putObject"
 )
 
 var method *string
@@ -39,6 +45,20 @@ var filePath *string
 var client *string
 var customHostParam *string
 var customHostParamSet bool = false
+var commandType *string
+var checksumType *string
+
+type arrayFlags []string
+
+var tagCount *int
+var tagKeys arrayFlags
+var tagValues arrayFlags
+
+var payloadType *string
+var chunkSize *int
+var contentType *string
+
+var omitTrailer *bool
 
 type restParams map[string]string
 
@@ -52,12 +72,19 @@ func (r *restParams) Set(value string) error {
 	for _, pair := range pairs {
 		kv := strings.SplitN(pair, ":", 2)
 		if len(kv) != 2 {
-		}
-		if len(kv) != 2 {
 			return fmt.Errorf("invalid key-value pair: %s", pair)
 		}
 		(*r)[kv[0]] = kv[1]
 	}
+	return nil
+}
+
+func (a *arrayFlags) String() string {
+	return fmt.Sprintf("%v", *a)
+}
+
+func (a *arrayFlags) Set(value string) error {
+	*a = append(*a, value)
 	return nil
 }
 
@@ -66,7 +93,7 @@ func main() {
 		log.Fatalf("Error checking flags: %v", err)
 	}
 
-	s3Command := &command.S3Command{
+	baseCommand := &command.S3Command{
 		Method:                *method,
 		Url:                   *url,
 		BucketName:            *bucketName,
@@ -90,22 +117,60 @@ func main() {
 		FilePath:              *filePath,
 		CustomHostParam:       *customHostParam,
 		CustomHostParamSet:    customHostParamSet,
+		PayloadType:           *payloadType,
+		ChunkSize:             *chunkSize,
+		ChecksumType:          *checksumType,
+		OmitTrailer:           *omitTrailer,
 	}
+
+	s3Command, err := getS3CommandType(baseCommand)
+	if err != nil {
+		logger.LogFatal("Error getting command subtype: %v", err)
+	}
+	if err := buildCommand(s3Command); err != nil {
+		logger.LogFatal("Error building command: %v", err)
+	}
+}
+
+func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverter, error) {
+	var s3Command command.S3CommandConverter
+	var err error
+	switch *commandType {
+	case PutBucketTagging:
+		fields := command.PutBucketTaggingFields{
+			TagCount:  *tagCount,
+			TagKeys:   tagKeys,
+			TagValues: tagValues,
+		}
+		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
+		}
+	case PutObject:
+		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
+		}
+	default:
+		s3Command = baseCommand
+	}
+	return s3Command, nil
+}
+
+func buildCommand(s3Command command.S3CommandConverter) error {
 	switch *client {
 	case CURL:
 		curlShellCommand, err := s3Command.CurlShellCommand()
 		if err != nil {
-			log.Fatalf("Error generating curl command: %v", err)
+			return fmt.Errorf("error generating curl command: %w", err)
 		}
 		fmt.Println(curlShellCommand)
 	case OPENSSL:
 		if err := s3Command.OpenSSLCommand(); err != nil {
-			log.Fatalf("Error generating and writing openssl command: %v", err)
+			return fmt.Errorf("error generating and writing openssl command: %w", err)
 		}
 	default:
-		log.Fatalln("Invalid client type: ", *client)
+		return errors.New("Invalid client type: " + *client)
 	}
-
+	return nil
 }
 
 func checkFlags() error {
@@ -119,6 +184,7 @@ func checkFlags() error {
 	awsRegion = flag.String("awsRegion", "us-east-1", "AWS region")
 	serviceName = flag.String("serviceName", "s3", "Service name")
 	logger.Debug = flag.Bool("debug", false, "Print debug statements")
+	logger.LogFile = flag.String("logFile", "", "Log file, if any")
 	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
 	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
 	incorrectSignature = flag.Bool("incorrectSignature", false, "Simulate an incorrect signature")
@@ -133,6 +199,14 @@ func checkFlags() error {
 	customHostParam = flag.String("customHostParam", "", "Custom host parameter")
 	filePath = flag.String("filePath", "", "Path to write command (stdout if none)")
 	client = flag.String("client", CURL, "Command-line client to use")
+	commandType = flag.String("commandType", "", "Command template to use, if any")
+	tagCount = flag.Int("tagCount", 0, "Autogenerate this amount of tags for commands with tags")
+	payloadType = flag.String("payloadType", "", "Payload type")
+	chunkSize = flag.Int("chunkSize", 0, "Chunk size for chunked uploads (0 for non-chunked upload)")
+	checksumType = flag.String("checksumType", "", "Checksum type for additional or trailing checksum")
+	omitTrailer = flag.Bool("omitTrailer", false, "Omit final trailer")
+	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
+	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	// Parse the flags
 	flag.Parse()
 
