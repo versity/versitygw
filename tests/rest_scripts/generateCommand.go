@@ -58,6 +58,8 @@ var payloadType *string
 var chunkSize *int
 var contentType *string
 
+var omitTrailer *bool
+
 type restParams map[string]string
 
 func (r *restParams) String() string {
@@ -118,6 +120,7 @@ func main() {
 		PayloadType:           *payloadType,
 		ChunkSize:             *chunkSize,
 		ChecksumType:          *checksumType,
+		OmitTrailer:           *omitTrailer,
 	}
 
 	s3Command, err := getS3CommandType(baseCommand)
@@ -201,6 +204,7 @@ func checkFlags() error {
 	payloadType = flag.String("payloadType", "", "Payload type")
 	chunkSize = flag.Int("chunkSize", 0, "Chunk size for chunked uploads (0 for non-chunked upload)")
 	checksumType = flag.String("checksumType", "", "Checksum type for additional or trailing checksum")
+	omitTrailer = flag.Bool("omitTrailer", false, "Omit final trailer")
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	// Parse the flags

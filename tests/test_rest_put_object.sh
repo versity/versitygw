@@ -278,7 +278,11 @@ export RUN_USERS=true
 
   run send_openssl_go_command_expect_error "400" "MalformedTrailerError" "The request contained trailing data that was not well-formed" \
     "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
-    "-debug" "-logFile" "tagging.log" \
+    "-debug" "-logFile" "tagging.log" "-omitTrailer" \
     "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
   assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - 200 header returns correct checksum type" {
+
 }

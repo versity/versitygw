@@ -62,6 +62,7 @@ type S3Command struct {
 	PayloadType                  string
 	ChunkSize                    int
 	ChecksumType                 string
+	OmitTrailer                  bool
 
 	currentDateTime      string
 	host                 string
@@ -437,16 +438,13 @@ func (s *S3Command) getOpenSSLChunkedPayload(payload []byte, payloadLength int, 
 		return nil, fmt.Errorf("error adding final segment to payload: %w", err)
 	}
 	chunkedPayload = append(chunkedPayload, segment...)
-	if s.PayloadType == StreamingUnsignedPayloadTrailer || s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer {
-		logger.PrintDebug("adding trailer with checksum")
+	if s.OmitTrailer != true && (s.PayloadType == StreamingUnsignedPayloadTrailer || s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer) {
 		var trailerBytes []byte
 		trailerBytes, err = s.getPayloadTrailer(payload)
-		logger.PrintDebug("after getting trailer")
 		if err != nil {
 			return nil, fmt.Errorf("error getting payload trailer: %w", err)
 		}
 		chunkedPayload = append(chunkedPayload, trailerBytes...)
-		logger.PrintDebug("Trailer addition success")
 	}
 	return chunkedPayload, nil
 }

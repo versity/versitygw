@@ -122,3 +122,7 @@ send_openssl_go_command() {
   fi
   return 0
 }
+
+send_openssl_go_command_check_header() {
+
+}
