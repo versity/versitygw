@@ -1995,3 +1995,8 @@ func processCompositeChecksum(hasher hash.Hash, checksum string) error {
 
 	return nil
 }
+
+type mpinfo struct {
+	uploadId *string
+	parts    []types.CompletedPart
+}
