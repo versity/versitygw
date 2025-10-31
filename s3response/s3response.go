@@ -728,3 +728,8 @@ type LocationConstraint struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
 	Value   string   `xml:",chardata"`
 }
+
+type CreateBucketConfiguration struct {
+	LocationConstraint string
+	TagSet             []types.Tag `xml:"Tags>Tag"`
+}

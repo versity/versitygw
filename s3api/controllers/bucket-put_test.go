@@ -695,6 +695,11 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 		Role:   auth.RoleUser,
 	}
 
+	invLocConstBody, err := xml.Marshal(s3response.CreateBucketConfiguration{
+		LocationConstraint: "us-west-1",
+	})
+	assert.NoError(t, err)
+
 	tests := []struct {
 		name   string
 		input  testInput
@@ -727,6 +732,37 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 					MetaOpts: &MetaOptions{},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidBucketName),
+			},
+		},
+		{
+			name: "malformed body",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+				},
+				body: []byte("invalid_body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
+				},
+				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+		{
+			name: "invalid location constraint",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+					utils.ContextKeyRegion:  "us-east-1",
+				},
+				body: invLocConstBody,
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidLocationConstraint),
 			},
 		},
 		{

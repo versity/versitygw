@@ -533,6 +533,32 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
 	}
 
+	var body s3response.CreateBucketConfiguration
+	if len(ctx.Body()) != 0 {
+		// request body is optional for CreateBucket
+		err := xml.Unmarshal(ctx.Body(), &body)
+		if err != nil {
+			debuglogger.Logf("failed to parse the request body: %v", err)
+			return &Response{
+				MetaOpts: &MetaOptions{
+					BucketOwner: acct.Access,
+				},
+			}, s3err.GetAPIError(s3err.ErrMalformedXML)
+		}
+
+		if body.LocationConstraint != "" {
+			region := utils.ContextKeyRegion.Get(ctx).(string)
+			if body.LocationConstraint != region {
+				debuglogger.Logf("invalid location constraint: %s", body.LocationConstraint)
+				return &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: acct.Access,
+					},
+				}, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint)
+			}
+		}
+	}
+
 	defACL := auth.ACL{
 		Owner: acct.Access,
 	}
@@ -562,6 +588,9 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:                     &bucket,
 		ObjectOwnership:            objectOwnership,
 		ObjectLockEnabledForBucket: &lockEnabled,
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{
+			Tags: body.TagSet,
+		},
 	}, updAcl)
 	return &Response{
 		MetaOpts: &MetaOptions{

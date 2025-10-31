@@ -173,6 +173,7 @@ const (
 	ErrMissingCORSOrigin
 	ErrCORSIsNotEnabled
 	ErrNotModified
+	ErrInvalidLocationConstraint
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -761,6 +762,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "NotModified",
 		Description:    "Not Modified",
 		HTTPStatusCode: http.StatusNotModified,
+	},
+	ErrInvalidLocationConstraint: {
+		Code:           "InvalidLocationConstraint",
+		Description:    "The specified location-constraint is not valid",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// non aws errors

@@ -381,7 +381,12 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
-	err := os.Mkdir(bucket, p.newDirPerm)
+	tagging, err := backend.ParseCreateBucketTags(input.CreateBucketConfiguration.Tags)
+	if err != nil {
+		return err
+	}
+
+	err = os.Mkdir(bucket, p.newDirPerm)
 	if err != nil && os.IsExist(err) {
 		aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
 		if err != nil {
@@ -419,6 +424,16 @@ func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, a
 	err = p.meta.StoreAttribute(nil, bucket, "", ownershipkey, []byte(input.ObjectOwnership))
 	if err != nil {
 		return fmt.Errorf("set ownership: %w", err)
+	}
+	if tagging != nil {
+		tags, err := json.Marshal(tagging)
+		if err != nil {
+			return fmt.Errorf("marshal tags: %w", err)
+		}
+		err = p.meta.StoreAttribute(nil, bucket, "", tagHdr, tags)
+		if err != nil {
+			return fmt.Errorf("set tags: %w", err)
+		}
 	}
 
 	if input.ObjectLockEnabledForBucket != nil && *input.ObjectLockEnabledForBucket {

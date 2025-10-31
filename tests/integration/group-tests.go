@@ -80,6 +80,11 @@ func TestCreateBucket(ts *TestState) {
 	ts.Run(CreateBucket_non_default_acl)
 	ts.Run(CreateDeleteBucket_success)
 	ts.Run(CreateBucket_default_object_lock)
+	ts.Run(CreateBucket_invalid_location_constraint)
+	ts.Run(CreateBucket_long_tags)
+	ts.Run(CreateBucket_invalid_tags)
+	ts.Run(CreateBucket_duplicate_keys)
+	ts.Run(CreateBucket_tag_count_limit)
 }
 
 func TestHeadBucket(ts *TestState) {
@@ -1135,6 +1140,11 @@ func GetIntTests() IntTests {
 		"CreateBucket_default_acl":                                                CreateBucket_default_acl,
 		"CreateBucket_non_default_acl":                                            CreateBucket_non_default_acl,
 		"CreateBucket_default_object_lock":                                        CreateBucket_default_object_lock,
+		"CreateBucket_invalid_location_constraint":                                CreateBucket_invalid_location_constraint,
+		"CreateBucket_long_tags":                                                  CreateBucket_long_tags,
+		"CreateBucket_invalid_tags":                                               CreateBucket_invalid_tags,
+		"CreateBucket_duplicate_keys":                                             CreateBucket_duplicate_keys,
+		"CreateBucket_tag_count_limit":                                            CreateBucket_tag_count_limit,
 		"HeadBucket_non_existing_bucket":                                          HeadBucket_non_existing_bucket,
 		"HeadBucket_success":                                                      HeadBucket_success,
 		"ListBuckets_as_user":                                                     ListBuckets_as_user,

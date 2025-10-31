@@ -265,7 +265,8 @@ func actionHandler(s *S3Conf, testName string, handler func(s3client *s3.Client,
 func actionHandlerNoSetup(s *S3Conf, testName string, handler func(s3client *s3.Client, bucket string) error, _ ...setupOpt) error {
 	runF(testName)
 	client := s.GetClient()
-	handlerErr := handler(client, "")
+	bucket := getBucketName()
+	handlerErr := handler(client, bucket)
 	if handlerErr != nil {
 		failF("%v: %v", testName, handlerErr)
 	}
