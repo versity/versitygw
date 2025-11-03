@@ -87,6 +87,7 @@ const (
 	ErrInvalidPartOrder
 	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
+	ErrNonEmptyRequestBody
 	ErrInvalidCopyDest
 	ErrInvalidCopySourceRange
 	ErrInvalidCopySourceBucket
@@ -317,6 +318,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InternalError",
 		Description:    "We encountered an internal error, please try again.",
 		HTTPStatusCode: http.StatusInternalServerError,
+	},
+	ErrNonEmptyRequestBody: {
+		Code:           "InvalidRequest",
+		Description:    "The request included a body. Requests of this type must not include a non-empty body.",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPart: {
 		Code:           "InvalidPart",
