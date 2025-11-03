@@ -490,3 +490,16 @@ func CreateBucket_tag_count_limit(s *S3Conf) error {
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingLimited))
 	})
 }
+
+func CreateBucket_invalid_canned_acl(s *S3Conf) error {
+	testName := "CreateBucket_invalid_canned_acl"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACL("invalid_acl"),
+		})
+		cancel()
+		return checkSdkApiErr(err, "InvalidArgument")
+	})
+}

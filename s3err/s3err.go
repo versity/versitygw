@@ -174,6 +174,7 @@ const (
 	ErrCORSIsNotEnabled
 	ErrNotModified
 	ErrInvalidLocationConstraint
+	ErrInvalidArgument
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -766,6 +767,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidLocationConstraint: {
 		Code:           "InvalidLocationConstraint",
 		Description:    "The specified location-constraint is not valid",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidArgument: {
+		Code:           "InvalidArgument",
+		Description:    "",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 
