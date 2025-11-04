@@ -1085,7 +1085,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	}, nil
 }
 
-func (az *Azure) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
+func (az *Azure) PutObjectTagging(ctx context.Context, bucket, object, _ string, tags map[string]string) error {
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return err
@@ -1099,7 +1099,7 @@ func (az *Azure) PutObjectTagging(ctx context.Context, bucket, object string, ta
 	return nil
 }
 
-func (az *Azure) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+func (az *Azure) GetObjectTagging(ctx context.Context, bucket, object, _ string) (map[string]string, error) {
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return nil, err
@@ -1113,7 +1113,7 @@ func (az *Azure) GetObjectTagging(ctx context.Context, bucket, object string) (m
 	return parseAzTags(tags.BlobTagSet), nil
 }
 
-func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+func (az *Azure) DeleteObjectTagging(ctx context.Context, bucket, object, _ string) error {
 	client, err := az.getBlobClient(bucket, object)
 	if err != nil {
 		return err

@@ -1313,7 +1313,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 
 	// set object tagging
 	if tags != nil {
-		err := p.PutObjectTagging(ctx, bucket, filepath.Join(objdir, uploadID), tags)
+		err := p.PutObjectTagging(ctx, bucket, filepath.Join(objdir, uploadID), "", tags)
 		if err != nil {
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
@@ -3149,7 +3149,7 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 
 	// Set object tagging
 	if tags != nil {
-		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, tags)
+		err := p.PutObjectTagging(ctx, *po.Bucket, *po.Key, "", tags)
 		if errors.Is(err, fs.ErrNotExist) {
 			return s3response.PutObjectOutput{
 				ETag:      etag,
@@ -3722,7 +3722,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 		objMeta := p.loadObjectMetaData(nil, bucket, object, &fid, userMetaData)
 
 		var tagCount *int32
-		tags, err := p.getAttrTags(bucket, object)
+		tags, err := p.getAttrTags(bucket, object, versionId)
 		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
 			return nil, err
 		}
@@ -3802,7 +3802,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	objMeta := p.loadObjectMetaData(f, bucket, object, &fi, userMetaData)
 
 	var tagCount *int32
-	tags, err := p.getAttrTags(bucket, object)
+	tags, err := p.getAttrTags(bucket, object, versionId)
 	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
 		return nil, err
 	}
@@ -4319,7 +4319,7 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 				return s3response.CopyObjectOutput{}, err
 			}
 
-			err = p.PutObjectTagging(ctx, dstBucket, dstObject, tags)
+			err = p.PutObjectTagging(ctx, dstBucket, dstObject, "", tags)
 			if err != nil {
 				return s3response.CopyObjectOutput{}, err
 			}
@@ -4742,7 +4742,7 @@ func (p *Posix) GetBucketTagging(_ context.Context, bucket string) (map[string]s
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	tags, err := p.getAttrTags(bucket, "")
+	tags, err := p.getAttrTags(bucket, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -4757,7 +4757,7 @@ func (p *Posix) DeleteBucketTagging(ctx context.Context, bucket string) error {
 	return p.PutBucketTagging(ctx, bucket, nil)
 }
 
-func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
+func (p *Posix) GetObjectTagging(_ context.Context, bucket, object, versionId string) (map[string]string, error) {
 	if !p.isBucketValid(bucket) {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -4769,13 +4769,35 @@ func (p *Posix) GetObjectTagging(_ context.Context, bucket, object string) (map[
 		return nil, fmt.Errorf("stat bucket: %w", err)
 	}
 
-	return p.getAttrTags(bucket, object)
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return nil, fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
+	return p.getAttrTags(bucket, object, versionId)
 }
 
-func (p *Posix) getAttrTags(bucket, object string) (map[string]string, error) {
+func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string, error) {
 	tags := make(map[string]string)
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, tagHdr)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if versionId != "" {
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
+		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
@@ -4793,7 +4815,7 @@ func (p *Posix) getAttrTags(bucket, object string) (map[string]string, error) {
 	return tags, nil
 }
 
-func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
+func (p *Posix) PutObjectTagging(_ context.Context, bucket, object, versionId string, tags map[string]string) error {
 	if !p.isBucketValid(bucket) {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -4805,9 +4827,31 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 		return fmt.Errorf("stat bucket: %w", err)
 	}
 
+	if versionId != "" {
+		if !p.versioningEnabled() {
+			//TODO: Maybe we need to return our custom error here?
+			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+		}
+		vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return s3err.GetAPIError(s3err.ErrNoSuchKey)
+		}
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return fmt.Errorf("get obj versionId: %w", err)
+		}
+
+		if string(vId) != versionId {
+			bucket = filepath.Join(p.versioningDir, bucket)
+			object = filepath.Join(genObjVersionKey(object), versionId)
+		}
+	}
+
 	if tags == nil {
 		err = p.meta.DeleteAttribute(bucket, object, tagHdr)
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			if versionId != "" {
+				return s3err.GetAPIError(s3err.ErrNoSuchVersion)
+			}
 			return s3err.GetAPIError(s3err.ErrNoSuchKey)
 		}
 		if errors.Is(err, meta.ErrNoSuchKey) {
@@ -4826,6 +4870,9 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 
 	err = p.meta.StoreAttribute(nil, bucket, object, tagHdr, b)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if versionId != "" {
+			return s3err.GetAPIError(s3err.ErrNoSuchVersion)
+		}
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if err != nil {
@@ -4835,11 +4882,11 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object string, tags 
 	return nil
 }
 
-func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+func (p *Posix) DeleteObjectTagging(ctx context.Context, bucket, object, versionId string) error {
 	if !p.isBucketValid(bucket) {
 		return s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
-	return p.PutObjectTagging(ctx, bucket, object, nil)
+	return p.PutObjectTagging(ctx, bucket, object, versionId, nil)
 }
 
 func (p *Posix) PutBucketPolicy(ctx context.Context, bucket string, policy []byte) error {

@@ -81,7 +81,7 @@ func TestS3ApiController_DeleteObjectTagging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
-				DeleteObjectTaggingFunc: func(contextMoqParam context.Context, bucket, object string) error {
+				DeleteObjectTaggingFunc: func(contextMoqParam context.Context, bucket, object, versionId string) error {
 					return tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {

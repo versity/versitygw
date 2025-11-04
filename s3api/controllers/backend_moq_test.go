@@ -59,7 +59,7 @@ var _ backend.Backend = &BackendMock{}
 //			DeleteObjectFunc: func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error) {
 //				panic("mock out the DeleteObject method")
 //			},
-//			DeleteObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string) error {
+//			DeleteObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) error {
 //				panic("mock out the DeleteObjectTagging method")
 //			},
 //			DeleteObjectsFunc: func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error) {
@@ -101,7 +101,7 @@ var _ backend.Backend = &BackendMock{}
 //			GetObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) ([]byte, error) {
 //				panic("mock out the GetObjectRetention method")
 //			},
-//			GetObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error) {
+//			GetObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string) (map[string]string, error) {
 //				panic("mock out the GetObjectTagging method")
 //			},
 //			HeadBucketFunc: func(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error) {
@@ -164,7 +164,7 @@ var _ backend.Backend = &BackendMock{}
 //			PutObjectRetentionFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error {
 //				panic("mock out the PutObjectRetention method")
 //			},
-//			PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
+//			PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket string, object string, versionId string, tags map[string]string) error {
 //				panic("mock out the PutObjectTagging method")
 //			},
 //			RestoreObjectFunc: func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error {
@@ -229,7 +229,7 @@ type BackendMock struct {
 	DeleteObjectFunc func(contextMoqParam context.Context, deleteObjectInput *s3.DeleteObjectInput) (*s3.DeleteObjectOutput, error)
 
 	// DeleteObjectTaggingFunc mocks the DeleteObjectTagging method.
-	DeleteObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string) error
+	DeleteObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) error
 
 	// DeleteObjectsFunc mocks the DeleteObjects method.
 	DeleteObjectsFunc func(contextMoqParam context.Context, deleteObjectsInput *s3.DeleteObjectsInput) (s3response.DeleteResult, error)
@@ -271,7 +271,7 @@ type BackendMock struct {
 	GetObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) ([]byte, error)
 
 	// GetObjectTaggingFunc mocks the GetObjectTagging method.
-	GetObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string) (map[string]string, error)
+	GetObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, versionId string) (map[string]string, error)
 
 	// HeadBucketFunc mocks the HeadBucket method.
 	HeadBucketFunc func(contextMoqParam context.Context, headBucketInput *s3.HeadBucketInput) (*s3.HeadBucketOutput, error)
@@ -334,7 +334,7 @@ type BackendMock struct {
 	PutObjectRetentionFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, retention []byte) error
 
 	// PutObjectTaggingFunc mocks the PutObjectTagging method.
-	PutObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error
+	PutObjectTaggingFunc func(contextMoqParam context.Context, bucket string, object string, versionId string, tags map[string]string) error
 
 	// RestoreObjectFunc mocks the RestoreObject method.
 	RestoreObjectFunc func(contextMoqParam context.Context, restoreObjectInput *s3.RestoreObjectInput) error
@@ -452,6 +452,8 @@ type BackendMock struct {
 			Bucket string
 			// Object is the object argument value.
 			Object string
+			// VersionId is the versionId argument value.
+			VersionId string
 		}
 		// DeleteObjects holds details about calls to the DeleteObjects method.
 		DeleteObjects []struct {
@@ -560,6 +562,8 @@ type BackendMock struct {
 			Bucket string
 			// Object is the object argument value.
 			Object string
+			// VersionId is the versionId argument value.
+			VersionId string
 		}
 		// HeadBucket holds details about calls to the HeadBucket method.
 		HeadBucket []struct {
@@ -733,6 +737,8 @@ type BackendMock struct {
 			Bucket string
 			// Object is the object argument value.
 			Object string
+			// VersionId is the versionId argument value.
+			VersionId string
 			// Tags is the tags argument value.
 			Tags map[string]string
 		}
@@ -1268,7 +1274,7 @@ func (mock *BackendMock) DeleteObjectCalls() []struct {
 }
 
 // DeleteObjectTagging calls DeleteObjectTaggingFunc.
-func (mock *BackendMock) DeleteObjectTagging(contextMoqParam context.Context, bucket string, object string) error {
+func (mock *BackendMock) DeleteObjectTagging(contextMoqParam context.Context, bucket string, object string, versionId string) error {
 	if mock.DeleteObjectTaggingFunc == nil {
 		panic("BackendMock.DeleteObjectTaggingFunc: method is nil but Backend.DeleteObjectTagging was just called")
 	}
@@ -1276,15 +1282,17 @@ func (mock *BackendMock) DeleteObjectTagging(contextMoqParam context.Context, bu
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
 		Object:          object,
+		VersionId:       versionId,
 	}
 	mock.lockDeleteObjectTagging.Lock()
 	mock.calls.DeleteObjectTagging = append(mock.calls.DeleteObjectTagging, callInfo)
 	mock.lockDeleteObjectTagging.Unlock()
-	return mock.DeleteObjectTaggingFunc(contextMoqParam, bucket, object)
+	return mock.DeleteObjectTaggingFunc(contextMoqParam, bucket, object, versionId)
 }
 
 // DeleteObjectTaggingCalls gets all the calls that were made to DeleteObjectTagging.
@@ -1295,11 +1303,13 @@ func (mock *BackendMock) DeleteObjectTaggingCalls() []struct {
 	ContextMoqParam context.Context
 	Bucket          string
 	Object          string
+	VersionId       string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 	}
 	mock.lockDeleteObjectTagging.RLock()
 	calls = mock.calls.DeleteObjectTagging
@@ -1792,7 +1802,7 @@ func (mock *BackendMock) GetObjectRetentionCalls() []struct {
 }
 
 // GetObjectTagging calls GetObjectTaggingFunc.
-func (mock *BackendMock) GetObjectTagging(contextMoqParam context.Context, bucket string, object string) (map[string]string, error) {
+func (mock *BackendMock) GetObjectTagging(contextMoqParam context.Context, bucket string, object string, versionId string) (map[string]string, error) {
 	if mock.GetObjectTaggingFunc == nil {
 		panic("BackendMock.GetObjectTaggingFunc: method is nil but Backend.GetObjectTagging was just called")
 	}
@@ -1800,15 +1810,17 @@ func (mock *BackendMock) GetObjectTagging(contextMoqParam context.Context, bucke
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
 		Object:          object,
+		VersionId:       versionId,
 	}
 	mock.lockGetObjectTagging.Lock()
 	mock.calls.GetObjectTagging = append(mock.calls.GetObjectTagging, callInfo)
 	mock.lockGetObjectTagging.Unlock()
-	return mock.GetObjectTaggingFunc(contextMoqParam, bucket, object)
+	return mock.GetObjectTaggingFunc(contextMoqParam, bucket, object, versionId)
 }
 
 // GetObjectTaggingCalls gets all the calls that were made to GetObjectTagging.
@@ -1819,11 +1831,13 @@ func (mock *BackendMock) GetObjectTaggingCalls() []struct {
 	ContextMoqParam context.Context
 	Bucket          string
 	Object          string
+	VersionId       string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 	}
 	mock.lockGetObjectTagging.RLock()
 	calls = mock.calls.GetObjectTagging
@@ -2600,7 +2614,7 @@ func (mock *BackendMock) PutObjectRetentionCalls() []struct {
 }
 
 // PutObjectTagging calls PutObjectTaggingFunc.
-func (mock *BackendMock) PutObjectTagging(contextMoqParam context.Context, bucket string, object string, tags map[string]string) error {
+func (mock *BackendMock) PutObjectTagging(contextMoqParam context.Context, bucket string, object string, versionId string, tags map[string]string) error {
 	if mock.PutObjectTaggingFunc == nil {
 		panic("BackendMock.PutObjectTaggingFunc: method is nil but Backend.PutObjectTagging was just called")
 	}
@@ -2608,17 +2622,19 @@ func (mock *BackendMock) PutObjectTagging(contextMoqParam context.Context, bucke
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 		Tags            map[string]string
 	}{
 		ContextMoqParam: contextMoqParam,
 		Bucket:          bucket,
 		Object:          object,
+		VersionId:       versionId,
 		Tags:            tags,
 	}
 	mock.lockPutObjectTagging.Lock()
 	mock.calls.PutObjectTagging = append(mock.calls.PutObjectTagging, callInfo)
 	mock.lockPutObjectTagging.Unlock()
-	return mock.PutObjectTaggingFunc(contextMoqParam, bucket, object, tags)
+	return mock.PutObjectTaggingFunc(contextMoqParam, bucket, object, versionId, tags)
 }
 
 // PutObjectTaggingCalls gets all the calls that were made to PutObjectTagging.
@@ -2629,12 +2645,14 @@ func (mock *BackendMock) PutObjectTaggingCalls() []struct {
 	ContextMoqParam context.Context
 	Bucket          string
 	Object          string
+	VersionId       string
 	Tags            map[string]string
 } {
 	var calls []struct {
 		ContextMoqParam context.Context
 		Bucket          string
 		Object          string
+		VersionId       string
 		Tags            map[string]string
 	}
 	mock.lockPutObjectTagging.RLock()

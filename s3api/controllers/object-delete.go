@@ -30,6 +30,7 @@ import (
 func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
+	versionId := ctx.Query("versionId")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
@@ -55,7 +56,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
-	err = c.be.DeleteObjectTagging(ctx.Context(), bucket, key)
+	err = c.be.DeleteObjectTagging(ctx.Context(), bucket, key, versionId)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			Status:      http.StatusNoContent,

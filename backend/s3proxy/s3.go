@@ -1445,7 +1445,7 @@ func (s *S3Proxy) PutBucketAcl(ctx context.Context, bucket string, data []byte) 
 	return handleError(s.putMetaBucketObj(ctx, bucket, data, metaPrefixAcl))
 }
 
-func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, tags map[string]string) error {
+func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object, versionId string, tags map[string]string) error {
 	if bucket == s.metaBucket {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
@@ -1460,20 +1460,22 @@ func (s *S3Proxy) PutObjectTagging(ctx context.Context, bucket, object string, t
 	}
 
 	_, err := s.client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
-		Bucket:  &bucket,
-		Key:     &object,
-		Tagging: tagging,
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
+		Tagging:   tagging,
 	})
 	return handleError(err)
 }
 
-func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (map[string]string, error) {
+func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object, versionId string) (map[string]string, error) {
 	if bucket == s.metaBucket {
 		return nil, s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 	output, err := s.client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
-		Bucket: &bucket,
-		Key:    &object,
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
 	})
 	if err != nil {
 		return nil, handleError(err)
@@ -1487,13 +1489,14 @@ func (s *S3Proxy) GetObjectTagging(ctx context.Context, bucket, object string) (
 	return tags, nil
 }
 
-func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object string) error {
+func (s *S3Proxy) DeleteObjectTagging(ctx context.Context, bucket, object, versionId string) error {
 	if bucket == s.metaBucket {
 		return s3err.GetAPIError(s3err.ErrAccessDenied)
 	}
 	_, err := s.client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
-		Bucket: &bucket,
-		Key:    &object,
+		Bucket:    &bucket,
+		Key:       &object,
+		VersionId: &versionId,
 	})
 	return handleError(err)
 }
