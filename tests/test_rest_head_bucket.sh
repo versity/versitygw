@@ -51,6 +51,11 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+@test "REST - HeadBucket - doesn't exist" {
+  run head_bucket_rest "$BUCKET_ONE_NAME-$(uuidgen)"
+  assert_failure 1
+}
+
 @test "REST - HeadBucket - expected owner success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

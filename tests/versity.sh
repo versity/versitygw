@@ -81,7 +81,6 @@ run_versity_app_posix() {
   if [ -n "$PORT" ]; then
     base_command+=(--port ":$PORT")
   fi
-  # TODO remove or change
   base_command+=(posix)
   if [ -n "$VERSIONING_DIR" ]; then
     base_command+=(--versioning-dir "$VERSIONING_DIR")
