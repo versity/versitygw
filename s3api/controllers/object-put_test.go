@@ -600,6 +600,27 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 			},
 		},
 		{
+			name: "non empty request body",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
+				queries: map[string]string{
+					"partNumber": "2",
+				},
+				body: []byte("body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
+			},
+		},
+		{
 			name: "invalid part number",
 			input: testInput{
 				locals: defaultLocals,
@@ -696,6 +717,7 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 					locals:  tt.input.locals,
 					headers: tt.input.headers,
 					queries: tt.input.queries,
+					body:    tt.input.body,
 				})
 		})
 	}
@@ -815,6 +837,24 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket),
+			},
+		},
+		{
+			name: "invalid copy source",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+				},
+				body: []byte("body"),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrNonEmptyRequestBody),
 			},
 		},
 		{
@@ -999,6 +1039,7 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 				ctxInputs{
 					locals:  tt.input.locals,
 					headers: tt.input.headers,
+					body:    tt.input.body,
 				})
 		})
 	}
