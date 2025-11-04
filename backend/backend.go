@@ -83,9 +83,9 @@ type Backend interface {
 	DeleteBucketTagging(_ context.Context, bucket string) error
 
 	// object tagging operations
-	GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error)
-	PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error
-	DeleteObjectTagging(_ context.Context, bucket, object string) error
+	GetObjectTagging(_ context.Context, bucket, object, versionId string) (map[string]string, error)
+	PutObjectTagging(_ context.Context, bucket, object, versionId string, tags map[string]string) error
+	DeleteObjectTagging(_ context.Context, bucket, object, versionId string) error
 
 	// object lock operations
 	PutObjectLockConfiguration(_ context.Context, bucket string, config []byte) error
@@ -251,13 +251,13 @@ func (BackendUnsupported) DeleteBucketTagging(_ context.Context, bucket string) 
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 
-func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object string) (map[string]string, error) {
+func (BackendUnsupported) GetObjectTagging(_ context.Context, bucket, object, versionId string) (map[string]string, error) {
 	return nil, s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) PutObjectTagging(_ context.Context, bucket, object string, tags map[string]string) error {
+func (BackendUnsupported) PutObjectTagging(_ context.Context, bucket, object, versionId string, tags map[string]string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
-func (BackendUnsupported) DeleteObjectTagging(_ context.Context, bucket, object string) error {
+func (BackendUnsupported) DeleteObjectTagging(_ context.Context, bucket, object, versionId string) error {
 	return s3err.GetAPIError(s3err.ErrNotImplemented)
 }
 

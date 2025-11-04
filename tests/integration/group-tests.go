@@ -1004,6 +1004,11 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_GetObject_delete_marker_without_versionId)
 	ts.Run(Versioning_GetObject_delete_marker)
 	ts.Run(Versioning_GetObject_null_versionId_obj)
+	// object tagging actions
+	ts.Run(Versioning_PutObjectTagging_non_existing_object_version)
+	ts.Run(Versioning_GetObjectTagging_non_existing_object_version)
+	ts.Run(Versioning_DeleteObjectTagging_non_existing_object_version)
+	ts.Run(Versioning_PutGetDeleteObjectTagging_success)
 	// GetObjectAttributes action
 	ts.Run(Versioning_GetObjectAttributes_object_version)
 	ts.Run(Versioning_GetObjectAttributes_delete_marker)
@@ -1636,6 +1641,10 @@ func GetIntTests() IntTests {
 		"Versioning_GetObject_delete_marker_without_versionId":                    Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                      Versioning_GetObject_delete_marker,
 		"Versioning_GetObject_null_versionId_obj":                                 Versioning_GetObject_null_versionId_obj,
+		"Versioning_PutObjectTagging_non_existing_object_version":                 Versioning_PutObjectTagging_non_existing_object_version,
+		"Versioning_GetObjectTagging_non_existing_object_version":                 Versioning_GetObjectTagging_non_existing_object_version,
+		"Versioning_DeleteObjectTagging_non_existing_object_version":              Versioning_DeleteObjectTagging_non_existing_object_version,
+		"Versioning_PutGetDeleteObjectTagging_success":                            Versioning_PutGetDeleteObjectTagging_success,
 		"Versioning_GetObjectAttributes_object_version":                           Versioning_GetObjectAttributes_object_version,
 		"Versioning_GetObjectAttributes_delete_marker":                            Versioning_GetObjectAttributes_delete_marker,
 		"Versioning_DeleteObject_delete_object_version":                           Versioning_DeleteObject_delete_object_version,

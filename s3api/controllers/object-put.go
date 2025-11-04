@@ -36,6 +36,7 @@ import (
 func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
+	versionId := ctx.Query("versionId")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
@@ -69,7 +70,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutObjectTagging(ctx.Context(), bucket, key, tagging)
+	err = c.be.PutObjectTagging(ctx.Context(), bucket, key, versionId, tagging)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,

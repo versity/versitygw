@@ -115,7 +115,7 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			be := &BackendMock{
-				PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket, object string, tags map[string]string) error {
+				PutObjectTaggingFunc: func(contextMoqParam context.Context, bucket, object, versionId string, tags map[string]string) error {
 					return tt.input.beErr
 				},
 				GetBucketPolicyFunc: func(contextMoqParam context.Context, bucket string) ([]byte, error) {

@@ -35,6 +35,7 @@ import (
 func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
+	versionId := ctx.Query("versionId")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
@@ -59,7 +60,7 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	data, err := c.be.GetObjectTagging(ctx.Context(), bucket, key)
+	data, err := c.be.GetObjectTagging(ctx.Context(), bucket, key, versionId)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

@@ -2682,3 +2682,139 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
+
+func Versioning_PutObjectTagging_non_existing_object_version(s *S3Conf) error {
+	testName := "Versioning_PutObjectTagging_non_existing_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Tagging: &types.Tagging{
+				TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr("value")}},
+			},
+			VersionId: getPtr("01K97XE6PJQ1A4X5TJFDHK4EMC"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_GetObjectTagging_non_existing_object_version(s *S3Conf) error {
+	testName := "Versioning_GetObjectTagging_non_existing_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("01K97XE6PJQ1A4X5TJFDHK4EMC"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_DeleteObjectTagging_non_existing_object_version(s *S3Conf) error {
+	testName := "Versioning_DeleteObjectTagging_non_existing_object_version"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("01K97XE6PJQ1A4X5TJFDHK4EMC"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutGetDeleteObjectTagging_success(s *S3Conf) error {
+	testName := "Versioning_PutGetDeleteObjectTagging_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		versions, err := createObjVersions(s3client, bucket, obj, 5)
+		if err != nil {
+			return err
+		}
+		versionId := versions[2].VersionId
+
+		tagging := types.Tagging{
+			TagSet: []types.Tag{
+				{Key: getPtr("key"), Value: getPtr("value")},
+			},
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			Tagging:   &tagging,
+			VersionId: versionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: versionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+		if !areTagsSame(tagging.TagSet, out.TagSet) {
+			return fmt.Errorf("expected the object version tags to be %v, instead got %v", tagging.TagSet, out.TagSet)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: versionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: versionId,
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
