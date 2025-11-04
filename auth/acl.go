@@ -25,6 +25,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -492,4 +493,15 @@ func UpdateBucketACLOwner(ctx context.Context, be backend.Backend, bucket, newOw
 	}
 
 	return be.DeleteBucketPolicy(ctx, bucket)
+}
+
+// ValidateCannedACL validates bucket canned acl value
+func ValidateCannedACL(acl string) error {
+	switch types.BucketCannedACL(acl) {
+	case types.BucketCannedACLPrivate, types.BucketCannedACLPublicRead, types.BucketCannedACLPublicReadWrite, "":
+		return nil
+	default:
+		debuglogger.Logf("invalid bucket canned acl: %v", acl)
+		return s3err.GetAPIError(s3err.ErrInvalidArgument)
+	}
 }

@@ -85,6 +85,7 @@ func TestCreateBucket(ts *TestState) {
 	ts.Run(CreateBucket_invalid_tags)
 	ts.Run(CreateBucket_duplicate_keys)
 	ts.Run(CreateBucket_tag_count_limit)
+	ts.Run(CreateBucket_invalid_canned_acl)
 }
 
 func TestHeadBucket(ts *TestState) {
@@ -509,6 +510,7 @@ func TestPutBucketAcl(ts *TestState) {
 	ts.Run(PutBucketAcl_non_existing_bucket)
 	ts.Run(PutBucketAcl_disabled)
 	ts.Run(PutBucketAcl_none_of_the_options_specified)
+	ts.Run(PutBucketAcl_invalid_canned_acl)
 	ts.Run(PutBucketAcl_invalid_acl_canned_and_acp)
 	ts.Run(PutBucketAcl_invalid_acl_canned_and_grants)
 	ts.Run(PutBucketAcl_invalid_acl_acp_and_grants)
@@ -1145,6 +1147,7 @@ func GetIntTests() IntTests {
 		"CreateBucket_invalid_tags":                                               CreateBucket_invalid_tags,
 		"CreateBucket_duplicate_keys":                                             CreateBucket_duplicate_keys,
 		"CreateBucket_tag_count_limit":                                            CreateBucket_tag_count_limit,
+		"CreateBucket_invalid_canned_acl":                                         CreateBucket_invalid_canned_acl,
 		"HeadBucket_non_existing_bucket":                                          HeadBucket_non_existing_bucket,
 		"HeadBucket_success":                                                      HeadBucket_success,
 		"ListBuckets_as_user":                                                     ListBuckets_as_user,
@@ -1410,6 +1413,7 @@ func GetIntTests() IntTests {
 		"PutBucketAcl_non_existing_bucket":                                        PutBucketAcl_non_existing_bucket,
 		"PutBucketAcl_disabled":                                                   PutBucketAcl_disabled,
 		"PutBucketAcl_none_of_the_options_specified":                              PutBucketAcl_none_of_the_options_specified,
+		"PutBucketAcl_invalid_canned_acl":                                         PutBucketAcl_invalid_canned_acl,
 		"PutBucketAcl_invalid_acl_canned_and_acp":                                 PutBucketAcl_invalid_acl_canned_and_acp,
 		"PutBucketAcl_invalid_acl_canned_and_grants":                              PutBucketAcl_invalid_acl_canned_and_grants,
 		"PutBucketAcl_invalid_acl_acp_and_grants":                                 PutBucketAcl_invalid_acl_acp_and_grants,

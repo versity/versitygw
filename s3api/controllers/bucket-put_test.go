@@ -729,7 +729,9 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					MetaOpts: &MetaOptions{},
+					MetaOpts: &MetaOptions{
+						BucketOwner: adminAcc.Access,
+					},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidBucketName),
 			},
@@ -747,6 +749,24 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
 				},
 				err: s3err.GetAPIError(s3err.ErrMalformedXML),
+			},
+		},
+
+		{
+			name: "invalid canned acl",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: adminAcc,
+				},
+				headers: map[string]string{
+					"x-amz-acl": "invalid_acl",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{BucketOwner: adminAcc.Access},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidArgument),
 			},
 		},
 		{
@@ -777,7 +797,9 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					MetaOpts: &MetaOptions{},
+					MetaOpts: &MetaOptions{
+						BucketOwner: adminAcc.Access,
+					},
 				},
 				err: s3err.APIError{
 					Code:           "InvalidArgument",
@@ -1079,7 +1101,7 @@ func TestS3ApiController_PutBucketAcl(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+				err: s3err.GetAPIError(s3err.ErrInvalidArgument),
 			},
 		},
 		{

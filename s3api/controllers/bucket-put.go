@@ -352,6 +352,15 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = auth.ValidateCannedACL(acl)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
 	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
 		return &Response{
@@ -419,14 +428,6 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			AccessControlPolicy: &accessControlPolicy,
 		}
 	} else if acl != "" {
-		if acl != "private" && acl != "public-read" && acl != "public-read-write" {
-			debuglogger.Logf("invalid acl: %q", acl)
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidRequest)
-		}
 		if grants != "" {
 			debuglogger.Logf("invalid request: %q (grants) %q (acl)",
 				grants, acl)
@@ -500,14 +501,28 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	// validate the bucket name
 	if ok := utils.IsValidBucketName(bucket); !ok {
 		return &Response{
-			MetaOpts: &MetaOptions{},
+			MetaOpts: &MetaOptions{
+				BucketOwner: acct.Access,
+			},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
+	}
+
+	// validate bucket canned acl
+	err := auth.ValidateCannedACL(acl)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: acct.Access,
+			},
+		}, err
 	}
 
 	// validate the object ownership value
 	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return &Response{
-				MetaOpts: &MetaOptions{},
+				MetaOpts: &MetaOptions{
+					BucketOwner: acct.Access,
+				},
 			}, s3err.APIError{
 				Code:           "InvalidArgument",
 				Description:    fmt.Sprintf("Invalid x-amz-object-ownership header: %v", objectOwnership),

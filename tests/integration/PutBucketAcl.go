@@ -71,6 +71,21 @@ func PutBucketAcl_none_of_the_options_specified(s *S3Conf) error {
 	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
 }
 
+func PutBucketAcl_invalid_canned_acl(s *S3Conf) error {
+	testName := "PutBucketAcl_invalid_canned_acl"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutBucketAcl(ctx, &s3.PutBucketAclInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACL("invalid_acl"),
+		})
+		cancel()
+		// the expected error message is empty for this case
+		// only check the error Code
+		return checkSdkApiErr(err, "InvalidArgument")
+	}, withOwnership(types.ObjectOwnershipBucketOwnerPreferred))
+}
+
 func PutBucketAcl_invalid_acl_canned_and_acp(s *S3Conf) error {
 	testName := "PutBucketAcl_invalid_acl_canned_and_acp"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
