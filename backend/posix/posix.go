@@ -4026,6 +4026,16 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		}
 	}
 
+	var tagCount *int32
+	tags, err := p.getAttrTags(bucket, object, versionId)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+		return nil, err
+	}
+	if tags != nil {
+		tc := int32(len(tags))
+		tagCount = &tc
+	}
+
 	return &s3.HeadObjectOutput{
 		ContentLength:             &length,
 		AcceptRanges:              backend.GetPtrFromString("bytes"),
@@ -4050,6 +4060,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ChecksumSHA256:            checksums.SHA256,
 		ChecksumCRC64NVME:         checksums.CRC64NVME,
 		ChecksumType:              cType,
+		TagCount:                  tagCount,
 	}, nil
 }
 

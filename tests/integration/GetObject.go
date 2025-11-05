@@ -527,6 +527,7 @@ func GetObject_success(s *S3Conf) error {
 			Expires:            &expires,
 			CacheControl:       &cacheControl,
 			Metadata:           meta,
+			Tagging:            getPtr("key=value&key1=val1"),
 		}, s3client)
 		if err != nil {
 			return err
@@ -576,6 +577,13 @@ func GetObject_success(s *S3Conf) error {
 		if !areMapsSame(out.Metadata, meta) {
 			return fmt.Errorf("expected the object metadata to be %v, instead got %v",
 				meta, out.Metadata)
+		}
+		var tagCount int32
+		if out.TagCount != nil {
+			tagCount = *out.TagCount
+		}
+		if tagCount != 2 {
+			return fmt.Errorf("expected tag count to be 2, instead got %v", tagCount)
 		}
 
 		bdy, err := io.ReadAll(out.Body)
