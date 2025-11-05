@@ -566,6 +566,7 @@ func HeadObject_success(s *S3Conf) error {
 			ContentLanguage:    &cLang,
 			CacheControl:       &cacheControl,
 			Expires:            &expires,
+			Tagging:            getPtr("key=value"),
 		}, s3client)
 		if err != nil {
 			return err
@@ -619,6 +620,14 @@ func HeadObject_success(s *S3Conf) error {
 		if out.StorageClass != types.StorageClassStandard {
 			return fmt.Errorf("expected the storage class to be %v, instead got %v",
 				types.StorageClassStandard, out.StorageClass)
+		}
+		tagCount := int32(0)
+		if out.TagCount != nil {
+			tagCount = *out.TagCount
+		}
+
+		if tagCount != 1 {
+			return fmt.Errorf("expected the tagcount to be 1, instead got %v", tagCount)
 		}
 
 		return nil

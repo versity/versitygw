@@ -583,6 +583,11 @@ func (az *Azure) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3
 		}
 	}
 
+	if resp.TagCount != nil {
+		tagcount := int32(*resp.TagCount)
+		result.TagCount = &tagcount
+	}
+
 	return result, nil
 }
 

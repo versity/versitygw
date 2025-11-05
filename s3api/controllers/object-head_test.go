@@ -147,6 +147,7 @@ func TestS3ApiController_HeadObject(t *testing.T) {
 						"x-amz-checksum-type":                 nil,
 						"x-amz-object-lock-retain-until-date": nil,
 						"Last-Modified":                       nil,
+						"x-amz-tagging-count":                 nil,
 						"Content-Type":                        utils.GetStringPtr("application/xml"),
 						"Content-Length":                      utils.GetStringPtr("100"),
 					},

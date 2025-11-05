@@ -150,6 +150,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			"x-amz-storage-class":                 utils.ConvertToStringPtr(res.StorageClass),
 			"x-amz-checksum-type":                 utils.ConvertToStringPtr(res.ChecksumType),
 			"x-amz-object-lock-retain-until-date": utils.FormatDatePtrToString(res.ObjectLockRetainUntilDate, time.RFC3339),
+			"x-amz-tagging-count":                 utils.ConvertPtrToStringPtr(res.TagCount),
 		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
