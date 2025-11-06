@@ -207,12 +207,32 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 	}
 
+	// At this point, the S3 action has succeeded in the backend and
+	// the event has already occurred. This means the S3 event must be sent,
+	// even if unexpected issues arise while further parsing the response payload.
+	if svc.EventSender != nil && opts.EventName != "" {
+		svc.EventSender.SendEvent(ctx, s3event.EventMeta{
+			BucketOwner: opts.BucketOwner,
+			ObjectSize:  opts.ObjectSize,
+			ObjectETag:  opts.ObjectETag,
+			VersionId:   opts.VersionId,
+			EventName:   opts.EventName,
+		})
+	}
+
 	if opts.Status == 0 {
 		opts.Status = http.StatusOK
 	}
 
 	// if no data payload is provided, send the response status
 	if response.Data == nil {
+		if svc.Logger != nil {
+			svc.Logger.Log(ctx, nil, []byte{}, s3log.LogMeta{
+				Action:      s3action,
+				BucketOwner: opts.BucketOwner,
+				ObjectSize:  opts.ObjectSize,
+			})
+		}
 		ctx.Status(opts.Status)
 		return nil
 	}
@@ -226,6 +246,13 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	} else {
 		if responseBytes, err = xml.Marshal(response.Data); err != nil {
 			debuglogger.Logf("Internal Error, %v", err)
+			if svc.Logger != nil {
+				svc.Logger.Log(ctx, err, nil, s3log.LogMeta{
+					Action:      s3action,
+					BucketOwner: opts.BucketOwner,
+					ObjectSize:  opts.ObjectSize,
+				})
+			}
 			return ctx.Status(http.StatusInternalServerError).Send(s3err.GetAPIErrorResponse(
 				s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
 		}
@@ -235,27 +262,17 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 		}
 	}
 
-	if svc.Logger != nil {
-		svc.Logger.Log(ctx, nil, responseBytes, s3log.LogMeta{
-			Action:      s3action,
-			BucketOwner: opts.BucketOwner,
-			ObjectSize:  opts.ObjectSize,
-		})
-	}
-
-	if svc.EventSender != nil {
-		svc.EventSender.SendEvent(ctx, s3event.EventMeta{
-			BucketOwner: opts.BucketOwner,
-			ObjectSize:  opts.ObjectSize,
-			ObjectETag:  opts.ObjectETag,
-			VersionId:   opts.VersionId,
-			EventName:   opts.EventName,
-		})
-	}
-
 	if ok {
 		if len(responseBytes) > 0 {
 			ctx.Response().Header.Set("Content-Length", fmt.Sprint(len(responseBytes)))
+		}
+
+		if svc.Logger != nil {
+			svc.Logger.Log(ctx, nil, responseBytes, s3log.LogMeta{
+				Action:      s3action,
+				BucketOwner: opts.BucketOwner,
+				ObjectSize:  opts.ObjectSize,
+			})
 		}
 
 		return ctx.Send(responseBytes)
@@ -265,6 +282,13 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	if msglen > maxXMLBodyLen {
 		debuglogger.Logf("XML encoded body len %v exceeds max len %v",
 			msglen, maxXMLBodyLen)
+		if svc.Logger != nil {
+			svc.Logger.Log(ctx, err, []byte{}, s3log.LogMeta{
+				Action:      s3action,
+				BucketOwner: opts.BucketOwner,
+				ObjectSize:  opts.ObjectSize,
+			})
+		}
 		ctx.Status(http.StatusInternalServerError)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
@@ -276,6 +300,14 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 
 	// Set the Content-Length header
 	ctx.Response().Header.SetContentLength(msglen)
+
+	if svc.Logger != nil {
+		svc.Logger.Log(ctx, nil, responseBytes, s3log.LogMeta{
+			Action:      s3action,
+			BucketOwner: opts.BucketOwner,
+			ObjectSize:  opts.ObjectSize,
+		})
+	}
 
 	return ctx.Send(res)
 }
