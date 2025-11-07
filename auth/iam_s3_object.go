@@ -205,11 +205,12 @@ func (s *IAMServiceS3) ListUserAccounts() ([]Account, error) {
 	var accs []Account
 	for _, k := range keys {
 		accs = append(accs, Account{
-			Access:  k,
-			Secret:  conf.AccessAccounts[k].Secret,
-			Role:    conf.AccessAccounts[k].Role,
-			UserID:  conf.AccessAccounts[k].UserID,
-			GroupID: conf.AccessAccounts[k].GroupID,
+			Access:    k,
+			Secret:    conf.AccessAccounts[k].Secret,
+			Role:      conf.AccessAccounts[k].Role,
+			UserID:    conf.AccessAccounts[k].UserID,
+			GroupID:   conf.AccessAccounts[k].GroupID,
+			ProjectID: conf.AccessAccounts[k].ProjectID,
 		})
 	}
 
