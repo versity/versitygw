@@ -132,6 +132,7 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	userResult := struct {
 		Gidnumber []string
 		Uidnumber []string
+		PidNumber []string
 	}{}
 
 	err = ipa.rpc(req, &userResult)
@@ -147,12 +148,17 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 	if err != nil {
 		return Account{}, fmt.Errorf("ipa gid invalid: %w", err)
 	}
+	pId, err := strconv.Atoi(userResult.PidNumber[0])
+	if err != nil {
+		return Account{}, fmt.Errorf("ipa pid invalid: %w", err)
+	}
 
 	account := Account{
-		Access:  access,
-		Role:    RoleUser,
-		UserID:  uid,
-		GroupID: gid,
+		Access:    access,
+		Role:      RoleUser,
+		UserID:    uid,
+		GroupID:   gid,
+		ProjectID: pId,
 	}
 
 	session_key := make([]byte, 16)

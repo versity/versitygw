@@ -45,11 +45,12 @@ func (r Role) IsValid() bool {
 
 // Account is a gateway IAM account
 type Account struct {
-	Access  string `json:"access"`
-	Secret  string `json:"secret"`
-	Role    Role   `json:"role"`
-	UserID  int    `json:"userID"`
-	GroupID int    `json:"groupID"`
+	Access    string `json:"access"`
+	Secret    string `json:"secret"`
+	Role      Role   `json:"role"`
+	UserID    int    `json:"userID"`
+	GroupID   int    `json:"groupID"`
+	ProjectID int    `json:"projectID"`
 }
 
 type ListUserAccountsResult struct {
@@ -58,10 +59,11 @@ type ListUserAccountsResult struct {
 
 // Mutable props, which could be changed when updating an IAM account
 type MutableProps struct {
-	Secret  *string `json:"secret"`
-	Role    Role    `json:"role"`
-	UserID  *int    `json:"userID"`
-	GroupID *int    `json:"groupID"`
+	Secret    *string `json:"secret"`
+	Role      Role    `json:"role"`
+	UserID    *int    `json:"userID"`
+	GroupID   *int    `json:"groupID"`
+	ProjectID *int    `json:"projectID"`
 }
 
 func (m MutableProps) Validate() error {
@@ -81,6 +83,9 @@ func updateAcc(acc *Account, props MutableProps) {
 	}
 	if props.UserID != nil {
 		acc.UserID = *props.UserID
+	}
+	if props.ProjectID != nil {
+		acc.ProjectID = *props.ProjectID
 	}
 	if props.Role != "" {
 		acc.Role = props.Role
@@ -119,6 +124,7 @@ type Opts struct {
 	LDAPRoleAtr                 string
 	LDAPUserIdAtr               string
 	LDAPGroupIdAtr              string
+	LDAPProjectIdAtr            string
 	LDAPTLSSkipVerify           bool
 	VaultEndpointURL            string
 	VaultNamespace              string
@@ -160,7 +166,7 @@ func New(o *Opts) (IAMService, error) {
 	case o.LDAPServerURL != "":
 		svc, err = NewLDAPService(o.RootAccount, o.LDAPServerURL, o.LDAPBindDN, o.LDAPPassword,
 			o.LDAPQueryBase, o.LDAPAccessAtr, o.LDAPSecretAtr, o.LDAPRoleAtr, o.LDAPUserIdAtr,
-			o.LDAPGroupIdAtr, o.LDAPObjClasses, o.LDAPTLSSkipVerify)
+			o.LDAPGroupIdAtr, o.LDAPProjectIdAtr, o.LDAPObjClasses, o.LDAPTLSSkipVerify)
 		fmt.Printf("initializing LDAP IAM with %q\n", o.LDAPServerURL)
 	case o.S3Endpoint != "":
 		svc, err = NewS3(o.RootAccount, o.S3Access, o.S3Secret, o.S3Region, o.S3Bucket,

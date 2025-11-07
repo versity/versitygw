@@ -369,12 +369,21 @@ func parseVaultUserAccount(data map[string]any, access string) (acc Account, err
 	if err != nil {
 		return acc, errInvalidUser
 	}
+	projectIdJson, ok := usrAcc["projectID"].(json.Number)
+	if !ok {
+		return acc, errInvalidUser
+	}
+	projectID, err := projectIdJson.Int64()
+	if err != nil {
+		return acc, errInvalidUser
+	}
 
 	return Account{
-		Access:  acss,
-		Secret:  secret,
-		Role:    Role(role),
-		UserID:  int(userId),
-		GroupID: int(groupId),
+		Access:    acss,
+		Secret:    secret,
+		Role:      Role(role),
+		UserID:    int(userId),
+		GroupID:   int(groupId),
+		ProjectID: int(projectID),
 	}, nil
 }

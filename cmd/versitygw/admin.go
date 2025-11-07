@@ -82,6 +82,11 @@ func adminCommand() *cli.Command {
 						Usage:   "groupID for the new user",
 						Aliases: []string{"gi"},
 					},
+					&cli.IntFlag{
+						Name:    "project-id",
+						Usage:   "projectID for the new user",
+						Aliases: []string{"pi"},
+					},
 				},
 			},
 			{
@@ -114,6 +119,11 @@ func adminCommand() *cli.Command {
 						Name:    "group-id",
 						Usage:   "groupID for the new user",
 						Aliases: []string{"gi"},
+					},
+					&cli.IntFlag{
+						Name:    "project-id",
+						Usage:   "projectID for the new user",
+						Aliases: []string{"pi"},
 					},
 				},
 			},
@@ -214,7 +224,7 @@ func initHTTPClient() *http.Client {
 
 func createUser(ctx *cli.Context) error {
 	access, secret, role := ctx.String("access"), ctx.String("secret"), ctx.String("role")
-	userID, groupID := ctx.Int("user-id"), ctx.Int("group-id")
+	userID, groupID, projectID := ctx.Int("user-id"), ctx.Int("group-id"), ctx.Int("project-id")
 	if access == "" || secret == "" {
 		return fmt.Errorf("invalid input parameters for the new user access/secret keys")
 	}
@@ -223,11 +233,12 @@ func createUser(ctx *cli.Context) error {
 	}
 
 	acc := auth.Account{
-		Access:  access,
-		Secret:  secret,
-		Role:    auth.Role(role),
-		UserID:  userID,
-		GroupID: groupID,
+		Access:    access,
+		Secret:    secret,
+		Role:      auth.Role(role),
+		UserID:    userID,
+		GroupID:   groupID,
+		ProjectID: projectID,
 	}
 
 	accxml, err := xml.Marshal(acc)
@@ -316,7 +327,14 @@ func deleteUser(ctx *cli.Context) error {
 }
 
 func updateUser(ctx *cli.Context) error {
-	access, secret, userId, groupId, role := ctx.String("access"), ctx.String("secret"), ctx.Int("user-id"), ctx.Int("group-id"), auth.Role(ctx.String("role"))
+	access, secret, userId, groupId, projectID, role :=
+		ctx.String("access"),
+		ctx.String("secret"),
+		ctx.Int("user-id"),
+		ctx.Int("group-id"),
+		ctx.Int("projectID"),
+		auth.Role(ctx.String("role"))
+
 	props := auth.MutableProps{}
 	if ctx.IsSet("role") {
 		if !role.IsValid() {
@@ -332,6 +350,9 @@ func updateUser(ctx *cli.Context) error {
 	}
 	if ctx.IsSet("group-id") {
 		props.GroupID = &groupId
+	}
+	if ctx.IsSet("project-id") {
+		props.ProjectID = &projectID
 	}
 
 	propsxml, err := xml.Marshal(props)
@@ -433,10 +454,10 @@ const (
 func printAcctTable(accs []auth.Account) {
 	w := new(tabwriter.Writer)
 	w.Init(os.Stdout, minwidth, tabwidth, padding, padchar, flags)
-	fmt.Fprintln(w, "Account\tRole\tUserID\tGroupID")
-	fmt.Fprintln(w, "-------\t----\t------\t-------")
+	fmt.Fprintln(w, "Account\tRole\tUserID\tGroupID\tProjectID")
+	fmt.Fprintln(w, "-------\t----\t------\t-------\t---------")
 	for _, acc := range accs {
-		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", acc.Access, acc.Role, acc.UserID, acc.GroupID)
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\t%v\n", acc.Access, acc.Role, acc.UserID, acc.GroupID, acc.ProjectID)
 	}
 	fmt.Fprintln(w)
 	w.Flush()

@@ -36,6 +36,7 @@ type LdapIAMService struct {
 	roleAtr       string
 	groupIdAtr    string
 	userIdAtr     string
+	projectIdAtr  string
 	rootAcc       Account
 	url           string
 	bindDN        string
@@ -46,9 +47,9 @@ type LdapIAMService struct {
 
 var _ IAMService = &LdapIAMService{}
 
-func NewLDAPService(rootAcc Account, ldapURL, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, objClasses string, tlsSkipVerify bool) (IAMService, error) {
+func NewLDAPService(rootAcc Account, ldapURL, bindDN, pass, queryBase, accAtr, secAtr, roleAtr, userIdAtr, groupIdAtr, projectIdAtr, objClasses string, tlsSkipVerify bool) (IAMService, error) {
 	if ldapURL == "" || bindDN == "" || pass == "" || queryBase == "" || accAtr == "" ||
-		secAtr == "" || roleAtr == "" || userIdAtr == "" || groupIdAtr == "" || objClasses == "" {
+		secAtr == "" || roleAtr == "" || userIdAtr == "" || groupIdAtr == "" || projectIdAtr == "" || objClasses == "" {
 		return nil, fmt.Errorf("required parameters list not fully provided")
 	}
 
@@ -71,6 +72,7 @@ func NewLDAPService(rootAcc Account, ldapURL, bindDN, pass, queryBase, accAtr, s
 		roleAtr:       roleAtr,
 		userIdAtr:     userIdAtr,
 		groupIdAtr:    groupIdAtr,
+		projectIdAtr:  projectIdAtr,
 		rootAcc:       rootAcc,
 		url:           ldapURL,
 		bindDN:        bindDN,
@@ -142,6 +144,7 @@ func (ld *LdapIAMService) CreateAccount(account Account) error {
 	userEntry.Attribute(ld.roleAtr, []string{string(account.Role)})
 	userEntry.Attribute(ld.groupIdAtr, []string{fmt.Sprint(account.GroupID)})
 	userEntry.Attribute(ld.userIdAtr, []string{fmt.Sprint(account.UserID)})
+	userEntry.Attribute(ld.projectIdAtr, []string{fmt.Sprint(account.ProjectID)})
 
 	err := ld.execute(func(c *ldap.Conn) error {
 		return c.Add(userEntry)
@@ -177,7 +180,7 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 		0,
 		false,
 		ld.buildSearchFilter(access),
-		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.userIdAtr, ld.groupIdAtr},
+		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.userIdAtr, ld.groupIdAtr, ld.projectIdAtr},
 		nil,
 	)
 
@@ -216,12 +219,19 @@ func (ld *LdapIAMService) GetUserAccount(access string) (Account, error) {
 		return Account{}, fmt.Errorf("invalid entry value for user-id %q: %w",
 			entry.GetAttributeValue(ld.userIdAtr), err)
 	}
+	projectID, err := strconv.Atoi(entry.GetAttributeValue(ld.projectIdAtr))
+	if err != nil {
+		return Account{}, fmt.Errorf("invalid entry value for project-id %q: %w",
+			entry.GetAttributeValue(ld.projectIdAtr), err)
+	}
+
 	return Account{
-		Access:  entry.GetAttributeValue(ld.accessAtr),
-		Secret:  entry.GetAttributeValue(ld.secretAtr),
-		Role:    Role(entry.GetAttributeValue(ld.roleAtr)),
-		GroupID: groupId,
-		UserID:  userId,
+		Access:    entry.GetAttributeValue(ld.accessAtr),
+		Secret:    entry.GetAttributeValue(ld.secretAtr),
+		Role:      Role(entry.GetAttributeValue(ld.roleAtr)),
+		GroupID:   groupId,
+		UserID:    userId,
+		ProjectID: projectID,
 	}, nil
 }
 
@@ -235,6 +245,9 @@ func (ld *LdapIAMService) UpdateUserAccount(access string, props MutableProps) e
 	}
 	if props.UserID != nil {
 		req.Replace(ld.userIdAtr, []string{fmt.Sprint(*props.UserID)})
+	}
+	if props.ProjectID != nil {
+		req.Replace(ld.projectIdAtr, []string{fmt.Sprint(*props.ProjectID)})
 	}
 	if props.Role != "" {
 		req.Replace(ld.roleAtr, []string{string(props.Role)})
@@ -273,7 +286,7 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 		0,
 		false,
 		ld.buildSearchFilter(""),
-		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.groupIdAtr, ld.userIdAtr},
+		[]string{ld.accessAtr, ld.secretAtr, ld.roleAtr, ld.groupIdAtr, ld.projectIdAtr, ld.userIdAtr},
 		nil,
 	)
 
@@ -298,12 +311,19 @@ func (ld *LdapIAMService) ListUserAccounts() ([]Account, error) {
 			return nil, fmt.Errorf("invalid entry value for user-id %q: %w",
 				el.GetAttributeValue(ld.userIdAtr), err)
 		}
+		projectID, err := strconv.Atoi(el.GetAttributeValue(ld.projectIdAtr))
+		if err != nil {
+			return nil, fmt.Errorf("invalid entry value for project-id %q: %w",
+				el.GetAttributeValue(ld.groupIdAtr), err)
+		}
+
 		result = append(result, Account{
-			Access:  el.GetAttributeValue(ld.accessAtr),
-			Secret:  el.GetAttributeValue(ld.secretAtr),
-			Role:    Role(el.GetAttributeValue(ld.roleAtr)),
-			GroupID: groupId,
-			UserID:  userId,
+			Access:    el.GetAttributeValue(ld.accessAtr),
+			Secret:    el.GetAttributeValue(ld.secretAtr),
+			Role:      Role(el.GetAttributeValue(ld.roleAtr)),
+			GroupID:   groupId,
+			ProjectID: projectID,
+			UserID:    userId,
 		})
 	}
 
