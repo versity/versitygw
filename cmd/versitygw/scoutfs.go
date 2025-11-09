@@ -26,6 +26,7 @@ import (
 var (
 	glacier          bool
 	disableNoArchive bool
+	setProjectID     bool
 )
 
 func scoutfsCommand() *cli.Command {
@@ -65,6 +66,12 @@ move interfaces as well as support for tiered filesystems.`,
 				Usage:       "chown newly created files and directories to client account GID",
 				EnvVars:     []string{"VGW_CHOWN_GID"},
 				Destination: &chowngid,
+			},
+			&cli.BoolFlag{
+				Name:        "projectid",
+				Usage:       "set project id on newly created buckets, files, and directories to client account ProjectID",
+				EnvVars:     []string{"VGW_SET_PROJECT_ID"},
+				Destination: &setProjectID,
 			},
 			&cli.BoolFlag{
 				Name:        "bucketlinks",
@@ -114,6 +121,7 @@ func runScoutfs(ctx *cli.Context) error {
 	opts.DisableNoArchive = disableNoArchive
 	opts.VersioningDir = versioningDir
 	opts.ValidateBucketNames = disableStrictBucketNames
+	opts.SetProjectID = setProjectID
 
 	be, err := scoutfs.New(ctx.Args().Get(0), opts)
 	if err != nil {

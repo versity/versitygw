@@ -27,7 +27,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.7
 	github.com/valyala/fasthttp v1.68.0
-	github.com/versity/scoutfs-go v0.0.0-20240325223134-38eb2f5f7d44
+	github.com/versity/scoutfs-go v0.0.0-20240625221833-95fd765b760b
 	golang.org/x/sync v0.18.0
 	golang.org/x/sys v0.38.0
 )
