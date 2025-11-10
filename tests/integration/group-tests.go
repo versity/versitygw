@@ -993,13 +993,13 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_CopyObject_from_an_object_version)
 	ts.Run(Versioning_CopyObject_special_chars)
 	// HeadObject action
-	ts.Run(Versioning_HeadObject_invalid_versionId)
+	ts.Run(Versioning_HeadObject_non_existing_object_version)
 	ts.Run(Versioning_HeadObject_invalid_parent)
 	ts.Run(Versioning_HeadObject_success)
 	ts.Run(Versioning_HeadObject_without_versionId)
 	ts.Run(Versioning_HeadObject_delete_marker)
 	// GetObject action
-	ts.Run(Versioning_GetObject_invalid_versionId)
+	ts.Run(Versioning_GetObject_non_existing_object_version)
 	ts.Run(Versioning_GetObject_success)
 	ts.Run(Versioning_GetObject_delete_marker_without_versionId)
 	ts.Run(Versioning_GetObject_delete_marker)
@@ -1040,12 +1040,12 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_Enable_object_lock)
 	ts.Run(Versioning_status_switch_to_suspended_with_object_lock)
 	// Object-Lock Retention
-	ts.Run(Versioning_PutObjectRetention_invalid_versionId)
-	ts.Run(Versioning_GetObjectRetention_invalid_versionId)
+	ts.Run(Versioning_PutObjectRetention_non_existing_object_version)
+	ts.Run(Versioning_GetObjectRetention_non_existing_object_version)
 	ts.Run(Versioning_Put_GetObjectRetention_success)
 	// Object-Lock Legal hold
-	ts.Run(Versioning_PutObjectLegalHold_invalid_versionId)
-	ts.Run(Versioning_GetObjectLegalHold_invalid_versionId)
+	ts.Run(Versioning_PutObjectLegalHold_non_existing_object_version)
+	ts.Run(Versioning_GetObjectLegalHold_non_existing_object_version)
 	ts.Run(Versioning_Put_GetObjectLegalHold_success)
 	// WORM protection
 	ts.Run(Versioning_WORM_obj_version_locked_with_legal_hold)
@@ -1631,12 +1631,12 @@ func GetIntTests() IntTests {
 		"Versioning_CopyObject_non_existing_version_id":                           Versioning_CopyObject_non_existing_version_id,
 		"Versioning_CopyObject_from_an_object_version":                            Versioning_CopyObject_from_an_object_version,
 		"Versioning_CopyObject_special_chars":                                     Versioning_CopyObject_special_chars,
-		"Versioning_HeadObject_invalid_versionId":                                 Versioning_HeadObject_invalid_versionId,
+		"Versioning_HeadObject_non_existing_object_version":                       Versioning_HeadObject_non_existing_object_version,
 		"Versioning_HeadObject_invalid_parent":                                    Versioning_HeadObject_invalid_parent,
 		"Versioning_HeadObject_success":                                           Versioning_HeadObject_success,
 		"Versioning_HeadObject_without_versionId":                                 Versioning_HeadObject_without_versionId,
 		"Versioning_HeadObject_delete_marker":                                     Versioning_HeadObject_delete_marker,
-		"Versioning_GetObject_invalid_versionId":                                  Versioning_GetObject_invalid_versionId,
+		"Versioning_GetObject_non_existing_object_version":                        Versioning_GetObject_non_existing_object_version,
 		"Versioning_GetObject_success":                                            Versioning_GetObject_success,
 		"Versioning_GetObject_delete_marker_without_versionId":                    Versioning_GetObject_delete_marker_without_versionId,
 		"Versioning_GetObject_delete_marker":                                      Versioning_GetObject_delete_marker,
@@ -1670,11 +1670,11 @@ func GetIntTests() IntTests {
 		"Versioning_object_lock_not_enabled_on_bucket_creation":                   Versioning_object_lock_not_enabled_on_bucket_creation,
 		"Versioning_Enable_object_lock":                                           Versioning_Enable_object_lock,
 		"Versioning_status_switch_to_suspended_with_object_lock":                  Versioning_status_switch_to_suspended_with_object_lock,
-		"Versioning_PutObjectRetention_invalid_versionId":                         Versioning_PutObjectRetention_invalid_versionId,
-		"Versioning_GetObjectRetention_invalid_versionId":                         Versioning_GetObjectRetention_invalid_versionId,
+		"Versioning_PutObjectRetention_non_existing_object_version":               Versioning_PutObjectRetention_non_existing_object_version,
+		"Versioning_GetObjectRetention_non_existing_object_version":               Versioning_GetObjectRetention_non_existing_object_version,
 		"Versioning_Put_GetObjectRetention_success":                               Versioning_Put_GetObjectRetention_success,
-		"Versioning_PutObjectLegalHold_invalid_versionId":                         Versioning_PutObjectLegalHold_invalid_versionId,
-		"Versioning_GetObjectLegalHold_invalid_versionId":                         Versioning_GetObjectLegalHold_invalid_versionId,
+		"Versioning_PutObjectLegalHold_non_existing_object_version":               Versioning_PutObjectLegalHold_non_existing_object_version,
+		"Versioning_GetObjectLegalHold_non_existing_object_version":               Versioning_GetObjectLegalHold_non_existing_object_version,
 		"Versioning_Put_GetObjectLegalHold_success":                               Versioning_Put_GetObjectLegalHold_success,
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                      Versioning_WORM_obj_version_locked_with_legal_hold,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":            Versioning_WORM_obj_version_locked_with_governance_retention,
