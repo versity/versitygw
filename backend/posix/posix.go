@@ -3656,7 +3656,7 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 	fid, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -3912,7 +3912,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	fi, err := os.Stat(objPath)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -5151,7 +5151,7 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 	err = p.meta.StoreAttribute(nil, bucket, object, objectLegalHoldKey, statusData)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
-			return s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
 		return s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -5197,7 +5197,7 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectLegalHoldKey)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
@@ -5288,7 +5288,7 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectRetentionKey)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
-			return nil, s3err.GetAPIError(s3err.ErrInvalidVersionId)
+			return nil, s3err.GetAPIError(s3err.ErrNoSuchVersion)
 		}
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
