@@ -53,6 +53,23 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
+			},
+		},
+		{
 			name: "backend returns error",
 			input: testInput{
 				locals: defaultLocals,
@@ -113,8 +130,9 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
-					body:   tt.input.body,
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -145,6 +163,23 @@ func TestS3ApiController_GetObjectRetention(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -218,8 +253,9 @@ func TestS3ApiController_GetObjectRetention(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
-					body:   tt.input.body,
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -247,6 +283,23 @@ func TestS3ApiController_GetObjectLegalHold(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -305,8 +358,9 @@ func TestS3ApiController_GetObjectLegalHold(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
-					body:   tt.input.body,
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -556,6 +610,23 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
+			},
+		},
+		{
 			name: "invalid max parts",
 			input: testInput{
 				locals: defaultLocals,
@@ -663,6 +734,7 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 					locals:  tt.input.locals,
 					body:    tt.input.body,
 					headers: tt.input.headers,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -691,6 +763,23 @@ func TestS3ApiController_GetObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -757,7 +846,7 @@ func TestS3ApiController_GetObject(t *testing.T) {
 					"Range": "100-200",
 				},
 				queries: map[string]string{
-					"versionId": "versionId",
+					"versionId": "01BX5ZZKBKACTAV9WEVGEMMVRZ",
 				},
 				locals: defaultLocals,
 				beRes: &s3.GetObjectOutput{

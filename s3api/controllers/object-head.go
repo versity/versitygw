@@ -80,6 +80,15 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		partNumber = &partNumberQuery
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	checksumMode := types.ChecksumMode(strings.ToUpper(ctx.Get("x-amz-checksum-mode")))
 	if checksumMode != "" && checksumMode != types.ChecksumModeEnabled {
 		debuglogger.Logf("invalid x-amz-checksum-mode header value: %v", checksumMode)

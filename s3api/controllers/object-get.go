@@ -60,6 +60,15 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	data, err := c.be.GetObjectTagging(ctx.Context(), bucket, key, versionId)
 	if err != nil {
 		return &Response{
@@ -114,6 +123,15 @@ func (c S3ApiController) GetObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	data, err := c.be.GetObjectRetention(ctx.Context(), bucket, key, versionId)
 	if err != nil {
 		return &Response{
@@ -153,6 +171,15 @@ func (c S3ApiController) GetObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		Action:          auth.GetObjectLegalHoldAction,
 		IsPublicRequest: isPublicBucket,
 	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateVersionId(versionId)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -313,6 +340,15 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	// parse max parts
 	maxParts, err := utils.ParseUint(maxPartsStr)
 	if err != nil {
@@ -454,6 +490,15 @@ func (c S3ApiController) GetObject(ctx *fiber.Ctx) (*Response, error) {
 		}
 
 		partNumber = &partNumberQuery
+	}
+
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
 	}
 
 	// validate the checksum mode

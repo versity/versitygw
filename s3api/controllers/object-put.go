@@ -61,6 +61,15 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
 	if err != nil {
 		return &Response{
@@ -89,7 +98,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -99,7 +108,17 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		Object:          key,
 		Action:          auth.PutObjectRetentionAction,
 		IsPublicRequest: IsBucketPublic,
-	}); err != nil {
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
@@ -154,7 +173,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -164,7 +183,17 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		Object:          key,
 		Action:          auth.PutObjectLegalHoldAction,
 		IsPublicRequest: IsBucketPublic,
-	}); err != nil {
+	})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
@@ -191,7 +220,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	err := c.be.PutObjectLegalHold(ctx.Context(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
+	err = c.be.PutObjectLegalHold(ctx.Context(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
