@@ -955,12 +955,15 @@ func TestValidateCopySource(t *testing.T) {
 		{"invalid object name 3", "bucket", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
 		{"invalid object name 4", "bucket/../foo/dir/../../../", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
 		{"invalid object name 5", "bucket/.?versionId=smth", s3err.GetAPIError(s3err.ErrInvalidCopySourceObject)},
+		// invalid versionId
+		{"invalid versionId 1", "bucket/object?versionId=invalid", s3err.GetAPIError(s3err.ErrInvalidVersionId)},
+		{"invalid versionId 2", "bucket/object?versionId=01BX5ZZKBKACTAV9WEVGEMMV", s3err.GetAPIError(s3err.ErrInvalidVersionId)},
 		// success
 		{"no error 1", "bucket/object", nil},
 		{"no error 2", "bucket/object/key", nil},
 		{"no error 3", "bucket/4*&(*&(89765))", nil},
 		{"no error 4", "bucket/foo/../bar", nil},
-		{"no error 5", "bucket/foo/bar/baz?versionId=id", nil},
+		{"no error 5", "bucket/foo/bar/baz?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ", nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

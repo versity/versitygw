@@ -56,6 +56,15 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
+	err = utils.ValidateVersionId(versionId)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	err = c.be.DeleteObjectTagging(ctx.Context(), bucket, key, versionId)
 	return &Response{
 		MetaOpts: &MetaOptions{
@@ -139,6 +148,15 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 			Action:          auth.DeleteObjectAction,
 			IsPublicRequest: isBucketPublic,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateVersionId(versionId)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

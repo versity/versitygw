@@ -218,6 +218,31 @@ func Versioning_PutObject_success(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_CopyObject_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_CopyObject_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstObj, srcObj := "dst-obj", "src-obj"
+
+		srcObjLen := int64(2345)
+		_, err := putObjectWithData(srcObjLen, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId", bucket, srcObj)),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_CopyObject_success(s *S3Conf) error {
 	testName := "Versioning_CopyObject_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -311,7 +336,7 @@ func Versioning_CopyObject_non_existing_version_id(s *S3Conf) error {
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket: &dstBucket,
 			Key:    &dstObj,
-			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId",
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=01BX5ZZKBKACTAV9WEVGEMMVRZ",
 				bucket, srcObj)),
 		})
 		cancel()
@@ -459,6 +484,32 @@ func Versioning_CopyObject_special_chars(s *S3Conf) error {
 			return err
 		}
 
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_HeadObject_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_HeadObject_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		if err := checkSdkApiErr(err, "BadRequest"); err != nil {
+			return err
+		}
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
@@ -640,6 +691,30 @@ func Versioning_HeadObject_delete_marker(s *S3Conf) error {
 		}
 
 		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_GetObject_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObject_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_version_id"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
@@ -900,6 +975,29 @@ func Versioning_GetObject_null_versionId_obj(s *S3Conf) error {
 	})
 }
 
+func Versioning_GetObjectAttributes_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectAttributes_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+			ObjectAttributes: []types.ObjectAttributes{
+				types.ObjectAttributesEtag,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
+}
+
 func Versioning_GetObjectAttributes_object_version(s *S3Conf) error {
 	testName := "Versioning_GetObjectAttributes_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -993,6 +1091,29 @@ func Versioning_GetObjectAttributes_delete_marker(s *S3Conf) error {
 
 		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_DeleteObject_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := putObjectWithData(3, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
 }
 
 func Versioning_DeleteObject_delete_object_version(s *S3Conf) error {
@@ -1686,6 +1807,37 @@ func Versioning_Multipart_Upload_overwrite_an_object(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_UploadPartCopy_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_UploadPartCopy_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		dstObj, srcObj := "dst-obj", "src-obj"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		mp, err := createMp(s3client, bucket, dstObj)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.UploadPartCopy(ctx, &s3.UploadPartCopyInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			UploadId:   mp.UploadId,
+			PartNumber: getPtr(int32(1)),
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId",
+				bucket, srcObj)),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
+}
+
 func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
 	testName := "Versioning_UploadPartCopy_non_existing_versionId"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1716,7 +1868,7 @@ func Versioning_UploadPartCopy_non_existing_versionId(s *S3Conf) error {
 			Key:        &dstObj,
 			UploadId:   mp.UploadId,
 			PartNumber: &pNumber,
-			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=invalid_versionId",
+			CopySource: getPtr(fmt.Sprintf("%v/%v?versionId=01BX5ZZKBKACTAV9WEVGEMMVS0",
 				bucket, srcObj)),
 		})
 		cancel()
@@ -1867,6 +2019,31 @@ func Versioning_status_switch_to_suspended_with_object_lock(s *S3Conf) error {
 	}, withLock())
 }
 
+func Versioning_PutObjectRetention_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_PutObjectRetention_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		rDate := time.Now().Add(time.Hour * 48)
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_version_id"),
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: &rDate,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
+}
+
 func Versioning_PutObjectRetention_non_existing_object_version(s *S3Conf) error {
 	testName := "Versioning_PutObjectRetention_non_existing_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1894,6 +2071,26 @@ func Versioning_PutObjectRetention_non_existing_object_version(s *S3Conf) error 
 
 		return nil
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_GetObjectRetention_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectRetention_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
 }
 
 func Versioning_GetObjectRetention_non_existing_object_version(s *S3Conf) error {
@@ -1966,6 +2163,29 @@ func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_PutObjectLegalHold_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_PutObjectLegalHold_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_version_id"),
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
+}
+
 func Versioning_PutObjectLegalHold_non_existing_object_version(s *S3Conf) error {
 	testName := "Versioning_PutObjectLegalHold_non_existing_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -1991,6 +2211,26 @@ func Versioning_PutObjectLegalHold_non_existing_object_version(s *S3Conf) error 
 
 		return nil
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_GetObjectLegalHold_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectLegalHold_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		_, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_version_id"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
 }
 
 func Versioning_GetObjectLegalHold_non_existing_object_version(s *S3Conf) error {
@@ -2683,6 +2923,29 @@ func Versioning_concurrent_upload_object(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_GetObjectTagging_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_GetObjectTagging_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
+}
+
 func Versioning_PutObjectTagging_non_existing_object_version(s *S3Conf) error {
 	testName := "Versioning_PutObjectTagging_non_existing_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2709,6 +2972,32 @@ func Versioning_PutObjectTagging_non_existing_object_version(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_PutObjectTagging_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_PutObjectTagging_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Tagging: &types.Tagging{
+				TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr("value")}},
+			},
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func Versioning_GetObjectTagging_non_existing_object_version(s *S3Conf) error {
 	testName := "Versioning_GetObjectTagging_non_existing_object_version"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2730,6 +3019,29 @@ func Versioning_GetObjectTagging_non_existing_object_version(s *S3Conf) error {
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_DeleteObjectTagging_invalid_versionId(s *S3Conf) error {
+	testName := "Versioning_DeleteObjectTagging_invalid_versionId"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(4, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: getPtr("invalid_versionId"),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidVersionId))
+	})
 }
 
 func Versioning_DeleteObjectTagging_non_existing_object_version(s *S3Conf) error {

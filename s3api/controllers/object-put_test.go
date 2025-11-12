@@ -65,6 +65,23 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
+			},
+		},
+		{
 			name: "invalid request body",
 			input: testInput{
 				locals: defaultLocals,
@@ -133,8 +150,9 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
-					body:   tt.input.body,
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -169,6 +187,23 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -262,6 +297,7 @@ func TestS3ApiController_PutObjectRetention(t *testing.T) {
 					locals:  tt.input.locals,
 					body:    tt.input.body,
 					headers: tt.input.headers,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -296,6 +332,23 @@ func TestS3ApiController_PutObjectLegalHold(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid request body",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": "invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -380,8 +433,9 @@ func TestS3ApiController_PutObjectLegalHold(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{
-					locals: tt.input.locals,
-					body:   tt.input.body,
+					locals:  tt.input.locals,
+					body:    tt.input.body,
+					queries: tt.input.queries,
 				})
 		})
 	}
@@ -577,6 +631,26 @@ func TestS3ApiController_UploadPartCopy(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid copy source: invalid versionId",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object?versionId=invalid_versionId",
+				},
+				queries: map[string]string{
+					"partNumber": "2",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
 			},
 		},
 		{
@@ -840,7 +914,24 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid copy source",
+			name: "invalid copy source: versionId",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object?versionId=invalid_versionId",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
+			},
+		},
+		{
+			name: "non empty request body",
 			input: testInput{
 				locals: defaultLocals,
 				headers: map[string]string{
