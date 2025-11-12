@@ -1071,6 +1071,9 @@ func TestVersioning(ts *TestState) {
 	// Versioninig_concurrent_upload_object
 	ts.Run(Versioning_AccessControl_GetObjectVersion)
 	ts.Run(Versioning_AccessControl_HeadObjectVersion)
+	ts.Run(Versioning_AccessControl_object_tagging_policy)
+	ts.Run(Versioning_AccessControl_DeleteObject_policy)
+	ts.Run(Versioning_AccessControl_GetObjectAttributes_policy)
 }
 
 func TestVersioningDisabled(ts *TestState) {
@@ -1710,6 +1713,9 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object":         Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object,
 		"Versioning_AccessControl_GetObjectVersion":                               Versioning_AccessControl_GetObjectVersion,
 		"Versioning_AccessControl_HeadObjectVersion":                              Versioning_AccessControl_HeadObjectVersion,
+		"Versioning_AccessControl_object_tagging_policy":                          Versioning_AccessControl_object_tagging_policy,
+		"Versioning_AccessControl_DeleteObject_policy":                            Versioning_AccessControl_DeleteObject_policy,
+		"Versioning_AccessControl_GetObjectAttributes_policy":                     Versioning_AccessControl_GetObjectAttributes_policy,
 		"Versioning_concurrent_upload_object":                                     Versioning_concurrent_upload_object,
 		"RouterPutPartNumberWithoutUploadId":                                      RouterPutPartNumberWithoutUploadId,
 		"RouterPostRoot":                                                          RouterPostRoot,

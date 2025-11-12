@@ -41,6 +41,11 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	action := auth.GetObjectTaggingAction
+	if versionId != "" {
+		action = auth.GetObjectVersionTaggingAction
+	}
+
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
@@ -49,7 +54,7 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Action:          auth.GetObjectTaggingAction,
+		Action:          action,
 		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {
@@ -321,6 +326,11 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	action := auth.GetObjectAttributesAction
+	if versionId != "" {
+		action = auth.GetObjectVersionAttributesAction
+	}
+
 	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
@@ -329,7 +339,7 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 		Acc:             acct,
 		Bucket:          bucket,
 		Object:          key,
-		Action:          auth.GetObjectAttributesAction,
+		Action:          action,
 		IsPublicRequest: isPublicBucket,
 	})
 	if err != nil {

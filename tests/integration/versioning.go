@@ -2832,6 +2832,285 @@ func Versioning_AccessControl_HeadObjectVersion(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_AccessControl_object_tagging_policy(s *S3Conf) error {
+	testName := "Versioning_AccessControl_PutObjectTagging_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		res, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &object,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		err = createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+
+		putGetDeleteObjectTagging := func(versionId *string, denyAccess bool) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+				Bucket:    &bucket,
+				Key:       &object,
+				VersionId: versionId,
+				Tagging: &types.Tagging{
+					TagSet: []types.Tag{
+						{Key: getPtr("key"), Value: getPtr("value")},
+					},
+				},
+			})
+			cancel()
+			if denyAccess {
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+					return err
+				}
+			} else {
+				if err != nil {
+					return err
+				}
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = userClient.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+				Bucket:    &bucket,
+				Key:       &object,
+				VersionId: versionId,
+			})
+			cancel()
+			if denyAccess {
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+					return err
+				}
+			} else {
+				if err != nil {
+					return err
+				}
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			_, err = userClient.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+				Bucket:    &bucket,
+				Key:       &object,
+				VersionId: versionId,
+			})
+			cancel()
+			if denyAccess {
+				if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied)); err != nil {
+					return err
+				}
+			} else {
+				if err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:PutObjectVersionTagging", "s3:GetObjectVersionTagging", "s3:DeleteObjectVersionTagging"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// deny without versionId
+		err = putGetDeleteObjectTagging(nil, true)
+		if err != nil {
+			return err
+		}
+
+		// allow with versionId
+		err = putGetDeleteObjectTagging(res.res.VersionId, false)
+		if err != nil {
+			return err
+		}
+
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `["s3:PutObjectTagging", "s3:GetObjectTagging", "s3:DeleteObjectTagging"]`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// allow without versionId
+		err = putGetDeleteObjectTagging(nil, false)
+		if err != nil {
+			return err
+		}
+
+		// deny with versionId
+		err = putGetDeleteObjectTagging(res.res.VersionId, true)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_AccessControl_DeleteObject_policy(s *S3Conf) error {
+	testName := "Versioning_AccessControl_DeleteObject_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		testuser := getUser("user")
+		err := createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		userClient := s.getUserClient(testuser)
+
+		delObject := func(versionId *string, denyAccess bool) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &obj,
+				VersionId: versionId,
+			})
+			cancel()
+			if denyAccess {
+				return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+			}
+
+			return err
+		}
+
+		res, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:DeleteObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// deny with versionId
+		err = delObject(res.res.VersionId, true)
+		if err != nil {
+			return err
+		}
+
+		// allow without versionId
+		err = delObject(nil, false)
+		if err != nil {
+			return err
+		}
+
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:DeleteObjectVersion"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// recreate the object
+		res, err = putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		// deny without versionId
+		err = delObject(nil, true)
+		if err != nil {
+			return err
+		}
+
+		// allow with versionId
+		err = delObject(res.res.VersionId, false)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_AccessControl_GetObjectAttributes_policy(s *S3Conf) error {
+	testName := "Versioning_AccessControl_GetObjectAttributes_policy"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		res, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		testuser := getUser("user")
+		err = createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+		userClient := s.getUserClient(testuser)
+
+		getObjectAttr := func(versionId *string, denyAccess bool) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := userClient.GetObjectAttributes(ctx, &s3.GetObjectAttributesInput{
+				Bucket:           &bucket,
+				Key:              &obj,
+				VersionId:        versionId,
+				ObjectAttributes: types.ObjectAttributesChecksum.Values(),
+			})
+			cancel()
+			if denyAccess {
+				return checkApiErr(err, s3err.GetAPIError(s3err.ErrAccessDenied))
+			}
+
+			return nil
+		}
+
+		policy := genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// deny with versionId
+		err = getObjectAttr(res.res.VersionId, true)
+		if err != nil {
+			return err
+		}
+
+		// allow without versionId
+		err = getObjectAttr(nil, false)
+		if err != nil {
+			return err
+		}
+
+		policy = genPolicyDoc("Allow", fmt.Sprintf(`"%s"`, testuser.access), `"s3:GetObjectVersionAttributes"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		err = putBucketPolicy(s3client, bucket, policy)
+		if err != nil {
+			return err
+		}
+
+		// deny without versionId
+		err = getObjectAttr(nil, true)
+		if err != nil {
+			return err
+		}
+
+		// allow with versionId
+		err = getObjectAttr(res.res.VersionId, false)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
 func VersioningDisabled_GetBucketVersioning_not_configured(s *S3Conf) error {
 	testName := "VersioningDisabled_GetBucketVersioning_not_configured"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
