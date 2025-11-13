@@ -89,6 +89,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	}
 
 	// ListBuckets action
+
+	// copy source is not allowed on '/'
+	app.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	app.Get("/",
 		controllers.ProcessHandlers(
 			ctrl.ListBuckets,
@@ -384,6 +390,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		))
 
 	// HeadBucket action
+
+	// copy source is not allowed on bucket HEAD operation
+	bucketRouter.Head("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	bucketRouter.Head("",
 		controllers.ProcessHandlers(
 			ctrl.HeadBucket,
@@ -399,6 +411,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		))
 
 	// DELETE bucket operations
+
+	// copy source is not allowed on bucket DELETE operation
+	bucketRouter.Delete("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	bucketRouter.Delete("",
 		middlewares.MatchQueryArgs("tagging"),
 		controllers.ProcessHandlers(
@@ -582,6 +600,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		))
 
 	// GET bucket operations
+
+	// copy source is not allowed on bucket GET operation
+	bucketRouter.Get("/", middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	bucketRouter.Get("",
 		middlewares.MatchQueryArgs("location"),
 		controllers.ProcessHandlers(
@@ -973,6 +997,13 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.ParseAcl(be),
 		))
 
+	// bucket POST operation is not allowed with uploadId and copy source
+	bucketRouter.Post("/",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		middlewares.MatchQueryArgs("uploadId"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	// DeleteObjects action
 	bucketRouter.Post("",
 		middlewares.MatchQueryArgs("delete"),
@@ -988,6 +1019,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
+
+	// object HEAD operation is not allowed with copy source
+	objectRouter.Head("/",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
 
 	// HeadObject
 	objectRouter.Head("",
@@ -1009,6 +1046,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 	objectRouter.Get("",
 		middlewares.MatchQueryArgs("uploads"),
 		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrGetUploadsWithKey)), metrics.ActionUndetected, services),
+	)
+
+	// object GET operation is not allowed with copy source
+	objectRouter.Get("/",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
 	)
 
 	objectRouter.Get("",
@@ -1103,6 +1146,13 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		))
 
 	// DELETE object operations
+
+	// object DELETE operation is not allowed with copy source
+	objectRouter.Delete("/",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
+
 	objectRouter.Delete("",
 		middlewares.MatchQueryArgs("tagging"),
 		controllers.ProcessHandlers(
@@ -1141,6 +1191,15 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
+
+	// object POST operations
+
+	// object POST operation is not allowed with copy source and uploadId
+	objectRouter.Post("/",
+		middlewares.MatchHeader("X-Amz-Copy-Source"),
+		middlewares.MatchQueryArgs("uploadId"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)), metrics.ActionUndetected, services),
+	)
 
 	objectRouter.Post("",
 		middlewares.MatchQueryArgs("restore"),
