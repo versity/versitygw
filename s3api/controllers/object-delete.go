@@ -36,6 +36,11 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
+	action := auth.DeleteObjectTaggingAction
+	if versionId != "" {
+		action = auth.DeleteObjectVersionTaggingAction
+	}
+
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
@@ -45,7 +50,7 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          auth.DeleteObjectTaggingAction,
+			Action:          action,
 			IsPublicRequest: isBucketPublic,
 		})
 	if err != nil {
@@ -134,7 +139,10 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	isBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	//TODO: check s3:DeleteObjectVersion policy in case a use tries to delete a version of an object
+	action := auth.DeleteObjectAction
+	if versionId != "" {
+		action = auth.DeleteObjectVersionAction
+	}
 
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
@@ -145,7 +153,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 			Acc:             acct,
 			Bucket:          bucket,
 			Object:          key,
-			Action:          auth.DeleteObjectAction,
+			Action:          action,
 			IsPublicRequest: isBucketPublic,
 		})
 	if err != nil {

@@ -38,15 +38,20 @@ const (
 	GetObjectAction                          Action = "s3:GetObject"
 	GetObjectVersionAction                   Action = "s3:GetObjectVersion"
 	DeleteObjectAction                       Action = "s3:DeleteObject"
+	DeleteObjectVersionAction                Action = "s3:DeleteObjectVersion"
 	GetObjectAclAction                       Action = "s3:GetObjectAcl"
 	GetObjectAttributesAction                Action = "s3:GetObjectAttributes"
+	GetObjectVersionAttributesAction         Action = "s3:GetObjectVersionAttributes"
 	PutObjectAclAction                       Action = "s3:PutObjectAcl"
 	RestoreObjectAction                      Action = "s3:RestoreObject"
 	GetBucketTaggingAction                   Action = "s3:GetBucketTagging"
 	PutBucketTaggingAction                   Action = "s3:PutBucketTagging"
 	GetObjectTaggingAction                   Action = "s3:GetObjectTagging"
+	GetObjectVersionTaggingAction            Action = "s3:GetObjectVersionTagging"
 	PutObjectTaggingAction                   Action = "s3:PutObjectTagging"
+	PutObjectVersionTaggingAction            Action = "s3:PutObjectVersionTagging"
 	DeleteObjectTaggingAction                Action = "s3:DeleteObjectTagging"
+	DeleteObjectVersionTaggingAction         Action = "s3:DeleteObjectVersionTagging"
 	ListBucketVersionsAction                 Action = "s3:ListBucketVersions"
 	ListBucketAction                         Action = "s3:ListBucket"
 	GetBucketObjectLockConfigurationAction   Action = "s3:GetBucketObjectLockConfiguration"
@@ -109,15 +114,20 @@ var supportedActionList = map[Action]struct{}{
 	GetObjectAction:                          {},
 	GetObjectVersionAction:                   {},
 	DeleteObjectAction:                       {},
+	DeleteObjectVersionAction:                {},
 	GetObjectAclAction:                       {},
 	GetObjectAttributesAction:                {},
+	GetObjectVersionAttributesAction:         {},
 	PutObjectAclAction:                       {},
 	RestoreObjectAction:                      {},
 	GetBucketTaggingAction:                   {},
 	PutBucketTaggingAction:                   {},
 	GetObjectTaggingAction:                   {},
+	GetObjectVersionTaggingAction:            {},
 	PutObjectTaggingAction:                   {},
+	PutObjectVersionTaggingAction:            {},
 	DeleteObjectTaggingAction:                {},
+	DeleteObjectVersionTaggingAction:         {},
 	ListBucketVersionsAction:                 {},
 	ListBucketAction:                         {},
 	GetBucketObjectLockConfigurationAction:   {},
@@ -163,25 +173,30 @@ var supportedActionList = map[Action]struct{}{
 }
 
 var supportedObjectActionList = map[Action]struct{}{
-	AbortMultipartUploadAction:      {},
-	ListMultipartUploadPartsAction:  {},
-	PutObjectAction:                 {},
-	GetObjectAction:                 {},
-	GetObjectVersionAction:          {},
-	DeleteObjectAction:              {},
-	GetObjectAclAction:              {},
-	GetObjectAttributesAction:       {},
-	PutObjectAclAction:              {},
-	RestoreObjectAction:             {},
-	GetObjectTaggingAction:          {},
-	PutObjectTaggingAction:          {},
-	DeleteObjectTaggingAction:       {},
-	GetObjectLegalHoldAction:        {},
-	PutObjectLegalHoldAction:        {},
-	GetObjectRetentionAction:        {},
-	PutObjectRetentionAction:        {},
-	BypassGovernanceRetentionAction: {},
-	AllActions:                      {},
+	AbortMultipartUploadAction:       {},
+	ListMultipartUploadPartsAction:   {},
+	PutObjectAction:                  {},
+	GetObjectAction:                  {},
+	GetObjectVersionAction:           {},
+	DeleteObjectAction:               {},
+	DeleteObjectVersionAction:        {},
+	GetObjectAclAction:               {},
+	GetObjectAttributesAction:        {},
+	GetObjectVersionAttributesAction: {},
+	PutObjectAclAction:               {},
+	RestoreObjectAction:              {},
+	GetObjectTaggingAction:           {},
+	GetObjectVersionTaggingAction:    {},
+	PutObjectTaggingAction:           {},
+	PutObjectVersionTaggingAction:    {},
+	DeleteObjectTaggingAction:        {},
+	DeleteObjectVersionTaggingAction: {},
+	GetObjectLegalHoldAction:         {},
+	PutObjectLegalHoldAction:         {},
+	GetObjectRetentionAction:         {},
+	PutObjectRetentionAction:         {},
+	BypassGovernanceRetentionAction:  {},
+	AllActions:                       {},
 }
 
 // Validates Action: it should either wildcard match with supported actions list or be in it

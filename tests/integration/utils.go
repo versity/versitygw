@@ -2000,3 +2000,13 @@ type mpinfo struct {
 	uploadId *string
 	parts    []types.CompletedPart
 }
+
+func putBucketPolicy(client *s3.Client, bucket, policy string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	_, err := client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+		Bucket: &bucket,
+		Policy: &policy,
+	})
+	cancel()
+	return err
+}
