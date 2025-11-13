@@ -123,6 +123,7 @@ const (
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
 	ErrMissingDateHeader
+	ErrGetUploadsWithKey
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
@@ -513,6 +514,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMissingDateHeader: {
 		Code:           "AccessDenied",
 		Description:    "AWS authentication requires a valid Date or x-amz-date header.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrGetUploadsWithKey: {
+		Code:           "InvalidRequest",
+		Description:    "Key is not expected for the GET method ?uploads subresource",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidRequest: {

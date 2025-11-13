@@ -1004,6 +1004,13 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		))
 
 	// GET object operations
+
+	// object operation with '?uploads' is rejected with a specific error
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("uploads"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrGetUploadsWithKey)), metrics.ActionUndetected, services),
+	)
+
 	objectRouter.Get("",
 		middlewares.MatchQueryArgs("tagging"),
 		controllers.ProcessHandlers(

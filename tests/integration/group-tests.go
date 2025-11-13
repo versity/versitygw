@@ -1085,6 +1085,8 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterPutPartNumberWithoutUploadId)
 	ts.Run(RouterPostRoot)
 	ts.Run(RouterPostObjectWithoutQuery)
+	ts.Run(RouterPUTObjectOnlyUploadId)
+	ts.Run(RouterGetUploadsWithKey)
 }
 
 type IntTest func(s3 *S3Conf) error
@@ -1721,5 +1723,6 @@ func GetIntTests() IntTests {
 		"RouterPostRoot":                                                          RouterPostRoot,
 		"RouterPostObjectWithoutQuery":                                            RouterPostObjectWithoutQuery,
 		"RouterPUTObjectOnlyUploadId":                                             RouterPUTObjectOnlyUploadId,
+		"RouterGetUploadsWithKey":                                                 RouterGetUploadsWithKey,
 	}
 }
