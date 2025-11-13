@@ -198,6 +198,8 @@ func (s *S3Command) initializeOpenSSLPayloadAndGetContentLength() error {
 		streamingUnsignedPayloadTrailerImpl := NewStreamingUnsignedPayloadWithTrailer(s.dataSource, int64(s.ChunkSize), s.ChecksumType)
 		streamingUnsignedPayloadTrailerImpl.OmitTrailerOrKey(s.OmitPayloadTrailer, s.OmitPayloadTrailerKey)
 		s.payloadOpenSSL = streamingUnsignedPayloadTrailerImpl
+	case UnsignedPayload, "":
+		s.payloadOpenSSL = NewWholePayload(s.dataSource)
 	default:
 		return fmt.Errorf("unsupported OpenSSL payload type: '%s'", s.PayloadType)
 	}
@@ -407,6 +409,9 @@ func (s *S3Command) buildOpenSSLCommand() error {
 	if _, err = file.Write(openSSLCommandBytes); err != nil {
 		return fmt.Errorf("error writing to file: %w", err)
 	}
+	if _, err := file.Write([]byte{'\r', '\n', '\r', '\n'}); err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
+	}
 	if s.PayloadFile != "" || s.Payload != "" {
 		if err = s.writeOpenSSLPayload(file); err != nil {
 			return fmt.Errorf("error writing openssl payload: %w", err)
@@ -416,9 +421,6 @@ func (s *S3Command) buildOpenSSLCommand() error {
 }
 
 func (s *S3Command) writeOpenSSLPayload(file *os.File) error {
-	if _, err := file.Write([]byte{'\r', '\n', '\r', '\n'}); err != nil {
-		return fmt.Errorf("error writing to file: %w", err)
-	}
 	if awsPayload, ok := s.payloadOpenSSL.(*PayloadStreamingAWS4HMACSHA256); ok {
 		awsPayload.AddInitialSignatureAndSigningKey(s.signature, s.signingKey)
 	}

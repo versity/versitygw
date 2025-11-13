@@ -90,15 +90,15 @@ test_file="test_file"
   assert_success
 }
 
-#@test "REST - UploadPartCopy w/o upload ID" {
-#  run get_bucket_name "$BUCKET_ONE_NAME"
-#  assert_success
-#  bucket_name="$output"
+@test "REST - UploadPartCopy w/o upload ID" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
 
-#  run upload_part_copy_without_upload_id_or_part_number "$bucket_name" "$test_file" "1" "" \
-#    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
-#  assert_success
-#}
+  run upload_part_copy_without_upload_id_or_part_number "$bucket_name" "$test_file" "1" "" \
+    400 "InvalidArgument" "This operation does not accept partNumber without uploadId"
+  assert_success
+}
 
 @test "REST - UploadPartCopy w/o part number" {
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -174,10 +174,8 @@ test_file="test_file"
   run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run upload_part_rest_without_upload_id "$bucket_name" "$test_file"
+  run send_openssl_go_command_expect_error "400" "InvalidArgument" "This operation does not accept partNumber without uploadId" \
+    "-method" "PUT" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-query" "partNumber=1"
   assert_success
 }
 
