@@ -124,6 +124,23 @@ func RouterPUTObjectOnlyUploadId(s *S3Conf) error {
 	})
 }
 
+func RouterGetUploadsWithKey(s *S3Conf) error {
+	testName := "RouterGetUploadsWithKey"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodGet, s.endpoint+"/bucket/object?uploads", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrGetUploadsWithKey))
+	})
+}
+
 // CORS middleware tests
 func CORSMiddleware_invalid_method(s *S3Conf) error {
 	testName := "CORSMiddleware_invalid_method"
