@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 type Tag struct {
@@ -51,7 +50,7 @@ func NewPutBucketTaggingCommand(s3Command *S3Command, fields *PutBucketTaggingFi
 		return nil, errors.New("tagCount can not be set simultaneously with tagKeys or tagValues")
 	}
 	command.Tags = &PutBucketTaggingTags{
-		XMLNamespace: "https://s3.amazonaws.com/doc/2006-03-01/",
+		XMLNamespace: "http://s3.amazonaws.com/doc/2006-03-01/",
 	}
 	if fields.TagCount > 0 {
 		command.Tags.GenerateKeyValuePairs(fields.TagCount)
@@ -65,8 +64,7 @@ func NewPutBucketTaggingCommand(s3Command *S3Command, fields *PutBucketTaggingFi
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling XML: %w", err)
 	}
-	command.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + string(xmlData)
-	command.Payload = strings.Replace(command.Payload, "\"", "\\\"", -1)
+	command.Payload = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + string(xmlData)
 	return command, nil
 }
 
