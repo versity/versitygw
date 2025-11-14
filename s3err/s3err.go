@@ -124,6 +124,7 @@ const (
 	ErrRequestNotReadyYet
 	ErrMissingDateHeader
 	ErrGetUploadsWithKey
+	ErrCopySourceNotAllowed
 	ErrInvalidRequest
 	ErrAuthNotSetup
 	ErrNotImplemented
@@ -519,6 +520,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrGetUploadsWithKey: {
 		Code:           "InvalidRequest",
 		Description:    "Key is not expected for the GET method ?uploads subresource",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrCopySourceNotAllowed: {
+		Code:           "InvalidArgument",
+		Description:    "You can only specify a copy source header for copy requests.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidRequest: {

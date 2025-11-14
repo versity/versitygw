@@ -15,6 +15,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -138,6 +139,53 @@ func RouterGetUploadsWithKey(s *S3Conf) error {
 		}
 
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrGetUploadsWithKey))
+	})
+}
+
+func RouterCopySourceNotAllowed(s *S3Conf) error {
+	testName := "RouterCopySourceNotAllowed"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		for _, method := range []string{
+			http.MethodPost,
+			http.MethodDelete,
+			http.MethodGet,
+			http.MethodHead,
+		} {
+			for _, path := range []string{
+				"/bucket",
+				"/bucket/object",
+			} {
+				if method == http.MethodPost {
+					// the error for POST request occurs only when uploadId is there
+					path += "?uploadId=something"
+				}
+
+				req, err := http.NewRequest(method, s.endpoint+path, nil)
+				if err != nil {
+					return fmt.Errorf("failed to make %s request to %s", method, path)
+				}
+
+				req.Header.Add("x-amz-copy-source", "bucket/object")
+
+				resp, err := s.httpClient.Do(req)
+				if err != nil {
+					return fmt.Errorf("failed to send %s request to %s", method, path)
+				}
+
+				if method == http.MethodHead {
+					// for head requests only check the status code
+					if resp.StatusCode != http.StatusBadRequest {
+						return fmt.Errorf("expected 400 status code for HEAD %s request, instead got %v", path, resp.StatusCode)
+					}
+				} else {
+					if err := checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrCopySourceNotAllowed)); err != nil {
+						return fmt.Errorf("%s %s: %w", method, path, err)
+					}
+				}
+			}
+		}
+
+		return nil
 	})
 }
 

@@ -1087,6 +1087,7 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterPostObjectWithoutQuery)
 	ts.Run(RouterPUTObjectOnlyUploadId)
 	ts.Run(RouterGetUploadsWithKey)
+	ts.Run(RouterCopySourceNotAllowed)
 }
 
 type IntTest func(s3 *S3Conf) error
@@ -1724,5 +1725,6 @@ func GetIntTests() IntTests {
 		"RouterPostObjectWithoutQuery":                                            RouterPostObjectWithoutQuery,
 		"RouterPUTObjectOnlyUploadId":                                             RouterPUTObjectOnlyUploadId,
 		"RouterGetUploadsWithKey":                                                 RouterGetUploadsWithKey,
+		"RouterCopySourceNotAllowed":                                              RouterCopySourceNotAllowed,
 	}
 }
