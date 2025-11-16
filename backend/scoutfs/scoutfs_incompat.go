@@ -17,23 +17,15 @@
 package scoutfs
 
 import (
-	"errors"
 	"fmt"
-	"os"
+
+	"github.com/versity/versitygw/backend"
 )
+
+type ScoutFS struct {
+	backend.BackendUnsupported
+}
 
 func New(rootdir string, opts ScoutfsOpts) (*ScoutFS, error) {
 	return nil, fmt.Errorf("scoutfs only available on linux")
-}
-
-var (
-	errNotSupported = errors.New("not supported")
-)
-
-func moveData(_, _ *os.File) error {
-	return errNotSupported
-}
-
-func statMore(_ string) (stat, error) {
-	return stat{}, errNotSupported
 }

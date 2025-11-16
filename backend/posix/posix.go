@@ -1651,7 +1651,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			err = customMove(pf, f.File())
 			if err != nil {
 				// Fail back to standard copy
-				debuglogger.Logf("Custom data block move failed (%w), failing back to io.Copy()", err)
+				debuglogger.Logf("custom data block move failed (%q/%q): %v, failing back to io.Copy()",
+					bucket, object, err)
 				fw := f.File()
 				fw.Seek(0, io.SeekEnd)
 				_, err = io.Copy(fw, rdr)
@@ -2438,6 +2439,10 @@ type hashConfig struct {
 }
 
 func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.UploadPartOutput, error) {
+	return p.UploadPartWithPostFunc(ctx, input, func(*os.File) error { return nil })
+}
+
+func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPartInput, postprocess func(f *os.File) error) (*s3.UploadPartOutput, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -2615,6 +2620,11 @@ func (p *Posix) UploadPart(ctx context.Context, input *s3.UploadPartInput) (*s3.
 				return nil, fmt.Errorf("store checksum: %w", err)
 			}
 		}
+	}
+
+	err = postprocess(f.File())
+	if err != nil {
+		return nil, fmt.Errorf("upload part post process failed: %w", err)
 	}
 
 	err = f.link()
@@ -2858,6 +2868,10 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 }
 
 func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
+	return p.PutObjectWithPostFunc(ctx, po, func(*os.File) error { return nil })
+}
+
+func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObjectInput, postprocess func(f *os.File) error) (s3response.PutObjectOutput, error) {
 	acct, ok := ctx.Value("account").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
@@ -3136,6 +3150,13 @@ func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3
 			return s3response.PutObjectOutput{}, fmt.Errorf("set versionId attr: %w", err)
 		}
 	}
+
+	err = postprocess(f.File())
+	if err != nil {
+		return s3response.PutObjectOutput{},
+			fmt.Errorf("put object post process failed: %w", err)
+	}
+
 	err = f.link()
 	if errors.Is(err, syscall.EEXIST) {
 		return s3response.PutObjectOutput{
