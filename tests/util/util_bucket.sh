@@ -124,7 +124,7 @@ setup_bucket() {
 
   log 5 "util.setup_bucket: bucket name: $1"
   if [[ $RECREATE_BUCKETS == "true" ]]; then
-    if ! create_bucket "s3api" "$1"; then
+    if ! create_bucket_rest_expect_success "$1" ""; then
       log 2 "error creating bucket"
       return 1
     fi

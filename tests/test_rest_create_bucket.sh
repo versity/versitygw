@@ -124,3 +124,34 @@ export RUN_USERS=true
   run setup_and_create_bucket_and_check_acl "GRANT_WRITE_ACP"
   assert_success
 }
+
+@test "REST - CreateBucket - empty location constraint" {
+  run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" ""
+  assert_success
+}
+
+@test "REST - CreateBucket - location constraint mismatch" {
+  if [ "$DIRECT" == "true" ]; then
+    skip "not valid for direct mode"
+  fi
+  local region="us-east-1"
+  if [ "$AWS_REGION" == "us-east-1" ]; then
+    region="us-west-1"
+  fi
+
+  run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" "$region"
+  assert_success
+}
+
+@test "REST - CreateBucket - fail - us-east-1 with 'us-east-1' location constraint" {
+  if [ "$AWS_REGION" != "us-east-1" ]; then
+    skip "only valid for us-east-1 region"
+  fi
+  run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" "us-east-1"
+  assert_success
+}
+
+@test "REST - CreateBucket - location constraint error returns invalid constraint" {
+  run send_invalid_location_constraint_check_error "abc"
+  assert_success
+}

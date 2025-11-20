@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 	"os"
@@ -112,9 +111,6 @@ type S3Command struct {
 }
 
 func (s *S3Command) OpenSSLCommand() error {
-	if s.FilePath == "" {
-		return errors.New("for openssl command, filePath must be set")
-	}
 	if err := s.prepareForBuild(); err != nil {
 		return fmt.Errorf("error preparing for command building: %w", err)
 	}
@@ -162,9 +158,6 @@ func (s *S3Command) prepareForBuild() error {
 }
 
 func (s *S3Command) preparePayload() error {
-	if s.PayloadFile != "" && s.Payload != "" {
-		return fmt.Errorf("cannot have both payload and payloadFile parameters set")
-	}
 	if s.PayloadFile != "" {
 		s.dataSource = NewFileDataSource(s.PayloadFile)
 	} else if s.Payload != "" {

@@ -109,6 +109,7 @@ get_bucket_policy_rest() {
   if ! check_param_count "get_bucket_policy_rest" "bucket" 1 $#; then
     return 1
   fi
+  log 5 "aws region: $AWS_REGION"
   if ! get_bucket_policy_rest_expect_code "$1" "200"; then
     log 2 "error getting REST bucket policy"
     return 1
