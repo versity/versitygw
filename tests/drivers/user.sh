@@ -112,3 +112,55 @@ setup_bucket_file_and_user_v2() {
   echo "$result"
   return 0
 }
+
+reset_bucket() {
+  if ! check_param_count "reset_bucket" "bucket" 1 $#; then
+    return 1
+  fi
+  log 6 "reset bucket '$1'"
+
+  if [[ $LOG_LEVEL_INT -ge 5 ]] && ! log_bucket_policy "$1"; then
+    log 3 "error logging bucket policy"
+  fi
+
+  if ! check_object_lock_config "$1"; then
+    log 2 "error checking object lock config"
+    return 1
+  fi
+
+  if [[ "$DIRECT" != "true" ]] && ! add_governance_bypass_policy "$1"; then
+    log 2 "error adding governance bypass policy"
+    return 1
+  fi
+
+  if ! list_and_delete_objects "$1"; then
+    log 2 "error listing and deleting objects"
+    return 1
+  fi
+
+  if ! abort_all_multipart_uploads_rest "$1"; then
+    log 2 "error aborting all multipart uploads"
+    return 1
+  fi
+
+  if [ "$SKIP_ACL_TESTING" != "true" ] && ! check_ownership_rule_and_reset_acl "$1"; then
+    log 2 "error checking ownership rule and resetting acl"
+    return 1
+  fi
+
+  if ! delete_bucket_policy_rest "$1"; then
+    log 2 "error deleting bucket policy"
+    return 1
+  fi
+
+  # shellcheck disable=SC2154
+  if [[ $lock_config_exists == true ]] && ! remove_retention_policy_rest "$1"; then
+    log 2 "error removing bucket retention policy"
+    return 1
+  fi
+
+  if [ "$RUN_USERS" == "true" ] && [ "$DIRECT" != "true" ] && ! change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$1" "$AWS_ACCESS_KEY_ID"; then
+    log 2 "error changing bucket owner back to root"
+    return 1
+  fi
+}
