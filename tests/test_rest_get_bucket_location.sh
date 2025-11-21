@@ -22,6 +22,9 @@ source ./tests/drivers/get_bucket_location/get_bucket_location_rest.sh
 source ./tests/setup.sh
 
 @test "REST - GetBucketLocation - no bucket" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "not valid for static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -31,6 +34,9 @@ source ./tests/setup.sh
 }
 
 @test "REST - GetBucketLocation - us-east-1 is returned as null" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1643"
+  fi
   log 5 "AWS_REGION: $AWS_REGION"
   if [ "$AWS_REGION" != "us-east-1" ]; then
     skip "test only valid for AWS_REGION of 'us-east-1'"
