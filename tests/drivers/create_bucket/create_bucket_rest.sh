@@ -17,6 +17,7 @@
 source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/drivers/get_object/get_object_rest.sh
+source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 source ./tests/drivers/user.sh
