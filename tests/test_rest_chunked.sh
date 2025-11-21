@@ -21,7 +21,6 @@ source ./tests/logger.sh
 source ./tests/setup.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
-source ./tests/util/util_bucket.sh
 source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_file.sh
 

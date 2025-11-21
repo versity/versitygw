@@ -27,7 +27,6 @@ source ./tests/drivers/list_buckets/list_buckets_rest.sh
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_bucket.sh
 source ./tests/util/util_delete_object.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
