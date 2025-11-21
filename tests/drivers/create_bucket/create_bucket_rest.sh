@@ -302,7 +302,7 @@ create_bucket_and_run_command() {
     log 2 "error setting up bucket"
     return 1
   fi
-  if ! "$2" "${@:3}"; then
+  if ! "$2" "$bucket_name" "${@:3}"; then
     log 2 "error running command on bucket"
     return 1
   fi

@@ -35,7 +35,7 @@ source ./tests/setup.sh
   if [ "$AWS_REGION" != "us-east-1" ]; then
     skip "test only valid for AWS_REGION of 'us-east-1'"
   fi
-  run create_bucket_and_run_command "$BUCKET_ONE_NAME" get_check_bucket_location "200" ""
+  run create_bucket_and_run_command "$BUCKET_ONE_NAME" get_check_bucket_location ""
   assert_success
 }
 
@@ -43,6 +43,6 @@ source ./tests/setup.sh
   if [ "$AWS_REGION" == "us-east-1" ]; then
     skip "test not valid for us-east-1"
   fi
-  run create_bucket_and_run_command "$BUCKET_ONE_NAME" get_check_bucket_location "200" "$AWS_REGION"
+  run create_bucket_and_run_command "$BUCKET_ONE_NAME" get_check_bucket_location "$AWS_REGION"
   assert_success
 }
