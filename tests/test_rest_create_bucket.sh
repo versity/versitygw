@@ -126,12 +126,15 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - empty location constraint" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1644"
+  fi
   run send_curl_command_create_bucket_expect_error "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" "-locationConstraint" ""
   assert_success
 }
 
 @test "REST - CreateBucket - location constraint mismatch" {
-  if [ "$DIRECT" == "true" ]; then
+  if [ "$DIRECT" != "true" ]; then
     skip "not valid for direct mode"
   fi
   local region="us-east-1"
@@ -144,6 +147,9 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - fail - us-east-1 with 'us-east-1' location constraint" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1643"
+  fi
   if [ "$AWS_REGION" != "us-east-1" ]; then
     skip "only valid for us-east-1 region"
   fi
@@ -152,6 +158,9 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - location constraint error returns invalid constraint" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1645"
+  fi
   run send_invalid_location_constraint_check_error "abc"
   assert_success
 }
