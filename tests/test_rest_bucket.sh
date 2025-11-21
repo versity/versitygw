@@ -24,6 +24,7 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
