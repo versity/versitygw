@@ -50,6 +50,7 @@ source ./tests/commands/select_object_content.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 export RUN_USERS=true
 

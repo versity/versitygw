@@ -82,3 +82,18 @@ get_bucket_location_mc() {
   bucket_location=$(echo "$info" | grep -o 'Location:.*' | awk '{print $2}')
   return 0
 }
+
+get_bucket_location_rest() {
+  if ! check_param_count_v2 "bucket, callback" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command "200" "-bucketName" "$1" "-method" "GET" "-query" "location=" "-awsRegion" "$AWS_REGION"; then
+    log 2 "error sending rest go command"
+    return 1
+  fi
+  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/result.txt"; then
+    log 2 "callback error"
+    return 1
+  fi
+  return 0
+}

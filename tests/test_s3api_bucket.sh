@@ -48,6 +48,9 @@ source ./tests/drivers/user.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/head_bucket/head_bucket_rest.sh
+source ./tests/drivers/head_bucket/head_bucket_s3api.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_head_bucket.sh

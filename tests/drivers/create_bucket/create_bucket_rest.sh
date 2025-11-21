@@ -17,6 +17,7 @@
 source ./tests/drivers/delete_bucket/delete_bucket_rest.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl_rest.sh
 source ./tests/drivers/get_object/get_object_rest.sh
+source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/put_bucket_acl/put_bucket_acl_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 source ./tests/drivers/user.sh
@@ -232,6 +233,79 @@ setup_bucket_object_lock_enabled() {
       log 2 "error creating bucket with object lock enabled"
       return 1
     fi
+  fi
+  return 0
+}
+
+send_curl_command_create_bucket_expect_error() {
+  if ! check_param_count_gt "response code, error code, message, params" 4 $#; then
+    return 1
+  fi
+  if ! send_curl_command_create_bucket_expect_error_callback "$1" "$2" "$3" "" "${@:4}"; then
+    log 2 "error sending curl create bucket command"
+    return 1
+  fi
+  return 0
+}
+
+send_curl_command_create_bucket_expect_error_callback() {
+  if ! check_param_count_gt "response code, error code, message, callback, params" 5 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name from '$BUCKET_ONE_NAME': $bucket_name"
+    return 1
+  fi
+  if ! send_rest_go_command_expect_error "$1" "$2" "$3" "-bucketName" "$bucket_name" "-commandType" "createBucket" "${@:5}"; then
+    log 2 "error sending rest go command"
+    return 1
+  fi
+  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/result.txt"; then
+    log 2 "callback error"
+    return 1
+  fi
+  return 0
+}
+
+send_invalid_location_constraint_check_error() {
+  if ! check_param_count_v2 "invalid param" 1 $#; then
+    return 1
+  fi
+  invalid_location_constraint="$1"
+  if ! send_curl_command_create_bucket_expect_error_callback "400" "InvalidLocationConstraint" "The specified location-constraint is not valid" \
+      "check_location_constraint_param" "-locationConstraint" "$invalid_location_constraint"; then
+    log 2 "error sending curl command and checking callback"
+    return 1
+  fi
+  return 0
+}
+
+check_location_constraint_param() {
+  if ! check_param_count_v2 "file" 1 $#; then
+    return 1
+  fi
+  if ! check_error_parameter "$1" "LocationConstraint" "$invalid_location_constraint"; then
+    log 2 "location constraint mismatch"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_and_run_command() {
+  if ! check_param_count_gt "bucket, command, params" 2 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(get_bucket_name "$1" 2>&1); then
+    log 2 "error creating bucket '$1': $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket "$bucket_name"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  if ! "$2" "$bucket_name" "${@:3}"; then
+    log 2 "error running command on bucket"
+    return 1
   fi
   return 0
 }

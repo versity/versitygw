@@ -1,6 +1,6 @@
-#!/usr/bin/env bats
+#!/usr/bin/env bash
 
-# Copyright 2024 Versity Software
+# Copyright 2025 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -14,13 +14,20 @@
 # specific language governing permissions and limitations
 # under the License.
 
-load ./bats-support/load
-load ./bats-assert/load
-
-source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_file.sh
-source ./tests/test_common.sh
-
-@test "test_list_objects_file_count" {
-  test_common_list_objects_file_count "s3"
+bucket_exists() {
+  if ! check_param_count "bucket_exists" "bucket name" 1 $#; then
+    return 2
+  fi
+  local exists=0
+  head_bucket "rest" "$1" || exists=$?
+  log 5 "bucket exists response code: $exists"
+  # shellcheck disable=SC2181
+  if [ $exists -eq 2 ]; then
+    log 2 "unexpected error checking if bucket exists"
+    return 2
+  fi
+  if [ $exists -eq 0 ]; then
+    return 0
+  fi
+  return 1
 }

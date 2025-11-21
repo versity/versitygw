@@ -14,8 +14,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/list_buckets.sh
+source ./tests/drivers/get_bucket_location/get_bucket_location_rest.sh
+source ./tests/drivers/head_bucket/head_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/user.sh
 
 delete_buckets_with_prefix() {
   if ! check_param_count_v2 "bucket prefix" 1 $#; then
@@ -128,6 +132,12 @@ delete_bucket_recursive() {
   if ! check_param_count "delete_bucket_recursive_s3api" "bucket" 1 $#; then
     return 1
   fi
+
+  if ! location=$(get_bucket_location_rest "$1" "parse_bucket_location" 2>&1); then
+    log 2 "error getting bucket location: $location"
+    return 1
+  fi
+  log 5 "location: $location"
 
   if ! reset_bucket "$1"; then
     log 2 "error clearing bucket (s3api)"

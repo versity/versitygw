@@ -15,120 +15,140 @@ jobs:
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "mc, posix, file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "mc-file-count"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, non-static, base|acl|multipart|put-object, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-base,rest-acl,rest-multipart,rest-put-object"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, non-static, chunked|checksum|versioning|bucket, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-chunked,rest-checksum,rest-versioning,rest-bucket,rest-list-buckets,rest-create-bucket,rest-head-bucket"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, non-static, not implemented|rest-delete-bucket-ownership-controls|rest-delete-bucket-tagging, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-not-implemented,rest-delete-bucket-ownership-controls,rest-delete-bucket-tagging"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, static, base|acl|multipart|put-object, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-base,rest-acl,rest-multipart,rest-put-object"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, static, chunked|checksum|versioning|bucket, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-chunked,rest-checksum,rest-versioning,rest-bucket,rest-list-buckets,rest-create-bucket,rest-head-bucket"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "REST, posix, static, not implemented|rest-delete-bucket-ownership-controls|rest-delete-bucket-tagging, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "rest-not-implemented,rest-delete-bucket-ownership-controls,rest-delete-bucket-tagging"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
-          - set: "REST, posix, static, rest-put-bucket-tagging, folder IAM"
+            AWS_REGION: "us-east-1"
+          - set: "REST, posix, static, rest-put-bucket-tagging|rest-get-bucket-location, folder IAM"
             IAM_TYPE: folder
-            RUN_SET: "rest-put-bucket-tagging"
+            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
-          - set: "REST, posix, non-static, rest-put-bucket-tagging, folder IAM"
+            AWS_REGION: "us-east-1"
+          - set: "REST, posix, non-static, rest-put-bucket-tagging|rest-get-bucket-location, folder IAM"
             IAM_TYPE: folder
-            RUN_SET: "rest-put-bucket-tagging"
+            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-west-1"
           - set: "s3, posix, non-file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3-non-file-count"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3, posix, file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3-file-count"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, bucket|object|multipart, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-bucket,s3api-object,s3api-multipart"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, policy, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-policy"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, user, non-static, s3 IAM"
             IAM_TYPE: s3
             RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, bucket, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-bucket"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, multipart, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-multipart"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, object, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-object"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, policy, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-policy"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3api, posix, user, static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3api-user"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           # TODO fix/debug s3 gateway
           #- set: "s3api, s3, multipart|object, non-static, folder IAM"
           #  IAM_TYPE: folder
@@ -146,24 +166,28 @@ jobs:
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3cmd, posix, non-user, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3cmd-non-user"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "s3cmd, posix, user, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3cmd-user"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
           - set: "setup/remove static buckets scripts"
             IAM_TYPE: folder
             RUN_SET: "setup-remove-static"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
+            AWS_REGION: "us-east-1"
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -243,11 +267,12 @@ jobs:
           PYTHON_ENV_FOLDER: ${{ github.workspace }}/env
           AUTOGENERATE_USERS: true
           USER_AUTOGENERATION_PREFIX: github-actions-test-
+          AWS_REGION: ${{ matrix.AWS_REGION }}
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
           export AWS_SECRET_ACCESS_KEY=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
-          export AWS_REGION=us-east-1
+          export AWS_REGION=$AWS_REGION
           export AWS_ACCESS_KEY_ID_TWO=user
           export AWS_SECRET_ACCESS_KEY_TWO=pass
           export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED

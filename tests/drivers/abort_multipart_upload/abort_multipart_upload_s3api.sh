@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 Versity Software
+# Copyright 2025 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -51,18 +51,4 @@ abort_all_multipart_uploads() {
     fi
   done <<< "$lines"
   return 0
-}
-
-remove_insecure_request_warning() {
-  if [[ $# -ne 1 ]]; then
-    log 2 "remove insecure request warning requires input lines"
-    return 1
-  fi
-  parsed_output=()
-  while IFS= read -r line; do
-    if [[ $line != *InsecureRequestWarning* ]]; then
-      parsed_output+=("$line")
-    fi
-  done <<< "$1"
-  export parsed_output
 }

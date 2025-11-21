@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-get_check_bucket_location() {
+get_check_bucket_location_various() {
   if [ $# -ne 2 ]; then
     log 2 "'get_bucket_location' requires client, bucket"
     return 1

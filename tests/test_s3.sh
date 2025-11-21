@@ -17,8 +17,9 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/test_common.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/util/util_file.sh
+source ./tests/test_common.sh
 
 # complete-multipart-upload
 @test "test_complete_multipart_upload" {
