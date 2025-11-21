@@ -14,7 +14,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/file.sh
+source ./tests/util/util_retention.sh
 source ./tests/util/util_users.sh
 
 create_versitygw_acl_user_or_get_direct_user() {
