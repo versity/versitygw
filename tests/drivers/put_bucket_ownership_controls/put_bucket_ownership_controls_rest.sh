@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/head_bucket/head_bucket_rest.sh
+
 # params:  client, bucket name(s)
 # return 0 for success, 1 for failure
 setup_buckets() {
