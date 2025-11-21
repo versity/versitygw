@@ -36,6 +36,7 @@ source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
+source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh

@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/drivers/params.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 setup_bucket_and_file() {
   if ! check_param_count_v2 "bucket, file name" 2 $#; then

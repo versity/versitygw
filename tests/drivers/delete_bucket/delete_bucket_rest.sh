@@ -17,7 +17,9 @@
 source ./tests/commands/get_bucket_location.sh
 source ./tests/commands/list_buckets.sh
 source ./tests/drivers/get_bucket_location/get_bucket_location_rest.sh
+source ./tests/drivers/head_bucket/head_bucket_rest.sh
 source ./tests/drivers/list_buckets/list_buckets_rest.sh
+source ./tests/drivers/user.sh
 
 delete_buckets_with_prefix() {
   if ! check_param_count_v2 "bucket prefix" 1 $#; then
