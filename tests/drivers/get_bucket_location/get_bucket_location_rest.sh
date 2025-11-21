@@ -24,7 +24,7 @@ get_check_bucket_location() {
   if [ "$expected_location" == "us-east-1" ]; then
     expected_location=""
   fi
-  if ! get_bucket_location_rest "200" "check_location_constraint"; then
+  if ! get_bucket_location_rest "$1" "check_location_constraint"; then
     log 2 "error getting and checking bucket location"
     return 1
   fi
