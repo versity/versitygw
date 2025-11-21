@@ -32,6 +32,7 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
+source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh

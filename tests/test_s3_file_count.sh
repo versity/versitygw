@@ -17,8 +17,9 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/test_common.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/util/util_file.sh
+source ./tests/test_common.sh
 
 @test "test_list_objects_file_count" {
   test_common_list_objects_file_count "s3"
