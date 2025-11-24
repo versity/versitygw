@@ -22,6 +22,7 @@ source ./tests/drivers/file.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
+source ./tests/util/util_public_access_block.sh
 
 test_file="test_file"
 export RUN_USERS=true
@@ -441,5 +442,34 @@ export RUN_USERS=true
     "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-omitPayloadTrailer" \
     "-debug" "-logFile" "tagging.log" "-checksumType" "crc64nvme" \
     "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192"
+  assert_success
+}
+
+@test "REST - PutObjectTagging - invalid x-amz-request-payer" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run create_versitygw_acl_user_or_get_direct_user "$USERNAME_ONE" "$PASSWORD_ONE"
+  assert_success
+  username=${lines[2]}
+  password=${lines[3]}
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_bucket_ownership_controls "$bucket_name" "BucketOwnerPreferred"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    run allow_public_access "$bucket_name"
+    assert_success
+  fi
+
+  run put_canned_acl_rest "$bucket_name" "public-read-write"
+  assert_success
+
+  run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" "-signedParams" "x-amz-request-payer:dummy"
   assert_success
 }
