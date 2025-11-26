@@ -512,14 +512,33 @@ func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, Ch
 		return sdkAlgorithm, checksums, err
 	}
 
-	if len(checksums) == 0 && sdkAlgorithm != "" {
-		if ctx.Get("X-Amz-Trailer") == "" {
-			// This is a special case when x-amz-trailer is there
-			// it means the upload is done with chunked encoding
-			// where the checksum verification is handled in the chunk reader
+	trailer := strings.ToUpper(ctx.Get("X-Amz-Trailer"))
+
+	if len(checksums) != 0 && trailer != "" {
+		// both x-amz-trailer and one of x-amz-checksum-* is not allowed
+		debuglogger.Logf("x-amz-checksum-* header is used with x-amz-trailer: trailer: %s", trailer)
+		return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrMultipleChecksumHeaders)
+	}
+
+	trailerAlgo := strings.TrimPrefix(trailer, "X-AMZ-CHECKSUM-")
+
+	if sdkAlgorithm != "" {
+		if len(checksums) == 0 && trailerAlgo == "" {
+			// in case x-amz-sdk-algorithm is specified, but no corresponging
+			// x-amz-checksum-* or x-amz-trailer is sent
 			debuglogger.Logf("'x-amz-sdk-checksum-algorithm : %s' is used without corresponding x-amz-checksum-* header", sdkAlgorithm)
 			return sdkAlgorithm, checksums, s3err.GetAPIError(s3err.ErrChecksumSDKAlgoMismatch)
 		}
+
+		if trailerAlgo != "" && string(sdkAlgorithm) != trailerAlgo {
+			// x-amz-sdk-checksum-algorithm and x-amz-trailer should match
+			debuglogger.Logf("x-amz-sdk-checksum-algorithm: (%s) and x-amz-trailer: (%s) doesn't match", sdkAlgorithm, trailerAlgo)
+			return sdkAlgorithm, checksums, s3err.GetInvalidChecksumHeaderErr("x-amz-sdk-checksum-algorithm")
+		}
+	}
+
+	if trailerAlgo != "" {
+		sdkAlgorithm = types.ChecksumAlgorithm(trailerAlgo)
 	}
 
 	for al, val := range checksums {
