@@ -174,10 +174,8 @@ test_file="test_file"
   run setup_bucket_and_large_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run split_file "$TEST_FILE_FOLDER/$test_file" 4
-  assert_success
-
-  run upload_part_rest_without_upload_id "$bucket_name" "$test_file"
+  run send_openssl_go_command_expect_error "400" "InvalidArgument" "This operation does not accept partNumber without uploadId" \
+    "-method" "PUT" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-query" "partNumber=1"
   assert_success
 }
 
@@ -208,9 +206,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart checksum w/crc64nvme, composite" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1329"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -224,9 +219,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart checksum w/sha1, full object" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1329"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

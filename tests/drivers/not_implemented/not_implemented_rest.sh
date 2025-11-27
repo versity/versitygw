@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/rest_scripts/rest.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 send_not_implemented_expect_failure() {
   if [ $(($# % 2)) -ne 0 ]; then

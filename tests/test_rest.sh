@@ -32,9 +32,11 @@ source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/copy_object/copy_object_rest.sh
 source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
+source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/get_bucket_ownership_controls/get_bucket_ownership_controls_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
+source ./tests/drivers/list_objects/list_objects_rest.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh
@@ -306,9 +308,6 @@ test_file="test_file"
 }
 
 @test "REST - delete objects - no content-md5 header" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1040"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -370,9 +369,6 @@ test_file="test_file"
 }
 
 @test "REST - PutObjectLegalHold - missing content-md5" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1311"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -442,9 +438,6 @@ test_file="test_file"
 }
 
 @test "REST - copy object w/copy source and payload" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1242"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

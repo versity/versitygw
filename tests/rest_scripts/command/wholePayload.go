@@ -30,6 +30,9 @@ func (w *WholePayload) GetContentLength() (int64, error) {
 }
 
 func (w *WholePayload) WritePayload(filePath string) error {
+	if w.dataSource == nil {
+		return nil
+	}
 	sourceFile, err := w.dataSource.GetReader()
 	if err != nil {
 		return fmt.Errorf("error creating tee reader: %w", err)

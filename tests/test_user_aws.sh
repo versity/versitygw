@@ -20,6 +20,7 @@ load ./bats-assert/load
 source ./tests/test_user_common.sh
 source ./tests/commands/get_object.sh
 source ./tests/commands/put_object.sh
+source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/user.sh
 

@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	CreateBucket     = "createBucket"
 	PutBucketTagging = "putBucketTagging"
 	PutObject        = "putObject"
 )
@@ -57,6 +58,9 @@ var omitPayloadTrailer *bool
 var omitPayloadTrailerKey *bool
 var omitContentLength *bool
 
+var locationConstraint *string
+var locationConstraintSet bool = false
+
 type restParams map[string]string
 
 func (r *restParams) String() string {
@@ -88,6 +92,10 @@ func (a *arrayFlags) Set(value string) error {
 func main() {
 	if err := checkFlags(); err != nil {
 		log.Fatalf("Error checking flags: %v", err)
+	}
+
+	if err := validateConfig(); err != nil {
+		log.Fatalf("Error validating config: %v", err)
 	}
 
 	baseCommand := &command.S3Command{
@@ -137,6 +145,10 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 	var s3Command command.S3CommandConverter
 	var err error
 	switch *commandType {
+	case CreateBucket:
+		if s3Command, err = command.NewCreateBucketCommand(baseCommand, *locationConstraint, locationConstraintSet); err != nil {
+			return nil, fmt.Errorf("error setting up CreateBucket command: %v", err)
+		}
 	case PutBucketTagging:
 		fields := command.PutBucketTaggingFields{
 			TagCount:  *tagCount,
@@ -148,7 +160,7 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 		}
 	case PutObject:
 		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
-			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
+			return nil, fmt.Errorf("error setting up PutObject command: %v", err)
 		}
 	default:
 		s3Command = baseCommand
@@ -211,6 +223,7 @@ func checkFlags() error {
 	omitContentLength = flag.Bool("omitContentLength", false, "Omit content length parameter")
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
+	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
 	// Parse the flags
 	flag.Parse()
 
@@ -218,13 +231,35 @@ func checkFlags() error {
 		if f.Name == "customHostParam" {
 			customHostParamSet = true
 		}
+		if f.Name == "locationConstraint" {
+			locationConstraintSet = true
+		}
 	})
 
-	if flag.Lookup("awsAccessKeyId").Value.String() == "" {
+	return nil
+}
+
+func validateConfig() error {
+	if *awsAccessKeyId == "" {
 		return fmt.Errorf("the 'awsAccessKeyId' value must be set")
 	}
-	if flag.Lookup("awsSecretAccessKey").Value.String() == "" {
+	if *awsSecretAccessKey == "" {
 		return fmt.Errorf("the 'awsSecretAccessKey' value must be set")
+	}
+	if *payloadFile != "" && *payload != "" {
+		return fmt.Errorf("cannot have both payload and payloadFile parameters set")
+	}
+	if *client == command.OPENSSL {
+		if *filePath == "" {
+			return fmt.Errorf("for OpenSSL commands, file path must be set")
+		}
+	} else {
+		if *chunkSize != 0 || *omitPayloadTrailerKey || *omitPayloadTrailer {
+			return fmt.Errorf("use of one or more params only suppored for OpenSSL commands")
+		}
+	}
+	if *client == command.CURL && *filePath != "" {
+		return fmt.Errorf("writing to file not currently supported for curl commands")
 	}
 	return nil
 }
