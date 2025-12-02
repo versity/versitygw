@@ -371,11 +371,19 @@ func checkHTTPResponseApiErr(resp *http.Response, apiErr s3err.APIError) error {
 	if resp.StatusCode != apiErr.HTTPStatusCode {
 		return fmt.Errorf("expected response status code to be %v, instead got %v", apiErr.HTTPStatusCode, resp.StatusCode)
 	}
-	if errResp.Code != apiErr.Code {
-		return fmt.Errorf("expected error code to be %v, instead got %v", apiErr.Code, errResp.Code)
+	return compareS3ApiError(apiErr, &errResp)
+}
+
+func compareS3ApiError(expected s3err.APIError, received *s3err.APIErrorResponse) error {
+	if received == nil {
+		return fmt.Errorf("expected %w, received nil", expected)
 	}
-	if errResp.Message != apiErr.Description {
-		return fmt.Errorf("expected error message to be %v, instead got %v", apiErr.Description, errResp.Message)
+
+	if received.Code != expected.Code {
+		return fmt.Errorf("expected error code to be %v, instead got %v", expected.Code, received.Code)
+	}
+	if received.Message != expected.Description {
+		return fmt.Errorf("expected error message to be %v, instead got %v", expected.Description, received.Message)
 	}
 
 	return nil
@@ -2009,4 +2017,79 @@ func putBucketPolicy(client *s3.Client, bucket, policy string) error {
 	})
 	cancel()
 	return err
+}
+
+func sendSignedRequest(s *S3Conf, req *http.Request, cancel context.CancelFunc) (map[string]string, *s3err.APIErrorResponse, error) {
+	signer := v4.NewSigner()
+	signErr := signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, "STREAMING-UNSIGNED-PAYLOAD-TRAILER", "s3", s.awsRegion, time.Now())
+	if signErr != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to sign the request: %w", signErr)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	cancel()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to send the request: %w", err)
+	}
+
+	if resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read the request body: %w", err)
+		}
+
+		var errResp s3err.APIErrorResponse
+		err = xml.Unmarshal(bodyBytes, &errResp)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal response body: %w", err)
+		}
+
+		return nil, &errResp, nil
+	}
+
+	headers := map[string]string{}
+	for key, val := range resp.Header {
+		headers[strings.ToLower(key)] = val[0]
+	}
+
+	return headers, nil, nil
+}
+
+func testUnsignedStreamingPayloadTrailerObjectPut(s *S3Conf, bucket, object string, body []byte, reqHeaders map[string]string) (map[string]string, *s3err.APIErrorResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.endpoint+"/"+bucket+"/"+object, bytes.NewReader(body))
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to create a request: %w", err)
+	}
+
+	req.Header.Add("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
+	for key, val := range reqHeaders {
+		req.Header.Add(key, val)
+	}
+
+	return sendSignedRequest(s, req, cancel)
+}
+
+func testUnsignedStreamingPayloadTrailerUploadPart(s *S3Conf, bucket, object string, uploadId *string, body []byte, reqHeaders map[string]string) (map[string]string, *s3err.APIErrorResponse, error) {
+	if uploadId == nil {
+		return nil, nil, fmt.Errorf("empty upload id")
+	}
+
+	uri := fmt.Sprintf("%s/%s/%s?uploadId=%s&partNumber=%v", s.endpoint, bucket, object, *uploadId, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uri, bytes.NewReader(body))
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to create a request: %w", err)
+	}
+
+	req.Header.Add("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
+	for key, val := range reqHeaders {
+		req.Header.Add(key, val)
+	}
+
+	return sendSignedRequest(s, req, cancel)
 }

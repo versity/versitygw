@@ -2502,35 +2502,30 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	hash := md5.New()
 	tr := io.TeeReader(r, hash)
 
-	hashConfigs := []hashConfig{
-		{input.ChecksumCRC32, utils.HashTypeCRC32},
-		{input.ChecksumCRC32C, utils.HashTypeCRC32C},
-		{input.ChecksumSHA1, utils.HashTypeSha1},
-		{input.ChecksumSHA256, utils.HashTypeSha256},
-		{input.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
-	}
+	chRdr, chunkUpload := input.Body.(middlewares.ChecksumReader)
+	isTrailingChecksum := chunkUpload && chRdr.Algorithm() != ""
 
 	var hashRdr *utils.HashReader
-	for _, config := range hashConfigs {
-		if config.value != nil {
-			hashRdr, err = utils.NewHashReader(tr, *config.value, config.hashType)
-			if err != nil {
-				return nil, fmt.Errorf("initialize hash reader: %w", err)
+
+	if !isTrailingChecksum {
+		hashConfigs := []hashConfig{
+			{input.ChecksumCRC32, utils.HashTypeCRC32},
+			{input.ChecksumCRC32C, utils.HashTypeCRC32C},
+			{input.ChecksumSHA1, utils.HashTypeSha1},
+			{input.ChecksumSHA256, utils.HashTypeSha256},
+			{input.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
+		}
+
+		for _, config := range hashConfigs {
+			if config.value != nil {
+				hashRdr, err = utils.NewHashReader(tr, *config.value, config.hashType)
+				if err != nil {
+					return nil, fmt.Errorf("initialize hash reader: %w", err)
+				}
+
+				tr = hashRdr
 			}
-
-			tr = hashRdr
 		}
-	}
-
-	// If only the checksum algorithm is provided register
-	// a new HashReader to calculate the object checksum
-	if hashRdr == nil && input.ChecksumAlgorithm != "" {
-		hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(input.ChecksumAlgorithm))))
-		if err != nil {
-			return nil, fmt.Errorf("initialize hash reader: %w", err)
-		}
-
-		tr = hashRdr
 	}
 
 	checksums, chErr := p.retrieveChecksums(nil, bucket, mpPath)
@@ -2538,17 +2533,25 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		return nil, fmt.Errorf("retreive mp checksum: %w", chErr)
 	}
 
+	var inputChAlgo utils.HashType
+	if isTrailingChecksum {
+		inputChAlgo = utils.HashType(chRdr.Algorithm())
+	}
+	if hashRdr != nil {
+		inputChAlgo = hashRdr.Type()
+	}
+
 	// If checksum isn't provided for the part,
 	// but it has been provided on mp initalization
 	// and checksum type is 'COMPOSITE', return mismatch error
-	if hashRdr == nil && chErr == nil && checksums.Type == types.ChecksumTypeComposite {
+	if inputChAlgo == "" && checksums.Type == types.ChecksumTypeComposite {
 		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, "null")
 	}
 
 	// Check if the provided checksum algorithm match
 	// the one specified on mp initialization
-	if hashRdr != nil && chErr == nil && checksums.Type != "" {
-		algo := types.ChecksumAlgorithm(strings.ToUpper(string(hashRdr.Type())))
+	if inputChAlgo != "" && checksums.Type != "" {
+		algo := types.ChecksumAlgorithm(strings.ToUpper(string(inputChAlgo)))
 		if checksums.Algorithm != algo {
 			return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, algo)
 		}
@@ -2557,11 +2560,13 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 	// if no checksum algorithm or precalculated checksum is
 	// provided, but one has been on multipart upload initialization,
 	// anyways calculate and store the uploaded part checksum
-	if hashRdr == nil && checksums.Algorithm != "" {
-		hashRdr, err = utils.NewHashReader(tr, "", utils.HashType(strings.ToLower(string(checksums.Algorithm))))
+	if inputChAlgo == "" && checksums.Algorithm != "" {
+		hashType := utils.HashType(strings.ToLower(string(checksums.Algorithm)))
+		hashRdr, err = utils.NewHashReader(tr, "", hashType)
 		if err != nil {
 			return nil, fmt.Errorf("initialize hash reader: %w", err)
 		}
+		inputChAlgo = hashType
 
 		tr = hashRdr
 	}
@@ -2588,14 +2593,21 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 		ETag: &etag,
 	}
 
-	if hashRdr != nil {
+	if inputChAlgo != "" {
 		checksum := s3response.Checksum{
 			Algorithm: input.ChecksumAlgorithm,
 		}
 
-		// Validate the provided checksum
-		sum := hashRdr.Sum()
-		switch hashRdr.Type() {
+		var sum string
+		if isTrailingChecksum {
+			sum = chRdr.Checksum()
+		}
+		if hashRdr != nil {
+			sum = hashRdr.Sum()
+		}
+
+		// Assign the checksum
+		switch inputChAlgo {
 		case utils.HashTypeCRC32:
 			checksum.CRC32 = &sum
 			res.ChecksumCRC32 = &sum
@@ -3115,7 +3127,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	var sum string
 
 	if isTrailingChecksum {
-		fmt.Println("reading from result reader")
 		chAlgo = utils.HashType(chRdr.Algorithm())
 		sum = chRdr.Checksum()
 	} else if hashRdr != nil {
