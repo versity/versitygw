@@ -140,17 +140,17 @@ func (ipa *IpaIAMService) GetUserAccount(access string) (Account, error) {
 		return Account{}, err
 	}
 
-	uid, err := strconv.Atoi(userResult.Uidnumber[0])
+	uid, err := parseToInt(userResult.Uidnumber, "userID")
 	if err != nil {
-		return Account{}, fmt.Errorf("ipa uid invalid: %w", err)
+		return Account{}, err
 	}
-	gid, err := strconv.Atoi(userResult.Gidnumber[0])
+	gid, err := parseToInt(userResult.Gidnumber, "groupID")
 	if err != nil {
-		return Account{}, fmt.Errorf("ipa gid invalid: %w", err)
+		return Account{}, err
 	}
-	pId, err := strconv.Atoi(userResult.PidNumber[0])
+	pId, err := parseToInt(userResult.PidNumber, "projectID")
 	if err != nil {
-		return Account{}, fmt.Errorf("ipa pid invalid: %w", err)
+		return Account{}, err
 	}
 
 	account := Account{
@@ -499,4 +499,21 @@ func (b *Base64Encoded) UnmarshalJSON(data []byte) error {
 	}
 	*b, err = base64.StdEncoding.DecodeString(intermediate)
 	return err
+}
+
+// parseToInt parses the first argument of input string slice
+// to an integer. If slice is empty, it defaults to 0
+func parseToInt(input []string, argName string) (int, error) {
+	if len(input) == 0 {
+		debuglogger.IAMLogf("empty %s slice: defaulting to 0", argName)
+		return 0, nil
+	}
+
+	id, err := strconv.Atoi(input[0])
+	if err != nil {
+		debuglogger.IAMLogf("failed to parse %s: %v", argName, err)
+		return 0, fmt.Errorf("invalid %s: %w", argName, err)
+	}
+
+	return id, nil
 }
