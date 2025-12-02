@@ -30,6 +30,7 @@ var (
 	versioningDir      string
 	dirPerms           uint
 	sidecar            string
+	sqlitecar          string
 	nometa             bool
 	forceNoTmpFile     bool
 )
@@ -88,6 +89,12 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_META_SIDECAR"},
 				Destination: &sidecar,
 			},
+			&cli.StringFlag{
+				Name:        "sqlite",
+				Usage:       "use provided directory to store metadata in sqlite databases per bucket",
+				EnvVars:     []string{"VGW_META_SQLITE"},
+				Destination: &sqlitecar,
+			},
 			&cli.BoolFlag{
 				Name:        "nometa",
 				Usage:       "disable metadata storage",
@@ -119,6 +126,14 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("cannot use both nometa and sidecar metadata")
 	}
 
+	if nometa && sqlitecar != "" {
+		return fmt.Errorf("cannot use both nometa and sqlite metadata")
+	}
+
+	if sqlitecar != "" && sidecar != "" {
+		return fmt.Errorf("cannot use both sqlite and sidecar metadata")
+	}
+
 	opts := posix.PosixOpts{
 		ChownUID:            chownuid,
 		ChownGID:            chowngid,
@@ -138,6 +153,13 @@ func runPosix(ctx *cli.Context) error {
 		}
 		ms = sc
 		opts.SideCarDir = sidecar
+	case sqlitecar != "":
+		sc, err := meta.NewSqliteCar(sqlitecar)
+		if err != nil {
+			return fmt.Errorf("failed to init sqlite metadata: %w", err)
+		}
+		ms = sc
+		opts.SqliteCarDir = sqlitecar
 	case nometa:
 		ms = meta.NoMeta{}
 	default:

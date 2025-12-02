@@ -132,6 +132,8 @@ type PosixOpts struct {
 	NewDirPerm fs.FileMode
 	// SideCarDir sets the directory to store sidecar metadata
 	SideCarDir string
+	// SqliteCarDir sets the directory to store the bucket sqlite databases for metadata
+	SqliteCarDir string
 	// ForceNoTmpFile disables the use of O_TMPFILE even if the filesystem
 	// supports it
 	ForceNoTmpFile bool
@@ -144,6 +146,10 @@ type PosixOpts struct {
 func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, error) {
 	if opts.SideCarDir != "" && strings.HasPrefix(opts.SideCarDir, rootdir) {
 		return nil, fmt.Errorf("sidecar directory cannot be inside the gateway root directory")
+	}
+
+	if opts.SqliteCarDir != "" && strings.HasPrefix(opts.SqliteCarDir, rootdir) {
+		return nil, fmt.Errorf("sqlite directory cannot be inside the gateway root directory")
 	}
 
 	err := os.Chdir(rootdir)
@@ -179,12 +185,26 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		}
 	}
 
+	var sqlitecardirAbs string
+	// Ensure the sqlite directory isn't within the root directory
+	if opts.SqliteCarDir != "" {
+		sqlitecardirAbs, err = validateSubDir(rootdirAbs, opts.SqliteCarDir)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+
 	if verioningdirAbs != "" {
 		fmt.Println("Bucket versioning enabled with directory:", verioningdirAbs)
 	}
 
 	if sidecardirAbs != "" {
 		fmt.Println("Using sidecar directory for metadata:", sidecardirAbs)
+	}
+
+	if sqlitecardirAbs != "" {
+		fmt.Println("Using sqlite for metadata in directory:", sqlitecardirAbs)
 	}
 
 	return &Posix{
