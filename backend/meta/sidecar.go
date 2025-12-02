@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"encoding/json"
 )
 
 // SideCar is a metadata storer that uses sidecar files to store metadata.
@@ -27,7 +28,7 @@ type SideCar struct {
 }
 
 const (
-	sidecarmeta = "meta"
+	sidecarmeta = ".meta"
 )
 
 // NewSideCar creates a new SideCar metadata storer.
@@ -43,20 +44,73 @@ func NewSideCar(dir string) (SideCar, error) {
 	return SideCar{dir: dir}, nil
 }
 
-// RetrieveAttribute retrieves the value of a specific attribute for an object or a bucket.
-func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string) ([]byte, error) {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
+// Sidecar JSON file for storing attributes
+func sidecarFileGen(root string, bucket string, object string) string {
 	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
+		return filepath.Join(root, bucket + sidecarmeta)
+	} else {
+		return filepath.Join(root, bucket, object + sidecarmeta)
 	}
-	attr := filepath.Join(metadir, attribute)
+}
 
-	value, err := os.ReadFile(attr)
+// Load sidecar file
+func sidecarFileLoad(sidecarFile string) (map[string][]byte, error) {
+	//Read JSON file
+	jsonData, err := os.ReadFile(sidecarFile)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoSuchKey
 	}
 	if err != nil {
+		return nil, fmt.Errorf("failed to read sidecar file: %v", err)
+	}
+	if len(jsonData) == 0 {
+		return nil, ErrNoSuchKey
+	}
+
+	// Decode JSON file
+	data := map[string][]byte{}
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return nil, fmt.Errorf("error unmarshaling existing JSON: %v", err)
+	}
+
+	//Return data
+	return data, nil
+
+}
+
+// Write sidecar file
+func sidecarFileSave(sidecarFile string, data map[string][]byte) error {
+
+	// Re-serialize
+	jsonBytes, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling JSON: %v", err)
+	}
+
+	// Write file back
+	if err := os.WriteFile(sidecarFile, jsonBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write sidecar file: %v", err)
+	}
+
+	return nil
+
+}
+
+// RetrieveAttribute retrieves the value of a specific attribute for an object or a bucket.
+func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string) ([]byte, error) {
+	//Sidecar file
+	sidecarFile := sidecarFileGen(s.dir, bucket, object)
+
+	//Read JSON file
+	data, err := sidecarFileLoad(sidecarFile)
+	if err != nil {
 		return nil, fmt.Errorf("failed to read attribute: %v", err)
+	}
+
+	//If the attribute exist, return it
+	value, ok := data[attribute]
+	if !ok {
+		return nil, ErrNoSuchKey
 	}
 
 	return value, nil
@@ -64,18 +118,27 @@ func (s SideCar) RetrieveAttribute(_ *os.File, bucket, object, attribute string)
 
 // StoreAttribute stores the value of a specific attribute for an object or a bucket.
 func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, value []byte) error {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
-	}
-	err := os.MkdirAll(metadir, 0777)
+	//Sidecar file
+	sidecarFile :=  sidecarFileGen(s.dir, bucket, object)
+
+	//Create directory if it does not exist
+	err := os.MkdirAll(filepath.Dir(sidecarFile), 0777)
 	if err != nil {
 		return fmt.Errorf("failed to create metadata directory: %v", err)
 	}
 
-	attr := filepath.Join(metadir, attribute)
-	err = os.WriteFile(attr, value, 0666)
+	// Try reading existing file
+	data, err := sidecarFileLoad(sidecarFile)
 	if err != nil {
+		// File does not exist, using empty data
+		data = map[string][]byte{}
+	}
+
+	// Set or replace the attribute entry
+	data[attribute] = value
+
+	// Write file back
+	if err := sidecarFileSave(sidecarFile, data); err != nil {
 		return fmt.Errorf("failed to write attribute: %v", err)
 	}
 
@@ -84,18 +147,30 @@ func (s SideCar) StoreAttribute(_ *os.File, bucket, object, attribute string, va
 
 // DeleteAttribute removes the value of a specific attribute for an object or a bucket.
 func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
-	}
-	attr := filepath.Join(metadir, attribute)
+	//Sidecar file
+	sidecarFile :=  sidecarFileGen(s.dir, bucket, object)
 
-	err := os.Remove(attr)
-	if errors.Is(err, os.ErrNotExist) {
-		return ErrNoSuchKey
-	}
+	// Try reading existing file
+	data, err := sidecarFileLoad(sidecarFile)
 	if err != nil {
-		return fmt.Errorf("failed to remove attribute: %v", err)
+		// File does not exist, all is fine
+		return nil
+	}
+
+	// Delete the key (no error if missing)
+	delete(data, attribute)
+
+	// Delete the file if there are no attributes left
+	if len(data) == 0 {
+		if err := os.Remove(sidecarFile); err != nil {
+			return fmt.Errorf("error removing empty JSON file: %w", err)
+		}
+		return nil
+	}
+
+	// Write file back
+	if err := sidecarFileSave(sidecarFile, data); err != nil {
+		return err
 	}
 
 	return nil
@@ -103,12 +178,11 @@ func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
 
 // ListAttributes lists all attributes for an object or a bucket.
 func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
-	}
+	//Sidecar file
+	sidecarFile :=  sidecarFileGen(s.dir, bucket, object)
 
-	ents, err := os.ReadDir(metadir)
+	// Try reading existing file
+	data, err := sidecarFileLoad(sidecarFile)
 	if errors.Is(err, os.ErrNotExist) {
 		return []string{}, nil
 	}
@@ -116,24 +190,25 @@ func (s SideCar) ListAttributes(bucket, object string) ([]string, error) {
 		return nil, fmt.Errorf("failed to list attributes: %v", err)
 	}
 
-	var attrs []string
-	for _, ent := range ents {
-		attrs = append(attrs, ent.Name())
+	// Collect keys
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
 	}
 
-	return attrs, nil
+	return keys, nil
+
 }
 
 // DeleteAttributes removes all attributes for an object or a bucket.
 func (s SideCar) DeleteAttributes(bucket, object string) error {
-	metadir := filepath.Join(s.dir, bucket, object, sidecarmeta)
-	if object == "" {
-		metadir = filepath.Join(s.dir, bucket, sidecarmeta)
-	}
+	//Sidecar file
+	sidecarFile :=  sidecarFileGen(s.dir, bucket, object)
 
-	err := os.RemoveAll(metadir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove attributes: %v", err)
+	//Delete metadata file
+	if err := os.Remove(sidecarFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("error removing empty JSON file: %w", err)
 	}
 	return nil
+
 }
