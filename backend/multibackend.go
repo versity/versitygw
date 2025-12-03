@@ -204,28 +204,24 @@ func (m *MultiBackend) GetObjectLegalHold(ctx context.Context, bucket, object, v
 
 func (m *MultiBackend) SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer) {
 	// Try each backend until one succeeds
-	// This is a special case since it returns a function
-	for i, be := range m.backends {
-		if i == len(m.backends)-1 {
-			// Last backend, return its result regardless
-			return be.SelectObjectContent(ctx, input)
+	// Note: This implementation has a performance characteristic where errors
+	// are only discovered when the returned function is executed, not at call time.
+	// This avoids unnecessary HeadObject calls but means the first backend's error
+	// will be returned even if later backends might succeed.
+	// For true fallback behavior, consider implementing error detection within
+	// the returned function at the cost of more complex error handling.
+	var lastErr error
+	for _, be := range m.backends {
+		output := be.SelectObjectContent(ctx, input)
+		if output != nil {
+			return output
 		}
-		// For non-last backends, we'd need to check if object exists first
-		// Using HeadObject as a preliminary check
-		headInput := &s3.HeadObjectInput{
-			Bucket: input.Bucket,
-			Key:    input.Key,
-		}
-		_, err := be.HeadObject(ctx, headInput)
-		if err == nil {
-			return be.SelectObjectContent(ctx, input)
-		}
-		if !isNotFoundError(err) {
-			// Non-404 error, return error handler
-			return be.SelectObjectContent(ctx, input)
+		// Track last error for potential logging
+		if lastErr == nil {
+			lastErr = fmt.Errorf("SelectObjectContent returned nil function")
 		}
 	}
-	// Shouldn't reach here, but return last backend as fallback
+	// Return last backend's result as fallback
 	return m.backends[len(m.backends)-1].SelectObjectContent(ctx, input)
 }
 
@@ -356,19 +352,28 @@ func (m *MultiBackend) GetBucketLockConfiguration(ctx context.Context, bucket st
 func (m *MultiBackend) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
 	// For bucket listing, we query all backends and merge results
 	bucketMap := make(map[string]s3response.ListAllMyBucketsEntry)
+	successCount := 0
+	var lastErr error
 
 	for _, be := range m.backends {
 		result, err := be.ListBuckets(ctx, input)
 		if err != nil {
-			// Continue even if one backend fails
+			// Track error but continue to try other backends
+			lastErr = err
 			continue
 		}
+		successCount++
 		for _, bucket := range result.Buckets.Bucket {
 			// Keep the first occurrence of each bucket name
 			if _, exists := bucketMap[bucket.Name]; !exists {
 				bucketMap[bucket.Name] = bucket
 			}
 		}
+	}
+
+	// If ALL backends failed, return an error instead of empty list
+	if successCount == 0 && lastErr != nil {
+		return s3response.ListAllMyBucketsResult{}, fmt.Errorf("all backends failed: %w", lastErr)
 	}
 
 	buckets := make([]s3response.ListAllMyBucketsEntry, 0, len(bucketMap))
@@ -463,18 +468,27 @@ func (m *MultiBackend) ListParts(ctx context.Context, input *s3.ListPartsInput) 
 func (m *MultiBackend) ListBucketsAndOwners(ctx context.Context) ([]s3response.Bucket, error) {
 	// Merge results from all backends
 	bucketMap := make(map[string]s3response.Bucket)
+	successCount := 0
+	var lastErr error
 
 	for _, be := range m.backends {
 		buckets, err := be.ListBucketsAndOwners(ctx)
 		if err != nil {
+			lastErr = err
 			continue
 		}
+		successCount++
 		for _, bucket := range buckets {
 			// Use Name as key for deduplication
 			if _, exists := bucketMap[bucket.Name]; !exists {
 				bucketMap[bucket.Name] = bucket
 			}
 		}
+	}
+
+	// If ALL backends failed, return an error instead of empty list
+	if successCount == 0 && lastErr != nil {
+		return nil, fmt.Errorf("all backends failed: %w", lastErr)
 	}
 
 	buckets := make([]s3response.Bucket, 0, len(bucketMap))

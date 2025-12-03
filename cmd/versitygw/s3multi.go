@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/backend"
@@ -262,14 +263,20 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 		if val := os.Getenv(prefix + "META_BUCKET"); val != "" {
 			config.Backends[i].MetaBucket = val
 		}
-		if val := os.Getenv(prefix + "DISABLE_CHECKSUM"); val == "true" || val == "1" {
-			config.Backends[i].DisableChecksum = true
+		if val := os.Getenv(prefix + "DISABLE_CHECKSUM"); val != "" {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				config.Backends[i].DisableChecksum = boolVal
+			}
 		}
-		if val := os.Getenv(prefix + "SSL_SKIP_VERIFY"); val == "true" || val == "1" {
-			config.Backends[i].SslSkipVerify = true
+		if val := os.Getenv(prefix + "SSL_SKIP_VERIFY"); val != "" {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				config.Backends[i].SslSkipVerify = boolVal
+			}
 		}
-		if val := os.Getenv(prefix + "USE_PATH_STYLE"); val == "true" || val == "1" {
-			config.Backends[i].UsePathStyle = true
+		if val := os.Getenv(prefix + "USE_PATH_STYLE"); val != "" {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				config.Backends[i].UsePathStyle = boolVal
+			}
 		}
 	}
 
@@ -278,13 +285,15 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 
 // generateRandomCredential generates a cryptographically secure random credential
 func generateRandomCredential(length int) string {
-	// Generate random bytes
-	bytes := make([]byte, length*3/4+1) // base64 expands by ~4/3
+	// Calculate bytes needed: base64 encoding expands data by 4/3
+	// To get 'length' characters of base64, we need length * 3/4 bytes (rounded up)
+	bytesNeeded := (length*3 + 3) / 4 // Round up to handle base64 padding
+	bytes := make([]byte, bytesNeeded)
 	if _, err := rand.Read(bytes); err != nil {
 		panic(fmt.Sprintf("failed to generate random credential: %v", err))
 	}
 
-	// Encode to base64 and trim to desired length
+	// Encode to base64 and trim to exact desired length
 	encoded := base64.URLEncoding.EncodeToString(bytes)
 	if len(encoded) > length {
 		encoded = encoded[:length]
