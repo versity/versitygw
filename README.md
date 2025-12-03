@@ -1,3 +1,80 @@
+# VersityGW Multi-Backend Fork
+
+> **Fork of [versity/versitygw](https://github.com/versity/versitygw)** with multi-backend S3 gateway support and automatic fallback.
+
+## What's New in This Fork
+
+### Multi-Backend S3 Gateway with Automatic Fallback
+
+This fork adds transparent multi-backend architecture that enables:
+
+- **Automatic Fallback Across Backends**: Read operations (GET/HEAD/LIST) try all configured backends sequentially until object is found
+- **Multiple S3-Compatible Backends**: Works with Cloudflare R2, MinIO, AWS S3, Azure, and any S3-compatible storage
+- **Smart Write Operations**: PUT/DELETE always target the primary backend only
+- **Presigned URLs**: Full AWS SigV4 signing with configurable expiration (leverages existing Versity feature)
+- **Robust Error Detection**: Distinguishes NoSuchKey (404) from other errors to ensure proper fallback behavior
+
+### New Files Added
+
+- `backend/multibackend.go` (623 lines) - Multi-backend wrapper with fallback logic
+- `cmd/versitygw/s3multi.go` (261 lines) - New CLI command for multi-backend mode
+- `examples/README-s3-multi.md` - Complete usage documentation
+- `examples/s3-multi-config.json` - Configuration template
+- `multibackend-implementation.patch` - Patch file for easy upstream application
+
+### Quick Start with Multi-Backend
+
+```bash
+# Create configuration file
+cat > config.json << 'EOF'
+{
+  "backends": [
+    {
+      "endpoint": "https://account.r2.cloudflarestorage.com/primary-bucket",
+      "region": "auto",
+      "accessKeyId": "YOUR_ACCESS_KEY",
+      "secretAccessKey": "YOUR_SECRET_KEY"
+    },
+    {
+      "endpoint": "https://account.r2.cloudflarestorage.com/fallback-bucket",
+      "region": "auto",
+      "accessKeyId": "YOUR_ACCESS_KEY",
+      "secretAccessKey": "YOUR_SECRET_KEY"
+    }
+  ],
+  "port": 7070,
+  "accessKey": "admin",
+  "secretKey": "password"
+}
+EOF
+
+# Build
+make build
+
+# Run multi-backend mode
+./bin/versitygw s3multi --config config.json
+```
+
+### Use Cases for Multi-Backend
+
+- **High Availability**: Automatic failover to backup storage if primary is unavailable
+- **Data Migration**: Access data from multiple sources during migration periods
+- **Multi-Region Access**: Read from nearest/fastest available backend
+- **Cost Optimization**: Store hot data in premium storage, archive in cheaper backends
+
+### Testing Status
+
+Fully tested with Cloudflare R2 dual-bucket setup:
+- ✅ List buckets across multiple backends
+- ✅ Upload/Download with integrity verification
+- ✅ Presigned URL generation and validation
+- ✅ Automatic fallback to secondary backend
+- ✅ 404 error handling
+
+See [`examples/README-s3-multi.md`](examples/README-s3-multi.md) for complete documentation.
+
+---
+
 # The Versity S3 Gateway:<br/>A High-Performance S3 Translation Service
 
 <picture>
