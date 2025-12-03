@@ -1100,6 +1100,7 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 		ts.Run(UnsignedStreamingPayloadTrailer_incorrect_trailing_checksum)
 		ts.Run(UnsignedStreamingPayloadTrailer_multiple_checksum_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch)
+		ts.Run(UnsignedStreamingPayloadTrailer_incomplete_body)
 		ts.Run(UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme)
 		ts.Run(UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers)
 		ts.Run(UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer)
@@ -1752,6 +1753,7 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_incorrect_trailing_checksum":              UnsignedStreamingPayloadTrailer_incorrect_trailing_checksum,
 		"UnsignedStreamingPayloadTrailer_multiple_checksum_headers":                UnsignedStreamingPayloadTrailer_multiple_checksum_headers,
 		"UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch":            UnsignedStreamingPayloadTrailer_sdk_algo_and_trailer_mismatch,
+		"UnsignedStreamingPayloadTrailer_incomplete_body":                          UnsignedStreamingPayloadTrailer_incomplete_body,
 		"UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme":    UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme,
 		"UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers":          UnsignedStreamingPayloadTrailer_no_payload_trailer_only_headers,
 		"UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer":        UnsignedStreamingPayloadTrailer_success_both_sdk_algo_and_trailer,
