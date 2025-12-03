@@ -1,0 +1,24 @@
+# Environment files (but keep .env.example)
+.env
+!.env.example
+
+# Config with real credentials
+configs/config.json
+
+# Logs
+*.log
+logs/
+
+# Certificates
+certs/
+*.key
+*.crt
+*.pem
+
+# Backup files
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

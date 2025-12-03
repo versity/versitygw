@@ -1,0 +1,28 @@
+{
+  "comment": "Cloudflare R2 Multi-Backend Configuration Example",
+  "note": "Replace YOUR_ACCOUNT_ID, YOUR_ACCESS_KEY, and YOUR_SECRET_KEY with your actual credentials",
+  "backends": [
+    {
+      "name": "primary-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/primary-bucket",
+      "region": "us-east-1",
+      "comment": "Primary R2 bucket - all writes go here"
+    },
+    {
+      "name": "fallback-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/fallback-bucket",
+      "region": "us-east-1",
+      "comment": "Fallback R2 bucket - reads try here if not found in primary"
+    }
+  ],
+  "important_notes": [
+    "R2 requires region to be 'us-east-1', not 'auto'",
+    "Replace YOUR_ACCOUNT_ID with your Cloudflare account ID",
+    "Get credentials from Cloudflare dashboard: R2 > Manage R2 API Tokens",
+    "Each backend can point to a different bucket in the same or different accounts"
+  ]
+}

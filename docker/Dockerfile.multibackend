@@ -1,0 +1,47 @@
+FROM golang:1.24-alpine AS builder
+
+# Set build arguments with default values
+ARG VERSION="dev"
+ARG BUILD="docker"
+ARG TIME=""
+
+# Install build dependencies
+RUN apk add --no-cache git make
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the binary
+WORKDIR /app/cmd/versitygw
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X=main.Build=${BUILD} -X=main.BuildTime=${TIME} -X=main.Version=${VERSION} -w -s" \
+    -o versitygw
+
+# Final stage
+FROM alpine:latest
+
+# Install ca-certificates for HTTPS
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create necessary directories
+RUN mkdir -p /etc/versitygw /var/log/versitygw
+
+# Copy binary from builder
+COPY --from=builder /app/cmd/versitygw/versitygw /usr/local/bin/versitygw
+
+# Copy entrypoint
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Expose port
+EXPOSE 7070
+
+# Set entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["s3multi"]

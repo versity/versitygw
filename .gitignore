@@ -37,6 +37,7 @@ VERSION
 *.tar.gz
 **/rand.data
 /profile.txt
+/bin/
 
 dist/
 
@@ -60,6 +61,7 @@ tests/!s3cfg.local.default
 
 # patches
 *.patch
+!multibackend-implementation.patch
 
 # grafana's local database (kept on filesystem for survival between instantiations)
 metrics-exploration/grafana_data/**
@@ -67,3 +69,12 @@ metrics-exploration/grafana_data/**
 # bats tools
 /tests/bats-assert
 /tests/bats-support
+# Test files with credentials
+test-r2-*.json
+test-r2-*.sh
+test-r2-*.md
+*-TEST-*.md
+QUICKSTART.sh
+run-r2-*.sh
+URL*.md
+TEST*.md

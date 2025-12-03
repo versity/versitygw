@@ -1,3 +1,141 @@
+# VersityGW Multi-Backend Fork
+
+> **Fork of [versity/versitygw](https://github.com/versity/versitygw)** with multi-backend S3 gateway support and automatic fallback.
+
+**English Documentation** | **[Documentação em Português](README.pt-BR.md)**
+
+## What's New in This Fork
+
+### Multi-Backend S3 Gateway with Automatic Fallback
+
+This fork adds transparent multi-backend architecture that enables:
+
+- **Automatic Fallback Across Backends**: Read operations (GET/HEAD/LIST) try all configured backends sequentially until object is found
+- **Multiple S3-Compatible Backends**: Works with Cloudflare R2, MinIO, AWS S3, Azure, and any S3-compatible storage
+- **Smart Write Operations**: PUT/DELETE always target the primary backend only
+- **Presigned URLs**: Full AWS SigV4 signing with configurable expiration (leverages existing Versity feature)
+- **Robust Error Detection**: Distinguishes NoSuchKey (404) from other errors to ensure proper fallback behavior
+- **🔐 Random Credentials**: Auto-generates secure gateway credentials if not provided (crypto/rand based)
+
+### New Files Added
+
+- `backend/multibackend.go` (623 lines) - Multi-backend wrapper with fallback logic
+- `cmd/versitygw/s3multi.go` (261 lines) - New CLI command for multi-backend mode
+- `examples/README-s3-multi.md` - Complete usage documentation
+- `examples/s3-multi-config.json` - Configuration template
+- `multibackend-implementation.patch` - Patch file for easy upstream application
+
+### Quick Start with Multi-Backend
+
+```bash
+# Create configuration file
+cat > config.json << 'EOF'
+{
+  "backends": [
+    {
+      "name": "primary-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
+      "endpoint": "https://account.r2.cloudflarestorage.com/primary-bucket",
+      "region": "us-east-1"
+    },
+    {
+      "name": "fallback-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
+      "endpoint": "https://account.r2.cloudflarestorage.com/fallback-bucket",
+      "region": "us-east-1"
+    }
+  ]
+}
+EOF
+
+# Important: Use region "us-east-1" for Cloudflare R2
+# AWS CLI must also use: export AWS_DEFAULT_REGION=us-east-1
+
+# Build
+make build
+
+# Run with automatic random credentials (easiest!)
+./bin/versitygw --port :7070 s3-multi --config config.json
+# ⚠️  Generated random ACCESS KEY: kNnIst0KOxuyBbozuF-l
+# ⚠️  Generated random SECRET KEY: mZA4WE4HFydNcBubWCozuXkG8-Z03afd5KWlFAp1
+
+# Or provide your own gateway credentials
+./bin/versitygw --port :7070 --access admin --secret password s3-multi --config config.json
+```
+
+**Note:** Backend credentials (in JSON) are for connecting to R2/S3. Gateway credentials (--access/--secret) are what S3 clients use to connect to VersityGW. If omitted, they're auto-generated.
+
+### Use Cases for Multi-Backend
+
+- **High Availability**: Automatic failover to backup storage if primary is unavailable
+- **Data Migration**: Access data from multiple sources during migration periods
+- **Multi-Region Access**: Read from nearest/fastest available backend
+- **Cost Optimization**: Store hot data in premium storage, archive in cheaper backends
+
+### Presigned URLs
+
+Generate temporary URLs with client-controlled expiration:
+
+```bash
+# Configure AWS CLI to use the gateway
+export AWS_ACCESS_KEY_ID=<gateway-access-key>
+export AWS_SECRET_ACCESS_KEY=<gateway-secret-key>
+export AWS_ENDPOINT_URL=http://localhost:7070
+export AWS_DEFAULT_REGION=us-east-1
+
+# Generate presigned URL with 5 minutes expiration
+aws s3 presign s3://mybucket/file.txt --expires-in 300
+
+# Generate presigned URL with 24 hours expiration
+aws s3 presign s3://mybucket/file.txt --expires-in 86400
+```
+
+**Important:** Expiration time is set by the **client** when generating the URL, not by the gateway. Gateway validates limits (1s - 7 days). See [`docker/PRESIGNED-URL-EXPIRATION.md`](docker/PRESIGNED-URL-EXPIRATION.md) for complete documentation.
+
+### Docker Deployment
+
+Quick deployment with Docker Compose:
+
+```bash
+cd docker
+./quickstart.sh
+```
+
+Or manual setup:
+
+```bash
+cd docker
+cp .env.example .env
+cp configs/cloudflare-r2.example.json configs/config.json
+# Edit configs/config.json with your backend credentials
+docker-compose up -d
+```
+
+Features:
+- 🐳 Single command deployment
+- ⚙️ Environment-based configuration
+- 🔐 Auto-generated credentials
+- 💚 Health checks
+- 📊 Resource limits
+
+See [`docker/README.md`](docker/README.md) for complete Docker documentation.
+
+### Testing Status
+
+Fully tested with Cloudflare R2 dual-bucket setup:
+- ✅ List buckets across multiple backends
+- ✅ Upload/Download with integrity verification
+- ✅ Presigned URL generation and validation
+- ✅ Automatic fallback to secondary backend
+- ✅ 404 error handling
+
+See [`examples/README-s3-multi.md`](examples/README-s3-multi.md) for complete documentation.
+
+---
+
+
 # The Versity S3 Gateway:<br/>A High-Performance S3 Translation Service
 
 <picture>

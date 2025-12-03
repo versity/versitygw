@@ -1,0 +1,36 @@
+{
+  "comment": "Multi-Provider Configuration Example",
+  "note": "Mix different S3-compatible providers for high availability",
+  "backends": [
+    {
+      "name": "aws-s3-primary",
+      "access": "YOUR_AWS_ACCESS_KEY",
+      "secret": "YOUR_AWS_SECRET_KEY",
+      "endpoint": "https://s3.us-east-1.amazonaws.com/my-aws-bucket",
+      "region": "us-east-1",
+      "comment": "AWS S3 as primary storage"
+    },
+    {
+      "name": "cloudflare-r2-fallback",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
+      "endpoint": "https://account.r2.cloudflarestorage.com/my-r2-bucket",
+      "region": "us-east-1",
+      "comment": "Cloudflare R2 as fallback"
+    },
+    {
+      "name": "minio-local",
+      "access": "YOUR_MINIO_ACCESS_KEY",
+      "secret": "YOUR_MINIO_SECRET_KEY",
+      "endpoint": "https://minio.example.com/my-minio-bucket",
+      "region": "us-east-1",
+      "comment": "Local MinIO as last resort"
+    }
+  ],
+  "use_cases": [
+    "High availability across multiple providers",
+    "Cost optimization (expensive primary, cheap fallbacks)",
+    "Data migration with zero downtime",
+    "Geographic redundancy"
+  ]
+}

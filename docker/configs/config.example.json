@@ -1,0 +1,18 @@
+{
+  "backends": [
+    {
+      "name": "primary-backend",
+      "access": "YOUR_S3_ACCESS_KEY",
+      "secret": "YOUR_S3_SECRET_KEY",
+      "endpoint": "https://s3.amazonaws.com/your-primary-bucket",
+      "region": "us-east-1"
+    },
+    {
+      "name": "fallback-backend",
+      "access": "YOUR_S3_ACCESS_KEY",
+      "secret": "YOUR_S3_SECRET_KEY",
+      "endpoint": "https://s3.amazonaws.com/your-fallback-bucket",
+      "region": "us-east-1"
+    }
+  ]
+}

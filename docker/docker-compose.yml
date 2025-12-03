@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  versitygw-multibackend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.multibackend
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD: ${BUILD:-docker-compose}
+        TIME: ${BUILD_TIME:-}
+    image: versitygw-multibackend:${VERSION:-latest}
+    container_name: versitygw-multibackend
+    restart: unless-stopped
+    
+    ports:
+      - "${VGW_PORT:-7070}:7070"
+    
+    environment:
+      # Config file location
+      VGW_CONFIG_FILE: ${VGW_CONFIG_FILE:-/etc/versitygw/config.json}
+      
+      # Gateway credentials (optional - generates random if not set)
+      VGW_ACCESS_KEY: ${VGW_ACCESS_KEY:-}
+      VGW_SECRET_KEY: ${VGW_SECRET_KEY:-}
+      
+      # Server settings
+      VGW_PORT: ${VGW_PORT:-7070}
+      VGW_HOST: ${VGW_HOST:-0.0.0.0}
+      VGW_REGION: ${VGW_REGION:-us-east-1}
+      
+      # Optional: HTTPS certificates
+      VGW_CERT: ${VGW_CERT:-}
+      VGW_KEY: ${VGW_KEY:-}
+      
+      # Debug mode
+      VGW_DEBUG: ${VGW_DEBUG:-false}
+      
+      # Additional arguments
+      VGW_EXTRA_ARGS: ${VGW_EXTRA_ARGS:-}
+      
+      # Timezone
+      TZ: ${TZ:-UTC}
+    
+    volumes:
+      # Mount your multi-backend config file
+      - ${CONFIG_PATH:-./configs/config.json}:/etc/versitygw/config.json:ro
+      
+      # Optional: Mount certificates for HTTPS
+      # - ./certs:/etc/versitygw/certs:ro
+      
+      # Optional: Mount logs directory
+      # - ./logs:/var/log/versitygw
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:7070/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    networks:
+      - versitygw-network
+    
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 512M
+
+networks:
+  versitygw-network:
+    driver: bridge
