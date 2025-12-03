@@ -109,6 +109,7 @@ func main() {
 		posixCommand(),
 		scoutfsCommand(),
 		s3Command(),
+		s3MultiCommand(),
 		azureCommand(),
 		pluginCommand(),
 		adminCommand(),

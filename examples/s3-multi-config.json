@@ -1,0 +1,26 @@
+{
+  "backends": [
+    {
+      "name": "primary-s3",
+      "access": "PRIMARY_ACCESS_KEY",
+      "secret": "PRIMARY_SECRET_KEY",
+      "endpoint": "https://s3-primary.example.com",
+      "region": "us-east-1",
+      "metaBucket": "",
+      "disableChecksum": false,
+      "sslSkipVerify": false,
+      "usePathStyle": false
+    },
+    {
+      "name": "fallback-s3",
+      "access": "FALLBACK_ACCESS_KEY",
+      "secret": "FALLBACK_SECRET_KEY",
+      "endpoint": "https://s3-fallback.example.com",
+      "region": "us-west-2",
+      "metaBucket": "",
+      "disableChecksum": false,
+      "sslSkipVerify": false,
+      "usePathStyle": true
+    }
+  ]
+}

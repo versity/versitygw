@@ -37,6 +37,7 @@ VERSION
 *.tar.gz
 **/rand.data
 /profile.txt
+/bin/
 
 dist/
 
@@ -60,6 +61,7 @@ tests/!s3cfg.local.default
 
 # patches
 *.patch
+!multibackend-implementation.patch
 
 # grafana's local database (kept on filesystem for survival between instantiations)
 metrics-exploration/grafana_data/**
