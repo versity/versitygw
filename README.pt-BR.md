@@ -38,18 +38,21 @@ cat > config.json << 'EOF'
       "access": "SUA_CHAVE_ACESSO_R2",
       "secret": "SUA_CHAVE_SECRETA_R2",
       "endpoint": "https://conta.r2.cloudflarestorage.com/bucket-primario",
-      "region": "auto"
+      "region": "us-east-1"
     },
     {
       "name": "fallback-r2",
       "access": "SUA_CHAVE_ACESSO_R2",
       "secret": "SUA_CHAVE_SECRETA_R2",
       "endpoint": "https://conta.r2.cloudflarestorage.com/bucket-fallback",
-      "region": "auto"
+      "region": "us-east-1"
     }
   ]
 }
 EOF
+
+# Importante: Use região "us-east-1" para Cloudflare R2
+# O AWS CLI também deve usar: export AWS_DEFAULT_REGION=us-east-1
 
 # Compile
 make build
@@ -171,14 +174,14 @@ Crie um arquivo JSON com seus backends:
       "access": "9b5e212b5da57b6fd67f938b2de9c1d5",
       "secret": "d06434439ad24ead24d80688494462b0b4cd89b45c07306d71a7a533f8b6d26d",
       "endpoint": "https://9cf30e99d849125d9bc261b19b175489.r2.cloudflarestorage.com/anexos",
-      "region": "auto"
+      "region": "us-east-1"
     },
     {
       "name": "fallback-r2",
       "access": "9b5e212b5da57b6fd67f938b2de9c1d5",
       "secret": "d06434439ad24ead24d80688494462b0b4cd89b45c07306d71a7a533f8b6d26d",
       "endpoint": "https://9cf30e99d849125d9bc261b19b175489.r2.cloudflarestorage.com/apostas",
-      "region": "auto"
+      "region": "us-east-1"
     }
   ]
 }

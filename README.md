@@ -37,18 +37,21 @@ cat > config.json << 'EOF'
       "access": "YOUR_R2_ACCESS_KEY",
       "secret": "YOUR_R2_SECRET_KEY",
       "endpoint": "https://account.r2.cloudflarestorage.com/primary-bucket",
-      "region": "auto"
+      "region": "us-east-1"
     },
     {
       "name": "fallback-r2",
       "access": "YOUR_R2_ACCESS_KEY",
       "secret": "YOUR_R2_SECRET_KEY",
       "endpoint": "https://account.r2.cloudflarestorage.com/fallback-bucket",
-      "region": "auto"
+      "region": "us-east-1"
     }
   ]
 }
 EOF
+
+# Important: Use region "us-east-1" for Cloudflare R2
+# AWS CLI must also use: export AWS_DEFAULT_REGION=us-east-1
 
 # Build
 make build

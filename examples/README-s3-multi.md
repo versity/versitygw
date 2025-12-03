@@ -123,18 +123,20 @@ Perfect for cost-effective multi-backend setup with Cloudflare R2:
       "access": "YOUR_R2_ACCESS_KEY_ID",
       "secret": "YOUR_R2_SECRET_ACCESS_KEY",
       "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/primary-bucket",
-      "region": "auto"
+      "region": "us-east-1"
     },
     {
       "name": "r2-fallback-bucket",
       "access": "YOUR_R2_ACCESS_KEY_ID",
       "secret": "YOUR_R2_SECRET_ACCESS_KEY",
       "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/fallback-bucket",
-      "region": "auto"
+      "region": "us-east-1"
     }
   ]
 }
 ```
+
+**Important:** For Cloudflare R2, use `"region": "us-east-1"` in the backend config. AWS CLI must also use `us-east-1` as the region (`export AWS_DEFAULT_REGION=us-east-1` or `aws configure set region us-east-1`).
 
 **Run with random gateway credentials:**
 ```bash

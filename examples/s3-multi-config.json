@@ -22,5 +22,10 @@
       "sslSkipVerify": false,
       "usePathStyle": true
     }
-  ]
+  ],
+  "comments": {
+    "region": "Backend region must match what the backend expects. Use 'us-east-1' for R2, actual region for AWS S3.",
+    "access/secret": "These are backend credentials for accessing S3/R2 storage.",
+    "gateway_credentials": "Gateway credentials (for S3 clients to connect to VersityGW) are configured via CLI flags --access/--secret or auto-generated if omitted."
+  }
 }

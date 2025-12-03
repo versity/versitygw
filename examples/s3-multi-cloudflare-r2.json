@@ -5,7 +5,7 @@
       "access": "YOUR_R2_ACCESS_KEY_ID",
       "secret": "YOUR_R2_SECRET_ACCESS_KEY",
       "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/primary-bucket",
-      "region": "auto",
+      "region": "us-east-1",
       "metaBucket": "",
       "disableChecksum": false,
       "sslSkipVerify": false,
@@ -16,11 +16,16 @@
       "access": "YOUR_R2_ACCESS_KEY_ID",
       "secret": "YOUR_R2_SECRET_ACCESS_KEY",
       "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/fallback-bucket",
-      "region": "auto",
+      "region": "us-east-1",
       "metaBucket": "",
       "disableChecksum": false,
       "sslSkipVerify": false,
       "usePathStyle": false
     }
-  ]
+  ],
+  "comments": {
+    "region": "Use 'us-east-1' for Cloudflare R2 (not 'auto'). AWS CLI must also use region 'us-east-1'.",
+    "endpoint": "Replace YOUR_ACCOUNT_ID with your Cloudflare account ID",
+    "credentials": "Backend credentials are for R2/S3 access. Gateway credentials (for S3 clients) are separate and can be auto-generated."
+  }
 }
