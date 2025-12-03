@@ -124,12 +124,18 @@ func runS3Multi(ctx *cli.Context) error {
 	// Generate random credentials if not provided
 	if rootUserAccess == "" {
 		rootUserAccess = generateRandomCredential(20)
+		if rootUserAccess == "" {
+			return fmt.Errorf("failed to generate access key and none provided via --access flag")
+		}
 		if !quiet {
 			fmt.Fprintf(os.Stderr, "⚠️  Generated random ACCESS KEY: %s\n", rootUserAccess)
 		}
 	}
 	if rootUserSecret == "" {
 		rootUserSecret = generateRandomCredential(40)
+		if rootUserSecret == "" {
+			return fmt.Errorf("failed to generate secret key and none provided via --secret flag")
+		}
 		if !quiet {
 			fmt.Fprintf(os.Stderr, "⚠️  Generated random SECRET KEY: %s\n", rootUserSecret)
 		}
@@ -266,16 +272,22 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 		if val := os.Getenv(prefix + "DISABLE_CHECKSUM"); val != "" {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].DisableChecksum = boolVal
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sDISABLE_CHECKSUM: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 		if val := os.Getenv(prefix + "SSL_SKIP_VERIFY"); val != "" {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].SslSkipVerify = boolVal
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sSSL_SKIP_VERIFY: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 		if val := os.Getenv(prefix + "USE_PATH_STYLE"); val != "" {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].UsePathStyle = boolVal
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sUSE_PATH_STYLE: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 	}
@@ -284,13 +296,17 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 }
 
 // generateRandomCredential generates a cryptographically secure random credential
+// Returns empty string on error to allow graceful handling
 func generateRandomCredential(length int) string {
 	// Calculate bytes needed: base64 encoding expands data by 4/3
 	// To get 'length' characters of base64, we need length * 3/4 bytes (rounded up)
 	bytesNeeded := (length*3 + 3) / 4 // Round up to handle base64 padding
 	bytes := make([]byte, bytesNeeded)
 	if _, err := rand.Read(bytes); err != nil {
-		panic(fmt.Sprintf("failed to generate random credential: %v", err))
+		// Return empty string on error - caller should check and handle appropriately
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to generate random credential: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Please provide credentials manually using --access and --secret flags\n")
+		return ""
 	}
 
 	// Encode to base64 and trim to exact desired length

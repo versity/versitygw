@@ -23,8 +23,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-X=main.Build=${BUILD} -X=main.BuildTime=${TIME} -X=main.Version=${VERSION} -w -s" \
     -o versitygw
 
-# Final stage
-FROM alpine:latest
+# Final stage - pin to specific alpine version for reproducible builds
+FROM alpine:3.19
 
 # Install ca-certificates for HTTPS
 RUN apk --no-cache add ca-certificates tzdata

@@ -13,52 +13,54 @@ fi
 # Default command is s3multi
 COMMAND="${1:-s3multi}"
 
-# Build arguments array
+# Build arguments array - use proper quoting to prevent injection
 ARGS=""
 
 # Multi-backend specific environment variables
 if [ "$COMMAND" = "s3multi" ]; then
     # Config file (required for s3multi)
     if [ -n "${VGW_CONFIG_FILE}" ]; then
-        ARGS="$ARGS --config ${VGW_CONFIG_FILE}"
+        ARGS="$ARGS --config \"${VGW_CONFIG_FILE}\""
     elif [ -f "/etc/versitygw/config.json" ]; then
-        ARGS="$ARGS --config /etc/versitygw/config.json"
+        ARGS="$ARGS --config \"/etc/versitygw/config.json\""
     else
         echo "ERROR: No config file found. Set VGW_CONFIG_FILE or mount to /etc/versitygw/config.json" >&2
         exit 1
     fi
 
-    # Gateway credentials (optional - will generate random if not provided)
+    # Gateway credentials are read from environment variables by the binary
+    # DO NOT pass them via command line to avoid exposure in process list
+    # The versitygw binary will read ROOT_ACCESS_KEY and ROOT_SECRET_KEY from environment
     if [ -n "${VGW_ACCESS_KEY}" ]; then
-        ARGS="$ARGS --access ${VGW_ACCESS_KEY}"
+        export ROOT_ACCESS_KEY="${VGW_ACCESS_KEY}"
     fi
     
     if [ -n "${VGW_SECRET_KEY}" ]; then
-        ARGS="$ARGS --secret ${VGW_SECRET_KEY}"
+        export ROOT_SECRET_KEY="${VGW_SECRET_KEY}"
     fi
 
     # Port
     if [ -n "${VGW_PORT}" ]; then
-        ARGS="$ARGS --port ${VGW_PORT}"
+        ARGS="$ARGS --port \"${VGW_PORT}\""
     fi
 
     # Host/Address
     if [ -n "${VGW_HOST}" ]; then
-        ARGS="$ARGS --host ${VGW_HOST}"
+        ARGS="$ARGS --host \"${VGW_HOST}\""
     fi
 
     # Region
     if [ -n "${VGW_REGION}" ]; then
-        ARGS="$ARGS --region ${VGW_REGION}"
+        ARGS="$ARGS --region \"${VGW_REGION}\""
     fi
 
     # Certificate files for HTTPS
     if [ -n "${VGW_CERT}" ]; then
-        ARGS="$ARGS --cert ${VGW_CERT}"
+        ARGS="$ARGS --cert \"${VGW_CERT}\""
     fi
 
     if [ -n "${VGW_KEY}" ]; then
-        ARGS="$ARGS --key ${VGW_KEY}"
+        ARGS="$ARGS --key \"${VGW_KEY}\""
     fi
 
     # Debug mode
@@ -73,7 +75,9 @@ if [ -n "${VGW_EXTRA_ARGS}" ]; then
 fi
 
 echo "Starting VersityGW Multi-Backend..."
-echo "Command: $BIN $COMMAND $ARGS"
+# Redact any --access or --secret arguments from log output for security
+REDACTED_ARGS=$(echo "$ARGS" | sed -E 's/--access[[:space:]]+[^ ]+/--access ****/g' | sed -E 's/--secret[[:space:]]+[^ ]+/--secret ****/g')
+echo "Command: $BIN $COMMAND $REDACTED_ARGS"
 echo ""
 
 # Execute with proper argument expansion

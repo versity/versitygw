@@ -86,7 +86,9 @@ read -p "Choose option [1/2]: " cred_choice
 if [ "$cred_choice" = "2" ]; then
     echo ""
     read -p "Enter ACCESS KEY: " access_key
-    read -p "Enter SECRET KEY: " secret_key
+    # Use -s flag to hide secret key input
+    read -sp "Enter SECRET KEY: " secret_key
+    echo ""
     
     # Update .env file
     sed -i.bak "s|^VGW_ACCESS_KEY=.*|VGW_ACCESS_KEY=$access_key|g" .env
@@ -96,6 +98,8 @@ if [ "$cred_choice" = "2" ]; then
     echo "✅ Custom credentials configured"
 else
     echo "✅ Will use auto-generated credentials"
+    echo "⚠️  Credentials will be shown ONCE in the startup output below"
+    echo "    Make sure to save them securely!"
 fi
 
 # Ask about port
@@ -138,10 +142,17 @@ if docker-compose ps | grep -q "Up"; then
     echo ""
     
     # Show credentials if auto-generated
+    # Note: Credentials are only displayed once during startup for security
     if [ "$cred_choice" != "2" ]; then
-        echo "🔐 Auto-Generated Credentials:"
+        echo "🔐 Retrieving Auto-Generated Credentials..."
         echo "================================"
-        docker-compose logs | grep "Generated random" || echo "Check logs with: docker-compose logs"
+        echo "⚠️  IMPORTANT: Save these credentials securely!"
+        echo "   They are generated randomly and will not be stored."
+        echo ""
+        docker-compose logs 2>/dev/null | grep "Generated random" || echo "⚠️  Could not retrieve credentials from logs. Check with: docker-compose logs"
+        echo ""
+        echo "💡 TIP: To avoid logging credentials, consider setting"
+        echo "   VGW_ACCESS_KEY and VGW_SECRET_KEY in .env file instead"
         echo ""
     fi
     
