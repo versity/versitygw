@@ -203,13 +203,12 @@ func (m *MultiBackend) GetObjectLegalHold(ctx context.Context, bucket, object, v
 }
 
 func (m *MultiBackend) SelectObjectContent(ctx context.Context, input *s3.SelectObjectContentInput) func(w *bufio.Writer) {
-	// Try each backend until one succeeds
-	// Note: This implementation has a performance characteristic where errors
-	// are only discovered when the returned function is executed, not at call time.
-	// This avoids unnecessary HeadObject calls but means the first backend's error
-	// will be returned even if later backends might succeed.
-	// For true fallback behavior, consider implementing error detection within
-	// the returned function at the cost of more complex error handling.
+	// Try each backend until one succeeds.
+	// Note: In this implementation, errors are only discovered when the returned function is executed,
+	// not at call time. This avoids unnecessary HeadObject calls but means that if the first backend's
+	// function returns an error at execution time, later backends are not tried, even if they might succeed.
+	// Error detection within the returned function is not currently implemented, but could be considered
+	// in the future at the cost of more complex error handling.
 	var lastErr error
 	for _, be := range m.backends {
 		output := be.SelectObjectContent(ctx, input)
