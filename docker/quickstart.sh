@@ -144,16 +144,16 @@ if docker-compose ps | grep -q "Up"; then
     # Show credentials if auto-generated
     # Note: Credentials are only displayed once during startup for security
     if [ "$cred_choice" != "2" ]; then
-        echo "🔐 Retrieving Auto-Generated Credentials..."
+        echo "🔐 Credentials were auto-generated for this session."
         echo "================================"
-        echo "⚠️  IMPORTANT: Save these credentials securely!"
-        echo "   They are generated randomly and will not be stored."
+        echo "⚠️  For security, auto-generated credentials are not displayed in logs."
+        echo "   To use your own credentials and avoid logging secrets, set"
+        echo "   VGW_ACCESS_KEY and VGW_SECRET_KEY in a .env file before running this script."
         echo ""
-        docker-compose logs 2>/dev/null | grep "Generated random" || echo "⚠️  Could not retrieve credentials from logs. Check with: docker-compose logs"
+        echo "💡 TIP: See the .env.example file for guidance."
         echo ""
-        echo "💡 TIP: To avoid logging credentials, consider setting"
-        echo "   VGW_ACCESS_KEY and VGW_SECRET_KEY in .env file instead"
-        echo ""
+        
+        
     fi
     
     echo "📊 Service Information:"
