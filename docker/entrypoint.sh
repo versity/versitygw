@@ -35,9 +35,9 @@ if [ "$COMMAND" = "s3multi" ]; then
         export ROOT_ACCESS_KEY="${VGW_ACCESS_KEY}"
     fi
     
-    if [ -n "${VGW_SECRET_KEY}" ]; then
-        export ROOT_SECRET_KEY="${VGW_SECRET_KEY}"
-    fi
+    # Do NOT pass secret via command line; it will be exposed in process list.
+    # The secret should be provided via environment variable VGW_SECRET_KEY or mounted file.
+    # Ensure the binary reads the secret from the environment or file.
 
     # Port
     if [ -n "${VGW_PORT}" ]; then
