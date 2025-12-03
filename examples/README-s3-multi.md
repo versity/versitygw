@@ -1,5 +1,7 @@
 # S3 Multi-Backend Configuration Example
 
+**English** | **[Português](README-s3-multi.pt-BR.md)**
+
 This directory contains an example configuration for running VersityGW with multiple S3 backends for fallback support.
 
 ## Configuration File: s3-multi-config.json

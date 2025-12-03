@@ -2,6 +2,8 @@
 
 > **Fork of [versity/versitygw](https://github.com/versity/versitygw)** with multi-backend S3 gateway support and automatic fallback.
 
+**English Documentation** | **[Documentação em Português](README.pt-BR.md)**
+
 ## What's New in This Fork
 
 ### Multi-Backend S3 Gateway with Automatic Fallback
@@ -13,6 +15,7 @@ This fork adds transparent multi-backend architecture that enables:
 - **Smart Write Operations**: PUT/DELETE always target the primary backend only
 - **Presigned URLs**: Full AWS SigV4 signing with configurable expiration (leverages existing Versity feature)
 - **Robust Error Detection**: Distinguishes NoSuchKey (404) from other errors to ensure proper fallback behavior
+- **🔐 Random Credentials**: Auto-generates secure gateway credentials if not provided (crypto/rand based)
 
 ### New Files Added
 
@@ -30,30 +33,36 @@ cat > config.json << 'EOF'
 {
   "backends": [
     {
+      "name": "primary-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
       "endpoint": "https://account.r2.cloudflarestorage.com/primary-bucket",
-      "region": "auto",
-      "accessKeyId": "YOUR_ACCESS_KEY",
-      "secretAccessKey": "YOUR_SECRET_KEY"
+      "region": "auto"
     },
     {
+      "name": "fallback-r2",
+      "access": "YOUR_R2_ACCESS_KEY",
+      "secret": "YOUR_R2_SECRET_KEY",
       "endpoint": "https://account.r2.cloudflarestorage.com/fallback-bucket",
-      "region": "auto",
-      "accessKeyId": "YOUR_ACCESS_KEY",
-      "secretAccessKey": "YOUR_SECRET_KEY"
+      "region": "auto"
     }
-  ],
-  "port": 7070,
-  "accessKey": "admin",
-  "secretKey": "password"
+  ]
 }
 EOF
 
 # Build
 make build
 
-# Run multi-backend mode
-./bin/versitygw s3multi --config config.json
+# Run with automatic random credentials (easiest!)
+./bin/versitygw --port :7070 s3-multi --config config.json
+# ⚠️  Generated random ACCESS KEY: kNnIst0KOxuyBbozuF-l
+# ⚠️  Generated random SECRET KEY: mZA4WE4HFydNcBubWCozuXkG8-Z03afd5KWlFAp1
+
+# Or provide your own gateway credentials
+./bin/versitygw --port :7070 --access admin --secret password s3-multi --config config.json
 ```
+
+**Note:** Backend credentials (in JSON) are for connecting to R2/S3. Gateway credentials (--access/--secret) are what S3 clients use to connect to VersityGW. If omitted, they're auto-generated.
 
 ### Use Cases for Multi-Backend
 
