@@ -15,6 +15,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -118,6 +120,20 @@ Example:
 }
 
 func runS3Multi(ctx *cli.Context) error {
+	// Generate random credentials if not provided
+	if rootUserAccess == "" {
+		rootUserAccess = generateRandomCredential(20)
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "⚠️  Generated random ACCESS KEY: %s\n", rootUserAccess)
+		}
+	}
+	if rootUserSecret == "" {
+		rootUserSecret = generateRandomCredential(40)
+		if !quiet {
+			fmt.Fprintf(os.Stderr, "⚠️  Generated random SECRET KEY: %s\n", rootUserSecret)
+		}
+	}
+
 	// Load configuration from file
 	config, err := loadS3MultiConfig(s3multiConfigFile)
 	if err != nil {
@@ -258,4 +274,21 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 	}
 
 	return config, nil
+}
+
+// generateRandomCredential generates a cryptographically secure random credential
+func generateRandomCredential(length int) string {
+	// Generate random bytes
+	bytes := make([]byte, length*3/4+1) // base64 expands by ~4/3
+	if _, err := rand.Read(bytes); err != nil {
+		panic(fmt.Sprintf("failed to generate random credential: %v", err))
+	}
+
+	// Encode to base64 and trim to desired length
+	encoded := base64.URLEncoding.EncodeToString(bytes)
+	if len(encoded) > length {
+		encoded = encoded[:length]
+	}
+
+	return encoded
 }

@@ -11,12 +11,18 @@ The configuration file defines multiple S3 backends. The first backend is the pr
 ### Basic Usage
 
 ```bash
+# Gateway credentials will be randomly generated if not provided
+versitygw s3-multi --config examples/s3-multi-config.json --port :7070
+
+# Or specify your own gateway credentials
 versitygw s3-multi \
   --config examples/s3-multi-config.json \
   --access ROOT_ACCESS_KEY \
   --secret ROOT_SECRET_KEY \
   --port :7070
 ```
+
+**Note:** If you don't provide `--access` and `--secret`, VersityGW will automatically generate random credentials and display them on startup. These are the credentials S3 clients will use to connect to the gateway (not to be confused with the backend credentials in the config file).
 
 ### With Environment Variables
 
@@ -30,11 +36,11 @@ export VGW_S3_MULTI_BACKEND_1_ACCESS="fallback_key"
 export VGW_S3_MULTI_BACKEND_1_SECRET="fallback_secret"
 export VGW_S3_MULTI_BACKEND_1_ENDPOINT="https://backup-s3.example.com"
 
-versitygw s3-multi \
-  --config examples/s3-multi-config.json \
-  --access ROOT_ACCESS_KEY \
-  --secret ROOT_SECRET_KEY \
-  --port :7070
+# Gateway credentials can be set via env vars or auto-generated
+export ROOT_ACCESS_KEY="my-gateway-key"  # Optional
+export ROOT_SECRET_KEY="my-gateway-secret"  # Optional
+
+versitygw s3-multi --config examples/s3-multi-config.json --port :7070
 ```
 
 ### With Debug Mode
@@ -73,11 +79,27 @@ Presigned URLs work as expected with the standard expiration handling:
 
 ## Configuration Options
 
+### Gateway Credentials (Random Generation)
+
+VersityGW can automatically generate random credentials for the gateway itself:
+
+- If you **don't provide** `--access` and `--secret` (or `ROOT_ACCESS_KEY` and `ROOT_SECRET_KEY` env vars), VersityGW will generate cryptographically secure random credentials on startup
+- The generated credentials will be displayed in the console output
+- These are the credentials S3 clients use to connect to the gateway (separate from backend credentials)
+
+Example output:
+```
+⚠️  Generated random ACCESS KEY: k8jN2mP9xQwE4rTyU5iO
+⚠️  Generated random SECRET KEY: vL7sD3fG6hJ9kM2nB5vC8xZ1aS4dF7gH9jK2lM5n
+```
+
+### Backend Configuration Fields
+
 Each backend in the `backends` array supports these fields:
 
 - **name** (string): Human-readable name for logging/debugging
-- **access** (string, required): AWS access key ID
-- **secret** (string, required): AWS secret access key
+- **access** (string, required): AWS access key ID for this backend
+- **secret** (string, required): AWS secret access key for this backend
 - **endpoint** (string): S3 endpoint URL (defaults to AWS if empty)
 - **region** (string): AWS region (defaults to "us-east-1")
 - **metaBucket** (string): Meta bucket for storing ACLs/policies
@@ -87,7 +109,40 @@ Each backend in the `backends` array supports these fields:
 
 ## Example Scenarios
 
-### Scenario 1: AWS S3 with On-Premises Backup
+### Scenario 1: Cloudflare R2 Dual Bucket (Recommended)
+
+Perfect for cost-effective multi-backend setup with Cloudflare R2:
+
+```json
+{
+  "backends": [
+    {
+      "name": "r2-primary-bucket",
+      "access": "YOUR_R2_ACCESS_KEY_ID",
+      "secret": "YOUR_R2_SECRET_ACCESS_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/primary-bucket",
+      "region": "auto"
+    },
+    {
+      "name": "r2-fallback-bucket",
+      "access": "YOUR_R2_ACCESS_KEY_ID",
+      "secret": "YOUR_R2_SECRET_ACCESS_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/fallback-bucket",
+      "region": "auto"
+    }
+  ]
+}
+```
+
+**Run with random gateway credentials:**
+```bash
+versitygw s3-multi --config r2-config.json --port :7070
+# Gateway will auto-generate and display ACCESS/SECRET keys
+```
+
+See `examples/s3-multi-cloudflare-r2.json` for a complete template.
+
+### Scenario 2: AWS S3 with On-Premises Backup
 ```json
 {
   "backends": [
@@ -110,7 +165,7 @@ Each backend in the `backends` array supports these fields:
 }
 ```
 
-### Scenario 2: Multi-Region Fallback
+### Scenario 3: Multi-Region Fallback
 ```json
 {
   "backends": [
@@ -132,7 +187,7 @@ Each backend in the `backends` array supports these fields:
 }
 ```
 
-### Scenario 3: Three-Tier Fallback
+### Scenario 4: Three-Tier Fallback
 ```json
 {
   "backends": [

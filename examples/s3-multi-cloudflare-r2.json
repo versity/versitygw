@@ -1,0 +1,26 @@
+{
+  "backends": [
+    {
+      "name": "r2-primary-bucket",
+      "access": "YOUR_R2_ACCESS_KEY_ID",
+      "secret": "YOUR_R2_SECRET_ACCESS_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/primary-bucket",
+      "region": "auto",
+      "metaBucket": "",
+      "disableChecksum": false,
+      "sslSkipVerify": false,
+      "usePathStyle": false
+    },
+    {
+      "name": "r2-fallback-bucket",
+      "access": "YOUR_R2_ACCESS_KEY_ID",
+      "secret": "YOUR_R2_SECRET_ACCESS_KEY",
+      "endpoint": "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com/fallback-bucket",
+      "region": "auto",
+      "metaBucket": "",
+      "disableChecksum": false,
+      "sslSkipVerify": false,
+      "usePathStyle": false
+    }
+  ]
+}
