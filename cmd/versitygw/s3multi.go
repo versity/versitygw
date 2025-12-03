@@ -273,21 +273,21 @@ func applyEnvOverrides(config S3MultiConfig) (S3MultiConfig, error) {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].DisableChecksum = boolVal
 			} else {
-				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sDISABLE_CHECKSUM: '%s' (%v)\n", prefix, val, err)
+				fmt.Fprintf(os.Stderr, "WARNING: failed to parse boolean for %sDISABLE_CHECKSUM: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 		if val := os.Getenv(prefix + "SSL_SKIP_VERIFY"); val != "" {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].SslSkipVerify = boolVal
 			} else {
-				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sSSL_SKIP_VERIFY: '%s' (%v)\n", prefix, val, err)
+				fmt.Fprintf(os.Stderr, "WARNING: failed to parse boolean for %sSSL_SKIP_VERIFY: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 		if val := os.Getenv(prefix + "USE_PATH_STYLE"); val != "" {
 			if boolVal, err := strconv.ParseBool(val); err == nil {
 				config.Backends[i].UsePathStyle = boolVal
 			} else {
-				fmt.Fprintf(os.Stderr, "Warning: failed to parse boolean for %sUSE_PATH_STYLE: '%s' (%v)\n", prefix, val, err)
+				fmt.Fprintf(os.Stderr, "WARNING: failed to parse boolean for %sUSE_PATH_STYLE: '%s' (%v)\n", prefix, val, err)
 			}
 		}
 	}
