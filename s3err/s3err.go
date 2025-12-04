@@ -180,6 +180,7 @@ const (
 	ErrInvalidLocationConstraint
 	ErrInvalidArgument
 	ErrMalformedTrailer
+	ErrInvalidChunkSize
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -802,6 +803,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMalformedTrailer: {
 		Code:           "MalformedTrailerError",
 		Description:    "The request contained trailing data that was not well-formed or did not conform to our published schema.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidChunkSize: {
+		Code:           "InvalidChunkSizeError",
+		Description:    "Only the last chunk is allowed to have a size less than 8192 bytes",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 
