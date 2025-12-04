@@ -178,6 +178,7 @@ const (
 	ErrNotModified
 	ErrInvalidLocationConstraint
 	ErrInvalidArgument
+	ErrMalformedTrailer
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -790,6 +791,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrInvalidArgument: {
 		Code:           "InvalidArgument",
 		Description:    "",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrMalformedTrailer: {
+		Code:           "MalformedTrailerError",
+		Description:    "The request contained trailing data that was not well-formed or did not conform to our published schema.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 

@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"hash"
 	"hash/crc32"
 	"hash/crc64"
@@ -30,7 +29,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/debuglogger"
+	"github.com/versity/versitygw/s3err"
 )
 
 var (
@@ -39,20 +40,25 @@ var (
 )
 
 type UnsignedChunkReader struct {
-	reader           *bufio.Reader
-	checksumType     checksumType
-	expectedChecksum string
-	hasher           hash.Hash
-	stash            []byte
-	offset           int
+	reader         *bufio.Reader
+	checksumType   checksumType
+	parsedChecksum string
+	hasher         hash.Hash
+	stash          []byte
+	offset         int
 }
 
 func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader, error) {
-	hasher, err := getHasher(ct)
+	var hasher hash.Hash
+	var err error
+	if ct != "" {
+		hasher, err = getHasher(ct)
+	}
 	if err != nil {
 		debuglogger.Logf("failed to initialize hash calculator: %v", err)
 		return nil, err
 	}
+
 	debuglogger.Infof("initializing unsigned chunk reader")
 	return &UnsignedChunkReader{
 		reader:       bufio.NewReader(r),
@@ -60,6 +66,16 @@ func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader,
 		stash:        make([]byte, 0),
 		hasher:       hasher,
 	}, nil
+}
+
+// Algorithm returns the checksum algorithm
+func (ucr *UnsignedChunkReader) Algorithm() string {
+	return strings.TrimPrefix(string(ucr.checksumType), "x-amz-checksum-")
+}
+
+// Checksum returns the parsed trailing checksum
+func (ucr *UnsignedChunkReader) Checksum() string {
+	return ucr.parsedChecksum
 }
 
 func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
@@ -87,7 +103,10 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 			// Stop reading parsing payloads as 0 sized chunk is reached
 			break
 		}
-		rdr := io.TeeReader(ucr.reader, ucr.hasher)
+		var rdr io.Reader = ucr.reader
+		if ucr.hasher != nil {
+			rdr = io.TeeReader(ucr.reader, ucr.hasher)
+		}
 		payload := make([]byte, chunkSize)
 		// Read and cache the payload
 		_, err = io.ReadFull(rdr, payload)
@@ -167,6 +186,7 @@ func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
 // Reads and validates the trailer at the end
 func (ucr *UnsignedChunkReader) readTrailer() error {
 	var trailerBuffer bytes.Buffer
+	var hasChecksum bool
 
 	for {
 		v, err := ucr.reader.ReadByte()
@@ -178,9 +198,27 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 			return err
 		}
 		if v != '\r' {
+			hasChecksum = true
 			trailerBuffer.WriteByte(v)
 			continue
 		}
+
+		if !hasChecksum {
+			// in case the payload doesn't contain trailer
+			// the first 2 bytes(\r\n) have been read
+			// only read the last byte: \n
+			err := ucr.readAndSkip('\n')
+			if err != nil {
+				debuglogger.Logf("failed to read chunk last byte: \\n: %v", err)
+				if err == io.EOF {
+					return io.ErrUnexpectedEOF
+				}
+				return err
+			}
+
+			break
+		}
+
 		var tmp [3]byte
 		_, err = io.ReadFull(ucr.reader, tmp[:])
 		if err != nil {
@@ -200,20 +238,35 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 	// Parse the trailer
 	trailerHeader := trailerBuffer.String()
 	trailerHeader = strings.TrimSpace(trailerHeader)
+	if trailerHeader == "" {
+		if ucr.checksumType != "" {
+			debuglogger.Logf("expected %s checksum in the paylod, but it's missing", ucr.checksumType)
+			return s3err.GetAPIError(s3err.ErrMalformedTrailer)
+		}
+
+		return nil
+	}
 	trailerHeaderParts := strings.Split(trailerHeader, ":")
 	if len(trailerHeaderParts) != 2 {
 		debuglogger.Logf("invalid trailer header parts: %v", trailerHeaderParts)
-		return errMalformedEncoding
+		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
 	}
 
-	if trailerHeaderParts[0] != string(ucr.checksumType) {
-		debuglogger.Logf("invalid checksum type: %v", trailerHeaderParts[0])
-		//TODO: handle the error
-		return errMalformedEncoding
+	checksumKey := checksumType(trailerHeaderParts[0])
+	checksum := trailerHeaderParts[1]
+
+	if !checksumKey.isValid() {
+		debuglogger.Logf("invalid checksum header key: %s", checksumKey)
+		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
 	}
 
-	ucr.expectedChecksum = trailerHeaderParts[1]
-	debuglogger.Infof("parsed the trailing header:\n%v:%v", trailerHeaderParts[0], trailerHeaderParts[1])
+	if checksumKey != ucr.checksumType {
+		debuglogger.Logf("incorrect checksum type (expected): %s, (actual): %s", ucr.checksumType, checksumKey)
+		return s3err.GetAPIError(s3err.ErrMalformedTrailer)
+	}
+
+	ucr.parsedChecksum = checksum
+	debuglogger.Infof("parsed the trailing header:\n%v:%v", checksumKey, checksum)
 
 	// Validate checksum
 	return ucr.validateChecksum()
@@ -221,15 +274,28 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 
 // Validates the trailing checksum sent at the end
 func (ucr *UnsignedChunkReader) validateChecksum() error {
-	csum := ucr.hasher.Sum(nil)
-	checksum := base64.StdEncoding.EncodeToString(csum)
+	algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(string(ucr.checksumType), "x-amz-checksum-")))
+	// validate the checksum
+	if !IsValidChecksum(ucr.parsedChecksum, algo) {
+		debuglogger.Logf("invalid checksum: (algo): %s, (checksum): %s", algo, ucr.parsedChecksum)
+		return s3err.GetInvalidTrailingChecksumHeaderErr(string(ucr.checksumType))
+	}
 
-	if checksum != ucr.expectedChecksum {
-		debuglogger.Logf("incorrect checksum: (expected): %v, (got): %v", ucr.expectedChecksum, checksum)
-		return fmt.Errorf("actual checksum: %v, expected checksum: %v", checksum, ucr.expectedChecksum)
+	checksum := ucr.calculateChecksum()
+
+	// compare the calculated and parsed checksums
+	if checksum != ucr.parsedChecksum {
+		debuglogger.Logf("incorrect checksum: (expected): %v, (got): %v", ucr.parsedChecksum, checksum)
+		return s3err.GetChecksumBadDigestErr(algo)
 	}
 
 	return nil
+}
+
+// calculateChecksum calculates the checksum with the unsigned reader hasher
+func (ucr *UnsignedChunkReader) calculateChecksum() string {
+	csum := ucr.hasher.Sum(nil)
+	return base64.StdEncoding.EncodeToString(csum)
 }
 
 // Retruns the hash calculator based on the hash type provided

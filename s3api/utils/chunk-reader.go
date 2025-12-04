@@ -170,7 +170,7 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 	//TODO: not sure if InvalidRequest should be returned in this case
 	if err != nil {
 		debuglogger.Logf("invalid value for 'X-Amz-Decoded-Content-Length': %v", decContLengthStr)
-		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+		return nil, s3err.GetAPIError(s3err.ErrMissingContentLength)
 	}
 
 	if decContLength > maxObjSizeLimit {
@@ -188,10 +188,6 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 	checksumType, err := ExtractChecksumType(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if contentSha256 != payloadTypeStreamingSigned && checksumType == "" {
-		debuglogger.Logf("empty value for required trailer header 'X-Amz-Trailer': %v", checksumType)
-		return nil, s3err.GetAPIError(s3err.ErrTrailerHeaderNotSupported)
 	}
 
 	switch contentSha256 {
