@@ -2093,3 +2093,28 @@ func testUnsignedStreamingPayloadTrailerUploadPart(s *S3Conf, bucket, object str
 
 	return sendSignedRequest(s, req, cancel)
 }
+
+// constructUnsignedPaylod constructs an unsigned streaming upload payload
+// and returns the decoded content length and the payload
+func constructUnsignedPaylod(chunkSizes ...int64) (int64, []byte, error) {
+	var cLength int64
+	buffer := bytes.NewBuffer([]byte{})
+
+	for _, chunkSize := range chunkSizes {
+		cLength += chunkSize
+		_, err := buffer.WriteString(fmt.Sprintf("%x\r\n", chunkSize))
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = buffer.WriteString(strings.Repeat("a", int(chunkSize)))
+		if err != nil {
+			return 0, nil, err
+		}
+		_, err = buffer.WriteString("\r\n")
+		if err != nil {
+			return 0, nil, err
+		}
+	}
+
+	return cLength, buffer.Bytes(), nil
+}

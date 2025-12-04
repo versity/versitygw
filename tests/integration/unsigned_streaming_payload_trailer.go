@@ -211,6 +211,63 @@ func UnsignedStreamingPayloadTrailer_incomplete_body(s *S3Conf) error {
 	})
 }
 
+func UnsignedStreamingPayloadTrailer_invalid_chunk_size(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_invalid_chunk_size"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		chSizeErr := s3err.GetAPIError(s3err.ErrInvalidChunkSize)
+		for i, test := range []struct {
+			chunkSizes  []int64
+			expectedErr error
+		}{
+			{[]int64{8192, 8192, 100, 0}, nil},
+			{[]int64{100, 0}, nil},
+			{[]int64{10000, 9500, 20, 0}, nil},
+			{[]int64{8200, 8201, 10000, 10, 0}, nil},
+			{[]int64{100, 8192, 100, 0}, chSizeErr},
+			{[]int64{8192, 10, 100, 0}, chSizeErr},
+			{[]int64{10, 10, 10, 0}, chSizeErr},
+			{[]int64{8192, 10, 100, 0}, chSizeErr},
+			{[]int64{10000, 10, 8192, 8192, 0}, chSizeErr},
+			{[]int64{8192, 10, 10, 8192, 20, 20000, 0}, chSizeErr},
+		} {
+			cLength, payload, err := constructUnsignedPaylod(test.chunkSizes...)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": fmt.Sprint(cLength),
+			}
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, payload, reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if test.expectedErr == nil && apiErr != nil {
+				return fmt.Errorf("test %v failed: (%s) %s", i+1, apiErr.Code, apiErr.Message)
+			}
+
+			if test.expectedErr != nil {
+				if apiErr == nil {
+					return fmt.Errorf("test %v failed: expected %w, instead got nil", i+1, test.expectedErr)
+				}
+
+				expErr, ok := test.expectedErr.(s3err.APIError)
+				if !ok {
+					return fmt.Errorf("test %v failed: invalid expected error type", i+1)
+				}
+
+				if err := compareS3ApiError(expErr, apiErr); err != nil {
+					return fmt.Errorf("test %v failed: %w", i+1, err)
+				}
+			}
+		}
+		return nil
+	})
+}
+
 func UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme(s *S3Conf) error {
 	testName := "UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

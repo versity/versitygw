@@ -35,8 +35,9 @@ import (
 )
 
 var (
-	trailerDelim         = []byte{'\n', '\r', '\n'}
-	errMalformedEncoding = errors.New("malformed chunk encoding")
+	trailerDelim               = []byte{'\n', '\r', '\n'}
+	minChunkSize         int64 = 8192
+	errMalformedEncoding       = errors.New("malformed chunk encoding")
 )
 
 type UnsignedChunkReader struct {
@@ -46,6 +47,9 @@ type UnsignedChunkReader struct {
 	hasher         hash.Hash
 	stash          []byte
 	offset         int
+	// this data is necessary for 'InvalidChunkSizeError' error
+	// TODO: add 'Chunk' and 'BadChunkSize' in the error
+	chunkSizes []int64
 }
 
 func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader, error) {
@@ -65,6 +69,7 @@ func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader,
 		checksumType: ct,
 		stash:        make([]byte, 0),
 		hasher:       hasher,
+		chunkSizes:   []int64{},
 	}, nil
 }
 
@@ -188,9 +193,34 @@ func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
 		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 
+	if !ucr.isValidChunkSize(chunkSize) {
+		return chunkSize, s3err.GetAPIError(s3err.ErrInvalidChunkSize)
+	}
+
+	ucr.chunkSizes = append(ucr.chunkSizes, chunkSize)
+
 	debuglogger.Infof("chunk size extracted: %v", chunkSize)
 
 	return chunkSize, nil
+}
+
+// isValidChunkSize checks if the parsed chunk size is valid
+// they follow one rule: all chunk sizes except for the last one
+// should be greater than 8192
+func (ucr *UnsignedChunkReader) isValidChunkSize(size int64) bool {
+	if len(ucr.chunkSizes) == 0 {
+		// any valid number is valid as a first chunk size
+		return true
+	}
+
+	lastChunkSize := ucr.chunkSizes[len(ucr.chunkSizes)-1]
+	// any chunk size, except the last one should be greater than 8192
+	if size != 0 && lastChunkSize < minChunkSize {
+		debuglogger.Logf("invalid chunk size %v", lastChunkSize)
+		return false
+	}
+
+	return true
 }
 
 // Reads and validates the trailer at the end
