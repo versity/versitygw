@@ -111,6 +111,12 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 		// Read and cache the payload
 		_, err = io.ReadFull(rdr, payload)
 		if err != nil {
+			// the chunk size is not 0 and if io.EOF is returned
+			// it means the body is incomplete
+			if errors.Is(err, io.EOF) {
+				debuglogger.Logf("unexpected EOF when reading chunk data")
+				return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
+			}
 			debuglogger.Logf("failed to read chunk data: %v", err)
 			return 0, err
 		}
@@ -149,14 +155,11 @@ func (ucr *UnsignedChunkReader) readAndSkip(data ...byte) error {
 	for _, d := range data {
 		b, err := ucr.reader.ReadByte()
 		if err != nil {
-			if err == io.EOF {
-				return io.ErrUnexpectedEOF
-			}
-			return err
+			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 
 		if b != d {
-			return errMalformedEncoding
+			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 	}
 
@@ -165,17 +168,24 @@ func (ucr *UnsignedChunkReader) readAndSkip(data ...byte) error {
 
 // Extracts the chunk size from the payload
 func (ucr *UnsignedChunkReader) extractChunkSize() (int64, error) {
-	line, err := ucr.reader.ReadString('\n')
+	line, err := ucr.reader.ReadString('\r')
 	if err != nil {
 		debuglogger.Logf("failed to parse chunk size: %v", err)
-		return 0, errMalformedEncoding
+		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
+
+	err = ucr.readAndSkip('\n')
+	if err != nil {
+		debuglogger.Logf("failed to read the second byte (\\n) after chunk size")
+		return 0, err
+	}
+
 	line = strings.TrimSpace(line)
 
 	chunkSize, err := strconv.ParseInt(line, 16, 64)
 	if err != nil {
 		debuglogger.Logf("failed to convert chunk size: %v", err)
-		return 0, errMalformedEncoding
+		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 
 	debuglogger.Infof("chunk size extracted: %v", chunkSize)
@@ -191,11 +201,7 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 	for {
 		v, err := ucr.reader.ReadByte()
 		if err != nil {
-			debuglogger.Logf("failed to read byte: %v", err)
-			if err == io.EOF {
-				return io.ErrUnexpectedEOF
-			}
-			return err
+			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 		if v != '\r' {
 			hasChecksum = true
@@ -210,10 +216,7 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 			err := ucr.readAndSkip('\n')
 			if err != nil {
 				debuglogger.Logf("failed to read chunk last byte: \\n: %v", err)
-				if err == io.EOF {
-					return io.ErrUnexpectedEOF
-				}
-				return err
+				return s3err.GetAPIError(s3err.ErrIncompleteBody)
 			}
 
 			break
@@ -223,14 +226,11 @@ func (ucr *UnsignedChunkReader) readTrailer() error {
 		_, err = io.ReadFull(ucr.reader, tmp[:])
 		if err != nil {
 			debuglogger.Logf("failed to read chunk ending: \\n\\r\\n: %v", err)
-			if err == io.EOF {
-				return io.ErrUnexpectedEOF
-			}
-			return err
+			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 		if !bytes.Equal(tmp[:], trailerDelim) {
 			debuglogger.Logf("incorrect trailer delimiter: (expected): \\n\\r\\n, (got): %q", tmp[:])
-			return errMalformedEncoding
+			return s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 		break
 	}

@@ -88,6 +88,7 @@ const (
 	ErrInvalidCompleteMpPartNumber
 	ErrInternalError
 	ErrNonEmptyRequestBody
+	ErrIncompleteBody
 	ErrInvalidCopyDest
 	ErrInvalidCopySourceRange
 	ErrInvalidCopySourceBucket
@@ -326,6 +327,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrNonEmptyRequestBody: {
 		Code:           "InvalidRequest",
 		Description:    "The request included a body. Requests of this type must not include a non-empty body.",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrIncompleteBody: {
+		Code:           "IncompleteBody",
+		Description:    "The request body terminated unexpectedly",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidPart: {
