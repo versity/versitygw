@@ -160,22 +160,32 @@ func IsStreamingPayload(str string) bool {
 		pt == payloadTypeStreamingSignedTrailer
 }
 
-func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
+// ParseDecodedContentLength extracts and validates the
+// 'x-amz-decoded-content-length' from fiber context
+func ParseDecodedContentLength(ctx *fiber.Ctx) (int64, error) {
 	decContLengthStr := ctx.Get("X-Amz-Decoded-Content-Length")
 	if decContLengthStr == "" {
 		debuglogger.Logf("missing required header 'X-Amz-Decoded-Content-Length'")
-		return nil, s3err.GetAPIError(s3err.ErrMissingContentLength)
+		return 0, s3err.GetAPIError(s3err.ErrMissingContentLength)
 	}
 	decContLength, err := strconv.ParseInt(decContLengthStr, 10, 64)
-	//TODO: not sure if InvalidRequest should be returned in this case
 	if err != nil {
 		debuglogger.Logf("invalid value for 'X-Amz-Decoded-Content-Length': %v", decContLengthStr)
-		return nil, s3err.GetAPIError(s3err.ErrMissingContentLength)
+		return 0, s3err.GetAPIError(s3err.ErrMissingContentLength)
 	}
 
 	if decContLength > maxObjSizeLimit {
 		debuglogger.Logf("the object size exceeds the allowed limit: (size): %v, (limit): %v", decContLength, int64(maxObjSizeLimit))
-		return nil, s3err.GetAPIError(s3err.ErrEntityTooLarge)
+		return 0, s3err.GetAPIError(s3err.ErrEntityTooLarge)
+	}
+
+	return decContLength, nil
+}
+
+func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
+	cLength, err := ParseDecodedContentLength(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	contentSha256 := payloadType(ctx.Get("X-Amz-Content-Sha256"))
@@ -192,7 +202,7 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 
 	switch contentSha256 {
 	case payloadTypeStreamingUnsignedTrailer:
-		return NewUnsignedChunkReader(r, checksumType)
+		return NewUnsignedChunkReader(r, checksumType, cLength)
 	case payloadTypeStreamingSignedTrailer:
 		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType)
 	case payloadTypeStreamingSigned:

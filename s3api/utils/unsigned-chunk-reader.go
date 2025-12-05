@@ -50,9 +50,13 @@ type UnsignedChunkReader struct {
 	// this data is necessary for 'InvalidChunkSizeError' error
 	// TODO: add 'Chunk' and 'BadChunkSize' in the error
 	chunkSizes []int64
+	cLength    int64
+	// This data is necessary for the decoded content length mismatch error
+	// TODO: add 'NumberBytesExpected' and 'NumberBytesProvided' in the error
+	dataRead int64
 }
 
-func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader, error) {
+func NewUnsignedChunkReader(r io.Reader, ct checksumType, decContentLength int64) (*UnsignedChunkReader, error) {
 	var hasher hash.Hash
 	var err error
 	if ct != "" {
@@ -70,6 +74,7 @@ func NewUnsignedChunkReader(r io.Reader, ct checksumType) (*UnsignedChunkReader,
 		stash:        make([]byte, 0),
 		hasher:       hasher,
 		chunkSizes:   []int64{},
+		cLength:      decContentLength,
 	}, nil
 }
 
@@ -103,6 +108,8 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+
+		ucr.dataRead += chunkSize
 
 		if chunkSize == 0 {
 			// Stop reading parsing payloads as 0 sized chunk is reached
@@ -144,6 +151,11 @@ func (ucr *UnsignedChunkReader) Read(p []byte) (int, error) {
 			ucr.offset = 0
 			return dataRead, nil
 		}
+	}
+
+	if ucr.cLength != ucr.dataRead {
+		debuglogger.Logf("number of bytes expected: (%v), number of bytes read: (%v)", ucr.cLength, ucr.dataRead)
+		return 0, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
 	}
 
 	// Read and validate trailers

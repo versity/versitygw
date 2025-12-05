@@ -79,6 +79,10 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 
 		if streamBody {
 			if utils.IsUnsignedStreamingPayload(payloadHash) {
+				cLength, err := utils.ParseDecodedContentLength(ctx)
+				if err != nil {
+					return err
+				}
 				// stack an unsigned streaming payload reader
 				checksumType, err := utils.ExtractChecksumType(ctx)
 				if err != nil {
@@ -87,7 +91,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 
 				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 					var cr io.Reader
-					cr, err = utils.NewUnsignedChunkReader(r, checksumType)
+					cr, err = utils.NewUnsignedChunkReader(r, checksumType, cLength)
 					return cr
 				})
 

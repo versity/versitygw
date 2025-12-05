@@ -268,6 +268,41 @@ func UnsignedStreamingPayloadTrailer_invalid_chunk_size(s *S3Conf) error {
 	})
 }
 
+func UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_content_length_payload_size_mismatch"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		object := "my-object"
+		for i, test := range []struct {
+			payload string
+			cLength int64
+			trailer string
+		}{
+			{"b\r\nabcdefghijk\r\n0\r\n\r\n", 5, ""},
+			{"b\r\nabcdefghijk\r\n0\r\n\r\n", 200, ""},
+			{"a\r\ndummy data\r\n0\r\nx-amz-checksum-crc64nvme:dPVWc2vU1+Q=\r\n\r\n", 128, "crc64nvme"},
+			{"a\r\ndummy data\r\n0\r\nx-amz-checksum-sha256:eXuwq/95jXIAr3aF3KeQHt/8Ur8mUA1b2XKCZY7iQVI=\r\n\r\n", 7, "crc64nvme"},
+		} {
+			reqHeaders := map[string]string{
+				"x-amz-decoded-content-length": fmt.Sprint(test.cLength),
+			}
+			if test.trailer != "" {
+				reqHeaders["x-amz-trailer"] = fmt.Sprintf("x-amz-checksum-%s", test.trailer)
+			}
+
+			_, apiErr, err := testUnsignedStreamingPayloadTrailerObjectPut(s, bucket, object, []byte(test.payload), reqHeaders)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if err := compareS3ApiError(s3err.GetAPIError(s3err.ErrContentLengthMismatch), apiErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme(s *S3Conf) error {
 	testName := "UnsignedStreamingPayloadTrailer_no_trailer_should_calculate_crc64nvme"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
