@@ -1268,7 +1268,7 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 			middlewares.AuthorizePublicBucketAccess(be, metrics.ActionPutObjectTagging, auth.PutObjectTaggingAction, auth.PermissionWrite, region, false),
 			middlewares.VerifyPresignedV4Signature(root, iam, region, false),
 			middlewares.VerifyV4Signature(root, iam, region, false, true),
-			middlewares.VerifyChecksums(false, true, true),
+			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ApplyBucketCORS(be),
 			middlewares.ParseAcl(be),
 		))
