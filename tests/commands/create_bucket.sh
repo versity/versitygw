@@ -48,6 +48,31 @@ create_bucket() {
   return 0
 }
 
+create_bucket_invalid_name() {
+  if [ $# -ne 1 ]; then
+    log 2 "create bucket w/invalid name missing command type"
+    return 1
+  fi
+  local exit_code=0
+  if [[ $1 == "aws" ]] || [[ $1 == 's3' ]]; then
+    bucket_create_error=$(aws --no-verify-ssl s3 mb "s3://" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3api' ]]; then
+    bucket_create_error=$(aws --no-verify-ssl s3api create-bucket --bucket "s3://" 2>&1) || exit_code=$?
+  elif [[ $1 == 's3cmd' ]]; then
+    bucket_create_error=$(s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb "s3://" 2>&1) || exit_code=$?
+  elif [[ $1 == 'mc' ]]; then
+    bucket_create_error=$(mc --insecure mb "$MC_ALIAS/." 2>&1) || exit_code=$?
+  else
+    log 2 "invalid command type $1"
+    return 1
+  fi
+  if [ $exit_code -eq 0 ]; then
+    log 2 "error:  bucket should have not been created but was"
+    return 1
+  fi
+  echo "$bucket_create_error"
+}
+
 create_bucket_with_user() {
   log 6 "create_bucket_with_user"
   if ! check_param_count "create_bucket_with_user" "command type, bucket, access ID, secret key" 4 $#; then
@@ -121,6 +146,22 @@ create_bucket_rest_expect_success() {
   env_vars="BUCKET_NAME=$1 $2"
   if ! send_rest_command_expect_success "$env_vars" "./tests/rest_scripts/create_bucket.sh" "200"; then
     log 2 "error sending REST command and checking error"
+    return 1
+  fi
+  return 0
+}
+
+create_bucket_rest() {
+  if ! check_param_count "create_bucket_rest" "bucket name" 1 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$BUCKET_ONE_NAME" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/create_bucket.sh 2>&1); then
+    log 2 "error creating bucket: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ]; then
+    bucket_create_error="$(cat "$TEST_FILE_FOLDER/result.txt")"
+    log 2 "expected '200', was '$result' ($bucket_create_error)"
     return 1
   fi
   return 0

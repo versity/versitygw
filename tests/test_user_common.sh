@@ -16,7 +16,6 @@
 
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
-source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh
 source ./tests/util/util_users.sh

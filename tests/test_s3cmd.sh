@@ -23,8 +23,8 @@ source ./tests/test_common_acl.sh
 source ./tests/commands/delete_bucket_policy.sh
 source ./tests/commands/get_bucket_policy.sh
 source ./tests/commands/put_bucket_policy.sh
+source ./tests/drivers/get_bucket_location/get_bucket_location.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_object.sh
 
 export RUN_S3CMD=true
