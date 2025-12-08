@@ -121,6 +121,7 @@ const (
 	ErrInvalidSHA256Paylod
 	ErrUnsupportedAnonymousSignedStreaming
 	ErrMissingContentLength
+	ErrContentLengthMismatch
 	ErrInvalidAccessKeyID
 	ErrRequestNotReadyYet
 	ErrMissingDateHeader
@@ -519,6 +520,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "MissingContentLength",
 		Description:    "You must provide the Content-Length HTTP header.",
 		HTTPStatusCode: http.StatusLengthRequired,
+	},
+	ErrContentLengthMismatch: {
+		Code:           "IncompleteBody",
+		Description:    "You did not provide the number of bytes specified by the Content-Length HTTP header",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrMissingDateHeader: {
 		Code:           "AccessDenied",
