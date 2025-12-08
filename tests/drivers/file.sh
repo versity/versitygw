@@ -123,3 +123,31 @@ setup_bucket_and_large_file_v2() {
   fi
   return 0
 }
+
+chunked_upload_trailer_success() {
+  if ! check_param_count_v2 "checksum" 1 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+  if ! setup_bucket "$bucket_name"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  test_file="test-file"
+  if ! create_test_file "$test_file" 10000; then
+    log 2 "error creating test file"
+    return 1
+  fi
+  if ! put_object_chunked_trailer_success "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$1"; then
+    log 2 "error performing chunked upload w/trailer"
+    return 1
+  fi
+  if ! download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"; then
+    log 2 "error downloading and comparing file"
+    return 1
+  fi
+  return 0
+}

@@ -31,7 +31,6 @@ source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/params.sh
-source ./tests/util/util_bucket_location.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_object.sh

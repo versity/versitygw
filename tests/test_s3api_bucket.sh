@@ -45,13 +45,14 @@ source ./tests/commands/put_public_access_block.sh
 source ./tests/commands/select_object_content.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/user.sh
+source ./tests/drivers/create_bucket/create_bucket.sh
 source ./tests/drivers/get_bucket_acl/get_bucket_acl.sh
+source ./tests/drivers/get_bucket_location/get_bucket_location.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging.sh
 source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_rest.sh
 source ./tests/drivers/head_bucket/head_bucket_s3api.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_create_bucket.sh
 source ./tests/util/util_file.sh
 source ./tests/util/util_head_bucket.sh
 source ./tests/util/util_lock_config.sh
