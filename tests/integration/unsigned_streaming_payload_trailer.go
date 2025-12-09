@@ -2,7 +2,9 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -543,6 +545,45 @@ func UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer(s *S3Conf) 
 
 			if headers[csumHdr] != test.value {
 				return fmt.Errorf("expected the %s to be %s, instead got %s", csumHdr, test.value, headers[csumHdr])
+			}
+		}
+
+		return nil
+	})
+}
+
+func UnsignedStreamingPayloadTrailer_not_allowed(s *S3Conf) error {
+	testName := "UnsignedStreamingPayloadTrailer_not_allowed"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// doesn't matter what data is sent in the body
+		body := []byte("5\r\nabcde\r\n0\r\n\r\n")
+		// tests a couple of bucket PUT actions, where
+		// STREAMING-UNSIGNED-PAYLOAD-TRAILER is not allowed
+		for i, query := range []string{
+			"cors",              // PutBucketCors
+			"tagging",           // PutBucketTagging
+			"object-lock",       // PutObjectLockConfiguration
+			"ownershipControls", // PutBucketOwnership
+			"versioning",        // PutBucketVersioning
+			"policy",            // PutBucketPolicy
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/%s?%s", s.endpoint, bucket, query), bytes.NewReader(body))
+			if err != nil {
+				cancel()
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			req.Header.Set("x-amz-content-sha256", "STREAMING-UNSIGNED-PAYLOAD-TRAILER")
+			req.Header.Set("x-amz-decoded-content-length", "5")
+
+			_, apiErr, err := sendSignedRequest(s, req, cancel)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if err := compareS3ApiError(s3err.GetAPIError(s3err.ErrInvalidSHA256PayloadUsage), apiErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 		}
 

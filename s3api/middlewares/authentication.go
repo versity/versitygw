@@ -115,6 +115,11 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		if !utils.IsValidSh256PayloadHeader(hashPayload) {
 			return s3err.GetAPIError(s3err.ErrInvalidSHA256Paylod)
 		}
+		// the streaming payload type is allowed only in PutObject and UploadPart
+		// e.g. STREAMING-UNSIGNED-PAYLOAD-TRAILER
+		if !streamBody && utils.IsStreamingPayload(hashPayload) {
+			return s3err.GetAPIError(s3err.ErrInvalidSHA256PayloadUsage)
+		}
 		if streamBody {
 			// for streaming PUT actions, authorization is deferred
 			// until end of stream due to need to get length and
