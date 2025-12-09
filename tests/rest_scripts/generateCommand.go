@@ -14,6 +14,7 @@ const (
 	CreateBucket     = "createBucket"
 	PutBucketTagging = "putBucketTagging"
 	PutObject        = "putObject"
+	PutObjectTagging = "putObjectTagging"
 )
 
 var method *string
@@ -150,7 +151,7 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 			return nil, fmt.Errorf("error setting up CreateBucket command: %v", err)
 		}
 	case PutBucketTagging:
-		fields := command.PutBucketTaggingFields{
+		fields := command.TaggingFields{
 			TagCount:  *tagCount,
 			TagKeys:   tagKeys,
 			TagValues: tagValues,
@@ -161,6 +162,15 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 	case PutObject:
 		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
 			return nil, fmt.Errorf("error setting up PutObject command: %v", err)
+		}
+	case PutObjectTagging:
+		fields := command.TaggingFields{
+			TagCount:  *tagCount,
+			TagKeys:   tagKeys,
+			TagValues: tagValues,
+		}
+		if s3Command, err = command.NewPutObjectTaggingCommand(baseCommand, &fields); err != nil {
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
 		}
 	default:
 		s3Command = baseCommand

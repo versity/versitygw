@@ -48,6 +48,7 @@ show_help() {
     echo "   rest-not-implemented                   Run REST multipart tests"
     echo "   rest-put-bucket-tagging                Run REST put-bucket-tagging tests"
     echo "   rest-put-object                        Run REST put-object tests"
+    echo "   rest-put-object-tagging                Run REST put-object-tagging tests"
     echo "   rest-versioning                        Run REST versioning tests"
     echo "   rest-bucket                            Run REST bucket tests"
 }
@@ -63,7 +64,8 @@ handle_param() {
       s3api-bucket|s3api-object|s3api-multipart|rest-base|rest-acl|rest-chunked|rest-checksum|\
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
       rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
-      rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging|rest-get-bucket-location)
+      rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging|rest-get-bucket-location|\
+      rest-put-object-tagging)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -188,6 +190,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_put_object.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_put_object_tagging.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_versioning.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_bucket.sh; then
@@ -253,6 +257,10 @@ run_suite() {
     rest-put-object)
       echo "Running REST put-object tests ..."
       "$HOME"/bin/bats ./tests/test_rest_put_object.sh || exit_code=$?
+      ;;
+    rest-put-object-tagging)
+      echo "Running REST put-object-tagging tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_put_object_tagging.sh || exit_code=$?
       ;;
     rest-versioning)
       echo "Running REST versioning tests ..."

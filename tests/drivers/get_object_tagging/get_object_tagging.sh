@@ -90,7 +90,7 @@ check_verify_object_tags() {
       return 1
     fi
   elif [ "$1" == 'rest' ]; then
-    if ! parse_object_tags_rest; then
+    if ! parse_object_tags_rest "$TEST_FILE_FOLDER/object_tags.txt"; then
       log 2 "error parsing object tags"
       return 1
     fi

@@ -141,6 +141,21 @@ check_xml_error_contains() {
   return 0
 }
 
+check_xml_error_contains_with_single_error_field() {
+  if ! check_param_count_v2 "data source, expected error, string, expected key, expected value" 5 $#; then
+    return 1
+  fi
+  if ! check_xml_error_contains "$1""$2" "$3"; then
+    log 2 "error checking initial xml error"
+    return 1
+  fi
+  if ! check_error_parameter "$1" "$4" "$5"; then
+    log 2 "error checking error parameter"
+    return 1
+  fi
+  return 0
+}
+
 get_xml_data() {
   if ! check_param_count_v2 "data file, output file" 2 $#; then
     return 1
@@ -188,4 +203,5 @@ check_error_parameter() {
     log 2 "expected '$3', was '$unescaped_value'"
     return 1
   fi
+  return 0
 }

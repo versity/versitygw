@@ -64,3 +64,33 @@ send_openssl_go_command_chunked_no_content_length() {
       "-payloadType" "STREAMING-AWS4-HMAC-SHA256-PAYLOAD" "-chunkSize" "8192" "-objectKey" "$2"
     assert_success
 }
+
+put_bucket_object_run_command() {
+  if ! check_param_count_gt "bucket, key, expected success val, params" 3 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_add_file "$1" "$2"; then
+    log 2 "error setting up bucket and adding file"
+    return 1
+  fi
+  if ! send_rest_go_command "$3" "-bucketName" "$1" "-objectKey" "$2" "${@:4}"; then
+    log 2 "error sending go command"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_object_run_command_expect_error() {
+  if ! check_param_count_gt "bucket, key, expected response code, error code, message, params" 5 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_add_file "$1" "$2"; then
+    log 2 "error setting up bucket and adding file"
+    return 1
+  fi
+  if ! send_rest_go_command_expect_error "$3" "$4" "$5" "-bucketName" "$1" "-objectKey" "$2" "${@:6}"; then
+    log 2 "error sending go command and parsing error"
+    return 1
+  fi
+  return 0
+}
