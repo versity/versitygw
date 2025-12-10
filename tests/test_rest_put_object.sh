@@ -473,3 +473,21 @@ export RUN_USERS=true
     "-method" "PUT" "-contentMD5" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" "-signedParams" "x-amz-request-payer:dummy"
   assert_success
 }
+
+@test "REST - PutObject - content disposition" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "Content-Disposition:dummy"
+  assert_success
+
+  run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" \
+    "-method" "GET"
+  assert_success
+  return 1
+}
