@@ -4,10 +4,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/versity/versitygw/tests/rest_scripts/command"
-	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 	"log"
 	"strings"
+
+	"github.com/versity/versitygw/tests/rest_scripts/command"
+	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 )
 
 const (
@@ -271,5 +272,25 @@ func validateConfig() error {
 	if *client == command.CURL && *filePath != "" {
 		return fmt.Errorf("writing to file not currently supported for curl commands")
 	}
+	if !isValidChecksumType(checksumType) {
+		return fmt.Errorf("invalid checksum type: %s", *checksumType)
+	}
 	return nil
+}
+
+func isValidChecksumType(input *string) bool {
+	if input == nil {
+		return true
+	}
+
+	// make is case insensitive
+	chType := strings.ToLower(*input)
+	checksumType = &chType
+
+	switch chType {
+	case "", command.ChecksumCRC32, command.ChecksumCRC32C, command.ChecksumCRC64NVME, command.ChecksumSHA1, command.ChecksumSHA256:
+		return true
+	default:
+		return false
+	}
 }
