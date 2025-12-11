@@ -7,11 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 	"os"
 	"sort"
 	"strings"
 	"time"
+
+	logger "github.com/versity/versitygw/tests/rest_scripts/logger"
 )
 
 const (
@@ -128,10 +129,11 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 }
 
 func (s *S3Command) prepareForBuild() error {
+	now := time.Now().UTC()
 	if s.IncorrectYearMonthDay {
-		s.currentDateTime = time.Now().Add(-48 * time.Hour).UTC().Format("20060102T150405Z")
+		s.currentDateTime = now.Add(-48 * time.Hour).Format("20060102T150405Z")
 	} else {
-		s.currentDateTime = time.Now().UTC().Format("20060102T150405Z")
+		s.currentDateTime = now.Format("20060102T150405Z")
 	}
 	protocolAndHost := strings.Split(s.Url, "://")
 	if len(protocolAndHost) != 2 {
@@ -184,9 +186,9 @@ func (s *S3Command) preparePayload() error {
 
 func (s *S3Command) initializeOpenSSLPayloadAndGetContentLength() error {
 	switch s.PayloadType {
-	case StreamingAWS4HMACSHA256Payload:
+	case StreamingAWS4HMACSHA256Payload, StreamingAWS4HMACSHA256PayloadTrailer:
 		serviceString := fmt.Sprintf("%s/%s/%s/aws4_request", s.yearMonthDay, s.AwsRegion, s.ServiceName)
-		s.payloadOpenSSL = NewPayloadStreamingAWS4HMACSHA256(s.dataSource, int64(s.ChunkSize), serviceString, s.currentDateTime)
+		s.payloadOpenSSL = NewPayloadStreamingAWS4HMACSHA256(s.dataSource, int64(s.ChunkSize), PayloadType(s.PayloadType), serviceString, s.currentDateTime, s.yearMonthDay, s.ChecksumType)
 	case StreamingUnsignedPayloadTrailer:
 		streamingUnsignedPayloadTrailerImpl := NewStreamingUnsignedPayloadWithTrailer(s.dataSource, int64(s.ChunkSize), s.ChecksumType)
 		streamingUnsignedPayloadTrailerImpl.OmitTrailerOrKey(s.OmitPayloadTrailer, s.OmitPayloadTrailerKey)
@@ -213,6 +215,9 @@ func (s *S3Command) addHeaderValues() error {
 		s.headerValues = append(s.headerValues, []string{"host", s.CustomHostParam})
 	} else {
 		s.headerValues = append(s.headerValues, []string{"host", s.host})
+	}
+	if s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer && s.ChecksumType != "" {
+		s.headerValues = append(s.headerValues, []string{"x-amz-trailer", fmt.Sprintf("x-amz-checksum-%s", s.ChecksumType)})
 	}
 	s.headerValues = append(s.headerValues,
 		[]string{"x-amz-content-sha256", s.payloadHash},
@@ -418,7 +423,7 @@ func (s *S3Command) writeOpenSSLPayload(file *os.File) error {
 		awsPayload.AddInitialSignatureAndSigningKey(s.signature, s.signingKey)
 	}
 	switch s.PayloadType {
-	case UnsignedPayload, "", StreamingUnsignedPayloadTrailer, StreamingAWS4HMACSHA256Payload:
+	case UnsignedPayload, "", StreamingUnsignedPayloadTrailer, StreamingAWS4HMACSHA256Payload, StreamingAWS4HMACSHA256PayloadTrailer:
 		if err := s.payloadOpenSSL.WritePayload(s.FilePath); err != nil {
 			return fmt.Errorf("error writing payload to openssl file: %w", err)
 		}
