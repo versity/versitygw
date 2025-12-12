@@ -23,7 +23,6 @@ source ./tests/drivers/file.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_lock_config/get_object_lock_config_rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
-source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_file.sh
 
 @test "REST - chunked upload, no content length" {
