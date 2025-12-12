@@ -19,6 +19,7 @@ load ./bats-assert/load
 
 source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_object_tagging/get_object_tagging_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
 @test "REST - GetObjectTagging - no tags" {
@@ -31,7 +32,6 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run setup_bucket_and_add_file "$bucket_name" "$test_file"
   assert_success
 
-  run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" \
-    "-method" "GET" "-query" "tagging="
+  run get_check_object_tags_empty "$bucket_name" "$test_file"
   assert_success
 }

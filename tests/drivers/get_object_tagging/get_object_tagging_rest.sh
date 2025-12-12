@@ -61,3 +61,26 @@ check_object_tags_single_set() {
   fi
   return 0
 }
+
+check_for_empty_tagset() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_for_empty_element "$1" "Tagging" "TagSet"; then
+    log 2 "error checking for empty XML element"
+    return 1
+  fi
+  return 0
+}
+
+get_check_object_tags_empty() {
+  if ! check_param_count_v2 "bucket name, key" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "check_for_empty_tagset" "-bucketName" "$1" "-objectKey" "$2" \
+      "-method" "GET" "-query" "tagging="; then
+    log 2 "error sending get object tagging command"
+    return 1
+  fi
+  return 0
+}
