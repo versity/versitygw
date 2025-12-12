@@ -35,3 +35,15 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run get_check_object_tags_empty "$bucket_name" "$test_file"
   assert_success
 }
+
+@test "REST - GetObjectTagging - older version returns version ID" {
+  test_file="test_file"
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_versioning_file_two_versions "$bucket_name" "$test_file"
+  assert_success
+
+}

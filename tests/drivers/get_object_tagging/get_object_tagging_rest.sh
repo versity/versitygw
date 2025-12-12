@@ -84,3 +84,24 @@ get_check_object_tags_empty() {
   fi
   return 0
 }
+
+check_header_version_id() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+}
+
+add_version_tags_check_version_id() {
+  if ! check_param_count_v2 "bucket name, version ID" 2 $#; then
+    return 1
+  fi
+  if ! tag_old_version "$1"; then
+    log 2 "error tagging old version"
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
+        "-method" "GET" "-query" "tagging=&versionId=$2" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
+    log 2 "error tagging object"
+    return 1
+  fi``
+}

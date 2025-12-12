@@ -83,16 +83,7 @@ test_file="test_file"
   assert_success
   bucket_name="$output"
 
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  run put_bucket_versioning_rest "$bucket_name" "Enabled"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
-  assert_success
-
-  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  run setup_bucket_versioning_file_two_versions "$bucket_name" "$test_file"
   assert_success
 
   run tag_old_version "$bucket_name" "$test_file"

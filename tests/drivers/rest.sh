@@ -272,3 +272,20 @@ send_rest_go_command_callback() {
   fi
   return 0
 }
+
+check_for_header_key_and_value() {
+  if ! check_param_count_v2 "data file, header key, header value" 3 $#; then
+    return 1
+  fi
+  grep -E '^.+: .+$' $1 | while IFS=": " read -r key value; do
+    if [ "$key" == "$2" ]; then
+      if [ "$value" != "$3" ]; then
+        log 2 "expected value of '$3', was '$value'"
+        return 1
+      fi
+      return 0
+    fi
+  done
+  log 2 "no header key '$2' found"
+  return 1
+}
