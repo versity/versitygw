@@ -1096,6 +1096,9 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 	}
 
 	out, err := s.client.GetObjectAttributes(ctx, input)
+	if err != nil {
+		return s3response.GetObjectAttributesResponse{}, handleError(err)
+	}
 
 	parts := s3response.ObjectParts{}
 	objParts := out.ObjectParts
@@ -1128,7 +1131,7 @@ func (s *S3Proxy) GetObjectAttributes(ctx context.Context, input *s3.GetObjectAt
 		StorageClass: out.StorageClass,
 		ObjectParts:  &parts,
 		Checksum:     out.Checksum,
-	}, handleError(err)
+	}, nil
 }
 
 func (s *S3Proxy) CopyObject(ctx context.Context, input s3response.CopyObjectInput) (s3response.CopyObjectOutput, error) {
