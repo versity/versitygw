@@ -21,9 +21,6 @@ source ./tests/setup.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 
 @test "REST - HeadBucket - mismatched owner" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1428"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -36,10 +33,6 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
 }
 
 @test "REST - HeadBucket - invalid owner" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1428"
-  fi
-
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -47,7 +40,14 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   run setup_bucket "$bucket_name"
   assert_success
 
-  run head_bucket_rest_expect_error "$bucket_name" "EXPECTED_OWNER=01234567890" "400" "Bad Request"
+  if [ "$DIRECT" == "true" ]; then
+    http_code=400
+    error_code="Bad Request"
+  else
+    http_code=403
+    error_code="Forbidden"
+  fi
+  run head_bucket_rest_expect_error "$bucket_name" "EXPECTED_OWNER=01234567890" "$http_code" "$error_code"
   assert_success
 }
 

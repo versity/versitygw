@@ -45,10 +45,6 @@ export RUN_USERS=true
 
 @test "REST - deformed message" {
   test_file="test_file"
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1364"
-  fi
-
   echo -en "abcdefg\r\n\r\n" > "$TEST_FILE_FOLDER/deformed.txt"
   run send_via_openssl_check_code_error_contains "$TEST_FILE_FOLDER/deformed.txt" 400 "BadRequest" "An error occurred when parsing the HTTP request."
   assert_success
@@ -56,7 +52,7 @@ export RUN_USERS=true
 
 @test "REST - invalid authorization scheme" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1512"
+    skip "https://github.com/versity/versitygw/issues/1705"
   fi
   run list_buckets_check_authorization_scheme_error
   assert_success
@@ -64,7 +60,7 @@ export RUN_USERS=true
 
 @test "REST - very invalid credential string" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1513"
+    skip "https://github.com/versity/versitygw/issues/1706"
   fi
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "the Credential is mal-formed" "-incorrectCredential" "Credentials"
   assert_success
@@ -77,7 +73,7 @@ export RUN_USERS=true
 
 @test "REST - invalid year/month/day" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1513"
+    skip "https://github.com/versity/versitygw/issues/1706"
   fi
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect date format" "-invalidYearMonthDay"
   assert_success
@@ -93,7 +89,7 @@ export RUN_USERS=true
 
 @test "REST - invalid region" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1513"
+    skip "https://github.com/versity/versitygw/issues/1706"
   fi
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "the region 'us-eest-1' is wrong" "-awsRegion" "us-eest-1"
   assert_success
@@ -101,7 +97,7 @@ export RUN_USERS=true
 
 @test "REST - invalid service name" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1513"
+    skip "https://github.com/versity/versitygw/issues/1706"
   fi
   run send_rest_go_command_expect_error "400" "AuthorizationHeaderMalformed" "incorrect service" "-serviceName" "s2"
   assert_success
@@ -191,10 +187,10 @@ export RUN_USERS=true
 
 @test "REST - ListBuckets - correct buckets show up" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skip versitygw-specific users tests"
   fi
   if [ "$DIRECT" == "true" ]; then
-    skip
+    skip "https://github.com/versity/versitygw/issues/1704"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

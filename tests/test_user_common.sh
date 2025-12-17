@@ -23,7 +23,7 @@ source ./tests/commands/list_buckets.sh
 
 test_admin_user() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   admin_username="$USERNAME_ONE"
   admin_password="$PASSWORD_ONE"
@@ -62,7 +62,7 @@ test_admin_user() {
 
 test_create_user_already_exists() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"
@@ -76,7 +76,7 @@ test_create_user_already_exists() {
 
 test_user_user() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   if [ "$RECREATE_BUCKETS" == "false" ]; then
     skip "test not valid for static buckets"
@@ -115,7 +115,7 @@ test_user_user() {
 
 test_userplus_operation() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   username="$USERNAME_ONE"
   password="$PASSWORD_ONE"

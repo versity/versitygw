@@ -115,7 +115,7 @@ export RUN_USERS=true
 
 @test "REST - PutObject - If-None-Match - no asterisk" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
+    skip "https://github.com/versity/versitygw/issues/1708"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -125,13 +125,13 @@ export RUN_USERS=true
   assert_success
 
   run send_rest_go_command_expect_error "501" "NotImplemented" "not implemented" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
-    "-signedParams" "if-none-match:true"
+    "-signedParams" "If-None-Match:true"
   assert_success
 }
 
 @test "REST - PutObject - If-None-Match - block copy" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
+    skip "https://github.com/versity/versitygw/issues/1708"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -141,14 +141,11 @@ export RUN_USERS=true
   assert_success
 
   run send_rest_go_command_expect_error "412" "PreconditionFailed" "did not hold" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
-    "-signedParams" "if-none-match:*"
+    "-signedParams" "If-None-Match:*"
   assert_success
 }
 
 @test "REST - PutObject - If-None-Match - success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -163,7 +160,7 @@ export RUN_USERS=true
 
 @test "REST - PutObject - If-Match - file doesn't exist on server" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
+    skip "https://github.com/versity/versitygw/issues/1709"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -178,9 +175,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - If-Match - incorrect etag" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -195,7 +189,7 @@ export RUN_USERS=true
 
 @test "REST - PutObject - If-Match - correct etag" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/821"
+    skip "https://github.com/versity/versitygw/issues/1710"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -235,7 +229,7 @@ export RUN_USERS=true
 
 @test "REST - PutObject - user permission, bad signature" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -252,7 +246,7 @@ export RUN_USERS=true
 
 @test "REST - PutObject - expect continue - success" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1517"
+    skip "https://github.com/versity/versitygw/issues/1707"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -262,14 +256,11 @@ export RUN_USERS=true
   assert_success
 
   run send_rest_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
-        "-signedParams" "Expect:100-continue" "-debug" "-logFile" "tagging.log"
+        "-signedParams" "Expect:100-continue"
   assert_success
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer missing" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1600"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -285,9 +276,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - 200 header returns correct checksum type" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1607"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -304,9 +292,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (sha1)" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1607"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -326,9 +311,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32)" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1607"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -348,9 +330,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32c)" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1607"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -410,9 +389,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer key missing" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1626"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -428,9 +404,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - default crc64nvme" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1632"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

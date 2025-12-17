@@ -232,9 +232,6 @@ test_file="test_file"
 }
 
 @test "REST - multipart checksum w/sha256, full object" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1329"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -279,34 +276,29 @@ test_file="test_file"
   assert_success
 }
 
+@test "sha256 - calculate composite checksum w/null byte" {
+  run calculate_composite_checksum "sha256" "Gaq9AN6Uxmk7WaTR9TzgDhE8m8bzXrfJWReDyLoZAo8=" "GohMQZ27EDvwB3n2iDx4irfxkTQDyvpDB7NFeTYaXn8="
+  assert_success
+  composite=$output
+  assert_equal "$composite" "/UpzIA5Rft0d6bSkAlmgESdRE3vtDbo8hzAn//6Z5UU="
+}
+
 @test "REST - multipart - composite - sha256" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
   assert_success
 }
 
 @test "REST - multipart - composite - sha1" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32"
   assert_success
 }
 
 @test "REST - multipart - composite - crc32c" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_multipart_upload_with_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
   assert_success
 }
@@ -332,33 +324,21 @@ test_file="test_file"
 }
 
 @test "REST - multipart - composite - incorrect sha256" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA256"
   assert_success
 }
 
 @test "REST - multipart - composite - incorrect sha1" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "SHA1"
   assert_success
 }
 
 @test "REST - multipart - composite - incorrect crc32" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
   assert_success
 }
 
 @test "REST - multipart - composite - incorrect crc32c" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1359"
-  fi
   run test_complete_multipart_upload_incorrect_checksum "$BUCKET_ONE_NAME" "$test_file" "COMPOSITE" "CRC32C"
   assert_success
 }
