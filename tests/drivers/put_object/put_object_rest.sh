@@ -369,3 +369,25 @@ chunked_upload_trailer_different_chunk_size() {
   return 0
 }
 
+setup_bucket_versioning_file_two_versions() {
+  if ! check_param_count_v2 "bucket, key" 2 $#; then
+    return 1
+  fi
+  if ! setup_bucket_and_file_v2 "$1" "$2"; then
+    log 2 "error setting up bucket"
+    return 1
+  fi
+  if ! put_bucket_versioning_rest "$1" "Enabled"; then
+    log 2 "error enabling bucket versioning"
+    return 1
+  fi
+  if ! put_object "rest" "$TEST_FILE_FOLDER/$2" "$1" "$2"; then
+    log 2 "error putting object"
+    return 1
+  fi
+  if ! put_object "rest" "$TEST_FILE_FOLDER/$2" "$1" "$2"; then
+    log 2 "error putting object second time"
+    return 1
+  fi
+  return 0
+}

@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
+
 get_check_tag_error_with_invalid_key() {
   if ! check_param_count_v2 "bucket name, key, tag key, tag value" 4 $#; then
     return 1
@@ -33,6 +35,27 @@ check_invalid_key_error() {
   fi
   if ! check_error_parameter "$1" "TagKey" "$invalid_key"; then
     log 2 "error checking 'TagKey' parameter"
+    return 1
+  fi
+  return 0
+}
+
+tag_old_version() {
+  if ! check_param_count_v2 "bucket name, key" 2 $#; then
+    return 1
+  fi
+  if ! get_non_latest_version "$1"; then
+    log 2 "error getting non-latest object version"
+    return 1
+  fi
+  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-query" "versionId=$version_id" "-debug" "-logFile" "signature.log" \
+        "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
+    log 2 "error tagging object"
+    return 1
+  fi
+  if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-debug" "-logFile" "signature.log" \
+        "-method" "GET" "-query" "tagging=&versionId=$version_id" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
+    log 2 "error tagging object"
     return 1
   fi
   return 0

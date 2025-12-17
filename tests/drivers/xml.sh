@@ -29,12 +29,18 @@ check_for_empty_element() {
   fi
 
   # shellcheck disable=SC2068
-  if ! build_xpath_string ${@:2}; then
+  if ! build_xpath_string_for_element ${@:2}; then
     log 2 "error building XPath search string"
     return 1
   fi
-  if grep '<[^/][^ >]*>' "$1" | xmllint --xpath "'${xpath}[not(normalize-space())]'" -; then
-    return 0
+  if ! get_xml_data "$1" "$1.xml"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  if grep -q '<[^/][^ >]*>' "$1.xml"; then
+    if xmllint --xpath "${xpath}[not(normalize-space())]" "$1.xml" 1>/dev/null 2>&1; then
+      return 0
+    fi
   fi
   return 1
 }

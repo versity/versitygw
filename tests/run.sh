@@ -42,8 +42,10 @@ show_help() {
     echo "   rest-delete-bucket-ownership-controls  Run REST delete bucket ownership controls tests"
     echo "   rest-delete-bucket-tagging             Run REST delete bucket tagging tests"
     echo "   rest-get-bucket-location               Run REST get bucket location tests"
+    echo "   rest-get-object-tagging                Run REST get object tagging tests"
     echo "   rest-head-bucket                       Run REST head bucket tests"
     echo "   rest-list-buckets                      Run REST list-buckets tests"
+    echo "   rest-list-object-versions              Run REST list-object-versions tests"
     echo "   rest-multipart                         Run REST multipart tests"
     echo "   rest-not-implemented                   Run REST multipart tests"
     echo "   rest-put-bucket-tagging                Run REST put-bucket-tagging tests"
@@ -65,7 +67,7 @@ handle_param() {
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
       rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
       rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging|rest-get-bucket-location|\
-      rest-put-object-tagging)
+      rest-put-object-tagging|rest-get-object-tagging|rest-list-object-versions)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -178,9 +180,13 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_get_object_tagging.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh; then
+        exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_list_object_versions.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_multipart.sh; then
         exit_code=1
@@ -234,6 +240,10 @@ run_suite() {
       echo "Running REST get bucket location tests ..."
       "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh || exit_code=$?
       ;;
+    rest-get-object-tagging)
+      echo "Running REST get object tagging tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_get_object_tagging.sh || exit_code=$?
+      ;;
     rest-head-bucket)
       echo "Running REST head bucket tests ..."
       "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh || exit_code=$?
@@ -241,6 +251,10 @@ run_suite() {
     rest-list-buckets)
       echo "Running REST list-buckets tests ..."
       "$HOME"/bin/bats ./tests/test_rest_list_buckets.sh || exit_code=$?
+      ;;
+    rest-list-object-versions)
+      echo "Running REST list-object-versions tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_list_object_versions.sh || exit_code=$?
       ;;
     rest-not-implemented)
       echo "Running REST not-implemented tests ..."

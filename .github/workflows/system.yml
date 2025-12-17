@@ -67,14 +67,14 @@ jobs:
             AWS_REGION: "us-east-1"
           - set: "REST, posix, static, rest-put-bucket-tagging|rest-get-bucket-location|rest-put-object-tagging, folder IAM"
             IAM_TYPE: folder
-            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location,rest-put-object-tagging"
+            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location,rest-put-object-tagging,rest-get-object-tagging,rest-list-object-versions"
             RECREATE_BUCKETS: "false"
             DELETE_BUCKETS_AFTER_TEST: "false"
             BACKEND: "posix"
             AWS_REGION: "us-east-1"
           - set: "REST, posix, non-static, rest-put-bucket-tagging|rest-get-bucket-location|rest-put-object-tagging, folder IAM"
             IAM_TYPE: folder
-            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location,rest-put-object-tagging"
+            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location,rest-put-object-tagging,rest-get-object-tagging,rest-list-object-versions"
             RECREATE_BUCKETS: "true"
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
