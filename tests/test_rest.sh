@@ -41,7 +41,6 @@ source ./tests/drivers/file.sh
 source ./tests/drivers/xml.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_chunked_upload.sh
 source ./tests/util/util_delete_object.sh
 source ./tests/util/util_legal_hold.sh
 source ./tests/util/util_list_buckets.sh
