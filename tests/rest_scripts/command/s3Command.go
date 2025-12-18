@@ -345,7 +345,11 @@ func (s *S3Command) buildCurlShellCommand() (string, error) {
 	if s.MissingHostParam {
 		return "", fmt.Errorf("missingHostParam option only available for OpenSSL commands")
 	}
-	curlCommand := []string{"curl", "-iks"}
+	curlOpts := "-iks"
+	if s.Method == "HEAD" {
+		curlOpts += "I"
+	}
+	curlCommand := []string{"curl", curlOpts}
 	if s.Method != "GET" {
 		curlCommand = append(curlCommand, fmt.Sprintf("-X %s ", s.Method))
 	}

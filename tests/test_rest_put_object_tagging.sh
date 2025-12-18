@@ -19,6 +19,7 @@ load ./bats-assert/load
 
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging_rest.sh
+source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/put_object_tagging/put_object_tagging_rest.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/setup.sh
@@ -71,5 +72,20 @@ test_file="test_file"
 
   run put_bucket_object_run_command_expect_error "$bucket_name" "$test_file" "403" "AccessDenied" "Access Denied" \
     "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5" "-signedParams" "x-amz-expected-bucket-owner:012345678901"
+  assert_success
+}
+
+@test "REST -PutObjectTagging - older version" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "cannot change versioning status for static buckets"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_versioning_file_two_versions "$bucket_name" "$test_file"
+  assert_success
+
+  run tag_old_version "$bucket_name" "$test_file"
   assert_success
 }

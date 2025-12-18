@@ -14,7 +14,11 @@ type PutTaggingCommand struct {
 
 func (p *PutTaggingCommand) createTaggingPayload(fields *TaggingFields) error {
 	p.Method = "PUT"
-	p.Query = "tagging="
+	if p.Query != "" {
+		p.Query = "tagging=&" + p.Query
+	} else {
+		p.Query = "tagging="
+	}
 	if len(fields.TagKeys) != len(fields.TagValues) {
 		return errors.New("must be same number of tag keys and tag values")
 	}
