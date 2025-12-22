@@ -1114,6 +1114,14 @@ func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 	}
 }
 
+func TestSignedStreaminPayload(ts *TestState) {
+	if !ts.conf.azureTests {
+		ts.Run(SignedStreamingPayload_invalid_encoding)
+		ts.Run(SignedStreamingPayload_invalid_chunk_size)
+		ts.Run(SignedStreamingPayload_decoded_content_length_mismatch)
+	}
+}
+
 type IntTest func(s3 *S3Conf) error
 
 type IntTests map[string]IntTest
@@ -1767,5 +1775,8 @@ func GetIntTests() IntTests {
 		"UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch":  UnsignedStreamingPayloadTrailer_UploadPart_trailer_and_mp_algo_mismatch,
 		"UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer":          UnsignedStreamingPayloadTrailer_UploadPart_success_with_trailer,
 		"UnsignedStreamingPayloadTrailer_not_allowed":                              UnsignedStreamingPayloadTrailer_not_allowed,
+		"SignedStreamingPayload_invalid_encoding":                                  SignedStreamingPayload_invalid_encoding,
+		"SignedStreamingPayload_invalid_chunk_size":                                SignedStreamingPayload_invalid_chunk_size,
+		"SignedStreamingPayload_decoded_content_length_mismatch":                   SignedStreamingPayload_decoded_content_length_mismatch,
 	}
 }

@@ -43,7 +43,7 @@ const (
 	awsV4                    = "AWS4"
 	awsS3Service             = "s3"
 	awsV4Request             = "aws4_request"
-	trailerSignatureHeader   = "x-amz-trailer-signature"
+	trailerSignatureHeader   = "x-amz-trailer-signature:"
 	streamPayloadAlgo        = "AWS4-HMAC-SHA256-PAYLOAD"
 	streamPayloadTrailerAlgo = "AWS4-HMAC-SHA256-TRAILER"
 
@@ -52,6 +52,7 @@ const (
 
 var (
 	errskipHeader = errors.New("skip to next header")
+	delimiter     = []byte{'\r', '\n'}
 )
 
 // ChunkReader reads from chunked upload request body, and returns
@@ -134,12 +135,15 @@ func (cr *ChunkReader) Read(p []byte) (int, error) {
 			}
 		}
 		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
+		if err != nil && err != io.EOF {
+			return 0, err
+		}
 		n += int(chunkSize)
 		cr.dataRead += int64(n)
 		if cr.isEOF {
 			if cr.cLength != cr.dataRead {
 				debuglogger.Logf("number of bytes expected: (%v), number of bytes read: (%v)", cr.cLength, cr.dataRead)
-				return n, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
+				return 0, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
 			}
 		}
 		return n, err
@@ -154,7 +158,7 @@ func (cr *ChunkReader) Read(p []byte) (int, error) {
 	if cr.isEOF {
 		if cr.cLength != cr.dataRead {
 			debuglogger.Logf("number of bytes expected: (%v), number of bytes read: (%v)", cr.cLength, cr.dataRead)
-			return n, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
+			return 0, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
 		}
 	}
 	return n, err
@@ -378,7 +382,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	// After the first chunk each chunk header should start
 	// with "\n\r\n"
 	if !cr.isFirstHeader {
-		err := readAndSkip(rdr, '\r', '\n')
+		err := readAndSkip(rdr, delimiter...)
 		if err != nil {
 			debuglogger.Logf("failed to read chunk header first 2 bytes: (should be): \\r\\n, (got): %q", header[:min(2, len(header))])
 			return cr.handleRdrErr(err, header)
@@ -391,25 +395,26 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	}
 
 	// read the chunk signature
-	err = readAndSkip(rdr, 'c', 'h', 'u', 'n', 'k', '-', 's', 'i', 'g', 'n', 'a', 't', 'u', 'r', 'e', '=')
+	err = readAndSkip(rdr, []byte("chunk-signature=")...)
 	if err != nil {
 		debuglogger.Logf("failed to read 'chunk-signature=': %v", err)
 		return cr.handleRdrErr(err, header)
 	}
-	sig, err := readAndTrim(rdr, '\r')
+	sig, err := readBytes(rdr, 64)
 	if err != nil {
 		debuglogger.Logf("failed to read '\\r', after chunk signature: %v", err)
+		return cr.handleRdrErr(err, header)
+	}
+
+	err = readAndSkip(rdr, delimiter...)
+	if err != nil {
+		debuglogger.Logf("failed to read '\\r\\n' after chunk signature")
 		return cr.handleRdrErr(err, header)
 	}
 
 	// read and parse the final chunk trailer and checksum
 	if chunkSize == 0 {
 		if cr.requireTrailer {
-			err = readAndSkip(rdr, '\n')
-			if err != nil {
-				debuglogger.Logf("failed to read \\n before the trailer: %v", err)
-				return cr.handleRdrErr(err, header)
-			}
 			// parse and validate the trailing header
 			trailer, err := readAndTrim(rdr, ':')
 			if err != nil {
@@ -430,19 +435,19 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 				return cr.handleRdrErr(err, header)
 			}
 
-			if !IsValidChecksum(checksum, algo) {
-				debuglogger.Logf("invalid checksum value: %v", checksum)
-				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
-			}
-
 			err = readAndSkip(rdr, '\n')
 			if err != nil {
 				debuglogger.Logf("failed to read \\n after checksum: %v", err)
 				return cr.handleRdrErr(err, header)
 			}
 
+			if !IsValidChecksum(checksum, algo) {
+				debuglogger.Logf("invalid checksum value: %v", checksum)
+				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
+			}
+
 			// parse the trailing signature
-			trailerSigPrefix, err := readAndTrim(rdr, ':')
+			trailerSigPrefix, err := readBytes(rdr, 24)
 			if err != nil {
 				debuglogger.Logf("failed to read trailing signature prefix: %v", err)
 				return cr.handleRdrErr(err, header)
@@ -453,9 +458,15 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 				return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 			}
 
-			trailerSig, err := readAndTrim(rdr, '\r')
+			trailerSig, err := readBytes(rdr, 64)
 			if err != nil {
 				debuglogger.Logf("failed to read trailing signature: %v", err)
+				return cr.handleRdrErr(err, header)
+			}
+
+			err = readAndSkip(rdr, delimiter...)
+			if err != nil {
+				debuglogger.Logf("failed to read '\\r\\n' after last chunk signature")
 				return cr.handleRdrErr(err, header)
 			}
 
@@ -464,26 +475,20 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 		}
 
 		// "\r\n\r\n" is followed after the last chunk
-		err = readAndSkip(rdr, '\n', '\r', '\n')
+		err = readAndSkip(rdr, delimiter...)
 		if err != nil {
-			debuglogger.Logf("failed to read \\n\\r\\n at the end of chunk header: %v", err)
+			debuglogger.Logf("failed to read \\r\\n at the end of chunk header: %v", err)
 			return cr.handleRdrErr(err, header)
 		}
 
 		return 0, sig, 0, nil
 	}
 
-	err = readAndSkip(rdr, '\n')
-	if err != nil {
-		debuglogger.Logf("failed to read \\n at the end of chunk header: %v", err)
-		return cr.handleRdrErr(err, header)
-	}
-
 	// find the index of chunk ending: '\r\n'
 	// skip the first 2 bytes as it is the starting '\r\n'
 	// the first chunk doesn't contain the starting '\r\n', but
 	// anyway, trimming the first 2 bytes doesn't pollute the logic.
-	ind := bytes.Index(header[2:], []byte{'\r', '\n'})
+	ind := bytes.Index(header[2:], delimiter)
 	cr.isFirstHeader = false
 
 	// the offset is the found index + 4 - the stash length
@@ -570,19 +575,18 @@ func (cr *ChunkReader) Checksum() string {
 }
 
 // reads data from the "rdr" and validates the passed data bytes
-func readAndSkip(rdr *bufio.Reader, data ...byte) error {
-	for _, d := range data {
-		b, err := rdr.ReadByte()
-		if err != nil {
-			return err
-		}
-
-		if b != d {
-			return s3err.GetAPIError(s3err.ErrIncompleteBody)
-		}
+func readAndSkip(rdr *bufio.Reader, expected ...byte) error {
+	buf := make([]byte, len(expected))
+	_, err := io.ReadFull(rdr, buf)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	if bytes.Equal(buf, expected) {
+		return nil
+	}
+
+	return s3err.GetAPIError(s3err.ErrIncompleteBody)
 }
 
 // reads string by "delim" and trims the delimiter at the end
@@ -593,4 +597,11 @@ func readAndTrim(r *bufio.Reader, delim byte) (string, error) {
 	}
 
 	return strings.TrimSuffix(str, string(delim)), nil
+}
+
+func readBytes(r *bufio.Reader, count int) (string, error) {
+	buf := make([]byte, count)
+	_, err := io.ReadFull(r, buf)
+
+	return string(buf), err
 }
