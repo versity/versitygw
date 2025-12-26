@@ -808,6 +808,8 @@ func TestFullFlow(ts *TestState) {
 	TestAccessControl(ts)
 	TestRouter(ts)
 	TestUnsignedStreaminPayloadTrailer(ts)
+	TestSignedStreaminPayload(ts)
+	TestSignedStreaminPayloadTrailer(ts)
 	// FIXME: The tests should pass for azure as well
 	// but this issue should be fixed with https://github.com/versity/versitygw/issues/1336
 	if !ts.conf.azureTests {
@@ -1119,6 +1121,17 @@ func TestSignedStreaminPayload(ts *TestState) {
 		ts.Run(SignedStreamingPayload_invalid_encoding)
 		ts.Run(SignedStreamingPayload_invalid_chunk_size)
 		ts.Run(SignedStreamingPayload_decoded_content_length_mismatch)
+	}
+}
+
+func TestSignedStreaminPayloadTrailer(ts *TestState) {
+	if !ts.conf.azureTests {
+		ts.Run(SignedStreamingPayloadTrailer_malformed_trailer)
+		ts.Run(SignedStreamingPayloadTrailer_incomplete_body)
+		ts.Run(SignedStreamingPayloadTrailer_missing_x_amz_trailer_header)
+		ts.Run(SignedStreamingPayloadTrailer_invalid_checksum)
+		ts.Run(SignedStreamingPayloadTrailer_bad_digest)
+		ts.Run(SignedStreamingPayloadTrailer_success)
 	}
 }
 
@@ -1778,5 +1791,11 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayload_invalid_encoding":                                  SignedStreamingPayload_invalid_encoding,
 		"SignedStreamingPayload_invalid_chunk_size":                                SignedStreamingPayload_invalid_chunk_size,
 		"SignedStreamingPayload_decoded_content_length_mismatch":                   SignedStreamingPayload_decoded_content_length_mismatch,
+		"SignedStreamingPayloadTrailer_malformed_trailer":                          SignedStreamingPayloadTrailer_malformed_trailer,
+		"SignedStreamingPayloadTrailer_incomplete_body":                            SignedStreamingPayloadTrailer_incomplete_body,
+		"SignedStreamingPayloadTrailer_missing_x_amz_trailer_header":               SignedStreamingPayloadTrailer_missing_x_amz_trailer_header,
+		"SignedStreamingPayloadTrailer_invalid_checksum":                           SignedStreamingPayloadTrailer_invalid_checksum,
+		"SignedStreamingPayloadTrailer_bad_digest":                                 SignedStreamingPayloadTrailer_bad_digest,
+		"SignedStreamingPayloadTrailer_success":                                    SignedStreamingPayloadTrailer_success,
 	}
 }

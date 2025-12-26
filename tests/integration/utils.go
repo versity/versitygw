@@ -17,6 +17,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
@@ -2120,11 +2121,13 @@ func constructUnsignedPaylod(chunkSizes ...int64) (int64, []byte, error) {
 }
 
 type signedReqCfg struct {
-	headers      map[string]string
-	chunkSize    int64
-	modifFrom    *int
-	modifTo      *int
-	modifPayload []byte
+	headers          map[string]string
+	chunkSize        int64
+	modifFrom        *int
+	modifTo          *int
+	modifPayload     []byte
+	trailingChecksum *string
+	isTrailer        bool
 }
 
 type signedReqOpt func(*signedReqCfg)
@@ -2145,6 +2148,13 @@ func withModifyPayload(from int, to int, p []byte) signedReqOpt {
 	}
 }
 
+func withTrailingChecksum(checksum string) signedReqOpt {
+	return func(src *signedReqCfg) {
+		src.trailingChecksum = &checksum
+		src.isTrailer = true
+	}
+}
+
 func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []byte, opts ...signedReqOpt) (map[string]string, *s3err.APIErrorResponse, error) {
 	cfg := &signedReqCfg{
 		chunkSize: 8192, // minimal valid chunk size
@@ -2162,6 +2172,7 @@ func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []by
 	}
 
 	var payloadOffset int64
+	var trailerLength int
 
 	// any planned modification which is going to affect the
 	// Content-Length header value
@@ -2169,10 +2180,17 @@ func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []by
 		diff := len(cfg.modifPayload) - *cfg.modifTo + *cfg.modifFrom
 		payloadOffset = int64(diff)
 	}
+	if cfg.isTrailer {
+		trailerLength = len(*cfg.trailingChecksum)
+	}
 	// precalculated the Content-Length header to correctly sign the request
-	req.ContentLength = calculateSignedReqContentLength(int64(len(payload)), cfg.chunkSize, payloadOffset)
-	req.Header.Set("x-amz-content-sha256", "STREAMING-AWS4-HMAC-SHA256-PAYLOAD")
+	req.ContentLength = calculateSignedReqContentLength(int64(len(payload)), cfg.chunkSize, payloadOffset, cfg.isTrailer, int64(trailerLength))
+	sha256Header := "STREAMING-AWS4-HMAC-SHA256-PAYLOAD"
+	if cfg.isTrailer {
+		sha256Header = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD-TRAILER"
+	}
 	req.Header.Set("x-amz-decoded-content-length", fmt.Sprint(len(payload)))
+	req.Header.Set("x-amz-content-sha256", sha256Header)
 
 	// set custom request headers
 	for key, val := range cfg.headers {
@@ -2183,7 +2201,7 @@ func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []by
 	signingTime := time.Now()
 
 	// sign the request
-	err = signer.SignHTTP(ctx, aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, "STREAMING-AWS4-HMAC-SHA256-PAYLOAD", "s3", s.awsRegion, signingTime)
+	err = signer.SignHTTP(ctx, aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, sha256Header, "s3", s.awsRegion, signingTime)
 	if err != nil {
 		return nil, nil, cancelAndError(fmt.Errorf("failed to sign the request: %w", err), cancel)
 	}
@@ -2197,7 +2215,7 @@ func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []by
 	// initialize v4 stream signed
 	streamSigner := v4.NewStreamSigner(aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, "s3", s.awsRegion, seedSignature)
 	// create the signed payload
-	body, err := constructSignedStreamingPayload(ctx, streamSigner, signingTime, payload, cfg.chunkSize)
+	body, err := constructSignedStreamingPayload(ctx, streamSigner, signingTime, payload, cfg.chunkSize, cfg.trailingChecksum, s.awsRegion, s.awsSecret)
 	if err != nil {
 		return nil, nil, cancelAndError(fmt.Errorf("failed to encode req body: %w", err), cancel)
 	}
@@ -2254,18 +2272,23 @@ func cancelAndError(err error, cancel context.CancelFunc) error {
 
 const (
 	chunkSigHdrLength int64 = 81
+	trailerSigLength  int64 = 88
 )
 
 // calculateSignedReqContentLength calculates the value of `Content-Length` header
 // sizeOffset marks any planned changes on the body, which will affect the size
-func calculateSignedReqContentLength(decPayloadSize int64, chunkSize int64, sizeOffset int64) int64 {
+func calculateSignedReqContentLength(decPayloadSize int64, chunkSize int64, sizeOffset int64, withTrailer bool, trailerLength int64) int64 {
 	payloadSize := decPayloadSize
 	var chunkHeadersLength int64
+
+	if withTrailer {
+		chunkHeadersLength += trailerLength + 4 + trailerSigLength
+	}
 
 	// special case when chunk size is greater or equal than decoded content length
 	if chunkSize >= decPayloadSize {
 		chSizeLgth := len(fmt.Sprintf("%x", decPayloadSize))
-		return decPayloadSize + sizeOffset + int64(chSizeLgth) + 2*chunkSigHdrLength + 9
+		return decPayloadSize + sizeOffset + int64(chSizeLgth) + 2*chunkSigHdrLength + 9 + chunkHeadersLength
 	}
 
 	for {
@@ -2287,7 +2310,7 @@ func calculateSignedReqContentLength(decPayloadSize int64, chunkSize int64, size
 }
 
 // constructSignedStreamingPayload creates chunk encoded payload with signatures.
-func constructSignedStreamingPayload(ctx context.Context, signer *v4.StreamSigner, signingTime time.Time, payload []byte, chunkSize int64) ([]byte, error) {
+func constructSignedStreamingPayload(ctx context.Context, signer *v4.StreamSigner, signingTime time.Time, payload []byte, chunkSize int64, trailer *string, region, secret string) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
 	payloadLen := int64(len(payload))
 
@@ -2324,6 +2347,26 @@ func constructSignedStreamingPayload(ctx context.Context, signer *v4.StreamSigne
 	sig, err := signer.GetSignature(ctx, nil, nil, signingTime)
 	if err != nil {
 		return nil, err
+	}
+
+	if trailer != nil {
+		_, err = buf.WriteString(fmt.Sprintf("0;chunk-signature=%x\r\n", sig))
+		if err != nil {
+			return nil, err
+		}
+
+		sigKey := getSigningKey(secret, signingTime.Format("20060102"), region)
+		trailerSig, err := getAWS4StreamingTrailer(sigKey, sig, signingTime, region, *trailer)
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = buf.WriteString(fmt.Sprintf("%s\r\nx-amz-trailer-signature:%s\r\n\r\n", *trailer, trailerSig))
+		if err != nil {
+			return nil, err
+		}
+
+		return buf.Bytes(), nil
 	}
 
 	_, err = buf.WriteString(fmt.Sprintf("0;chunk-signature=%x\r\n\r\n", sig))
@@ -2378,4 +2421,69 @@ func replaceRange(dst, src []byte, start, end int) ([]byte, error) {
 	copy(out[start:], src)
 	copy(out[start+len(src):], dst[end:])
 	return out, nil
+}
+
+func getAWS4StreamingTrailer(
+	signingKey,
+	lastSignature []byte,
+	signingTime time.Time,
+	awsRegion,
+	trailer string,
+) (string, error) {
+
+	// yyyyMMdd
+	yearMonthDay := signingTime.Format("20060102")
+
+	// ISO8601 basic format: yyyyMMdd'T'HHmmss'Z'
+	currentDateTime := signingTime.UTC().Format("20060102T150405Z")
+
+	// <date>/<region>/<service>/aws4_request
+	serviceString := fmt.Sprintf(
+		"%s/%s/s3/aws4_request",
+		yearMonthDay,
+		awsRegion,
+	)
+
+	// Trailer must be newline-terminated for hashing/signing
+	trailerWithNL := trailer + "\n"
+
+	// Hash of trailer
+	trailerHash := sha256.Sum256([]byte(trailerWithNL))
+	trailerHashHex := hex.EncodeToString(trailerHash[:])
+
+	// String-to-sign prefix
+	stringToSignPrefix := fmt.Sprintf(
+		"%s\n%s\n%s",
+		"AWS4-HMAC-SHA256-TRAILER",
+		currentDateTime,
+		serviceString,
+	)
+
+	// Full string-to-sign
+	stringToSign := fmt.Sprintf(
+		"%s\n%x\n%s",
+		stringToSignPrefix,
+		lastSignature,
+		trailerHashHex,
+	)
+
+	// Final trailer signature
+	finalSignature := hex.EncodeToString(
+		hmacSHA256(signingKey, stringToSign),
+	)
+
+	return finalSignature, nil
+}
+
+func hmacSHA256(key []byte, data string) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(data))
+	return h.Sum(nil)
+}
+
+func getSigningKey(secret, yearMonthDay, region string) []byte {
+	dateKey := hmacSHA256([]byte("AWS4"+secret), yearMonthDay)
+	dateRegionKey := hmacSHA256(dateKey, region)
+	dateRegionServiceKey := hmacSHA256(dateRegionKey, "s3")
+	return hmacSHA256(dateRegionServiceKey, "aws4_request")
 }

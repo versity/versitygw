@@ -74,9 +74,13 @@ func SignedStreamingPayload_invalid_chunk_size(s *S3Conf) error {
 			{10, bytes.Repeat([]byte{'b'}, 100), true},
 			{1000, bytes.Repeat([]byte{'a'}, 200), false},
 			{8192, bytes.Repeat([]byte{'c'}, 10000), false},
+			{8192, bytes.Repeat([]byte{'c'}, 20000), false},
 			{1000, bytes.Repeat([]byte{'c'}, 1024*64), true},
 		} {
-			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, test.payload, withChunkSize(test.chunkSize))
+			_, apiErr, err := testSignedStreamingObjectPut(s, bucket, object, test.payload, withChunkSize(test.chunkSize), withCustomHeaders(map[string]string{
+				"Content-Length":    "-1",
+				"Transfer-Encoding": "chunked",
+			}))
 			if err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}

@@ -402,7 +402,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	}
 	sig, err := readBytes(rdr, 64)
 	if err != nil {
-		debuglogger.Logf("failed to read '\\r', after chunk signature: %v", err)
+		debuglogger.Logf("failed to read the chunk signature: %v", err)
 		return cr.handleRdrErr(err, header)
 	}
 
@@ -484,6 +484,10 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 		return 0, sig, 0, nil
 	}
 
+	// add the chunk size at the end of header parsing
+	// to avoid duplication because of header stashing
+	cr.addChunkSize(chunkSize)
+
 	// find the index of chunk ending: '\r\n'
 	// skip the first 2 bytes as it is the starting '\r\n'
 	// the first chunk doesn't contain the starting '\r\n', but
@@ -511,7 +515,7 @@ func (cr *ChunkReader) stashAndSkipHeader(header []byte) (int64, string, int, er
 // calls "cr.stashAndSkipHeader" if the passed err is "io.EOF" and cr.isEOF is false
 // Returns the error otherwise
 func (cr *ChunkReader) handleRdrErr(err error, header []byte) (int64, string, int, error) {
-	if err == io.EOF {
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		if cr.isEOF {
 			debuglogger.Logf("incomplete chunk encoding, EOF reached")
 			return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
@@ -540,9 +544,12 @@ func (cr *ChunkReader) parseChunkSize(rdr *bufio.Reader, header []byte) (int64, 
 		return 0, s3err.GetAPIError(s3err.ErrInvalidChunkSize)
 	}
 
-	cr.chunkSizes = append(cr.chunkSizes, chunkSize)
-
 	return chunkSize, nil
+}
+
+// addChunkSize adds the input chunk size to chunkSizes slice
+func (cr *ChunkReader) addChunkSize(size int64) {
+	cr.chunkSizes = append(cr.chunkSizes, size)
 }
 
 // isValidChunkSize checks if the parsed chunk size is valid
