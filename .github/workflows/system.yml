@@ -79,6 +79,20 @@ jobs:
             DELETE_BUCKETS_AFTER_TEST: "true"
             BACKEND: "posix"
             AWS_REGION: "us-west-1"
+          - set: "REST, posix, static, rest-get-bucket-policy-status, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "rest-get-bucket-policy-status"
+            RECREATE_BUCKETS: "false"
+            DELETE_BUCKETS_AFTER_TEST: "false"
+            BACKEND: "posix"
+            AWS_REGION: "us-east-1"
+          - set: "REST, posix, non-static, rest-get-bucket-policy-status, folder IAM"
+            IAM_TYPE: folder
+            RUN_SET: "rest-put-bucket-tagging,rest-get-bucket-location,rest-put-object-tagging,rest-get-object-tagging,rest-list-object-versions"
+            RECREATE_BUCKETS: "true"
+            DELETE_BUCKETS_AFTER_TEST: "true"
+            BACKEND: "posix"
+            AWS_REGION: "us-west-1"
           - set: "s3, posix, non-file count, non-static, folder IAM"
             IAM_TYPE: folder
             RUN_SET: "s3-non-file-count"

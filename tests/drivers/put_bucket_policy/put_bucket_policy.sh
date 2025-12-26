@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bats
 
-# Copyright 2024 Versity Software
+# Copyright 2025 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -14,16 +14,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-allow_public_access() {
-  if ! check_param_count_v2 "bucket name" 1 $#; then
+put_and_check_for_malformed_policy() {
+  if ! check_param_count "put_and_check_for_malformed_policy" "bucket, policy file" 2 $#; then
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" BLOCK_PUBLIC_ACLS="FALSE" BLOCK_PUBLIC_POLICY="FALSE" IGNORE_PUBLIC_ACLS="FALSE" RESTRICT_PUBLIC_BUCKETS="FALSE" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/put_public_access_block.sh 2>&1); then
-    log 2 "error getting public access block: $result"
+  if put_bucket_policy "s3api" "$1" "$2"; then
+    log 2 "put succeeded despite malformed policy"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/response.txt"))"
+  # shellcheck disable=SC2154
+  if [[ "$put_bucket_policy_error" != *"MalformedPolicy"*"invalid action"* ]]; then
+    log 2 "invalid policy error: $put_bucket_policy_error"
     return 1
   fi
   return 0
