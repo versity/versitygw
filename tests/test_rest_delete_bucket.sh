@@ -83,9 +83,6 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - invalid x-amz-expected-bucket-owner" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1428"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -93,14 +90,21 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run setup_bucket "$bucket_name"
   assert_success
 
-  run send_rest_go_command_expect_error "400" "InvalidBucketOwnerAWSAccountID" "value of the expected bucket owner" "-method" "DELETE" "-bucketName" "$bucket_name" "-signedParams" "x-amz-expected-bucket-owner:01234567890"
+  if [ "$DIRECT" == "true" ]; then
+    expected_http_code="400"
+    expected_error_code="InvalidBucketOwnerAWSAccountID"
+    expected_error="value of the expected bucket owner"
+  else
+    expected_http_code="403"
+    expected_error_code="AccessDenied"
+    expected_error="Access Denied"
+  fi
+  run send_rest_go_command_expect_error "$expected_http_code" "$expected_error_code" "$expected_error" "-method" "DELETE" \
+    "-bucketName" "$bucket_name" "-signedParams" "x-amz-expected-bucket-owner:a"
   assert_success
 }
 
 @test "REST - DeleteBucket - incorrect x-amz-expected-bucket-owner" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1428"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

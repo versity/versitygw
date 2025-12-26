@@ -67,7 +67,7 @@ handle_param() {
       rest-create-bucket|rest-head-bucket|rest-list-buckets|rest-not-implemented|\
       rest-put-object|rest-versioning|rest-bucket|rest-multipart|rest-delete-bucket-ownership-controls|\
       rest-delete-bucket-tagging|setup-remove-static|rest-put-bucket-tagging|rest-get-bucket-location|\
-      rest-put-object-tagging|rest-get-object-tagging|rest-list-object-versions)
+      rest-put-object-tagging|rest-get-object-tagging|rest-list-object-versions|rest-get-bucket-policy-status)
           run_suite "$1"
           ;;
       *) # Handle unrecognized options or positional arguments
@@ -180,6 +180,8 @@ run_suite() {
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh; then
         exit_code=1
+      elif ! "$HOME"/bin/bats ./tests/test_rest_get_bucket_policy_status.sh; then
+        exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_get_object_tagging.sh; then
         exit_code=1
       elif ! "$HOME"/bin/bats ./tests/test_rest_head_bucket.sh; then
@@ -239,6 +241,10 @@ run_suite() {
     rest-get-bucket-location)
       echo "Running REST get bucket location tests ..."
       "$HOME"/bin/bats ./tests/test_rest_get_bucket_location.sh || exit_code=$?
+      ;;
+    rest-get-bucket-policy-status)
+      echo "Running REST get bucket policy status tests ..."
+      "$HOME"/bin/bats ./tests/test_rest_get_bucket_policy_status.sh || exit_code=$?
       ;;
     rest-get-object-tagging)
       echo "Running REST get object tagging tests ..."

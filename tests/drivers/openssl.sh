@@ -118,7 +118,8 @@ send_openssl_go_command_expect_error() {
   if ! check_param_count_gt "expected HTTP code, expected error code, expected message, params" 4 $#; then
     return 1
   fi
-  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}" 2>&1); then
+  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" \
+      "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-awsRegion" "$AWS_REGION" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}" 2>&1); then
     log 2 "error sending go command and checking error: $result"
     return 1
   fi
@@ -133,8 +134,8 @@ send_openssl_go_command() {
   if ! check_param_count_gt "expected HTTP code, params" 2 $#; then
     return 1
   fi
-  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:2}"; then
-    log 2 "error sending go command and checking error"
+  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:2}" 2>&1); then
+    log 2 "error sending go command and checking error: $result"
     return 1
   fi
   if ! result=$(send_via_openssl_and_check_code "$TEST_FILE_FOLDER/openssl_command.txt" "$1" 2>&1); then
@@ -148,8 +149,9 @@ send_openssl_go_command_check_header() {
   if ! check_param_count_gt "expected HTTP code, header key, value, params" 4 $#; then
     return 1
   fi
-  if ! go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}"; then
-    log 2 "error sending go command and checking error"
+  if ! result=$(go run "./tests/rest_scripts/generateCommand.go" "-awsAccessKeyId" "$AWS_ACCESS_KEY_ID" "-awsSecretAccessKey" "$AWS_SECRET_ACCESS_KEY" \
+      "-awsRegion" "$AWS_REGION" "-url" "$AWS_ENDPOINT_URL" "-client" "openssl" "-filePath" "$TEST_FILE_FOLDER/openssl_command.txt" "${@:4}" 2>&1); then
+    log 2 "error sending go command and checking error: $result"
     return 1
   fi
   if ! send_via_openssl_and_check_code_header "$TEST_FILE_FOLDER/openssl_command.txt" "$1" "$2" "$3"; then

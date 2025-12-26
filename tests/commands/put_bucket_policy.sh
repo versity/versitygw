@@ -30,7 +30,7 @@ put_bucket_policy() {
   elif [[ $1 == 'mc' ]]; then
     policy=$(send_command mc --insecure anonymous set-json "$3" "$MC_ALIAS/$2" 2>&1) || put_policy_result=$?
   elif [ "$1" == 'rest' ]; then
-    put_bucket_policy_rest "$2" "$3" || put_policy_result=$?
+    put_bucket_policy_rest_200_or_204 "$2" "$3" || put_policy_result=$?
     return $put_policy_result
   else
     log 2 "command 'put bucket policy' not implemented for '$1'"
@@ -71,8 +71,23 @@ put_bucket_policy_rest() {
     log 2 "error putting bucket policy: $result"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  if [ "$result" != "204" ]; then
+    log 2 "expected '204', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+    return 1
+  fi
+  return 0
+}
+
+put_bucket_policy_rest_200_or_204() {
+  if ! check_param_count "put_bucket_policy_rest" "bucket, policy file" 2 $#; then
+    return 1
+  fi
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" POLICY_FILE="$2" OUTPUT_FILE="$TEST_FILE_FOLDER/result.txt" ./tests/rest_scripts/put_bucket_policy.sh); then
+    log 2 "error putting bucket policy: $result"
+    return 1
+  fi
+  if [ "$result" != "200" ] && [ "$result" != "204" ]; then
+    log 2 "expected '200' or '204', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0

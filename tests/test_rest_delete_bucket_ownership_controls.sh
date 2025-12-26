@@ -26,7 +26,7 @@ export RUN_USERS=true
 
 @test "REST - DeleteBucketOwnershipControls - lack permission" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skip versitygw-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -46,7 +46,7 @@ export RUN_USERS=true
 
 @test "REST - DeleteBucketOwnershipControls - invalid username" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skip versitygw-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

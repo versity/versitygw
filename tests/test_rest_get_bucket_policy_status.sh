@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Copyright 2024 Versity Software
+# Copyright 2025 Versity Software
 # This file is licensed under the Apache License, Version 2.0
 # (the "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
@@ -17,34 +17,16 @@
 load ./bats-support/load
 load ./bats-assert/load
 
-source ./tests/setup.sh
-source ./tests/drivers/rest.sh
-source ./tests/drivers/user.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
-source ./tests/drivers/delete_bucket_tagging/delete_bucket_tagging_rest.sh
-source ./tests/drivers/get_bucket_tagging/get_bucket_tagging_rest.sh
+source ./tests/drivers/get_bucket_policy_status/get_bucket_policy_status_rest.sh
+source ./tests/drivers/put_bucket_policy/put_bucket_policy_rest.sh
+source ./tests/util/util_public_access_block.sh
+source ./tests/setup.sh
 
-export RUN_USERS=true
-
-@test "REST - DeleteBucketTagging - lack permission" {
-  if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip "skip versitygw-specific users tests"
+@test "REST - GetBucketPolicyStatus" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1712"
   fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket_and_acl_user "$bucket_name" "$USERNAME_ONE" "$PASSWORD_ONE"
-  assert_success
-  username=${lines[${#lines[@]}-2]}
-  password=${lines[${#lines[@]}-1]}
-
-  run send_rest_go_command_expect_error "403" "AccessDenied" "Access Denied" "-awsAccessKeyId" "$username" "-awsSecretAccessKey" "$password" \
-    "-method" "DELETE" "-bucketName" "$bucket_name" "-query" "tagging="
-  assert_success
-}
-
-@test "REST - DeleteBucketTagging - success" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -52,9 +34,32 @@ export RUN_USERS=true
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run add_verify_bucket_tags_rest "$bucket_name" "key" "value"
+  run put_simple_bucket_policy "$bucket_name"
   assert_success
 
-  run delete_tags_and_verify_deletion "$bucket_name"
+  run get_and_check_policy_status "$bucket_name" "false"
+  assert_success
+}
+
+@test "REST - GetBucketPolicyStatus true" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1712"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    run allow_public_access "$bucket_name"
+    assert_success
+  fi
+
+  run put_public_bucket_policy "$bucket_name"
+  assert_success
+
+  run get_and_check_policy_status "$bucket_name" "true"
   assert_success
 }

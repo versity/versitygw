@@ -14,6 +14,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/put_bucket_policy/put_bucket_policy.sh
 source ./tests/util/util_delete_object.sh
 
 test_s3api_policy_allow_deny() {

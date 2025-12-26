@@ -106,7 +106,7 @@ test_get_object_attributes_s3api_root() {
 
 test_get_put_object_legal_hold_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   bucket_file="bucket_file"
   username=$USERNAME_ONE
@@ -140,7 +140,7 @@ test_get_put_object_legal_hold_s3api_root() {
 
 test_get_put_object_retention_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   bucket_file="bucket_file"
   username=$USERNAME_ONE
@@ -175,7 +175,7 @@ test_get_put_object_retention_s3api_root() {
 
 test_retention_bypass_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   bucket_file="bucket_file"
   username=$USERNAME_ONE
