@@ -134,7 +134,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 				var err error
 				wrapBodyReader(ctx, func(r io.Reader) io.Reader {
 					var cr io.Reader
-					cr, err = utils.NewChunkReader(ctx, r, authData, region, account.Secret, tdate)
+					cr, err = utils.NewChunkReader(ctx, r, authData, account.Secret, tdate)
 					return cr
 				})
 				if err != nil {

@@ -182,7 +182,7 @@ func ParseDecodedContentLength(ctx *fiber.Ctx) (int64, error) {
 	return decContLength, nil
 }
 
-func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secret string, date time.Time) (io.Reader, error) {
+func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, secret string, date time.Time) (io.Reader, error) {
 	cLength, err := ParseDecodedContentLength(ctx)
 	if err != nil {
 		return nil, err
@@ -204,9 +204,9 @@ func NewChunkReader(ctx *fiber.Ctx, r io.Reader, authdata AuthData, region, secr
 	case payloadTypeStreamingUnsignedTrailer:
 		return NewUnsignedChunkReader(r, checksumType, cLength)
 	case payloadTypeStreamingSignedTrailer:
-		return NewSignedChunkReader(r, authdata, region, secret, date, checksumType)
+		return NewSignedChunkReader(r, authdata, secret, date, checksumType, true, cLength)
 	case payloadTypeStreamingSigned:
-		return NewSignedChunkReader(r, authdata, region, secret, date, "")
+		return NewSignedChunkReader(r, authdata, secret, date, "", false, cLength)
 	// return not supported for:
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD
 	// - STREAMING-AWS4-ECDSA-P256-SHA256-PAYLOAD-TRAILER
