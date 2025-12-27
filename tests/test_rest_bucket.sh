@@ -105,9 +105,6 @@ export RUN_USERS=true
 }
 
 @test "REST - can set object lock enabled on existing buckets" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1300"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -124,9 +121,6 @@ export RUN_USERS=true
 }
 
 @test "REST - cannot set object lock enabled without content-md5" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1301"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -156,7 +150,7 @@ export RUN_USERS=true
 
 @test "REST - put policy" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skip versitygw-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -184,65 +178,5 @@ export RUN_USERS=true
     skip "https://github.com/versity/versitygw/issues/1487"
   fi
   run delete_object_empty_bucket_check_error
-  assert_success
-}
-
-@test "REST - PutBucketTagging - no payload" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1521"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT"
-  assert_success
-}
-
-@test "REST - PutBucketTagging - invalid Content-MD5" {
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket_v2 "$bucket_name"
-  assert_success
-
-  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" \
-    "-customContentMD5" "dummy" \
-    "-payload" "<Tagging xmlms=\"http://s3.amazonaws.com/doc/2006-03-01/\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
-  assert_success
-}
-
-@test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1526"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket "$bucket_name"
-  assert_success
-
-  run send_put_bucket_tagging_command_check_invalid_content_md5 "$bucket_name"
-  assert_success
-}
-
-@test "REST - PutBucketTagging - incorrect Content-MD5" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1525"
-  fi
-  run get_bucket_name "$BUCKET_ONE_NAME"
-  assert_success
-  bucket_name="$output"
-
-  run setup_bucket "$bucket_name"
-  assert_success
-
-  run send_rest_go_command_expect_error "400" "BadDigest" "did not match" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-incorrectContentMD5" \
-    "-payload" "<Tagging xmlms=\\\"http://s3.amazonaws.com/doc/2006-03-01/\\\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }

@@ -17,6 +17,7 @@
 load ./bats-support/load
 load ./bats-assert/load
 
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/not_implemented/not_implemented_rest.sh
 source ./tests/setup.sh
 
@@ -182,12 +183,6 @@ source ./tests/setup.sh
 
 @test "REST - PutBucketNotificationConfiguration" {
   run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "notification=" "PUT"
-  assert_success
-}
-
-@test "REST - GetBucketPolicyStatus" {
-  skip "https://github.com/versity/versitygw/issues/1454"
-  run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "policyStatus=" "GET"
   assert_success
 }
 

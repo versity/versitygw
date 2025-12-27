@@ -76,12 +76,10 @@ calculate_composite_checksum() {
   fi
   log 5 "checksums: ${*:2}"
   for checksum in ${@:2}; do
-    if ! binary_checksum=$(echo -n "$checksum" | base64 -d 2>&1); then
-      log 2 "error calculating binary checksum: $binary_checksum"
+    if ! printf '%s' "$checksum" | base64 -d >> "$TEST_FILE_FOLDER/all_checksums.bin"; then
+      log 2 "error calculating binary checksum and adding to file"
       return 1
     fi
-    log 5 "binary checksum: $binary_checksum"
-    printf "%s" "$binary_checksum" | cat >> "$TEST_FILE_FOLDER/all_checksums.bin"
   done
   if [ "$1" == "sha256" ]; then
     composite=$(openssl dgst -sha256 -binary "$TEST_FILE_FOLDER/all_checksums.bin" | base64)
@@ -96,6 +94,7 @@ calculate_composite_checksum() {
     fi
   fi
   log 5 "composite: $composite"
+  echo "$composite"
 }
 
 test_multipart_upload_with_checksum() {
