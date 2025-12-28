@@ -1374,6 +1374,7 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 		obj := "my-obj"
 
 		etag := getPtr("")
+		var etagTrimmed string
 		incorrectEtag := getPtr("incorrect_etag")
 		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
 
@@ -1399,6 +1400,13 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 			{"obj-3", etag, incorrectEtag, nil},
 			{"obj-4", incorrectEtag, nil, nil},
 			{"obj-5", nil, etag, nil},
+
+			// precondtion headers without quotes
+			{obj, &etagTrimmed, nil, nil},
+			{obj, &etagTrimmed, &etagTrimmed, errPrecond},
+			{obj, &etagTrimmed, incorrectEtag, nil},
+			{obj, incorrectEtag, &etagTrimmed, errPrecond},
+			{obj, nil, &etagTrimmed, errPrecond},
 		} {
 			res, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket: &bucket,
@@ -1412,6 +1420,7 @@ func CompleteMultipartUpload_conditional_writes(s *S3Conf) error {
 			// the exact same data.
 			// to avoid ETag collision reassign the etag value
 			*etag = *res.res.ETag
+			etagTrimmed = strings.Trim(*etag, `"`)
 
 			mp, err := createMp(s3client, bucket, test.obj)
 			if err != nil {

@@ -495,6 +495,8 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 		return nil
 	}
 
+	etag = strings.Trim(etag, `"`)
+
 	// convert all conditions to *bool to evaluate the conditions
 	var ifMatch, ifNoneMatch, ifModSince, ifUnmodeSince *bool
 	if preconditions.IfMatch != nil {
@@ -581,6 +583,7 @@ func EvaluatePreconditions(etag string, modTime time.Time, preconditions PreCond
 
 // EvaluateMatchPreconditions evaluates if-match and if-none-match preconditions
 func EvaluateMatchPreconditions(etag string, ifMatch, ifNoneMatch *string) error {
+	etag = strings.Trim(etag, `"`)
 	if ifMatch != nil && *ifMatch != etag {
 		return errPreconditionFailed
 	}
