@@ -22,6 +22,9 @@ source ./tests/drivers/put_bucket_policy/put_bucket_policy_rest.sh
 source ./tests/setup.sh
 
 @test "PutBucketPolicy - success returns 204" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1712"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

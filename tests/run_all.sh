@@ -24,10 +24,8 @@ grep -v ^# "$VERSITYGW_TEST_ENV"
 
 status=0
 
-for cmd in s3api s3 s3cmd mc rest; do
-  if ! ./tests/run.sh "$cmd"; then
-    status=1
-  fi
-done
+if ! ./tests/run.sh "all"; then
+  status=1
+fi
 
 exit $status

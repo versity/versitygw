@@ -23,6 +23,9 @@ source ./tests/drivers/delete_object/delete_object_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
 @test "REST - DeleteBucket - can delete with partial multipart upload" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -38,6 +41,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - file - non-versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -56,6 +62,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - file - versioning" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -83,6 +92,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - invalid x-amz-expected-bucket-owner" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -105,6 +117,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - incorrect x-amz-expected-bucket-owner" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -117,6 +132,9 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - DeleteBucket - correct x-amz-expected-bucket-owner" {
+  if [ "$RECREATE_BUCKETS" == "false" ]; then
+    skip "avoid bucket deletion in static mode"
+  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

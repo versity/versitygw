@@ -74,6 +74,9 @@ export RUN_USERS=true
 
 # get-bucket-location
 @test "test_get_bucket_location" {
+  if [ "$DIRECT" != "true" ]; then
+      skip "https://github.com/versity/versitygw/issues/1643"
+    fi
   test_common_get_bucket_location "s3cmd"
 }
 

@@ -26,7 +26,11 @@ get_bucket_location() {
   elif [[ $1 == 's3cmd' ]]; then
     get_bucket_location_s3cmd "$2" || get_result=$?
   elif [[ $1 == 'mc' ]]; then
-    get_bucket_location_mc "$2" || get_result=$?
+    if ! get_bucket_location_mc "$2"; then
+      log 2 "error getting mc bucket location"
+      return 1
+    fi
+    return 0
   else
     log 2 "command type '$1' not implemented for get_bucket_location"
     return 1
@@ -69,13 +73,11 @@ get_bucket_location_s3cmd() {
 
 get_bucket_location_mc() {
   record_command "get-bucket-location" "client:mc"
-  if [[ $# -ne 1 ]]; then
-    log 2 "get bucket location (mc) requires bucket name"
+  if ! check_param_count_v2 "bucket name" 1 $#; then
     return 1
   fi
-  info=$(send_command mc --insecure stat "$MC_ALIAS/$1") || results=$?
-  if [[ $results -ne 0 ]]; then
-    log 2 "error getting s3cmd info: $info"
+  if ! info=$(send_command mc --insecure stat "$MC_ALIAS/$1" 2>&1); then
+    log 2 "error getting mc info: $info"
     return 1
   fi
   # shellcheck disable=SC2034

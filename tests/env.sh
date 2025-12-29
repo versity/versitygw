@@ -281,7 +281,7 @@ check_user_vars() {
       exit 1
     fi
     IAM_PARAMS="--s3-iam-access $AWS_ACCESS_KEY_ID --s3-iam-secret $AWS_SECRET_ACCESS_KEY \
-      --s3-iam-region us-east-1 --s3-iam-bucket $USERS_BUCKET --s3-iam-endpoint $AWS_ENDPOINT_URL \
+      --s3-iam-region $AWS_REGION --s3-iam-bucket $USERS_BUCKET --s3-iam-endpoint $AWS_ENDPOINT_URL \
       --s3-iam-noverify"
     export IAM_PARAMS
     return 0

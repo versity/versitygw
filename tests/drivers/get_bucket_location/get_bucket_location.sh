@@ -23,8 +23,13 @@ get_check_bucket_location_various() {
     return 1
   fi
   # shellcheck disable=SC2154
-  if [[ $bucket_location != "null" ]] && [[ $bucket_location != "us-east-1" ]]; then
-    log 2 "wrong location: '$bucket_location'"
+  if [ "$AWS_REGION" == "us-east-1" ]; then
+    if [ "$bucket_location" != "null" ]; then
+      log 2 "expected 'null' for 'us-east-1' region, got : '$bucket_location'"
+      return 1
+    fi
+  elif [ "$AWS_REGION" != "$bucket_location" ]; then
+    log 2 "expected bucket location of '$AWS_REGION', got '$bucket_location'"
     return 1
   fi
   return 0
