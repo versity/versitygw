@@ -480,6 +480,28 @@ func listObjects(client *s3.Client, bucket, prefix, delimiter string, maxKeys in
 	return contents, commonPrefixes, nil
 }
 
+func constructObjectLocation(endpoint, bucket, object string, hostStyle bool) string {
+	// Normalize endpoint (no trailing slash)
+	endpoint = strings.TrimRight(endpoint, "/")
+
+	if !hostStyle {
+		// Path-style: http://endpoint/bucket/object
+		return fmt.Sprintf("%s/%s/%s", endpoint, bucket, object)
+	}
+
+	// Host-style: http://bucket.endpoint/object
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		// Fallback for raw host:port endpoints (e.g. "127.0.0.1:7070")
+		return fmt.Sprintf("http://%s.%s/%s", bucket, endpoint, object)
+	}
+
+	host := u.Host
+	u.Host = fmt.Sprintf("%s.%s", bucket, host)
+
+	return fmt.Sprintf("%s/%s", u.String(), object)
+}
+
 func hasObjNames(objs []types.Object, names []string) bool {
 	if len(objs) != len(names) {
 		return false

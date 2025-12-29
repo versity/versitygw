@@ -536,7 +536,8 @@ func TestS3ApiController_CompleteMultipartUpload(t *testing.T) {
 			output: testOutput{
 				response: &Response{
 					Data: s3response.CompleteMultipartUploadResult{
-						ETag: &ETag,
+						ETag:     &ETag,
+						Location: utils.GetStringPtr("http://example.com/bucket/object"),
 					},
 					Headers: map[string]*string{
 						"x-amz-version-id": &versionId,

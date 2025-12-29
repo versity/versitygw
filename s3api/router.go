@@ -30,8 +30,8 @@ type S3ApiRouter struct {
 	WithAdmSrv bool
 }
 
-func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool, region string, root middlewares.RootUserConfig) {
-	ctrl := controllers.New(be, iam, logger, evs, mm, readonly)
+func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool, region, virtualDomain string, root middlewares.RootUserConfig) {
+	ctrl := controllers.New(be, iam, logger, evs, mm, readonly, virtualDomain)
 	adminServices := &controllers.Services{
 		Logger: aLogger,
 	}

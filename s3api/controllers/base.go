@@ -31,12 +31,13 @@ import (
 )
 
 type S3ApiController struct {
-	be       backend.Backend
-	iam      auth.IAMService
-	logger   s3log.AuditLogger
-	evSender s3event.S3EventSender
-	mm       metrics.Manager
-	readonly bool
+	be            backend.Backend
+	iam           auth.IAMService
+	logger        s3log.AuditLogger
+	evSender      s3event.S3EventSender
+	mm            metrics.Manager
+	readonly      bool
+	virtualDomain string
 }
 
 const (
@@ -56,14 +57,15 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool, virtualDomain string) S3ApiController {
 	return S3ApiController{
-		be:       be,
-		iam:      iam,
-		logger:   logger,
-		evSender: evs,
-		readonly: readonly,
-		mm:       mm,
+		be:            be,
+		iam:           iam,
+		logger:        logger,
+		evSender:      evs,
+		readonly:      readonly,
+		mm:            mm,
+		virtualDomain: virtualDomain,
 	}
 }
 

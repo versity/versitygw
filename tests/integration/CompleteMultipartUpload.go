@@ -1631,6 +1631,13 @@ func CompleteMultipartUpload_success(s *S3Conf) error {
 		if getString(res.Key) != obj {
 			return fmt.Errorf("expected object key to be %v, instead got %v", obj, *res.Key)
 		}
+		location := constructObjectLocation(s.endpoint, bucket, obj, s.hostStyle)
+		if res.Location == nil {
+			return fmt.Errorf("expected non nil Location")
+		}
+		if *res.Location != location {
+			return fmt.Errorf("expected Location to be %s, instead got %s", location, *res.Location)
+		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 		resp, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
