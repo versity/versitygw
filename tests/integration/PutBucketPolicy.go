@@ -17,6 +17,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/versity/versitygw/s3err"
@@ -688,6 +690,28 @@ func PutBucketPolicy_success(s *S3Conf) error {
 			if err != nil {
 				return err
 			}
+		}
+
+		return nil
+	})
+}
+
+func PutBucketPolicy_status(s *S3Conf) error {
+	testname := "PutBucketPolicy_status"
+	return actionHandler(s, testname, func(s3client *s3.Client, bucket string) error {
+		doc := genPolicyDoc("Allow", `"*"`, `"s3:GetObject"`, fmt.Sprintf(`"arn:aws:s3:::%s/*"`, bucket))
+		req, err := createSignedReq(http.MethodPut, s.endpoint, bucket+"?policy", s.awsID, s.awsSecret, "s3", s.awsRegion, []byte(doc), time.Now(), nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("expected the response status code to be %v, instead got %v", http.StatusNoContent, resp.StatusCode)
 		}
 
 		return nil

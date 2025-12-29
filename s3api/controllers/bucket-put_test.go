@@ -641,7 +641,10 @@ func TestS3ApiController_PutBucketPolicy(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
-					MetaOpts: &MetaOptions{BucketOwner: "root"},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+						Status:      http.StatusNoContent,
+					},
 				},
 				err: s3err.GetAPIError(s3err.ErrNoSuchBucket),
 			},
@@ -656,6 +659,7 @@ func TestS3ApiController_PutBucketPolicy(t *testing.T) {
 				response: &Response{
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
+						Status:      http.StatusNoContent,
 					},
 				},
 			},

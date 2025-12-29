@@ -560,6 +560,7 @@ func TestPutBucketPolicy(ts *TestState) {
 	ts.Run(PutBucketPolicy_any_char_match)
 	ts.Run(PutBucketPolicy_version)
 	ts.Run(PutBucketPolicy_success)
+	ts.Run(PutBucketPolicy_status)
 }
 
 func TestGetBucketPolicy(ts *TestState) {
@@ -1505,6 +1506,7 @@ func GetIntTests() IntTests {
 		"PutBucketPolicy_any_char_match":                                           PutBucketPolicy_any_char_match,
 		"PutBucketPolicy_version":                                                  PutBucketPolicy_version,
 		"PutBucketPolicy_success":                                                  PutBucketPolicy_success,
+		"PutBucketPolicy_status":                                                   PutBucketPolicy_status,
 		"GetBucketPolicy_non_existing_bucket":                                      GetBucketPolicy_non_existing_bucket,
 		"GetBucketPolicy_not_set":                                                  GetBucketPolicy_not_set,
 		"GetBucketPolicy_success":                                                  GetBucketPolicy_success,
