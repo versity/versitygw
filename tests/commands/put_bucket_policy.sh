@@ -71,8 +71,8 @@ put_bucket_policy_rest() {
     log 2 "error putting bucket policy: $result"
     return 1
   fi
-  if [ "$result" != "200" ]; then
-    log 2 "expected '200', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
+  if [ "$result" != "204" ]; then
+    log 2 "expected '204', was '$result' ($(cat "$TEST_FILE_FOLDER/result.txt"))"
     return 1
   fi
   return 0
