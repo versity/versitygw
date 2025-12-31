@@ -67,7 +67,10 @@ func ParsePreconditionMatchHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) (*st
 	if cfg.withCopySource {
 		prefix = "X-Amz-Copy-Source-"
 	}
-	return GetStringPtr(ctx.Get(prefix + "If-Match")), GetStringPtr(ctx.Get(prefix + "If-None-Match"))
+
+	ifMatch := trimQuotes(ctx.Get(prefix + "If-Match"))
+	ifNoneMatch := trimQuotes(ctx.Get(prefix + "If-None-Match"))
+	return GetStringPtr(ifMatch), GetStringPtr(ifNoneMatch)
 }
 
 // ParsePreconditionDateHeaders parses the "If-Modified-Since" and "If-Unmodified-Since"
@@ -135,4 +138,16 @@ func ParseIfMatchSize(ctx *fiber.Ctx) *int64 {
 	}
 
 	return &ifMatchSize
+}
+
+func trimQuotes(str string) string {
+	if len(str) < 2 {
+		return str
+	}
+
+	if str[0] == str[len(str)-1] && str[0] == '"' {
+		return str[1 : len(str)-1]
+	}
+
+	return str
 }

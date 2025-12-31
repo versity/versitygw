@@ -17,6 +17,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -663,6 +664,7 @@ func UploadPartCopy_conditional_reads(s *S3Conf) error {
 		before := time.Now().AddDate(0, 0, -3)
 		after := time.Now()
 		etag := obj.res.ETag
+		etagTrimmed := strings.Trim(*etag, `"`)
 
 		for i, test := range []struct {
 			ifmatch           *string
@@ -761,6 +763,47 @@ func UploadPartCopy_conditional_reads(s *S3Conf) error {
 			{nil, nil, nil, &before, errCond},
 			{nil, nil, nil, &after, nil},
 			{nil, nil, nil, nil, nil},
+
+			// if-match, if-non-match without quotes
+			{&etagTrimmed, getPtr("invalid_etag"), &before, &before, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), &before, &after, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), &before, nil, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), &after, &before, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), &after, &after, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), &after, nil, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), nil, &before, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), nil, &after, nil},
+			{&etagTrimmed, getPtr("invalid_etag"), nil, nil, nil},
+
+			{&etagTrimmed, &etagTrimmed, &before, &before, errMod},
+			{&etagTrimmed, &etagTrimmed, &before, &after, errMod},
+			{&etagTrimmed, &etagTrimmed, &before, nil, errMod},
+			{&etagTrimmed, &etagTrimmed, &after, &before, errMod},
+			{&etagTrimmed, &etagTrimmed, &after, &after, errMod},
+			{&etagTrimmed, &etagTrimmed, &after, nil, errMod},
+			{&etagTrimmed, &etagTrimmed, nil, &before, errMod},
+			{&etagTrimmed, &etagTrimmed, nil, &after, errMod},
+			{&etagTrimmed, &etagTrimmed, nil, nil, errMod},
+
+			{&etagTrimmed, nil, &before, &before, nil},
+			{&etagTrimmed, nil, &before, &after, nil},
+			{&etagTrimmed, nil, &before, nil, nil},
+			{&etagTrimmed, nil, &after, &before, errMod},
+			{&etagTrimmed, nil, &after, &after, errMod},
+			{&etagTrimmed, nil, &after, nil, errMod},
+			{&etagTrimmed, nil, nil, &before, nil},
+			{&etagTrimmed, nil, nil, &after, nil},
+			{&etagTrimmed, nil, nil, nil, nil},
+
+			{nil, &etagTrimmed, &before, &before, errCond},
+			{nil, &etagTrimmed, &before, &after, errMod},
+			{nil, &etagTrimmed, &before, nil, errMod},
+			{nil, &etagTrimmed, &after, &before, errCond},
+			{nil, &etagTrimmed, &after, &after, errMod},
+			{nil, &etagTrimmed, &after, nil, errMod},
+			{nil, &etagTrimmed, nil, &before, errCond},
+			{nil, &etagTrimmed, nil, &after, errMod},
+			{nil, &etagTrimmed, nil, nil, errMod},
 		} {
 			mpKey := "mp-key"
 			mp, err := createMp(s3client, bucket, mpKey)

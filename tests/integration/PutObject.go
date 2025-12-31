@@ -313,6 +313,7 @@ func PutObject_conditional_writes(s *S3Conf) error {
 		}
 
 		etag := res.res.ETag
+		etagTrimmed := strings.Trim(*etag, `"`)
 		incorrectEtag := getPtr("incorrect_etag")
 		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
 
@@ -331,6 +332,14 @@ func PutObject_conditional_writes(s *S3Conf) error {
 			{obj, nil, incorrectEtag, nil},
 			{obj, nil, etag, errPrecond},
 			{obj, nil, nil, nil},
+
+			// precondition headers without quotes
+			{obj, &etagTrimmed, nil, nil},
+			{obj, &etagTrimmed, &etagTrimmed, errPrecond},
+			{obj, &etagTrimmed, incorrectEtag, nil},
+			{obj, incorrectEtag, &etagTrimmed, errPrecond},
+			{obj, nil, &etagTrimmed, errPrecond},
+
 			// should ignore the precondition headers if
 			// an object with the given name doesn't exist
 			{"obj-1", incorrectEtag, etag, nil},
@@ -351,6 +360,7 @@ func PutObject_conditional_writes(s *S3Conf) error {
 				// the exact same data.
 				// to avoid ETag collision reassign the etag value
 				*etag = *res.res.ETag
+				etagTrimmed = strings.Trim(*res.res.ETag, `"`)
 			}
 			if test.err == nil && err != nil {
 				return fmt.Errorf("test case %v: expected no error, instead got %w", i, err)
