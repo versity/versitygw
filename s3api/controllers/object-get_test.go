@@ -26,6 +26,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -33,6 +34,7 @@ import (
 )
 
 func TestS3ApiController_GetObjectTagging(t *testing.T) {
+	versionId := ulid.Make().String()
 	tests := []struct {
 		name   string
 		input  testInput
@@ -88,6 +90,9 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 		{
 			name: "successful response",
 			input: testInput{
+				queries: map[string]string{
+					"versionId": versionId,
+				},
 				locals: defaultLocals,
 				beRes: map[string]string{
 					"key": "val",
@@ -95,6 +100,9 @@ func TestS3ApiController_GetObjectTagging(t *testing.T) {
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-version-id": utils.GetStringPtr(versionId),
+					},
 					Data: s3response.Tagging{
 						TagSet: s3response.TagSet{
 							Tags: []s3response.Tag{

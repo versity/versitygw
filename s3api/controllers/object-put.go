@@ -86,6 +86,9 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 
 	err = c.be.PutObjectTagging(ctx.Context(), bucket, key, versionId, tagging)
 	return &Response{
+		Headers: map[string]*string{
+			"x-amz-version-id": &versionId,
+		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 			EventName:   s3event.EventObjectTaggingPut,

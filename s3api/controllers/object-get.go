@@ -93,6 +93,9 @@ func (c S3ApiController) GetObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 
 	return &Response{
 		Data: tags,
+		Headers: map[string]*string{
+			"x-amz-version-id": &versionId,
+		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
 		},

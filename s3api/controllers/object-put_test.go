@@ -23,6 +23,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
@@ -44,6 +45,8 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 			},
 		})
 	assert.NoError(t, err)
+
+	versionId := ulid.Make().String()
 
 	tests := []struct {
 		name   string
@@ -102,9 +105,15 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 				locals: defaultLocals,
 				beErr:  s3err.GetAPIError(s3err.ErrNoSuchBucket),
 				body:   validTaggingBody,
+				queries: map[string]string{
+					"versionId": versionId,
+				},
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-version-id": &versionId,
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 						EventName:   s3event.EventObjectTaggingPut,
@@ -118,9 +127,15 @@ func TestS3ApiController_PutObjectTagging(t *testing.T) {
 			input: testInput{
 				locals: defaultLocals,
 				body:   validTaggingBody,
+				queries: map[string]string{
+					"versionId": versionId,
+				},
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-version-id": &versionId,
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 						EventName:   s3event.EventObjectTaggingPut,
