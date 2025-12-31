@@ -43,9 +43,16 @@ const (
 	awsV4                    = "AWS4"
 	awsS3Service             = "s3"
 	awsV4Request             = "aws4_request"
-	trailerSignatureHeader   = "x-amz-trailer-signature"
+	trailerSignatureHeader   = "x-amz-trailer-signature:"
 	streamPayloadAlgo        = "AWS4-HMAC-SHA256-PAYLOAD"
 	streamPayloadTrailerAlgo = "AWS4-HMAC-SHA256-TRAILER"
+
+	maxHeaderSize = 1024
+)
+
+var (
+	errskipHeader = errors.New("skip to next header")
+	delimiter     = []byte{'\r', '\n'}
 )
 
 // ChunkReader reads from chunked upload request body, and returns
@@ -66,24 +73,31 @@ type ChunkReader struct {
 	isFirstHeader  bool
 	region         string
 	date           time.Time
+	requireTrailer bool
+	chunkSizes     []int64
+	cLength        int64
+	dataRead       int64
 }
 
 // NewChunkReader reads from request body io.Reader and parses out the
 // chunk metadata in stream. The headers are validated for proper signatures.
 // Reading from the chunk reader will read only the object data stream
 // without the chunk headers/trailers.
-func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string, date time.Time, chType checksumType) (io.Reader, error) {
+func NewSignedChunkReader(r io.Reader, authdata AuthData, secret string, date time.Time, chType checksumType, requireTrailer bool, cLength int64) (io.Reader, error) {
 	chRdr := &ChunkReader{
 		r:          r,
-		signingKey: getSigningKey(secret, region, date),
+		signingKey: getSigningKey(secret, authdata.Region, date),
 		// the authdata.Signature is validated in the auth-reader,
 		// so we can use that here without any other checks
-		prevSig:       authdata.Signature,
-		chunkHash:     sha256.New(),
-		isFirstHeader: true,
-		date:          date,
-		region:        region,
-		trailer:       chType,
+		prevSig:        authdata.Signature,
+		chunkHash:      sha256.New(),
+		isFirstHeader:  true,
+		date:           date,
+		region:         authdata.Region,
+		trailer:        chType,
+		requireTrailer: requireTrailer,
+		chunkSizes:     []int64{},
+		cLength:        cLength,
 	}
 
 	if chType != "" {
@@ -95,7 +109,7 @@ func NewSignedChunkReader(r io.Reader, authdata AuthData, region, secret string,
 
 		chRdr.checksumHash = checksumHasher
 	}
-	if chType == "" {
+	if !requireTrailer {
 		debuglogger.Infof("initializing signed chunk reader")
 	} else {
 		debuglogger.Infof("initializing signed chunk reader with '%v' trailing checksum", chType)
@@ -121,7 +135,17 @@ func (cr *ChunkReader) Read(p []byte) (int, error) {
 			}
 		}
 		n, err := cr.parseAndRemoveChunkInfo(p[chunkSize:n])
+		if err != nil && err != io.EOF {
+			return 0, err
+		}
 		n += int(chunkSize)
+		cr.dataRead += int64(n)
+		if cr.isEOF {
+			if cr.cLength != cr.dataRead {
+				debuglogger.Logf("number of bytes expected: (%v), number of bytes read: (%v)", cr.cLength, cr.dataRead)
+				return 0, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
+			}
+		}
 		return n, err
 	}
 
@@ -129,6 +153,13 @@ func (cr *ChunkReader) Read(p []byte) (int, error) {
 	cr.chunkHash.Write(p[:n])
 	if cr.checksumHash != nil {
 		cr.checksumHash.Write(p[:n])
+	}
+	cr.dataRead += int64(n)
+	if cr.isEOF {
+		if cr.cLength != cr.dataRead {
+			debuglogger.Logf("number of bytes expected: (%v), number of bytes read: (%v)", cr.cLength, cr.dataRead)
+			return 0, s3err.GetAPIError(s3err.ErrContentLengthMismatch)
+		}
 	}
 	return n, err
 }
@@ -328,15 +359,6 @@ func hmac256(key []byte, data []byte) []byte {
 	return hash.Sum(nil)
 }
 
-var (
-	errInvalidChunkFormat = errors.New("invalid chunk header format")
-	errskipHeader         = errors.New("skip to next header")
-)
-
-const (
-	maxHeaderSize = 1024
-)
-
 // This returns the chunk payload size, signature, data start offset, and
 // error if any. See the AWS documentation for the chunk header format. The
 // header[0] byte is expected to be the first byte of the chunk size here.
@@ -344,7 +366,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	stashLen := len(cr.stash)
 	if stashLen > maxHeaderSize {
 		debuglogger.Logf("the stash length exceeds the maximum allowed chunk header size: (stash len): %v, (header limit): %v", stashLen, maxHeaderSize)
-		return 0, "", 0, errInvalidChunkFormat
+		return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 	}
 	if cr.stash != nil {
 		debuglogger.Logf("recovering the stash: (stash len): %v", stashLen)
@@ -360,45 +382,39 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 	// After the first chunk each chunk header should start
 	// with "\n\r\n"
 	if !cr.isFirstHeader {
-		err := readAndSkip(rdr, '\r', '\n')
+		err := readAndSkip(rdr, delimiter...)
 		if err != nil {
 			debuglogger.Logf("failed to read chunk header first 2 bytes: (should be): \\r\\n, (got): %q", header[:min(2, len(header))])
 			return cr.handleRdrErr(err, header)
 		}
 	}
 
-	// read and parse the chunk size
-	chunkSizeStr, err := readAndTrim(rdr, ';')
+	chunkSize, err := cr.parseChunkSize(rdr, header)
 	if err != nil {
-		debuglogger.Logf("failed to read chunk size: %v", err)
-		return cr.handleRdrErr(err, header)
-	}
-	chunkSize, err := strconv.ParseInt(chunkSizeStr, 16, 64)
-	if err != nil {
-		debuglogger.Logf("failed to parse chunk size: (size): %v, (err): %v", chunkSizeStr, err)
-		return 0, "", 0, errInvalidChunkFormat
+		return 0, "", 0, err
 	}
 
 	// read the chunk signature
-	err = readAndSkip(rdr, 'c', 'h', 'u', 'n', 'k', '-', 's', 'i', 'g', 'n', 'a', 't', 'u', 'r', 'e', '=')
+	err = readAndSkip(rdr, []byte("chunk-signature=")...)
 	if err != nil {
 		debuglogger.Logf("failed to read 'chunk-signature=': %v", err)
 		return cr.handleRdrErr(err, header)
 	}
-	sig, err := readAndTrim(rdr, '\r')
+	sig, err := readBytes(rdr, 64)
 	if err != nil {
-		debuglogger.Logf("failed to read '\\r', after chunk signature: %v", err)
+		debuglogger.Logf("failed to read the chunk signature: %v", err)
+		return cr.handleRdrErr(err, header)
+	}
+
+	err = readAndSkip(rdr, delimiter...)
+	if err != nil {
+		debuglogger.Logf("failed to read '\\r\\n' after chunk signature")
 		return cr.handleRdrErr(err, header)
 	}
 
 	// read and parse the final chunk trailer and checksum
 	if chunkSize == 0 {
-		if cr.trailer != "" {
-			err = readAndSkip(rdr, '\n')
-			if err != nil {
-				debuglogger.Logf("failed to read \\n before the trailer: %v", err)
-				return cr.handleRdrErr(err, header)
-			}
+		if cr.requireTrailer {
 			// parse and validate the trailing header
 			trailer, err := readAndTrim(rdr, ':')
 			if err != nil {
@@ -407,7 +423,7 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 			}
 			if trailer != string(cr.trailer) {
 				debuglogger.Logf("incorrect trailer prefix: (expected): %v, (got): %v", cr.trailer, trailer)
-				return 0, "", 0, errInvalidChunkFormat
+				return 0, "", 0, s3err.GetAPIError(s3err.ErrMalformedTrailer)
 			}
 
 			algo := types.ChecksumAlgorithm(strings.ToUpper(strings.TrimPrefix(trailer, "x-amz-checksum-")))
@@ -419,19 +435,19 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 				return cr.handleRdrErr(err, header)
 			}
 
-			if !IsValidChecksum(checksum, algo) {
-				debuglogger.Logf("invalid checksum value: %v", checksum)
-				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
-			}
-
 			err = readAndSkip(rdr, '\n')
 			if err != nil {
 				debuglogger.Logf("failed to read \\n after checksum: %v", err)
 				return cr.handleRdrErr(err, header)
 			}
 
+			if !IsValidChecksum(checksum, algo) {
+				debuglogger.Logf("invalid checksum value: %v", checksum)
+				return 0, "", 0, s3err.GetInvalidTrailingChecksumHeaderErr(trailer)
+			}
+
 			// parse the trailing signature
-			trailerSigPrefix, err := readAndTrim(rdr, ':')
+			trailerSigPrefix, err := readBytes(rdr, 24)
 			if err != nil {
 				debuglogger.Logf("failed to read trailing signature prefix: %v", err)
 				return cr.handleRdrErr(err, header)
@@ -439,12 +455,18 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 
 			if trailerSigPrefix != trailerSignatureHeader {
 				debuglogger.Logf("invalid trailing signature prefix: (expected): %v, (got): %v", trailerSignatureHeader, trailerSigPrefix)
-				return 0, "", 0, errInvalidChunkFormat
+				return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 			}
 
-			trailerSig, err := readAndTrim(rdr, '\r')
+			trailerSig, err := readBytes(rdr, 64)
 			if err != nil {
 				debuglogger.Logf("failed to read trailing signature: %v", err)
+				return cr.handleRdrErr(err, header)
+			}
+
+			err = readAndSkip(rdr, delimiter...)
+			if err != nil {
+				debuglogger.Logf("failed to read '\\r\\n' after last chunk signature")
 				return cr.handleRdrErr(err, header)
 			}
 
@@ -453,26 +475,24 @@ func (cr *ChunkReader) parseChunkHeaderBytes(header []byte) (int64, string, int,
 		}
 
 		// "\r\n\r\n" is followed after the last chunk
-		err = readAndSkip(rdr, '\n', '\r', '\n')
+		err = readAndSkip(rdr, delimiter...)
 		if err != nil {
-			debuglogger.Logf("failed to read \\n\\r\\n at the end of chunk header: %v", err)
+			debuglogger.Logf("failed to read \\r\\n at the end of chunk header: %v", err)
 			return cr.handleRdrErr(err, header)
 		}
 
 		return 0, sig, 0, nil
 	}
 
-	err = readAndSkip(rdr, '\n')
-	if err != nil {
-		debuglogger.Logf("failed to read \\n at the end of chunk header: %v", err)
-		return cr.handleRdrErr(err, header)
-	}
+	// add the chunk size at the end of header parsing
+	// to avoid duplication because of header stashing
+	cr.addChunkSize(chunkSize)
 
 	// find the index of chunk ending: '\r\n'
 	// skip the first 2 bytes as it is the starting '\r\n'
 	// the first chunk doesn't contain the starting '\r\n', but
 	// anyway, trimming the first 2 bytes doesn't pollute the logic.
-	ind := bytes.Index(header[2:], []byte{'\r', '\n'})
+	ind := bytes.Index(header[2:], delimiter)
 	cr.isFirstHeader = false
 
 	// the offset is the found index + 4 - the stash length
@@ -495,30 +515,85 @@ func (cr *ChunkReader) stashAndSkipHeader(header []byte) (int64, string, int, er
 // calls "cr.stashAndSkipHeader" if the passed err is "io.EOF" and cr.isEOF is false
 // Returns the error otherwise
 func (cr *ChunkReader) handleRdrErr(err error, header []byte) (int64, string, int, error) {
-	if err == io.EOF {
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		if cr.isEOF {
 			debuglogger.Logf("incomplete chunk encoding, EOF reached")
-			return 0, "", 0, errInvalidChunkFormat
+			return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
 		}
 		return cr.stashAndSkipHeader(header)
 	}
-	return 0, "", 0, err
+	return 0, "", 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
+}
+
+// parseChunkSize parses and validates the chunk size
+func (cr *ChunkReader) parseChunkSize(rdr *bufio.Reader, header []byte) (int64, error) {
+	// read and parse the chunk size
+	chunkSizeStr, err := readAndTrim(rdr, ';')
+	if err != nil {
+		debuglogger.Logf("failed to read chunk size: %v", err)
+		_, _, _, err := cr.handleRdrErr(err, header)
+		return 0, err
+	}
+	chunkSize, err := strconv.ParseInt(chunkSizeStr, 16, 64)
+	if err != nil {
+		debuglogger.Logf("failed to parse chunk size: (size): %v, (err): %v", chunkSizeStr, err)
+		return 0, s3err.GetAPIError(s3err.ErrIncompleteBody)
+	}
+
+	if !cr.isValidChunkSize(chunkSize) {
+		return 0, s3err.GetAPIError(s3err.ErrInvalidChunkSize)
+	}
+
+	return chunkSize, nil
+}
+
+// addChunkSize adds the input chunk size to chunkSizes slice
+func (cr *ChunkReader) addChunkSize(size int64) {
+	cr.chunkSizes = append(cr.chunkSizes, size)
+}
+
+// isValidChunkSize checks if the parsed chunk size is valid
+// they follow one rule: all chunk sizes except for the last one
+// should be greater than 8192
+func (cr *ChunkReader) isValidChunkSize(size int64) bool {
+	if len(cr.chunkSizes) == 0 {
+		// any valid number is valid as a first chunk size
+		return true
+	}
+
+	lastChunkSize := cr.chunkSizes[len(cr.chunkSizes)-1]
+	// any chunk size, except the last one should be greater than 8192
+	if size != 0 && lastChunkSize < minChunkSize {
+		debuglogger.Logf("invalid chunk size %v", lastChunkSize)
+		return false
+	}
+
+	return true
+}
+
+// Algorithm returns the checksum algorithm
+func (cr *ChunkReader) Algorithm() string {
+	return strings.TrimPrefix(string(cr.trailer), "x-amz-checksum-")
+}
+
+// Checksum returns the parsed trailing checksum
+func (cr *ChunkReader) Checksum() string {
+	return cr.parsedChecksum
 }
 
 // reads data from the "rdr" and validates the passed data bytes
-func readAndSkip(rdr *bufio.Reader, data ...byte) error {
-	for _, d := range data {
-		b, err := rdr.ReadByte()
-		if err != nil {
-			return err
-		}
-
-		if b != d {
-			return errMalformedEncoding
-		}
+func readAndSkip(rdr *bufio.Reader, expected ...byte) error {
+	buf := make([]byte, len(expected))
+	_, err := io.ReadFull(rdr, buf)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	if bytes.Equal(buf, expected) {
+		return nil
+	}
+
+	return s3err.GetAPIError(s3err.ErrIncompleteBody)
 }
 
 // reads string by "delim" and trims the delimiter at the end
@@ -529,4 +604,11 @@ func readAndTrim(r *bufio.Reader, delim byte) (string, error) {
 	}
 
 	return strings.TrimSuffix(str, string(delim)), nil
+}
+
+func readBytes(r *bufio.Reader, count int) (string, error) {
+	buf := make([]byte, count)
+	_, err := io.ReadFull(r, buf)
+
+	return string(buf), err
 }

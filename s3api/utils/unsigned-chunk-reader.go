@@ -35,9 +35,8 @@ import (
 )
 
 var (
-	trailerDelim               = []byte{'\n', '\r', '\n'}
-	minChunkSize         int64 = 8192
-	errMalformedEncoding       = errors.New("malformed chunk encoding")
+	trailerDelim       = []byte{'\n', '\r', '\n'}
+	minChunkSize int64 = 8192
 )
 
 type UnsignedChunkReader struct {
