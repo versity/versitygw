@@ -98,6 +98,8 @@ func (s SideCar) DeleteAttribute(bucket, object, attribute string) error {
 		return fmt.Errorf("failed to remove attribute: %v", err)
 	}
 
+	s.cleanupEmptyDirs(metadir, bucket, object)
+
 	return nil
 }
 
@@ -135,5 +137,43 @@ func (s SideCar) DeleteAttributes(bucket, object string) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to remove attributes: %v", err)
 	}
+	s.cleanupEmptyDirs(metadir, bucket, object)
 	return nil
+}
+
+func (s SideCar) cleanupEmptyDirs(metadir, bucket, object string) {
+	removeIfEmpty(metadir)
+	if bucket == "" {
+		return
+	}
+	bucketDir := filepath.Join(s.dir, bucket)
+	if object != "" {
+		removeEmptyParents(filepath.Dir(metadir), bucketDir)
+	}
+	removeIfEmpty(bucketDir)
+}
+
+func removeIfEmpty(dir string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil || len(ents) != 0 {
+		return
+	}
+	_ = os.Remove(dir)
+}
+
+func removeEmptyParents(dir, stopDir string) {
+	for {
+		if dir == stopDir || dir == "." || dir == string(filepath.Separator) {
+			return
+		}
+		ents, err := os.ReadDir(dir)
+		if err != nil || len(ents) != 0 {
+			return
+		}
+		err = os.Remove(dir)
+		if err != nil {
+			return
+		}
+		dir = filepath.Dir(dir)
+	}
 }
