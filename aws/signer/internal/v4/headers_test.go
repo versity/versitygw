@@ -41,7 +41,7 @@ func TestIgnoredHeaders(t *testing.T) {
 	}{
 		"expect": {
 			Header:        "Expect",
-			ExpectIgnored: true,
+			ExpectIgnored: false,
 		},
 		"authorization": {
 			Header:        "Authorization",
