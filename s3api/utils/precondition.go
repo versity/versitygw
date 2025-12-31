@@ -131,6 +131,9 @@ func ParsePreconditionDateHeader(date string) *time.Time {
 // if parsing fails, returns nil
 func ParseIfMatchSize(ctx *fiber.Ctx) *int64 {
 	ifMatchSizeHdr := ctx.Get("x-amz-if-match-size")
+	if ifMatchSizeHdr == "" {
+		return nil
+	}
 	ifMatchSize, err := strconv.ParseInt(ifMatchSizeHdr, 10, 64)
 	if err != nil {
 		debuglogger.Logf("failed to parse 'x-amz-if-match-size': %s", ifMatchSizeHdr)
