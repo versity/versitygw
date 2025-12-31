@@ -24,7 +24,7 @@ func malformedAuthError(format string, args ...any) APIError {
 	return APIError{
 		Code:           "AuthorizationHeaderMalformed",
 		Description:    fmt.Sprintf("The authorization header is malformed; %s", fmt.Sprintf(format, args...)),
-		HTTPStatusCode: http.StatusForbidden,
+		HTTPStatusCode: http.StatusBadRequest,
 	}
 }
 
