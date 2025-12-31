@@ -314,6 +314,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
+			Status:      http.StatusNoContent,
 		},
 	}, err
 }
