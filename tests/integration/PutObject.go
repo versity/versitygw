@@ -316,6 +316,7 @@ func PutObject_conditional_writes(s *S3Conf) error {
 		etagTrimmed := strings.Trim(*etag, `"`)
 		incorrectEtag := getPtr("incorrect_etag")
 		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
+		errNoSuchKey := s3err.GetAPIError(s3err.ErrNoSuchKey)
 
 		for i, test := range []struct {
 			obj         string
@@ -340,13 +341,13 @@ func PutObject_conditional_writes(s *S3Conf) error {
 			{obj, incorrectEtag, &etagTrimmed, errPrecond},
 			{obj, nil, &etagTrimmed, errPrecond},
 
-			// should ignore the precondition headers if
-			// an object with the given name doesn't exist
-			{"obj-1", incorrectEtag, etag, nil},
-			{"obj-2", etag, etag, nil},
-			{"obj-3", etag, incorrectEtag, nil},
-			{"obj-4", incorrectEtag, nil, nil},
-			{"obj-5", nil, etag, nil},
+			// should return NoSuchKey error, if any precondition
+			// header is present, but object doesn't exist
+			{"obj-1", incorrectEtag, etag, errNoSuchKey},
+			{"obj-2", etag, etag, errNoSuchKey},
+			{"obj-3", etag, incorrectEtag, errNoSuchKey},
+			{"obj-4", incorrectEtag, nil, errNoSuchKey},
+			{"obj-5", nil, etag, errNoSuchKey},
 		} {
 			res, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket:      &bucket,

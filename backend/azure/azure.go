@@ -2085,8 +2085,6 @@ func (az *Azure) evaluateWritePreconditions(ctx context.Context, bucket, object,
 		return nil
 	}
 	// call HeadObject to evaluate preconditions
-	// if object doesn't exist, move forward with the object creation
-	// otherwise return the error
 	_, err := az.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket:      bucket,
 		Key:         object,
@@ -2096,11 +2094,8 @@ func (az *Azure) evaluateWritePreconditions(ctx context.Context, bucket, object,
 	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
 		return s3err.GetAPIError(s3err.ErrPreconditionFailed)
 	}
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {

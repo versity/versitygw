@@ -1473,6 +1473,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	}
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
+	if errors.Is(err, fs.ErrNotExist) && (input.IfMatch != nil || input.IfNoneMatch != nil) {
+		return s3response.CompleteMultipartUploadResult{}, "", s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if err == nil {
 		err = backend.EvaluateMatchPreconditions(string(b), input.IfMatch, input.IfNoneMatch)
 		if err != nil {
@@ -2913,6 +2916,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 
 	// evaluate preconditions
 	etagBytes, err := p.meta.RetrieveAttribute(nil, *po.Bucket, *po.Key, etagkey)
+	if errors.Is(err, fs.ErrNotExist) && (po.IfMatch != nil || po.IfNoneMatch != nil) {
+		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
 	if err == nil {
 		err := backend.EvaluateMatchPreconditions(string(etagBytes), po.IfMatch, po.IfNoneMatch)
 		if err != nil {
