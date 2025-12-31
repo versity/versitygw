@@ -1,0 +1,84 @@
+name: skips check
+permissions: {}
+on: workflow_dispatch
+jobs:
+  skip-ticket-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if any skip descriptions are empty or point to closed issues/PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Find uncommented lines with "skip " (ignore lines whose first non-space char is #)
+          mapfile -t MATCHES < <(
+            git ls-files 'tests/test_*.sh' \
+              | xargs -r grep -nE '^[[:space:]]*[^#][[:space:]]*skip[[:space:]]*$' \
+              || true
+          )
+
+          if [ ${#MATCHES[@]} -ne 0 ]; then
+            echo "${#MATCHES[@]} skip(s) lack a description"
+            printf ' - %s\n' "${MATCHES[@]}"
+            exit 1
+          fi
+          
+          mapfile -t MATCHES < <(
+            git ls-files 'tests/test_*.sh' \
+              | xargs -r grep -nE '^[[:space:]]*[^#][[:space:]]*skip[[:space:]]*"https://github.com' \
+              || true
+          )
+
+          urls=()
+          for m in "${MATCHES[@]}"; do
+            # Extract first GitHub issue/PR URL on the line:
+            # supports /issues/123 and /pull/123 (with or without extra suffix)
+            url="$(echo "$m" | grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(issues|pull)/[0-9]+' | head -n1 || true)"
+            if [ -n "$url" ]; then
+              urls+=("$url")
+            fi
+          done
+
+          if [ ${#urls[@]} -eq 0 ]; then
+            echo "Found skip lines, but no recognizable GitHub issue/PR URLs."
+            exit 0
+          fi
+
+          echo "Found skip ticket URLs:"
+          printf ' - %s\n' "${urls[@]}"
+
+          closed=()
+
+          for url in "${urls[@]}"; do
+            # Parse owner/repo and number from URL
+            # url format: https://github.com/OWNER/REPO/issues/123 or /pull/123
+            path="${url#https://github.com/}"
+            owner="$(echo "$path" | cut -d/ -f1)"
+            repo="$(echo "$path"  | cut -d/ -f2)"
+            num="$(echo "$path"   | cut -d/ -f4)"
+
+            # Issues API works for both issues and PRs; state=open/closed
+            state="$(curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$owner/$repo/issues/$num" \
+              | python -c "import sys,json; print(json.load(sys.stdin).get('state',''))")"
+
+            echo "$url -> $state"
+            if [ "$state" = "closed" ]; then
+              closed+=("$url")
+            fi
+          done
+
+          if [ ${#closed[@]} -gt 0 ]; then
+            echo "::error::Closed tickets referenced by uncommented skip URLs:"
+            printf '::error:: - %s\n' "${closed[@]}"
+            exit 1
+          fi
+
+          echo "All referenced tickets are open. ✅"

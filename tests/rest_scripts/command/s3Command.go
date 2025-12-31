@@ -245,7 +245,7 @@ func (s *S3Command) addHeaderValues() error {
 	}
 	sort.Slice(s.headerValues,
 		func(i, j int) bool {
-			return s.headerValues[i][0] < s.headerValues[j][0]
+			return strings.ToLower(s.headerValues[i][0]) < strings.ToLower(s.headerValues[j][0])
 		})
 	return nil
 }

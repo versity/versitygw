@@ -36,9 +36,6 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 }
 
 @test "REST PutBucketTagging - tag key with control character" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1579"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -66,9 +63,6 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 }
 
 @test "REST PutBucketTagging - tag value with control character" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1579"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -121,9 +115,6 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 }
 
 @test "REST - PutBucketTagging - STREAMING-UNSIGNED-PAYLOAD-TRAILER fails" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1601"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -132,8 +123,74 @@ source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
   assert_success
 
   run send_openssl_go_command_expect_error "400" "InvalidRequest" "The value of x-amz-content-sha256 header is invalid" \
-    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
-    "-debug" "-logFile" "tagging.log" \
+    "-client" "openssl" "-commandType" "putBucketTagging" "-bucketName" "$bucket_name" "-payload" "abcdefg" "-checksumType" "sha256" \
     "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-tagKey" "key" "-tagValue" "value"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - no payload" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "MissingRequestBodyError" "Request Body is empty" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-contentMD5"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - invalid Content-MD5" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidDigest" "you specified" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" \
+    "-customContentMD5" "dummy" \
+    "-payload" "<Tagging xmlms=\"http://s3.amazonaws.com/doc/2006-03-01/\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - invalid Content-MD5 - invalid Content-MD5 itself returned" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1526"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_put_bucket_tagging_command_check_invalid_content_md5 "$bucket_name"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - incorrect Content-MD5" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "BadDigest" "did not match" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" "-incorrectContentMD5" \
+    "-payload" "<Tagging xmlms=\"http://s3.amazonaws.com/doc/2006-03-01/\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
+  assert_success
+}
+
+@test "REST - PutBucketTagging - missing Content-MD5" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header for this request" "-bucketName" "$bucket_name" "-query" "tagging=" "-method" "PUT" \
+    "-payload" "<Tagging xmlms=\"http://s3.amazonaws.com/doc/2006-03-01/\"><TagSet><Tag><Key>key</Key><Value>value</Value></Tag></TagSet></Tagging>"
   assert_success
 }

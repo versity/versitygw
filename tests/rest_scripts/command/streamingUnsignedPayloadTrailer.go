@@ -50,7 +50,7 @@ func (s *StreamingUnsignedPayloadWithTrailer) GetContentLength() (int64, error) 
 	if s.omitTrailer {
 		trailerLength = 4
 	} else if s.omitTrailerKey {
-		trailerLength = 1 + checksumValueLength + 4
+		trailerLength = 3 + checksumValueLength + 4
 	} else {
 		trailerLength = 2 + int64(len(s.checksumHeader)) + 1 + checksumValueLength + 4
 	}

@@ -36,7 +36,7 @@ export RUN_USERS=true
 
 @test "test_delete_user_no_access_key" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   run delete_user ""
   assert_failure
@@ -52,7 +52,7 @@ export RUN_USERS=true
 
 @test "test_user_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   test_file="test_file"
 
@@ -79,7 +79,7 @@ export RUN_USERS=true
 
 @test "test_userplus_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   test_file="test_file"
 
@@ -106,7 +106,7 @@ export RUN_USERS=true
 
 @test "test_user_delete_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   test_file="test_file"
 
@@ -133,7 +133,7 @@ export RUN_USERS=true
 
 @test "test_admin_put_get_object" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   test_file="test_file"
 
@@ -164,7 +164,7 @@ export RUN_USERS=true
 
 @test "test_user_create_multipart_upload" {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
-    skip
+    skip "skipping versitygw-specific users tests"
   fi
   test_file="test_file"
 
