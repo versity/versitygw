@@ -46,7 +46,7 @@ func TestS3ApiRouter_Init(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.sa.Init(tt.args.app, tt.args.be, tt.args.iam, nil, nil, nil, nil, false, "us-east-1", middlewares.RootUserConfig{})
+			tt.sa.Init(tt.args.app, tt.args.be, tt.args.iam, nil, nil, nil, nil, false, "us-east-1", "", middlewares.RootUserConfig{})
 		})
 	}
 }

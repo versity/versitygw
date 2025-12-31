@@ -352,6 +352,10 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			IfMatch:           ifMatch,
 			IfNoneMatch:       ifNoneMatch,
 		})
+	if err == nil {
+		objUrl := utils.GenerateObjectLocation(ctx, c.virtualDomain, bucket, key)
+		res.Location = &objUrl
+	}
 	return &Response{
 		Data: res,
 		Headers: map[string]*string{

@@ -887,3 +887,26 @@ func ValidateVersionId(versionId string) error {
 
 	return nil
 }
+
+// GenerateObjectLocation generates the object location path-styled or host-styled
+// depending on the gateway configuration
+func GenerateObjectLocation(ctx *fiber.Ctx, virtualDomain, bucket, object string) string {
+	scheme := ctx.Protocol()
+	host := ctx.Hostname()
+
+	// escape the object name
+	obj := url.PathEscape(object)
+
+	if virtualDomain != "" && strings.Contains(host, virtualDomain) {
+		// the host already contains the bucket name
+		return fmt.Sprintf("%s://%s/%s", scheme, host, obj)
+	}
+
+	return fmt.Sprintf(
+		"%s://%s/%s/%s",
+		scheme,
+		host,
+		bucket,
+		obj,
+	)
+}

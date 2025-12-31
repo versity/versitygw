@@ -123,7 +123,7 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, root)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root)
 
 	return server, nil
 }
