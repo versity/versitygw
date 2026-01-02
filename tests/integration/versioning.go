@@ -3400,12 +3400,20 @@ func Versioning_PutGetDeleteObjectTagging_success(s *S3Conf) error {
 		}
 
 		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		r, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 			Bucket:    &bucket,
 			Key:       &obj,
 			VersionId: versionId,
 		})
 		cancel()
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound))
+		if err != nil {
+			return err
+		}
+
+		if len(r.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", r.TagSet)
+		}
+
+		return nil
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }

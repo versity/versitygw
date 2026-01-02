@@ -778,6 +778,7 @@ func TestFullFlow(ts *TestState) {
 	TestDeleteObjects(ts)
 	TestCopyObject(ts)
 	TestPutObjectTagging(ts)
+	TestGetObjectTagging(ts)
 	TestDeleteObjectTagging(ts)
 	TestCreateMultipartUpload(ts)
 	TestUploadPart(ts)

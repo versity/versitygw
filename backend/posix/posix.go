@@ -3785,10 +3785,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 		var tagCount *int32
 		tags, err := p.getAttrTags(bucket, object, versionId)
-		if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+		if err != nil {
 			return nil, err
 		}
-		if tags != nil {
+		if len(tags) != 0 {
 			tgCount := int32(len(tags))
 			tagCount = &tgCount
 		}
@@ -3865,10 +3865,10 @@ func (p *Posix) GetObject(_ context.Context, input *s3.GetObjectInput) (*s3.GetO
 
 	var tagCount *int32
 	tags, err := p.getAttrTags(bucket, object, versionId)
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+	if err != nil {
 		return nil, err
 	}
-	if tags != nil {
+	if len(tags) != 0 {
 		tgCount := int32(len(tags))
 		tagCount = &tgCount
 	}
@@ -4090,10 +4090,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 
 	var tagCount *int32
 	tags, err := p.getAttrTags(bucket, object, versionId)
-	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)) {
+	if err != nil {
 		return nil, err
 	}
-	if tags != nil {
+	if len(tags) != 0 {
 		tc := int32(len(tags))
 		tagCount = &tc
 	}
@@ -4874,6 +4874,10 @@ func (p *Posix) getAttrTags(bucket, object, versionId string) (map[string]string
 		return nil, s3err.GetAPIError(s3err.ErrNoSuchKey)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
+		if object != "" {
+			// return empty tag set for object tagging
+			return tags, nil
+		}
 		return nil, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)
 	}
 	if err != nil {
