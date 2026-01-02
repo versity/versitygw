@@ -594,6 +594,38 @@ func EvaluateMatchPreconditions(etag string, ifMatch, ifNoneMatch *string) error
 	return nil
 }
 
+// EvaluateObjectPutPreconditions evaluates if-match and if-none-match preconditions
+// for object PUT(PutObject, CompleteMultipartUpload) actions
+func EvaluateObjectPutPreconditions(etag string, ifMatch, ifNoneMatch *string, objExists bool) error {
+	if ifMatch == nil && ifNoneMatch == nil {
+		return nil
+	}
+
+	if ifNoneMatch != nil && *ifNoneMatch != "*" {
+		return s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
+	if ifNoneMatch != nil && ifMatch != nil {
+		return s3err.GetAPIError(s3err.ErrNotImplemented)
+	}
+
+	if ifNoneMatch != nil && objExists {
+		return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+	}
+
+	if ifMatch != nil && !objExists {
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+
+	etag = strings.Trim(etag, `"`)
+
+	if ifMatch != nil && *ifMatch != etag {
+		return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+	}
+
+	return nil
+}
+
 type ObjectDeletePreconditions struct {
 	IfMatch            *string
 	IfMatchLastModTime *time.Time

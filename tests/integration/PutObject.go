@@ -317,6 +317,7 @@ func PutObject_conditional_writes(s *S3Conf) error {
 		incorrectEtag := getPtr("incorrect_etag")
 		errPrecond := s3err.GetAPIError(s3err.ErrPreconditionFailed)
 		errNoSuchKey := s3err.GetAPIError(s3err.ErrNoSuchKey)
+		errNotImplemented := s3err.GetAPIError(s3err.ErrNotImplemented)
 
 		for i, test := range []struct {
 			obj         string
@@ -325,29 +326,33 @@ func PutObject_conditional_writes(s *S3Conf) error {
 			err         error
 		}{
 			{obj, etag, nil, nil},
-			{obj, etag, etag, errPrecond},
-			{obj, etag, incorrectEtag, nil},
-			{obj, incorrectEtag, incorrectEtag, errPrecond},
-			{obj, incorrectEtag, etag, errPrecond},
+			{obj, etag, etag, errNotImplemented},
+			{obj, etag, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, etag, errNotImplemented},
 			{obj, incorrectEtag, nil, errPrecond},
-			{obj, nil, incorrectEtag, nil},
-			{obj, nil, etag, errPrecond},
+			{obj, nil, incorrectEtag, errNotImplemented},
+			{obj, nil, etag, errNotImplemented},
+			{obj, nil, getPtr("*"), errPrecond},
+			{obj, etag, getPtr("*"), errNotImplemented},
 			{obj, nil, nil, nil},
 
 			// precondition headers without quotes
 			{obj, &etagTrimmed, nil, nil},
-			{obj, &etagTrimmed, &etagTrimmed, errPrecond},
-			{obj, &etagTrimmed, incorrectEtag, nil},
-			{obj, incorrectEtag, &etagTrimmed, errPrecond},
-			{obj, nil, &etagTrimmed, errPrecond},
+			{obj, &etagTrimmed, &etagTrimmed, errNotImplemented},
+			{obj, &etagTrimmed, incorrectEtag, errNotImplemented},
+			{obj, incorrectEtag, &etagTrimmed, errNotImplemented},
+			{obj, nil, &etagTrimmed, errNotImplemented},
 
-			// should return NoSuchKey error, if any precondition
-			// header is present, but object doesn't exist
-			{"obj-1", incorrectEtag, etag, errNoSuchKey},
-			{"obj-2", etag, etag, errNoSuchKey},
-			{"obj-3", etag, incorrectEtag, errNoSuchKey},
-			{"obj-4", incorrectEtag, nil, errNoSuchKey},
-			{"obj-5", nil, etag, errNoSuchKey},
+			// object deson't exist tests
+			{"obj-1", incorrectEtag, etag, errNotImplemented},
+			{"obj-2", etag, etag, errNotImplemented},
+			{"obj-3", etag, nil, errNoSuchKey},
+			{"obj-4", etag, incorrectEtag, errNotImplemented},
+			{"obj-5", incorrectEtag, nil, errNoSuchKey},
+			{"obj-6", nil, etag, errNotImplemented},
+			{"obj-7", nil, getPtr("*"), nil},
+			{"obj-8", etag, getPtr("*"), errNotImplemented},
 		} {
 			res, err := putObjectWithData(0, &s3.PutObjectInput{
 				Bucket:      &bucket,
