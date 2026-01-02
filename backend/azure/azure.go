@@ -2085,17 +2085,20 @@ func (az *Azure) evaluateWritePreconditions(ctx context.Context, bucket, object,
 		return nil
 	}
 	// call HeadObject to evaluate preconditions
-	_, err := az.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket:      bucket,
-		Key:         object,
-		IfMatch:     ifMatch,
-		IfNoneMatch: ifNoneMatch,
+	res, err := az.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: bucket,
+		Key:    object,
 	})
-	if errors.Is(err, s3err.GetAPIError(s3err.ErrNotModified)) {
-		return s3err.GetAPIError(s3err.ErrPreconditionFailed)
+	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
+		return err
 	}
 
-	return err
+	var etag string
+	if res != nil {
+		etag = backend.GetStringFromPtr(res.ETag)
+	}
+
+	return backend.EvaluateObjectPutPreconditions(etag, ifMatch, ifNoneMatch, !errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)))
 }
 
 func getAclFromMetadata(meta map[string]*string, key key) (*auth.ACL, error) {
