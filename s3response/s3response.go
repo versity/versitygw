@@ -730,6 +730,6 @@ type LocationConstraint struct {
 }
 
 type CreateBucketConfiguration struct {
-	LocationConstraint string
+	LocationConstraint *string
 	TagSet             []types.Tag `xml:"Tags>Tag"`
 }

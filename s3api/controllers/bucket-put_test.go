@@ -700,7 +700,7 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 	}
 
 	invLocConstBody, err := xml.Marshal(s3response.CreateBucketConfiguration{
-		LocationConstraint: "us-west-1",
+		LocationConstraint: utils.GetStringPtr("us-west-1"),
 	})
 	assert.NoError(t, err)
 

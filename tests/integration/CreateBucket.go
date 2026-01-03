@@ -342,16 +342,27 @@ func CreateBucket_invalid_location_constraint(s *S3Conf) error {
 			region = types.BucketLocationConstraintUsWest1
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: &bucket,
-			CreateBucketConfiguration: &types.CreateBucketConfiguration{
-				LocationConstraint: region,
-			},
-		})
-		cancel()
+		createBucket := func(region types.BucketLocationConstraint) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+				Bucket: &bucket,
+				CreateBucketConfiguration: &types.CreateBucketConfiguration{
+					LocationConstraint: region,
+				},
+			})
+			cancel()
 
-		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint))
+			return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint))
+		}
+
+		for _, lConstraint := range []types.BucketLocationConstraint{region, "us-east-1"} {
+			err := createBucket(lConstraint)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 }
 
