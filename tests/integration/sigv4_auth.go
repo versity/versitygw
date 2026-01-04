@@ -563,3 +563,36 @@ func Authentication_signature_error_incorrect_secret_key(s *S3Conf) error {
 		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrSignatureDoesNotMatch))
 	})
 }
+
+func Authentication_with_expect_header(s *S3Conf) error {
+	testName := "Authentication_with_expect_header"
+	bucket, object := getBucketName(), "object"
+	return authHandler(s, &authConfig{
+		testName: testName,
+		method:   http.MethodPut,
+		body:     []byte("dummy data"),
+		service:  "s3",
+		date:     time.Now(),
+		path:     fmt.Sprintf("%s/%s", bucket, object),
+		headers: map[string]string{
+			"Expect": "100-continue",
+		},
+	}, func(req *http.Request) error {
+		err := setup(s, bucket)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("expected the response status to be 200, instead got %v", resp.StatusCode)
+		}
+
+		err = teardown(s, bucket)
+		return err
+	})
+}

@@ -8,7 +8,8 @@ var IgnoredHeaders = Rules{
 			// some clients use user-agent in signed headers
 			// "User-Agent":      struct{}{},
 			"X-Amzn-Trace-Id": struct{}{},
-			"Expect":          struct{}{},
+			// Expect might appear in signed headers
+			// "Expect":          struct{}{},
 		},
 	},
 }
