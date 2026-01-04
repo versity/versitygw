@@ -72,6 +72,9 @@ func (c S3ApiController) DeleteObjectTagging(ctx *fiber.Ctx) (*Response, error) 
 
 	err = c.be.DeleteObjectTagging(ctx.Context(), bucket, key, versionId)
 	return &Response{
+		Headers: map[string]*string{
+			"x-amz-version-id": &versionId,
+		},
 		MetaOpts: &MetaOptions{
 			Status:      http.StatusNoContent,
 			BucketOwner: parsedAcl.Owner,

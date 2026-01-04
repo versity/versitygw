@@ -20,12 +20,14 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/oklog/ulid/v2"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 )
 
 func TestS3ApiController_DeleteObjectTagging(t *testing.T) {
+	versionId := ulid.Make().String()
 	tests := []struct {
 		name   string
 		input  testInput
@@ -65,11 +67,17 @@ func TestS3ApiController_DeleteObjectTagging(t *testing.T) {
 		{
 			name: "backend returns error",
 			input: testInput{
+				queries: map[string]string{
+					"versionId": versionId,
+				},
 				locals: defaultLocals,
 				beErr:  s3err.GetAPIError(s3err.ErrInvalidRequest),
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-version-id": &versionId,
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 						Status:      http.StatusNoContent,
@@ -83,9 +91,15 @@ func TestS3ApiController_DeleteObjectTagging(t *testing.T) {
 			name: "successful response",
 			input: testInput{
 				locals: defaultLocals,
+				queries: map[string]string{
+					"versionId": versionId,
+				},
 			},
 			output: testOutput{
 				response: &Response{
+					Headers: map[string]*string{
+						"x-amz-version-id": &versionId,
+					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",
 						Status:      http.StatusNoContent,
