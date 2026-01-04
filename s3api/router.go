@@ -1048,6 +1048,12 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrGetUploadsWithKey)), metrics.ActionUndetected, services),
 	)
 
+	// object operation with '?versions' is rejected with a specific error
+	objectRouter.Get("",
+		middlewares.MatchQueryArgs("versions"),
+		controllers.ProcessHandlers(ctrl.HandleErrorRoute(s3err.GetAPIError(s3err.ErrVersionsWithKey)), metrics.ActionUndetected, services),
+	)
+
 	// object GET operation is not allowed with copy source
 	objectRouter.Get("/",
 		middlewares.MatchHeader("X-Amz-Copy-Source"),

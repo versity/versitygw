@@ -189,6 +189,23 @@ func RouterCopySourceNotAllowed(s *S3Conf) error {
 	})
 }
 
+func RouterListVersionsWithKey(s *S3Conf) error {
+	testName := "RouterListVersionsWithKey"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := http.NewRequest(http.MethodGet, s.endpoint+"/bucket/object?versions", nil)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrVersionsWithKey))
+	})
+}
+
 // CORS middleware tests
 func CORSMiddleware_invalid_method(s *S3Conf) error {
 	testName := "CORSMiddleware_invalid_method"

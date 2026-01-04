@@ -1094,6 +1094,7 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterPUTObjectOnlyUploadId)
 	ts.Run(RouterGetUploadsWithKey)
 	ts.Run(RouterCopySourceNotAllowed)
+	ts.Run(RouterListVersionsWithKey)
 }
 
 func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
@@ -1776,6 +1777,7 @@ func GetIntTests() IntTests {
 		"RouterPUTObjectOnlyUploadId":                                              RouterPUTObjectOnlyUploadId,
 		"RouterGetUploadsWithKey":                                                  RouterGetUploadsWithKey,
 		"RouterCopySourceNotAllowed":                                               RouterCopySourceNotAllowed,
+		"RouterListVersionsWithKey":                                                RouterListVersionsWithKey,
 		"UnsignedStreaminPayloadTrailer_malformed_trailer":                         UnsignedStreaminPayloadTrailer_malformed_trailer,
 		"UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length":       UnsignedStreamingPayloadTrailer_missing_invalid_dec_content_length,
 		"UnsignedStreamingPayloadTrailer_invalid_trailing_checksum":                UnsignedStreamingPayloadTrailer_invalid_trailing_checksum,
