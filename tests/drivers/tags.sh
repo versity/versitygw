@@ -18,7 +18,7 @@ check_tags_empty() {
   if ! check_param_count_v2 "command type" 1 $#; then
     return 1
   fi
-  if [[ $1 == 'aws' ]]; then
+  if [ "$1" == 'aws' ] || [ "$1" == 's3api' ]; then
     # shellcheck disable=SC2154
     if [[ $tags == "" ]]; then
       return 0

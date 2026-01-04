@@ -48,14 +48,19 @@ func GetObjectTagging_unset_tags(s *S3Conf) error {
 			return err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+		res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 			Bucket: &bucket,
 			Key:    &obj,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrBucketTaggingNotFound)); err != nil {
+		if err != nil {
 			return err
 		}
+
+		if len(res.TagSet) != 0 {
+			return fmt.Errorf("expected empty tag set, instead got %v", res.TagSet)
+		}
+
 		return nil
 	})
 }
