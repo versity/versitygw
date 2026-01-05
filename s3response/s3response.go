@@ -726,7 +726,7 @@ type Checksum struct {
 // LocationConstraint represents the GetBucketLocation response
 type LocationConstraint struct {
 	XMLName xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
-	Value   string   `xml:",chardata"`
+	Value   *string  `xml:",chardata"`
 }
 
 type CreateBucketConfiguration struct {
