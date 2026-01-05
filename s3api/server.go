@@ -41,16 +41,17 @@ const (
 )
 
 type S3ApiServer struct {
-	app           *fiber.App
-	backend       backend.Backend
-	router        *S3ApiRouter
-	port          string
-	cert          *tls.Certificate
-	quiet         bool
-	readonly      bool
-	keepAlive     bool
-	health        string
-	virtualDomain string
+	app             *fiber.App
+	backend         backend.Backend
+	router          *S3ApiRouter
+	port            string
+	cert            *tls.Certificate
+	quiet           bool
+	readonly        bool
+	keepAlive       bool
+	health          string
+	virtualDomain   string
+	corsAllowOrigin string
 }
 
 func New(
@@ -123,7 +124,7 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root)
+	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root, server.corsAllowOrigin)
 
 	return server, nil
 }
@@ -163,6 +164,12 @@ func WithHostStyle(virtualDomain string) Option {
 // WithKeepAlive enables the server keep alive
 func WithKeepAlive() Option {
 	return func(s *S3ApiServer) { s.keepAlive = true }
+}
+
+// WithCORSAllowOrigin sets the default CORS Access-Control-Allow-Origin value.
+// This is applied when no bucket CORS configuration exists, and for admin APIs.
+func WithCORSAllowOrigin(origin string) Option {
+	return func(s *S3ApiServer) { s.corsAllowOrigin = origin }
 }
 
 func (sa *S3ApiServer) Serve() (err error) {

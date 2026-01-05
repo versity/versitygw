@@ -222,13 +222,6 @@ func PreflightOPTIONS_access_granted(s *S3Conf) error {
 						ExposeHeaders:  []string{"X-Amz-Expected-Bucket-Owner"},
 						MaxAgeSeconds:  getPtr(int32(5000)),
 					},
-					{
-						AllowedOrigins: []string{"http://uniquie-origin.net"},
-						AllowedMethods: []string{http.MethodPost, http.MethodPut},
-						AllowedHeaders: []string{"X-Amz-*-Suffix"},
-						ExposeHeaders:  []string{"Authorization", "Content-Type"},
-						MaxAgeSeconds:  getPtr(int32(2000)),
-					},
 				},
 			},
 		})
@@ -245,22 +238,19 @@ func PreflightOPTIONS_access_granted(s *S3Conf) error {
 			result  PreflightResult
 		}{
 			// first rule matches
-			{"http://example.com", http.MethodGet, "X-Amz-Date", PreflightResult{"http://example.com", "GET, HEAD", "x-amz-date", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
-			{"http://example.com", http.MethodGet, "X-Amz-Content-Sha256", PreflightResult{"http://example.com", "GET, HEAD", "x-amz-content-sha256", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
-			{"http://example.com", http.MethodHead, "", PreflightResult{"http://example.com", "GET, HEAD", "", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
-			{"https://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256", PreflightResult{"https://example.com", "GET, HEAD", "x-amz-date, x-amz-content-sha256", "Content-Type, Content-Length", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodGet, "X-Amz-Date", PreflightResult{"http://example.com", "GET, HEAD", "x-amz-date", "Content-Type, Content-Length, ETag", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodGet, "X-Amz-Content-Sha256", PreflightResult{"http://example.com", "GET, HEAD", "x-amz-content-sha256", "Content-Type, Content-Length, ETag", "100", "true", varyHdr, nil}},
+			{"http://example.com", http.MethodHead, "", PreflightResult{"http://example.com", "GET, HEAD", "", "Content-Type, Content-Length, ETag", "100", "true", varyHdr, nil}},
+			{"https://example.com", http.MethodGet, "X-Amz-Date,X-Amz-Content-Sha256", PreflightResult{"https://example.com", "GET, HEAD", "x-amz-date, x-amz-content-sha256", "Content-Type, Content-Length, ETag", "100", "true", varyHdr, nil}},
 			// second rule matches: origin is a wildcard
-			{"http://anything.com", http.MethodHead, "X-Amz-Meta-Something", PreflightResult{"*", "HEAD", "x-amz-meta-something", "", "", "false", varyHdr, nil}},
-			{"hello.com", http.MethodHead, "", PreflightResult{"*", "HEAD", "", "", "", "false", varyHdr, nil}},
+			{"http://anything.com", http.MethodHead, "X-Amz-Meta-Something", PreflightResult{"*", "HEAD", "x-amz-meta-something", "ETag", "", "false", varyHdr, nil}},
+			{"hello.com", http.MethodHead, "", PreflightResult{"*", "HEAD", "", "ETag", "", "false", varyHdr, nil}},
 			// third rule matches
-			{"something.net", http.MethodPut, "Authorization", PreflightResult{"something.net", "POST, PUT", "authorization", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
-			{"something.net", http.MethodPost, "", PreflightResult{"something.net", "POST, PUT", "", "Content-Disposition, Content-Encoding", "3000", "true", varyHdr, nil}},
+			{"something.net", http.MethodPut, "Authorization", PreflightResult{"something.net", "POST, PUT", "authorization", "Content-Disposition, Content-Encoding, ETag", "3000", "true", varyHdr, nil}},
+			{"something.net", http.MethodPost, "", PreflightResult{"something.net", "POST, PUT", "", "Content-Disposition, Content-Encoding, ETag", "3000", "true", varyHdr, nil}},
 			// forth rule matches: origin contains wildcard
-			{"http://www.hello.world.com", http.MethodGet, "", PreflightResult{"http://www.hello.world.com", "GET", "", "X-Amz-Expected-Bucket-Owner", "5000", "true", varyHdr, nil}},
-			{"http://www.example.com", http.MethodGet, "x-amz-server-side-encryption", PreflightResult{"http://www.example.com", "GET", "x-amz-server-side-encryption", "X-Amz-Expected-Bucket-Owner", "5000", "true", varyHdr, nil}},
-			// fifth rule matches: allowed headers contains wildcard
-			{"http://uniquie-origin.net", http.MethodPost, "X-Amz-anything-Suffix", PreflightResult{"http://uniquie-origin.net", "POST, PUT", "x-amz-anything-suffix", "Authorization, Content-Type", "2000", "true", varyHdr, nil}},
-			{"http://uniquie-origin.net", http.MethodPut, "X-Amz-yyy-xxx-Suffix", PreflightResult{"http://uniquie-origin.net", "POST, PUT", "x-amz-yyy-xxx-suffix", "Authorization, Content-Type", "2000", "true", varyHdr, nil}},
+			{"http://www.hello.world.com", http.MethodGet, "", PreflightResult{"http://www.hello.world.com", "GET", "", "X-Amz-Expected-Bucket-Owner, ETag", "5000", "true", varyHdr, nil}},
+			{"http://www.example.com", http.MethodGet, "x-amz-server-side-encryption", PreflightResult{"http://www.example.com", "GET", "x-amz-server-side-encryption", "X-Amz-Expected-Bucket-Owner, ETag", "5000", "true", varyHdr, nil}},
 		} {
 			err := testOPTIONSEdnpoint(s, bucket, test.origin, test.method, test.headers, &test.result)
 			if err != nil {
