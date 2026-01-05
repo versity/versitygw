@@ -34,9 +34,14 @@ func GetBucketLocation_success(s *S3Conf) error {
 			return err
 		}
 
-		if string(resp.LocationConstraint) != s.awsRegion {
+		expectedLocConstraint := s.awsRegion
+		if s.awsRegion == "us-east-1" {
+			expectedLocConstraint = ""
+		}
+
+		if string(resp.LocationConstraint) != expectedLocConstraint {
 			return fmt.Errorf("expected bucket region to be %v, instead got %v",
-				s.awsRegion, resp.LocationConstraint)
+				expectedLocConstraint, resp.LocationConstraint)
 		}
 
 		return nil

@@ -1303,14 +1303,40 @@ func TestS3ApiController_GetBucketLocation(t *testing.T) {
 			},
 		},
 		{
-			name: "successful response",
+			name: "successful response us-east-1",
 			input: testInput{
 				locals: defaultLocals,
 			},
 			output: testOutput{
 				response: &Response{
 					Data: s3response.LocationConstraint{
-						Value: "us-east-1",
+						Value: nil,
+					},
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyIsRoot: true,
+					utils.ContextKeyParsedAcl: auth.ACL{
+						Owner: "root",
+					},
+					utils.ContextKeyAccount: auth.Account{
+						Access: "root",
+						Role:   auth.RoleAdmin,
+					},
+					utils.ContextKeyRegion: "us-east-2",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					Data: s3response.LocationConstraint{
+						Value: utils.GetStringPtr("us-east-2"),
 					},
 					MetaOpts: &MetaOptions{
 						BucketOwner: "root",

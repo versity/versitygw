@@ -658,10 +658,14 @@ func (c S3ApiController) GetBucketLocation(ctx *fiber.Ctx) (*Response, error) {
 
 	// pick up configured region from locals (set by router middleware)
 	region, _ := ctx.Locals("region").(string)
+	value := &region
+	if region == "us-east-1" {
+		value = nil
+	}
 
 	return &Response{
 		Data: s3response.LocationConstraint{
-			Value: region,
+			Value: value,
 		},
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
