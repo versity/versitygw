@@ -87,7 +87,7 @@ get_bucket_policy_s3cmd() {
     return 1
   fi
 
-  if ! info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1" 2>&1); then
+  if ! info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" info "s3://$1" 2>&1); then
     log 2 "error getting bucket policy: $info"
     return 1
   fi

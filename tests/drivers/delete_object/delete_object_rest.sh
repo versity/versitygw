@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/commands/list_objects_v2.sh
+source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/xml.sh
 source ./tests/util/util_legal_hold.sh
 
@@ -101,4 +102,51 @@ delete_object_version_with_or_without_retention_base64() {
   fi
   log 5 "successfully deleted version with key '$key', id '$id'"
   return 0
+}
+
+put_object_with_lock_mode_and_delete_latest_version() {
+  if ! check_param_count_v2 "file, bucket, key, later time" 4 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command "200" \
+    "-bucketName" "$2" "-objectKey" "$3" "-payloadFile" "$1" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:GOVERNANCE,x-amz-object-lock-retain-until-date:$4"; then
+      log 2 "error sending put object command with object lock"
+      return 1
+  fi
+  if ! send_rest_go_command_callback "200" "parse_latest_version_id" \
+      "-method" "GET" "-bucketName" "$2" "-query" "versions="; then
+    log 2 "error checking versions before deletion"
+    return 1
+  fi
+  if ! delete_object_version_rest_expect_error "$2" "$3" "$version_id" "403" "AccessDenied" "object protected by object lock"; then
+    log 2 "shouldn't have been able to delete"
+    return 1
+  fi
+  sleep 15
+  if ! delete_object_version "$2" "$3" "$version_id"; then
+    log 2 "error deleting object version"
+    return 1
+  fi
+  return 0
+}
+
+attempt_to_delete_version_after_retention_policy() {
+  if ! check_param_count_v2 "file, bucket name, key" 3 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command "200" \
+    "-bucketName" "$2" "-objectKey" "$3" "-payloadFile" "$1" "-method" "PUT" "-contentMD5"; then
+      log 2 "error sending put object command"
+      return 1
+  fi
+  if ! send_rest_go_command_callback "200" "parse_latest_version_id" \
+      "-method" "GET" "-bucketName" "$2" "-query" "versions="; then
+    log 2 "error checking versions before deletion"
+    return 1
+  fi
+  if ! delete_object_version_rest_expect_error "$2" "$3" "$version_id" "403" "AccessDenied" "object protected by object lock"; then
+    log 2 "shouldn't have been able to delete"
+    return 1
+  fi
 }

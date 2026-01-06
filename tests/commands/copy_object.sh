@@ -28,7 +28,7 @@ copy_object() {
     error=$(send_command aws --no-verify-ssl s3api copy-object --copy-source "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
     log 5 "s3cmd ${S3CMD_OPTS[*]} --no-check-certificate cp s3://$2 s3://$3/$4"
-    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate cp "s3://$2" s3://"$3/$4" 2>&1) || exit_code=$?
+    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" cp "s3://$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(send_command mc --insecure cp "$MC_ALIAS/$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
   else

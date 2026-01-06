@@ -289,3 +289,31 @@ check_for_header_key_and_value() {
   log 2 "no header key '$2' found"
   return 1
 }
+
+check_argument_name_and_value() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_error_parameter "$1" "ArgumentName" "$argument_name"; then
+    log 2 "error checking 'ArgumentName' parameter"
+    return 1
+  fi
+  if ! check_error_parameter "$1" "ArgumentValue" "$argument_value"; then
+    log 2 "error checking 'ArgumentValue' parameter"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_expect_error_with_arg_name_value() {
+  if ! check_param_count_gt "response code, error code, message, arg name, arg value, params" 5 $#; then
+    return 1
+  fi
+  argument_name=$4
+  argument_value=$5
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_argument_name_and_value" "${@:6}"; then
+    log 2 "error checking error response values"
+    return 1
+  fi
+  return 0
+}

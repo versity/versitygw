@@ -21,8 +21,10 @@ source ./tests/setup.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/head_object/head_object_rest.sh
+source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 source ./tests/util/util_public_access_block.sh
+source ./tests/util/util_time.sh
 
 test_file="test_file"
 export RUN_USERS=true
@@ -460,5 +462,104 @@ export RUN_USERS=true
   assert_success
 
   run head_object_check_header_key_and_value "$bucket_name" "$test_file" "Content-Disposition" "dummy"
+  assert_success
+}
+
+@test "REST - PutObject - x-amz-object-lock-retain-until-date - invalid format" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidArgument" "must be provided in ISO 8601 format" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:abc,x-amz-object-lock-retain-until-date:abc"
+  assert_success
+}
+
+@test "REST - PutObject - x-amz-object-lock-retain-until-date - earlier date" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1734"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  earlier_date="2025-12-25T12:00:00Z"
+  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "must be in the future" \
+    "x-amz-object-lock-retain-until-date" "$earlier_date" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:abc,x-amz-object-lock-retain-until-date:$earlier_date"
+  assert_success
+}
+
+@test "REST - PutObject - x-amz-object-lock-mode - invalid mode" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1736"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run get_time_seconds_in_future 10
+  assert_success
+  later_date=${output}Z
+
+  lock_mode="abc"
+  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "Unknown wormMode directive" \
+    "x-amz-object-lock-mode" "$lock_mode" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:$lock_mode,x-amz-object-lock-retain-until-date:$later_date"
+  assert_success
+}
+
+@test "TEST - REST - PutObject - not allowed without content-MD5 with lock configuration" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1740"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
+  assert_success
+
+  run put_object_lock_configuration_rest "$bucket_name" "RETENTION_MODE=GOVERNANCE RETENTION_RULE=true RETENTION_DAYS=1"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "is required for Put Object requests with Object Lock parameters" \
+    "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT"
+  assert_success
+}
+
+@test "REST - PutObject - object lock - success" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_bucket_versioning_rest "$bucket_name" "Enabled"
+  assert_success
+
+  run put_object_lock_configuration_rest "$bucket_name" ""
+  assert_success
+
+  run get_time_seconds_in_future 15
+  assert_success
+  later_date=${output}Z
+
+  run put_object_with_lock_mode_and_delete_latest_version "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$later_date"
   assert_success
 }

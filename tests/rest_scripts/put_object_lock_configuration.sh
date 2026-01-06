@@ -34,17 +34,23 @@ omit_content_md5="${OMIT_CONTENT_MD5:=false}"
 
   payload="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <ObjectLockConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">
-   <ObjectLockEnabled>Enabled</ObjectLockEnabled>"
+  <ObjectLockEnabled>Enabled</ObjectLockEnabled>"
 if [ "$retention_rule" != "false" ]; then
-  payload+="<Rule>
-    <DefaultRetention>
-      <Days>$retention_days<Days>
-      <Mode>$retention_mode</Mode>
-      <Years>$retention_years</Years>
-    </DefaultRetention>
+  payload+="
+  <Rule>
+    <DefaultRetention>"
+  if [ "$retention_days" != "" ]; then
+    payload+="<Days>$retention_days</Days>"
+  fi
+  payload+="<Mode>$retention_mode</Mode>"
+  if [ "$retention_years" != "" ]; then
+    payload+="<Years>$retention_years</Years>"
+  fi
+  payload+="</DefaultRetention>
   </Rule>"
 fi
-  payload+="</ObjectLockConfiguration>"
+  payload+="
+</ObjectLockConfiguration>"
 
 payload_hash="$(echo -n "$payload" | sha256sum | awk '{print $1}')"
 if [ "$omit_content_md5" == "false" ]; then
