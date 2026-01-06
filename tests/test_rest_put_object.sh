@@ -462,3 +462,32 @@ export RUN_USERS=true
   run head_object_check_header_key_and_value "$bucket_name" "$test_file" "Content-Disposition" "dummy"
   assert_success
 }
+
+@test "REST - PutObject - x-amz-object-lock-retain-until-date - invalid format" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidArgument" "must be provided in ISO 8601 format" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:abc,x-amz-object-lock-retain-until-date:abc"
+  assert_success
+}
+
+@test "REST - PutObject - x-amz-object-lock-retain-until-date - earlier date" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  earlier_date="2025-12-25T12:00:00Z"
+  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "must be in the future" \
+    "x-amz-object-lock-retain-until-date" "$earlier_date" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-method" "PUT" "-contentMD5" "-signedParams" "x-amz-object-lock-mode:abc,x-amz-object-lock-retain-until-date:$earlier_date"
+  assert_success
+}
