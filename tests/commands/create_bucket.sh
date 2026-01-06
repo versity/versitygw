@@ -36,7 +36,7 @@ create_bucket() {
     log 5 "s3cmd ${S3CMD_OPTS[*]} --no-check-certificate mb s3://$2"
     error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate mb s3://"$2" 2>&1) || exit_code=$?
   elif [[ $1 == "mc" ]]; then
-    error=$(send_command mc --insecure mb "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
+    error=$(send_command mc --insecure mb "$MC_ALIAS"/"$2" --region "$AWS_REGION" 2>&1) || exit_code=$?
   else
     log 2 "invalid command type $1"
     return 1

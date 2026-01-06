@@ -114,7 +114,7 @@ run_versity_app_s3() {
   if ! check_param_count "run_versity_app_s3" "versityid app index" 1 $#; then
     exit 1
   fi
-  base_command=("$VERSITY_EXE" --access="$AWS_ACCESS_KEY_ID" --secret="$AWS_SECRET_ACCESS_KEY")
+  base_command=("$VERSITY_EXE" --access="$AWS_ACCESS_KEY_ID" --secret="$AWS_SECRET_ACCESS_KEY" --region="$AWS_REGION")
   if [ -n "$CERT" ] && [ -n "$KEY" ]; then
     base_command+=(--cert "$CERT" --key "$KEY")
   fi
