@@ -47,5 +47,6 @@ list_object_versions_rest() {
     return 1
   fi
   versions=$(cat "$TEST_FILE_FOLDER/object_versions.txt")
+  log 5 "versions: $versions"
   return 0
 }

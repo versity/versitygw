@@ -27,6 +27,28 @@ put_object_lock_configuration() {
   return 0
 }
 
+put_object_lock_configuration_rest() {
+  if ! check_param_count_v2 "bucket name, params" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_command "BUCKET_NAME=$1 $2" "./tests/rest_scripts/put_object_lock_configuration.sh"; then
+    log 2 "error sending put object lock config command or error mismatch"
+    return 1
+  fi
+  return 0
+}
+
+put_object_lock_configuration_rest_expect_error() {
+  if ! check_param_count_v2 "bucket name, params, expected response code, expected error code, expected message" 5 $#; then
+    return 1
+  fi
+  if ! send_rest_command_expect_error "BUCKET_NAME=$1 $2" "./tests/rest_scripts/put_object_lock_configuration.sh" "$3" "$4" "$5"; then
+    log 2 "error sending put object lock config command or error mismatch"
+    return 1
+  fi
+  return 0
+}
+
 remove_retention_policy_rest() {
   if ! check_param_count "remove_retention_policy_rest" "bucket" 1 $#; then
     return 1
