@@ -157,7 +157,7 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 		string(keyOwnership):  backend.GetPtrFromString(encodeBytes([]byte(input.ObjectOwnership))),
 	}
 
-	acct, ok := ctx.Value("account").(auth.Account)
+	acct, ok := ctx.Value("bucket-owner").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}

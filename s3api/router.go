@@ -28,16 +28,18 @@ import (
 
 type S3ApiRouter struct {
 	WithAdmSrv bool
+	Ctrl       controllers.S3ApiController
 }
 
 func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, aLogger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool, region, virtualDomain string, root middlewares.RootUserConfig) {
 	ctrl := controllers.New(be, iam, logger, evs, mm, readonly, virtualDomain)
+	sa.Ctrl = ctrl
 	adminServices := &controllers.Services{
 		Logger: aLogger,
 	}
 
 	if sa.WithAdmSrv {
-		adminController := controllers.NewAdminController(iam, be, aLogger)
+		adminController := controllers.NewAdminController(iam, be, aLogger, ctrl)
 
 		// CreateUser admin api
 		app.Patch("/create-user",
@@ -77,6 +79,13 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		// ListBucketsAndOwners admin api
 		app.Patch("/list-buckets",
 			controllers.ProcessHandlers(adminController.ListBuckets, metrics.ActionAdminListBuckets, adminServices,
+				middlewares.VerifyV4Signature(root, iam, region, false, true),
+				middlewares.IsAdmin(metrics.ActionAdminListBuckets),
+			))
+
+		// CreateBucket admin api
+		app.Patch("/:bucket/create",
+			controllers.ProcessHandlers(adminController.CreateBucket, metrics.ActionAdminListBuckets, adminServices,
 				middlewares.VerifyV4Signature(root, iam, region, false, true),
 				middlewares.IsAdmin(metrics.ActionAdminListBuckets),
 			))

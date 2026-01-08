@@ -35,7 +35,7 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				app:     fiber.New(),
 				backend: backend.BackendUnsupported{},
 				port:    "Invalid address",
-				router:  &S3ApiRouter{},
+				Router:  &S3ApiRouter{},
 			},
 		},
 		{
@@ -45,7 +45,7 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				app:     fiber.New(),
 				backend: backend.BackendUnsupported{},
 				port:    "Invalid address",
-				router:  &S3ApiRouter{},
+				Router:  &S3ApiRouter{},
 				cert:    &tls.Certificate{},
 			},
 		},

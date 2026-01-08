@@ -36,6 +36,7 @@ const (
 	ContextKeyBodyReader     ContextKey = "body-reader"
 	ContextKeySkip           ContextKey = "__skip"
 	ContextKeyStack          ContextKey = "stack"
+	ContextKeyBucketOwner    ContextKey = "bucket-owner"
 )
 
 func (ck ContextKey) Values() []ContextKey {
@@ -50,6 +51,7 @@ func (ck ContextKey) Values() []ContextKey {
 		ContextKeyParsedAcl,
 		ContextKeySkipResBodyLog,
 		ContextKeyBodyReader,
+		ContextKeyBucketOwner,
 	}
 }
 

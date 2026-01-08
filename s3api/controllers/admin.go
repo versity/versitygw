@@ -28,13 +28,14 @@ import (
 )
 
 type AdminController struct {
-	iam auth.IAMService
-	be  backend.Backend
-	l   s3log.AuditLogger
+	iam   auth.IAMService
+	be    backend.Backend
+	l     s3log.AuditLogger
+	s3api S3ApiController
 }
 
-func NewAdminController(iam auth.IAMService, be backend.Backend, l s3log.AuditLogger) AdminController {
-	return AdminController{iam: iam, be: be, l: l}
+func NewAdminController(iam auth.IAMService, be backend.Backend, l s3log.AuditLogger, s3api S3ApiController) AdminController {
+	return AdminController{iam: iam, be: be, l: l, s3api: s3api}
 }
 
 func (c AdminController) CreateUser(ctx *fiber.Ctx) (*Response, error) {
@@ -160,4 +161,38 @@ func (c AdminController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 		},
 		MetaOpts: &MetaOptions{},
 	}, err
+}
+
+func (c AdminController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
+	owner := ctx.Get("x-vgw-owner")
+
+	accs, err := auth.CheckIfAccountsExist([]string{owner}, c.iam)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, err
+	}
+	if len(accs) > 0 {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetAPIError(s3err.ErrAdminUserNotFound)
+	}
+
+	// store the owner access key id in context
+	ctx.Context().SetUserValue("bucket-owner", auth.Account{
+		Access: owner,
+	})
+
+	_, err = c.s3api.CreateBucket(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, err
+	}
+
+	return &Response{
+		MetaOpts: &MetaOptions{
+			Status: http.StatusCreated,
+		},
+	}, nil
 }
