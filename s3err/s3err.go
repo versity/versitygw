@@ -201,6 +201,7 @@ const (
 	ErrAdminInvalidUserRole
 	ErrAdminMissingUserAcess
 	ErrAdminMethodNotSupported
+	ErrAdminEmptyBucketOwnerHeader
 )
 
 var errorCodeResponse = map[ErrorCode]APIError{
@@ -897,6 +898,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "XAdminMethodNotSupported",
 		Description:    "The method is not supported in single root user mode.",
 		HTTPStatusCode: http.StatusNotImplemented,
+	},
+	ErrAdminEmptyBucketOwnerHeader: {
+		Code:           "XAdminInvalidRequest",
+		Description:    "The x-vgw-owner header specifying the new bucket owner access key id is either missing or empty",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 }
 

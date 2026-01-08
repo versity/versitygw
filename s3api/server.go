@@ -41,9 +41,9 @@ const (
 )
 
 type S3ApiServer struct {
+	Router          *S3ApiRouter
 	app             *fiber.App
 	backend         backend.Backend
-	router          *S3ApiRouter
 	port            string
 	cert            *tls.Certificate
 	quiet           bool
@@ -67,7 +67,7 @@ func New(
 ) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		backend: be,
-		router:  new(S3ApiRouter),
+		Router:  new(S3ApiRouter),
 		port:    port,
 	}
 
@@ -124,7 +124,7 @@ func New(
 		app.Use(middlewares.DebugLogger())
 	}
 
-	server.router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root, server.corsAllowOrigin)
+	server.Router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root, server.corsAllowOrigin)
 
 	return server, nil
 }
@@ -139,7 +139,7 @@ func WithTLS(cert tls.Certificate) Option {
 
 // WithAdminServer runs admin endpoints with the gateway in the same network
 func WithAdminServer() Option {
-	return func(s *S3ApiServer) { s.router.WithAdmSrv = true }
+	return func(s *S3ApiServer) { s.Router.WithAdmSrv = true }
 }
 
 // WithQuiet silences default logging output

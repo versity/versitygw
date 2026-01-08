@@ -461,7 +461,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrMissingSecurityHeader)
 	}
 
-	updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam, acct.Role == auth.RoleAdmin)
+	updAcl, err := auth.UpdateACL(input, parsedAcl, c.iam)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -487,13 +487,18 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	grantWrite := ctx.Get("X-Amz-Grant-Write")
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 	lockEnabled := strings.EqualFold(ctx.Get("X-Amz-Bucket-Object-Lock-Enabled"), "true")
-	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	objectOwnership := types.ObjectOwnership(
 		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
 	)
 
-	if acct.Role != auth.RoleAdmin && acct.Role != auth.RoleUserPlus {
+	creator := utils.ContextKeyAccount.Get(ctx).(auth.Account)
+	if !utils.ContextKeyBucketOwner.IsSet(ctx) {
+		utils.ContextKeyBucketOwner.Set(ctx, creator)
+	}
+	bucketOwner := utils.ContextKeyBucketOwner.Get(ctx).(auth.Account)
+
+	if creator.Role != auth.RoleAdmin && creator.Role != auth.RoleUserPlus {
 		return &Response{
 			MetaOpts: &MetaOptions{},
 		}, s3err.GetAPIError(s3err.ErrAccessDenied)
@@ -503,7 +508,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	if ok := utils.IsValidBucketName(bucket); !ok {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				BucketOwner: acct.Access,
+				BucketOwner: bucketOwner.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
@@ -513,7 +518,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
-				BucketOwner: acct.Access,
+				BucketOwner: bucketOwner.Access,
 			},
 		}, err
 	}
@@ -522,7 +527,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	if ok := utils.IsValidOwnership(objectOwnership); !ok {
 		return &Response{
 				MetaOpts: &MetaOptions{
-					BucketOwner: acct.Access,
+					BucketOwner: bucketOwner.Access,
 				},
 			}, s3err.APIError{
 				Code:           "InvalidArgument",
@@ -535,7 +540,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("bucket acls are disabled for %v object ownership", objectOwnership)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				BucketOwner: acct.Access,
+				BucketOwner: bucketOwner.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership)
 	}
@@ -544,7 +549,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				BucketOwner: acct.Access,
+				BucketOwner: bucketOwner.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
 	}
@@ -557,7 +562,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 			debuglogger.Logf("failed to parse the request body: %v", err)
 			return &Response{
 				MetaOpts: &MetaOptions{
-					BucketOwner: acct.Access,
+					BucketOwner: bucketOwner.Access,
 				},
 			}, s3err.GetAPIError(s3err.ErrMalformedXML)
 		}
@@ -568,7 +573,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 				debuglogger.Logf("invalid location constraint: %s", *body.LocationConstraint)
 				return &Response{
 					MetaOpts: &MetaOptions{
-						BucketOwner: acct.Access,
+						BucketOwner: bucketOwner.Access,
 					},
 				}, s3err.GetAPIError(s3err.ErrInvalidLocationConstraint)
 			}
@@ -576,7 +581,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	defACL := auth.ACL{
-		Owner: acct.Access,
+		Owner: bucketOwner.Access,
 	}
 
 	updAcl, err := auth.UpdateACL(&auth.PutBucketAclInput{
@@ -587,15 +592,15 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		GrantWriteACP:    &grantWriteACP,
 		AccessControlPolicy: &auth.AccessControlPolicy{
 			Owner: &types.Owner{
-				ID: &acct.Access,
+				ID: &bucketOwner.Access,
 			}},
 		ACL: types.BucketCannedACL(acl),
-	}, defACL, c.iam, acct.Role == auth.RoleAdmin)
+	}, defACL, c.iam)
 	if err != nil {
 		debuglogger.Logf("failed to update bucket acl: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
-				BucketOwner: acct.Access,
+				BucketOwner: bucketOwner.Access,
 			},
 		}, err
 	}
@@ -610,7 +615,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	}, updAcl)
 	return &Response{
 		MetaOpts: &MetaOptions{
-			BucketOwner: acct.Access,
+			BucketOwner: bucketOwner.Access,
 		},
 	}, err
 }

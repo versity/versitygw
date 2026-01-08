@@ -821,7 +821,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			opts = append(opts, s3api.WithAdminDebug())
 		}
 
-		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, opts...)
+		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, srv.Router.Ctrl, opts...)
 	}
 
 	if !quiet {

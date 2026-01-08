@@ -823,6 +823,7 @@ func TestFullFlow(ts *TestState) {
 	if ts.conf.versioningEnabled {
 		TestVersioning(ts)
 	}
+	TestIAM(ts)
 }
 
 func TestPosix(ts *TestState) {
@@ -945,7 +946,10 @@ func TestIAM(ts *TestState) {
 	ts.Run(IAM_userplus_CreateBucket)
 	ts.Run(IAM_admin_ChangeBucketOwner)
 	ts.Run(IAM_ChangeBucketOwner_back_to_root)
-	ts.Run(IAM_ListBuckets)
+	ts.Sync(IAM_ListBuckets)
+	ts.Run(IAM_CreateBucket_empty_owner_header)
+	ts.Run(IAM_CreateBucket_non_existing_user)
+	ts.Run(IAM_CreateBucket_success)
 }
 
 func TestAccessControl(ts *TestState) {
@@ -1672,6 +1676,10 @@ func GetIntTests() IntTests {
 		"IAM_userplus_CreateBucket":                                                IAM_userplus_CreateBucket,
 		"IAM_admin_ChangeBucketOwner":                                              IAM_admin_ChangeBucketOwner,
 		"IAM_ChangeBucketOwner_back_to_root":                                       IAM_ChangeBucketOwner_back_to_root,
+		"IAM_ListBuckets":                                                          IAM_ListBuckets,
+		"IAM_CreateBucket_empty_owner_header":                                      IAM_CreateBucket_empty_owner_header,
+		"IAM_CreateBucket_non_existing_user":                                       IAM_CreateBucket_non_existing_user,
+		"IAM_CreateBucket_success":                                                 IAM_CreateBucket_success,
 		"AccessControl_default_ACL_user_access_denied":                             AccessControl_default_ACL_user_access_denied,
 		"AccessControl_default_ACL_userplus_access_denied":                         AccessControl_default_ACL_userplus_access_denied,
 		"AccessControl_default_ACL_admin_successful_access":                        AccessControl_default_ACL_admin_successful_access,

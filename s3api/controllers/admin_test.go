@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/assert"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
@@ -32,9 +33,10 @@ import (
 
 func TestNewAdminController(t *testing.T) {
 	type args struct {
-		iam auth.IAMService
-		be  backend.Backend
-		l   s3log.AuditLogger
+		iam   auth.IAMService
+		be    backend.Backend
+		l     s3log.AuditLogger
+		s3api S3ApiController
 	}
 	tests := []struct {
 		name string
@@ -49,7 +51,7 @@ func TestNewAdminController(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewAdminController(tt.args.iam, tt.args.be, tt.args.l)
+			got := NewAdminController(tt.args.iam, tt.args.be, tt.args.l, tt.args.s3api)
 			assert.Equal(t, got, tt.want)
 		})
 	}
@@ -573,6 +575,129 @@ func TestAdminController_ListBuckets(t *testing.T) {
 				tt.output.response,
 				tt.output.err,
 				ctxInputs{},
+			)
+		})
+	}
+}
+
+func TestAdminController_CreateBucket(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  testInput
+		output testOutput
+	}{
+		{
+			name: "empty owner header",
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminEmptyBucketOwnerHeader),
+			},
+		},
+		{
+			name: "fails to get user account",
+			input: testInput{
+				extraMockErr: s3err.GetAPIError(s3err.ErrInternalError),
+				headers: map[string]string{
+					"x-vgw-owner": "access",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInternalError),
+			},
+		},
+		{
+			name: "user not found",
+			input: testInput{
+				extraMockErr: auth.ErrNoSuchUser,
+				headers: map[string]string{
+					"x-vgw-owner": "access",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminUserNotFound),
+			},
+		},
+		{
+			name: "backend returns error",
+			input: testInput{
+				headers: map[string]string{
+					"x-vgw-owner": "access",
+				},
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: auth.Account{
+						Access: "test-user",
+						Role:   "admin",
+					},
+				},
+				beErr: s3err.GetAPIError(s3err.ErrAdminMethodNotSupported),
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrAdminMethodNotSupported),
+			},
+		},
+		{
+			name: "successful response",
+			input: testInput{
+				headers: map[string]string{
+					"x-vgw-owner": "access",
+				},
+				locals: map[utils.ContextKey]any{
+					utils.ContextKeyAccount: auth.Account{
+						Access: "test-user",
+						Role:   "admin",
+					},
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						Status: http.StatusCreated,
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			iam := &IAMServiceMock{
+				GetUserAccountFunc: func(access string) (auth.Account, error) {
+					return auth.Account{}, tt.input.extraMockErr
+				},
+			}
+			be := &BackendMock{
+				CreateBucketFunc: func(contextMoqParam context.Context, createBucketInput *s3.CreateBucketInput, defaultACL []byte) error {
+					return tt.input.beErr
+				},
+			}
+
+			s3api := New(be, iam, nil, nil, nil, false, "")
+
+			ctrl := AdminController{
+				iam:   iam,
+				be:    be,
+				s3api: s3api,
+			}
+
+			testController(
+				t,
+				ctrl.CreateBucket,
+				tt.output.response,
+				tt.output.err,
+				ctxInputs{
+					locals:  tt.input.locals,
+					headers: tt.input.headers,
+				},
 			)
 		})
 	}

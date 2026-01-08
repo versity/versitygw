@@ -38,11 +38,13 @@ type S3AdminServer struct {
 	corsAllowOrigin string
 }
 
-func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
+func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
 	server := &S3AdminServer{
 		backend: be,
-		router:  new(S3AdminRouter),
-		port:    port,
+		router: &S3AdminRouter{
+			s3api: ctrl,
+		},
+		port: port,
 	}
 
 	for _, opt := range opts {

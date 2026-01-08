@@ -19,16 +19,20 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/urfave/cli/v2"
 	"github.com/versity/versitygw/auth"
@@ -168,6 +172,66 @@ func adminCommand() *cli.Command {
 				Name:   "list-buckets",
 				Usage:  "Lists all the gateway buckets and owners.",
 				Action: listBuckets,
+			},
+			{
+				Name:   "create-bucket",
+				Usage:  "Create a new bucket with owner",
+				Action: createBucket,
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "owner",
+						Usage:    "access key id of the bucket owner",
+						Required: true,
+						Aliases:  []string{"o"},
+					},
+					&cli.StringFlag{
+						Name:     "bucket",
+						Usage:    "bucket name",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:  "acl",
+						Usage: "canned ACL to apply to the bucket",
+					},
+					&cli.StringFlag{
+						Name:  "grant-full-control",
+						Usage: "Allows grantee the read, write, read ACP, and write ACP permissions on the bucket.",
+					},
+					&cli.StringFlag{
+						Name:  "grant-read",
+						Usage: "Allows grantee to list the objects in the bucket.",
+					},
+					&cli.StringFlag{
+						Name:  "grant-read-acp",
+						Usage: "Allows grantee to read the bucket ACL.",
+					},
+					&cli.StringFlag{
+						Name: "grant-write",
+						Usage: `Allows grantee to create new objects in the bucket.
+							For the bucket and object owners of existing objects, also allows deletions and overwrites of those objects.`,
+					},
+					&cli.StringFlag{
+						Name:  "grant-write-acp",
+						Usage: "Allows grantee to write the ACL for the applicable bucket.",
+					},
+					&cli.StringFlag{
+						Name:  "create-bucket-configuration",
+						Usage: "bucket configuration (LocationConstraint, Tags)",
+					},
+					&cli.BoolFlag{
+						Name:  "object-lock-enabled-for-bucket",
+						Usage: "enable object lock for the bucket",
+					},
+					&cli.BoolFlag{
+						Name:  "no-object-lock-enabled-for-bucket",
+						Usage: "disable object lock for the bucket",
+					},
+					&cli.StringFlag{
+						Name:  "object-ownership",
+						Usage: "bucket object ownership setting",
+						Value: "",
+					},
+				},
 			},
 		},
 		Flags: []cli.Flag{
@@ -438,6 +502,246 @@ func listUsers(ctx *cli.Context) error {
 	}
 
 	printAcctTable(accs.Accounts)
+
+	return nil
+}
+
+type createBucketInput struct {
+	LocationConstraint *string
+	Tags               []types.Tag
+}
+
+// parseCreateBucketPayload parses the
+func parseCreateBucketPayload(input string) ([]byte, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return []byte{}, nil
+	}
+
+	// try to parse as json, if the input starts with '{'
+	if input[0] == '{' {
+		var raw createBucketInput
+		err := json.Unmarshal([]byte(input), &raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON input: %w", err)
+		}
+
+		return xml.Marshal(s3response.CreateBucketConfiguration{
+			LocationConstraint: raw.LocationConstraint,
+			TagSet:             raw.Tags,
+		})
+	}
+
+	var config s3response.CreateBucketConfiguration
+
+	// parse as string - shorthand syntax
+	inputParts, err := splitTopLevel(input)
+	if err != nil {
+		return nil, err
+	}
+	for _, part := range inputParts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "LocationConstraint=") {
+			locConstraint := strings.TrimPrefix(part, "LocationConstraint=")
+			config.LocationConstraint = &locConstraint
+		} else if strings.HasPrefix(part, "Tags=") {
+			tags, err := parseTagging(strings.TrimPrefix(part, "Tags="))
+			if err != nil {
+				return nil, err
+			}
+
+			config.TagSet = tags
+		} else {
+			return nil, fmt.Errorf("invalid component: %v", part)
+		}
+	}
+
+	return xml.Marshal(config)
+}
+
+var errInvalidTagsSyntax = errors.New("invalid tags syntax")
+
+// splitTopLevel splits a shorthand configuration string into top-level components.
+// The function splits only on commas that are not nested inside '{}' or '[]'.
+func splitTopLevel(s string) ([]string, error) {
+	var parts []string
+	start := 0
+	depth := 0
+
+	for i, r := range s {
+		switch r {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+
+	if depth != 0 {
+		return nil, errors.New("invalid string format")
+	}
+
+	// add last segment
+	if start < len(s) {
+		parts = append(parts, s[start:])
+	}
+
+	return parts, nil
+}
+
+// parseTagging parses a tag set expressed in shorthand syntax into AWS CLI tags.
+// Expected format:
+//
+//	[{Key=string,Value=string},{Key=string,Value=string}]
+//
+// The function validates bracket structure, splits tag objects at the top level,
+// and delegates individual tag parsing to parseTag. It returns an error if the
+// syntax is invalid or if any tag entry cannot be parsed.
+func parseTagging(input string) ([]types.Tag, error) {
+	if len(input) < 2 {
+		return nil, errInvalidTagsSyntax
+	}
+
+	if input[0] != '[' || input[len(input)-1] != ']' {
+		return nil, errInvalidTagsSyntax
+	}
+	// strip []
+	input = input[1 : len(input)-1]
+
+	tagComponents, err := splitTopLevel(input)
+	if err != nil {
+		return nil, errInvalidTagsSyntax
+	}
+	result := make([]types.Tag, 0, len(tagComponents))
+	for _, tagComponent := range tagComponents {
+		tagComponent = strings.TrimSpace(tagComponent)
+		tag, err := parseTag(tagComponent)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, tag)
+	}
+
+	return result, nil
+}
+
+// parseTag parses a single tag definition in shorthand form.
+// Expected format:
+//
+// {Key=string,Value=string}
+func parseTag(input string) (types.Tag, error) {
+	input = strings.TrimSpace(input)
+
+	if len(input) < 2 {
+		return types.Tag{}, errInvalidTagsSyntax
+	}
+
+	if input[0] != '{' || input[len(input)-1] != '}' {
+		return types.Tag{}, errInvalidTagsSyntax
+	}
+
+	// strip {}
+	input = input[1 : len(input)-1]
+
+	components := strings.Split(input, ",")
+	if len(components) != 2 {
+		return types.Tag{}, errInvalidTagsSyntax
+	}
+
+	var key, value string
+
+	for _, c := range components {
+		c = strings.TrimSpace(c)
+
+		switch {
+		case strings.HasPrefix(c, "Key="):
+			key = strings.TrimPrefix(c, "Key=")
+		case strings.HasPrefix(c, "Value="):
+			value = strings.TrimPrefix(c, "Value=")
+		default:
+			return types.Tag{}, errInvalidTagsSyntax
+		}
+	}
+
+	if key == "" {
+		return types.Tag{}, errInvalidTagsSyntax
+	}
+
+	return types.Tag{
+		Key:   &key,
+		Value: &value,
+	}, nil
+}
+
+func createBucket(ctx *cli.Context) error {
+	bucket, owner := ctx.String("bucket"), ctx.String("owner")
+
+	payload, err := parseCreateBucketPayload(ctx.String("create-bucket-configuration"))
+	if err != nil {
+		return fmt.Errorf("invalid create bucket configuration: %w", err)
+	}
+
+	hashedPayload := sha256.Sum256(payload)
+	hexPayload := hex.EncodeToString(hashedPayload[:])
+
+	headers := map[string]string{
+		"x-amz-content-sha256":     hexPayload,
+		"x-vgw-owner":              owner,
+		"x-amz-acl":                ctx.String("acl"),
+		"x-amz-grant-full-control": ctx.String("grant-full-control"),
+		"x-amz-grant-read":         ctx.String("grant-read"),
+		"x-amz-grant-read-acp":     ctx.String("grant-read-acp"),
+		"x-amz-grant-write":        ctx.String("grant-write"),
+		"x-amz-grant-write-acp":    ctx.String("grant-write-acp"),
+		"x-amz-object-ownership":   ctx.String("object-ownership"),
+	}
+
+	if ctx.Bool("object-lock-enabled-for-bucket") {
+		headers["x-amz-bucket-object-lock-enabled"] = "true"
+	}
+	if ctx.Bool("no-object-lock-enabled-for-bucket") {
+		headers["x-amz-bucket-object-lock-enabled"] = "false"
+	}
+
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodPatch, fmt.Sprintf("%s/%s/create", adminEndpoint, bucket), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+
+	for key, value := range headers {
+		if value != "" {
+			req.Header.Set(key, value)
+		}
+	}
+
+	signer := v4.NewSigner()
+	err = signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: adminAccess, SecretAccessKey: adminSecret}, req, hexPayload, "s3", adminRegion, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to sign the request: %w", err)
+	}
+
+	client := initHTTPClient()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send the request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode >= 400 {
+		return parseApiError(body)
+	}
 
 	return nil
 }

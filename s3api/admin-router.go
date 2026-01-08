@@ -24,10 +24,12 @@ import (
 	"github.com/versity/versitygw/s3log"
 )
 
-type S3AdminRouter struct{}
+type S3AdminRouter struct {
+	s3api controllers.S3ApiController
+}
 
 func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, root middlewares.RootUserConfig, region string, debug bool, corsAllowOrigin string) {
-	ctrl := controllers.NewAdminController(iam, be, logger)
+	ctrl := controllers.NewAdminController(iam, be, logger, ar.s3api)
 	services := &controllers.Services{
 		Logger: logger,
 	}
@@ -100,6 +102,16 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
 	app.Options("/list-buckets",
+		middlewares.ApplyDefaultCORSPreflight(corsAllowOrigin),
+		middlewares.ApplyDefaultCORS(corsAllowOrigin),
+	)
+
+	app.Patch("/:bucket/create",
+		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminListBuckets, services,
+			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
+		))
+	app.Options("/:bucket/create",
 		middlewares.ApplyDefaultCORSPreflight(corsAllowOrigin),
 		middlewares.ApplyDefaultCORS(corsAllowOrigin),
 	)
