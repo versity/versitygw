@@ -246,7 +246,7 @@ func ParseACLOutput(data []byte, owner string) (GetBucketAclOutput, error) {
 	}, nil
 }
 
-func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService, isAdmin bool) ([]byte, error) {
+func UpdateACL(input *PutBucketAclInput, acl ACL, iam IAMService) ([]byte, error) {
 	if input == nil {
 		return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
 	}

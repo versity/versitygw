@@ -369,7 +369,7 @@ func (p *Posix) HeadBucket(_ context.Context, input *s3.HeadBucketInput) (*s3.He
 }
 
 func (p *Posix) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, acl []byte) error {
-	acct, ok := ctx.Value("account").(auth.Account)
+	acct, ok := ctx.Value("bucket-owner").(auth.Account)
 	if !ok {
 		acct = auth.Account{}
 	}
