@@ -355,7 +355,7 @@ func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
 		rDate, err := time.Parse(time.RFC3339, objLockDate)
 		if err != nil {
 			debuglogger.Logf("failed to parse retain until date: %v\n", err)
-			return nil, s3err.GetAPIError(s3err.ErrInvalidRequest)
+			return nil, s3err.GetAPIError(s3err.ErrInvalidRetainUntilDate)
 		}
 		if rDate.Before(time.Now()) {
 			debuglogger.Logf("expired retain until date: %v\n", rDate.Format(time.RFC3339))

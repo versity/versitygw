@@ -141,6 +141,7 @@ const (
 	ErrInvalidBucketObjectLockConfiguration
 	ErrObjectLockConfigurationNotAllowed
 	ErrObjectLocked
+	ErrInvalidRetainUntilDate
 	ErrPastObjectLockRetainDate
 	ErrObjectLockInvalidRetentionPeriod
 	ErrInvalidLegalHoldStatus
@@ -613,9 +614,14 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Access Denied because object protected by object lock.",
 		HTTPStatusCode: http.StatusForbidden,
 	},
+	ErrInvalidRetainUntilDate: {
+		Code:           "InvalidArgument",
+		Description:    "The retain until date must be provided in ISO 8601 format",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
 	ErrPastObjectLockRetainDate: {
-		Code:           "InvalidRequest",
-		Description:    "the retain until date must be in the future.",
+		Code:           "InvalidArgument",
+		Description:    "The retain until date must be in the future!",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLockInvalidRetentionPeriod: {

@@ -165,6 +165,8 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_with_object_lock)
 	ts.Run(PutObject_invalid_legal_hold)
 	ts.Run(PutObject_invalid_object_lock_mode)
+	ts.Run(PutObject_past_retain_until_date)
+	ts.Run(PutObject_invalid_retain_until_date)
 	ts.Run(PutObject_conditional_writes)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
@@ -1194,6 +1196,8 @@ func GetIntTests() IntTests {
 		"PutObject_with_object_lock":                                               PutObject_with_object_lock,
 		"PutObject_invalid_legal_hold":                                             PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                       PutObject_invalid_object_lock_mode,
+		"PutObject_past_retain_until_date":                                         PutObject_past_retain_until_date,
+		"PutObject_invalid_retain_until_date":                                      PutObject_invalid_retain_until_date,
 		"PutObject_conditional_writes":                                             PutObject_conditional_writes,
 		"PutObject_with_metadata":                                                  PutObject_with_metadata,
 		"PutObject_invalid_credentials":                                            PutObject_invalid_credentials,
