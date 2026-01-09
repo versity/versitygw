@@ -26,10 +26,6 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-const (
-	xattrPrefix = "user."
-)
-
 var (
 	// ErrNoSuchKey is returned when the key does not exist.
 	ErrNoSuchKey = errors.New("no such key")
