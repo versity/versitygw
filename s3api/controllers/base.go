@@ -18,6 +18,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
@@ -172,6 +174,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 
 	// Set the response headers
 	SetResponseHeaders(ctx, response.Headers)
+	ensureExposeMetaHeaders(ctx)
 
 	opts := response.MetaOpts
 	if opts == nil {
@@ -312,6 +315,77 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	}
 
 	return ctx.Send(res)
+}
+
+func ensureExposeMetaHeaders(ctx *fiber.Ctx) {
+	// Only attempt to modify expose headers when CORS is actually in use.
+	if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
+		return
+	}
+
+	existing := strings.TrimSpace(string(ctx.Response().Header.Peek("Access-Control-Expose-Headers")))
+	if existing == "*" {
+		return
+	}
+
+	lowerExisting := map[string]struct{}{}
+	if existing != "" {
+		for _, part := range strings.Split(existing, ",") {
+			p := strings.ToLower(strings.TrimSpace(part))
+			if p != "" {
+				lowerExisting[p] = struct{}{}
+			}
+		}
+	}
+
+	metaNames := map[string]struct{}{}
+	for k := range ctx.Response().Header.All() {
+		key := string(k)
+		if strings.HasPrefix(strings.ToLower(key), "x-amz-meta-") {
+			metaNames[key] = struct{}{}
+		}
+	}
+	if len(metaNames) == 0 {
+		// Still ensure ETag is present if any expose headers exist/are needed.
+		if _, ok := lowerExisting["etag"]; ok {
+			return
+		}
+		if existing == "" {
+			ctx.Response().Header.Set("Access-Control-Expose-Headers", "ETag")
+			return
+		}
+		ctx.Response().Header.Set("Access-Control-Expose-Headers", existing+", ETag")
+		return
+	}
+
+	metaList := make([]string, 0, len(metaNames))
+	for k := range metaNames {
+		metaList = append(metaList, k)
+	}
+	sort.Strings(metaList)
+
+	toAdd := make([]string, 0, 1+len(metaList))
+	if _, ok := lowerExisting["etag"]; !ok {
+		toAdd = append(toAdd, "ETag")
+		lowerExisting["etag"] = struct{}{}
+	}
+	for _, h := range metaList {
+		lh := strings.ToLower(h)
+		if _, ok := lowerExisting[lh]; ok {
+			continue
+		}
+		toAdd = append(toAdd, h)
+		lowerExisting[lh] = struct{}{}
+	}
+	if len(toAdd) == 0 {
+		return
+	}
+
+	if existing == "" {
+		ctx.Response().Header.Set("Access-Control-Expose-Headers", strings.Join(toAdd, ", "))
+		return
+	}
+	ctx.Response().Header.Set("Access-Control-Expose-Headers", existing+", "+strings.Join(toAdd, ", "))
 }
 
 // Sets the response headers

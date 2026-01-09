@@ -16,6 +16,7 @@ package middlewares
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
@@ -31,12 +32,14 @@ var VaryHdr = "Origin, Access-Control-Request-Headers, Access-Control-Request-Me
 // checks if origin and method meets the cors rules and
 // adds the necessary response headers.
 // CORS check is applied only when 'Origin' request header is present
-func ApplyBucketCORS(be backend.Backend) fiber.Handler {
+func ApplyBucketCORS(be backend.Backend, fallbackOrigin string) fiber.Handler {
+	fallbackOrigin = strings.TrimSpace(fallbackOrigin)
+
 	return func(ctx *fiber.Ctx) error {
 		bucket := ctx.Params("bucket")
 		origin := ctx.Get("Origin")
-		// if the origin request header is empty, skip cors validation
-		if origin == "" {
+		// If neither Origin is present nor a fallback is configured, skip CORS entirely.
+		if origin == "" && fallbackOrigin == "" {
 			return nil
 		}
 
@@ -46,9 +49,29 @@ func ApplyBucketCORS(be backend.Backend) fiber.Handler {
 			// If CORS is not configured, S3Error will have code NoSuchCORSConfiguration.
 			// In this case, we can safely continue. For any other error, we should log it.
 			s3Err, ok := err.(s3err.APIError)
+			if ok && (s3Err.Code == "NoSuchCORSConfiguration" || s3Err.Code == "NoSuchBucket") {
+				// Optional global fallback: add Access-Control-Allow-Origin for buckets
+				// without a specific CORS configuration.
+				if fallbackOrigin != "" {
+					if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
+						ctx.Response().Header.Add("Access-Control-Allow-Origin", fallbackOrigin)
+					}
+					if len(ctx.Response().Header.Peek("Vary")) == 0 {
+						ctx.Response().Header.Add("Vary", VaryHdr)
+					}
+					ensureExposeETag(ctx)
+				}
+				return nil
+			}
 			if !ok || s3Err.Code != "NoSuchCORSConfiguration" {
 				debuglogger.Logf("failed to get bucket cors for bucket %q: %v", bucket, err)
 			}
+			return nil
+		}
+
+		// If Origin is missing, don't attempt per-bucket CORS evaluation.
+		// (Fallback has already been handled above for buckets without CORS config.)
+		if origin == "" {
 			return nil
 		}
 
@@ -99,6 +122,9 @@ func ApplyBucketCORS(be backend.Backend) fiber.Handler {
 				ctx.Response().Header.Add(key, val)
 			}
 		}
+
+		// Always expose ETag and user metadata headers for browser clients.
+		ensureExposeETag(ctx)
 
 		return nil
 	}

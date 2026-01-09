@@ -28,13 +28,14 @@ import (
 )
 
 type S3AdminServer struct {
-	app     *fiber.App
-	backend backend.Backend
-	router  *S3AdminRouter
-	port    string
-	cert    *tls.Certificate
-	quiet   bool
-	debug   bool
+	app             *fiber.App
+	backend         backend.Backend
+	router          *S3AdminRouter
+	port            string
+	cert            *tls.Certificate
+	quiet           bool
+	debug           bool
+	corsAllowOrigin string
 }
 
 func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, opts ...AdminOpt) *S3AdminServer {
@@ -73,7 +74,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 	app.Use(middlewares.DebugLogger())
 
-	server.router.Init(app, be, iam, l, root, region, server.debug)
+	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
 
 	return server
 }
@@ -92,6 +93,12 @@ func WithAdminQuiet() AdminOpt {
 // WithAdminDebug enables the debug logging
 func WithAdminDebug() AdminOpt {
 	return func(s *S3AdminServer) { s.debug = true }
+}
+
+// WithAdminCORSAllowOrigin sets the default CORS Access-Control-Allow-Origin value
+// for the standalone admin server.
+func WithAdminCORSAllowOrigin(origin string) AdminOpt {
+	return func(s *S3AdminServer) { s.corsAllowOrigin = origin }
 }
 
 func (sa *S3AdminServer) Serve() (err error) {

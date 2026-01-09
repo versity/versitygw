@@ -42,6 +42,7 @@ var (
 	rootUserAccess                         string
 	rootUserSecret                         string
 	region                                 string
+	corsAllowOrigin                        string
 	admCertFile, admKeyFile                string
 	certFile, keyFile                      string
 	kafkaURL, kafkaTopic, kafkaKey         string
@@ -187,6 +188,12 @@ func initFlags() []cli.Flag {
 			Value:       "us-east-1",
 			Destination: &region,
 			Aliases:     []string{"r"},
+		},
+		&cli.StringFlag{
+			Name:        "cors-allow-origin",
+			Usage:       "default CORS Access-Control-Allow-Origin value (applied when no bucket CORS configuration exists, and for admin APIs)",
+			EnvVars:     []string{"VGW_CORS_ALLOW_ORIGIN"},
+			Destination: &corsAllowOrigin,
 		},
 		&cli.StringFlag{
 			Name:        "cert",
@@ -649,6 +656,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	var opts []s3api.Option
+	if corsAllowOrigin != "" {
+		opts = append(opts, s3api.WithCORSAllowOrigin(corsAllowOrigin))
+	}
 
 	if certFile != "" || keyFile != "" {
 		if certFile == "" {
@@ -786,6 +796,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	if admPort != "" {
 		var opts []s3api.AdminOpt
+		if corsAllowOrigin != "" {
+			opts = append(opts, s3api.WithAdminCORSAllowOrigin(corsAllowOrigin))
+		}
 
 		if admCertFile != "" || admKeyFile != "" {
 			if admCertFile == "" {
