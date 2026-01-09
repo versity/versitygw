@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -296,6 +297,52 @@ func PutObject_invalid_object_lock_mode(s *S3Conf) error {
 			ObjectLockMode:            types.ObjectLockMode("invalid_mode"),
 		}, s3client)
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidObjectLockMode))
+	}, withLock())
+}
+
+func PutObject_past_retain_until_date(s *S3Conf) error {
+	testName := "PutObject_past_retain_until_date"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		rDate := time.Now().AddDate(-1, 0, 0)
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("my-object"),
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: &rDate,
+		}, s3client)
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrPastObjectLockRetainDate))
+	}, withLock())
+}
+
+func PutObject_invalid_retain_until_date(s *S3Conf) error {
+	testName := "PutObject_invalid_retain_until_date"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		req, err := createSignedReq(
+			http.MethodPut,
+			s.endpoint,
+			fmt.Sprintf("%s/my-object", bucket),
+			s.awsID,
+			s.awsSecret,
+			"s3",
+			s.awsRegion,
+			nil,
+			time.Now(),
+			map[string]string{
+				"x-amz-object-lock-retain-until-date": "invalid_date",
+				"x-amz-object-lock-mode":              "GOVERNANCE",
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		return checkHTTPResponseApiErr(resp, s3err.GetAPIError(s3err.ErrInvalidRetainUntilDate))
 	}, withLock())
 }
 
