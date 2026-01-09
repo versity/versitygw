@@ -619,8 +619,8 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrObjectLockInvalidRetentionPeriod: {
-		Code:           "InvalidRetentionPeriod",
-		Description:    "the retention days/years must be positive integer.",
+		Code:           "InvalidArgument",
+		Description:    "Default retention period must be a positive integer value.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidLegalHoldStatus: {
