@@ -125,6 +125,7 @@ var (
 	ActionAdminChangeBucketOwner = "admin_ChangeBucketOwner"
 	ActionAdminListUsers         = "admin_ListUsers"
 	ActionAdminListBuckets       = "admin_ListBuckets"
+	ActionAdminCreateBucket      = "admin_CreateBucket"
 )
 
 func init() {
