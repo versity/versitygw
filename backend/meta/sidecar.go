@@ -17,6 +17,7 @@ package meta
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -154,8 +155,8 @@ func (s SideCar) cleanupEmptyDirs(metadir, bucket, object string) {
 }
 
 func removeIfEmpty(dir string) {
-	ents, err := os.ReadDir(dir)
-	if err != nil || len(ents) != 0 {
+	empty, err := isDirEmpty(dir)
+	if err != nil || !empty {
 		return
 	}
 	_ = os.Remove(dir)
@@ -166,8 +167,8 @@ func removeEmptyParents(dir, stopDir string) {
 		if dir == stopDir || dir == "." || dir == string(filepath.Separator) {
 			return
 		}
-		ents, err := os.ReadDir(dir)
-		if err != nil || len(ents) != 0 {
+		empty, err := isDirEmpty(dir)
+		if err != nil || !empty {
 			return
 		}
 		err = os.Remove(dir)
@@ -176,4 +177,21 @@ func removeEmptyParents(dir, stopDir string) {
 		}
 		dir = filepath.Dir(dir)
 	}
+}
+
+func isDirEmpty(dir string) (bool, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	ents, err := f.Readdirnames(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return len(ents) == 0, nil
 }
