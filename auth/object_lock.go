@@ -254,6 +254,12 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		}
 	}
 
+	var versioningEnabled bool
+	vers, err := be.GetBucketVersioning(ctx, bucket)
+	if err == nil && vers.Status != nil {
+		versioningEnabled = *vers.Status == types.BucketVersioningStatusEnabled
+	}
+
 	for _, obj := range objects {
 		var key, versionId string
 		if obj.Key != nil {
@@ -261,6 +267,11 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		}
 		if obj.VersionId != nil {
 			versionId = *obj.VersionId
+		}
+		// if bucket versioning is enabled and versionId isn't provided
+		// no lock check is needed, as it leads to a new delete marker creation
+		if versioningEnabled && versionId == "" {
+			continue
 		}
 		checkRetention := true
 		retentionData, err := be.GetObjectRetention(ctx, bucket, key, versionId)

@@ -728,8 +728,17 @@ func (p *Posix) deleteNullVersionIdObject(bucket, key string) error {
 	return err
 }
 
+func isRemovableAttr(attr string) bool {
+	switch attr {
+	case objectLegalHoldKey, objectRetentionKey:
+		return true
+	default:
+		return false
+	}
+}
+
 // Creates a new copy(version) of an object in the versioning directory
-func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Account) (versionPath string, err error) {
+func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Account, removeAttributes bool) (versionPath string, err error) {
 	sf, err := os.Open(filepath.Join(bucket, key))
 	if err != nil {
 		return "", err
@@ -784,6 +793,14 @@ func (p *Posix) createObjVersion(bucket, key string, size int64, acc auth.Accoun
 		err = p.meta.StoreAttribute(f.File(), versionPath, "", attr, data)
 		if err != nil {
 			return versionPath, fmt.Errorf("store %v attribute: %w", attr, err)
+		}
+
+		// remove object lock attributes in delete marker
+		if removeAttributes && isRemovableAttr(attr) {
+			err := p.meta.DeleteAttribute(bucket, key, attr)
+			if err != nil {
+				return versionPath, fmt.Errorf("remove %s attribute: %w", attr, err)
+			}
 		}
 	}
 
@@ -1699,7 +1716,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	// if the versioninng is enabled first create the file object version
 	if p.versioningEnabled() && vEnabled && err == nil && !d.IsDir() {
-		_, err := p.createObjVersion(bucket, object, d.Size(), acct)
+		_, err := p.createObjVersion(bucket, object, d.Size(), acct, false)
 		if err != nil {
 			return res, "", fmt.Errorf("create object version: %w", err)
 		}
@@ -2995,7 +3012,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			isVersionIdMissing = len(vIdBytes) == 0
 		}
 		if !isVersionIdMissing {
-			_, err := p.createObjVersion(*po.Bucket, *po.Key, d.Size(), acct)
+			_, err := p.createObjVersion(*po.Bucket, *po.Key, d.Size(), acct, false)
 			if err != nil {
 				return s3response.PutObjectOutput{}, fmt.Errorf("create object version: %w", err)
 			}
@@ -3343,7 +3360,7 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 
 			// Creates a new object version in the versioning directory
 			if p.isBucketVersioningEnabled(vStatus) || string(vId) != nullVersionId {
-				_, err = p.createObjVersion(bucket, object, fi.Size(), acct)
+				_, err = p.createObjVersion(bucket, object, fi.Size(), acct, true)
 				if err != nil {
 					return nil, err
 				}
