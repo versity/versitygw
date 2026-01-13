@@ -23,9 +23,6 @@ source ./tests/drivers/get_object_tagging/get_object_tagging_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
 @test "REST - GetObjectTagging - no tags" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1686"
-  fi
   test_file="test_file"
 
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -40,9 +37,6 @@ source ./tests/drivers/put_object/put_object_rest.sh
 }
 
 @test "REST - GetObjectTagging - older version returns version ID" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1693"
-  fi
   test_file="test_file"
 
   run get_bucket_name "$BUCKET_ONE_NAME"

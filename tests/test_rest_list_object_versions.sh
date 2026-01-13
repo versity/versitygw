@@ -23,9 +23,6 @@ source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/util/util_time.sh
 
 @test "ListObjectVersions - accidental query of versions on object returns correct error" {
-  if [ "$DIRECT" != "true" ]; then
-      skip "https://github.com/versity/versitygw/issues/1688"
-    fi
   test_file="test_file"
 
   run get_bucket_name "$BUCKET_ONE_NAME"

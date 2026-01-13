@@ -27,7 +27,7 @@ get_object() {
   elif [[ $1 == 's3api' ]]; then
     get_object_error=$(send_command aws --no-verify-ssl s3api get-object --bucket "$2" --key "$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    get_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate get "s3://$2/$3" "$4" 2>&1) || exit_code=$?
+    get_object_error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate get --force "s3://$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     get_object_error=$(send_command mc --insecure get "$MC_ALIAS/$2/$3" "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then

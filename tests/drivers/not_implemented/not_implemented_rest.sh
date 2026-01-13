@@ -22,7 +22,8 @@ send_not_implemented_expect_failure() {
     log 2 "'send_not_implemented_expect_failure' param count must be multiple of 2 (key/value pairs)"
     return 1
   fi
-  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -url "$AWS_ENDPOINT_URL" "$@" 2>&1); then
+  if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" \
+      -awsSecretAccessKey "$AWS_SECRET_ACCESS_KEY" -awsRegion "$AWS_REGION" -url "$AWS_ENDPOINT_URL" "$@" 2>&1); then
     log 2 "error: $curl_command"
     return 1
   fi
