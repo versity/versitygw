@@ -26,7 +26,7 @@ put_bucket_policy() {
   if [[ $1 == 's3api' ]]; then
     policy=$(send_command aws --no-verify-ssl s3api put-bucket-policy --bucket "$2" --policy "file://$3" 2>&1) || put_policy_result=$?
   elif [[ $1 == 's3cmd' ]]; then
-    policy=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate setpolicy "$3" "s3://$2" 2>&1) || put_policy_result=$?
+    policy=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" setpolicy "$3" "s3://$2" 2>&1) || put_policy_result=$?
   elif [[ $1 == 'mc' ]]; then
     policy=$(send_command mc --insecure anonymous set-json "$3" "$MC_ALIAS/$2" 2>&1) || put_policy_result=$?
   elif [ "$1" == 'rest' ]; then

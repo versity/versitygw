@@ -30,7 +30,7 @@ put_object() {
   elif [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api put-object --body "$2" --bucket "$3" --key "$4" 2>&1) || exit_code=$?
   elif [[ $1 == 's3cmd' ]]; then
-    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate put "$2" s3://"$3/$4" 2>&1) || exit_code=$?
+    error=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate --region "$AWS_REGION" put "$2" s3://"$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     error=$(send_command mc --insecure put "$2" "$MC_ALIAS/$3/$4" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then
