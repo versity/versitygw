@@ -2445,6 +2445,212 @@ func Versioning_WORM_obj_version_locked_with_compliance_retention(s *S3Conf) err
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_WORM_delete_marker_locked_object_legal_hold(s *S3Conf) error {
+	testName := "Versioning_WORM_delete_marker_locked_object_legal_hold"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		version := objVersions[0]
+		objVersions[0].IsLatest = getPtr(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				IsLatest:  getPtr(true),
+				Key:       &obj,
+				VersionId: out.VersionId,
+			},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(objVersions, resp.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", objVersions, resp.Versions)
+		}
+		if !compareDelMarkers(delMarkers, resp.DeleteMarkers) {
+			return fmt.Errorf("expected the object delete markers to be %v, instead got %v", delMarkers, resp.DeleteMarkers)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:                obj,
+				versionId:          getString(version.VersionId),
+				removeOnlyLeglHold: true,
+			},
+		})
+	}, withLock())
+}
+
+func Versioning_WORM_delete_marker_locked_object_governance_retention(s *S3Conf) error {
+	testName := "Versioning_WORM_delete_marker_locked_object_governance_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		version := objVersions[0]
+		objVersions[0].IsLatest = getPtr(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeGovernance,
+				RetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				IsLatest:  getPtr(true),
+				Key:       &obj,
+				VersionId: out.VersionId,
+			},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(objVersions, resp.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", objVersions, resp.Versions)
+		}
+		if !compareDelMarkers(delMarkers, resp.DeleteMarkers) {
+			return fmt.Errorf("expected the object delete markers to be %v, instead got %v", delMarkers, resp.DeleteMarkers)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:          obj,
+				versionId:    getString(version.VersionId),
+				isCompliance: false,
+			},
+		})
+	}, withLock())
+}
+
+func Versioning_WORM_delete_marker_locked_object_compliance_retention(s *S3Conf) error {
+	testName := "Versioning_WORM_delete_marker_locked_object_compliance_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		objVersions, err := createObjVersions(s3client, bucket, obj, 1)
+		if err != nil {
+			return err
+		}
+		version := objVersions[0]
+		objVersions[0].IsLatest = getPtr(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		delMarkers := []types.DeleteMarkerEntry{
+			{
+				IsLatest:  getPtr(true),
+				Key:       &obj,
+				VersionId: out.VersionId,
+			},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(objVersions, resp.Versions) {
+			return fmt.Errorf("expected the object versions to be %v, instead got %v", objVersions, resp.Versions)
+		}
+		if !compareDelMarkers(delMarkers, resp.DeleteMarkers) {
+			return fmt.Errorf("expected the object delete markers to be %v, instead got %v", delMarkers, resp.DeleteMarkers)
+		}
+
+		return cleanupLockedObjects(s3client, bucket, []objToDelete{
+			{
+				key:          obj,
+				versionId:    getString(version.VersionId),
+				isCompliance: true,
+			},
+		})
+	}, withLock())
+}
+
 func Versioning_WORM_PutObject_overwrite_locked_object(s *S3Conf) error {
 	testName := "Versioning_WORM_PutObject_overwrite_locked_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

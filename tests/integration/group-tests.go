@@ -1076,6 +1076,9 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_WORM_obj_version_locked_with_legal_hold)
 	ts.Run(Versioning_WORM_obj_version_locked_with_governance_retention)
 	ts.Run(Versioning_WORM_obj_version_locked_with_compliance_retention)
+	ts.Run(Versioning_WORM_delete_marker_locked_object_legal_hold)
+	ts.Run(Versioning_WORM_delete_marker_locked_object_governance_retention)
+	ts.Run(Versioning_WORM_delete_marker_locked_object_compliance_retention)
 	ts.Run(Versioning_WORM_PutObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CopyObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object)
@@ -1774,6 +1777,9 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                       Versioning_WORM_obj_version_locked_with_legal_hold,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":             Versioning_WORM_obj_version_locked_with_governance_retention,
 		"Versioning_WORM_obj_version_locked_with_compliance_retention":             Versioning_WORM_obj_version_locked_with_compliance_retention,
+		"Versioning_WORM_delete_marker_locked_object_legal_hold":                   Versioning_WORM_delete_marker_locked_object_legal_hold,
+		"Versioning_WORM_delete_marker_locked_object_governance_retention":         Versioning_WORM_delete_marker_locked_object_governance_retention,
+		"Versioning_WORM_delete_marker_locked_object_compliance_retention":         Versioning_WORM_delete_marker_locked_object_compliance_retention,
 		"Versioning_WORM_PutObject_overwrite_locked_object":                        Versioning_WORM_PutObject_overwrite_locked_object,
 		"Versioning_WORM_CopyObject_overwrite_locked_object":                       Versioning_WORM_CopyObject_overwrite_locked_object,
 		"Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object":          Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object,
