@@ -66,8 +66,8 @@ type user struct {
 }
 
 func getBucketName() string {
-	bcktCount.Add(1)
-	return fmt.Sprintf("test-bucket-%v", bcktCount.Load())
+	val := bcktCount.Add(1)
+	return fmt.Sprintf("test-bucket-%v", val)
 }
 
 func getUser(role string) user {
