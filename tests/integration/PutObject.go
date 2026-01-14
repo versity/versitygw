@@ -274,6 +274,30 @@ func PutObject_with_object_lock(s *S3Conf) error {
 	}, withLock())
 }
 
+func PutObject_missing_bucket_lock(s *S3Conf) error {
+	testName := "PutObject_missing_bucket_lock"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// with retention
+		_, err := putObjectWithData(3, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("my-object"),
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: getPtr(time.Now().AddDate(0, 0, 2)),
+		}, s3client)
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+			return err
+		}
+
+		// with legal hold
+		_, err = putObjectWithData(2, &s3.PutObjectInput{
+			Bucket:                    &bucket,
+			Key:                       getPtr("my-object"),
+			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
+		}, s3client)
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces))
+	})
+}
+
 func PutObject_invalid_legal_hold(s *S3Conf) error {
 	testName := "PutObject_invalid_legal_hold"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

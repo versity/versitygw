@@ -72,7 +72,7 @@ func GetObjectLegalHold_disabled_lock(s *S3Conf) error {
 			Key:    &key,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)); err != nil {
 			return err
 		}
 

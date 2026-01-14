@@ -364,6 +364,9 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := az.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			return s3response.PutObjectOutput{}, err
 		}
 	}
@@ -380,6 +383,9 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 		}
 		err = az.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			return s3response.PutObjectOutput{}, err
 		}
 	}
@@ -980,6 +986,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		if input.ObjectLockLegalHoldStatus != "" {
 			err = az.PutObjectLegalHold(ctx, *input.Bucket, *input.Key, "", input.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn)
 			if err != nil {
+				if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+					err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+				}
 				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
 		}
@@ -998,6 +1007,9 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 			}
 			err = az.PutObjectRetention(ctx, *input.Bucket, *input.Key, "", retParsed)
 			if err != nil {
+				if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+					err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+				}
 				return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 			}
 		}
@@ -1140,7 +1152,7 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 		}
 
 		if len(bucketLock) == 0 {
-			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 		}
 
 		var bucketLockConfig auth.BucketLockConfig
@@ -1149,7 +1161,7 @@ func (az *Azure) CreateMultipartUpload(ctx context.Context, input s3response.Cre
 		}
 
 		if !bucketLockConfig.Enabled {
-			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+			return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
 		}
 	}
 
@@ -1839,7 +1851,7 @@ func (az *Azure) isBucketObjectLockEnabled(ctx context.Context, bucket string) e
 	}
 
 	if len(cfg) == 0 {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)
 	}
 
 	var bucketLockConfig auth.BucketLockConfig
@@ -1848,7 +1860,7 @@ func (az *Azure) isBucketObjectLockEnabled(ctx context.Context, bucket string) e
 	}
 
 	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)
 	}
 
 	return nil
