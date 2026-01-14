@@ -163,6 +163,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_tagging)
 	ts.Run(PutObject_missing_object_lock_retention_config)
 	ts.Run(PutObject_with_object_lock)
+	ts.Run(PutObject_missing_bucket_lock)
 	ts.Run(PutObject_invalid_legal_hold)
 	ts.Run(PutObject_invalid_object_lock_mode)
 	ts.Run(PutObject_past_retain_until_date)
@@ -328,6 +329,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_replace_meta_props)
+	ts.Run(CopyObject_missing_bucket_lock)
 	ts.Run(CopyObject_invalid_legal_hold)
 	ts.Run(CopyObject_invalid_object_lock_mode)
 	ts.Run(CopyObject_with_legal_hold)
@@ -1201,6 +1203,7 @@ func GetIntTests() IntTests {
 		"PutObject_missing_object_lock_retention_config":                           PutObject_missing_object_lock_retention_config,
 		"PutObject_name_too_long":                                                  PutObject_name_too_long,
 		"PutObject_with_object_lock":                                               PutObject_with_object_lock,
+		"PutObject_missing_bucket_lock":                                            PutObject_missing_bucket_lock,
 		"PutObject_invalid_legal_hold":                                             PutObject_invalid_legal_hold,
 		"PutObject_invalid_object_lock_mode":                                       PutObject_invalid_object_lock_mode,
 		"PutObject_past_retain_until_date":                                         PutObject_past_retain_until_date,
@@ -1373,6 +1376,7 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
+		"CopyObject_missing_bucket_lock":                                           CopyObject_missing_bucket_lock,
 		"CopyObject_invalid_legal_hold":                                            CopyObject_invalid_legal_hold,
 		"CopyObject_invalid_object_lock_mode":                                      CopyObject_invalid_object_lock_mode,
 		"CopyObject_with_legal_hold":                                               CopyObject_with_legal_hold,

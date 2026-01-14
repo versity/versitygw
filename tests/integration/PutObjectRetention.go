@@ -84,7 +84,7 @@ func PutObjectRetention_unset_bucket_object_lock_config(s *S3Conf) error {
 			},
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)); err != nil {
 			return err
 		}
 

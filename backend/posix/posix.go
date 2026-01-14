@@ -1359,6 +1359,9 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	if mpu.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := p.PutObjectLegalHold(ctx, bucket, filepath.Join(objdir, uploadID), "", true)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
@@ -1381,6 +1384,9 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 		err = p.PutObjectRetention(ctx, bucket, filepath.Join(objdir, uploadID), "", retParsed)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			// cleanup object if returning error
 			os.RemoveAll(filepath.Join(tmppath, uploadID))
 			os.Remove(tmppath)
@@ -3238,6 +3244,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	if po.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn {
 		err := p.PutObjectLegalHold(ctx, *po.Bucket, *po.Key, "", true)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			return s3response.PutObjectOutput{}, err
 		}
 	}
@@ -3254,6 +3263,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 		err = p.PutObjectRetention(ctx, *po.Bucket, *po.Key, "", retParsed)
 		if err != nil {
+			if errors.Is(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)) {
+				err = s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)
+			}
 			return s3response.PutObjectOutput{}, err
 		}
 	}
@@ -5108,7 +5120,7 @@ func (p *Posix) isBucketObjectLockEnabled(bucket string) error {
 		return s3err.GetAPIError(s3err.ErrNoSuchBucket)
 	}
 	if errors.Is(err, meta.ErrNoSuchKey) {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)
 	}
 	if err != nil {
 		return fmt.Errorf("get object lock config: %w", err)
@@ -5120,7 +5132,7 @@ func (p *Posix) isBucketObjectLockEnabled(bucket string) error {
 	}
 
 	if !bucketLockConfig.Enabled {
-		return s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)
+		return s3err.GetAPIError(s3err.ErrMissingObjectLockConfiguration)
 	}
 
 	return nil

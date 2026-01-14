@@ -209,18 +209,29 @@ func CreateMultipartUpload_with_object_lock_not_enabled(s *S3Conf) error {
 	testName := "CreateMultipartUpload_with_object_lock_not_enabled"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
+
+		// with retention
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket:                    &bucket,
+			Key:                       &obj,
+			ObjectLockMode:            types.ObjectLockModeGovernance,
+			ObjectLockRetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces)); err != nil {
+			return err
+		}
+
+		// with legal hold
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
 			Bucket:                    &bucket,
 			Key:                       &obj,
 			ObjectLockLegalHoldStatus: types.ObjectLockLegalHoldStatusOn,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidBucketObjectLockConfiguration)); err != nil {
-			return err
-		}
-
-		return nil
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMissingObjectLockConfigurationNoSpaces))
 	})
 }
 
