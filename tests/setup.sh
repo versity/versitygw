@@ -86,6 +86,7 @@ setup() {
     S3CMD_OPTS+=(-c "$S3CMD_CONFIG")
     S3CMD_OPTS+=(--access_key="$AWS_ACCESS_KEY_ID")
     S3CMD_OPTS+=(--secret_key="$AWS_SECRET_ACCESS_KEY")
+    S3CMD_OPTS+=(--region="$AWS_REGION")
     export S3CMD_CONFIG S3CMD_OPTS
   fi
 

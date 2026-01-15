@@ -34,9 +34,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - GetBucketLocation - us-east-1 is returned as null" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1643"
-  fi
   log 5 "AWS_REGION: $AWS_REGION"
   if [ "$AWS_REGION" != "us-east-1" ]; then
     skip "test only valid for AWS_REGION of 'us-east-1'"

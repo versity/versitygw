@@ -31,7 +31,7 @@ head_bucket() {
   if [[ $1 == 's3api' ]] || [[ $1 == 's3' ]]; then
     bucket_info=$(send_command aws --no-verify-ssl s3api head-bucket --bucket "$2" 2>&1) || exit_code=$?
   elif [[ $1 == "s3cmd" ]]; then
-    bucket_info=$(send_command s3cmd --no-check-certificate info "s3://$2" 2>&1) || exit_code=$?
+    bucket_info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$2" 2>&1) || exit_code=$?
   elif [[ $1 == 'mc' ]]; then
     bucket_info=$(send_command mc --insecure stat "$MC_ALIAS"/"$2" 2>&1) || exit_code=$?
   elif [[ $1 == 'rest' ]]; then

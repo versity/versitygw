@@ -62,7 +62,7 @@ get_bucket_location_s3cmd() {
     echo "get bucket location (s3cmd) requires bucket name"
     return 1
   fi
-  info=$(send_command s3cmd --no-check-certificate info "s3://$1") || results=$?
+  info=$(send_command s3cmd "${S3CMD_OPTS[@]}" --no-check-certificate info "s3://$1") || results=$?
   if [[ $results -ne 0 ]]; then
     log 2 "error getting bucket location: $location"
     return 1

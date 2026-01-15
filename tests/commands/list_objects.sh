@@ -44,8 +44,10 @@ list_objects() {
     fail "invalid command type $1"
     return 1
   fi
-  # shellcheck disable=SC2154
-  assert_success "error listing objects: $output"
+  if [ "$list_objects_result" -ne 0 ]; then
+    log 2 "error listing objects: $output"
+    return 1
+  fi
 
   object_array=()
   while IFS= read -r line; do

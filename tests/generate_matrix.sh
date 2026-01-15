@@ -36,7 +36,7 @@ check_for_and_load_test_file_and_params() {
       iam="folder"
     fi
     iam_types+=("$iam")
-    if [ $(( idx % 10 )) -eq 0 ]; then
+    if [ $(( idx % 4 )) -eq 0 ]; then
       region="us-west-1"
     else
       region="us-east-1"

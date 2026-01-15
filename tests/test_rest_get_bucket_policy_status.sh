@@ -24,9 +24,6 @@ source ./tests/util/util_public_access_block.sh
 source ./tests/setup.sh
 
 @test "REST - GetBucketPolicyStatus" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1712"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -42,9 +39,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - GetBucketPolicyStatus true" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1712"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

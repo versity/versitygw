@@ -116,9 +116,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - If-None-Match - no asterisk" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1708"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -132,9 +129,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - If-None-Match - block copy" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1708"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -161,17 +155,14 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - If-Match - file doesn't exist on server" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1709"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
 
-  run setup_bucket_v2 "$bucket_name"
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
-  run send_rest_go_command_expect_error "404" "NoSuchKey" "key does not exist" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+  send_rest_go_command_expect_error "404" "NoSuchKey" "key does not exist" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
     "-signedParams" "if-match:abc"
   assert_success
 }
@@ -190,9 +181,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - If-Match - correct etag" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1710"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
@@ -247,9 +235,6 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject - expect continue - success" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1707"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"
