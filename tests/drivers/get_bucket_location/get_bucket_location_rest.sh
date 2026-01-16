@@ -51,6 +51,7 @@ parse_bucket_location() {
   if ! check_param_count_v2 "file" 1 $#; then
     return 1
   fi
+  log 5 "file: $1"
   log 5 "data: $(cat "$1")"
   if ! location_constraint=$(get_element_text "$1" "LocationConstraint" 2>&1); then
     log 2 "error getting location constraint: $location_constraint"

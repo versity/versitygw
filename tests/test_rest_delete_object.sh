@@ -66,7 +66,6 @@ source ./tests/setup.sh
   run get_file_name
   assert_success
   test_file_two="$output"
-  log 5 "$test_file $test_file_two"
 
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success

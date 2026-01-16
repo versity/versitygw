@@ -17,6 +17,7 @@
 source ./tests/commands/delete_objects.sh
 source ./tests/commands/list_objects_v2.sh
 source ./tests/commands/list_parts.sh
+source ./tests/drivers/put_object/put_object.sh
 source ./tests/util/util_get_bucket_acl.sh
 source ./tests/util/util_get_object_attributes.sh
 source ./tests/util/util_get_object_retention.sh
@@ -108,46 +109,64 @@ test_get_put_object_legal_hold_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
   fi
-  bucket_file="bucket_file"
+  run get_file_name
+  assert_success
+  # shellcheck disable=SC2154
+  bucket_file="$output"
+
   username=$USERNAME_ONE
   password=$PASSWORD_ONE
 
-  run legal_hold_retention_setup "$username" "$password" "$bucket_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run legal_hold_retention_setup "$bucket_name" "$username" "$password" "$bucket_file"
   assert_success
 
-  run get_check_object_lock_config_enabled "$BUCKET_ONE_NAME"
+  run get_check_object_lock_config_enabled "$bucket_name"
   assert_success
 
-  run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "ON"
+  run put_object_legal_hold "s3api" "$bucket_name" "$bucket_file" "ON"
   assert_success
 
-  run get_and_check_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "ON"
+  run get_and_check_legal_hold "s3api" "$bucket_name" "$bucket_file" "ON"
   assert_success
 
   echo "fdkljafajkfs" > "$TEST_FILE_FOLDER/$bucket_file"
-  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
+  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$username" "$password"
   assert_success
 
-  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
+  run delete_object_with_user "s3api" "$bucket_name" "$bucket_file" "$username" "$password"
   assert_success
 
-  run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
+  run put_object_legal_hold "s3api" "$bucket_name" "$bucket_file" "OFF"
   assert_failure
   assert_output -p "MethodNotAllowed"
+
+  run delete_delete_marker_without_object_lock "$bucket_name" "$bucket_file"
+  assert_success
 }
 
 test_get_put_object_retention_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
   fi
-  bucket_file="bucket_file"
+  run get_file_name
+  assert_success
+  bucket_file="$output"
+
   username=$USERNAME_ONE
   secret_key=$PASSWORD_ONE
 
-  run legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run legal_hold_retention_setup "$bucket_name" "$username" "$secret_key" "$bucket_file"
   assert_success
 
-  run get_check_object_lock_config_enabled "$BUCKET_ONE_NAME"
+  run get_check_object_lock_config_enabled "$bucket_name"
   assert_success
 
   if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -157,17 +176,17 @@ test_get_put_object_retention_s3api_root() {
   fi
   log 5 "retention date: $retention_date"
 
-  run put_object_retention "$BUCKET_ONE_NAME" "$bucket_file" "GOVERNANCE" "$retention_date"
+  run put_object_retention "$bucket_name" "$bucket_file" "GOVERNANCE" "$retention_date"
   assert_success
 
-  run get_check_object_retention "$BUCKET_ONE_NAME" "$bucket_file" "$retention_date"
+  run get_check_object_retention "$bucket_name" "$bucket_file" "$retention_date"
   assert_success
 
   echo "fdkljafajkfs" > "$TEST_FILE_FOLDER/$bucket_file"
-  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
+  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$username" "$secret_key"
   assert_success
 
-  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
+  run delete_object_with_user "s3api" "$bucket_name" "$bucket_file" "$username" "$secret_key"
   assert_success
 }
 
@@ -175,15 +194,22 @@ test_retention_bypass_s3api_root() {
   if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versitygw-specific users tests"
   fi
-  bucket_file="bucket_file"
+  run get_file_name
+  assert_success
+  bucket_file="$output"
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
   username=$USERNAME_ONE
   secret_key=$PASSWORD_ONE
   policy_file="policy_file"
 
-  run legal_hold_retention_setup "$username" "$secret_key" "$bucket_file"
+  run legal_hold_retention_setup "$bucket_name" "$username" "$secret_key" "$bucket_file"
   assert_success
 
-  run get_check_object_lock_config_enabled "$BUCKET_ONE_NAME"
+  run get_check_object_lock_config_enabled "$bucket_name"
   assert_success
 
   if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -193,45 +219,20 @@ test_retention_bypass_s3api_root() {
   fi
   log 5 "retention date: $retention_date"
 
-  run put_object_retention "$BUCKET_ONE_NAME" "$bucket_file" "GOVERNANCE" "$retention_date"
+  run put_object_retention "$bucket_name" "$bucket_file" "GOVERNANCE" "$retention_date"
   assert_success
 
-  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file"
+  run delete_object_with_user "s3api" "$bucket_name" "$bucket_file"
   assert_failure 1
 
   run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "Allow" "$username" \
-    "[\"s3:BypassGovernanceRetention\",\"s3:DeleteObject\"]" "arn:aws:s3:::$BUCKET_ONE_NAME/*"
+    "[\"s3:BypassGovernanceRetention\",\"s3:DeleteObject\"]" "arn:aws:s3:::$bucket_name/*"
   assert_success
 
-  run put_bucket_policy "s3api" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER/$policy_file"
+  run put_bucket_policy "s3api" "$bucket_name" "$TEST_FILE_FOLDER/$policy_file"
   assert_success
 
-  run delete_object_bypass_retention "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$secret_key"
-  assert_success
-}
-
-legal_hold_retention_setup() {
-  assert [ $# -eq 3 ]
-
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
-  assert_success
-
-  run setup_user "$1" "$2" "user"
-  assert_success
-
-  run create_test_file "$3"
-  assert_success
-
-  #create_bucket "s3api" "$BUCKET_ONE_NAME" || fail "error creating bucket"
-  if [[ $RECREATE_BUCKETS == "true" ]]; then
-    run create_bucket_object_lock_enabled "$BUCKET_ONE_NAME"
-    assert_success
-  fi
-
-  run change_bucket_owner "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$BUCKET_ONE_NAME" "$1"
-  assert_success
-
-  run put_object_with_user "s3api" "$TEST_FILE_FOLDER/$3" "$BUCKET_ONE_NAME" "$3" "$1" "$2"
+  run delete_object_bypass_retention "$bucket_name" "$bucket_file" "$username" "$secret_key"
   assert_success
 }
 

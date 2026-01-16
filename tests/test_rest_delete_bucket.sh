@@ -145,3 +145,26 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run send_rest_go_command "204" "-method" "DELETE" "-bucketName" "$bucket_name" "-signedParams" "x-amz-expected-bucket-owner:$AWS_USER_ID"
   assert_success
 }
+
+@test "REST - DeleteBucket - BucketNotEmpty error contains bucket that is not empty" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1780"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object_rest "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+
+  run send_rest_go_command_expect_error_with_specific_arg_name_value "409" "BucketNotEmpty" "not empty" "BucketName" "$bucket_name" \
+    "-bucketName" "$bucket_name" "-method" "DELETE"
+  assert_success
+}

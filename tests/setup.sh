@@ -40,7 +40,13 @@ check_secrets_line() {
       log 2 "$password_env secrets parameter missing"
       return 1
     fi
-    if ! user_exists "${!username_env}" && ! create_user_versitygw "${!username_env}" "${!password_env}" "$role"; then
+    local user_exists_code=0
+    user_exists "${!username_env}" || user_exists_code=$?
+    if [ $user_exists_code -eq 2 ]; then
+      log 2 "error checking for user existence"
+      return 1
+    fi
+    if [ $user_exists_code -eq 1 ] && ! create_user_versitygw "${!username_env}" "${!password_env}" "$role"; then
       log 2 "error creating user"
       return 1
     fi
