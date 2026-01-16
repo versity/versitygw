@@ -1,0 +1,621 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - Users</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/css/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#002A7A', 50: '#E6EBF4', 500: '#002A7A', 600: '#002468' },
+            accent: { DEFAULT: '#0076CD', 50: '#E6F3FA', 500: '#0076CD', 600: '#0065AF' },
+            charcoal: { DEFAULT: '#191B2A', 300: '#757884', 400: '#565968' },
+            surface: { DEFAULT: '#F3F8FC' }
+          },
+          fontFamily: { sans: ['Roboto', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Roboto', system-ui, sans-serif; }
+    .nav-item { transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); }
+    .nav-item.active { background: rgba(0, 118, 205, 0.2); border-left: 4px solid #0076CD; }
+    .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    /* Custom dropdown styles */
+    .custom-dropdown {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      width: 100%;
+      margin-top: 4px;
+      background: white;
+      border: 2px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      max-height: 12rem;
+      overflow: auto;
+    }
+    .custom-dropdown.show {
+      display: block;
+    }
+    .custom-dropdown-item {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      color: #191B2A;
+      transition: background-color 0.15s;
+    }
+    .custom-dropdown-item:hover {
+      background-color: #f9fafb;
+    }
+    .custom-dropdown-item.selected {
+      background-color: rgba(0, 118, 205, 0.1);
+      color: #0076CD;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-charcoal flex flex-col flex-shrink-0">
+      <div class="h-16 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-admin-only>
+          Admin
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-admin-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10"></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span class="font-medium">Bug Reports</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <span class="font-medium">Releases</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+        </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3"></div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0">
+        <h1 class="text-xl font-semibold text-charcoal">VersityGW Users</h1>
+        <button onclick="loadUsers()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 overflow-auto p-8">
+        <div class="max-w-7xl mx-auto">
+          <!-- Page Header -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 class="text-2xl font-semibold text-charcoal">Users</h1>
+              <p class="text-charcoal-300 mt-1">Manage gateway user accounts</p>
+            </div>
+            <button onclick="openCreateModal()" class="flex items-center gap-2 bg-primary hover:bg-primary-600 text-white font-medium py-2.5 px-4 rounded-lg transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+              Create User
+            </button>
+          </div>
+
+          <!-- Filters & Search -->
+          <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+              <div class="relative flex-1 min-w-64">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input
+                  type="text"
+                  id="search-input"
+                  placeholder="Search by access key..."
+                  class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-charcoal placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+                  oninput="filterUsers()"
+                >
+              </div>
+              <div class="relative" id="role-filter-container">
+                <input
+                  type="text"
+                  id="role-filter-display"
+                  readonly
+                  value="All Roles"
+                  onclick="toggleDropdown('role-filter')"
+                  class="bg-white border border-gray-200 rounded-lg px-4 py-2.5 pr-10 text-charcoal cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+                >
+                <input type="hidden" id="role-filter" value="">
+                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-300 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+                <div id="role-filter-dropdown" class="custom-dropdown">
+                  <div class="custom-dropdown-item selected" data-value="" onclick="selectRoleFilter('')">All Roles</div>
+                  <div class="custom-dropdown-item" data-value="admin" onclick="selectRoleFilter('admin')">Admin</div>
+                  <div class="custom-dropdown-item" data-value="user" onclick="selectRoleFilter('user')">User</div>
+                  <div class="custom-dropdown-item" data-value="userplus" onclick="selectRoleFilter('userplus')">User+</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Users Table -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Access Key</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Role</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">User ID</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Group ID</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Project ID</th>
+                    <th class="text-right py-4 px-6 text-sm font-semibold text-charcoal">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-body">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Create/Edit User Modal -->
+  <div id="user-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('user-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 id="modal-title" class="text-xl font-semibold text-charcoal">Create New User</h2>
+          <button onclick="closeModal('user-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <form id="user-form" class="p-6 space-y-5">
+          <input type="hidden" id="edit-mode" value="create">
+
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Access Key <span class="text-red-500">*</span></label>
+            <div class="flex gap-2">
+              <input type="text" id="form-access" required placeholder="e.g., AKIAXXXXXXXXXX" class="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:text-charcoal-300 placeholder:font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              <button type="button" id="generate-access-btn" onclick="generateAccessKey()" class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-charcoal font-medium rounded-lg transition-colors text-sm">Generate</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Secret Key <span class="text-red-500">*</span></label>
+            <div class="flex gap-2">
+              <input type="text" id="form-secret" required placeholder="Click Generate or enter manually" class="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal font-mono text-sm placeholder:text-charcoal-300 placeholder:font-sans focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              <button type="button" onclick="generateSecret()" class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-charcoal font-medium rounded-lg transition-colors text-sm">Generate</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Role <span class="text-red-500">*</span></label>
+            <div class="relative" id="form-role-container">
+              <input
+                type="text"
+                id="form-role-display"
+                readonly
+                value="Select a role..."
+                onclick="toggleDropdown('form-role')"
+                class="w-full px-4 py-2.5 pr-10 border-2 border-gray-200 rounded-lg text-charcoal bg-white cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <input type="hidden" id="form-role" value="">
+              <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-300 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+              <div id="form-role-dropdown" class="custom-dropdown">
+                <div class="custom-dropdown-item" data-value="" onclick="selectFormRole('')">Select a role...</div>
+                <div class="custom-dropdown-item" data-value="admin" onclick="selectFormRole('admin')">Admin - Full administrative access</div>
+                <div class="custom-dropdown-item" data-value="user" onclick="selectFormRole('user')">User - Standard user access</div>
+                <div class="custom-dropdown-item" data-value="userplus" onclick="selectFormRole('userplus')">User+ - Enhanced user permissions</div>
+              </div>
+            </div>
+          </div>
+
+          <details class="group">
+            <summary class="flex items-center gap-2 cursor-pointer text-sm font-medium text-charcoal-400 hover:text-charcoal transition-colors list-none">
+              <svg class="w-4 h-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+              Advanced Options
+            </summary>
+            <div class="mt-4 space-y-4 pl-6">
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-charcoal mb-2">User ID</label>
+                  <input type="number" id="form-userid" value="0" min="0" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-charcoal mb-2">Group ID</label>
+                  <input type="number" id="form-groupid" value="0" min="0" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-charcoal mb-2">Project ID</label>
+                <input type="number" id="form-projectid" value="0" min="0" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all">
+              </div>
+            </div>
+          </details>
+        </form>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('user-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="submit-btn" onclick="submitUserForm()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Create User</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('delete-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-charcoal text-center mb-2">Delete User</h3>
+          <p class="text-charcoal-300 text-center mb-6">
+            Are you sure you want to delete <span id="delete-user-name" class="font-mono text-charcoal"></span>? This action cannot be undone.
+          </p>
+          <div class="flex items-center justify-center gap-3">
+            <button onclick="closeModal('delete-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            <button id="confirm-delete-btn" onclick="confirmDelete()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors">Delete User</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allUsers = [];
+    let userToDelete = null;
+
+    // ============================================
+    // Custom Dropdown Functions
+    // ============================================
+
+    // Toggle any dropdown
+    function toggleDropdown(name) {
+      const dropdown = document.getElementById(name + '-dropdown');
+      const allDropdowns = document.querySelectorAll('.custom-dropdown');
+
+      // Close all other dropdowns
+      allDropdowns.forEach(d => {
+        if (d.id !== name + '-dropdown') d.classList.remove('show');
+      });
+
+      dropdown.classList.toggle('show');
+    }
+
+    // Close all dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      const containers = ['role-filter-container', 'form-role-container'];
+      if (!containers.some(id => e.target.closest('#' + id))) {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('show'));
+      }
+    });
+
+    // Role filter dropdown
+    function selectRoleFilter(value) {
+      const display = document.getElementById('role-filter-display');
+      const hidden = document.getElementById('role-filter');
+      const dropdown = document.getElementById('role-filter-dropdown');
+
+      const labels = { '': 'All Roles', 'admin': 'Admin', 'user': 'User', 'userplus': 'User+' };
+      display.value = labels[value] || value;
+      hidden.value = value;
+
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      dropdown.classList.remove('show');
+      filterUsers();
+    }
+
+    // Form role dropdown (for modal)
+    function selectFormRole(value) {
+      const display = document.getElementById('form-role-display');
+      const hidden = document.getElementById('form-role');
+      const dropdown = document.getElementById('form-role-dropdown');
+
+      const labels = {
+        '': 'Select a role...',
+        'admin': 'Admin - Full administrative access',
+        'user': 'User - Standard user access',
+        'userplus': 'User+ - Enhanced user permissions'
+      };
+      display.value = labels[value] || value;
+      hidden.value = value;
+
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      dropdown.classList.remove('show');
+    }
+
+    if (!requireAdmin()) {
+      // Redirected
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadUsers();
+    }
+
+    async function loadUsers() {
+      showTableLoading('users-table-body', 6);
+      try {
+        allUsers = await api.listUsers();
+        filterUsers();
+      } catch (error) {
+        console.error('Error loading users:', error);
+        showToast('Error loading users: ' + error.message, 'error');
+        showEmptyState('users-table-body', 6, 'Error loading users');
+      }
+    }
+
+    function filterUsers() {
+      const searchTerm = document.getElementById('search-input').value.toLowerCase();
+      const roleFilter = document.getElementById('role-filter').value;
+
+      let filtered = allUsers;
+
+      if (searchTerm) {
+        filtered = filtered.filter(u => u.access && u.access.toLowerCase().includes(searchTerm));
+      }
+
+      if (roleFilter) {
+        filtered = filtered.filter(u => u.role === roleFilter);
+      }
+
+      renderUsers(filtered);
+    }
+
+    function renderUsers(users) {
+      const tbody = document.getElementById('users-table-body');
+      tbody.innerHTML = '';
+
+      if (users.length === 0) {
+        showEmptyState('users-table-body', 6, 'No users found');
+        return;
+      }
+
+      users.forEach(user => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-50 hover:bg-gray-50 transition-colors';
+        row.innerHTML = `
+          <td class="py-4 px-6"><span class="font-mono text-sm text-charcoal">${escapeHtml(user.access)}</span></td>
+          <td class="py-4 px-6">${formatRole(user.role)}</td>
+          <td class="py-4 px-6 text-sm text-charcoal">${user.userid || '0'}</td>
+          <td class="py-4 px-6 text-sm text-charcoal">${user.groupid || '0'}</td>
+          <td class="py-4 px-6 text-sm text-charcoal">${user.projectid || '0'}</td>
+          <td class="py-4 px-6 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="openEditModal('${escapeHtml(user.access)}')" class="p-2 text-charcoal-300 hover:text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+              </button>
+              <button onclick="openDeleteModal('${escapeHtml(user.access)}')" class="p-2 text-charcoal-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function openCreateModal() {
+      document.getElementById('edit-mode').value = 'create';
+      document.getElementById('modal-title').textContent = 'Create New User';
+      document.getElementById('submit-btn').textContent = 'Create User';
+      document.getElementById('form-access').value = '';
+      document.getElementById('form-access').readOnly = false;
+      document.getElementById('form-access').classList.remove('bg-gray-50');
+      document.getElementById('generate-access-btn').classList.remove('hidden');
+      document.getElementById('form-secret').value = '';
+      document.getElementById('form-secret').required = true;
+      document.getElementById('form-secret').placeholder = 'Click Generate or enter manually';
+      selectFormRole('');
+      document.getElementById('form-userid').value = '0';
+      document.getElementById('form-groupid').value = '0';
+      document.getElementById('form-projectid').value = '0';
+      openModal('user-modal');
+    }
+
+    function openEditModal(accessKey) {
+      const user = allUsers.find(u => u.access === accessKey);
+      if (!user) return;
+
+      document.getElementById('edit-mode').value = 'edit';
+      document.getElementById('modal-title').textContent = 'Edit User';
+      document.getElementById('submit-btn').textContent = 'Save Changes';
+      document.getElementById('form-access').value = user.access;
+      document.getElementById('form-access').readOnly = true;
+      document.getElementById('form-access').classList.add('bg-gray-50');
+      document.getElementById('generate-access-btn').classList.add('hidden');
+      document.getElementById('form-secret').value = '';
+      document.getElementById('form-secret').required = false;
+      document.getElementById('form-secret').placeholder = 'Leave blank to keep current';
+      selectFormRole(user.role || 'user');
+      document.getElementById('form-userid').value = user.userid || '0';
+      document.getElementById('form-groupid').value = user.groupid || '0';
+      document.getElementById('form-projectid').value = user.projectid || '0';
+      openModal('user-modal');
+    }
+
+    function openDeleteModal(accessKey) {
+      userToDelete = accessKey;
+      document.getElementById('delete-user-name').textContent = accessKey;
+      openModal('delete-modal');
+    }
+
+    function generateAccessKey() {
+      document.getElementById('form-access').value = api.generateAccessKey();
+    }
+
+    function generateSecret() {
+      document.getElementById('form-secret').value = api.generateSecretKey();
+    }
+
+    async function submitUserForm() {
+      const mode = document.getElementById('edit-mode').value;
+      const access = document.getElementById('form-access').value.trim();
+      const secret = document.getElementById('form-secret').value;
+      const role = document.getElementById('form-role').value;
+      const userid = parseInt(document.getElementById('form-userid').value) || 0;
+      const groupid = parseInt(document.getElementById('form-groupid').value) || 0;
+      const projectid = parseInt(document.getElementById('form-projectid').value) || 0;
+
+      if (!access || !role) {
+        showToast('Please fill in all required fields', 'error');
+        return;
+      }
+
+      if (mode === 'create' && !secret) {
+        showToast('Secret key is required for new users', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('submit-btn');
+      setLoading(btn, true);
+
+      try {
+        if (mode === 'create') {
+          await api.createUser(access, secret, role, userid, groupid, projectid);
+          showToast('User created successfully', 'success');
+        } else {
+          const updates = { role, userID: userid, groupID: groupid, projectID: projectid };
+          if (secret) updates.secret = secret;
+          await api.updateUser(access, updates);
+          showToast('User updated successfully', 'success');
+        }
+        closeModal('user-modal');
+        loadUsers();
+      } catch (error) {
+        console.error('Error saving user:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function confirmDelete() {
+      if (!userToDelete) return;
+
+      const btn = document.getElementById('confirm-delete-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.deleteUser(userToDelete);
+        showToast('User deleted successfully', 'success');
+        closeModal('delete-modal');
+        userToDelete = null;
+        loadUsers();
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+  </script>
+</body>
+</html>

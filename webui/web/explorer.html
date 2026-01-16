@@ -1,0 +1,4120 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW - Explorer</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/css/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#002A7A', 50: '#E6EBF4', 500: '#002A7A', 600: '#002468' },
+            accent: { DEFAULT: '#0076CD', 50: '#E6F3FA', 500: '#0076CD', 600: '#0065AF' },
+            charcoal: { DEFAULT: '#191B2A', 300: '#757884', 400: '#565968' },
+            surface: { DEFAULT: '#F3F8FC' }
+          },
+          fontFamily: { sans: ['Roboto', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Roboto', system-ui, sans-serif; }
+    .nav-item { transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); }
+    .nav-item.active { background: rgba(0, 118, 205, 0.2); border-left: 4px solid #0076CD; }
+    .drop-zone-active { background: rgba(0, 118, 205, 0.1); border-color: #0076CD; }
+    .file-row:hover { background: #f9fafb; }
+    .file-row.selected { background: #e6f3fa; }
+  </style>
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-charcoal flex flex-col flex-shrink-0">
+      <div class="h-16 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-admin-only>
+          Admin
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-admin-only></div>
+        <a href="explorer.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10"></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span class="font-medium">Bug Reports</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <span class="font-medium">Releases</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+        </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3">
+          <!-- Populated by JS -->
+        </div>
+        <button onclick="logout()" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0">
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-semibold text-charcoal">VersityGW Explorer</h1>
+        </div>
+        <div id="header-actions" class="flex items-center gap-2 hidden">
+          <button onclick="refresh()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+          <button id="versioning-config-btn" onclick="openVersioningModal()" class="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors" title="Configure bucket versioning">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Versioning
+          </button>
+          <button id="versions-toggle-btn" onclick="toggleVersionsView()" class="hidden inline-flex items-center gap-2 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span id="versions-toggle-text">Show Versions</span>
+          </button>
+          <button onclick="openCreateFolderDialog()" class="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+            </svg>
+            New Folder
+          </button>
+          <button onclick="openUploadDialog()" id="upload-btn" class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Upload
+          </button>
+        </div>
+      </header>
+
+      <!-- Breadcrumb & Search -->
+      <div class="bg-white border-b border-gray-100 px-8 py-3 flex items-center justify-between">
+        <nav id="breadcrumb" class="flex items-center gap-2 text-sm">
+          <span class="text-charcoal-300">Select a bucket to browse</span>
+        </nav>
+        <div id="search-container" class="hidden">
+          <div class="relative">
+            <svg class="w-4 h-4 text-charcoal-300 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input type="text" id="search-input" class="pl-9 pr-8 py-1.5 w-64 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent" placeholder="Filter by name...">
+            <button id="clear-search" class="hidden absolute right-2 top-1/2 transform -translate-y-1/2 text-charcoal-300 hover:text-charcoal" onclick="clearSearch()">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <main class="flex-1 overflow-auto p-8" id="drop-zone">
+        <div class="max-w-7xl mx-auto">
+          <!-- Drop Zone Overlay (hidden by default) -->
+          <div id="drop-overlay" class="hidden fixed inset-0 z-40 bg-accent/10 border-4 border-dashed border-accent flex items-center justify-center">
+            <div class="bg-white rounded-xl p-8 shadow-lg text-center">
+              <svg class="w-16 h-16 text-accent mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              <p class="text-xl font-semibold text-charcoal">Drop files to upload</p>
+              <p class="text-charcoal-300 mt-2">Files will be uploaded to current folder</p>
+            </div>
+          </div>
+
+          <!-- Buckets Table (shown when no bucket selected) -->
+          <div id="buckets-view">
+            <!-- Create Bucket Button (shown for admin/userplus) -->
+            <div id="bucket-actions" class="flex justify-end mb-4">
+              <button onclick="openCreateBucketDialog()" class="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Create Bucket
+              </button>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <colgroup>
+                    <col style="width: 30%;">
+                    <col style="width: 18%;">
+                    <col style="width: 18%;">
+                    <col id="buckets-created-col" style="width: 16%;">
+                    <col style="width: 18%;">
+                  </colgroup>
+                  <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400">Name</th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400">Versioning</th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400">Object Lock</th>
+                      <th id="buckets-created-header" class="text-left py-3 px-4 text-sm font-medium text-charcoal-400">Created</th>
+                      <th class="text-center py-3 px-4 text-sm font-medium text-charcoal-400">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="buckets-table">
+                    <!-- Bucket rows rendered by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Objects Table (shown when bucket is selected) -->
+          <div id="objects-view" class="hidden">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="border-b border-gray-100 bg-gray-50">
+                      <th class="w-10 py-3 px-4">
+                        <input type="checkbox" id="select-all" class="w-4 h-4 rounded border-gray-300" onchange="toggleSelectAll()">
+                      </th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400">Name</th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400 w-28">Size</th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400 w-48">Modified</th>
+                      <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-400 w-28">Class</th>
+                      <th class="text-right py-3 px-4 text-sm font-medium text-charcoal-400 w-28">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="objects-table">
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selection Toolbar (hidden by default) -->
+          <div id="selection-toolbar" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-charcoal text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-4">
+            <span id="selection-count" class="text-sm font-medium">0 items selected</span>
+            <div class="w-px h-6 bg-white/20"></div>
+            <button onclick="deleteSelected()" class="inline-flex items-center gap-2 px-3 py-1.5 text-red-400 hover:text-red-300 hover:bg-white/10 rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Delete
+            </button>
+            <button onclick="clearSelection()" class="px-3 py-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+              Clear
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Object Info Modal -->
+  <div id="info-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('info-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <h2 class="text-xl font-semibold text-charcoal">Object Info</h2>
+          <button onclick="closeModal('info-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto p-6 space-y-6">
+          <!-- Basic Info Section -->
+          <div>
+            <h3 class="text-sm font-semibold text-charcoal-400 uppercase tracking-wider mb-3">Basic Info</h3>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Key</span>
+                <span id="info-key" class="text-charcoal font-mono text-sm max-w-xs truncate">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Size</span>
+                <span id="info-size" class="text-charcoal">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Last Modified</span>
+                <span id="info-modified" class="text-charcoal">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Content Type</span>
+                <span id="info-type" class="text-charcoal">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Storage Class</span>
+                <span id="info-class" class="text-charcoal">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2">
+                <span class="text-charcoal-300">ETag</span>
+                <span id="info-etag" class="text-charcoal font-mono text-sm max-w-xs truncate">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags Section -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-charcoal-400 uppercase tracking-wider">Tags</h3>
+              <button onclick="addObjectTag()" class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-accent hover:text-accent-600 hover:bg-accent-50 rounded transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Add Tag
+              </button>
+            </div>
+            <div id="object-tags-list" class="space-y-2 min-h-[60px]">
+              <p class="text-charcoal-300 text-sm py-4 text-center">No tags</p>
+            </div>
+          </div>
+
+          <!-- Metadata Section -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-charcoal-400 uppercase tracking-wider">Metadata</h3>
+              <button onclick="addObjectMetadata()" class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-accent hover:text-accent-600 hover:bg-accent-50 rounded transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Add Metadata
+              </button>
+            </div>
+            <div id="object-metadata-list" class="space-y-2 min-h-[60px]">
+              <p class="text-charcoal-300 text-sm py-4 text-center">No metadata</p>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-3 p-6 border-t border-gray-100 flex-shrink-0 bg-white">
+          <button onclick="closeModal('info-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Close
+          </button>
+          <div class="flex items-center gap-3">
+            <button id="save-object-tags-btn" onclick="saveObjectTags()" class="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors">
+              Save Tags
+            </button>
+            <button id="save-object-metadata-btn" onclick="saveObjectMetadata()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+              Save Metadata
+            </button>
+            <button id="info-download-btn" onclick="downloadCurrentObject()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+              Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden file input for uploads -->
+  <input type="file" id="file-input" class="hidden" multiple onchange="handleFileSelect(event)">
+
+  <!-- Object Versions Modal -->
+  <div id="versions-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('versions-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 class="text-xl font-semibold text-charcoal">Object Versions</h2>
+            <p id="versions-object-key" class="text-sm text-charcoal-300 font-mono mt-1"></p>
+          </div>
+          <button onclick="closeModal('versions-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-auto p-6">
+          <div id="versions-loading" class="hidden text-center py-8">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-accent border-t-transparent"></div>
+            <p class="text-charcoal-300 mt-3">Loading versions...</p>
+          </div>
+          <div id="versions-content" class="space-y-3">
+            <!-- Versions will be rendered here -->
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+          <button onclick="closeModal('versions-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('delete-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-charcoal text-center mb-2">Delete Objects</h3>
+          <p id="delete-message" class="text-charcoal-300 text-center mb-6">Are you sure you want to delete these items? This action cannot be undone.</p>
+          <div class="flex items-center justify-center gap-3">
+            <button onclick="closeModal('delete-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button id="confirm-delete-btn" onclick="confirmDelete()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Folder Modal -->
+  <div id="create-folder-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('create-folder-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Create Folder</h2>
+          <button onclick="closeModal('create-folder-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-medium text-charcoal mb-2">Folder Name</label>
+          <input type="text" id="new-folder-name" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent" placeholder="Enter folder name">
+          <p class="text-xs text-charcoal-300 mt-2">Folder will be created in: <span id="folder-location" class="font-mono">/</span></p>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('create-folder-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button id="create-folder-btn" onclick="createFolder()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Bucket Modal -->
+  <div id="create-bucket-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('create-bucket-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Create Bucket</h2>
+          <button onclick="closeModal('create-bucket-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6">
+          <label class="block text-sm font-medium text-charcoal mb-2">Bucket Name</label>
+          <input type="text" id="new-bucket-name" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent" placeholder="my-bucket-name">
+          <p class="text-xs text-charcoal-300 mt-2">Bucket names must be lowercase, 3-63 characters, and can contain letters, numbers, and hyphens.</p>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('create-bucket-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button id="create-bucket-btn" onclick="createBucket()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Bucket Modal -->
+  <div id="delete-bucket-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('delete-bucket-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="p-6">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold text-charcoal text-center mb-2">Delete Bucket</h3>
+          <p id="delete-bucket-message" class="text-charcoal-300 text-center mb-6"></p>
+          <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <p class="text-sm text-yellow-800">This action cannot be undone. The bucket must be empty before it can be deleted.</p>
+            </div>
+          </div>
+          <div class="flex items-center justify-center gap-3">
+            <button onclick="closeModal('delete-bucket-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button id="confirm-delete-bucket-btn" onclick="confirmDeleteBucketAction()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors">
+              Delete Bucket
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bucket Info Modal -->
+  <div id="bucket-info-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('bucket-info-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <h2 class="text-xl font-semibold text-charcoal">Bucket Information</h2>
+          <button onclick="closeModal('bucket-info-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-6">
+          <!-- Basic Info Section -->
+          <div>
+            <h3 class="text-sm font-semibold text-charcoal-400 uppercase tracking-wider mb-3">Basic Information</h3>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Bucket Name</span>
+                <span id="bucket-info-name" class="text-charcoal font-mono text-sm">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Versioning</span>
+                <span id="bucket-info-versioning" class="text-charcoal">-</span>
+              </div>
+              <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                <span class="text-charcoal-300">Object Lock</span>
+                <span id="bucket-info-object-lock" class="text-charcoal">-</span>
+              </div>
+              <div id="bucket-info-object-lock-details" class="hidden space-y-2 pl-4 py-2 border-l-2 border-accent-200">
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-charcoal-300">Mode</span>
+                  <span id="bucket-info-lock-mode" class="text-charcoal font-mono">-</span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-charcoal-300">Retention Period</span>
+                  <span id="bucket-info-lock-retention" class="text-charcoal">-</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags Section -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-charcoal-400 uppercase tracking-wider">Tags</h3>
+              <button onclick="addBucketTag()" class="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-accent hover:text-accent-600 hover:bg-accent-50 rounded transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Add Tag
+              </button>
+            </div>
+            <div id="bucket-tags-list" class="space-y-2 min-h-[60px]">
+              <p class="text-charcoal-300 text-sm py-4 text-center">No tags</p>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-3 p-6 border-t border-gray-100 sticky bottom-0 bg-white">
+          <div></div>
+          <div class="flex gap-3">
+            <button onclick="closeModal('bucket-info-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+              Close
+            </button>
+            <button id="save-bucket-tags-btn" onclick="saveBucketTags()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+              Save Tags
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Versioning Modal -->
+  <div id="versioning-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('versioning-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Bucket Versioning</h2>
+          <button onclick="closeModal('versioning-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Bucket</label>
+            <input type="text" id="versioning-bucket-name" readonly class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal bg-gray-50 font-mono">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Current Status</label>
+            <div id="versioning-current-status" class="flex items-center gap-2"></div>
+          </div>
+          <div class="bg-accent-50 border border-accent/20 rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm text-charcoal">
+                <span class="font-medium">Note:</span> Once versioning is enabled, it can only be suspended, not disabled. All object uploads will create new versions.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('versioning-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="suspend-versioning-btn" onclick="suspendVersioning()" class="hidden px-4 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-medium rounded-lg transition-colors">Suspend Versioning</button>
+          <button id="enable-versioning-btn" onclick="enableVersioning()" class="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors">Enable Versioning</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Object Lock Modal -->
+  <div id="object-lock-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('object-lock-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Object Lock Configuration</h2>
+          <button onclick="closeModal('object-lock-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="p-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Bucket</label>
+            <input type="text" id="object-lock-bucket-name" readonly class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal bg-gray-50 font-mono">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Current Status</label>
+            <div id="object-lock-current-status" class="flex items-center gap-2"></div>
+          </div>
+          <div id="object-lock-config-section" class="hidden space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-charcoal mb-2">Retention Mode</label>
+              <select id="object-lock-mode" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent">
+                <option value="">None</option>
+                <option value="GOVERNANCE">GOVERNANCE</option>
+                <option value="COMPLIANCE">COMPLIANCE</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-charcoal mb-2">Retention Period</label>
+              <div class="flex gap-3">
+                <div class="flex-1">
+                  <input type="number" id="object-lock-days" min="0" placeholder="Days" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent">
+                </div>
+                <div class="flex-1">
+                  <input type="number" id="object-lock-years" min="0" placeholder="Years" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent">
+                </div>
+              </div>
+              <p class="text-xs text-charcoal-300 mt-1">Specify either days or years, not both</p>
+            </div>
+          </div>
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm text-blue-800">
+                <span class="font-medium">Note:</span> Versioning must be enabled before you can enable Object Lock. Once Object Lock is enabled, it cannot be disabled. You can update retention settings at any time.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('object-lock-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Close</button>
+          <button id="enable-object-lock-btn" onclick="enableObjectLock()" class="hidden px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">Enable Object Lock</button>
+          <button id="update-object-lock-btn" onclick="updateObjectLockConfig()" class="hidden px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Update Configuration</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bucket Policy Modal -->
+  <div id="bucket-policy-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('bucket-policy-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 class="text-xl font-semibold text-charcoal">Bucket Policy Manager</h2>
+            <p class="text-sm text-charcoal-300 mt-1" id="policy-bucket-name-display"></p>
+          </div>
+          <button onclick="closeModal('bucket-policy-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="flex-1 overflow-auto">
+          <div class="p-6 space-y-6">
+            <!-- Info Banner -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div class="text-sm text-blue-800">
+                  <p class="font-medium">About Bucket Policies</p>
+                  <p class="mt-1">Bucket policies define who can access your bucket and what actions they can perform. The <strong>Principal</strong> is the access key of the user account, and the <strong>Resource</strong> uses standard bucket ARN format.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Reference Card -->
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h3 class="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                Quick Reference
+              </h3>
+              <div class="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p class="font-medium text-charcoal mb-1">Common Actions:</p>
+                  <ul class="space-y-0.5 text-charcoal-400">
+                    <li>• <code class="bg-white px-1 py-0.5 rounded">s3:GetObject</code> - Download objects</li>
+                    <li>• <code class="bg-white px-1 py-0.5 rounded">s3:PutObject</code> - Upload objects</li>
+                    <li>• <code class="bg-white px-1 py-0.5 rounded">s3:DeleteObject</code> - Delete objects</li>
+                    <li>• <code class="bg-white px-1 py-0.5 rounded">s3:ListBucket</code> - List bucket contents</li>
+                  </ul>
+                </div>
+                <div>
+                  <p class="font-medium text-charcoal mb-1">Resource Format:</p>
+                  <ul class="space-y-0.5 text-charcoal-400">
+                    <li>• Bucket: <code class="bg-white px-1 py-0.5 rounded text-[10px]">arn:aws:s3:::bucketname</code></li>
+                    <li>• All objects: <code class="bg-white px-1 py-0.5 rounded text-[10px]">arn:aws:s3:::bucketname/*</code></li>
+                    <li>• Folder: <code class="bg-white px-1 py-0.5 rounded text-[10px]">arn:aws:s3:::bucketname/folder/*</code></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Current Policy Status -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <label class="text-sm font-medium text-charcoal">Current Policy</label>
+                <div class="flex gap-2">
+                  <button onclick="showPolicyDocumentation()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Help
+                  </button>
+                  <button id="load-example-policy-btn" onclick="loadExamplePolicy()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 text-charcoal rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Load Example
+                  </button>
+                  <button onclick="validatePolicyJson()" class="inline-flex items-center gap-1 px-3 py-1.5 text-xs border border-accent text-accent hover:bg-accent-50 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Validate
+                  </button>
+                </div>
+              </div>
+              <div id="policy-status-message" class="mb-3 hidden"></div>
+              <div class="relative">
+                <textarea 
+                  id="policy-json-editor" 
+                  class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-accent resize-none"
+                  rows="16"
+                  placeholder="No policy defined. Click 'Load Example' to get started."
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Policy Documentation (collapsible) -->
+            <div id="policy-documentation" class="hidden bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div class="flex items-start justify-between mb-3">
+                <h3 class="text-sm font-semibold text-charcoal flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                  </svg>
+                  Policy Structure Guide
+                </h3>
+                <button onclick="hidePolicyDocumentation()" class="text-charcoal-300 hover:text-charcoal">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="space-y-3 text-sm text-charcoal">
+                <div>
+                  <p class="font-medium mb-1">Required Fields:</p>
+                  <ul class="list-disc list-inside space-y-1 text-charcoal-400 ml-2">
+                    <li><strong>Version:</strong> Always "2012-10-17"</li>
+                    <li><strong>Statement:</strong> Array of policy statements</li>
+                  </ul>
+                </div>
+                <div>
+                  <p class="font-medium mb-1">Statement Fields:</p>
+                  <ul class="list-disc list-inside space-y-1 text-charcoal-400 ml-2">
+                    <li><strong>Sid:</strong> Statement identifier (optional, but recommended)</li>
+                    <li><strong>Effect:</strong> "Allow" or "Deny"</li>
+                    <li><strong>Principal:</strong> Array of access keys (e.g., ["user001", "user002"])</li>
+                    <li><strong>Action:</strong> Array of S3 actions (e.g., ["s3:GetObject", "s3:PutObject"])</li>
+                    <li><strong>Resource:</strong> Array of ARNs (e.g., ["arn:aws:s3:::bucket/*"])</li>
+                  </ul>
+                </div>
+                <div>
+                  <p class="font-medium mb-1">Common S3 Actions:</p>
+                  <div class="grid grid-cols-2 gap-2 text-xs text-charcoal-400 ml-2">
+                    <div>
+                      <p class="font-medium text-charcoal mb-1">Bucket Operations:</p>
+                      <ul class="space-y-0.5">
+                        <li>• s3:ListBucket</li>
+                        <li>• s3:GetBucketLocation</li>
+                        <li>• s3:GetBucketPolicy</li>
+                        <li>• s3:PutBucketTagging</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p class="font-medium text-charcoal mb-1">Object Operations:</p>
+                      <ul class="space-y-0.5">
+                        <li>• s3:GetObject</li>
+                        <li>• s3:PutObject</li>
+                        <li>• s3:DeleteObject</li>
+                        <li>• s3:GetObjectTagging</li>
+                        <li>• s3:PutObjectTagging</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between p-6 border-t border-gray-100 flex-shrink-0">
+          <button id="delete-policy-btn" onclick="deleteBucketPolicy()" class="px-4 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 font-medium rounded-lg transition-colors">
+            Delete Policy
+          </button>
+          <div class="flex gap-3">
+            <button onclick="closeModal('bucket-policy-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+            <button id="save-policy-btn" onclick="saveBucketPolicy()" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Save Policy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multipart Uploads Modal -->
+  <div id="multipart-uploads-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" style="background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);" onclick="closeModal('multipart-uploads-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl relative max-h-[90vh] flex flex-col">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 class="text-xl font-semibold text-charcoal">Multipart Uploads</h2>
+            <p class="text-sm text-charcoal-300 mt-1" id="multipart-bucket-name-display"></p>
+          </div>
+          <button onclick="closeModal('multipart-uploads-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="flex-1 overflow-auto">
+          <div class="p-6 space-y-4">
+            <!-- Info Banner -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <div class="text-sm text-blue-800">
+                  <p class="font-medium">About Multipart Uploads</p>
+                  <p class="mt-1">These are incomplete multipart uploads in this bucket. You can abort uploads that are no longer needed to free up storage.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="multipart-loading" class="py-12 text-center">
+              <svg class="animate-spin w-8 h-8 text-accent mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <p class="text-charcoal-300">Loading multipart uploads...</p>
+            </div>
+
+            <!-- Uploads List -->
+            <div id="multipart-list" class="hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full">
+                  <thead>
+                    <tr class="border-b-2 border-gray-200">
+                      <th class="py-3 px-4 text-left text-xs font-semibold text-charcoal-400 uppercase tracking-wider">Object Key</th>
+                      <th class="py-3 px-4 text-left text-xs font-semibold text-charcoal-400 uppercase tracking-wider">Upload ID</th>
+                      <th class="py-3 px-4 text-left text-xs font-semibold text-charcoal-400 uppercase tracking-wider">Initiated</th>
+                      <th class="py-3 px-4 text-center text-xs font-semibold text-charcoal-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="multipart-uploads-tbody">
+                    <!-- Populated by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="multipart-empty" class="hidden py-12 text-center">
+              <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-lg font-medium text-charcoal">No Multipart Uploads</p>
+              <p class="text-sm text-charcoal-300 mt-1">There are no outstanding multipart uploads in this bucket</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 p-6 border-t border-gray-100 flex-shrink-0">
+          <div>
+            <button id="abort-all-btn" onclick="abortAllMultipartUploads()" class="hidden px-4 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 font-medium rounded-lg transition-colors">
+              <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+                Abort All
+              </span>
+            </button>
+          </div>
+          <div class="flex gap-3">
+            <button onclick="refreshMultipartUploads()" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+              <span class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Refresh
+              </span>
+            </button>
+            <button onclick="closeModal('multipart-uploads-modal')" class="px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentBucket = null;
+    let currentPrefix = '';
+    let objects = [];
+    let folders = [];
+    let bucketsList = [];
+    let selectedObjects = new Set();
+    let currentObjectKey = null; // For info modal
+    let searchTerm = ''; // Search filter
+
+    // Versioning state
+    let showVersions = false;
+    let currentBucketVersioningStatus = null;
+    let objectVersions = [];
+    let objectVersionCounts = {}; // Maps object key to version count
+    let deletedObjectsWithVersions = []; // Objects with delete marker but older versions exist
+    let bucketsVersioningCache = {};
+    let bucketsObjectLockCache = {};
+
+    // Auth guard
+    if (!requireAuth()) {
+      // Will redirect to login
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      init();
+      setupDragDrop();
+    }
+
+    // ============================================
+    // Initialization
+    // ============================================
+
+    async function init() {
+      // Check URL hash for bucket/prefix
+      const hash = window.location.hash.slice(1);
+      if (hash) {
+        const parts = hash.split('/');
+        const bucketName = parts[0];
+        if (bucketName) {
+          currentBucket = bucketName;
+          currentPrefix = parts.slice(1).join('/');
+          if (currentPrefix && !currentPrefix.endsWith('/')) {
+            currentPrefix += '/';
+          }
+        }
+      }
+
+      await loadBuckets();
+    }
+
+    // ============================================
+    // Logout
+    // ============================================
+
+    function logout() {
+      confirm('Are you sure you want to sign out?', () => {
+        api.logout();
+        window.location.href = 'index.html';
+      });
+    }
+
+    // ============================================
+    // Bucket Loading
+    // ============================================
+
+    async function loadBuckets() {
+      const tbody = document.getElementById('buckets-table');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="2" class="py-12 text-center">
+            <svg class="animate-spin h-8 w-8 text-accent mx-auto" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-charcoal-300 mt-4">Loading buckets...</p>
+          </td>
+        </tr>
+      `;
+
+      try {
+        if (api.isAdmin()) {
+          // Admin: use admin API to get all buckets with owner info
+          bucketsList = await api.listBuckets();
+        } else {
+          // Regular user: use S3 API to get accessible buckets
+          bucketsList = await api.listBucketsS3();
+        }
+
+        // Load versioning status for all buckets
+        await loadAllBucketsVersioning();
+        
+        // Load object lock configuration for all buckets
+        await loadAllBucketsObjectLock();
+
+        // If we have a bucket from URL, show it
+        if (currentBucket) {
+          showObjectsView();
+          await loadObjects();
+        } else {
+          showBucketsView();
+          renderBuckets();
+        }
+      } catch (error) {
+        console.error('Error loading buckets:', error);
+        showToast('Error loading buckets: ' + error.message, 'error');
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="2" class="py-12 text-center">
+              <svg class="w-16 h-16 text-red-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <p class="text-lg font-medium text-charcoal">Error loading buckets</p>
+              <p class="text-sm text-charcoal-300 mt-1">${escapeHtml(error.message)}</p>
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    async function loadAllBucketsVersioning() {
+      const promises = bucketsList.map(async (bucket) => {
+        const name = bucket.name || bucket.Name;
+        try {
+          const result = await api.getBucketVersioning(name);
+          bucketsVersioningCache[name] = result.status || '';
+        } catch (error) {
+          console.error(`Error loading versioning for ${name}:`, error);
+          bucketsVersioningCache[name] = 'Unknown';
+        }
+      });
+      await Promise.all(promises);
+    }
+
+    async function loadAllBucketsObjectLock() {
+      const promises = bucketsList.map(async (bucket) => {
+        const name = bucket.name || bucket.Name;
+        try {
+          const result = await api.getBucketObjectLockConfiguration(name);
+          bucketsObjectLockCache[name] = result;
+        } catch (error) {
+          console.error(`Error loading object lock for ${name}:`, error);
+          bucketsObjectLockCache[name] = { enabled: false, mode: '', days: null, years: null };
+        }
+      });
+      await Promise.all(promises);
+    }
+
+    function renderBuckets() {
+      const tbody = document.getElementById('buckets-table');
+      const createdHeader = document.getElementById('buckets-created-header');
+      const createdCol = document.getElementById('buckets-created-col');
+      tbody.innerHTML = '';
+
+      if (bucketsList.length === 0) {
+        createdHeader.style.display = 'none';
+        if (createdCol) createdCol.style.display = 'none';
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" class="py-12 text-center">
+              <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+              </svg>
+              <p class="text-lg font-medium text-charcoal">No buckets available</p>
+              <p class="text-sm text-charcoal-300 mt-1">You don't have access to any buckets</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      // Check if any bucket has a creation date
+      const hasAnyCreationDate = bucketsList.some(bucket => {
+        const creationDate = bucket.creationdate || bucket.CreationDate;
+        return creationDate != null;
+      });
+
+      // Show/hide the Created column header and column
+      if (hasAnyCreationDate) {
+        createdHeader.style.display = '';
+        if (createdCol) createdCol.style.display = '';
+      } else {
+        createdHeader.style.display = 'none';
+        if (createdCol) createdCol.style.display = 'none';
+      }
+
+      bucketsList.forEach(bucket => {
+        const name = bucket.name || bucket.Name;
+        const creationDate = bucket.creationdate || bucket.CreationDate;
+        const versioningStatus = bucketsVersioningCache[name] || '';
+        const objectLockConfig = bucketsObjectLockCache[name] || { enabled: false };
+        const row = document.createElement('tr');
+        row.className = 'file-row border-b border-gray-50';
+        row.innerHTML = `
+          <td class="py-3 px-4 cursor-pointer" onclick="selectBucket('${escapeHtml(name)}')">
+            <div class="flex items-center gap-3">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+              </svg>
+              <span class="font-mono text-sm text-charcoal">${escapeHtml(name)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4">
+            ${getVersioningBadge(versioningStatus)}
+          </td>
+          <td class="py-3 px-4">
+            ${getObjectLockBadge(objectLockConfig)}
+          </td>
+          ${hasAnyCreationDate ? `<td class="py-3 px-4 text-charcoal-300 text-sm">${creationDate ? new Date(creationDate).toLocaleDateString() : '-'}</td>` : ''}
+          <td class="py-3 px-4 text-center">
+            <div class="flex items-center justify-center gap-1">
+              <button onclick="event.stopPropagation(); openBucketInfoModal('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Bucket info">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); openBucketPolicyModal('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Manage policy">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); openVersioningModalForBucket('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Configure versioning">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); openObjectLockModalForBucket('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Configure object lock">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); openMultipartUploadsModalForBucket('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded transition-colors" title="Multipart uploads">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17h6m-3-3v6m-4 1h10a2 2 0 002-2V7a2 2 0 00-2-2h-4l-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6"/>
+                </svg>
+              </button>
+              <button onclick="event.stopPropagation(); confirmDeleteBucket('${escapeHtml(name)}')" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete bucket">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function selectBucket(bucketName) {
+      currentBucket = bucketName;
+      currentPrefix = '';
+      showVersions = false;
+      showObjectsView();
+      await checkBucketVersioning();
+      loadObjects();
+      updateUrl();
+    }
+
+    async function checkBucketVersioning() {
+      const btn = document.getElementById('versions-toggle-btn');
+      const text = document.getElementById('versions-toggle-text');
+
+      try {
+        const result = await api.getBucketVersioning(currentBucket);
+        currentBucketVersioningStatus = result.status || '';
+
+        // Show/hide versions toggle based on versioning status
+        if (currentBucketVersioningStatus === 'Enabled' || currentBucketVersioningStatus === 'Suspended') {
+          btn.classList.remove('hidden');
+        } else {
+          btn.classList.add('hidden');
+        }
+      } catch (error) {
+        console.error('Error checking bucket versioning:', error);
+        currentBucketVersioningStatus = null;
+        btn.classList.add('hidden');
+      }
+
+      // Reset toggle state
+      showVersions = false;
+      text.textContent = 'Show Versions';
+      btn.classList.remove('bg-accent', 'text-white', 'border-accent');
+      btn.classList.add('border-gray-200', 'text-charcoal');
+    }
+
+    function showBucketsView() {
+      document.getElementById('buckets-view').classList.remove('hidden');
+      document.getElementById('objects-view').classList.add('hidden');
+      document.getElementById('header-actions').classList.add('hidden');
+      document.getElementById('search-container').classList.add('hidden');
+      clearSearch();
+      updateBreadcrumb();
+    }
+
+    function showObjectsView() {
+      document.getElementById('buckets-view').classList.add('hidden');
+      document.getElementById('objects-view').classList.remove('hidden');
+      document.getElementById('header-actions').classList.remove('hidden');
+      document.getElementById('search-container').classList.remove('hidden');
+    }
+
+    function goToBuckets() {
+      currentBucket = null;
+      currentPrefix = '';
+      showBucketsView();
+      renderBuckets();
+      updateUrl();
+    }
+
+    function refresh() {
+      if (currentBucket) {
+        loadObjects();
+      } else {
+        loadBuckets();
+      }
+    }
+
+    // ============================================
+    // Object Loading
+    // ============================================
+
+    async function loadObjects() {
+      if (!currentBucket) return;
+
+      showTableLoading('objects-table', 6);
+      clearSelection();
+      updateBreadcrumb();
+
+      try {
+        const result = await api.listObjectsV2(currentBucket, currentPrefix);
+
+        folders = result.commonPrefixes || [];
+        objects = result.contents || [];
+
+        // Filter out the current prefix itself (if it exists as an object)
+        objects = objects.filter(obj => obj.key !== currentPrefix);
+
+        // If versioning is enabled, fetch version counts for all objects
+        objectVersionCounts = {};
+        deletedObjectsWithVersions = [];
+        if (currentBucketVersioningStatus === 'Enabled' || currentBucketVersioningStatus === 'Suspended') {
+          try {
+            const versionsResult = await api.listObjectVersions(currentBucket, currentPrefix);
+            
+            // Explicitly mark delete markers
+            const versions = versionsResult.versions.map(v => ({ ...v, isDeleteMarker: false }));
+            const deleteMarkers = versionsResult.deleteMarkers.map(dm => ({ ...dm, isDeleteMarker: true }));
+            const allVersions = [...versions, ...deleteMarkers];
+            
+            // Group versions by key
+            const versionsByKey = {};
+            allVersions.forEach(v => {
+              // Only include objects in the current prefix level (not subdirectories)
+              if (!versionsByKey[v.key]) {
+                versionsByKey[v.key] = [];
+              }
+              versionsByKey[v.key].push(v);
+            });
+            
+            // Count versions per key and identify deleted objects with older versions
+            Object.entries(versionsByKey).forEach(([key, versions]) => {
+              objectVersionCounts[key] = versions.length;
+              
+              // Find the latest version (marked by isLatest flag from API)
+              const latestVersion = versions.find(v => v.isLatest === true);
+              const hasOlderVersions = versions.length > 1;
+              
+              if (latestVersion && latestVersion.isDeleteMarker && hasOlderVersions) {
+                // Sort to find the most recent non-delete-marker version for display info
+                const nonDeleteMarkers = versions.filter(v => !v.isDeleteMarker);
+                nonDeleteMarkers.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+                const latestRealVersion = nonDeleteMarkers[0];
+                
+                deletedObjectsWithVersions.push({
+                  key: key,
+                  size: latestRealVersion?.size || 0,
+                  lastModified: latestVersion.lastModified,
+                  storageClass: latestRealVersion?.storageClass || 'STANDARD',
+                  deleteMarkerVersionId: latestVersion.versionId
+                });
+              }
+            });
+          } catch (error) {
+            console.error('Error loading version counts:', error);
+          }
+        }
+
+        renderObjects();
+      } catch (error) {
+        console.error('Error loading objects:', error);
+        showToast('Error loading objects: ' + error.message, 'error');
+        showEmptyState('objects-table', 6, 'Error loading objects');
+      }
+    }
+
+    function refreshObjects() {
+      loadObjects();
+    }
+
+    // ============================================
+    // Rendering
+    // ============================================
+
+    function renderObjects() {
+      const tbody = document.getElementById('objects-table');
+      tbody.innerHTML = '';
+
+      // No bucket selected - shouldn't happen but safety check
+      if (!currentBucket) {
+        goToBuckets();
+        return;
+      }
+
+      // Apply search filter
+      let filteredFolders = folders;
+      let filteredObjects = objects;
+      let filteredDeletedObjects = deletedObjectsWithVersions;
+
+      if (searchTerm) {
+        filteredFolders = folders.filter(f => {
+          const name = getFolderName(f.prefix);
+          return name.toLowerCase().includes(searchTerm);
+        });
+        filteredObjects = objects.filter(o => {
+          const name = getFileName(o.key);
+          return name.toLowerCase().includes(searchTerm);
+        });
+        filteredDeletedObjects = deletedObjectsWithVersions.filter(o => {
+          const name = getFileName(o.key);
+          return name.toLowerCase().includes(searchTerm);
+        });
+      }
+
+      // Empty folder or no results
+      if (filteredFolders.length === 0 && filteredObjects.length === 0 && filteredDeletedObjects.length === 0) {
+        if (searchTerm) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="py-12 text-center">
+                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <p class="text-lg font-medium text-charcoal">No results found</p>
+                <p class="text-sm text-charcoal-300 mt-1">No items match "${escapeHtml(searchTerm)}"</p>
+                <button onclick="clearSearch()" class="mt-4 px-4 py-2 border border-gray-200 hover:bg-gray-50 text-charcoal font-medium rounded-lg transition-colors">
+                  Clear Filter
+                </button>
+              </td>
+            </tr>
+          `;
+        } else {
+          // Empty folder (no search active)
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="py-12 text-center">
+                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+                <p class="text-lg font-medium text-charcoal">This folder is empty</p>
+                <p class="text-sm text-charcoal-300 mt-1">Upload files to get started</p>
+                <button onclick="openUploadDialog()" class="mt-4 px-4 py-2 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+                  Upload Files
+                </button>
+              </td>
+            </tr>
+          `;
+        }
+        return;
+      }
+
+      // Render folders first
+      filteredFolders.forEach(folder => {
+        const name = getFolderName(folder.prefix);
+        const row = document.createElement('tr');
+        row.className = 'file-row border-b border-gray-50 cursor-pointer';
+        row.onclick = (e) => {
+          if (!e.target.closest('input[type="checkbox"]') && !e.target.closest('button')) {
+            navigateToFolder(folder.prefix);
+          }
+        };
+        row.innerHTML = `
+          <td class="py-3 px-4">
+            <input type="checkbox" class="w-4 h-4 rounded border-gray-300" data-key="${escapeHtml(folder.prefix)}" data-type="folder" onchange="toggleSelect(this)">
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+              </svg>
+              <span class="font-mono text-sm text-charcoal">${escapeHtml(name)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-right">
+            <button onclick="event.stopPropagation(); deleteObject('${escapeHtml(folder.prefix)}', true)" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete folder">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Render objects
+      filteredObjects.forEach(obj => {
+        const name = getFileName(obj.key);
+        const versionCount = objectVersionCounts[obj.key] || 0;
+        const hasMultipleVersions = versionCount > 1;
+        
+        const row = document.createElement('tr');
+        row.className = 'file-row border-b border-gray-50';
+        row.innerHTML = `
+          <td class="py-3 px-4">
+            <input type="checkbox" class="w-4 h-4 rounded border-gray-300" data-key="${escapeHtml(obj.key)}" data-type="file" onchange="toggleSelect(this)">
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-2">
+              ${getFileIcon(name)}
+              <span class="font-mono text-sm text-charcoal">${escapeHtml(name)}</span>
+              ${hasMultipleVersions ? `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded" title="${versionCount} versions">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  ${versionCount}
+                </span>
+              ` : ''}
+            </div>
+          </td>
+          <td class="py-3 px-4 text-charcoal-300 font-mono text-sm">${formatSize(obj.size)}</td>
+          <td class="py-3 px-4 text-charcoal-300 text-sm">${formatDate(obj.lastModified)}</td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-1 ${getStorageClassColor(obj.storageClass)} text-xs font-medium rounded">
+              ${obj.storageClass || 'STANDARD'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end gap-1">
+              ${hasMultipleVersions ? `
+                <button onclick="showObjectVersions('${escapeHtml(obj.key)}')" class="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="View versions">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </button>
+              ` : ''}
+              <button onclick="showObjectInfo('${escapeHtml(obj.key)}')" class="p-1.5 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Info">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              <button onclick="downloadObject('${escapeHtml(obj.key)}')" class="p-1.5 text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Download">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+              </button>
+              <button onclick="deleteObject('${escapeHtml(obj.key)}')" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Render deleted objects that still have versions
+      filteredDeletedObjects.forEach(obj => {
+        const name = getFileName(obj.key);
+        const versionCount = objectVersionCounts[obj.key] || 0;
+        
+        const row = document.createElement('tr');
+        row.className = 'file-row border-b border-gray-50 opacity-60';
+        row.innerHTML = `
+          <td class="py-3 px-4">
+            <input type="checkbox" class="w-4 h-4 rounded border-gray-300" data-key="${escapeHtml(obj.key)}" data-type="file" onchange="toggleSelect(this)">
+          </td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-2">
+              ${getFileIcon(name)}
+              <span class="font-mono text-sm text-charcoal line-through">${escapeHtml(name)}</span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 text-xs font-medium rounded" title="Deleted but has ${versionCount} older versions">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+                Deleted
+              </span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded" title="${versionCount} versions available">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                ${versionCount}
+              </span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-charcoal-300 font-mono text-sm">${formatSize(obj.size)}</td>
+          <td class="py-3 px-4 text-charcoal-300 text-sm">${formatDate(obj.lastModified)}</td>
+          <td class="py-3 px-4">
+            <span class="px-2 py-1 ${getStorageClassColor(obj.storageClass)} text-xs font-medium rounded">
+              ${obj.storageClass || 'STANDARD'}
+            </span>
+          </td>
+          <td class="py-3 px-4 text-right">
+            <div class="flex items-center justify-end gap-1">
+              <button onclick="showObjectVersions('${escapeHtml(obj.key)}')" class="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="View ${versionCount} older versions">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </button>
+              <button onclick="restoreDeletedObject('${escapeHtml(obj.key)}')" class="p-1.5 text-green-500 hover:bg-green-50 rounded-lg transition-colors" title="Restore latest version">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+              </button>
+              <button onclick="permanentlyDeleteObject('${escapeHtml(obj.key)}', '${escapeHtml(obj.deleteMarkerVersionId)}')" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Permanently delete (remove delete marker)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+
+    // ============================================
+    // Breadcrumb Navigation
+    // ===========================-=================
+
+    function updateBreadcrumb() {
+      const nav = document.getElementById('breadcrumb');
+
+      if (!currentBucket) {
+        nav.innerHTML = '<span class="text-charcoal font-medium">Buckets</span>';
+        return;
+      }
+
+      let html = `
+        <button onclick="goToBuckets()" class="text-accent hover:text-accent-600 font-medium">
+          Buckets
+        </button>
+        <svg class="w-4 h-4 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      `;
+
+      if (!currentPrefix) {
+        html += `
+          <span class="text-charcoal font-medium">${escapeHtml(currentBucket)}</span>
+          <button onclick="openMultipartUploadsModal()" class="ml-2 p-1.5 text-charcoal-300 hover:text-accent hover:bg-gray-100 rounded-lg transition-colors" title="View multipart uploads">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 1H7a2 2 0 01-2-2V7a2 2 0 012-2h3l2 2h5a2 2 0 012 2v1M7 13h10"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17h6"/>
+            </svg>
+          </button>
+        `;
+      } else {
+        html += `
+          <button onclick="navigateToRoot()" class="text-accent hover:text-accent-600">
+            ${escapeHtml(currentBucket)}
+          </button>
+          <button onclick="openMultipartUploadsModal()" class="ml-2 p-1.5 text-charcoal-300 hover:text-accent hover:bg-gray-100 rounded-lg transition-colors" title="View multipart uploads">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 1H7a2 2 0 01-2-2V7a2 2 0 012-2h3l2 2h5a2 2 0 012 2v1M7 13h10"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17h6"/>
+            </svg>
+          </button>
+        `;
+        const parts = currentPrefix.split('/').filter(p => p);
+        let path = '';
+        parts.forEach((part, index) => {
+          path += part + '/';
+          const isLast = index === parts.length - 1;
+          html += `
+            <svg class="w-4 h-4 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+          `;
+          if (isLast) {
+            html += `<span class="text-charcoal font-medium">${escapeHtml(part)}</span>`;
+          } else {
+            html += `<button onclick="navigateToPrefix('${escapeHtml(path)}')" class="text-accent hover:text-accent-600">${escapeHtml(part)}</button>`;
+          }
+        });
+      }
+
+      nav.innerHTML = html;
+    }
+
+    function navigateToRoot() {
+      currentPrefix = '';
+      loadObjects();
+      updateUrl();
+    }
+
+    function navigateToPrefix(prefix) {
+      currentPrefix = prefix;
+      loadObjects();
+      updateUrl();
+    }
+
+    function navigateToFolder(prefix) {
+      currentPrefix = prefix;
+      loadObjects();
+      updateUrl();
+    }
+
+    function navigateUp() {
+      if (!currentPrefix) return;
+      const parts = currentPrefix.split('/').filter(p => p);
+      parts.pop();
+      currentPrefix = parts.length > 0 ? parts.join('/') + '/' : '';
+      loadObjects();
+      updateUrl();
+    }
+
+    function updateUrl() {
+      if (currentBucket) {
+        window.location.hash = currentBucket + '/' + currentPrefix;
+      } else {
+        window.location.hash = '';
+      }
+    }
+
+    // ============================================
+    // Selection
+    // ============================================
+
+    function toggleSelect(checkbox) {
+      const key = checkbox.dataset.key;
+      if (checkbox.checked) {
+        selectedObjects.add(key);
+      } else {
+        selectedObjects.delete(key);
+      }
+      updateSelectionToolbar();
+    }
+
+    function toggleSelectAll() {
+      const checkbox = document.getElementById('select-all');
+      const checkboxes = document.querySelectorAll('#objects-table input[type="checkbox"]');
+
+      checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+        const key = cb.dataset.key;
+        if (checkbox.checked) {
+          selectedObjects.add(key);
+        } else {
+          selectedObjects.delete(key);
+        }
+      });
+
+      updateSelectionToolbar();
+    }
+
+    function clearSelection() {
+      selectedObjects.clear();
+      document.querySelectorAll('#objects-table input[type="checkbox"]').forEach(cb => cb.checked = false);
+      document.getElementById('select-all').checked = false;
+      updateSelectionToolbar();
+    }
+
+    function updateSelectionToolbar() {
+      const toolbar = document.getElementById('selection-toolbar');
+      const count = document.getElementById('selection-count');
+
+      if (selectedObjects.size > 0) {
+        toolbar.classList.remove('hidden');
+        count.textContent = `${selectedObjects.size} item${selectedObjects.size > 1 ? 's' : ''} selected`;
+      } else {
+        toolbar.classList.add('hidden');
+      }
+    }
+
+    // ============================================
+    // Download
+    // ============================================
+
+    async function downloadObject(key) {
+      try {
+        showToast('Starting download...', 'info');
+        const result = await api.getObject(currentBucket, key);
+        const fileName = getFileName(key);
+
+        // Check if File System Access API is supported
+        if ('showSaveFilePicker' in window) {
+          try {
+            // Show save dialog with location picker
+            const fileHandle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [{
+                description: 'Files',
+                accept: { '*/*': [getFileExtension(fileName)] }
+              }]
+            });
+
+            const writable = await fileHandle.createWritable();
+            await writable.write(result.blob);
+            await writable.close();
+
+            showToast('Download complete', 'success');
+          } catch (err) {
+            // User cancelled the dialog
+            if (err.name !== 'AbortError') {
+              console.error('Save dialog error:', err);
+              // Fall back to default download
+              fallbackDownload(result.blob, fileName);
+            }
+          }
+        } else {
+          // Fallback for browsers without File System Access API
+          fallbackDownload(result.blob, fileName);
+        }
+      } catch (error) {
+        console.error('Download error:', error);
+        showToast('Download failed: ' + error.message, 'error');
+      }
+    }
+
+    function fallbackDownload(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Download complete', 'success');
+    }
+
+    function getFileExtension(fileName) {
+      const lastDot = fileName.lastIndexOf('.');
+      return lastDot > 0 ? fileName.substring(lastDot) : '';
+    }
+
+    function downloadCurrentObject() {
+      if (currentObjectKey) {
+        downloadObject(currentObjectKey);
+        closeModal('info-modal');
+      }
+    }
+
+    // ============================================
+    // Object Info
+    // ============================================
+
+    let objectTagsModified = [];
+    let objectMetadataModified = [];
+    let currentObjectContentType = null;
+
+    async function showObjectInfo(key) {
+      currentObjectKey = key;
+      document.getElementById('info-key').textContent = key;
+      document.getElementById('info-size').textContent = 'Loading...';
+      document.getElementById('info-modified').textContent = 'Loading...';
+      document.getElementById('info-type').textContent = 'Loading...';
+      document.getElementById('info-class').textContent = 'Loading...';
+      document.getElementById('info-etag').textContent = 'Loading...';
+
+      // Reset tags and metadata
+      objectTagsModified = [];
+      objectMetadataModified = [];
+
+      openModal('info-modal');
+
+      try {
+        // Get basic object info
+        const info = await api.headObject(currentBucket, key);
+
+        document.getElementById('info-size').textContent = formatSize(info.contentLength);
+        document.getElementById('info-modified').textContent = info.lastModified || '-';
+        document.getElementById('info-type').textContent = info.contentType || '-';
+        document.getElementById('info-class').textContent = info.storageClass || 'STANDARD';
+        document.getElementById('info-etag').textContent = info.etag || '-';
+
+        currentObjectContentType = info.contentType;
+
+        // Get object tags
+        let tags = [];
+        try {
+          tags = await api.getObjectTagging(currentBucket, key);
+        } catch (error) {
+          console.log('No tags or error fetching tags:', error.message);
+        }
+
+        // Store metadata as array of {key, value} objects
+        objectMetadataModified = Object.entries(info.metadata).map(([key, value]) => ({ key, value }));
+
+        // Store tags as working copy
+        objectTagsModified = [...tags];
+
+        // Render tags and metadata
+        renderObjectTags();
+        renderObjectMetadata();
+      } catch (error) {
+        console.error('Error fetching object info:', error);
+        showToast('Error fetching object info: ' + error.message, 'error');
+      }
+    }
+
+    function renderObjectTags() {
+      const tagsList = document.getElementById('object-tags-list');
+      
+      if (objectTagsModified.length === 0) {
+        tagsList.innerHTML = '<p class="text-charcoal-300 text-sm py-4 text-center">No tags</p>';
+        return;
+      }
+
+      tagsList.innerHTML = objectTagsModified.map((tag, index) => `
+        <div class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
+          <div class="flex-1 grid grid-cols-2 gap-2">
+            <input 
+              type="text" 
+              value="${escapeHtml(tag.key)}" 
+              placeholder="Key" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateObjectTagKey(${index}, this.value)"
+            >
+            <input 
+              type="text" 
+              value="${escapeHtml(tag.value)}" 
+              placeholder="Value" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateObjectTagValue(${index}, this.value)"
+            >
+          </div>
+          <button 
+            onclick="removeObjectTag(${index})" 
+            class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Remove tag"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function renderObjectMetadata() {
+      const metadataList = document.getElementById('object-metadata-list');
+      
+      if (objectMetadataModified.length === 0) {
+        metadataList.innerHTML = '<p class="text-charcoal-300 text-sm py-4 text-center">No metadata</p>';
+        return;
+      }
+
+      metadataList.innerHTML = objectMetadataModified.map((meta, index) => `
+        <div class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
+          <div class="flex-1 grid grid-cols-2 gap-2">
+            <input 
+              type="text" 
+              value="${escapeHtml(meta.key)}" 
+              placeholder="Key" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateObjectMetadataKey(${index}, this.value)"
+            >
+            <input 
+              type="text" 
+              value="${escapeHtml(meta.value)}" 
+              placeholder="Value" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateObjectMetadataValue(${index}, this.value)"
+            >
+          </div>
+          <button 
+            onclick="removeObjectMetadata(${index})" 
+            class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Remove metadata"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function addObjectTag() {
+      objectTagsModified.push({ key: '', value: '' });
+      renderObjectTags();
+    }
+
+    function removeObjectTag(index) {
+      objectTagsModified.splice(index, 1);
+      renderObjectTags();
+    }
+
+    function updateObjectTagKey(index, key) {
+      objectTagsModified[index].key = key;
+    }
+
+    function updateObjectTagValue(index, value) {
+      objectTagsModified[index].value = value;
+    }
+
+    function addObjectMetadata() {
+      objectMetadataModified.push({ key: '', value: '' });
+      renderObjectMetadata();
+    }
+
+    function removeObjectMetadata(index) {
+      objectMetadataModified.splice(index, 1);
+      renderObjectMetadata();
+    }
+
+    function updateObjectMetadataKey(index, key) {
+      objectMetadataModified[index].key = key;
+    }
+
+    function updateObjectMetadataValue(index, value) {
+      objectMetadataModified[index].value = value;
+    }
+
+    async function saveObjectTags() {
+      if (!currentObjectKey) return;
+
+      const btn = document.getElementById('save-object-tags-btn');
+      setLoading(btn, true);
+
+      try {
+        // Save tags
+        const validTags = objectTagsModified.filter(tag => tag.key && tag.value);
+        await api.putObjectTagging(currentBucket, currentObjectKey, validTags);
+
+        showToast('Object tags saved successfully', 'success');
+      } catch (error) {
+        console.error('Error saving object tags:', error);
+        showToast('Error saving tags: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function saveObjectMetadata() {
+      if (!currentObjectKey) return;
+
+      const btn = document.getElementById('save-object-metadata-btn');
+      setLoading(btn, true);
+
+      try {
+        // Save metadata - convert array back to object and filter out empty keys
+        const metadataObj = {};
+        objectMetadataModified.forEach(meta => {
+          if (meta.key) {
+            metadataObj[meta.key] = meta.value;
+          }
+        });
+        await api.putObjectMetadata(currentBucket, currentObjectKey, metadataObj, currentObjectContentType);
+
+        showToast('Object metadata saved successfully', 'success');
+        
+        // Refresh the object list to show updated info
+        await refresh();
+      } catch (error) {
+        console.error('Error saving object metadata:', error);
+        showToast('Error saving metadata: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Object Versions
+    // ============================================
+
+    async function showObjectVersions(key) {
+      document.getElementById('versions-object-key').textContent = key;
+      document.getElementById('versions-loading').classList.remove('hidden');
+      document.getElementById('versions-content').innerHTML = '';
+      openModal('versions-modal');
+
+      try {
+        // Fetch all versions for this specific key
+        const result = await api.listObjectVersions(currentBucket, key, '');
+        
+        // Filter to only include versions for this exact key (not prefixes)
+        const versions = [
+          ...result.versions.filter(v => v.key === key).map(v => ({ ...v, isDeleteMarker: false })),
+          ...result.deleteMarkers.filter(dm => dm.key === key).map(dm => ({ ...dm, isDeleteMarker: true, size: 0 }))
+        ];
+
+        // Sort by lastModified (newest first)
+        versions.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+
+        document.getElementById('versions-loading').classList.add('hidden');
+        renderVersionsList(versions);
+      } catch (error) {
+        console.error('Error loading versions:', error);
+        document.getElementById('versions-loading').classList.add('hidden');
+        document.getElementById('versions-content').innerHTML = `
+          <div class="text-center py-8">
+            <svg class="w-12 h-12 text-red-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p class="text-charcoal-300">Error loading versions: ${escapeHtml(error.message)}</p>
+          </div>
+        `;
+      }
+    }
+
+    function renderVersionsList(versions) {
+      const container = document.getElementById('versions-content');
+      
+      if (versions.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-8">
+            <svg class="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p class="text-charcoal-300">No versions found</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = versions.map((version, index) => {
+        const isLatestBadge = version.isLatest ? `
+          <span class="inline-flex items-center px-2 py-0.5 bg-green-50 text-green-700 text-xs font-medium rounded">
+            Latest
+          </span>
+        ` : '';
+
+        const deleteMarkerBadge = version.isDeleteMarker ? `
+          <span class="inline-flex items-center px-2 py-0.5 bg-red-50 text-red-700 text-xs font-medium rounded">
+            Delete Marker
+          </span>
+        ` : '';
+
+        return `
+          <div class="border border-gray-200 rounded-lg p-4 hover:border-accent transition-colors">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-xs font-mono text-charcoal-400 truncate" title="${escapeHtml(version.versionId)}">
+                    ${escapeHtml(version.versionId.substring(0, 24))}...
+                  </span>
+                  ${isLatestBadge}
+                  ${deleteMarkerBadge}
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span class="text-charcoal-300">Modified:</span>
+                    <span class="text-charcoal ml-1">${formatDate(version.lastModified)}</span>
+                  </div>
+                  ${!version.isDeleteMarker ? `
+                    <div>
+                      <span class="text-charcoal-300">Size:</span>
+                      <span class="text-charcoal ml-1">${formatSize(version.size)}</span>
+                    </div>
+                    <div>
+                      <span class="text-charcoal-300">Storage Class:</span>
+                      <span class="text-charcoal ml-1">${version.storageClass || 'STANDARD'}</span>
+                    </div>
+                    <div>
+                      <span class="text-charcoal-300">ETag:</span>
+                      <span class="text-charcoal ml-1 font-mono text-xs truncate" title="${escapeHtml(version.etag || '')}">${escapeHtml((version.etag || '').substring(0, 16))}...</span>
+                    </div>
+                  ` : '<div class="col-span-2 text-charcoal-300 text-sm">This version was deleted</div>'}
+                </div>
+              </div>
+              <div class="flex items-center gap-1 flex-shrink-0">
+                ${!version.isDeleteMarker ? `
+                  <button onclick="downloadObjectVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}')" class="p-2 text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Download this version">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                  </button>
+                ` : ''}
+                <button onclick="deleteSpecificVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}', ${version.isLatest})" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete this version">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function downloadObjectVersion(key, versionId) {
+      try {
+        showToast('Downloading version...', 'info');
+        const result = await api.getObjectVersion(currentBucket, key, versionId);
+        const fileName = getFileName(key);
+
+        // Check if File System Access API is supported
+        if ('showSaveFilePicker' in window) {
+          try {
+            // Show save dialog with location picker
+            const fileHandle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [{
+                description: 'Files',
+                accept: { '*/*': [getFileExtension(fileName)] }
+              }]
+            });
+
+            const writable = await fileHandle.createWritable();
+            await writable.write(result.blob);
+            await writable.close();
+
+            showToast('Download complete', 'success');
+          } catch (err) {
+            // User cancelled the dialog
+            if (err.name !== 'AbortError') {
+              console.error('Save dialog error:', err);
+              // Fall back to default download
+              fallbackDownload(result.blob, fileName);
+            }
+          }
+        } else {
+          // Fallback for browsers without File System Access API
+          fallbackDownload(result.blob, fileName);
+        }
+      } catch (error) {
+        console.error('Error downloading version:', error);
+        showToast('Error downloading version: ' + error.message, 'error');
+      }
+    }
+
+    async function deleteSpecificVersion(key, versionId, isLatest) {
+      const warningMessage = isLatest 
+        ? 'Are you sure you want to delete the latest version? This will make an older version the current one.'
+        : 'Are you sure you want to delete this version? This action cannot be undone.';
+
+      confirm(warningMessage, async () => {
+        try {
+          await api.deleteObjectVersion(currentBucket, key, versionId);
+          showToast('Version deleted successfully', 'success');
+          // Refresh the versions list
+          await showObjectVersions(key);
+          // Refresh the main object list to update version counts
+          loadObjects();
+        } catch (error) {
+          console.error('Error deleting version:', error);
+          showToast('Error deleting version: ' + error.message, 'error');
+        }
+      });
+    }
+
+    async function restoreDeletedObject(key) {
+      confirm('Restore this object? This will remove the delete marker and make the latest version visible again.', async () => {
+        try {
+          // Get all versions to find the delete marker
+          const result = await api.listObjectVersions(currentBucket, key, '');
+          const versions = [
+            ...result.versions.filter(v => v.key === key),
+            ...result.deleteMarkers.filter(dm => dm.key === key)
+          ];
+          
+          // Find the latest delete marker
+          versions.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+          const deleteMarker = versions.find(v => v.isDeleteMarker && v.isLatest);
+          
+          if (deleteMarker) {
+            // Delete the delete marker to restore the object
+            await api.deleteObjectVersion(currentBucket, key, deleteMarker.versionId);
+            showToast('Object restored successfully', 'success');
+            loadObjects();
+          } else {
+            showToast('No delete marker found to remove', 'warning');
+          }
+        } catch (error) {
+          console.error('Error restoring object:', error);
+          showToast('Error restoring object: ' + error.message, 'error');
+        }
+      });
+    }
+
+    async function permanentlyDeleteObject(key, deleteMarkerVersionId) {
+      confirm('Permanently remove the delete marker? This will make the object visible again.', async () => {
+        try {
+          await api.deleteObjectVersion(currentBucket, key, deleteMarkerVersionId);
+          showToast('Delete marker removed', 'success');
+          loadObjects();
+        } catch (error) {
+          console.error('Error removing delete marker:', error);
+          showToast('Error removing delete marker: ' + error.message, 'error');
+        }
+      });
+    }
+
+    // ============================================
+    // Delete
+    // ============================================
+
+    let deleteKeys = [];
+
+    function deleteObject(key, isFolder = false) {
+      deleteKeys = [key];
+      const name = isFolder ? getFolderName(key) : getFileName(key);
+      document.getElementById('delete-message').textContent =
+        `Are you sure you want to delete "${name}"? This action cannot be undone.`;
+      openModal('delete-modal');
+    }
+
+    function deleteSelected() {
+      if (selectedObjects.size === 0) return;
+      deleteKeys = Array.from(selectedObjects);
+      document.getElementById('delete-message').textContent =
+        `Are you sure you want to delete ${deleteKeys.length} item${deleteKeys.length > 1 ? 's' : ''}? This action cannot be undone.`;
+      openModal('delete-modal');
+    }
+
+    function isFolderKey(key) {
+      return typeof key === 'string' && key.endsWith('/');
+    }
+
+    function getRootFolderSelections(keys) {
+      const folderKeys = Array.from(new Set((keys || []).filter(isFolderKey))).sort((a, b) => a.length - b.length);
+      const roots = [];
+      for (const folder of folderKeys) {
+        if (!roots.some(r => folder.startsWith(r))) {
+          roots.push(folder);
+        }
+      }
+      return roots;
+    }
+
+    function isUnderAnyFolder(key, folderPrefixes) {
+      return (folderPrefixes || []).some(prefix => typeof key === 'string' && key.startsWith(prefix));
+    }
+
+    function parseMultiDeleteResult(xmlText) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xmlText || '', 'text/xml');
+
+      // If parsing failed, DOMParser returns a document with <parsererror>
+      if (doc.querySelector('parsererror')) {
+        return { deleted: 0, errors: [] };
+      }
+
+      // Namespace-agnostic element lookup for S3 XML responses (often include a default xmlns)
+      function elementsByTag(parent, tagName) {
+        if (!parent) return [];
+        const byNS = parent.getElementsByTagNameNS ? parent.getElementsByTagNameNS('*', tagName) : [];
+        if (byNS && byNS.length) return Array.from(byNS);
+        return Array.from(parent.getElementsByTagName(tagName) || []);
+      }
+
+      function firstText(parent, tagName) {
+        const els = elementsByTag(parent, tagName);
+        return els[0]?.textContent || '';
+      }
+
+      const deleted = elementsByTag(doc, 'Deleted').length;
+      const errors = elementsByTag(doc, 'Error').map(err => ({
+        key: firstText(err, 'Key'),
+        code: firstText(err, 'Code'),
+        message: firstText(err, 'Message')
+      }));
+
+      return { deleted, errors };
+    }
+
+    async function deleteInBatches(bucket, keys, batchSize = 1000) {
+      if (!keys || keys.length === 0) return 0;
+      let deletedCount = 0;
+
+      for (let i = 0; i < keys.length; i += batchSize) {
+        const batch = keys.slice(i, i + batchSize);
+        const resultXml = await api.deleteObjects(bucket, batch);
+        const result = parseMultiDeleteResult(resultXml);
+        if (result.errors.length > 0) {
+          const first = result.errors[0];
+          const msg = first.code
+            ? `${first.code}${first.message ? `: ${first.message}` : ''}${first.key ? ` (${first.key})` : ''}`
+            : (first.message || 'Unknown delete error');
+          throw new Error(msg);
+        }
+        deletedCount += result.deleted;
+      }
+
+      return deletedCount;
+    }
+
+    async function deleteFolderRecursively(bucket, folderPrefix) {
+      // Post-order traversal: delete files in a folder, recurse into subfolders,
+      // then delete the folder marker object as we return.
+      const visited = new Set();
+      const stack = [{ prefix: folderPrefix, phase: 'enter' }];
+      let deletedCount = 0;
+
+      while (stack.length > 0) {
+        const frame = stack.pop();
+        const prefix = frame.prefix;
+
+        if (frame.phase === 'enter') {
+          if (!prefix || visited.has(prefix)) continue;
+          visited.add(prefix);
+
+          let markerSeen = false;
+          const childPrefixes = new Set();
+          const fileKeys = [];
+
+          let continuationToken = null;
+          while (true) {
+            // Reuse the same listing behavior as Explorer navigation (delimiter='/')
+            const result = await api.listObjectsV2(bucket, prefix, '/', 1000, continuationToken);
+
+            if (result?.contents?.length) {
+              for (const obj of result.contents) {
+                if (!obj?.key) continue;
+                if (obj.key === prefix && isFolderKey(obj.key)) {
+                  markerSeen = true;
+                  continue;
+                }
+                if (isFolderKey(obj.key)) {
+                  // Folder marker objects can appear in Contents; treat them as child folders.
+                  childPrefixes.add(obj.key);
+                  continue;
+                }
+                fileKeys.push(obj.key);
+              }
+            }
+
+            if (result?.commonPrefixes?.length) {
+              for (const p of result.commonPrefixes) {
+                const childPrefix = typeof p === 'string' ? p : p?.prefix;
+                if (childPrefix) childPrefixes.add(childPrefix);
+              }
+            }
+
+            if (!result?.isTruncated || !result?.continuationToken) break;
+            continuationToken = result.continuationToken;
+          }
+
+          // Delete non-folder objects at this level first
+          deletedCount += await deleteInBatches(bucket, fileKeys);
+
+          // Ensure we delete marker after all children are deleted
+          stack.push({ prefix, phase: 'exit', markerSeen });
+
+          // Traverse children
+          const children = Array.from(childPrefixes).filter(p => p && p !== prefix);
+          // Reverse to keep a stable-ish traversal order with a stack
+          children.sort().reverse().forEach(child => stack.push({ prefix: child, phase: 'enter' }));
+        } else {
+          // Delete folder marker last. Only count it if it was observed during listing.
+          if (isFolderKey(prefix)) {
+            if (frame.markerSeen) {
+              deletedCount += await deleteInBatches(bucket, [prefix]);
+            } else {
+              // Marker might not exist; best-effort delete without inflating deleted count.
+              await api.deleteObject(bucket, prefix);
+            }
+          }
+        }
+      }
+
+      return deletedCount;
+    }
+
+    async function confirmDelete() {
+      const btn = document.getElementById('confirm-delete-btn');
+      setLoading(btn, true);
+
+      try {
+        const rootFolderKeys = getRootFolderSelections(deleteKeys);
+        const fileKeys = (deleteKeys || []).filter(k => !isFolderKey(k) && !isUnderAnyFolder(k, rootFolderKeys));
+
+        let deletedCount = 0;
+        deletedCount += await deleteInBatches(currentBucket, fileKeys);
+        for (const folderPrefix of rootFolderKeys) {
+          deletedCount += await deleteFolderRecursively(currentBucket, folderPrefix);
+        }
+
+        showToast(
+          `Deleted ${deletedCount} object${deletedCount === 1 ? '' : 's'}${deleteKeys.length !== deletedCount ? ` (from ${deleteKeys.length} selection${deleteKeys.length === 1 ? '' : 's'})` : ''}`,
+          'success'
+        );
+        closeModal('delete-modal');
+        clearSelection();
+        loadObjects();
+      } catch (error) {
+        console.error('Delete error:', error);
+        showToast('Delete failed: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Upload
+    // ============================================
+
+    function openUploadDialog() {
+      if (!currentBucket) {
+        showToast('Please select a bucket first', 'warning');
+        return;
+      }
+      document.getElementById('file-input').click();
+    }
+
+    async function handleFileSelect(event) {
+      const files = event.target.files;
+      if (files.length === 0) return;
+
+      await uploadFiles(Array.from(files));
+      event.target.value = ''; // Reset input
+    }
+
+    // Multipart upload threshold: 5MB (S3 minimum part size)
+    const MULTIPART_THRESHOLD = 5 * 1024 * 1024;
+    // Maximum parts allowed by VersityGW
+    const MAX_PARTS = 10000;
+    // Minimum part size per S3 spec (except last part)
+    const MIN_PART_SIZE = 5 * 1024 * 1024;
+
+    /**
+     * Calculate optimal part size based on file size
+     * - Minimum 5MB per S3 spec (except last part)
+     * - Increase if needed to stay within MAX_PARTS
+     */
+    function calculatePartSize(fileSize) {
+      // Minimum part size needed to fit within MAX_PARTS
+      const minPartSizeForParts = Math.ceil(fileSize / MAX_PARTS);
+      // Use the larger of S3 minimum or what's needed for part count
+      return Math.max(MIN_PART_SIZE, minPartSizeForParts);
+    }
+
+    async function uploadFiles(files) {
+      let successCount = 0;
+      let failCount = 0;
+
+      // Show uploading toast for multiple files
+      if (files.length > 1) {
+        showToast(`Uploading ${files.length} files...`, 'info');
+      }
+
+      for (const file of files) {
+        const key = currentPrefix + file.name;
+
+        try {
+          if (file.size >= MULTIPART_THRESHOLD) {
+            // Use multipart upload for large files
+            await uploadMultipart(file, key);
+          } else {
+            // Use simple PUT for small files
+            await api.putObject(currentBucket, key, file);
+          }
+          successCount++;
+        } catch (error) {
+          console.error('Upload error:', error);
+          showToast(`Failed to upload ${file.name}: ${error.message}`, 'error');
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        showToast(`Uploaded ${successCount} file${successCount > 1 ? 's' : ''}${failCount > 0 ? ` (${failCount} failed)` : ''}`, 'success');
+        loadObjects();
+      }
+    }
+
+    async function uploadMultipart(file, key) {
+      const contentType = file.type || 'application/octet-stream';
+
+      // Calculate optimal part size for this file
+      const partSize = calculatePartSize(file.size);
+      console.log(`Uploading ${file.name}: ${formatSize(file.size)}, part size: ${formatSize(partSize)}`);
+
+      // Initiate multipart upload
+      const uploadId = await api.createMultipartUpload(currentBucket, key, contentType);
+
+      const parts = [];
+      const totalParts = Math.ceil(file.size / partSize);
+
+      try {
+        for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+          const start = (partNumber - 1) * partSize;
+          const end = Math.min(start + partSize, file.size);
+          const chunk = file.slice(start, end);
+          const chunkBuffer = await chunk.arrayBuffer();
+
+          const etag = await api.uploadPart(currentBucket, key, uploadId, partNumber, chunkBuffer);
+          parts.push({ partNumber, etag });
+        }
+
+        // Complete the multipart upload
+        await api.completeMultipartUpload(currentBucket, key, uploadId, parts);
+      } catch (error) {
+        // Abort the multipart upload on failure
+        try {
+          await api.abortMultipartUpload(currentBucket, key, uploadId);
+        } catch (abortError) {
+          console.error('Failed to abort multipart upload:', abortError);
+        }
+        throw error;
+      }
+    }
+
+    // ============================================
+    // Create Folder
+    // ============================================
+
+    function openCreateFolderDialog() {
+      if (!currentBucket) {
+        showToast('Please select a bucket first', 'warning');
+        return;
+      }
+      document.getElementById('new-folder-name').value = '';
+      document.getElementById('folder-location').textContent = currentBucket + '/' + currentPrefix;
+      openModal('create-folder-modal');
+    }
+
+    async function createFolder() {
+      const folderName = document.getElementById('new-folder-name').value.trim();
+
+      if (!folderName) {
+        showToast('Please enter a folder name', 'warning');
+        return;
+      }
+
+      // Validate folder name
+      if (folderName.includes('/')) {
+        showToast('Folder name cannot contain "/"', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('create-folder-btn');
+      setLoading(btn, true);
+
+      try {
+        const folderKey = currentPrefix + folderName;
+        await api.createFolder(currentBucket, folderKey);
+        showToast(`Folder "${folderName}" created`, 'success');
+        closeModal('create-folder-modal');
+        loadObjects();
+      } catch (error) {
+        console.error('Create folder error:', error);
+        showToast('Failed to create folder: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Create Bucket
+    // ============================================
+
+    function openCreateBucketDialog() {
+      document.getElementById('new-bucket-name').value = '';
+      openModal('create-bucket-modal');
+    }
+
+    async function createBucket() {
+      const bucketName = document.getElementById('new-bucket-name').value.trim().toLowerCase();
+
+      if (!bucketName) {
+        showToast('Please enter a bucket name', 'warning');
+        return;
+      }
+
+      // Basic bucket name validation
+      if (bucketName.length < 3 || bucketName.length > 63) {
+        showToast('Bucket name must be between 3 and 63 characters', 'warning');
+        return;
+      }
+
+      if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucketName) && bucketName.length > 2) {
+        showToast('Bucket name must start and end with a letter or number', 'warning');
+        return;
+      }
+
+      if (/[^a-z0-9.-]/.test(bucketName)) {
+        showToast('Bucket name can only contain lowercase letters, numbers, hyphens, and periods', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('create-bucket-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.createBucket(bucketName);
+        showToast(`Bucket "${bucketName}" created successfully`, 'success');
+        closeModal('create-bucket-modal');
+        // Reload buckets list
+        await loadBuckets();
+        renderBuckets();
+      } catch (error) {
+        console.error('Create bucket error:', error);
+        showToast(error.message || 'Failed to create bucket', 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // Delete Bucket Functions
+    let bucketToDelete = null;
+
+    function confirmDeleteBucket(bucketName) {
+      bucketToDelete = bucketName;
+      document.getElementById('delete-bucket-message').textContent =
+        `Are you sure you want to delete the bucket "${bucketName}"?`;
+      openModal('delete-bucket-modal');
+    }
+
+    async function confirmDeleteBucketAction() {
+      if (!bucketToDelete) return;
+
+      const btn = document.getElementById('confirm-delete-bucket-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.deleteBucket(bucketToDelete);
+        showToast(`Bucket "${bucketToDelete}" deleted successfully`, 'success');
+        closeModal('delete-bucket-modal');
+        bucketToDelete = null;
+        
+        // If we're currently viewing the deleted bucket, go back to buckets view
+        if (currentBucket === bucketToDelete) {
+          currentBucket = '';
+          currentPrefix = '';
+          showBucketsView();
+        }
+        
+        // Reload buckets list
+        await loadBuckets();
+        renderBuckets();
+      } catch (error) {
+        console.error('Delete bucket error:', error);
+        showToast(error.message || 'Failed to delete bucket', 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // Handle Enter key in create folder/bucket inputs
+    document.addEventListener('DOMContentLoaded', () => {
+      const folderInput = document.getElementById('new-folder-name');
+      if (folderInput) {
+        folderInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            createFolder();
+          }
+        });
+      }
+
+      const bucketInput = document.getElementById('new-bucket-name');
+      if (bucketInput) {
+        bucketInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            createBucket();
+          }
+        });
+      }
+
+      // Setup search input handler
+      const searchInput = document.getElementById('search-input');
+      if (searchInput) {
+        searchInput.addEventListener('input', debounce((e) => {
+          searchTerm = e.target.value.toLowerCase();
+          const clearBtn = document.getElementById('clear-search');
+          if (searchTerm) {
+            clearBtn.classList.remove('hidden');
+          } else {
+            clearBtn.classList.add('hidden');
+          }
+          renderObjects();
+        }, 200));
+      }
+    });
+
+    // ============================================
+    // Search/Filter
+    // ============================================
+
+    function clearSearch() {
+      searchTerm = '';
+      const searchInput = document.getElementById('search-input');
+      const clearBtn = document.getElementById('clear-search');
+      if (searchInput) searchInput.value = '';
+      if (clearBtn) clearBtn.classList.add('hidden');
+      if (currentBucket) renderObjects();
+    }
+
+    // ============================================
+    // Drag and Drop
+    // ============================================
+
+    function setupDragDrop() {
+      const overlay = document.getElementById('drop-overlay');
+
+      if (!overlay) {
+        console.error('Drop overlay element not found');
+        return;
+      }
+
+      // Counter to track drag enter/leave across the entire window
+      let dragCounter = 0;
+
+      function showOverlay() {
+        if (currentBucket && !overlay.classList.contains('hidden') === false) {
+          overlay.classList.remove('hidden');
+        }
+      }
+
+      function hideOverlay() {
+        overlay.classList.add('hidden');
+      }
+
+      async function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        hideOverlay();
+
+        if (!currentBucket) {
+          showToast('Please select a bucket first', 'warning');
+          return;
+        }
+
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) {
+          await uploadFiles(Array.from(files));
+        }
+      }
+
+      // Use document-level events for reliable drag detection
+      document.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (currentBucket) {
+          overlay.classList.remove('hidden');
+        }
+      }, false);
+
+      document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        // Keep overlay visible during dragover
+        if (currentBucket && overlay.classList.contains('hidden')) {
+          overlay.classList.remove('hidden');
+        }
+      }, false);
+
+      document.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          hideOverlay();
+        }
+      }, false);
+
+      document.addEventListener('drop', handleDrop, false);
+    }
+
+    // ============================================
+    // Utility Functions
+    // ============================================
+
+    function getFolderName(prefix) {
+      const parts = prefix.split('/').filter(p => p);
+      return parts[parts.length - 1] || prefix;
+    }
+
+    function getFileName(key) {
+      const parts = key.split('/');
+      return parts[parts.length - 1] || key;
+    }
+
+    function formatSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function getFileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const icons = {
+        // Images
+        'jpg': 'text-pink-500',
+        'jpeg': 'text-pink-500',
+        'png': 'text-pink-500',
+        'gif': 'text-pink-500',
+        'svg': 'text-pink-500',
+        'webp': 'text-pink-500',
+        // Documents
+        'pdf': 'text-red-500',
+        'doc': 'text-blue-500',
+        'docx': 'text-blue-500',
+        'xls': 'text-green-500',
+        'xlsx': 'text-green-500',
+        // Code
+        'js': 'text-yellow-500',
+        'ts': 'text-blue-500',
+        'py': 'text-blue-500',
+        'go': 'text-cyan-500',
+        'html': 'text-orange-500',
+        'css': 'text-purple-500',
+        'json': 'text-yellow-600',
+        // Archive
+        'zip': 'text-yellow-600',
+        'tar': 'text-yellow-600',
+        'gz': 'text-yellow-600',
+        'rar': 'text-yellow-600',
+        // Video
+        'mp4': 'text-purple-500',
+        'webm': 'text-purple-500',
+        'mov': 'text-purple-500',
+        // Audio
+        'mp3': 'text-green-500',
+        'wav': 'text-green-500',
+      };
+
+      const color = icons[ext] || 'text-gray-400';
+
+      return `
+        <svg class="w-5 h-5 ${color}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+        </svg>
+      `;
+    }
+
+    function getStorageClassColor(storageClass) {
+      const colors = {
+        'STANDARD': 'bg-green-50 text-green-700',
+        'STANDARD_IA': 'bg-blue-50 text-blue-700',
+        'ONEZONE_IA': 'bg-blue-50 text-blue-700',
+        'INTELLIGENT_TIERING': 'bg-purple-50 text-purple-700',
+        'GLACIER': 'bg-cyan-50 text-cyan-700',
+        'GLACIER_IR': 'bg-cyan-50 text-cyan-700',
+        'DEEP_ARCHIVE': 'bg-indigo-50 text-indigo-700',
+      };
+      return colors[storageClass] || 'bg-gray-100 text-gray-700';
+    }
+
+    // ============================================
+    // Versioning Functions
+    // ============================================
+
+    function toggleVersionsView() {
+      showVersions = !showVersions;
+      const btn = document.getElementById('versions-toggle-btn');
+      const text = document.getElementById('versions-toggle-text');
+
+      if (showVersions) {
+        text.textContent = 'Hide Versions';
+        btn.classList.remove('border-gray-200', 'text-charcoal');
+        btn.classList.add('bg-accent', 'text-white', 'border-accent');
+        loadObjectVersions();
+      } else {
+        text.textContent = 'Show Versions';
+        btn.classList.remove('bg-accent', 'text-white', 'border-accent');
+        btn.classList.add('border-gray-200', 'text-charcoal');
+        loadObjects();
+      }
+    }
+
+    async function loadObjectVersions() {
+      if (!currentBucket) return;
+
+      showTableLoading('objects-table', 6);
+      clearSelection();
+
+      try {
+        const result = await api.listObjectVersions(currentBucket, currentPrefix);
+
+        // Merge versions and delete markers
+        objectVersions = [
+          ...result.versions.map(v => ({ ...v, isDeleteMarker: false })),
+          ...result.deleteMarkers.map(dm => ({ ...dm, isDeleteMarker: true, size: 0 }))
+        ];
+
+        // Sort by key, then by lastModified (newest first)
+        objectVersions.sort((a, b) => {
+          const keyCompare = a.key.localeCompare(b.key);
+          if (keyCompare !== 0) return keyCompare;
+          return new Date(b.lastModified) - new Date(a.lastModified);
+        });
+
+        // Also get common prefixes (folders)
+        folders = result.commonPrefixes || [];
+
+        renderVersions();
+      } catch (error) {
+        console.error('Error loading object versions:', error);
+        showToast('Error loading versions: ' + error.message, 'error');
+        showEmptyState('objects-table', 6, 'Error loading versions');
+      }
+    }
+
+    function renderVersions() {
+      const tbody = document.getElementById('objects-table');
+      tbody.innerHTML = '';
+
+      // Apply search filter
+      let filteredFolders = folders;
+      let filteredVersions = objectVersions;
+
+      if (searchTerm) {
+        filteredFolders = folders.filter(f => {
+          const name = getFolderName(f.prefix);
+          return name.toLowerCase().includes(searchTerm);
+        });
+        filteredVersions = objectVersions.filter(v => {
+          const name = getFileName(v.key);
+          return name.toLowerCase().includes(searchTerm);
+        });
+      }
+
+      // Empty state
+      if (filteredFolders.length === 0 && filteredVersions.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-12 text-center">
+              <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-lg font-medium text-charcoal">No versions found</p>
+              <p class="text-sm text-charcoal-300 mt-1">Upload files to create versions</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      // Render folders first (same as normal view)
+      filteredFolders.forEach(folder => {
+        const name = getFolderName(folder.prefix);
+        const row = document.createElement('tr');
+        row.className = 'file-row border-b border-gray-50 cursor-pointer';
+        row.onclick = (e) => {
+          if (!e.target.closest('button')) {
+            navigateToFolder(folder.prefix);
+          }
+        };
+        row.innerHTML = `
+          <td class="py-3 px-4"></td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+              </svg>
+              <span class="font-mono text-sm text-charcoal">${escapeHtml(name)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-charcoal-300">-</td>
+          <td class="py-3 px-4 text-right"></td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Render versions
+      filteredVersions.forEach(version => {
+        const name = getFileName(version.key);
+        const row = document.createElement('tr');
+        const isDeleteMarker = version.isDeleteMarker;
+
+        row.className = `file-row border-b border-gray-50 ${isDeleteMarker ? 'bg-red-50' : ''}`;
+
+        // Version status badge
+        let statusBadge;
+        if (isDeleteMarker) {
+          statusBadge = '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded">Deleted</span>';
+        } else if (version.isLatest) {
+          statusBadge = '<span class="px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">Latest</span>';
+        } else {
+          statusBadge = '<span class="px-2 py-1 bg-gray-100 text-charcoal-400 text-xs font-medium rounded">Old</span>';
+        }
+
+        // Truncate version ID
+        const shortVersionId = version.versionId ? (version.versionId.length > 12 ? version.versionId.substring(0, 12) + '...' : version.versionId) : '-';
+
+        // Actions
+        let actions = '';
+        if (isDeleteMarker) {
+          // Delete markers can only be permanently deleted (which undeletes the object)
+          actions = `
+            <button onclick="permanentlyDeleteVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}', true)" class="p-1.5 text-red-500 hover:bg-red-100 rounded-lg transition-colors" title="Remove delete marker (undelete)">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          `;
+        } else {
+          actions = `
+            <div class="flex items-center justify-end gap-1">
+              ${!version.isLatest ? `
+                <button onclick="restoreVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}')" class="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Restore this version">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                </button>
+              ` : ''}
+              <button onclick="downloadVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}')" class="p-1.5 text-accent hover:bg-accent-50 rounded-lg transition-colors" title="Download this version">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+              </button>
+              <button onclick="permanentlyDeleteVersion('${escapeHtml(version.key)}', '${escapeHtml(version.versionId)}', false)" class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Permanently delete this version">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          `;
+        }
+
+        row.innerHTML = `
+          <td class="py-3 px-4"></td>
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-3">
+              ${isDeleteMarker ?
+                `<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>` :
+                getFileIcon(name)
+              }
+              <div class="flex flex-col">
+                <span class="font-mono text-sm ${isDeleteMarker ? 'line-through text-charcoal-400' : 'text-charcoal'}">${escapeHtml(name)}</span>
+                <span class="text-xs text-charcoal-300 font-mono" title="${escapeHtml(version.versionId)}">${escapeHtml(shortVersionId)}</span>
+              </div>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-charcoal-300 font-mono text-sm">${isDeleteMarker ? '-' : formatSize(version.size)}</td>
+          <td class="py-3 px-4 text-charcoal-300 text-sm">${formatDate(version.lastModified)}</td>
+          <td class="py-3 px-4">${statusBadge}</td>
+          <td class="py-3 px-4 text-right">${actions}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function downloadVersion(key, versionId) {
+      try {
+        showToast('Starting download...', 'info');
+        const result = await api.getObjectVersion(currentBucket, key, versionId);
+
+        const url = URL.createObjectURL(result.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = getFileName(key);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showToast('Download complete', 'success');
+      } catch (error) {
+        console.error('Download version error:', error);
+        showToast('Download failed: ' + error.message, 'error');
+      }
+    }
+
+    async function restoreVersion(key, versionId) {
+      const name = getFileName(key);
+      confirm(`Restore this version of "${name}"? This will create a new current version.`, async () => {
+        try {
+          showToast('Restoring version...', 'info');
+          await api.restoreObjectVersion(currentBucket, key, versionId);
+          showToast('Version restored successfully', 'success');
+          loadObjectVersions();
+        } catch (error) {
+          console.error('Restore version error:', error);
+          showToast('Restore failed: ' + error.message, 'error');
+        }
+      });
+    }
+
+    async function permanentlyDeleteVersion(key, versionId, isDeleteMarker) {
+      const name = getFileName(key);
+      const msg = isDeleteMarker
+        ? `Remove delete marker for "${name}"? This will make the object accessible again.`
+        : `Permanently delete this version of "${name}"? This action cannot be undone.`;
+
+      confirm(msg, async () => {
+        try {
+          await api.deleteObjectVersion(currentBucket, key, versionId);
+          showToast(isDeleteMarker ? 'Delete marker removed' : 'Version permanently deleted', 'success');
+          loadObjectVersions();
+        } catch (error) {
+          console.error('Delete version error:', error);
+          showToast('Delete failed: ' + error.message, 'error');
+        }
+      });
+    }
+
+    // ============================================
+    // Versioning Configuration Functions
+    // ============================================
+
+    function getVersioningBadge(status) {
+      if (status === 'Enabled') {
+        return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Enabled
+        </span>`;
+      } else if (status === 'Suspended') {
+        return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-700 text-xs font-medium rounded">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Suspended
+        </span>`;
+      } else if (status === 'Unknown') {
+        return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-charcoal-400 text-xs font-medium rounded">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Unknown
+        </span>`;
+      }
+      return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-charcoal-400 text-xs font-medium rounded">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+        </svg>
+        Disabled
+      </span>`;
+    }
+
+    function getObjectLockBadge(config) {
+      if (!config || !config.enabled) {
+        return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-charcoal-400 text-xs font-medium rounded">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
+          </svg>
+          Disabled
+        </span>`;
+      }
+      
+      let retentionText = '';
+      if (config.mode) {
+        retentionText = config.mode;
+        if (config.days) {
+          retentionText += ` (${config.days} day${config.days > 1 ? 's' : ''})`;
+        } else if (config.years) {
+          retentionText += ` (${config.years} year${config.years > 1 ? 's' : ''})`;
+        }
+      }
+      
+      return `<span class="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded" title="${escapeHtml(retentionText)}">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+        Enabled
+      </span>`;
+    }
+
+    async function openVersioningModalForBucket(bucketName) {
+      // Open versioning modal for a bucket from the buckets list
+      document.getElementById('versioning-bucket-name').value = bucketName;
+
+      // Get versioning status from cache
+      const status = bucketsVersioningCache[bucketName] || '';
+      const statusContainer = document.getElementById('versioning-current-status');
+      statusContainer.innerHTML = getVersioningBadge(status);
+
+      // Show/hide appropriate buttons
+      const enableBtn = document.getElementById('enable-versioning-btn');
+      const suspendBtn = document.getElementById('suspend-versioning-btn');
+
+      if (status === 'Enabled') {
+        enableBtn.classList.add('hidden');
+        suspendBtn.classList.remove('hidden');
+      } else if (status === 'Suspended') {
+        enableBtn.classList.remove('hidden');
+        suspendBtn.classList.remove('hidden');
+        enableBtn.textContent = 'Re-enable Versioning';
+      } else {
+        enableBtn.classList.remove('hidden');
+        suspendBtn.classList.add('hidden');
+        enableBtn.textContent = 'Enable Versioning';
+      }
+
+      openModal('versioning-modal');
+    }
+
+    async function openVersioningModal() {
+      if (!currentBucket) return;
+
+      document.getElementById('versioning-bucket-name').value = currentBucket;
+
+      // Get current versioning status
+      const statusContainer = document.getElementById('versioning-current-status');
+      statusContainer.innerHTML = getVersioningBadge(currentBucketVersioningStatus || '');
+
+      // Show/hide appropriate buttons based on current status
+      const enableBtn = document.getElementById('enable-versioning-btn');
+      const suspendBtn = document.getElementById('suspend-versioning-btn');
+
+      if (currentBucketVersioningStatus === 'Enabled') {
+        enableBtn.classList.add('hidden');
+        suspendBtn.classList.remove('hidden');
+      } else if (currentBucketVersioningStatus === 'Suspended') {
+        enableBtn.classList.remove('hidden');
+        suspendBtn.classList.remove('hidden');
+        enableBtn.textContent = 'Re-enable Versioning';
+      } else {
+        enableBtn.classList.remove('hidden');
+        suspendBtn.classList.add('hidden');
+        enableBtn.textContent = 'Enable Versioning';
+      }
+
+      openModal('versioning-modal');
+    }
+
+    async function enableVersioning() {
+      const bucketName = document.getElementById('versioning-bucket-name').value;
+      if (!bucketName) return;
+
+      const btn = document.getElementById('enable-versioning-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.putBucketVersioning(bucketName, 'Enabled');
+        bucketsVersioningCache[bucketName] = 'Enabled';
+        if (currentBucket === bucketName) {
+          currentBucketVersioningStatus = 'Enabled';
+        }
+        showToast('Versioning enabled successfully', 'success');
+        closeModal('versioning-modal');
+        
+        // Refresh to update UI
+        if (currentBucket === bucketName) {
+          await checkBucketVersioning();
+        } else {
+          renderBuckets();
+        }
+      } catch (error) {
+        console.error('Error enabling versioning:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function suspendVersioning() {
+      const bucketName = document.getElementById('versioning-bucket-name').value;
+      if (!bucketName) return;
+
+      const btn = document.getElementById('suspend-versioning-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.putBucketVersioning(bucketName, 'Suspended');
+        bucketsVersioningCache[bucketName] = 'Suspended';
+        if (currentBucket === bucketName) {
+          currentBucketVersioningStatus = 'Suspended';
+        }
+        showToast('Versioning suspended successfully', 'success');
+        closeModal('versioning-modal');
+        
+        // Refresh to update UI
+        if (currentBucket === bucketName) {
+          await checkBucketVersioning();
+        } else {
+          renderBuckets();
+        }
+      } catch (error) {
+        console.error('Error suspending versioning:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Object Lock Configuration Functions
+    // ============================================
+
+    async function openObjectLockModalForBucket(bucketName) {
+      // Open object lock modal for a bucket from the buckets list
+      document.getElementById('object-lock-bucket-name').value = bucketName;
+
+      // Get object lock status from cache
+      const config = bucketsObjectLockCache[bucketName] || { enabled: false };
+      const statusContainer = document.getElementById('object-lock-current-status');
+      statusContainer.innerHTML = getObjectLockBadge(config);
+
+      // Always show configuration section
+      const configSection = document.getElementById('object-lock-config-section');
+      const enableBtn = document.getElementById('enable-object-lock-btn');
+      const updateBtn = document.getElementById('update-object-lock-btn');
+      
+      configSection.classList.remove('hidden');
+
+      if (config.enabled) {
+        // Object lock is enabled - show update button
+        enableBtn.classList.add('hidden');
+        updateBtn.classList.remove('hidden');
+
+        // Populate current configuration
+        document.getElementById('object-lock-mode').value = config.mode || '';
+        document.getElementById('object-lock-days').value = config.days || '';
+        document.getElementById('object-lock-years').value = config.years || '';
+      } else {
+        // Object lock is not enabled - show enable button
+        enableBtn.classList.remove('hidden');
+        updateBtn.classList.add('hidden');
+
+        // Clear inputs
+        document.getElementById('object-lock-mode').value = '';
+        document.getElementById('object-lock-days').value = '';
+        document.getElementById('object-lock-years').value = '';
+      }
+
+      openModal('object-lock-modal');
+    }
+
+    async function enableObjectLock() {
+      const bucketName = document.getElementById('object-lock-bucket-name').value;
+      if (!bucketName) return;
+
+      const mode = document.getElementById('object-lock-mode').value;
+      const days = document.getElementById('object-lock-days').value;
+      const years = document.getElementById('object-lock-years').value;
+
+      if (!mode || (!days && !years)) {
+        showToast('Please specify retention mode and period', 'warning');
+        return;
+      }
+
+      if (days && years) {
+        showToast('Specify either days or years, not both', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('enable-object-lock-btn');
+      setLoading(btn, true);
+
+      try {
+        const config = {
+          mode: mode,
+          days: days ? parseInt(days) : null,
+          years: years ? parseInt(years) : null
+        };
+
+        await api.putBucketObjectLockConfiguration(bucketName, config);
+        
+        // Update cache
+        bucketsObjectLockCache[bucketName] = { enabled: true, ...config };
+        
+        showToast('Object Lock enabled successfully', 'success');
+        closeModal('object-lock-modal');
+        
+        // Reload object lock status
+        await loadAllBucketsObjectLock();
+        renderBuckets();
+      } catch (error) {
+        console.error('Error enabling object lock:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function updateObjectLockConfig() {
+      const bucketName = document.getElementById('object-lock-bucket-name').value;
+      if (!bucketName) return;
+
+      const mode = document.getElementById('object-lock-mode').value;
+      const days = document.getElementById('object-lock-days').value;
+      const years = document.getElementById('object-lock-years').value;
+
+      if (days && years) {
+        showToast('Specify either days or years, not both', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('update-object-lock-btn');
+      setLoading(btn, true);
+
+      try {
+        const config = {
+          mode: mode || null,
+          days: days ? parseInt(days) : null,
+          years: years ? parseInt(years) : null
+        };
+
+        await api.putBucketObjectLockConfiguration(bucketName, config);
+        
+        // Update cache
+        bucketsObjectLockCache[bucketName] = { enabled: true, ...config };
+        
+        showToast('Object Lock configuration updated', 'success');
+        closeModal('object-lock-modal');
+        
+        // Reload object lock status
+        await loadAllBucketsObjectLock();
+        renderBuckets();
+      } catch (error) {
+        console.error('Error updating object lock:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Bucket Info Modal
+    // ============================================
+
+    let currentBucketInfo = null;
+    let bucketTagsModified = [];
+
+    async function openBucketInfoModal(bucketName) {
+      try {
+        // Get versioning status
+        let versioningStatus = bucketsVersioningCache[bucketName];
+        if (!versioningStatus) {
+          try {
+            const result = await api.getBucketVersioning(bucketName);
+            versioningStatus = result.status || 'Disabled';
+            bucketsVersioningCache[bucketName] = versioningStatus;
+          } catch (error) {
+            versioningStatus = 'Unknown';
+          }
+        }
+
+        // Get object lock configuration
+        let objectLockConfig = null;
+        try {
+          objectLockConfig = await api.getBucketObjectLockConfiguration(bucketName);
+        } catch (error) {
+          console.log('Error fetching object lock configuration:', error.message);
+          objectLockConfig = { enabled: false };
+        }
+
+        // Get bucket tags
+        let tags = [];
+        try {
+          tags = await api.getBucketTagging(bucketName);
+        } catch (error) {
+          console.log('No tags or error fetching tags:', error.message);
+        }
+
+        // Store current bucket info
+        currentBucketInfo = {
+          name: bucketName,
+          versioning: versioningStatus,
+          objectLock: objectLockConfig
+        };
+        bucketTagsModified = [...tags];
+
+        // Populate modal
+        document.getElementById('bucket-info-name').textContent = bucketName;
+        document.getElementById('bucket-info-versioning').textContent = versioningStatus || 'Disabled';
+        
+        // Populate object lock info
+        const objectLockEl = document.getElementById('bucket-info-object-lock');
+        const objectLockDetailsEl = document.getElementById('bucket-info-object-lock-details');
+        
+        if (objectLockConfig && objectLockConfig.enabled) {
+          objectLockEl.textContent = 'Enabled';
+          objectLockEl.className = 'text-green-600 font-medium';
+          
+          // Show details if retention is configured
+          if (objectLockConfig.mode) {
+            objectLockDetailsEl.classList.remove('hidden');
+            document.getElementById('bucket-info-lock-mode').textContent = objectLockConfig.mode;
+            
+            let retention = '-';
+            if (objectLockConfig.days) {
+              retention = `${objectLockConfig.days} day${objectLockConfig.days !== 1 ? 's' : ''}`;
+            } else if (objectLockConfig.years) {
+              retention = `${objectLockConfig.years} year${objectLockConfig.years !== 1 ? 's' : ''}`;
+            }
+            document.getElementById('bucket-info-lock-retention').textContent = retention;
+          } else {
+            objectLockDetailsEl.classList.add('hidden');
+          }
+        } else {
+          objectLockEl.textContent = 'Disabled';
+          objectLockEl.className = 'text-charcoal';
+          objectLockDetailsEl.classList.add('hidden');
+        }
+
+        // Render tags
+        renderBucketTags();
+
+        openModal('bucket-info-modal');
+      } catch (error) {
+        console.error('Error opening bucket info modal:', error);
+        showToast('Error loading bucket info: ' + error.message, 'error');
+      }
+    }
+
+    function renderBucketTags() {
+      const tagsList = document.getElementById('bucket-tags-list');
+      
+      if (bucketTagsModified.length === 0) {
+        tagsList.innerHTML = '<p class="text-charcoal-300 text-sm py-4 text-center">No tags</p>';
+        return;
+      }
+
+      tagsList.innerHTML = bucketTagsModified.map((tag, index) => `
+        <div class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50">
+          <div class="flex-1 grid grid-cols-2 gap-2">
+            <input 
+              type="text" 
+              value="${escapeHtml(tag.key)}" 
+              placeholder="Key" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateBucketTagKey(${index}, this.value)"
+            >
+            <input 
+              type="text" 
+              value="${escapeHtml(tag.value)}" 
+              placeholder="Value" 
+              class="px-3 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:border-accent"
+              onchange="updateBucketTagValue(${index}, this.value)"
+            >
+          </div>
+          <button 
+            onclick="removeBucketTag(${index})" 
+            class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Remove tag"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function addBucketTag() {
+      bucketTagsModified.push({ key: '', value: '' });
+      renderBucketTags();
+    }
+
+    function removeBucketTag(index) {
+      bucketTagsModified.splice(index, 1);
+      renderBucketTags();
+    }
+
+    function updateBucketTagKey(index, key) {
+      bucketTagsModified[index].key = key;
+    }
+
+    function updateBucketTagValue(index, value) {
+      bucketTagsModified[index].value = value;
+    }
+
+    async function saveBucketTags() {
+      if (!currentBucketInfo) return;
+
+      const btn = document.getElementById('save-bucket-tags-btn');
+      setLoading(btn, true);
+
+      try {
+        // Filter out empty tags
+        const validTags = bucketTagsModified.filter(tag => tag.key && tag.value);
+        
+        await api.putBucketTagging(currentBucketInfo.name, validTags);
+        showToast('Bucket tags saved successfully', 'success');
+        closeModal('bucket-info-modal');
+      } catch (error) {
+        console.error('Error saving bucket tags:', error);
+        showToast('Error saving tags: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Bucket Policy Modal
+    // ============================================
+
+    let currentPolicyBucket = null;
+    let currentPolicy = null;
+
+    async function openBucketPolicyModal(bucketName) {
+      currentPolicyBucket = bucketName;
+      document.getElementById('policy-bucket-name-display').textContent = `Bucket: ${bucketName}`;
+      
+      // Reset UI
+      document.getElementById('policy-status-message').classList.add('hidden');
+      document.getElementById('policy-documentation').classList.add('hidden');
+      
+      try {
+        // Try to load existing policy
+        const policy = await api.getBucketPolicy(bucketName);
+        currentPolicy = policy;
+        document.getElementById('policy-json-editor').value = JSON.stringify(policy, null, 2);
+        showPolicyStatusMessage('Policy loaded successfully', 'success');
+        document.getElementById('delete-policy-btn').disabled = false;
+      } catch (error) {
+        // No policy exists or error loading
+        currentPolicy = null;
+        document.getElementById('policy-json-editor').value = '';
+        if (error.message && error.message.includes('NoSuchBucketPolicy')) {
+          showPolicyStatusMessage('No policy defined for this bucket', 'info');
+        } else {
+          console.error('Error loading policy:', error);
+          showPolicyStatusMessage('Error loading policy: ' + error.message, 'error');
+        }
+        document.getElementById('delete-policy-btn').disabled = true;
+      }
+      
+      openModal('bucket-policy-modal');
+    }
+
+    function showPolicyStatusMessage(message, type) {
+      const statusDiv = document.getElementById('policy-status-message');
+      const colors = {
+        success: 'bg-green-50 border-green-200 text-green-800',
+        error: 'bg-red-50 border-red-200 text-red-800',
+        warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+        info: 'bg-blue-50 border-blue-200 text-blue-800'
+      };
+      
+      const icons = {
+        success: '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+        error: '<svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+        warning: '<svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>',
+        info: '<svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+      };
+      
+      statusDiv.className = `flex items-center gap-3 p-3 rounded-lg border ${colors[type]}`;
+      statusDiv.innerHTML = `
+        ${icons[type]}
+        <p class="text-sm">${escapeHtml(message)}</p>
+      `;
+      statusDiv.classList.remove('hidden');
+    }
+
+    function loadExamplePolicy() {
+      if (!currentPolicyBucket) return;
+      
+      const examplePolicy = {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "FullS3Access",
+            "Effect": "Allow",
+            "Principal": [
+              "user001",
+              "user002"
+            ],
+            "Action": [
+              "s3:AbortMultipartUpload",
+              "s3:DeleteObject",
+              "s3:DeleteObjectTagging",
+              "s3:GetBucketAcl",
+              "s3:GetBucketPolicy",
+              "s3:GetBucketTagging",
+              "s3:GetBucketLocation",
+              "s3:GetBucketCORS",
+              "s3:GetObject",
+              "s3:GetObjectAcl",
+              "s3:GetObjectAttributes",
+              "s3:GetObjectRetention",
+              "s3:GetObjectTagging",
+              "s3:ListBucket",
+              "s3:ListBucketMultipartUploads",
+              "s3:ListMultipartUploadParts",
+              "s3:PutBucketTagging",
+              "s3:PutObject",
+              "s3:PutObjectRetention",
+              "s3:PutObjectTagging",
+              "s3:RestoreObject"
+            ],
+            "Resource": [
+              `arn:aws:s3:::${currentPolicyBucket}`,
+              `arn:aws:s3:::${currentPolicyBucket}/*`
+            ]
+          }
+        ]
+      };
+      
+      document.getElementById('policy-json-editor').value = JSON.stringify(examplePolicy, null, 2);
+      showPolicyStatusMessage('Example policy loaded. Modify as needed and click Save.', 'info');
+    }
+
+    function validatePolicyJson() {
+      const policyText = document.getElementById('policy-json-editor').value.trim();
+      
+      if (!policyText) {
+        showPolicyStatusMessage('Policy is empty', 'warning');
+        return false;
+      }
+      
+      try {
+        const policy = JSON.parse(policyText);
+        
+        // Validate required fields
+        if (!policy.Version) {
+          showPolicyStatusMessage('Missing required field: Version', 'error');
+          return false;
+        }
+        
+        if (policy.Version !== "2012-10-17") {
+          showPolicyStatusMessage('Version must be "2012-10-17"', 'error');
+          return false;
+        }
+        
+        if (!policy.Statement || !Array.isArray(policy.Statement)) {
+          showPolicyStatusMessage('Missing or invalid Statement array', 'error');
+          return false;
+        }
+        
+        if (policy.Statement.length === 0) {
+          showPolicyStatusMessage('Statement array cannot be empty', 'error');
+          return false;
+        }
+        
+        // Validate each statement
+        for (let i = 0; i < policy.Statement.length; i++) {
+          const stmt = policy.Statement[i];
+          
+          if (!stmt.Effect || !['Allow', 'Deny'].includes(stmt.Effect)) {
+            showPolicyStatusMessage(`Statement ${i}: Effect must be "Allow" or "Deny"`, 'error');
+            return false;
+          }
+          
+          if (!stmt.Principal) {
+            showPolicyStatusMessage(`Statement ${i}: Missing Principal field`, 'error');
+            return false;
+          }
+          
+          if (!stmt.Action) {
+            showPolicyStatusMessage(`Statement ${i}: Missing Action field`, 'error');
+            return false;
+          }
+          
+          if (!stmt.Resource) {
+            showPolicyStatusMessage(`Statement ${i}: Missing Resource field`, 'error');
+            return false;
+          }
+        }
+        
+        showPolicyStatusMessage('Policy is valid ✓', 'success');
+        return true;
+      } catch (error) {
+        showPolicyStatusMessage('Invalid JSON: ' + error.message, 'error');
+        return false;
+      }
+    }
+
+    async function saveBucketPolicy() {
+      if (!currentPolicyBucket) return;
+      
+      if (!validatePolicyJson()) {
+        return;
+      }
+      
+      const policyText = document.getElementById('policy-json-editor').value.trim();
+      const policy = JSON.parse(policyText);
+      
+      const btn = document.getElementById('save-policy-btn');
+      setLoading(btn, true);
+      
+      try {
+        await api.putBucketPolicy(currentPolicyBucket, policy);
+        showToast('Bucket policy saved successfully', 'success');
+        currentPolicy = policy;
+        document.getElementById('delete-policy-btn').disabled = false;
+        showPolicyStatusMessage('Policy saved successfully', 'success');
+      } catch (error) {
+        console.error('Error saving policy:', error);
+        showToast('Error saving policy: ' + error.message, 'error');
+        showPolicyStatusMessage('Error saving policy: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    async function deleteBucketPolicy() {
+      if (!currentPolicyBucket) return;
+      
+      confirm('Are you sure you want to delete this bucket policy? This action cannot be undone.', async () => {
+        const btn = document.getElementById('delete-policy-btn');
+        setLoading(btn, true);
+        
+        try {
+          await api.deleteBucketPolicy(currentPolicyBucket);
+          showToast('Bucket policy deleted successfully', 'success');
+          currentPolicy = null;
+          document.getElementById('policy-json-editor').value = '';
+          document.getElementById('delete-policy-btn').disabled = true;
+          showPolicyStatusMessage('Policy deleted successfully', 'success');
+        } catch (error) {
+          console.error('Error deleting policy:', error);
+          showToast('Error deleting policy: ' + error.message, 'error');
+          showPolicyStatusMessage('Error deleting policy: ' + error.message, 'error');
+        } finally {
+          setLoading(btn, false);
+        }
+      });
+    }
+
+    function showPolicyDocumentation() {
+      document.getElementById('policy-documentation').classList.remove('hidden');
+    }
+
+    function hidePolicyDocumentation() {
+      document.getElementById('policy-documentation').classList.add('hidden');
+    }
+
+    // ============================================
+    // Multipart Uploads Modal
+    // ============================================
+
+    let currentMultipartUploads = [];
+    let currentMultipartBucket = null;
+
+    async function openMultipartUploadsModalForBucket(bucketName) {
+      currentMultipartBucket = bucketName;
+      
+      document.getElementById('multipart-bucket-name-display').textContent = `Bucket: ${bucketName}`;
+      
+      // Show modal and loading state
+      openModal('multipart-uploads-modal');
+      document.getElementById('multipart-loading').classList.remove('hidden');
+      document.getElementById('multipart-list').classList.add('hidden');
+      document.getElementById('multipart-empty').classList.add('hidden');
+      
+      await loadMultipartUploads();
+    }
+
+    async function openMultipartUploadsModal() {
+      if (!currentBucket) {
+        showToast('No bucket selected', 'warning');
+        return;
+      }
+
+      currentMultipartBucket = currentBucket;
+      document.getElementById('multipart-bucket-name-display').textContent = `Bucket: ${currentBucket}`;
+      
+      // Show modal and loading state
+      openModal('multipart-uploads-modal');
+      document.getElementById('multipart-loading').classList.remove('hidden');
+      document.getElementById('multipart-list').classList.add('hidden');
+      document.getElementById('multipart-empty').classList.add('hidden');
+      
+      await loadMultipartUploads();
+    }
+
+    async function loadMultipartUploads() {
+      if (!currentMultipartBucket) return;
+      
+      try {
+        currentMultipartUploads = await api.listMultipartUploads(currentMultipartBucket);
+        renderMultipartUploads();
+      } catch (error) {
+        console.error('Error loading multipart uploads:', error);
+        showToast('Error loading multipart uploads: ' + error.message, 'error');
+        document.getElementById('multipart-loading').classList.add('hidden');
+        document.getElementById('multipart-empty').classList.remove('hidden');
+      }
+    }
+
+    function renderMultipartUploads() {
+      document.getElementById('multipart-loading').classList.add('hidden');
+      
+      const abortAllBtn = document.getElementById('abort-all-btn');
+      
+      if (currentMultipartUploads.length === 0) {
+        document.getElementById('multipart-list').classList.add('hidden');
+        document.getElementById('multipart-empty').classList.remove('hidden');
+        abortAllBtn.classList.add('hidden');
+        return;
+      }
+
+      document.getElementById('multipart-empty').classList.add('hidden');
+      document.getElementById('multipart-list').classList.remove('hidden');
+      abortAllBtn.classList.remove('hidden');
+      
+      const tbody = document.getElementById('multipart-uploads-tbody');
+      tbody.innerHTML = '';
+      
+      currentMultipartUploads.forEach(upload => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-50 hover:bg-gray-50';
+        
+        // Format the initiated date
+        let initiatedDisplay = '-';
+        if (upload.initiated) {
+          try {
+            const date = new Date(upload.initiated);
+            initiatedDisplay = date.toLocaleString();
+          } catch (e) {
+            initiatedDisplay = upload.initiated;
+          }
+        }
+        
+        row.innerHTML = `
+          <td class="py-3 px-4">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-charcoal-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <span class="text-sm text-charcoal font-mono break-all">${escapeHtml(upload.key)}</span>
+            </div>
+          </td>
+          <td class="py-3 px-4">
+            <span class="text-xs text-charcoal-300 font-mono break-all">${escapeHtml(upload.uploadId.substring(0, 24))}...</span>
+          </td>
+          <td class="py-3 px-4 text-sm text-charcoal-300">
+            ${escapeHtml(initiatedDisplay)}
+          </td>
+          <td class="py-3 px-4 text-center">
+            <button 
+              onclick="abortMultipartUpload('${escapeHtml(upload.key)}', '${escapeHtml(upload.uploadId)}')"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors"
+              title="Abort this multipart upload">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Abort
+            </button>
+          </td>
+        `;
+        
+        tbody.appendChild(row);
+      });
+    }
+
+    async function abortMultipartUpload(key, uploadId) {
+      confirm(`Are you sure you want to abort this multipart upload for "${key}"? This action cannot be undone.`, async () => {
+        try {
+          await api.abortMultipartUpload(currentMultipartBucket, key, uploadId);
+          showToast('Multipart upload aborted successfully', 'success');
+          
+          // Remove from current list
+          currentMultipartUploads = currentMultipartUploads.filter(
+            upload => !(upload.key === key && upload.uploadId === uploadId)
+          );
+          
+          renderMultipartUploads();
+        } catch (error) {
+          console.error('Error aborting multipart upload:', error);
+          showToast('Error aborting multipart upload: ' + error.message, 'error');
+        }
+      });
+    }
+
+    async function abortAllMultipartUploads() {
+      if (!currentMultipartUploads || currentMultipartUploads.length === 0) {
+        return;
+      }
+
+      const count = currentMultipartUploads.length;
+      confirm(`Are you sure you want to abort all ${count} multipart upload${count > 1 ? 's' : ''}? This action cannot be undone.`, async () => {
+        const btn = document.getElementById('abort-all-btn');
+        setLoading(btn, true);
+        
+        let successCount = 0;
+        let failureCount = 0;
+        const failures = [];
+        
+        // Abort all uploads in parallel
+        const promises = currentMultipartUploads.map(async (upload) => {
+          try {
+            await api.abortMultipartUpload(currentMultipartBucket, upload.key, upload.uploadId);
+            successCount++;
+          } catch (error) {
+            failureCount++;
+            failures.push({ key: upload.key, error: error.message });
+            console.error(`Error aborting ${upload.key}:`, error);
+          }
+        });
+        
+        await Promise.all(promises);
+        
+        // Show results
+        if (failureCount === 0) {
+          showToast(`Successfully aborted all ${successCount} multipart upload${successCount > 1 ? 's' : ''}`, 'success');
+        } else if (successCount === 0) {
+          showToast(`Failed to abort all ${failureCount} multipart upload${failureCount > 1 ? 's' : ''}`, 'error');
+        } else {
+          showToast(`Aborted ${successCount} upload${successCount > 1 ? 's' : ''}, ${failureCount} failed`, 'warning');
+        }
+        
+        setLoading(btn, false);
+        
+        // Refresh the list
+        await refreshMultipartUploads();
+      });
+    }
+
+    async function refreshMultipartUploads() {
+      document.getElementById('multipart-loading').classList.remove('hidden');
+      document.getElementById('multipart-list').classList.add('hidden');
+      document.getElementById('multipart-empty').classList.add('hidden');
+      await loadMultipartUploads();
+    }
+
+    // ============================================
+    // Keyboard Shortcuts
+    // ============================================
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Delete key
+      if (e.key === 'Delete' && selectedObjects.size > 0) {
+        deleteSelected();
+      }
+      // Ctrl+A to select all
+      if (e.ctrlKey && e.key === 'a' && currentBucket) {
+        e.preventDefault();
+        document.getElementById('select-all').checked = true;
+        toggleSelectAll();
+      }
+      // Backspace to go up
+      if (e.key === 'Backspace' && currentPrefix && !e.target.matches('input, textarea')) {
+        e.preventDefault();
+        navigateUp();
+      }
+      // Escape to clear selection
+      if (e.key === 'Escape') {
+        clearSelection();
+      }
+    });
+  </script>
+</body>
+</html>
