@@ -179,13 +179,15 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **CREATE_STATIC_USERS_IF_NONEXISTENT**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **false**, generate non-existing users if they don't exist, but don't delete them, as with user autogeneration
 
-**DIRECT_POST_COMMAND_DELAY**:  in direct mode, time to wait before sending new commands to try to prevent propagation delay issues
+**DIRECT_POST_COMMAND_DELAY**:  in v1 direct mode, time to wait before sending new commands to try to prevent propagation delay issues
 
 **SKIP_ACL_TESTING**:  avoid ACL tests for systems which do not use ACLs
 
 **MAX_FILE_DOWNLOAD_CHUNK_SIZE**:  when set, will divide the download of large files with GetObject into chunks of the given size.  Useful for direct testing with slower connections.
 
 **SKIP_USERS_TESTS**:  skip versitygw-specific users tests, set to **false** to test against other S3 gateways
+
+**MAX_OPENSSL_COMMAND_LOG_BYTES**:  number of OpenSSL command bytes to display in command log, can prevent the display of too many chars in the case of large payload commands, -1 means display whole command
 
 ## REST Scripts
 
