@@ -67,6 +67,7 @@ get_bucket_location_s3cmd() {
     log 2 "error getting bucket location: $location"
     return 1
   fi
+  log 5 "s3cmd bucket location info: $info"
   bucket_location=$(echo "$info" | grep -o 'Location:.*' | awk '{print $2}')
   return 0
 }
