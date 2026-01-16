@@ -18,7 +18,10 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/setup.sh
+source ./tests/commands/delete_object_tagging.sh
+source ./tests/commands/put_object_tagging.sh
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
+source ./tests/drivers/get_object_tagging/get_object_tagging.sh
 source ./tests/drivers/get_object_tagging/get_object_tagging_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 
@@ -70,5 +73,33 @@ source ./tests/drivers/put_object/put_object_rest.sh
   assert_success
 
   run get_object_tagging_invalid_version_id "$bucket_name" "$test_file"
+  assert_success
+}
+
+@test "test_rest_tagging" {
+  test_key="TestKey"
+  test_value="TestValue"
+  test_file="test_file"
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object "rest" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object_tagging "rest" "$bucket_name" "$test_file" "$test_key" "$test_value"
+  assert_success
+
+  run check_verify_object_tags "rest" "$bucket_name" "$test_file" "$test_key" "$test_value"
+  assert_success
+
+  run delete_object_tagging "rest" "$bucket_name" "$test_file"
+  assert_success
+
+  run verify_no_object_tags "rest" "$bucket_name" "$test_file"
   assert_success
 }
