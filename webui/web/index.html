@@ -1,0 +1,836 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - Login</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/css/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#002A7A',
+              50: '#E6EBF4',
+              100: '#B3C2E0',
+              200: '#809ACC',
+              300: '#4D71B8',
+              400: '#264DA3',
+              500: '#002A7A',
+              600: '#002468',
+              700: '#001D56',
+            },
+            accent: {
+              DEFAULT: '#0076CD',
+              50: '#E6F3FA',
+              100: '#B3DCF2',
+              500: '#0076CD',
+              600: '#0065AF',
+            },
+            charcoal: {
+              DEFAULT: '#191B2A',
+              300: '#757884',
+              400: '#565968',
+            },
+            surface: {
+              DEFAULT: '#F3F8FC',
+            }
+          },
+          fontFamily: {
+            sans: ['Roboto', 'system-ui', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Roboto', system-ui, sans-serif; }
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #808080;
+    }
+    .input-with-icon {
+      padding-left: 44px;
+    }
+    .password-toggle {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #808080;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px;
+    }
+    .password-toggle:hover {
+      color: #002A7A;
+    }
+    .advanced-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      padding: 0.75rem 0;
+      margin: 0.5rem 0;
+      background: none;
+      border: none;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      width: 100%;
+    }
+    .advanced-toggle:hover {
+      opacity: 0.8;
+    }
+    .advanced-toggle-carat {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      flex-shrink: 0;
+      transition: transform 0.3s ease;
+    }
+    .advanced-toggle.expanded .advanced-toggle-carat {
+      transform: rotate(90deg);
+    }
+    .advanced-toggle-label {
+      font-weight: 500;
+      color: #565968;
+      cursor: pointer;
+    }
+    .advanced-options {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    .advanced-options.show {
+      max-height: 500px;
+    }
+    /* Custom dropdown styles */
+    .custom-dropdown {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      width: 100%;
+      margin-top: 4px;
+      background: white;
+      border: 2px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      max-height: 12rem;
+      overflow: auto;
+    }
+    .custom-dropdown.show {
+      display: block;
+    }
+    .custom-dropdown-item {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      color: #191B2A;
+      transition: background-color 0.15s;
+    }
+    .custom-dropdown-item:hover {
+      background-color: #f9fafb;
+    }
+    .custom-dropdown-item.selected {
+      background-color: rgba(0, 118, 205, 0.1);
+      color: #0076CD;
+    }
+    /* Toggle Switch Styles */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 28px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e5e7eb;
+      transition: 0.3s;
+      border-radius: 28px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 20px;
+      width: 20px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+    input:checked + .toggle-slider {
+      background-color: #0076CD;
+    }
+    input:checked + .toggle-slider:before {
+      transform: translateX(32px);
+    }
+    .toggle-label {
+      font-size: 0.875rem;
+      color: #565968;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-surface to-white flex items-center justify-center p-4">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+  <div class="w-full max-w-md">
+    <!-- Login Card -->
+    <div class="bg-white rounded-xl shadow-lg p-8">
+      <!-- Logo inside card -->
+      <div class="flex flex-col items-center mb-6">
+        <img src="assets/images/Versity-logo-blue-horizontal.png" alt="Versity" class="h-12">
+        <span class="text-charcoal font-semibold text-lg mt-2">S3 Gateway</span>
+      </div>
+
+      <!-- Error Alert -->
+      <div id="error-alert" class="hidden mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div class="flex items-center gap-3">
+          <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <p id="error-message" class="text-sm text-red-700">Invalid credentials.</p>
+        </div>
+      </div>
+
+      <form id="login-form" action="#" method="post" class="space-y-5">
+        <!-- Access Key -->
+        <div>
+          <label class="block text-sm font-medium text-charcoal-400 mb-2">Access Key</label>
+          <input
+            type="text"
+            id="access-key"
+            name="username"
+            required
+            placeholder="Enter your access key"
+            autocomplete="username"
+            class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+          >
+        </div>
+
+        <!-- Secret Key -->
+        <div>
+          <label class="block text-sm font-medium text-charcoal-400 mb-2">Secret Key</label>
+          <div class="relative">
+            <input
+              type="password"
+              id="secret-key"
+              name="password"
+              required
+              placeholder="Enter your secret key"
+              autocomplete="current-password"
+              class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all pr-12"
+            >
+            <button type="button" onclick="togglePassword()" class="password-toggle">
+              <svg id="eye-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+              </svg>
+              <svg id="eye-off-icon" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Remember Access Key -->
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="remember-access-key" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary">
+          <label for="remember-access-key" class="text-sm text-charcoal-400">Remember Access Key</label>
+        </div>
+
+        <!-- Advanced Options Toggle -->
+        <button type="button" id="advanced-options-toggle" class="advanced-toggle" onclick="toggleAdvancedOptions()">
+          <svg class="advanced-toggle-carat w-5 h-5 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          <span class="advanced-toggle-label">Advanced Options</span>
+        </button>
+
+        <!-- Advanced Options Section -->
+        <div id="advanced-options-section" class="advanced-options space-y-5">
+          <!-- S3 Endpoint URL -->
+          <div>
+            <label class="block text-sm font-medium text-charcoal-400 mb-2">S3 API Endpoint</label>
+            <div class="relative" id="endpoint-container">
+              <input
+                type="url"
+                id="endpoint-select"
+                required
+                placeholder="http://localhost:7070"
+                autocomplete="off"
+                class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <button type="button" onclick="toggleDropdown('endpoint')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <div id="endpoint-dropdown" class="custom-dropdown">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Admin Endpoint URL -->
+          <div>
+            <label class="block text-sm font-medium text-charcoal-400 mb-2">Admin API Endpoint</label>
+            <div class="relative" id="admin-endpoint-container">
+              <input
+                type="url"
+                id="admin-endpoint-select"
+                required
+                placeholder="http://localhost:7070"
+                autocomplete="off"
+                class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal placeholder:text-gray-400 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <button type="button" onclick="toggleDropdown('admin-endpoint')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <div id="admin-endpoint-dropdown" class="custom-dropdown">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Region Selector -->
+          <div>
+            <label class="block text-sm font-medium text-charcoal-400 mb-2">Region</label>
+            <div class="relative" id="region-container">
+              <input
+                type="text"
+                id="region-display"
+                readonly
+                value="us-east-1"
+                onclick="toggleDropdown('region')"
+                class="w-full px-4 py-3 pr-10 border-2 border-gray-200 rounded-lg text-charcoal bg-white cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <input type="hidden" id="region" value="us-east-1">
+              <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+              <div id="region-dropdown" class="custom-dropdown">
+                <div class="custom-dropdown-item selected" data-value="us-east-1" onclick="selectRegion('us-east-1')">us-east-1</div>
+                <div class="custom-dropdown-item" data-value="us-west-2" onclick="selectRegion('us-west-2')">us-west-2</div>
+                <div class="custom-dropdown-item" data-value="eu-west-1" onclick="selectRegion('eu-west-1')">eu-west-1</div>
+                <div class="custom-dropdown-item" data-value="ap-southeast-1" onclick="selectRegion('ap-southeast-1')">ap-southeast-1</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bucket Addressing Style -->
+          <div>
+            <label class="block text-sm font-medium text-charcoal-400 mb-2">Bucket Addressing Style</label>
+            <div class="flex items-center justify-between">
+              <span class="toggle-label">Path Style</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="addressing-style-toggle" onchange="toggleAddressingStyle()">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="toggle-label">Virtual Host</span>
+            </div>
+            <input type="hidden" id="addressing-style" value="path">
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button
+          type="submit"
+          id="submit-btn"
+          class="w-full bg-primary hover:bg-primary-600 active:bg-primary-700 text-white font-medium py-3 px-4 rounded-lg transition-all duration-150 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2"
+        >
+          Sign In
+        </button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center text-charcoal-300 text-sm mt-6">
+      &copy; 2025 Versity Software Inc.
+    </p>
+  </div>
+
+  <script>
+    // Redirect if already authenticated
+    redirectIfAuthenticated();
+
+    // ============================================
+    // Advanced Options Toggle
+    // ============================================
+    function toggleAdvancedOptions() {
+      const toggle = document.getElementById('advanced-options-toggle');
+      const section = document.getElementById('advanced-options-section');
+      
+      toggle.classList.toggle('expanded');
+      section.classList.toggle('show');
+    }
+
+    // ============================================
+    // Configured Gateways (from vgwmgr CLI)
+    // ============================================
+    let configuredGateways = [];
+    let configuredAdminGateways = [];
+    let configuredDefaultRegion = null;
+
+    function normalizeEndpoint(value) {
+      return String(value || '').trim();
+    }
+
+    function normalizeRegion(value) {
+      const s = String(value || '').trim();
+      return s || null;
+    }
+
+    function uniqNonEmpty(values) {
+      const out = [];
+      const seen = new Set();
+      (values || []).forEach(v => {
+        const s = normalizeEndpoint(v);
+        if (!s) return;
+        const key = s.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(s);
+      });
+      return out;
+    }
+
+    async function loadConfiguredGateways() {
+      try {
+        const res = await fetch('/api/gateways', { cache: 'no-store' });
+        if (!res.ok) return { gateways: [], adminGateways: [], defaultRegion: null };
+        const data = await res.json();
+        if (!data || !Array.isArray(data.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };
+        return {
+          gateways: data.gateways,
+          adminGateways: data.adminGateways || data.gateways || [],
+          defaultRegion: normalizeRegion(typeof data.defaultRegion === 'string' ? data.defaultRegion : null),
+        };
+      } catch (e) {
+        return { gateways: [], adminGateways: [], defaultRegion: null };
+      }
+    }
+
+    async function initConfiguredGateways() {
+      const cfg = await loadConfiguredGateways();
+      configuredGateways = uniqNonEmpty(cfg.gateways);
+      configuredAdminGateways = uniqNonEmpty(cfg.adminGateways);
+      configuredDefaultRegion = cfg.defaultRegion;
+
+      // Apply default region from server only if user hasn't changed it yet
+      if (configuredDefaultRegion) {
+        const hidden = document.getElementById('region');
+        const display = document.getElementById('region-display');
+
+        const looksUntouched =
+          hidden && display &&
+          hidden.value === 'us-east-1' &&
+          display.value === 'us-east-1';
+
+        if (looksUntouched) {
+          setRegion(configuredDefaultRegion);
+        }
+      }
+
+      // Default the endpoint input to the first configured gateway (if user hasn't typed one)
+      const endpointInput = document.getElementById('endpoint-select');
+      if (configuredGateways.length > 0 && endpointInput && !endpointInput.value.trim()) {
+        endpointInput.value = configuredGateways[0];
+        onEndpointInput(configuredGateways[0], { skipRegion: true });
+      }
+
+      // Default the admin-endpoint input to the first configured admin gateway (if user hasn't typed one)
+      const adminEndpointInput = document.getElementById('admin-endpoint-select');
+      if (configuredAdminGateways.length > 0 && adminEndpointInput && !adminEndpointInput.value.trim()) {
+        adminEndpointInput.value = configuredAdminGateways[0];
+        onAdminEndpointInput(configuredAdminGateways[0]);
+      }
+    }
+
+    // ============================================
+    // Recent Gateways (localStorage)
+    // ============================================
+    const RECENT_GATEWAYS_KEY = 'vgw_recent_gateways';
+    const MAX_RECENT_GATEWAYS = 5;
+
+    // Load recent gateways from localStorage
+    function loadRecentGateways() {
+      const stored = localStorage.getItem(RECENT_GATEWAYS_KEY);
+      if (!stored) return [];
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // Save gateway to recent list (call on successful login)
+    function saveRecentGateway(endpoint, region, accessKey, rememberKey) {
+      let gateways = loadRecentGateways();
+
+      // Remove existing entry for this endpoint
+      gateways = gateways.filter(g => g.endpoint !== endpoint);
+
+      // Add new entry at the beginning
+      gateways.unshift({
+        endpoint,
+        region,
+        accessKey: rememberKey ? accessKey : null,
+        lastUsed: Date.now()
+      });
+
+      // Keep only last 5
+      gateways = gateways.slice(0, MAX_RECENT_GATEWAYS);
+
+      localStorage.setItem(RECENT_GATEWAYS_KEY, JSON.stringify(gateways));
+    }
+
+    // ============================================
+    // Custom Dropdown Functions
+    // ============================================
+
+    // Toggle any dropdown
+    function toggleDropdown(name) {
+      const dropdown = document.getElementById(name + '-dropdown');
+      const allDropdowns = document.querySelectorAll('.custom-dropdown');
+
+      // Close all other dropdowns
+      allDropdowns.forEach(d => {
+        if (d.id !== name + '-dropdown') d.classList.remove('show');
+      });
+
+      dropdown.classList.toggle('show');
+
+      // If opening endpoint dropdown, populate it
+      if (name === 'endpoint' && dropdown.classList.contains('show')) {
+        populateEndpointDropdown();
+      }
+      // If opening admin-endpoint dropdown, populate it
+      if (name === 'admin-endpoint' && dropdown.classList.contains('show')) {
+        populateAdminEndpointDropdown();
+      }
+    }
+
+    // Close all dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#endpoint-container') && !e.target.closest('#admin-endpoint-container') && !e.target.closest('#region-container')) {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('show'));
+      }
+    });
+
+    // Populate endpoint dropdown with recent gateways
+    function populateEndpointDropdown() {
+      const dropdown = document.getElementById('endpoint-dropdown');
+      const recent = loadRecentGateways();
+
+      // Build a combined list: configured gateways first, then recents not already listed
+      const configured = uniqNonEmpty(configuredGateways);
+      const recentEndpoints = uniqNonEmpty(recent.map(r => r.endpoint));
+      const configuredSet = new Set(configured.map(e => e.toLowerCase()));
+      const combined = configured.concat(recentEndpoints.filter(e => !configuredSet.has(e.toLowerCase())));
+
+      dropdown.innerHTML = '';
+
+      if (combined.length === 0) {
+        dropdown.innerHTML = '<div class="px-4 py-3 text-gray-400 text-sm italic">No gateways configured</div>';
+        return;
+      }
+
+      combined.forEach(endpoint => {
+        const item = document.createElement('div');
+        item.className = 'custom-dropdown-item';
+        item.textContent = endpoint;
+        item.addEventListener('click', () => selectEndpoint(endpoint));
+        dropdown.appendChild(item);
+      });
+    }
+
+    // Populate admin-endpoint dropdown (with configured admin gateways)
+    function populateAdminEndpointDropdown() {
+      const dropdown = document.getElementById('admin-endpoint-dropdown');
+
+      // Build a combined list: configured admin gateways first, then all configured gateways as fallback
+      const configured = uniqNonEmpty(configuredAdminGateways.length > 0 ? configuredAdminGateways : configuredGateways);
+
+      dropdown.innerHTML = '';
+
+      if (configured.length === 0) {
+        dropdown.innerHTML = '<div class="px-4 py-3 text-gray-400 text-sm italic">No admin gateways configured</div>';
+        return;
+      }
+
+      configured.forEach(endpoint => {
+        const item = document.createElement('div');
+        item.className = 'custom-dropdown-item';
+        item.textContent = endpoint;
+        item.addEventListener('click', () => selectAdminEndpoint(endpoint));
+        dropdown.appendChild(item);
+      });
+    }
+
+    // Select an endpoint from dropdown
+    function selectEndpoint(endpoint) {
+      document.getElementById('endpoint-select').value = endpoint;
+      document.getElementById('endpoint-dropdown').classList.remove('show');
+      onEndpointInput(endpoint);
+    }
+
+    // Select an admin endpoint from dropdown
+    function selectAdminEndpoint(endpoint) {
+      document.getElementById('admin-endpoint-select').value = endpoint;
+      document.getElementById('admin-endpoint-dropdown').classList.remove('show');
+      onAdminEndpointInput(endpoint);
+    }
+
+    // Select a region from dropdown
+    function selectRegion(value) {
+      const display = document.getElementById('region-display');
+      const hidden = document.getElementById('region');
+      const dropdown = document.getElementById('region-dropdown');
+
+      // Update selected state
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      display.value = value;
+      hidden.value = value;
+
+      dropdown.classList.remove('show');
+    }
+
+    // Toggle addressing style between path and virtual-host
+    function toggleAddressingStyle() {
+      const toggle = document.getElementById('addressing-style-toggle');
+      const hidden = document.getElementById('addressing-style');
+      
+      // When toggle is checked, use virtual-host; unchecked is path
+      hidden.value = toggle.checked ? 'virtual-host' : 'path';
+    }
+
+    // Auto-fill access key, region and checkbox when endpoint is selected
+    function onEndpointInput(endpoint, opts = {}) {
+      const normalized = normalizeEndpoint(endpoint);
+      const gateways = loadRecentGateways();
+      const match = gateways.find(g => g.endpoint === normalized);
+      if (match) {
+        // Auto-fill access key if remembered
+        if (match.accessKey) {
+          document.getElementById('access-key').value = match.accessKey;
+          // Check the "Remember Access Key" checkbox since it was previously remembered
+          document.getElementById('remember-access-key').checked = true;
+        } else {
+          // Access key not remembered - uncheck the checkbox
+          document.getElementById('remember-access-key').checked = false;
+        }
+        // Auto-fill region
+        if (!opts.skipRegion && match.region) {
+          setRegion(match.region);
+        }
+      }
+    }
+
+    // Handle admin endpoint input (placeholder for future admin-specific logic)
+    function onAdminEndpointInput(endpoint) {
+      // For now, just acknowledge the change. Can be extended with admin-specific logic.
+    }
+
+    // Keep behavior consistent if user types an endpoint manually
+    document.getElementById('endpoint-select').addEventListener('input', (e) => {
+      onEndpointInput(e.target.value);
+    });
+
+    document.getElementById('admin-endpoint-select').addEventListener('input', (e) => {
+      onAdminEndpointInput(e.target.value);
+    });
+
+    // Helper to set region (works with custom dropdown)
+    function setRegion(region) {
+      const dropdown = document.getElementById('region-dropdown');
+
+      const normalized = normalizeRegion(region);
+      if (!normalized) return;
+
+      const existingItem = dropdown.querySelector(`.custom-dropdown-item[data-value="${CSS.escape(normalized)}"]`);
+      if (!existingItem) {
+        const item = document.createElement('div');
+        item.className = 'custom-dropdown-item';
+        item.dataset.value = normalized;
+        item.textContent = normalized;
+        item.addEventListener('click', () => selectRegion(normalized));
+
+        // Insert at the top of the list so the default is visible
+        dropdown.insertBefore(item, dropdown.firstChild);
+      }
+
+      selectRegion(normalized);
+    }
+
+    // Load configured gateways ASAP (needs setRegion defined)
+    initConfiguredGateways();
+
+    function getSelectedRegion() {
+      return document.getElementById('region').value;
+    }
+
+    function togglePassword() {
+      const input = document.getElementById('secret-key');
+      const eyeIcon = document.getElementById('eye-icon');
+      const eyeOffIcon = document.getElementById('eye-off-icon');
+
+      if (input.type === 'password') {
+        input.type = 'text';
+        eyeIcon.classList.add('hidden');
+        eyeOffIcon.classList.remove('hidden');
+      } else {
+        input.type = 'password';
+        eyeIcon.classList.remove('hidden');
+        eyeOffIcon.classList.add('hidden');
+      }
+    }
+
+    function showError(message) {
+      const alert = document.getElementById('error-alert');
+      const msgEl = document.getElementById('error-message');
+      msgEl.textContent = message;
+      alert.classList.remove('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('error-alert').classList.add('hidden');
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const s3Endpoint = document.getElementById('endpoint-select').value.trim();
+      const adminEndpoint = document.getElementById('admin-endpoint-select').value.trim();
+      const accessKey = document.getElementById('access-key').value.trim();
+      const secretKey = document.getElementById('secret-key').value;
+      const region = getSelectedRegion();
+      const addressingStyle = document.getElementById('addressing-style').value;
+
+      // Validate inputs
+      if (!s3Endpoint) {
+        showError('Please enter an S3 API endpoint.');
+        return;
+      }
+      if (!adminEndpoint) {
+        showError('Please enter an Admin API endpoint.');
+        return;
+      }
+      if (!accessKey || !secretKey) {
+        showError('Please enter both access key and secret key.');
+        return;
+      }
+
+      // Validate that virtual host style is not used with IP addresses
+      if (addressingStyle === 'virtual-host') {
+        try {
+          const url = new URL(s3Endpoint);
+          const hostname = url.hostname;
+          // Check for IPv4 (e.g., 192.168.1.1) or IPv6 (e.g., [::1] or 2001:db8::1)
+          const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+          const isIPv6 = hostname.includes(':') || hostname.startsWith('[');
+          
+          if (isIPv4 || isIPv6) {
+            showError('Virtual Host addressing style cannot be used with IP addresses. Please use a domain name or switch to Path Style.');
+            return;
+          }
+        } catch (err) {
+          // If URL parsing fails, let it continue and fail later with a more specific error
+        }
+      }
+
+      const submitBtn = document.getElementById('submit-btn');
+      setLoading(submitBtn, true);
+
+      try {
+        // Set credentials with admin endpoint, then configure s3 endpoint separately
+        api.setCredentials(adminEndpoint, accessKey, secretKey, region);
+        api.setS3Endpoint(s3Endpoint);
+        api.setAddressingStyle(addressingStyle);
+        const role = await api.detectRole();
+
+        if (role === 'none') {
+          api.logout();
+          showError('Invalid credentials or no access. Please check your access key and secret key.');
+          return;
+        }
+
+        // Store user type based on role
+        // Admin role means they have Admin API access
+        let userType = role === 'admin' ? 'admin' : 'user';
+        api.setUserContext(userType, []);
+
+        // Save gateway to recent list
+        const rememberKey = document.getElementById('remember-access-key').checked;
+        saveRecentGateway(s3Endpoint, region, accessKey, rememberKey);
+
+        // Navigate based on role
+        if (role === 'admin') {
+          // Admin user - redirect to dashboard
+          window.location.href = 'dashboard.html';
+        } else {
+          // Regular user with S3 access - redirect to explorer
+          window.location.href = 'explorer.html';
+        }
+      } catch (error) {
+        api.logout();
+        console.error('Login error:', error);
+
+        if (error.message.includes('CORS blocked')) {
+          showError(error.message);
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          showError('Unable to connect to the gateway. Please check the endpoint URL and ensure the server is running.');
+        } else if (error.message.includes('SignatureDoesNotMatch')) {
+          showError('Invalid credentials. Please check your access key and secret key.');
+        } else {
+          showError(error.message || 'An error occurred. Please try again.');
+        }
+      } finally {
+        setLoading(submitBtn, false);
+      }
+    });
+  </script>
+</body>
+</html>

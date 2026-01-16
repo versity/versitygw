@@ -71,7 +71,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 	// Logging middlewares
 	if !server.quiet {
 		app.Use(logger.New(logger.Config{
-			Format: "${time} | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
+			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
