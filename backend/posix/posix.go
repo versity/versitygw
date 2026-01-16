@@ -3407,7 +3407,13 @@ func (p *Posix) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput) (
 			versionPath := p.genObjVersionPath(bucket, object)
 
 			vId, err := p.meta.RetrieveAttribute(nil, bucket, object, versionIdKey)
-			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) && !errors.Is(err, fs.ErrNotExist) {
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+				// AWS returns success if the object does not exist
+				return &s3.DeleteObjectOutput{
+					VersionId: input.VersionId,
+				}, nil
+			}
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 				return nil, fmt.Errorf("get obj versionId: %w", err)
 			}
 			if errors.Is(err, meta.ErrNoSuchKey) {

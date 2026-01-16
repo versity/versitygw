@@ -1040,6 +1040,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObject_delete_a_delete_marker)
 	ts.Run(Versioning_Delete_null_versionId_object)
 	ts.Run(Versioning_DeleteObject_nested_dir_object)
+	ts.Run(Versioning_DeleteObject_non_existing_objects)
 	ts.Run(Versioning_DeleteObject_suspended)
 	ts.Run(Versioning_DeleteObjects_success)
 	ts.Run(Versioning_DeleteObjects_delete_deleteMarkers)
@@ -1749,6 +1750,7 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObject_delete_a_delete_marker":                           Versioning_DeleteObject_delete_a_delete_marker,
 		"Versioning_Delete_null_versionId_object":                                  Versioning_Delete_null_versionId_object,
 		"Versioning_DeleteObject_nested_dir_object":                                Versioning_DeleteObject_nested_dir_object,
+		"Versioning_DeleteObject_non_existing_objects":                             Versioning_DeleteObject_non_existing_objects,
 		"Versioning_DeleteObject_suspended":                                        Versioning_DeleteObject_suspended,
 		"Versioning_DeleteObjects_success":                                         Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                            Versioning_DeleteObjects_delete_deleteMarkers,
