@@ -49,3 +49,14 @@ list_object_versions_rest() {
   versions=$(cat "$TEST_FILE_FOLDER/object_versions.txt")
   return 0
 }
+
+list_object_versions_rest_v2() {
+  if ! check_param_count_v2 "bucket name, callback" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "$2" "-bucketName" "$1" "-query" "versions="; then
+    log 2 "error sending REST list object versions command"
+    return 1
+  fi
+  return 0
+}

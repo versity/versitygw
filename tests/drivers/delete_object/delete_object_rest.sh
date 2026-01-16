@@ -150,3 +150,30 @@ attempt_to_delete_version_after_retention_policy() {
     return 1
   fi
 }
+
+delete_delete_marker() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! parse_version_or_delete_marker_id "$1" "DeleteMarker" "true"; then
+    echo "error parsing delete marker ID"
+    return 1
+  fi
+  log 5 "version or marker ID: $version_or_marker_id"
+  if ! delete_object_version_rest "$bucket_name" "$object_key" "$version_or_marker_id"; then
+    log 2 "error deleting delete marker"
+    return 1
+  fi
+}
+
+delete_delete_marker_without_object_lock() {
+  if ! check_param_count_v2 "bucket name, key" 2 $#; then
+    return 1
+  fi
+  bucket_name="$1"
+  object_key="$2"
+  if ! list_object_versions_rest_v2 "$bucket_name" "delete_delete_marker"; then
+    return 1
+  fi
+  return 0
+}
