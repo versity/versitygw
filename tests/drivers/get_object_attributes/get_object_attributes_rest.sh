@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/util/util_list_parts.sh
+
 upload_and_check_attributes() {
   if ! check_param_count_v2 "bucket, test file, file size" 3 $#; then
     return 1
