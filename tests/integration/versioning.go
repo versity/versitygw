@@ -1335,6 +1335,65 @@ func Versioning_DeleteObject_nested_dir_object(s *S3Conf) error {
 	}, withLock())
 }
 
+func Versioning_DeleteObject_non_existing_objects(s *S3Conf) error {
+	testName := "Versioning_DeleteObject_non_existing_objects"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		out, err := putObjectWithData(2, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("foo"),
+		}, s3client)
+		if err != nil {
+			return err
+		}
+		versionId := getString(out.res.VersionId)
+
+		for _, test := range []struct {
+			key       string
+			versionId string
+		}{
+			{"foo/bar", "01KF2YVN948NAZ4JJR4X1AAVRA"},
+			{"foo/bar/baz", "01KF2YVN948NAZ4JJR4X1AAVRA"},
+			{"hello", "01KF2YVN948NAZ4JJR4X1AAVRA"},
+			{"hello/world", "01KF2YVN948NAZ4JJR4X1AAVRA"},
+			{"foo/bar/baz/quxx", versionId},
+			{"foo", versionId},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    &bucket,
+				Key:       &test.key,
+				VersionId: &test.versionId,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if getString(res.VersionId) != test.versionId {
+				return fmt.Errorf("expected the versionId to be %s, instead got %s", test.versionId, getString(res.VersionId))
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if len(resp.Versions) != 0 {
+			return fmt.Errorf("expected empty object versions, instead got %v", resp.Versions)
+		}
+		if len(resp.DeleteMarkers) != 0 {
+			return fmt.Errorf("expected empty delete markers list, insead got %v", resp.DeleteMarkers)
+		}
+
+		return nil
+	}, withLock())
+}
+
 func Versioning_DeleteObject_suspended(s *S3Conf) error {
 	testName := "Versioning_DeleteObject_suspended"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
