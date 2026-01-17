@@ -22,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3log"
@@ -74,7 +75,11 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 		}))
 	}
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
-	app.Use(middlewares.DebugLogger())
+
+	// initialize the debug logger in debug mode
+	if debuglogger.IsDebugEnabled() {
+		app.Use(middlewares.DebugLogger())
+	}
 
 	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
 
