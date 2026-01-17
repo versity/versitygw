@@ -23,6 +23,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v2"
@@ -35,6 +36,7 @@ import (
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+	"github.com/versity/versitygw/webui"
 )
 
 var (
@@ -90,6 +92,9 @@ var (
 	ipaUser, ipaPassword                   string
 	ipaInsecure                            bool
 	iamDebug                               bool
+	webuiAddr                              string
+	webuiCertFile, webuiKeyFile            string
+	webuiNoTLS                             bool
 )
 
 var (
@@ -166,6 +171,30 @@ func initFlags() []cli.Flag {
 			Value:       ":7070",
 			Destination: &port,
 			Aliases:     []string{"p"},
+		},
+		&cli.StringFlag{
+			Name:        "webui",
+			Usage:       "enable WebUI server on the specified listen address (e.g. ':7071', '127.0.0.1:7071', 'localhost:7071'; disabled when omitted)",
+			EnvVars:     []string{"VGW_WEBUI_PORT"},
+			Destination: &webuiAddr,
+		},
+		&cli.StringFlag{
+			Name:        "webui-cert",
+			Usage:       "TLS cert file for WebUI (defaults to --cert value when WebUI is enabled)",
+			EnvVars:     []string{"VGW_WEBUI_CERT"},
+			Destination: &webuiCertFile,
+		},
+		&cli.StringFlag{
+			Name:        "webui-key",
+			Usage:       "TLS key file for WebUI (defaults to --key value when WebUI is enabled)",
+			EnvVars:     []string{"VGW_WEBUI_KEY"},
+			Destination: &webuiKeyFile,
+		},
+		&cli.BoolFlag{
+			Name:        "webui-no-tls",
+			Usage:       "disable TLS for WebUI even if TLS is configured for the gateway",
+			EnvVars:     []string{"VGW_WEBUI_NO_TLS"},
+			Destination: &webuiNoTLS,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -645,6 +674,42 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("root user access and secret key must be provided")
 	}
 
+	webuiAddr = strings.TrimSpace(webuiAddr)
+	if webuiAddr != "" && isAllDigits(webuiAddr) {
+		webuiAddr = ":" + webuiAddr
+	}
+
+	// WebUI runs in a browser and typically talks to the gateway/admin APIs cross-origin
+	// (different port). If no bucket CORS configuration exists, those API responses need
+	// a default Access-Control-Allow-Origin to be usable from the WebUI.
+	if webuiAddr != "" && strings.TrimSpace(corsAllowOrigin) == "" {
+		// A single Access-Control-Allow-Origin value cannot cover multiple specific
+		// origins. Default to '*' for usability and print a warning so operators can
+		// lock it down explicitly.
+		corsAllowOrigin = "*"
+		webuiScheme := "http"
+		if !webuiNoTLS && (strings.TrimSpace(webuiCertFile) != "" || strings.TrimSpace(certFile) != "") {
+			webuiScheme = "https"
+		}
+
+		// Suggest a more secure explicit origin based on the actual WebUI listening interfaces.
+		// (Browsers require an exact origin match; this is typically one chosen hostname/IP.)
+		var suggestion string
+		ips, ipsErr := getMatchingIPs(webuiAddr)
+		_, webPrt, prtErr := net.SplitHostPort(webuiAddr)
+		if ipsErr == nil && prtErr == nil && len(ips) > 0 {
+			origins := make([]string, 0, len(ips))
+			for _, ip := range ips {
+				origins = append(origins, fmt.Sprintf("%s://%s:%s", webuiScheme, ip, webPrt))
+			}
+			suggestion = fmt.Sprintf("consider setting it to one of: %s (or your public hostname)", strings.Join(origins, ", "))
+		} else {
+			suggestion = fmt.Sprintf("consider setting it to %s://<host>:<port>", webuiScheme)
+		}
+
+		fmt.Fprintf(os.Stderr, "WARNING: --webui is enabled but --cors-allow-origin is not set; defaulting to '*'; %s\n", suggestion)
+	}
+
 	utils.SetBucketNameValidationStrict(!disableStrictBucketNames)
 
 	if pprof != "" {
@@ -824,14 +889,95 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		admSrv = s3api.NewAdminServer(be, middlewares.RootUserConfig{Access: rootUserAccess, Secret: rootUserSecret}, admPort, region, iam, loggers.AdminLogger, srv.Router.Ctrl, opts...)
 	}
 
-	if !quiet {
-		printBanner(port, admPort, certFile != "", admCertFile != "")
+	var webSrv *webui.Server
+	webuiSSLEnabled := false
+	if webuiAddr != "" {
+		_, webPrt, err := net.SplitHostPort(webuiAddr)
+		if err != nil {
+			return fmt.Errorf("webui listen address must be in the form ':port' or 'host:port': %w", err)
+		}
+		webPortNum, err := strconv.Atoi(webPrt)
+		if err != nil {
+			return fmt.Errorf("webui port must be a number: %w", err)
+		}
+		if webPortNum < 0 || webPortNum > 65535 {
+			return fmt.Errorf("webui port must be between 0 and 65535")
+		}
+
+		webTLSCert := ""
+		webTLSKey := ""
+		if !webuiNoTLS {
+			// WebUI can either use explicitly provided TLS files or reuse the
+			// gateway's TLS files by default.
+			webTLSCert = webuiCertFile
+			webTLSKey = webuiKeyFile
+			if webTLSCert == "" && webTLSKey == "" {
+				webTLSCert = certFile
+				webTLSKey = keyFile
+			}
+			if webTLSCert != "" || webTLSKey != "" {
+				if webTLSCert == "" {
+					return fmt.Errorf("webui TLS key specified without cert file")
+				}
+				if webTLSKey == "" {
+					return fmt.Errorf("webui TLS cert specified without key file")
+				}
+				webuiSSLEnabled = true
+			}
+		}
+
+		sslEnabled := certFile != ""
+		admSSLEnabled := sslEnabled
+		if admPort != "" {
+			admSSLEnabled = admCertFile != ""
+		}
+
+		gateways, err := buildServiceURLs(port, sslEnabled)
+		if err != nil {
+			return fmt.Errorf("webui: build gateway URLs: %w", err)
+		}
+
+		adminGateways := gateways
+		if admPort != "" {
+			adminGateways, err = buildServiceURLs(admPort, admSSLEnabled)
+			if err != nil {
+				return fmt.Errorf("webui: build admin gateway URLs: %w", err)
+			}
+		}
+
+		var webOpts []webui.Option
+		if quiet {
+			webOpts = append(webOpts, webui.WithQuiet())
+		}
+
+		webSrv = webui.NewServer(&webui.ServerConfig{
+			ListenAddr:    webuiAddr,
+			Gateways:      gateways,
+			AdminGateways: adminGateways,
+			Region:        region,
+			TLSCert:       webTLSCert,
+			TLSKey:        webTLSKey,
+		}, webOpts...)
 	}
 
-	c := make(chan error, 2)
+	if !quiet {
+		printBanner(port, admPort, certFile != "", admCertFile != "", webuiAddr, webuiSSLEnabled)
+	}
+
+	servers := 1
+	if admPort != "" {
+		servers++
+	}
+	if webSrv != nil {
+		servers++
+	}
+	c := make(chan error, servers)
 	go func() { c <- srv.Serve() }()
 	if admPort != "" {
 		go func() { c <- admSrv.Serve() }()
+	}
+	if webSrv != nil {
+		go func() { c <- webSrv.Serve() }()
 	}
 
 	// for/select blocks until shutdown
@@ -875,6 +1021,13 @@ Loop:
 		}
 	}
 
+	if webSrv != nil {
+		err := webSrv.Shutdown()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "shutdown webui server: %v\n", err)
+		}
+	}
+
 	be.Shutdown()
 
 	err = iam.Shutdown()
@@ -909,7 +1062,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(port, admPort string, ssl, admSsl bool) {
+func printBanner(port, admPort string, ssl, admSsl bool, webuiAddr string, webuiSsl bool) {
 	interfaces, err := getMatchingIPs(port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to match local IP addresses: %v\n", err)
@@ -991,6 +1144,30 @@ func printBanner(port, admPort string, ssl, admSsl bool) {
 		}
 	}
 
+	if strings.TrimSpace(webuiAddr) != "" {
+		webInterfaces, err := getMatchingIPs(webuiAddr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to match webui port local IP addresses: %v\n", err)
+			return
+		}
+		_, webPrt, err := net.SplitHostPort(webuiAddr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to parse webui port: %v\n", err)
+			return
+		}
+		lines = append(lines,
+			centerText(""),
+			leftText("WebUI listening on:"),
+		)
+		for _, ip := range webInterfaces {
+			url := fmt.Sprintf("http://%s:%s", ip, webPrt)
+			if webuiSsl {
+				url = fmt.Sprintf("https://%s:%s", ip, webPrt)
+			}
+			lines = append(lines, leftText("  "+url))
+		}
+	}
+
 	// Print the top border
 	fmt.Println("┌" + strings.Repeat("─", columnWidth-2) + "┐")
 
@@ -1064,6 +1241,42 @@ func getMatchingIPs(spec string) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+func buildServiceURLs(spec string, ssl bool) ([]string, error) {
+	interfaces, err := getMatchingIPs(spec)
+	if err != nil {
+		return nil, err
+	}
+	_, prt, err := net.SplitHostPort(spec)
+	if err != nil {
+		return nil, fmt.Errorf("parse address/port: %w", err)
+	}
+	if len(interfaces) == 0 {
+		interfaces = []string{"localhost"}
+	}
+
+	scheme := "http"
+	if ssl {
+		scheme = "https"
+	}
+	urls := make([]string, 0, len(interfaces))
+	for _, ip := range interfaces {
+		urls = append(urls, fmt.Sprintf("%s://%s:%s", scheme, ip, prt))
+	}
+	return urls, nil
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 const columnWidth = 70

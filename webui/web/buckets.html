@@ -1,0 +1,705 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - Buckets</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/css/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#002A7A', 50: '#E6EBF4', 500: '#002A7A', 600: '#002468' },
+            accent: { DEFAULT: '#0076CD', 50: '#E6F3FA', 500: '#0076CD', 600: '#0065AF' },
+            charcoal: { DEFAULT: '#191B2A', 300: '#757884', 400: '#565968' },
+            surface: { DEFAULT: '#F3F8FC' }
+          },
+          fontFamily: { sans: ['Roboto', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Roboto', system-ui, sans-serif; }
+    .nav-item { transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); }
+    .nav-item.active { background: rgba(0, 118, 205, 0.2); border-left: 4px solid #0076CD; }
+    .modal-backdrop { background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    /* Custom dropdown styles */
+    .custom-dropdown {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      width: 100%;
+      margin-top: 4px;
+      background: white;
+      border: 2px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      max-height: 12rem;
+      overflow: auto;
+    }
+    .custom-dropdown.show {
+      display: block;
+    }
+    .custom-dropdown-item {
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      color: #191B2A;
+      transition: background-color 0.15s;
+    }
+    .custom-dropdown-item:hover {
+      background-color: #f9fafb;
+    }
+    .custom-dropdown-item.selected {
+      background-color: rgba(0, 118, 205, 0.1);
+      color: #0076CD;
+    }
+    /* Dropup variant - opens upward */
+    .custom-dropdown.dropup {
+      bottom: 100%;
+      top: auto;
+      margin-top: 0;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-charcoal flex flex-col flex-shrink-0">
+      <div class="h-16 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-admin-only>
+          Admin
+        </div>
+        <a href="dashboard.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-admin-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10"></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span class="font-medium">Bug Reports</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <span class="font-medium">Releases</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+        </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3"></div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0">
+        <h1 class="text-xl font-semibold text-charcoal">VersityGW Buckets</h1>
+        <button onclick="loadBuckets()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </button>
+      </header>
+
+      <main class="flex-1 overflow-auto p-8">
+        <div class="max-w-7xl mx-auto">
+          <!-- Page Header -->
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h1 class="text-2xl font-semibold text-charcoal">Buckets</h1>
+              <p class="text-charcoal-300 mt-1">View and manage bucket ownership</p>
+            </div>
+            <button onclick="openCreateBucketDialog()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-accent hover:bg-accent-600 text-white font-medium rounded-lg transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Create Bucket
+            </button>
+          </div>
+
+          <!-- Info Banner -->
+          <div class="bg-accent-50 border border-accent/20 rounded-xl p-4 mb-6">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm text-charcoal">
+                <span class="font-medium">Note:</span> Create buckets, view existing buckets, and transfer ownership between users.
+              </p>
+            </div>
+          </div>
+
+          <!-- Search -->
+          <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+              <div class="relative flex-1 min-w-64">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-charcoal-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input
+                  type="text"
+                  id="search-input"
+                  placeholder="Search buckets..."
+                  class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-charcoal placeholder:text-charcoal-300 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+                  oninput="filterBuckets()"
+                >
+              </div>
+              <div class="relative" id="owner-filter-container">
+                <input
+                  type="text"
+                  id="owner-filter-display"
+                  readonly
+                  value="All Owners"
+                  onclick="toggleDropdown('owner-filter')"
+                  class="bg-white border border-gray-200 rounded-lg px-4 py-2.5 pr-10 text-charcoal cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+                >
+                <input type="hidden" id="owner-filter" value="">
+                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-300 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+                <div id="owner-filter-dropdown" class="custom-dropdown">
+                  <div class="custom-dropdown-item selected" data-value="" onclick="selectOwnerFilter('')">All Owners</div>
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Buckets Table -->
+          <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <colgroup>
+                  <col style="width: 50%;">
+                  <col style="width: 30%;">
+                  <col style="width: 20%;">
+                </colgroup>
+                <thead class="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Bucket Name</th>
+                    <th class="text-left py-4 px-6 text-sm font-semibold text-charcoal">Owner</th>
+                    <th class="text-right py-4 px-6 text-sm font-semibold text-charcoal">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="buckets-table-body">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Change Owner Modal -->
+  <div id="owner-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('owner-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Change Bucket Owner</h2>
+          <button onclick="closeModal('owner-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <form class="p-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Bucket</label>
+            <input type="text" id="modal-bucket" readonly class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal bg-gray-50 font-mono">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Current Owner</label>
+            <input type="text" id="modal-current-owner" readonly class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal-400 bg-gray-50 font-mono">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">New Owner <span class="text-red-500">*</span></label>
+            <div class="relative" id="new-owner-container">
+              <input
+                type="text"
+                id="modal-new-owner-display"
+                readonly
+                value="Select a user..."
+                onclick="toggleDropdown('new-owner')"
+                class="w-full px-4 py-2.5 pr-10 border-2 border-gray-200 rounded-lg text-charcoal bg-white cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <input type="hidden" id="modal-new-owner" value="">
+              <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-300 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+              <div id="new-owner-dropdown" class="custom-dropdown">
+                <div class="custom-dropdown-item" data-value="" onclick="selectNewOwner('')">Select a user...</div>
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+          <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <p class="text-sm text-yellow-800">Transferring ownership will give the new owner full control over this bucket and its contents.</p>
+            </div>
+          </div>
+        </form>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('owner-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+          <button id="transfer-btn" onclick="transferOwnership()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">Transfer Ownership</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Bucket Modal -->
+  <div id="create-bucket-modal" class="hidden fixed inset-0 z-50">
+    <div class="modal-backdrop absolute inset-0" onclick="closeModal('create-bucket-modal')"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-2xl w-full max-w-md relative">
+        <div class="flex items-center justify-between p-6 border-b border-gray-100">
+          <h2 class="text-xl font-semibold text-charcoal">Create Bucket</h2>
+          <button onclick="closeModal('create-bucket-modal')" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <form class="p-6 space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Bucket Name <span class="text-red-500">*</span></label>
+            <input type="text" id="new-bucket-name" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg text-charcoal focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all" placeholder="my-bucket-name">
+            <p class="text-xs text-charcoal-300 mt-2">Bucket names must be lowercase, 3-63 characters, and can contain letters, numbers, and hyphens.</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-charcoal mb-2">Owner <span class="text-red-500">*</span></label>
+            <div class="relative" id="bucket-owner-container">
+              <input
+                type="text"
+                id="bucket-owner-display"
+                readonly
+                value="Select owner..."
+                onclick="toggleDropdown('bucket-owner')"
+                class="w-full px-4 py-2.5 pr-10 border-2 border-gray-200 rounded-lg text-charcoal bg-white cursor-pointer focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all"
+              >
+              <input type="hidden" id="bucket-owner" value="">
+              <svg class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-charcoal-300 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+              <div id="bucket-owner-dropdown" class="custom-dropdown">
+                <div class="custom-dropdown-item" data-value="" onclick="selectBucketOwner('', '')">Select owner...</div>
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+          <div class="space-y-3">
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" id="enable-versioning" class="mt-1 w-4 h-4 text-accent border-2 border-gray-200 rounded focus:ring-2 focus:ring-accent/20 transition-all">
+              <div>
+                <span class="block text-sm font-medium text-charcoal group-hover:text-accent transition-colors">Enable Versioning</span>
+                <span class="block text-xs text-charcoal-300 mt-0.5">Keep multiple versions of objects in the bucket</span>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input type="checkbox" id="enable-object-lock" class="mt-1 w-4 h-4 text-accent border-2 border-gray-200 rounded focus:ring-2 focus:ring-accent/20 transition-all">
+              <div>
+                <span class="block text-sm font-medium text-charcoal group-hover:text-accent transition-colors">Enable Object Lock</span>
+                <span class="block text-xs text-charcoal-300 mt-0.5">Prevent object deletion for compliance (enables versioning)</span>
+              </div>
+            </label>
+          </div>
+        </form>
+        <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-100">
+          <button onclick="closeModal('create-bucket-modal')" class="px-4 py-2.5 border border-gray-200 rounded-lg text-charcoal font-medium hover:bg-gray-50 transition-colors">
+            Cancel
+          </button>
+          <button id="create-bucket-btn" onclick="createBucket()" class="px-4 py-2.5 bg-primary hover:bg-primary-600 text-white font-medium rounded-lg transition-colors">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allBuckets = [];
+    let allUsers = [];
+    let selectedBucket = null;
+
+    // ============================================
+    // Custom Dropdown Functions
+    // ============================================
+
+    // Toggle any dropdown
+    function toggleDropdown(name) {
+      const dropdown = document.getElementById(name + '-dropdown');
+      const allDropdowns = document.querySelectorAll('.custom-dropdown');
+
+      // Close all other dropdowns
+      allDropdowns.forEach(d => {
+        if (d.id !== name + '-dropdown') d.classList.remove('show');
+      });
+
+      dropdown.classList.toggle('show');
+    }
+
+    // Close all dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+      const containers = ['owner-filter-container', 'new-owner-container', 'bucket-owner-container'];
+      if (!containers.some(id => e.target.closest('#' + id))) {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('show'));
+      }
+    });
+
+    // Owner filter dropdown
+    function selectOwnerFilter(value) {
+      const display = document.getElementById('owner-filter-display');
+      const hidden = document.getElementById('owner-filter');
+      const dropdown = document.getElementById('owner-filter-dropdown');
+
+      display.value = value || 'All Owners';
+      hidden.value = value;
+
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      dropdown.classList.remove('show');
+      filterBuckets();
+    }
+
+    // Populate owner filter dropdown
+    function populateOwnerFilterDropdown(owners) {
+      const dropdown = document.getElementById('owner-filter-dropdown');
+      dropdown.innerHTML = '<div class="custom-dropdown-item selected" data-value="" onclick="selectOwnerFilter(\'\')">All Owners</div>';
+      owners.forEach(owner => {
+        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(owner)}" onclick="selectOwnerFilter('${escapeHtml(owner)}')">${escapeHtml(owner)}</div>`;
+      });
+    }
+
+    // New owner dropdown (for modal)
+    function selectNewOwner(value, displayText) {
+      const display = document.getElementById('modal-new-owner-display');
+      const hidden = document.getElementById('modal-new-owner');
+      const dropdown = document.getElementById('new-owner-dropdown');
+
+      display.value = displayText || value || 'Select a user...';
+      hidden.value = value;
+
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      dropdown.classList.remove('show');
+    }
+
+    // Bucket owner dropdown (for create bucket modal)
+    function selectBucketOwner(value, displayText) {
+      const display = document.getElementById('bucket-owner-display');
+      const hidden = document.getElementById('bucket-owner');
+      const dropdown = document.getElementById('bucket-owner-dropdown');
+
+      display.value = displayText || value || 'Select owner...';
+      hidden.value = value;
+
+      dropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+        item.classList.toggle('selected', item.dataset.value === value);
+      });
+
+      dropdown.classList.remove('show');
+    }
+
+    // Populate new owner dropdown
+    function populateNewOwnerDropdown(users, currentOwner) {
+      const dropdown = document.getElementById('new-owner-dropdown');
+      dropdown.innerHTML = '<div class="custom-dropdown-item" data-value="" onclick="selectNewOwner(\'\')">Select a user...</div>';
+      users.forEach(user => {
+        if (user.access !== currentOwner) {
+          const roleLabel = user.role ? ` (${user.role.charAt(0).toUpperCase() + user.role.slice(1)})` : '';
+          const displayText = `${user.access}${roleLabel}`;
+          dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(user.access)}" onclick="selectNewOwner('${escapeHtml(user.access)}', '${escapeHtml(displayText)}')">${escapeHtml(displayText)}</div>`;
+        }
+      });
+    }
+    // Populate bucket owner dropdown (for create bucket modal)
+    function populateBucketOwnerDropdown(users) {
+      const dropdown = document.getElementById('bucket-owner-dropdown');
+      dropdown.innerHTML = '<div class="custom-dropdown-item" data-value="" onclick="selectBucketOwner(\'\', \'\'">Select owner...</div>';
+      users.forEach(user => {
+        const roleLabel = user.role ? ` (${user.role.charAt(0).toUpperCase() + user.role.slice(1)})` : '';
+        const displayText = `${user.access}${roleLabel}`;
+        dropdown.innerHTML += `<div class="custom-dropdown-item" data-value="${escapeHtml(user.access)}" onclick="selectBucketOwner('${escapeHtml(user.access)}', '${escapeHtml(displayText)}')">${escapeHtml(displayText)}</div>`;
+      });
+    }
+    if (!requireAdmin()) {
+      // Redirected
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadData();
+    }
+
+    async function loadData() {
+      try {
+        // Load both users and buckets
+        allUsers = await api.listUsers();
+        await loadBuckets();
+
+        // Populate owner filter dropdown
+        const uniqueOwners = [...new Set(allBuckets.map(b => b.owner).filter(Boolean))];
+        populateOwnerFilterDropdown(uniqueOwners);
+        
+        filterBuckets();
+      } catch (error) {
+        console.error('Error loading data:', error);
+        showToast('Error loading data: ' + error.message, 'error');
+      }
+    }
+
+    async function loadBuckets() {
+      showTableLoading('buckets-table-body', 4);
+      try {
+        allBuckets = await api.listBuckets();
+        filterBuckets();
+      } catch (error) {
+        console.error('Error loading buckets:', error);
+        showToast('Error loading buckets: ' + error.message, 'error');
+        showEmptyState('buckets-table-body', 4, 'Error loading buckets');
+      }
+    }
+
+    function filterBuckets() {
+      const searchTerm = document.getElementById('search-input').value.toLowerCase();
+      const ownerFilter = document.getElementById('owner-filter').value;
+
+      let filtered = allBuckets;
+
+      if (searchTerm) {
+        filtered = filtered.filter(b => b.name && b.name.toLowerCase().includes(searchTerm));
+      }
+
+      if (ownerFilter) {
+        filtered = filtered.filter(b => b.owner === ownerFilter);
+      }
+
+      renderBuckets(filtered);
+    }
+
+    function renderBuckets(buckets) {
+      const tbody = document.getElementById('buckets-table-body');
+      tbody.innerHTML = '';
+
+      if (buckets.length === 0) {
+        showEmptyState('buckets-table-body', 4, 'No buckets found');
+        return;
+      }
+
+      buckets.forEach(bucket => {
+        const explorerHref = `explorer.html#${encodeURIComponent(bucket.name)}`;
+        const row = document.createElement('tr');
+        row.className = 'border-b border-gray-50 hover:bg-gray-50 transition-colors';
+        row.innerHTML = `
+          <td class="py-4 px-6">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-accent-50 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                </svg>
+              </div>
+              <a href="${explorerHref}" class="font-mono text-sm text-accent hover:underline">${escapeHtml(bucket.name)}</a>
+            </div>
+          </td>
+          <td class="py-4 px-6">
+            <span class="font-mono text-sm text-charcoal-400">${escapeHtml(bucket.owner || 'Unknown')}</span>
+          </td>
+          <td class="py-4 px-6 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <button onclick="openChangeOwnerModal('${escapeHtml(bucket.name)}', '${escapeHtml(bucket.owner || '')}')" class="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-charcoal-400 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                </svg>
+                Owner
+              </button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function openChangeOwnerModal(bucket, currentOwner) {
+      selectedBucket = bucket;
+      document.getElementById('modal-bucket').value = bucket;
+      document.getElementById('modal-current-owner').value = currentOwner || 'Unknown';
+
+      // Reset and populate new owner dropdown
+      document.getElementById('modal-new-owner-display').value = 'Select a user...';
+      document.getElementById('modal-new-owner').value = '';
+      populateNewOwnerDropdown(allUsers, currentOwner);
+
+      openModal('owner-modal');
+    }
+
+    async function transferOwnership() {
+      const newOwner = document.getElementById('modal-new-owner').value;
+
+      if (!newOwner) {
+        showToast('Please select a new owner', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('transfer-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.changeBucketOwner(selectedBucket, newOwner);
+        showToast('Bucket ownership transferred successfully', 'success');
+        closeModal('owner-modal');
+        loadBuckets();
+      } catch (error) {
+        console.error('Error transferring ownership:', error);
+        showToast('Error: ' + error.message, 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+    // ============================================
+    // Create Bucket
+    // ============================================
+
+    function openCreateBucketDialog() {
+      document.getElementById('new-bucket-name').value = '';
+      document.getElementById('bucket-owner-display').value = 'Select owner...';
+      document.getElementById('bucket-owner').value = '';
+      document.getElementById('enable-versioning').checked = false;
+      document.getElementById('enable-object-lock').checked = false;
+      populateBucketOwnerDropdown(allUsers);
+      openModal('create-bucket-modal');
+    }
+
+    async function createBucket() {
+      const bucketName = document.getElementById('new-bucket-name').value.trim().toLowerCase();
+      const owner = document.getElementById('bucket-owner').value;
+      const enableVersioning = document.getElementById('enable-versioning').checked;
+      const enableObjectLock = document.getElementById('enable-object-lock').checked;
+
+      if (!bucketName) {
+        showToast('Please enter a bucket name', 'warning');
+        return;
+      }
+
+      if (!owner) {
+        showToast('Please select an owner', 'warning');
+        return;
+      }
+
+      // Basic bucket name validation
+      if (bucketName.length < 3 || bucketName.length > 63) {
+        showToast('Bucket name must be between 3 and 63 characters', 'warning');
+        return;
+      }
+
+      if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucketName) && bucketName.length > 2) {
+        showToast('Bucket name must start and end with a letter or number', 'warning');
+        return;
+      }
+
+      if (/[^a-z0-9.-]/.test(bucketName)) {
+        showToast('Bucket name can only contain lowercase letters, numbers, hyphens, and periods', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('create-bucket-btn');
+      setLoading(btn, true);
+
+      try {
+        await api.createBucketWithOwner(bucketName, owner, enableVersioning, enableObjectLock);
+        showToast(`Bucket "${bucketName}" created successfully`, 'success');
+        closeModal('create-bucket-modal');
+        // Reload buckets list
+        await loadBuckets();
+      } catch (error) {
+        console.error('Create bucket error:', error);
+        showToast(error.message || 'Failed to create bucket', 'error');
+      } finally {
+        setLoading(btn, false);
+      }
+    }
+
+  </script>
+</body>
+</html>
