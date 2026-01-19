@@ -1,0 +1,358 @@
+<!--
+Copyright 2026 Versity Software
+This file is licensed under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VersityGW Admin - Dashboard</title>
+  <script src="assets/js/crypto-js.min.js"></script>
+  <script src="assets/css/tailwind.js"></script>
+  <link rel="stylesheet" href="assets/css/fonts.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: { DEFAULT: '#002A7A', 50: '#E6EBF4', 500: '#002A7A', 600: '#002468' },
+            accent: { DEFAULT: '#0076CD', 50: '#E6F3FA', 500: '#0076CD', 600: '#0065AF' },
+            charcoal: { DEFAULT: '#191B2A', 300: '#757884', 400: '#565968' },
+            surface: { DEFAULT: '#F3F8FC' }
+          },
+          fontFamily: { sans: ['Roboto', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Roboto', system-ui, sans-serif; }
+    .nav-item { transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); }
+    .nav-item.active { background: rgba(0, 118, 205, 0.2); border-left: 4px solid #0076CD; }
+  </style>
+</head>
+<body class="min-h-screen bg-surface">
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-60 bg-charcoal flex flex-col flex-shrink-0">
+      <div class="h-16 flex items-center px-6 border-b border-white/10">
+        <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
+          <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
+        </a>
+      </div>
+      <nav class="flex-1 py-4">
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase" data-admin-only>
+          Admin
+        </div>
+        <a href="dashboard.html" class="nav-item active flex items-center gap-3 px-6 py-3 text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          <span class="font-medium">Dashboard</span>
+        </a>
+        <a href="users.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <span class="font-medium">Users</span>
+        </a>
+        <a href="buckets.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+          <span class="font-medium">Buckets</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10" data-admin-only></div>
+        <a href="explorer.html" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+          <span class="font-medium">Explorer</span>
+        </a>
+        <div class="mx-6 my-2 border-t border-white/10"></div>
+        <div class="px-6 pt-2 pb-2 text-[11px] font-semibold tracking-wider text-white/40 uppercase">
+          Resources
+        </div>
+        <a href="https://github.com/versity/versitygw/wiki" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+          </svg>
+          <span class="font-medium">Documentation</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/issues" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <span class="font-medium">Bug Reports</span>
+        </a>
+        <a href="https://github.com/versity/versitygw/releases" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white" data-admin-only>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+          </svg>
+          <span class="font-medium">Releases</span>
+        </a>
+        <a href="https://github.com/versity/versitygw" target="_blank" rel="noopener noreferrer" class="nav-item flex items-center gap-3 px-6 py-3 text-white/70 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span class="font-medium">GitHub</span>
+        </a>
+        </nav>
+      <div class="p-4 border-t border-white/10">
+        <div id="user-info" class="flex items-center gap-3 mb-3">
+          <!-- Populated by JS -->
+        </div>
+        <button onclick="api.logout(); window.location.href='index.html';" class="w-full flex items-center gap-2 px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0">
+        <h1 class="text-xl font-semibold text-charcoal">VersityGW Dashboard</h1>
+        <div class="flex items-center gap-4">
+          <button onclick="loadDashboard()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="flex-1 overflow-auto p-8">
+        <div class="max-w-7xl mx-auto">
+          <!-- Metric Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Total Users -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-charcoal-300 text-sm font-medium">Total Users</p>
+                  <p id="user-count" class="text-3xl font-bold text-charcoal mt-2">-</p>
+                </div>
+                <div class="w-14 h-14 bg-primary-50 rounded-xl flex items-center justify-center">
+                  <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Total Buckets -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-charcoal-300 text-sm font-medium">Total Buckets</p>
+                  <p id="bucket-count" class="text-3xl font-bold text-charcoal mt-2">-</p>
+                </div>
+                <div class="w-14 h-14 bg-accent-50 rounded-xl flex items-center justify-center">
+                  <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- System Status -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-charcoal-300 text-sm font-medium">System Status</p>
+                  <div id="system-status" class="flex items-center gap-2 mt-2">
+                    <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                    <p class="text-xl font-bold text-green-600">Connected</p>
+                  </div>
+                </div>
+                <div class="w-14 h-14 bg-green-50 rounded-xl flex items-center justify-center">
+                  <svg class="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Layout -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Quick Actions -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h3 class="text-lg font-semibold text-charcoal mb-4">Quick Actions</h3>
+              <div class="space-y-3">
+                <a href="users.html" class="flex items-center gap-4 p-4 bg-surface rounded-lg hover:bg-gray-100 transition-colors group">
+                  <div class="w-10 h-10 bg-primary-50 rounded-lg flex items-center justify-center group-hover:bg-primary-100 transition-colors">
+                    <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="font-medium text-charcoal">Manage Users</p>
+                    <p class="text-sm text-charcoal-300">Create, edit, and delete user accounts</p>
+                  </div>
+                  <svg class="w-5 h-5 text-charcoal-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+                <a href="buckets.html" class="flex items-center gap-4 p-4 bg-surface rounded-lg hover:bg-gray-100 transition-colors group">
+                  <div class="w-10 h-10 bg-accent-50 rounded-lg flex items-center justify-center group-hover:bg-accent-100 transition-colors">
+                    <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p class="font-medium text-charcoal">Manage Buckets</p>
+                    <p class="text-sm text-charcoal-300">View and manage bucket ownership</p>
+                  </div>
+                  <svg class="w-5 h-5 text-charcoal-300 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+              </div>
+            </div>
+
+            <!-- Connection Info -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+              <h3 class="text-lg font-semibold text-charcoal mb-4">Connection Info</h3>
+              <div class="space-y-4">
+                <div class="flex items-center justify-between py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Endpoint</span>
+                  <span id="endpoint-display" class="text-charcoal font-mono text-sm">-</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Region</span>
+                  <span id="region-display" class="text-charcoal text-sm">-</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-gray-100">
+                  <span class="text-charcoal-300">Access Key</span>
+                  <span id="access-key-display" class="text-charcoal font-mono text-sm">-</span>
+                </div>
+                <div class="flex items-center justify-between py-3">
+                  <span class="text-charcoal-300">Status</span>
+                  <span class="flex items-center gap-2">
+                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span class="text-green-600 text-sm font-medium">Authenticated</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Users Table -->
+          <div class="mt-6 bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-charcoal">Recent Users</h3>
+              <a href="users.html" class="text-accent hover:text-accent-600 text-sm font-medium">View all</a>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full">
+                <thead>
+                  <tr class="border-b border-gray-100">
+                    <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-300">Access Key</th>
+                    <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-300">Role</th>
+                    <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-300">Project ID</th>
+                    <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-300">User ID</th>
+                    <th class="text-left py-3 px-4 text-sm font-medium text-charcoal-300">Group ID</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-users">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Auth guard - require admin role
+    if (!requireAdmin()) {
+      // Will redirect to login or explorer
+    } else {
+      initSidebarWithRole();
+      updateUserInfo();
+      loadDashboard();
+    }
+
+    async function loadDashboard() {
+      const info = api.getCredentialsInfo();
+
+      // Display connection info
+      document.getElementById('endpoint-display').textContent = info.endpoint || '-';
+      document.getElementById('region-display').textContent = info.region || '-';
+      document.getElementById('access-key-display').textContent = info.accessKey || '-';
+
+      try {
+        // Load users
+        const users = await api.listUsers();
+        document.getElementById('user-count').textContent = users.length;
+
+        // Load buckets
+        const buckets = await api.listBuckets();
+        document.getElementById('bucket-count').textContent = buckets.length;
+
+        // Display recent users (max 5)
+        const recentUsers = users.slice(0, 5);
+        const tbody = document.getElementById('recent-users');
+        tbody.innerHTML = '';
+
+        if (recentUsers.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="5" class="py-8 text-center text-charcoal-300">No users found</td>
+            </tr>
+          `;
+        } else {
+          recentUsers.forEach(user => {
+            const row = document.createElement('tr');
+            row.className = 'border-b border-gray-50 hover:bg-gray-50 transition-colors';
+            row.innerHTML = `
+              <td class="py-3 px-4 font-mono text-sm text-charcoal">${escapeHtml(user.access)}</td>
+              <td class="py-3 px-4">${formatRole(user.role)}</td>
+              <td class="py-3 px-4 text-sm text-charcoal">${user.projectid || '-'}</td>
+              <td class="py-3 px-4 text-sm text-charcoal">${user.userid || '0'}</td>
+              <td class="py-3 px-4 text-sm text-charcoal">${user.groupid || '0'}</td>
+            `;
+            tbody.appendChild(row);
+          });
+        }
+
+        // Update status
+        document.getElementById('system-status').innerHTML = `
+          <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+          <p class="text-xl font-bold text-green-600">Connected</p>
+        `;
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+        showToast('Error loading dashboard data: ' + error.message, 'error');
+
+        document.getElementById('system-status').innerHTML = `
+          <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+          <p class="text-xl font-bold text-red-600">Error</p>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>
