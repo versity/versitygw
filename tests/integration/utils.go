@@ -2221,7 +2221,7 @@ func testSignedStreamingObjectPut(s *S3Conf, bucket, object string, payload []by
 	}
 
 	signer := v4.NewSigner()
-	signingTime := time.Now()
+	signingTime := time.Now().UTC()
 
 	// sign the request
 	err = signer.SignHTTP(ctx, aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, sha256Header, "s3", s.awsRegion, signingTime)
@@ -2458,7 +2458,7 @@ func getAWS4StreamingTrailer(
 	yearMonthDay := signingTime.Format("20060102")
 
 	// ISO8601 basic format: yyyyMMdd'T'HHmmss'Z'
-	currentDateTime := signingTime.UTC().Format("20060102T150405Z")
+	currentDateTime := signingTime.Format("20060102T150405Z")
 
 	// <date>/<region>/<service>/aws4_request
 	serviceString := fmt.Sprintf(
