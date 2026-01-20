@@ -1024,6 +1024,7 @@ func TestVersioning(ts *TestState) {
 	// object tagging actions
 	ts.Run(Versioning_PutObjectTagging_invalid_versionId)
 	ts.Run(Versioning_PutObjectTagging_non_existing_object_version)
+	ts.Run(Versioning_PutGetDeleteObjectTagging_delete_marker)
 	ts.Run(Versioning_GetObjectTagging_invalid_versionId)
 	ts.Run(Versioning_GetObjectTagging_non_existing_object_version)
 	ts.Run(Versioning_DeleteObjectTagging_invalid_versionId)
@@ -1068,12 +1069,14 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_PutObjectRetention_non_existing_object_version)
 	ts.Run(Versioning_GetObjectRetention_invalid_versionId)
 	ts.Run(Versioning_GetObjectRetention_non_existing_object_version)
+	ts.Run(Versioning_Put_GetObjectRetention_delete_marker)
 	ts.Run(Versioning_Put_GetObjectRetention_success)
 	// Object-Lock Legal hold
 	ts.Run(Versioning_PutObjectLegalHold_invalid_versionId)
 	ts.Run(Versioning_PutObjectLegalHold_non_existing_object_version)
 	ts.Run(Versioning_GetObjectLegalHold_invalid_versionId)
 	ts.Run(Versioning_GetObjectLegalHold_non_existing_object_version)
+	ts.Run(Versioning_PutGetObjectLegalHold_delete_marker)
 	ts.Run(Versioning_Put_GetObjectLegalHold_success)
 	// WORM protection
 	ts.Run(Versioning_WORM_obj_version_locked_with_legal_hold)
@@ -1085,6 +1088,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_WORM_PutObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CopyObject_overwrite_locked_object)
 	ts.Run(Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object)
+	ts.Run(Versioning_WORM_remove_delete_marker_under_bucket_default_retention)
 	// Concurrent requests
 	// Versioninig_concurrent_upload_object
 	ts.Run(Versioning_AccessControl_GetObjectVersion)
@@ -1736,6 +1740,7 @@ func GetIntTests() IntTests {
 		"Versioning_GetObject_null_versionId_obj":                                  Versioning_GetObject_null_versionId_obj,
 		"Versioning_PutObjectTagging_invalid_versionId":                            Versioning_PutObjectTagging_invalid_versionId,
 		"Versioning_PutObjectTagging_non_existing_object_version":                  Versioning_PutObjectTagging_non_existing_object_version,
+		"Versioning_PutGetDeleteObjectTagging_delete_marker":                       Versioning_PutGetDeleteObjectTagging_delete_marker,
 		"Versioning_GetObjectTagging_invalid_versionId":                            Versioning_GetObjectTagging_invalid_versionId,
 		"Versioning_GetObjectTagging_non_existing_object_version":                  Versioning_GetObjectTagging_non_existing_object_version,
 		"Versioning_DeleteObjectTagging_invalid_versionId":                         Versioning_DeleteObjectTagging_invalid_versionId,
@@ -1774,11 +1779,13 @@ func GetIntTests() IntTests {
 		"Versioning_PutObjectRetention_non_existing_object_version":                Versioning_PutObjectRetention_non_existing_object_version,
 		"Versioning_GetObjectRetention_invalid_versionId":                          Versioning_GetObjectRetention_invalid_versionId,
 		"Versioning_GetObjectRetention_non_existing_object_version":                Versioning_GetObjectRetention_non_existing_object_version,
+		"Versioning_Put_GetObjectRetention_delete_marker":                          Versioning_Put_GetObjectRetention_delete_marker,
 		"Versioning_Put_GetObjectRetention_success":                                Versioning_Put_GetObjectRetention_success,
 		"Versioning_PutObjectLegalHold_invalid_versionId":                          Versioning_PutObjectLegalHold_invalid_versionId,
 		"Versioning_PutObjectLegalHold_non_existing_object_version":                Versioning_PutObjectLegalHold_non_existing_object_version,
 		"Versioning_GetObjectLegalHold_invalid_versionId":                          Versioning_GetObjectLegalHold_invalid_versionId,
 		"Versioning_GetObjectLegalHold_non_existing_object_version":                Versioning_GetObjectLegalHold_non_existing_object_version,
+		"Versioning_PutGetObjectLegalHold_delete_marker":                           Versioning_PutGetObjectLegalHold_delete_marker,
 		"Versioning_Put_GetObjectLegalHold_success":                                Versioning_Put_GetObjectLegalHold_success,
 		"Versioning_WORM_obj_version_locked_with_legal_hold":                       Versioning_WORM_obj_version_locked_with_legal_hold,
 		"Versioning_WORM_obj_version_locked_with_governance_retention":             Versioning_WORM_obj_version_locked_with_governance_retention,
@@ -1789,6 +1796,7 @@ func GetIntTests() IntTests {
 		"Versioning_WORM_PutObject_overwrite_locked_object":                        Versioning_WORM_PutObject_overwrite_locked_object,
 		"Versioning_WORM_CopyObject_overwrite_locked_object":                       Versioning_WORM_CopyObject_overwrite_locked_object,
 		"Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object":          Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object,
+		"Versioning_WORM_remove_delete_marker_under_bucket_default_retention":      Versioning_WORM_remove_delete_marker_under_bucket_default_retention,
 		"Versioning_AccessControl_GetObjectVersion":                                Versioning_AccessControl_GetObjectVersion,
 		"Versioning_AccessControl_HeadObjectVersion":                               Versioning_AccessControl_HeadObjectVersion,
 		"Versioning_AccessControl_object_tagging_policy":                           Versioning_AccessControl_object_tagging_policy,

@@ -118,17 +118,25 @@ func teardown(s *S3Conf, bucket string) error {
 	s3client := s.GetClient()
 
 	deleteObject := func(bucket, key, versionId *string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		_, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket:    bucket,
-			Key:       key,
-			VersionId: versionId,
-		})
-		cancel()
-		if err != nil {
-			return fmt.Errorf("failed to delete object %v: %w", *key, err)
+		var attempts int
+		var err error
+		for attempts < maxRetryAttempts {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket:    bucket,
+				Key:       key,
+				VersionId: versionId,
+			})
+			cancel()
+			if err == nil {
+				return nil
+			}
+
+			attempts++
+			time.Sleep(time.Second)
 		}
-		return nil
+
+		return fmt.Errorf("delete object %s: %w", *key, err)
 	}
 
 	if s.versioningEnabled {
@@ -1915,6 +1923,7 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 			if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
 				return nil
 			}
+
 			if err != nil {
 				return err
 			}
@@ -1922,29 +1931,8 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 			// Wait until retention lock expires before attempting delete
 			time.Sleep(lockWaitTime)
 
-			// Attempt deletion with retries
-			attempts := 0
-			for attempts != maxRetryAttempts {
-				ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-				_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-					Bucket:    &bucket,
-					Key:       &obj.key,
-					VersionId: getPtr(obj.versionId),
-				})
-				cancel()
-				if err != nil {
-					// Retry after a short delay if delete fails
-					time.Sleep(time.Second)
-					attempts++
-					continue
-				}
-
-				// Success, no more retries needed
-				return nil
-			}
-
 			// Return last error if all retries failed
-			return err
+			return nil
 		})
 	}
 

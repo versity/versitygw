@@ -2176,6 +2176,57 @@ func Versioning_GetObjectRetention_non_existing_object_version(s *S3Conf) error 
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func Versioning_Put_GetObjectRetention_delete_marker(s *S3Conf) error {
+	testName := "Versioning_Put_GetObjectRetention_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// PutObjectRetention
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+			Retention: &types.ObjectLockRetention{
+				Mode:            types.ObjectLockRetentionModeCompliance,
+				RetainUntilDate: getPtr(time.Now().AddDate(1, 0, 0)),
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		// GetObjectRetention
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectRetention(ctx, &s3.GetObjectRetentionInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed))
+	}, withLock())
+}
+
 func Versioning_Put_GetObjectRetention_success(s *S3Conf) error {
 	testName := "Versioning_Put_GetObjectRetention_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -2314,6 +2365,56 @@ func Versioning_GetObjectLegalHold_non_existing_object_version(s *S3Conf) error 
 
 		return nil
 	}, withLock(), withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutGetObjectLegalHold_delete_marker(s *S3Conf) error {
+	testName := "Versioning_PutGetObjectLegalHold_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// PutObjectLegalHold
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+			LegalHold: &types.ObjectLockLegalHold{
+				Status: types.ObjectLockLegalHoldStatusOn,
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		// GetObjectLegalHold
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectLegalHold(ctx, &s3.GetObjectLegalHoldInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed))
+	}, withLock())
 }
 
 func Versioning_Put_GetObjectLegalHold_success(s *S3Conf) error {
@@ -2957,6 +3058,85 @@ func Versioning_WORM_CompleteMultipartUpload_overwrite_locked_object(s *S3Conf) 
 	}, withLock())
 }
 
+func Versioning_WORM_remove_delete_marker_under_bucket_default_retention(s *S3Conf) error {
+	testName := "Versioning_WORM_remove_delete_marker_under_bucket_default_retention"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.PutObjectLockConfiguration(ctx, &s3.PutObjectLockConfigurationInput{
+			Bucket: &bucket,
+			ObjectLockConfiguration: &types.ObjectLockConfiguration{
+				ObjectLockEnabled: types.ObjectLockEnabledEnabled,
+				Rule: &types.ObjectLockRule{
+					DefaultRetention: &types.DefaultRetention{
+						Mode: types.ObjectLockRetentionModeGovernance,
+						Days: getPtr(int32(5)),
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		obj := "my-object"
+		versions, err := createObjVersions(s3client, bucket, obj, 3)
+		if err != nil {
+			return err
+		}
+
+		// Create a delete marker
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// Delete the delete marker
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		resp, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if !compareVersions(versions, resp.Versions) {
+			return fmt.Errorf("expected the object vresions to be %v, instead got %v", versions, resp.Versions)
+		}
+		if len(resp.DeleteMarkers) != 0 {
+			return fmt.Errorf("expected empty delete markers list, instead got %v", resp.DeleteMarkers)
+		}
+
+		//
+		lockedVersions := make([]objToDelete, 0, len(versions))
+		for _, v := range versions {
+			lockedVersions = append(lockedVersions, objToDelete{
+				key:          obj,
+				versionId:    getString(v.VersionId),
+				isCompliance: false,
+			})
+		}
+		return cleanupLockedObjects(s3client, bucket, lockedVersions)
+	}, withLock())
+}
+
 func Versioning_AccessControl_GetObjectVersion(s *S3Conf) error {
 	testName := "Versioning_AccessControl_GetObjectVersion"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -3514,6 +3694,68 @@ func Versioning_PutObjectTagging_non_existing_object_version(s *S3Conf) error {
 		cancel()
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNoSuchVersion))
 	}, withVersioning(types.BucketVersioningStatusEnabled))
+}
+
+func Versioning_PutGetDeleteObjectTagging_delete_marker(s *S3Conf) error {
+	testName := "Versioning_PutGetDeleteObjectTagging_delete_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		// PutObjectTagging
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+			Tagging: &types.Tagging{
+				TagSet: []types.Tag{{Key: getPtr("key"), Value: getPtr("value")}},
+			},
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		// GetObjectTagging
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+		})
+		cancel()
+		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)); err != nil {
+			return err
+		}
+
+		// DeleteObjectTagging
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+			Bucket:    &bucket,
+			Key:       &obj,
+			VersionId: out.VersionId,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed))
+	}, withLock())
 }
 
 func Versioning_PutObjectTagging_invalid_versionId(s *S3Conf) error {
