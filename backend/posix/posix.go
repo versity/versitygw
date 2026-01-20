@@ -871,6 +871,30 @@ func getBoolPtr(b bool) *bool {
 	return &b
 }
 
+// ensureNotDeleteMarker return a `MethodNotAllowd` error
+// if the provided object(version) is a delete marker
+func (p *Posix) ensureNotDeleteMarker(bucket, object, versionId string) error {
+	if !p.versioningEnabled() {
+		return nil
+	}
+
+	_, err := p.meta.RetrieveAttribute(nil, bucket, object, deleteMarkerKey)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		if versionId != "" {
+			return s3err.GetAPIError(s3err.ErrNoSuchVersion)
+		}
+		return s3err.GetAPIError(s3err.ErrNoSuchKey)
+	}
+	if errors.Is(err, meta.ErrNoSuchKey) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get delete marker attr: %w", err)
+	}
+
+	return s3err.GetAPIError(s3err.ErrMethodNotAllowed)
+}
+
 // Check if the given object is a delete marker
 func (p *Posix) isObjDeleteMarker(bucket, object string) (bool, error) {
 	_, err := p.meta.RetrieveAttribute(nil, bucket, object, deleteMarkerKey)
@@ -4890,6 +4914,11 @@ func (p *Posix) GetObjectTagging(_ context.Context, bucket, object, versionId st
 		}
 	}
 
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return nil, err
+	}
+
 	return p.getAttrTags(bucket, object, versionId)
 }
 
@@ -4950,6 +4979,11 @@ func (p *Posix) PutObjectTagging(_ context.Context, bucket, object, versionId st
 			bucket = filepath.Join(p.versioningDir, bucket)
 			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
+	}
+
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return err
 	}
 
 	if tags == nil {
@@ -5243,6 +5277,11 @@ func (p *Posix) PutObjectLegalHold(_ context.Context, bucket, object, versionId 
 		}
 	}
 
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return err
+	}
+
 	err = p.meta.StoreAttribute(nil, bucket, object, objectLegalHoldKey, statusData)
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		if versionId != "" {
@@ -5287,6 +5326,11 @@ func (p *Posix) GetObjectLegalHold(_ context.Context, bucket, object, versionId 
 			bucket = filepath.Join(p.versioningDir, bucket)
 			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
+	}
+
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return nil, err
 	}
 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectLegalHoldKey)
@@ -5340,6 +5384,11 @@ func (p *Posix) PutObjectRetention(_ context.Context, bucket, object, versionId 
 		}
 	}
 
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return err
+	}
+
 	err = p.meta.StoreAttribute(nil, bucket, object, objectRetentionKey, retention)
 	if err != nil {
 		return fmt.Errorf("set object lock config: %w", err)
@@ -5378,6 +5427,11 @@ func (p *Posix) GetObjectRetention(_ context.Context, bucket, object, versionId 
 			bucket = filepath.Join(p.versioningDir, bucket)
 			object = filepath.Join(genObjVersionKey(object), versionId)
 		}
+	}
+
+	err = p.ensureNotDeleteMarker(bucket, object, versionId)
+	if err != nil {
+		return nil, err
 	}
 
 	data, err := p.meta.RetrieveAttribute(nil, bucket, object, objectRetentionKey)

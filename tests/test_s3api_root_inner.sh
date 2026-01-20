@@ -132,10 +132,8 @@ test_get_put_object_legal_hold_s3api_root() {
   assert_success
 
   run put_object_legal_hold "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "OFF"
-  assert_success
-
-  run delete_object_with_user "s3api" "$BUCKET_ONE_NAME" "$bucket_file" "$username" "$password"
-  assert_success
+  assert_failure
+  assert_output -p "MethodNotAllowed"
 }
 
 test_get_put_object_retention_s3api_root() {

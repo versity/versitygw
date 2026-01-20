@@ -278,6 +278,11 @@ func CheckObjectAccess(ctx context.Context, bucket, userAccess string, objects [
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchKey)) {
 			continue
 		}
+		// the object is a delete marker, if a `MethodNotAllowed` error is returned
+		// no object lock check is needed
+		if errors.Is(err, s3err.GetAPIError(s3err.ErrMethodNotAllowed)) {
+			continue
+		}
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchObjectLockConfiguration)) {
 			checkRetention = false
 		}
