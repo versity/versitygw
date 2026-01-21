@@ -82,14 +82,14 @@ type AccessOptions struct {
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
-	// Skip the access check for public bucket requests
-	if opts.IsPublicRequest {
-		return nil
-	}
 	if opts.Readonly {
 		if opts.AclPermission == PermissionWrite || opts.AclPermission == PermissionWriteAcp {
 			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
+	}
+	// Skip the access check for public bucket requests
+	if opts.IsPublicRequest {
+		return nil
 	}
 	if opts.IsRoot {
 		return nil

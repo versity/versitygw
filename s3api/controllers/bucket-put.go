@@ -492,6 +492,12 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
 	)
 
+	if c.readonly {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, s3err.GetAPIError(s3err.ErrAccessDenied)
+	}
+
 	creator := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	if !utils.ContextKeyBucketOwner.IsSet(ctx) {
 		utils.ContextKeyBucketOwner.Set(ctx, creator)
