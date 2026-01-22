@@ -16,11 +16,13 @@ package utils
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -909,4 +911,40 @@ func GenerateObjectLocation(ctx *fiber.Ctx, virtualDomain, bucket, object string
 		bucket,
 		obj,
 	)
+}
+
+type CertStorage struct {
+	cert atomic.Pointer[tls.Certificate]
+}
+
+func NewCertStorage() *CertStorage {
+	return &CertStorage{}
+}
+
+func (cs *CertStorage) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return cs.cert.Load(), nil
+}
+
+func (cs *CertStorage) SetCertificate(certFile string, keyFile string) error {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return fmt.Errorf("unable to set certificate: %w", err)
+	}
+
+	cs.cert.Store(&cert)
+
+	return nil
+}
+
+func NewTLSListener(network string, address string, getCertificateFunc func(*tls.ClientHelloInfo) (*tls.Certificate, error)) (net.Listener, error) {
+	config := &tls.Config{
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: getCertificateFunc,
+	}
+
+	ln, err := net.Listen(network, address)
+	if err != nil {
+		return nil, err
+	}
+	return tls.NewListener(ln, config), nil
 }

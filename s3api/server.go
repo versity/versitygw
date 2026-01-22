@@ -15,7 +15,6 @@
 package s3api
 
 import (
-	"crypto/tls"
 	"errors"
 	"net/http"
 	"strings"
@@ -45,7 +44,7 @@ type S3ApiServer struct {
 	app             *fiber.App
 	backend         backend.Backend
 	port            string
-	cert            *tls.Certificate
+	CertStorage     *utils.CertStorage
 	quiet           bool
 	readonly        bool
 	keepAlive       bool
@@ -133,8 +132,8 @@ func New(
 type Option func(*S3ApiServer)
 
 // WithTLS sets TLS Credentials
-func WithTLS(cert tls.Certificate) Option {
-	return func(s *S3ApiServer) { s.cert = &cert }
+func WithTLS(cs *utils.CertStorage) Option {
+	return func(s *S3ApiServer) { s.CertStorage = cs }
 }
 
 // WithAdminServer runs admin endpoints with the gateway in the same network
@@ -173,8 +172,13 @@ func WithCORSAllowOrigin(origin string) Option {
 }
 
 func (sa *S3ApiServer) Serve() (err error) {
-	if sa.cert != nil {
-		return sa.app.ListenTLSWithCertificate(sa.port, *sa.cert)
+	if sa.CertStorage != nil {
+		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
+		if err != nil {
+			return err
+		}
+
+		return sa.app.Listener(ln)
 	}
 	return sa.app.Listen(sa.port)
 }

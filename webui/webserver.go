@@ -23,6 +23,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
 // ServerConfig holds the server configuration
@@ -31,16 +32,15 @@ type ServerConfig struct {
 	Gateways      []string // S3 API gateways
 	AdminGateways []string // Admin API gateways (defaults to Gateways if empty)
 	Region        string
-	TLSCert       string
-	TLSKey        string
 	CORSOrigin    string
 }
 
 // Server is the main GUI server
 type Server struct {
-	app    *fiber.App
-	config *ServerConfig
-	quiet  bool
+	app         *fiber.App
+	CertStorage *utils.CertStorage
+	config      *ServerConfig
+	quiet       bool
 }
 
 // Option sets various options for NewServer()
@@ -49,6 +49,11 @@ type Option func(*Server)
 // WithQuiet silences default logging output.
 func WithQuiet() Option {
 	return func(s *Server) { s.quiet = true }
+}
+
+// WithTLS sets TLS Credentials
+func WithTLS(cs *utils.CertStorage) Option {
+	return func(s *Server) { s.CertStorage = cs }
 }
 
 // NewServer creates a new GUI server instance
@@ -127,8 +132,13 @@ func (s *Server) Serve() error {
 	}
 
 	// Check if TLS is configured
-	if s.config.TLSCert != "" && s.config.TLSKey != "" {
-		return s.app.ListenTLS(addr, s.config.TLSCert, s.config.TLSKey)
+	if s.CertStorage != nil {
+		ln, err := utils.NewTLSListener(s.app.Config().Network, addr, s.CertStorage.GetCertificate)
+		if err != nil {
+			return err
+		}
+
+		return s.app.Listener(ln)
 	}
 
 	return s.app.Listen(addr)

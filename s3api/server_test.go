@@ -15,11 +15,11 @@
 package s3api
 
 import (
-	"crypto/tls"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/backend"
+	"github.com/versity/versitygw/s3api/utils"
 )
 
 func TestS3ApiServer_Serve(t *testing.T) {
@@ -42,11 +42,11 @@ func TestS3ApiServer_Serve(t *testing.T) {
 			name:    "Serve-invalid-address-with-certificate",
 			wantErr: true,
 			sa: &S3ApiServer{
-				app:     fiber.New(),
-				backend: backend.BackendUnsupported{},
-				port:    "Invalid address",
-				Router:  &S3ApiRouter{},
-				cert:    &tls.Certificate{},
+				app:         fiber.New(),
+				backend:     backend.BackendUnsupported{},
+				port:        "Invalid address",
+				Router:      &S3ApiRouter{},
+				CertStorage: &utils.CertStorage{},
 			},
 		},
 	}

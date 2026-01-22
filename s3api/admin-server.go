@@ -15,8 +15,6 @@
 package s3api
 
 import (
-	"crypto/tls"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -25,6 +23,7 @@ import (
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/controllers"
 	"github.com/versity/versitygw/s3api/middlewares"
+	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3log"
 )
 
@@ -33,7 +32,7 @@ type S3AdminServer struct {
 	backend         backend.Backend
 	router          *S3AdminRouter
 	port            string
-	cert            *tls.Certificate
+	CertStorage     *utils.CertStorage
 	quiet           bool
 	debug           bool
 	corsAllowOrigin string
@@ -88,8 +87,8 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 
 type AdminOpt func(s *S3AdminServer)
 
-func WithAdminSrvTLS(cert tls.Certificate) AdminOpt {
-	return func(s *S3AdminServer) { s.cert = &cert }
+func WithAdminSrvTLS(cs *utils.CertStorage) AdminOpt {
+	return func(s *S3AdminServer) { s.CertStorage = cs }
 }
 
 // WithQuiet silences default logging output
@@ -109,8 +108,13 @@ func WithAdminCORSAllowOrigin(origin string) AdminOpt {
 }
 
 func (sa *S3AdminServer) Serve() (err error) {
-	if sa.cert != nil {
-		return sa.app.ListenTLSWithCertificate(sa.port, *sa.cert)
+	if sa.CertStorage != nil {
+		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
+		if err != nil {
+			return err
+		}
+
+		return sa.app.Listener(ln)
 	}
 	return sa.app.Listen(sa.port)
 }
