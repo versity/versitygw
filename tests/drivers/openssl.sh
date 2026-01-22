@@ -16,6 +16,32 @@
 
 source ./tests/drivers/xml.sh
 
+write_openssl_command_to_command_log() {
+  if ! check_param_count_v2 "command file" 1 $#; then
+    return 1
+  fi
+  max_chars=1024
+  if [ -n "$MAX_OPENSSL_COMMAND_LOG_BYTES" ]; then
+    max_chars="$MAX_OPENSSL_COMMAND_LOG_BYTES"
+  fi
+  if ! file_size=$(get_file_size "$1"); then
+    return 1
+  fi
+  if [ "$max_chars" -eq -1 ] || [ "$file_size" -lt "$max_chars" ]; then
+    log_data=$(perl -pe 's/\x00/<NULL>/g' "$1" | perl -pe 's/\r/<CR>/g')
+  else
+    log_data=$(head -c "$max_chars" "$1" | perl -pe 's/\x00/<NULL>/g' | perl -pe 's/\r/<CR>/g')
+    log_data+="<TRUNC>"
+  fi
+  while IFS=$' ' read -r -a line_words; do
+    if ! mask_arg_array "${line_words[@]}"; then
+      return 1
+    fi
+    # shellcheck disable=SC2154
+    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+  done <<< "$log_data"
+}
+
 send_via_openssl() {
   if ! check_param_count_v2 "command file" 1 $#; then
     return 1
@@ -25,6 +51,9 @@ send_via_openssl() {
     host+=":443"
   fi
   log 5 "connecting to $host"
+  if [ -n "$COMMAND_LOG" ]; then
+    write_openssl_command_to_command_log "$1"
+  fi
   if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
     log 2 "error sending openssl command: $result"
     return 1

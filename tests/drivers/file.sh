@@ -151,3 +151,11 @@ chunked_upload_trailer_success() {
   fi
   return 0
 }
+
+get_file_name() {
+  if ! uuid=$(uuidgen 2>&1); then
+    log 2 "error getting UUID: $uuid"
+    return 1
+  fi
+  echo "test-file-${uuid}"
+}
