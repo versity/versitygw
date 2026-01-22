@@ -14,9 +14,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/util/util_rest.sh
+
 put_object_tagging() {
-  if [ $# -ne 5 ]; then
-    log 2 "'put-object-tagging' command missing command type, bucket, object name, file, key, and/or value"
+  if ! check_param_count_v2 "command type, bucket, object key, tag key, value" 5 $#; then
     return 1
   fi
   local error

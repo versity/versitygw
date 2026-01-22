@@ -30,7 +30,10 @@ source ./tests/util/util_file.sh
   assert_success
   bucket_name="$output"
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
   assert_success
 
@@ -46,7 +49,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_test_file "$test_file" 8192
   assert_success
 
@@ -62,7 +68,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_test_file "$test_file" 0
   assert_success
 
@@ -78,7 +87,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_file_single_char "$test_file" 8192 'a'
   assert_success
 
@@ -97,7 +109,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_file_single_char "$test_file" 8192 '\0'
   assert_success
 
@@ -116,7 +131,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_test_file "$test_file" 10000
   assert_success
 
@@ -135,7 +153,10 @@ source ./tests/util/util_file.sh
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_test_file "$test_file" 0
   assert_success
 
@@ -176,7 +197,10 @@ source ./tests/util/util_file.sh
   assert_success
   bucket_name="$output"
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run setup_bucket_and_file "$bucket_name" "$test_file"
   assert_success
 
@@ -242,7 +266,10 @@ source ./tests/util/util_file.sh
   run setup_bucket "$bucket_name"
   assert_success
 
-  test_file="test-file"
+  run get_file_name
+  assert_success
+  test_file="$output"
+
   run create_test_file "$test_file" 200000
   assert_success
 
@@ -250,5 +277,194 @@ source ./tests/util/util_file.sh
   assert_success
 
   run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/$test_file-copy"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer missing" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_expect_error "400" "MalformedTrailerError" "The request contained trailing data that was not well-formed" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payload" "abcdefg" \
+    "-omitPayloadTrailer" "-checksumType" "crc32" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - 200 header returns correct checksum type" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run bash -c "sha256sum $TEST_FILE_FOLDER/$test_file | awk '{print $1}' | xxd -r -p | base64"
+  assert_success
+  checksum=${output}
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-sha256" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "sha256" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-sha256"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (sha1)" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run bash -c "sha1sum $TEST_FILE_FOLDER/$test_file | awk '{print $1}' | xxd -r -p | base64"
+  assert_success
+  checksum=${output}
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-sha1" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "sha1" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-sha1"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32)" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run bash -c "gzip -c -1 $TEST_FILE_FOLDER/$test_file | tail -c8 | od -t x4 -N 4 -A n | awk '{print $1}' | xxd -r -p | base64"
+  assert_success
+  checksum=${output}
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-crc32" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "crc32" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc32c)" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run bash -c "DATA_FILE=$TEST_FILE_FOLDER/$test_file CHECKSUM_TYPE=crc32c ./tests/rest_scripts/calculate_checksum.sh"
+  assert_success
+  checksum=$output
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-crc32c" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "crc32c" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-checksumType" "crc32c" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32c"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - success (crc64nvme)" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_test_file "$test_file" 10000
+  assert_success
+
+  run bash -c "DATA_FILE=$TEST_FILE_FOLDER/$test_file CHECKSUM_TYPE=crc64nvme ./tests/rest_scripts/calculate_checksum.sh"
+  assert_success
+  checksum=$output
+
+  run send_openssl_go_command_check_header "200" "x-amz-checksum-crc64nvme" "$checksum" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-checksumType" "crc64nvme" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc64nvme"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-AWS4-HMAC-SHA256-PAYLOAD - missing content length" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1623"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_chunked_no_content_length "$bucket_name" "key"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER, x-amz-trailer of crc32, trailer key missing" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_openssl_go_command_expect_error "400" "MalformedTrailerError" "The request contained trailing data that was not well-formed" \
+    "-client" "openssl" "-commandType" "putObject" "-bucketName" "$bucket_name" "-objectKey" "key" "-payload" "abcdefg" "-checksumType" "crc32c" \
+    "-omitPayloadTrailerKey" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192" "-objectKey" "key" "-signedParams" "x-amz-trailer:x-amz-checksum-crc32"
+  assert_success
+}
+
+@test "REST - PutObject - STREAMING-UNSIGNED-PAYLOAD-TRAILER - default crc64nvme" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run create_test_file "$test_file" 1024
+  assert_success
+
+  run send_openssl_go_command "200" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-commandType" "putObject" \
+    "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-omitPayloadTrailer" \
+    "-debug" "-logFile" "tagging.log" "-checksumType" "crc64nvme" \
+    "-payloadType" "STREAMING-UNSIGNED-PAYLOAD-TRAILER" "-chunkSize" "8192"
   assert_success
 }
