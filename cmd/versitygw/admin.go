@@ -241,7 +241,6 @@ func adminCommand() *cli.Command {
 				Usage:       "admin access key id",
 				EnvVars:     []string{"ADMIN_ACCESS_KEY_ID", "ADMIN_ACCESS_KEY"},
 				Aliases:     []string{"a"},
-				Required:    true,
 				Destination: &adminAccess,
 			},
 			&cli.StringFlag{
@@ -249,7 +248,6 @@ func adminCommand() *cli.Command {
 				Usage:       "admin secret access key",
 				EnvVars:     []string{"ADMIN_SECRET_ACCESS_KEY", "ADMIN_SECRET_KEY"},
 				Aliases:     []string{"s"},
-				Required:    true,
 				Destination: &adminSecret,
 			},
 			&cli.StringFlag{
@@ -279,6 +277,32 @@ func adminCommand() *cli.Command {
 	}
 }
 
+// getAdminCreds returns the effective admin access key ID and secret key.
+// If admin-specific credentials are not provided, it falls back to the
+// root user credentials. Both resulting values must be non-empty;
+// otherwise, an error is returned.
+func getAdminCreds() (string, string, error) {
+	access := adminAccess
+	secret := adminSecret
+
+	// Fallbacks to root user credentials
+	if access == "" {
+		access = rootUserAccess
+	}
+	if secret == "" {
+		secret = rootUserSecret
+	}
+
+	if access == "" {
+		return "", "", errors.New("subcommand admin access key id is not set")
+	}
+	if secret == "" {
+		return "", "", errors.New("subcommand admin secret access key is not set")
+	}
+
+	return access, secret, nil
+}
+
 func initHTTPClient() *http.Client {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: allowInsecure},
@@ -287,6 +311,10 @@ func initHTTPClient() *http.Client {
 }
 
 func createUser(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
 	access, secret, role := ctx.String("access"), ctx.String("secret"), ctx.String("role")
 	userID, groupID, projectID := ctx.Int("user-id"), ctx.Int("group-id"), ctx.Int("project-id")
 	if access == "" || secret == "" {
@@ -348,6 +376,10 @@ func createUser(ctx *cli.Context) error {
 }
 
 func deleteUser(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
 	access := ctx.String("access")
 	if access == "" {
 		return fmt.Errorf("invalid input parameter for the user access key")
@@ -391,6 +423,11 @@ func deleteUser(ctx *cli.Context) error {
 }
 
 func updateUser(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
+
 	access, secret, userId, groupId, projectID, role :=
 		ctx.String("access"),
 		ctx.String("secret"),
@@ -462,6 +499,11 @@ func updateUser(ctx *cli.Context) error {
 }
 
 func listUsers(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
+
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-users", adminEndpoint), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
@@ -680,6 +722,11 @@ func parseTag(input string) (types.Tag, error) {
 }
 
 func createBucket(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
+
 	bucket, owner := ctx.String("bucket"), ctx.String("owner")
 
 	payload, err := parseCreateBucketPayload(ctx.String("create-bucket-configuration"))
@@ -768,6 +815,11 @@ func printAcctTable(accs []auth.Account) {
 }
 
 func changeBucketOwner(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
+
 	bucket, owner := ctx.String("bucket"), ctx.String("owner")
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/change-bucket-owner/?bucket=%v&owner=%v", adminEndpoint, bucket, owner), nil)
 	if err != nil {
@@ -819,6 +871,11 @@ func printBuckets(buckets []s3response.Bucket) {
 }
 
 func listBuckets(ctx *cli.Context) error {
+	adminAccess, adminSecret, err := getAdminCreds()
+	if err != nil {
+		return err
+	}
+
 	req, err := http.NewRequest(http.MethodPatch, fmt.Sprintf("%v/list-buckets", adminEndpoint), nil)
 	if err != nil {
 		return fmt.Errorf("failed to send the request: %w", err)
