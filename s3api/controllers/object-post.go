@@ -158,7 +158,16 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := utils.ValidateNoACLHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,

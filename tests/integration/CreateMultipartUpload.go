@@ -590,3 +590,38 @@ func CreateMultipartUpload_success(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CreateMultipartUpload_object_acl_not_supported(s *S3Conf) error {
+	testName := "CreateMultipartUpload_object_acl_not_supported"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		testuser := getUser("user")
+		err := createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		for i, modifyInput := range []func(*s3.CreateMultipartUploadInput){
+			func(poi *s3.CreateMultipartUploadInput) { poi.ACL = types.ObjectCannedACLPublicRead },
+			func(poi *s3.CreateMultipartUploadInput) { poi.GrantFullControl = &testuser.access },
+			func(poi *s3.CreateMultipartUploadInput) { poi.GrantRead = &testuser.access },
+			func(poi *s3.CreateMultipartUploadInput) { poi.GrantReadACP = &testuser.access },
+			func(poi *s3.CreateMultipartUploadInput) { poi.GrantWriteACP = &testuser.access },
+		} {
+			input := &s3.CreateMultipartUploadInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}
+
+			modifyInput(input)
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CreateMultipartUpload(ctx, input)
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}

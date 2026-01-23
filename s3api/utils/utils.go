@@ -948,3 +948,25 @@ func NewTLSListener(network string, address string, getCertificateFunc func(*tls
 	}
 	return tls.NewListener(ln, config), nil
 }
+
+// ValidateNoACLHeaders checks whether any ACL-related request headers are set.
+// since ACL operations are not supported on objects, the presence of any ACL headers
+// results in a NotImplemented error. It returns nil only when all ACL headers
+// are absent.
+func ValidateNoACLHeaders(ctx *fiber.Ctx) error {
+	for _, header := range []string{
+		"x-amz-acl",
+		"x-amz-grant-full-control",
+		"x-amz-grant-read",
+		"x-amz-grant-read-acp",
+		"x-amz-grant-write-acp",
+	} {
+		value := ctx.Request().Header.Peek(header)
+		if len(value) != 0 {
+			debuglogger.Logf("an unsupported object acl header present: %s:%s", header, value)
+			return s3err.GetAPIError(s3err.ErrNotImplemented)
+		}
+	}
+
+	return nil
+}

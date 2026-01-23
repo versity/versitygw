@@ -510,7 +510,16 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateCopySource(copySource)
+	err := utils.ValidateNoACLHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	err = utils.ValidateCopySource(copySource)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -659,6 +668,15 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
+	err := utils.ValidateNoACLHeaders(ctx)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
 	// Content Length
 	contentLengthStr := ctx.Get("Content-Length")
 	if contentLengthStr == "" {
@@ -674,7 +692,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	// load the meta headers
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err = auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,

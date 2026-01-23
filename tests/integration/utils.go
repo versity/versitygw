@@ -551,7 +551,7 @@ type putObjectOutput struct {
 func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) (*putObjectOutput, error) {
 	var csum [32]byte
 	var data []byte
-	if input.Body == nil {
+	if input.Body == nil && lgth != 0 {
 		data = make([]byte, lgth)
 		rand.Read(data)
 		csum = sha256.Sum256(data)

@@ -1497,3 +1497,47 @@ func CopyObject_success(s *S3Conf) error {
 		return nil
 	})
 }
+
+func CopyObject_object_acl_not_supported(s *S3Conf) error {
+	testName := "CopyObject_object_acl_not_supported"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj, srcObj := "my-object", "source-object"
+		testuser := getUser("user")
+		err := createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		_, err = putObjectWithData(0, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		for i, modifyInput := range []func(*s3.CopyObjectInput){
+			func(poi *s3.CopyObjectInput) { poi.ACL = types.ObjectCannedACLPublicRead },
+			func(poi *s3.CopyObjectInput) { poi.GrantFullControl = &testuser.access },
+			func(poi *s3.CopyObjectInput) { poi.GrantRead = &testuser.access },
+			func(poi *s3.CopyObjectInput) { poi.GrantReadACP = &testuser.access },
+			func(poi *s3.CopyObjectInput) { poi.GrantWriteACP = &testuser.access },
+		} {
+			input := &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &obj,
+				CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+			}
+
+			modifyInput(input)
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.CopyObject(ctx, input)
+			cancel()
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
