@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -733,11 +732,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			return fmt.Errorf("TLS cert specified without key file")
 		}
 
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		cs := utils.NewCertStorage()
+		err := cs.SetCertificate(certFile, keyFile)
 		if err != nil {
 			return fmt.Errorf("tls: load certs: %v", err)
 		}
-		opts = append(opts, s3api.WithTLS(cert))
+		opts = append(opts, s3api.WithTLS(cs))
 	}
 	if admPort == "" {
 		opts = append(opts, s3api.WithAdminServer())
@@ -873,11 +873,12 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 				return fmt.Errorf("TLS cert specified without key file")
 			}
 
-			cert, err := tls.LoadX509KeyPair(admCertFile, admKeyFile)
+			cs := utils.NewCertStorage()
+			err = cs.SetCertificate(admCertFile, admKeyFile)
 			if err != nil {
 				return fmt.Errorf("tls: load certs: %v", err)
 			}
-			opts = append(opts, s3api.WithAdminSrvTLS(cert))
+			opts = append(opts, s3api.WithAdminSrvTLS(cs))
 		}
 		if quiet {
 			opts = append(opts, s3api.WithAdminQuiet())
@@ -891,6 +892,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	var webSrv *webui.Server
 	webuiSSLEnabled := false
+	webTLSCert := ""
+	webTLSKey := ""
 	if webuiAddr != "" {
 		_, webPrt, err := net.SplitHostPort(webuiAddr)
 		if err != nil {
@@ -904,8 +907,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			return fmt.Errorf("webui port must be between 0 and 65535")
 		}
 
-		webTLSCert := ""
-		webTLSKey := ""
+		var webOpts []webui.Option
 		if !webuiNoTLS {
 			// WebUI can either use explicitly provided TLS files or reuse the
 			// gateway's TLS files by default.
@@ -923,6 +925,14 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 					return fmt.Errorf("webui TLS cert specified without key file")
 				}
 				webuiSSLEnabled = true
+
+				cs := utils.NewCertStorage()
+				err := cs.SetCertificate(webTLSCert, webTLSKey)
+				if err != nil {
+					return fmt.Errorf("tls: load certs: %v", err)
+				}
+
+				webOpts = append(webOpts, webui.WithTLS(cs))
 			}
 		}
 
@@ -945,7 +955,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			}
 		}
 
-		var webOpts []webui.Option
 		if quiet {
 			webOpts = append(webOpts, webui.WithQuiet())
 		}
@@ -955,8 +964,6 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
 			Region:        region,
-			TLSCert:       webTLSCert,
-			TLSKey:        webTLSKey,
 		}, webOpts...)
 	}
 
@@ -1001,6 +1008,30 @@ Loop:
 				if err != nil {
 					err = fmt.Errorf("HUP admin logger: %w", err)
 					break Loop
+				}
+			}
+			if certFile != "" && keyFile != "" {
+				err = srv.CertStorage.SetCertificate(certFile, keyFile)
+				if err != nil {
+					debuglogger.InernalError(fmt.Errorf("srv cert reload failed: %w", err))
+				} else {
+					fmt.Printf("srv cert reloaded (cert: %s, key: %s)\n", certFile, keyFile)
+				}
+			}
+			if admPort != "" && admCertFile != "" && admKeyFile != "" {
+				err = admSrv.CertStorage.SetCertificate(admCertFile, admKeyFile)
+				if err != nil {
+					debuglogger.InernalError(fmt.Errorf("admSrv cert reload failed: %w", err))
+				} else {
+					fmt.Printf("admSrv cert reloaded (cert: %s, key: %s)\n", admCertFile, admKeyFile)
+				}
+			}
+			if webSrv != nil && webTLSCert != "" && webTLSKey != "" {
+				err := webSrv.CertStorage.SetCertificate(webTLSCert, webTLSKey)
+				if err != nil {
+					debuglogger.InernalError(fmt.Errorf("webSrv cert reload failed: %w", err))
+				} else {
+					fmt.Printf("webSrv cert reloaded (cert: %s, key: %s)\n", webTLSCert, webTLSKey)
 				}
 			}
 		}
