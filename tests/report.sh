@@ -108,3 +108,56 @@ EOF
 
   log 5 "Database '$COVERAGE_DB' and table 'entries' created successfully."
 }
+
+get_curl_method() {
+  if ! check_param_count "command string" 1 $#; then
+    return 1
+  fi
+  if [[ "$cmd" =~ (^|[[:space:]])-([^-[:space:]]*)I([^-[:space:]]*) ]]; then
+    method="HEAD"
+  elif [[ "$cmd" =~ (^|[[:space:]])-X[[:space:]]*([^[:space:]]+) ]]; then
+    method="${BASH_REMATCH[2]}"
+  else
+    method="GET"
+  fi
+}
+
+get_route() {
+
+}
+
+parse_curl_rest_command() {
+  if ! check_param_count "command string" 1 $#; then
+    return 1
+  fi
+}
+
+parse_rest_command() {
+  if ! check_param_count "command string" 1 $#; then
+    return 1
+  fi
+  if [[ "$1" == *"curl "* ]]; then
+  fi
+}
+
+parse_command_info() {
+  if ! check_param_count "command string" 1 $#; then
+    return 1
+  fi
+  if [[ "$1" == *"curl "* ]] || [[ "$1" == *"HTTP"* ]]; then
+
+}
+
+record_command_v2() {
+  if [ -z "$COVERAGE_DB" ]; then
+    log 5 "no coverage db set, not recording"
+    return 0
+  fi
+  if ! check_param_count "command string" 1 $#; then
+    return 1
+  fi
+  if ! result=$(check_and_create_database 2>&1); then
+    log 2 "error creating database: $result"
+    return 1
+  fi
+}
