@@ -20,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-	
+
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
