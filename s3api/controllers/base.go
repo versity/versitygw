@@ -204,7 +204,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 		}
 
-		debuglogger.InernalError(err)
+		debuglogger.InternalError(err)
 		ctx.Status(http.StatusInternalServerError)
 
 		// If the error is not 's3err.APIError' return 'InternalError'

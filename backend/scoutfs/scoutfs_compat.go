@@ -168,7 +168,7 @@ func (s *ScoutFS) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 
 		f, err := os.Open(*input.Bucket)
 		if err != nil {
-			debuglogger.InernalError(fmt.Errorf("create bucket %q set project id - open: %v",
+			debuglogger.InternalError(fmt.Errorf("create bucket %q set project id - open: %v",
 				*input.Bucket, err))
 			return nil
 		}
@@ -176,7 +176,7 @@ func (s *ScoutFS) CreateBucket(ctx context.Context, input *s3.CreateBucketInput,
 		err = s.setProjectID(f, acct.ProjectID)
 		f.Close()
 		if err != nil {
-			debuglogger.InernalError(fmt.Errorf("create bucket %q set project id: %v",
+			debuglogger.InternalError(fmt.Errorf("create bucket %q set project id: %v",
 				*input.Bucket, err))
 		}
 	}
@@ -239,7 +239,7 @@ func (s *ScoutFS) PutObject(ctx context.Context, po s3response.PutObjectInput) (
 	return s.Posix.PutObjectWithPostFunc(ctx, po, func(f *os.File) error {
 		err := s.setProjectID(f, acct.ProjectID)
 		if err != nil {
-			debuglogger.InernalError(fmt.Errorf("put object %v/%v set project id: %v",
+			debuglogger.InternalError(fmt.Errorf("put object %v/%v set project id: %v",
 				filepath.Join(*po.Bucket, *po.Key), acct.ProjectID, err))
 		}
 
@@ -297,7 +297,7 @@ func (s *ScoutFS) CompleteMultipartUpload(ctx context.Context, input *s3.Complet
 
 			err = s.setProjectID(to, acct.ProjectID)
 			if err != nil {
-				debuglogger.InernalError(fmt.Errorf("complete-mpu %q/%q set project id %v: %v",
+				debuglogger.InternalError(fmt.Errorf("complete-mpu %q/%q set project id %v: %v",
 					*input.Bucket, *input.Key, acct.ProjectID, err))
 			}
 
