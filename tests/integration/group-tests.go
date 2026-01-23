@@ -188,6 +188,7 @@ func TestPutObject(ts *TestState) {
 	}
 	ts.Run(PutObject_invalid_credentials)
 	ts.Run(PutObject_invalid_object_names)
+	ts.Run(PutObject_object_acl_not_supported)
 }
 
 func TestHeadObject(ts *TestState) {
@@ -335,6 +336,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_with_legal_hold)
 	ts.Run(CopyObject_with_retention_lock)
 	ts.Run(CopyObject_conditional_reads)
+	ts.Run(CopyObject_object_acl_not_supported)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(CopyObject_invalid_checksum_algorithm)
@@ -381,6 +383,7 @@ func TestCreateMultipartUpload(ts *TestState) {
 	ts.Run(CreateMultipartUpload_past_retain_until_date)
 	ts.Run(CreateMultipartUpload_invalid_legal_hold)
 	ts.Run(CreateMultipartUpload_invalid_object_lock_mode)
+	ts.Run(CreateMultipartUpload_object_acl_not_supported)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(CreateMultipartUpload_invalid_checksum_algorithm)
@@ -1283,6 +1286,7 @@ func GetIntTests() IntTests {
 		"PutObject_tagging":                                                        PutObject_tagging,
 		"PutObject_success":                                                        PutObject_success,
 		"PutObject_invalid_object_names":                                           PutObject_invalid_object_names,
+		"PutObject_object_acl_not_supported":                                       PutObject_object_acl_not_supported,
 		"PutObject_false_negative_object_names":                                    PutObject_false_negative_object_names,
 		"PutObject_racey_success":                                                  PutObject_racey_success,
 		"HeadObject_non_existing_object":                                           HeadObject_non_existing_object,
@@ -1387,6 +1391,7 @@ func GetIntTests() IntTests {
 		"CopyObject_with_legal_hold":                                               CopyObject_with_legal_hold,
 		"CopyObject_with_retention_lock":                                           CopyObject_with_retention_lock,
 		"CopyObject_conditional_reads":                                             CopyObject_conditional_reads,
+		"CopyObject_object_acl_not_supported":                                      CopyObject_object_acl_not_supported,
 		"CopyObject_with_metadata":                                                 CopyObject_with_metadata,
 		"CopyObject_invalid_checksum_algorithm":                                    CopyObject_invalid_checksum_algorithm,
 		"CopyObject_create_checksum_on_copy":                                       CopyObject_create_checksum_on_copy,
@@ -1417,6 +1422,7 @@ func GetIntTests() IntTests {
 		"CreateMultipartUpload_past_retain_until_date":                             CreateMultipartUpload_past_retain_until_date,
 		"CreateMultipartUpload_invalid_legal_hold":                                 CreateMultipartUpload_invalid_legal_hold,
 		"CreateMultipartUpload_invalid_object_lock_mode":                           CreateMultipartUpload_invalid_object_lock_mode,
+		"CreateMultipartUpload_object_acl_not_supported":                           CreateMultipartUpload_object_acl_not_supported,
 		"CreateMultipartUpload_invalid_checksum_algorithm":                         CreateMultipartUpload_invalid_checksum_algorithm,
 		"CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type":        CreateMultipartUpload_empty_checksum_algorithm_with_checksum_type,
 		"CreateMultipartUpload_type_algo_mismatch":                                 CreateMultipartUpload_type_algo_mismatch,

@@ -954,6 +954,39 @@ func PutObject_invalid_object_names(s *S3Conf) error {
 	})
 }
 
+func PutObject_object_acl_not_supported(s *S3Conf) error {
+	testName := "PutObject_object_acl_not_supported"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		testuser := getUser("user")
+		err := createUsers(s, []user{testuser})
+		if err != nil {
+			return err
+		}
+
+		for i, modifyInput := range []func(*s3.PutObjectInput){
+			func(poi *s3.PutObjectInput) { poi.ACL = types.ObjectCannedACLPublicRead },
+			func(poi *s3.PutObjectInput) { poi.GrantFullControl = &testuser.access },
+			func(poi *s3.PutObjectInput) { poi.GrantRead = &testuser.access },
+			func(poi *s3.PutObjectInput) { poi.GrantReadACP = &testuser.access },
+			func(poi *s3.PutObjectInput) { poi.GrantWriteACP = &testuser.access },
+		} {
+			input := &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &obj,
+			}
+
+			modifyInput(input)
+			_, err := putObjectWithData(0, input, s3client)
+			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutObject_false_negative_object_names(s *S3Conf) error {
 	testName := "PutObject_false_negative_object_names"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
