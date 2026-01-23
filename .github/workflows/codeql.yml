@@ -13,9 +13,9 @@ name: "CodeQL Advanced"
 
 on:
   push:
-    branches: [ "main", "assets" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "assets" ]
+    branches: [ "main" ]
   schedule:
     - cron: '21 17 * * 2'
 
@@ -49,6 +49,9 @@ jobs:
           build-mode: autobuild
         - language: javascript-typescript
           build-mode: none
+          paths-ignore:
+            # ignore embedded 3rd party assets
+            - 'webui/web/assets/**'
         - language: python
           build-mode: none
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
