@@ -26,7 +26,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -3053,17 +3052,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if errors.Is(err, syscall.ENOTDIR) {
-		osys := runtime.GOOS
-		if osys != "windows" {
-			return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-		} else {
-			dir := filepath.Dir(name)
-			d1, err1 := os.Stat(dir)
-			if err1 == nil && !d1.IsDir() {
-				return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrObjectParentIsFile)
-			} else {
-				err = syscall.ENOENT
-			}
+		r, parentErr := handleParentDirError(name)
+		if parentErr == s3err.GetAPIError(s3err.ErrObjectParentIsFile) {
+			return r, parentErr
 		}
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
