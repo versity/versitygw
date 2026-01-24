@@ -1013,7 +1013,7 @@ Loop:
 			if certFile != "" && keyFile != "" {
 				err = srv.CertStorage.SetCertificate(certFile, keyFile)
 				if err != nil {
-					debuglogger.InernalError(fmt.Errorf("srv cert reload failed: %w", err))
+					debuglogger.InternalError(fmt.Errorf("srv cert reload failed: %w", err))
 				} else {
 					fmt.Printf("srv cert reloaded (cert: %s, key: %s)\n", certFile, keyFile)
 				}
@@ -1021,7 +1021,7 @@ Loop:
 			if admPort != "" && admCertFile != "" && admKeyFile != "" {
 				err = admSrv.CertStorage.SetCertificate(admCertFile, admKeyFile)
 				if err != nil {
-					debuglogger.InernalError(fmt.Errorf("admSrv cert reload failed: %w", err))
+					debuglogger.InternalError(fmt.Errorf("admSrv cert reload failed: %w", err))
 				} else {
 					fmt.Printf("admSrv cert reloaded (cert: %s, key: %s)\n", admCertFile, admKeyFile)
 				}
@@ -1029,7 +1029,7 @@ Loop:
 			if webSrv != nil && webTLSCert != "" && webTLSKey != "" {
 				err := webSrv.CertStorage.SetCertificate(webTLSCert, webTLSKey)
 				if err != nil {
-					debuglogger.InernalError(fmt.Errorf("webSrv cert reload failed: %w", err))
+					debuglogger.InternalError(fmt.Errorf("webSrv cert reload failed: %w", err))
 				} else {
 					fmt.Printf("webSrv cert reloaded (cert: %s, key: %s)\n", webTLSCert, webTLSKey)
 				}

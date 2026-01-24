@@ -50,8 +50,8 @@ func Panic(er error) {
 	printError(prefixPanic, er)
 }
 
-// InernalError prints the internal error out in the console
-func InernalError(er error) {
+// InternalError prints the internal error out in the console
+func InternalError(er error) {
 	printError(prefixInernalError, er)
 }
 

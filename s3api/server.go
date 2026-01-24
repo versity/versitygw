@@ -220,7 +220,7 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 		}
 
 		// additionally log the internal error
-		debuglogger.InernalError(er)
+		debuglogger.InternalError(er)
 	}
 
 	ctx.Status(http.StatusInternalServerError)
