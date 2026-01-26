@@ -126,7 +126,37 @@ get_curl_method() {
 }
 
 get_curl_route() {
+  local url="$1"
+  local path
+
+  # Only accept http/https URLs with a path
+  if [[ ! "$url" =~ ^https?://[^/]+(/.*)?$ ]]; then
+    echo "UNKNOWN"
+    return 0
+  fi
+
+  # Strip protocol + host + port
+  path="$(echo "$url" | sed -E 's|https?://[^/]+||')"
+
+  # Normalize: remove leading/trailing slashes
+  path="${path#/}"
+  path="${path%/}"
+
+  # Split path on '/'
+  IFS='/' read -r -a parts <<< "$path"
+
+  if [[ -z "$path" ]]; then
+    echo "MAIN"
+  elif [[ "${#parts[@]}" -eq 1 ]]; then
+    echo "BUCKET"
+  else
+    echo "FILE"
+  fi
   return 0
+}
+
+get_query() {
+
 }
 
 parse_curl_rest_command() {

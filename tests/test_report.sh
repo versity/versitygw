@@ -32,5 +32,17 @@ source ./tests/report.sh
 }
 
 @test "reporting - parse curl route" {
+  tests=("http://localhost:7070/bucket_name" "http://localhost:7070/bucket_name/file_name" "http://localhost:7070/" "")
+  expected_results=("BUCKET" "FILE" "MAIN" "UNKNOWN")
 
+  for ((i=0; i<${#tests[@]}; i++)); do
+    echo "test: ${tests[$i]}, expected result: ${expected_results[$i]}"
+    run get_curl_route "${tests[$i]}"
+    assert_output "${expected_results[$i]}"
+  done
+}
+
+@test "reporting - get query" {
+  tests=("https://localhost:7070/?query1=" "https://localhost/bucket?another=" "https://1.2.3.4/" "http://localhost/bucket/file?third")
+  expected_results=("query1" "another" "" "third")
 }
