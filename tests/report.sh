@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/params.sh
+
 check_and_create_database() {
   # Define SQL commands to create a table
   SQL_CREATE_TABLE="CREATE TABLE IF NOT EXISTS entries (
@@ -110,20 +112,21 @@ EOF
 }
 
 get_curl_method() {
-  if ! check_param_count "command string" 1 $#; then
+  if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
-  if [[ "$cmd" =~ (^|[[:space:]])-([^-[:space:]]*)I([^-[:space:]]*) ]]; then
+  if [[ "$1" =~ (^|[[:space:]])-([^-[:space:]]*)I([^-[:space:]]*) ]]; then
     method="HEAD"
-  elif [[ "$cmd" =~ (^|[[:space:]])-X[[:space:]]*([^[:space:]]+) ]]; then
+  elif [[ "$1" =~ (^|[[:space:]])-X[[:space:]]*([^[:space:]]+) ]]; then
     method="${BASH_REMATCH[2]}"
   else
     method="GET"
   fi
+  echo "$method"
 }
 
-get_route() {
-
+get_curl_route() {
+  return 0
 }
 
 parse_curl_rest_command() {
@@ -137,6 +140,7 @@ parse_rest_command() {
     return 1
   fi
   if [[ "$1" == *"curl "* ]]; then
+    return 0
   fi
 }
 
@@ -145,7 +149,8 @@ parse_command_info() {
     return 1
   fi
   if [[ "$1" == *"curl "* ]] || [[ "$1" == *"HTTP"* ]]; then
-
+    return 0
+  fi
 }
 
 record_command_v2() {
