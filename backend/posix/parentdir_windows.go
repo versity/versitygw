@@ -19,18 +19,28 @@ package posix
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3response"
 )
 
-func handleParentDirError(name string) (s3response.PutObjectOutput, error) {
+func handleParentDirError(name string) error {
 	dir := filepath.Dir(name)
-	d, statErr := os.Stat(dir)
-	if statErr == nil && !d.IsDir() {
-		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+
+	// Walk up the directory hierarchy
+	for dir != "." && dir != "/" {
+		d, statErr := os.Stat(dir)
+		if statErr == nil {
+			// Path component exists
+			if !d.IsDir() {
+				// Found a file in the ancestor path
+				return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+			}
+			// Found a valid directory ancestor, parent truly doesn't exist
+			break
+		}
+		// Continue checking parent directories
+		dir = filepath.Dir(dir)
 	}
 	// Parent doesn't exist or is a directory, treat as ENOENT
-	return s3response.PutObjectOutput{}, syscall.ENOENT
+	return nil
 }

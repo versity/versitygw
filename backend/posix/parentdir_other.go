@@ -18,9 +18,8 @@ package posix
 
 import (
 	"github.com/versity/versitygw/s3err"
-	"github.com/versity/versitygw/s3response"
 )
 
-func handleParentDirError(_ string) (s3response.PutObjectOutput, error) {
-	return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrObjectParentIsFile)
+func handleParentDirError(_ string) error {
+	return s3err.GetAPIError(s3err.ErrObjectParentIsFile)
 }

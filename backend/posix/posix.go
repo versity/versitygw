@@ -3052,9 +3052,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrKeyTooLong)
 	}
 	if errors.Is(err, syscall.ENOTDIR) {
-		r, parentErr := handleParentDirError(name)
-		if parentErr == s3err.GetAPIError(s3err.ErrObjectParentIsFile) {
-			return r, parentErr
+		parentErr := handleParentDirError(name)
+		if parentErr != nil {
+			return s3response.PutObjectOutput{}, parentErr
 		}
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
