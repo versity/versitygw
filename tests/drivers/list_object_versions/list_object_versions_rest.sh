@@ -14,27 +14,39 @@
 # specific language governing permissions and limitations
 # under the License.
 
-parse_version_id() {
-  if ! check_param_count_v2 "data file, IsLatest val" 2 $#; then
+parse_version_or_delete_marker_id() {
+  if ! check_param_count_v2 "data file, 'Version' or 'DeleteMarker', IsLatest val" 3 $#; then
     return 1
   fi
   log 5 "data: $(cat "$1")"
-  version_string="//*[local-name()=\"Version\"][*[local-name()=\"IsLatest\" and text()=\"$2\"]]"
+  version_string="//*[local-name()=\"$2\"][*[local-name()=\"IsLatest\" and text()=\"$3\"]]"
   log 5 "match string: $version_string"
   if ! get_xml_data "$1" "$1.xml"; then
     log 2 "error getting XML data"
     return 1
   fi
-  if ! version=$(xmllint --xpath "$version_string" "$1.xml" 2>&1); then
-    log 2 "error getting result: $version"
+  if ! version_or_marker=$(xmllint --xpath "$version_string" "$1.xml" 2>&1); then
+    log 2 "error getting result: $version_or_marker"
     return 1
   fi
-  log 5 "latest: $2, version: $version"
-  if ! version_id=$(xmllint --xpath "//*[local-name()=\"VersionId\"]/text()" <(echo "$version" | head -n 1) 2>&1); then
-    log 2 "error getting version ID: $version_id"
+  log 5 "latest: $3, version or marker: $version_or_marker"
+  if ! version_or_marker_id=$(xmllint --xpath "//*[local-name()=\"VersionId\"]/text()" <(echo "$version_or_marker" | head -n 1) 2>&1); then
+    log 2 "error getting version ID: $version_or_marker_id"
     return 1
   fi
-  log 5 "version ID: $version_id"
+  log 5 "version or marker ID: $version_or_marker_id"
+  return 0
+}
+
+parse_version_id() {
+  if ! check_param_count_v2 "data file, IsLatest val" 2 $#; then
+    return 1
+  fi
+  if ! parse_version_or_delete_marker_id "$1" "Version" "$2"; then
+    echo "error parsing version ID"
+    return 1
+  fi
+  version_id=$version_or_marker_id
   return 0
 }
 

@@ -20,7 +20,7 @@ get_check_object_retention() {
     return 1
   fi
   # shellcheck disable=SC2154
-  if ! get_object_retention "$BUCKET_ONE_NAME" "$bucket_file"; then
+  if ! get_object_retention "$1" "$bucket_file"; then
     log 2 "failed to get object retention"
     return 1
   fi

@@ -25,6 +25,7 @@ RUN apt-get update && \
     python3-pip \
     python3-venv \
     xxd \
+    uuid-runtime \
     ca-certificates && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*

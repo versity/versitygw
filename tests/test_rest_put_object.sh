@@ -390,3 +390,130 @@ export RUN_USERS=true
   run put_object_with_lock_mode_and_delete_latest_version "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$later_date"
   assert_success
 }
+
+@test "PutObject - x-amz-acl - not implemented" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1767"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_bucket_ownership_controls_rest "$bucket_name" "BucketOwnerPreferred"
+  assert_success
+
+  if [ "$DIRECT" == "true" ]; then
+    run allow_public_access "$bucket_name"
+    assert_success
+  fi
+
+  run send_rest_go_command_expect_error "501" "NotImplemented" "not implemented" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-signedParams" "x-amz-acl:public-read"
+  assert_success
+}
+
+@test "PutObject - x-amz-grant-full-control - not implemented" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1773"
+  fi
+  run attempt_put_object_with_specific_acl "x-amz-grant-full-control"
+  assert_success
+}
+
+@test "PutObject - x-amz-grant-read - not implemented" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1773"
+  fi
+  run attempt_put_object_with_specific_acl "x-amz-grant-read"
+  assert_success
+}
+@test "PutObject - x-amz-grant-read-acp - not implemented" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1773"
+  fi
+  run attempt_put_object_with_specific_acl "x-amz-grant-read-acp"
+  assert_success
+}
+
+@test "PutObject - x-amz-grant-write-acp - not implemented" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1773"
+  fi
+  run attempt_put_object_with_specific_acl "x-amz-grant-write-acp"
+  assert_success
+}
+
+@test "PutObject - x-amz-object-lock-legal-hold - invalid value" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1775"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  local legal_hold_value="wrong"
+  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "Legal Hold must be either of" \
+    "x-amz-object-lock-legal-hold" "$legal_hold_value" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" \
+    "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-signedParams" "x-amz-object-lock-legal-hold:$legal_hold_value"
+  assert_success
+}
+
+@test "PutObject - x-amz-object-lock-legal-hold - no Content-MD5" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1776"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file=$output
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "Content-MD5" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-signedParams" "x-amz-object-lock-legal-hold:ON"
+  assert_success
+}
+
+@test "PutObject - x-amz-object-lock-legal-hold - success" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file=$output
+
+  run setup_bucket_object_lock_enabled_v2 "$bucket_name"
+  assert_success
+
+  run create_test_file "$test_file"
+  assert_success
+
+  run send_rest_go_command "200" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-signedParams" "x-amz-object-lock-legal-hold:ON" "-contentMD5"
+  assert_success
+
+  run rest_check_legal_hold "$bucket_name" "$test_file"
+  assert_success
+}

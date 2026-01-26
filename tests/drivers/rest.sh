@@ -147,7 +147,11 @@ send_rest_command_expect_success_callback() {
   if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
     return 1
   fi
-  output_file="$TEST_FILE_FOLDER/output.txt"
+  if ! output_file_name=$(get_file_name); then
+    log 2 "error generating output file name: $output_file_name"
+    return 1
+  fi
+  output_file="$TEST_FILE_FOLDER/$output_file_name"
   local env_array=("env" "COMMAND_LOG=$COMMAND_LOG" "OUTPUT_FILE=$output_file")
   if [ "$1" != "" ]; then
     IFS=' ' read -r -a env_vars <<< "$1"
@@ -160,10 +164,10 @@ send_rest_command_expect_success_callback() {
   fi
   response_code="$(echo "$result" | tail -n 1)"
   if [ "$response_code" != "$3" ]; then
-    log 2 "expected '$3', was '$response_code' ($(cat "$TEST_FILE_FOLDER/output.txt"))"
+    log 2 "expected '$3', was '$response_code' ($(cat "$output_file"))"
     return 1
   fi
-  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/output.txt"; then
+  if [ "$4" != "" ] && ! "$4" "$output_file"; then
     log 2 "callback error"
     return 1
   fi
@@ -265,8 +269,12 @@ send_rest_go_command_callback() {
     log 2 "expected curl response '$1', was '$status_code'"
     return 1
   fi
-  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
-  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/result.txt"; then
+  if ! output_file_name=$(get_file_name); then
+    log 2 "error generating output file name: $output_file_name"
+    return 1
+  fi
+  echo -n "$result" > "$TEST_FILE_FOLDER/$output_file_name"
+  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/$output_file_name"; then
     log 2 "error in callback"
     return 1
   fi
@@ -312,6 +320,29 @@ send_rest_go_command_expect_error_with_arg_name_value() {
   argument_name=$4
   argument_value=$5
   if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_argument_name_and_value" "${@:6}"; then
+    log 2 "error checking error response values"
+    return 1
+  fi
+  return 0
+}
+
+check_specific_argument_name_and_value() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_error_parameter "$1" "$argument_name" "$argument_value"; then
+    log 2 "error checking 'ArgumentName' parameter"
+    return 1
+  fi
+}
+
+send_rest_go_command_expect_error_with_specific_arg_name_value() {
+  if ! check_param_count_gt "response code, error code, message, arg name, arg value, params" 5 $#; then
+    return 1
+  fi
+  argument_name=$4
+  argument_value=$5
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_name_and_value" "${@:6}"; then
     log 2 "error checking error response values"
     return 1
   fi

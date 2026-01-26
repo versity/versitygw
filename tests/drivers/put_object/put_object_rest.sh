@@ -391,3 +391,45 @@ setup_bucket_versioning_file_two_versions() {
   fi
   return 0
 }
+
+attempt_put_object_with_specific_acl() {
+  if ! check_param_count_v2 "acl header" 1 $#; then
+    return 1
+  fi
+  if ! bucket_name=$(get_bucket_name "$BUCKET_ONE_NAME" 2>&1); then
+    log 2 "error getting bucket name: $bucket_name"
+    return 1
+  fi
+
+  if ! test_file=$(get_file_name 2>&1); then
+    log 2 "error retrieving file name: $test_file"
+    return 1
+  fi
+
+  if ! setup_bucket_and_file_v2 "$bucket_name" "$test_file"; then
+    log 2 "error setting up bucket and file"
+    return 1
+  fi
+
+  if ! put_bucket_ownership_controls_rest "$bucket_name" "BucketOwnerPreferred"; then
+    log 2 "error changing bucket ownership controls"
+    return 1
+  fi
+
+  if [ "$DIRECT" == "true" ]; then
+    if ! allow_public_access "$bucket_name"; then
+      log 2 "error allowing public access"
+      return 1
+    fi
+    id="id=$ACL_AWS_CANONICAL_ID"
+  else
+    id="$AWS_ACCESS_KEY_ID"
+  fi
+
+  if ! send_rest_go_command_expect_error "501" "NotImplemented" "not implemented" "-method" "PUT" "-payloadFile" "$TEST_FILE_FOLDER/$test_file" "-bucketName" "$bucket_name" \
+    "-objectKey" "$test_file" "-signedParams" "$1:$id"; then
+    log 2 "error sending put object command with header '$1' and checking response"
+    return 1
+  fi
+  return 0
+}
