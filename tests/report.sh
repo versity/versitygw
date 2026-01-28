@@ -125,12 +125,19 @@ get_curl_method() {
   echo "$method"
 }
 
-get_curl_route() {
-  local url="$1"
+parse_path_and_get_route() {
+
+}
+
+get_route() {
+  if ! check_param_count_v2 "string" 1 $#; then
+    return 1
+  fi
+  url="$(echo "$1" | grep -oE 'https?://[^" ]+' | head -n 1)"
   local path
 
   # Only accept http/https URLs with a path
-  if [[ ! "$url" =~ ^https?://[^/]+(/.*)?$ ]]; then
+  if [ -z "$url" ]; then
     echo "UNKNOWN"
     return 0
   fi
@@ -156,43 +163,147 @@ get_curl_route() {
 }
 
 get_query() {
+  if ! check_param_count_v2 "string" 1 $#; then
+    return 1
+  fi
+  url="$(echo "$1" | grep -oE 'https?://[^" ]+' | head -n 1)"
 
+  # Must look like a URL
+  if [ -z "$url" ]; then
+    echo ""
+    return 0
+  fi
+
+  # Extract query string (everything after '?')
+  local query
+  query="${url#*\?}"
+
+  # No query present
+  if [[ "$query" == "$url" ]]; then
+    echo ""
+    return 0
+  fi
+
+  # Remove fragment if present
+  query="${query%%#*}"
+
+  keys=()
+  while [[ $query ]]; do
+    key="${query%%=*}" # Extract key
+    keys+=("$key")
+
+    # If no more keys
+    if [[ "$query" != *"&"* ]]; then
+      break
+    fi
+
+    query="${query#*&}" # Remove extracted part from query
+  done
+
+  echo "${keys[*]}"
 }
 
 parse_curl_rest_command() {
-  if ! check_param_count "command string" 1 $#; then
+  if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
+  if ! method=$(get_curl_method "$1" 2>&1); then
+    echo "error retrieving method: $method"
+    return 1
+  fi
+  if ! route=$(get_route "$1" 2>&1); then
+    echo "error retrieving route: $route"
+    return 1
+  fi
+  if ! query=$(get_query "$1" 2>&1); then
+    echo "error retrieving query: $query"
+    return 1
+  fi
+  echo "$method $route $query"
+  return 0
 }
 
-parse_rest_command() {
-  if ! check_param_count "command string" 1 $#; then
+get_openssl_method_route_queries() {
+  if ! check_param_count_v2 "command file" 1 $#; then
     return 1
   fi
-  if [[ "$1" == *"curl "* ]]; then
+  top_line=$(head -n 1 "$1")
+  method=$(awk 'NR==1{print $1}' "$1")
+  route=$(get_route "$top_line")
+  query=$(get_query "$top_line")
+  echo "$method $route $query"
+  return 0
+}
+
+parse_openssl_command() {
+  if ! check_param_count_v2 "command file" 1 $#; then
+    return 1
+  fi
+
+}
+
+get_client_type() {
+  if [[ "$1" == *" curl "* ]] || [[ "$1" == "curl "* ]]; then
+    echo "CURL"
+    return 0
+  elif [[ "$1" == *" s3api "* ]] || [[ "$1" == "s3api "* ]]; then
+    echo "S3API"
     return 0
   fi
+  echo "UNKNOWN"
 }
 
 parse_command_info() {
-  if ! check_param_count "command string" 1 $#; then
+  if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
-  if [[ "$1" == *"curl "* ]] || [[ "$1" == *"HTTP"* ]]; then
-    return 0
+  if [[ "$1" == *"curl "* ]]; then
+    if ! command_info=$(parse_curl_rest_command "$1" 2>&1); then
+      echo "error parsing rest command: $command_info"
+      return 1
+    fi
+  else
+    command_info="NONE"
   fi
 }
 
+check_and_create_database_v2() {
+  # Define SQL commands to create a table
+  SQL_CREATE_TABLE="CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    command TEXT UNIQUE NOT NULL,
+    count INTEGER DEFAULT 1
+  );"
+
+# Execute the SQL commands to create the database and table
+sqlite3 "coverage.db" <<EOF
+$SQL_CREATE_TABLE
+.exit
+EOF
+}
+
 record_command_v2() {
-  if [ -z "$COVERAGE_DB" ]; then
-    log 5 "no coverage db set, not recording"
+  #if [ -z "$COVERAGE_DB" ]; then
+  #  log 5 "no coverage db set, not recording"
+  #  return 0
+  #fi
+  if ! check_param_count_v2 "command string" 1 $#; then
+    return 1
+  fi
+  if ! db_result=$(check_and_create_database_v2 2>&1); then
+    log 2 "error creating database: $db_result"
+    return 1
+  fi
+  if ! parse_command_info "$1"; then
+    return 1
+  fi
+  if [ "$command_info" == "NONE" ]; then
     return 0
   fi
-  if ! check_param_count "command string" 1 $#; then
-    return 1
-  fi
-  if ! result=$(check_and_create_database 2>&1); then
-    log 2 "error creating database: $result"
-    return 1
+  echo "$command_info" >> "commandInfo.txt"
+  cat "commandInfo.txt" | sort | uniq > "commandInfo.txt.tmp"
+  mv "commandInfo.txt.tmp" "commandInfo.txt"
+  if ! error=$(sqlite3 "coverage.db" "INSERT INTO entries (command, count) VALUES(\"$command_info\", 1) ON CONFLICT(command) DO UPDATE SET count = count + 1" 2>&1); then
+    log 2 "error in sqlite statement: $error"
   fi
 }

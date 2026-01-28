@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/logger.sh
+source ./tests/report.sh
 
 send_command() {
   if [ $# -eq 0 ]; then
@@ -27,6 +28,7 @@ send_command() {
     fi
     # shellcheck disable=SC2154
     echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    record_command_v2 "${masked_args[*]}"
   fi
   local command_result=0
   "$@" || command_result=$?
