@@ -2462,10 +2462,6 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 		nextpart = parts[len(parts)-1].PartNumber
 	}
 
-	userMetaData := make(map[string]string)
-	upiddir := filepath.Join(objdir, uploadID)
-	p.loadObjectMetaData(nil, bucket, upiddir, nil, userMetaData)
-
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
 		IsTruncated:          oldLen != newLen,
