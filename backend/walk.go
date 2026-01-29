@@ -95,7 +95,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 		}
 	}
 
-	err := fs.WalkDir(fileSystem, root, func(path string, d fs.DirEntry, err error) error {
+	err := WalkDir(fileSystem, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -343,7 +343,7 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 
 	pastVersionIdMarker := versionIdMarker == ""
 
-	err := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
+	err := WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

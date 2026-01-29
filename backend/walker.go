@@ -5,8 +5,10 @@
 package backend
 
 import (
+	"cmp"
 	"io/fs"
 	"path"
+	"slices"
 )
 
 // WalkDirFunc is the type of the function called by [WalkDir] to visit
@@ -65,8 +67,7 @@ func walkDir(fsys fs.FS, name string, d fs.DirEntry, walkDirFn WalkDirFunc) erro
 			// Successfully skipped directory.
 			err = nil
 		}
-		// return errors.New("hi " + name)
-		 return err
+		return err
 	}
 
 	dirs, err := fs.ReadDir(fsys, name)
@@ -80,6 +81,20 @@ func walkDir(fsys fs.FS, name string, d fs.DirEntry, walkDirFn WalkDirFunc) erro
 			return err
 		}
 	}
+
+	sortFunc := func(a, b fs.DirEntry) int {
+		aname := a.Name()
+		bname := b.Name()
+		if a.IsDir() {
+			aname += "/"
+		}
+		if b.IsDir() {
+			bname += "/"
+		}
+		return cmp.Compare(aname, bname)
+	}
+
+	slices.SortFunc(dirs, sortFunc)
 
 	for _, d1 := range dirs {
 		name1 := path.Join(name, d1.Name())
