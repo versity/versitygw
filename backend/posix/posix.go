@@ -2400,7 +2400,9 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 		checksum.Type = types.ChecksumType("null")
 	}
 
-	parts := make([]s3response.Part, 0, len(ents))
+	var nextPartNumber int
+	var isTruncated bool
+	parts := make([]s3response.Part, 0, min(maxParts, len(ents)))
 	for i, e := range ents {
 		if i%128 == 0 {
 			select {
@@ -2446,28 +2448,20 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 			ChecksumSHA256:    checksum.SHA256,
 			ChecksumCRC64NVME: checksum.CRC64NVME,
 		})
-	}
 
-	sort.Slice(parts,
-		func(i int, j int) bool { return parts[i].PartNumber < parts[j].PartNumber })
-
-	oldLen := len(parts)
-	if maxParts > 0 && len(parts) > maxParts {
-		parts = parts[:maxParts]
-	}
-	newLen := len(parts)
-
-	nextpart := 0
-	if len(parts) != 0 {
-		nextpart = parts[len(parts)-1].PartNumber
+		if len(parts) >= maxParts {
+			isTruncated = maxParts < len(ents)
+			nextPartNumber = parts[len(parts)-1].PartNumber
+			break
+		}
 	}
 
 	return s3response.ListPartsResult{
 		Bucket:               bucket,
-		IsTruncated:          oldLen != newLen,
+		IsTruncated:          isTruncated,
 		Key:                  object,
 		MaxParts:             maxParts,
-		NextPartNumberMarker: nextpart,
+		NextPartNumberMarker: nextPartNumber,
 		PartNumberMarker:     partNumberMarker,
 		Parts:                parts,
 		UploadID:             uploadID,
