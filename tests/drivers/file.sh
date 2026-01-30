@@ -153,9 +153,19 @@ chunked_upload_trailer_success() {
 }
 
 get_file_name() {
+  if ! get_file_name_with_prefix "test-file"; then
+    return 1
+  fi
+  return 0
+}
+
+get_file_name_with_prefix() {
+  if ! check_param_count_v2 "prefix" 1 $#; then
+    return 1
+  fi
   if ! uuid=$(uuidgen 2>&1); then
     log 2 "error getting UUID: $uuid"
     return 1
   fi
-  echo "test-file-${uuid}"
+  echo "$1-${uuid}"
 }

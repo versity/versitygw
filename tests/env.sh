@@ -18,8 +18,29 @@ source ./tests/versity.sh
 
 base_setup() {
   check_env_vars
-  if [ "$RUN_VERSITYGW" == "true" ]; then
-    run_versity_app
+  if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then
+    if ! run_versity_app; then
+      exit 1
+    fi
+  fi
+}
+
+setup_test_log_file() {
+  if [ -n "$TEST_LOG_FILE" ]; then
+    if ! error=$(touch "$TEST_LOG_FILE.tmp" 2>&1); then
+      log 2 "error creating log file: $error"
+      exit 1
+    fi
+    export TEST_LOG_FILE
+  fi
+}
+
+remove_test_log_file_if_desired() {
+  if [ "$REMOVE_TEST_FILE_FOLDER" == "true" ]; then
+    log 6 "removing test file folder"
+    if ! error=$(rm -rf "${TEST_FILE_FOLDER:?}" 2>&1); then
+      log 3 "unable to remove test file folder: $error"
+    fi
   fi
 }
 
@@ -139,6 +160,9 @@ check_universal_vars() {
   fi
   if [ -n "$MAX_FILE_DOWNLOAD_CHUNK_SIZE" ]; then
     export MAX_FILE_DOWNLOAD_CHUNK_SIZE
+  fi
+  if [ -n "$COVERAGE_LOG" ]; then
+    export COVERAGE_LOG
   fi
 
   check_aws_vars
@@ -288,4 +312,25 @@ check_user_vars() {
   fi
   log 1 "unrecognized IAM_TYPE value: $IAM_TYPE"
   exit 1
+}
+
+log_cleanup() {
+  if [ -e "$TEST_LOG_FILE.tmp" ]; then
+    if ! error=$(cat "$TEST_LOG_FILE.tmp" >> "$TEST_LOG_FILE" 2>&1); then
+      log 3 "error appending temp log to main log: $error"
+    fi
+    if ! delete_temp_log_if_exists; then
+      log 3 "error deleting temp log"
+    fi
+  fi
+}
+
+delete_temp_log_if_exists() {
+  if [ -e "$TEST_LOG_FILE.tmp" ]; then
+    if ! error=$(rm "$TEST_LOG_FILE.tmp" 2>&1); then
+      log 2 "error deleting temp log: $error"
+      return 1
+    fi
+  fi
+  return 0
 }

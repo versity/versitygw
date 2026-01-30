@@ -15,18 +15,24 @@
 # under the License.
 
 source ./tests/logger.sh
+source ./tests/report.sh
 
 send_command() {
   if [ $# -eq 0 ]; then
     return 1
   fi
-  if [ -n "$COMMAND_LOG" ]; then
+  if [ -n "$COMMAND_LOG" ] || [ -n "$COVERAGE_LOG" ]; then
     args=(AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" "$@")
     if ! mask_arg_array "${args[@]}"; then
       return 1
     fi
-    # shellcheck disable=SC2154
-    echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    if [ -n "$COMMAND_LOG" ]; then
+      # shellcheck disable=SC2154
+      echo "${masked_args[*]}" >> "$COMMAND_LOG"
+    fi
+    if [ -n "$COVERAGE_LOG" ]; then
+      record_command_v2 "${masked_args[*]}"
+    fi
   fi
   local command_result=0
   "$@" || command_result=$?
