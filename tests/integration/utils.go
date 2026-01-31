@@ -838,14 +838,13 @@ func comparePrefixes(list1 []string, list2 []types.CommonPrefix) bool {
 		return false
 	}
 
-	elementMap := make(map[string]bool)
-
-	for _, elem := range list1 {
-		elementMap[elem] = true
-	}
-
-	for _, elem := range list2 {
-		if _, found := elementMap[*elem.Prefix]; !found {
+	for i, prefix := range list1 {
+		if list2[i].Prefix == nil {
+			fmt.Printf("unexpected nil prefix on index %v", i)
+			return false
+		}
+		if *list2[i].Prefix != prefix {
+			fmt.Printf("prefix mismatch on index %v: expected %s, got %v", i, prefix, *list2[i].Prefix)
 			return false
 		}
 	}

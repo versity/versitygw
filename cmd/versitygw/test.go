@@ -374,6 +374,9 @@ func extractIntTests() (commands []*cli.Command) {
 				if hostStyle {
 					opts = append(opts, integration.WithHostStyle())
 				}
+				if azureTests {
+					opts = append(opts, integration.WithAzureMode())
+				}
 
 				s := integration.NewS3Conf(opts...)
 				err := testFunc(s)
@@ -385,6 +388,12 @@ func extractIntTests() (commands []*cli.Command) {
 					Usage:       "Test the bucket object versioning, if the versioning is enabled",
 					Destination: &versioningEnabled,
 					Aliases:     []string{"vs"},
+				},
+				&cli.BoolFlag{
+					Name:        "azure-test-mode",
+					Usage:       "Skips tests that are not supported by Azure",
+					Destination: &azureTests,
+					Aliases:     []string{"azure"},
 				},
 			},
 		})
