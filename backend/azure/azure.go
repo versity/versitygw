@@ -1355,25 +1355,41 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 
 // Lists all the multipart uploads initiated with .sgwtmp/multipart prefix
 func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput) (s3response.ListMultipartUploadsResult, error) {
-	client, err := az.getContainerClient(*input.Bucket)
+	var bucket string
+	if input.Bucket != nil {
+		bucket = *input.Bucket
+	}
+
+	client, err := az.getContainerClient(bucket)
 	if err != nil {
 		return s3response.ListMultipartUploadsResult{}, err
 	}
 
-	uploads := []s3response.Upload{}
-
+	var delimiter string
+	if input.Delimiter != nil {
+		delimiter = *input.Delimiter
+	}
+	var prefix string
+	if input.Prefix != nil {
+		prefix = *input.Prefix
+	}
+	var keyMarker string
+	if input.KeyMarker != nil {
+		keyMarker = *input.KeyMarker
+	}
 	var uploadIDMarker string
 	if input.UploadIdMarker != nil {
 		uploadIDMarker = *input.UploadIdMarker
 	}
-	uploadIdMarkerFound := false
-	prefix := string(metaTmpMultipartPrefix)
+	maxUploads := int(*input.MaxUploads)
 
+	mpPrefix := string(metaTmpMultipartPrefix)
 	pager := client.NewListBlobsFlatPager(&container.ListBlobsFlatOptions{
 		Include: container.ListBlobsInclude{Metadata: true},
-		Prefix:  &prefix,
+		Prefix:  &mpPrefix,
 	})
 
+	uploads := []s3response.Upload{}
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
@@ -1384,10 +1400,10 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 			if !ok {
 				continue
 			}
-			if *key <= *input.KeyMarker {
+			if keyMarker != "" && *key <= keyMarker {
 				continue
 			}
-			if input.Prefix != nil && !strings.HasPrefix(*key, *input.Prefix) {
+			if prefix != "" && !strings.HasPrefix(*key, prefix) {
 				continue
 			}
 
@@ -1403,62 +1419,33 @@ func (az *Azure) ListMultipartUploads(ctx context.Context, input *s3.ListMultipa
 			})
 		}
 	}
-	maxUploads := 1000
-	if input.MaxUploads != nil {
-		maxUploads = int(*input.MaxUploads)
-	}
-	if *input.KeyMarker != "" && uploadIDMarker != "" && !uploadIdMarkerFound {
-		return s3response.ListMultipartUploadsResult{
-			Bucket:         *input.Bucket,
-			Delimiter:      *input.Delimiter,
-			KeyMarker:      *input.KeyMarker,
-			MaxUploads:     maxUploads,
-			Prefix:         *input.Prefix,
-			UploadIDMarker: *input.UploadIdMarker,
-			Uploads:        []s3response.Upload{},
-		}, nil
-	}
 
+	// Sort once: Key asc, Initiated asc
 	sort.SliceStable(uploads, func(i, j int) bool {
-		return uploads[i].Key < uploads[j].Key
+		if uploads[i].Key != uploads[j].Key {
+			return uploads[i].Key < uploads[j].Key
+		}
+		return uploads[i].Initiated.Before(uploads[j].Initiated)
 	})
 
-	if *input.KeyMarker != "" && *input.UploadIdMarker != "" {
-		// the uploads are already filtered by keymarker
-		// filter the uploads by uploadIdMarker
-		for i, upl := range uploads {
-			if upl.UploadID == uploadIDMarker {
-				uploads = uploads[i+1:]
-				break
-			}
-		}
+	result, err := backend.ListMultipartUploads(uploads, prefix, delimiter, keyMarker, uploadIDMarker, maxUploads)
+	if err != nil {
+		return s3response.ListMultipartUploadsResult{}, err
 	}
 
-	if len(uploads) <= maxUploads {
-		return s3response.ListMultipartUploadsResult{
-			Bucket:         *input.Bucket,
-			Delimiter:      *input.Delimiter,
-			KeyMarker:      *input.KeyMarker,
-			MaxUploads:     maxUploads,
-			Prefix:         *input.Prefix,
-			UploadIDMarker: *input.UploadIdMarker,
-			Uploads:        uploads,
-		}, nil
-	} else {
-		resUploads := uploads[:maxUploads]
-		return s3response.ListMultipartUploadsResult{
-			Bucket:             *input.Bucket,
-			Delimiter:          *input.Delimiter,
-			KeyMarker:          *input.KeyMarker,
-			NextKeyMarker:      resUploads[len(resUploads)-1].Key,
-			MaxUploads:         maxUploads,
-			Prefix:             *input.Prefix,
-			UploadIDMarker:     *input.UploadIdMarker,
-			NextUploadIDMarker: resUploads[len(resUploads)-1].UploadID,
-			IsTruncated:        true,
-			Uploads:            resUploads,
-		}, nil
-	}
+	return s3response.ListMultipartUploadsResult{
+		Bucket:             bucket,
+		Delimiter:          delimiter,
+		KeyMarker:          keyMarker,
+		MaxUploads:         maxUploads,
+		Prefix:             prefix,
+		NextKeyMarker:      result.NextKeyMarker,
+		NextUploadIDMarker: result.NextUploadIDMarker,
+		UploadIDMarker:     uploadIDMarker,
+		IsTruncated:        result.IsTruncated,
+		Uploads:            result.Uploads,
+		CommonPrefixes:     result.CommonPrefixes,
+	}, nil
 }
 
 // Deletes the block blob with committed/uncommitted blocks
