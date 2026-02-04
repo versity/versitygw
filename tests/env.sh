@@ -101,6 +101,16 @@ check_aws_vars() {
       log 1 "AWS_ENDPOINT_URL missing"
       exit 1
     fi
+    export SERVER_NAME="VERSITYGW"
+  else
+    if [ -z "$SERVER_NAME" ]; then
+      export SERVER_NAME="AMAZONS3"
+    else
+      export SERVER_NAME
+    fi
+  fi
+  if [ -n "$TEMPLATE_MATRIX_FILE" ]; then
+    export TEMPLATE_MATRIX_FILE
   fi
   # exporting these since they're needed for subshells
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_PROFILE AWS_ENDPOINT_URL
