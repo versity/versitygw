@@ -1298,7 +1298,7 @@ func (az *Azure) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3res
 	if *input.PartNumberMarker != "" {
 		partNumberMarker, err = strconv.Atoi(*input.PartNumberMarker)
 		if err != nil {
-			return s3response.ListPartsResult{}, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker)
+			return s3response.ListPartsResult{}, s3err.GetInvalidMaxLimiterErr("part-number-marker")
 		}
 	}
 	if input.MaxParts != nil {

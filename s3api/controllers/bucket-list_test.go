@@ -40,7 +40,7 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 		output testOutput
 	}{
 		{
-			name: "invalid max buckets",
+			name: "negative max buckets",
 			input: testInput{
 				locals: defaultLocals,
 				queries: map[string]string{
@@ -52,6 +52,51 @@ func TestS3ApiController_ListBuckets(t *testing.T) {
 					MetaOpts: &MetaOptions{},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+			},
+		},
+		{
+			name: "max buckets exceeds upper limit",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"max-buckets": "10001",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+			},
+		},
+		{
+			name: "max buckets 0",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"max-buckets": "0",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+			},
+		},
+		{
+			name: "invalid max buckets",
+			input: testInput{
+				locals: defaultLocals,
+				queries: map[string]string{
+					"max-buckets": "bla",
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{},
+				},
+				err: s3err.GetInvalidMaxLimiterErr("max-buckets"),
 			},
 		},
 		{

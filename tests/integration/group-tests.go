@@ -442,6 +442,7 @@ func TestListParts(ts *TestState) {
 	ts.Run(ListParts_incorrect_uploadId)
 	ts.Run(ListParts_incorrect_object_key)
 	ts.Run(ListParts_invalid_max_parts)
+	ts.Run(ListParts_invalid_part_number_marker)
 	ts.Run(ListParts_default_max_parts)
 	ts.Run(ListParts_exceeding_max_parts)
 	ts.Run(ListParts_truncated)
@@ -1054,6 +1055,7 @@ func TestVersioning(ts *TestState) {
 	ts.Run(Versioning_DeleteObjects_delete_deleteMarkers)
 	// ListObjectVersions
 	ts.Run(ListObjectVersions_non_existing_bucket)
+	ts.Run(ListObjectVersions_negative_max_keys)
 	ts.Run(ListObjectVersions_list_single_object_versions)
 	ts.Run(ListObjectVersions_list_multiple_object_versions)
 	ts.Run(ListObjectVersions_multiple_object_versions_truncated)
@@ -1467,6 +1469,7 @@ func GetIntTests() IntTests {
 		"ListParts_incorrect_uploadId":                                             ListParts_incorrect_uploadId,
 		"ListParts_incorrect_object_key":                                           ListParts_incorrect_object_key,
 		"ListParts_invalid_max_parts":                                              ListParts_invalid_max_parts,
+		"ListParts_invalid_part_number_marker":                                     ListParts_invalid_part_number_marker,
 		"ListParts_default_max_parts":                                              ListParts_default_max_parts,
 		"ListParts_truncated":                                                      ListParts_truncated,
 		"ListParts_with_checksums":                                                 ListParts_with_checksums,
@@ -1773,6 +1776,7 @@ func GetIntTests() IntTests {
 		"Versioning_DeleteObjects_success":                                         Versioning_DeleteObjects_success,
 		"Versioning_DeleteObjects_delete_deleteMarkers":                            Versioning_DeleteObjects_delete_deleteMarkers,
 		"ListObjectVersions_non_existing_bucket":                                   ListObjectVersions_non_existing_bucket,
+		"ListObjectVersions_negative_max_keys":                                     ListObjectVersions_negative_max_keys,
 		"ListObjectVersions_list_single_object_versions":                           ListObjectVersions_list_single_object_versions,
 		"ListObjectVersions_list_multiple_object_versions":                         ListObjectVersions_list_multiple_object_versions,
 		"ListObjectVersions_multiple_object_versions_truncated":                    ListObjectVersions_multiple_object_versions_truncated,

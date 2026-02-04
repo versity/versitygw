@@ -21,9 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -324,15 +322,13 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	maxkeys, err := utils.ParseUint(maxkeysStr)
+	maxkeys, err := utils.ParseMaxLimiter(maxkeysStr, utils.LimiterTypeVersionsMaxKeys)
 	if err != nil {
-		debuglogger.Logf("error parsing max keys %q: %v",
-			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+		}, err
 	}
 
 	data, err := c.be.ListObjectVersions(ctx.Context(),
@@ -474,15 +470,13 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 			},
 		}, err
 	}
-	maxUploads, err := utils.ParseUint(maxUploadsStr)
+	maxUploads, err := utils.ParseMaxLimiter(maxUploadsStr, utils.LimiterTypeMaxUploads)
 	if err != nil {
-		debuglogger.Logf("error parsing max uploads %q: %v",
-			maxUploadsStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxUploads)
+		}, err
 	}
 	res, err := c.be.ListMultipartUploads(ctx.Context(),
 		&s3.ListMultipartUploadsInput{
@@ -533,15 +527,13 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 			},
 		}, err
 	}
-	maxkeys, err := utils.ParseUint(maxkeysStr)
+	maxkeys, err := utils.ParseMaxLimiter(maxkeysStr, utils.LimiterTypeMaxKeys)
 	if err != nil {
-		debuglogger.Logf("error parsing max keys %q: %v",
-			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+		}, err
 	}
 
 	res, err := c.be.ListObjectsV2(ctx.Context(),
@@ -593,15 +585,13 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	maxkeys, err := utils.ParseUint(maxkeysStr)
+	maxkeys, err := utils.ParseMaxLimiter(maxkeysStr, utils.LimiterTypeMaxKeys)
 	if err != nil {
-		debuglogger.Logf("error parsing max keys %q: %v",
-			maxkeysStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)
+		}, err
 	}
 
 	res, err := c.be.ListObjects(ctx.Context(),

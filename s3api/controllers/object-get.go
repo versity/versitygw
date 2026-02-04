@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -275,31 +274,24 @@ func (c S3ApiController) ListParts(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	// parse the part number marker
-	if partNumberMarker != "" {
-		n, err := strconv.Atoi(partNumberMarker)
-		if err != nil || n < 0 {
-			debuglogger.Logf("invalid part number marker %q: %v",
-				partNumberMarker, err)
-
-			return &Response{
-				MetaOpts: &MetaOptions{
-					BucketOwner: parsedAcl.Owner,
-				},
-			}, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker)
-		}
-	}
-
-	// parse the max parts
-	maxParts, err := utils.ParseUint(maxPartsStr)
+	// parse/validate the part number marker
+	_, err = utils.ParseMaxLimiter(partNumberMarker, utils.LimiterTypePartNumberMarker)
 	if err != nil {
-		debuglogger.Logf("error parsing max parts %q: %v",
-			maxPartsStr, err)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: parsedAcl.Owner,
 			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxParts)
+		}, err
+	}
+
+	// parse the max parts
+	maxParts, err := utils.ParseMaxLimiter(maxPartsStr, utils.LimiterTypeMaxParts)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
 	}
 
 	res, err := c.be.ListParts(ctx.Context(), &s3.ListPartsInput{
@@ -362,16 +354,11 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 		}, err
 	}
 
+	var maxParts *int32
 	// parse max parts
-	maxParts, err := utils.ParseUint(maxPartsStr)
-	if err != nil {
-		debuglogger.Logf("error parsing max parts %q: %v",
-			maxPartsStr, err)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: parsedAcl.Owner,
-			},
-		}, s3err.GetAPIError(s3err.ErrInvalidMaxParts)
+	parsed, err := utils.ParseMaxLimiter(maxPartsStr, utils.LimiterTypeMaxParts)
+	if err == nil {
+		maxParts = &parsed
 	}
 
 	// parse the object attributes
@@ -389,7 +376,7 @@ func (c S3ApiController) GetObjectAttributes(ctx *fiber.Ctx) (*Response, error) 
 			Bucket:           &bucket,
 			Key:              &key,
 			PartNumberMarker: &partNumberMarker,
-			MaxParts:         &maxParts,
+			MaxParts:         maxParts,
 			VersionId:        &versionId,
 		})
 	if err != nil {

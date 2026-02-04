@@ -497,7 +497,7 @@ func TestS3ApiController_ListParts(t *testing.T) {
 			input: testInput{
 				locals: defaultLocals,
 				queries: map[string]string{
-					"part-number-marker": "-1",
+					"part-number-marker": "foo",
 				},
 			},
 			output: testOutput{
@@ -506,11 +506,11 @@ func TestS3ApiController_ListParts(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker),
+				err: s3err.GetInvalidMaxLimiterErr(utils.LimiterTypePartNumberMarker),
 			},
 		},
 		{
-			name: "invalid max parts",
+			name: "negative max parts",
 			input: testInput{
 				locals: defaultLocals,
 				queries: map[string]string{
@@ -523,7 +523,7 @@ func TestS3ApiController_ListParts(t *testing.T) {
 						BucketOwner: "root",
 					},
 				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxParts),
+				err: s3err.GetNegativeMaxLimiterErr(utils.LimiterTypeMaxParts),
 			},
 		},
 		{
@@ -632,23 +632,6 @@ func TestS3ApiController_GetObjectAttributes(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidVersionId),
-			},
-		},
-		{
-			name: "invalid max parts",
-			input: testInput{
-				locals: defaultLocals,
-				headers: map[string]string{
-					"X-Amz-Max-Parts": "-1",
-				},
-			},
-			output: testOutput{
-				response: &Response{
-					MetaOpts: &MetaOptions{
-						BucketOwner: "root",
-					},
-				},
-				err: s3err.GetAPIError(s3err.ErrInvalidMaxParts),
 			},
 		},
 		{

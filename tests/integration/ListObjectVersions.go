@@ -81,6 +81,19 @@ func ListObjectVersions_non_existing_bucket(s *S3Conf) error {
 	}, withVersioning(types.BucketVersioningStatusEnabled))
 }
 
+func ListObjectVersions_negative_max_keys(s *S3Conf) error {
+	testName := "ListObjectVersions_negative_max_keys"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket:  &bucket,
+			MaxKeys: getPtr(int32(-123)),
+		})
+		cancel()
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNegativeMaxKeys))
+	}, withLock())
+}
+
 func ListObjectVersions_list_single_object_versions(s *S3Conf) error {
 	testName := "ListObjectVersions_list_single_object_versions"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

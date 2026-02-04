@@ -253,67 +253,180 @@ func TestSetBucketNameValidationStrict(t *testing.T) {
 	}
 }
 
-func TestParseUint(t *testing.T) {
+func TestParseMaxLimiter(t *testing.T) {
 	type args struct {
 		str string
+		lt  LimiterType
+	}
+	type expected struct {
+		err error
+		res int32
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    int32
-		wantErr bool
+		name     string
+		args     args
+		expected expected
 	}{
 		{
-			name: "Parse-uint-empty-string",
+			name: "empty_string",
 			args: args{
 				str: "",
+				lt:  LimiterTypeMaxKeys,
 			},
-			want:    1000,
-			wantErr: false,
+			expected: expected{
+				err: nil,
+				res: 1000,
+			},
 		},
 		{
-			name: "Parse-uint-invalid-number-string",
+			name: "empty_max-buckets",
+			args: args{
+				str: "",
+				lt:  LimiterTypeMaxBuckets,
+			},
+			expected: expected{
+				err: nil,
+				res: 10000,
+			},
+		},
+		{
+			name: "invalid_max-parts",
 			args: args{
 				str: "bla",
+				lt:  LimiterTypeMaxParts,
 			},
-			want:    1000,
-			wantErr: true,
+			expected: expected{
+				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxParts)),
+				res: 0,
+			},
 		},
 		{
-			name: "Parse-uint-invalid-negative-number",
+			name: "invalid_max-uploads",
+			args: args{
+				str: "invalid",
+				lt:  LimiterTypeMaxUploads,
+			},
+			expected: expected{
+				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxUploads)),
+				res: 0,
+			},
+		},
+		{
+			name: "invalid_max-buckets",
+			args: args{
+				str: "invalid",
+				lt:  LimiterTypeMaxBuckets,
+			},
+			expected: expected{
+				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxBuckets)),
+				res: 0,
+			},
+		},
+		{
+			name: "invalid_versions_max-keys",
+			args: args{
+				str: "invalid",
+				lt:  LimiterTypeMaxKeys,
+			},
+			expected: expected{
+				err: s3err.GetInvalidMaxLimiterErr(string(LimiterTypeMaxKeys)),
+				res: 0,
+			},
+		},
+		{
+			name: "negative_max-keys",
 			args: args{
 				str: "-5",
+				lt:  LimiterTypeMaxKeys,
 			},
-			want:    1000,
-			wantErr: true,
+			expected: expected{
+				err: s3err.GetNegativeMaxLimiterErr(string(LimiterTypeMaxKeys)),
+				res: 0,
+			},
 		},
 		{
-			name: "Parse-uint-success",
+			name: "negative_part-number-marker",
+			args: args{
+				str: "-5",
+				lt:  LimiterTypePartNumberMarker,
+			},
+			expected: expected{
+				err: s3err.GetNegativeMaxLimiterErr(string(LimiterTypePartNumberMarker)),
+				res: 0,
+			},
+		},
+		{
+			name: "negative_max-buckets",
+			args: args{
+				str: "-12",
+				lt:  LimiterTypeMaxBuckets,
+			},
+			expected: expected{
+				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				res: 0,
+			},
+		},
+		{
+			name: "negative_versions_max-keys",
+			args: args{
+				str: "-12",
+				lt:  LimiterTypeVersionsMaxKeys,
+			},
+			expected: expected{
+				err: s3err.GetAPIError(s3err.ErrNegativeMaxKeys),
+				res: 0,
+			},
+		},
+		{
+			name: "greater_than_10000_max-buckets",
+			args: args{
+				str: "25000",
+				lt:  LimiterTypeMaxBuckets,
+			},
+			expected: expected{
+				err: s3err.GetAPIError(s3err.ErrInvalidMaxBuckets),
+				res: 0,
+			},
+		},
+		{
+			name: "greater_than_1000_max-buckets",
+			args: args{
+				str: "1300",
+				lt:  LimiterTypeMaxBuckets,
+			},
+			expected: expected{
+				err: nil,
+				res: 1300,
+			},
+		},
+		{
+			name: "greater_than_1000",
+			args: args{
+				str: "25000",
+				lt:  LimiterTypeMaxParts,
+			},
+			expected: expected{
+				err: nil,
+				res: 1000,
+			},
+		},
+		{
+			name: "success",
 			args: args{
 				str: "23",
+				lt:  LimiterTypeMaxUploads,
 			},
-			want:    23,
-			wantErr: false,
-		},
-		{
-			name: "Parse-uint-greater-than-1000",
-			args: args{
-				str: "25000000",
+			expected: expected{
+				err: nil,
+				res: 23,
 			},
-			want:    1000,
-			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseUint(tt.args.str)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseMaxKeys() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("ParseMaxKeys() = %v, want %v", got, tt.want)
-			}
+			got, err := ParseMaxLimiter(tt.args.str, tt.args.lt)
+			assert.Equal(t, tt.expected.err, err)
+			assert.Equal(t, tt.expected.res, got)
 		})
 	}
 }

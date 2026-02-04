@@ -74,7 +74,7 @@ func ListMultipartUploads_invalid_max_uploads(s *S3Conf) error {
 			MaxUploads: &maxUploads,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxUploads)); err != nil {
+		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("max-uploads")); err != nil {
 			return err
 		}
 
