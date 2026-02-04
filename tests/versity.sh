@@ -26,9 +26,9 @@ start_versity_process() {
     sleep 1
     if [ -n "$VERSITY_LOG_FILE" ]; then
       log 1 "error running versitygw command: $(cat "$VERSITY_LOG_FILE")"
-      exit 1
+      return 1
     fi
-    exit 1
+    return 1
   fi
   eval versitygw_pid_"$1"=$!
   if [ -n "$VERSITY_LOG_FILE" ]; then
@@ -45,7 +45,7 @@ start_versity_process() {
     if [ -n "$VERSITY_LOG_FILE" ]; then
       log 1 "log data: $(cat "$VERSITY_LOG_FILE")"
     fi
-    exit 1
+    return 1
   fi
   export versitygw_pid_"$1"
 }
@@ -67,7 +67,7 @@ build_run_and_log_command() {
 
 run_versity_app_posix() {
   if ! check_param_count "run_versity_app_posix" "access ID, secret key, versityid app index" 3 $#; then
-    exit 1
+    return 1
   fi
   base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION")
   if [ -n "$RUN_USERS" ]; then
@@ -94,7 +94,7 @@ run_versity_app_posix() {
 
 run_versity_app_scoutfs() {
   if ! check_param_count "run_versity_app_scoutfs" "access ID, secret key, versityid app index" 3 $#; then
-    exit 1
+    return 1
   fi
   base_command=("$VERSITY_EXE" --access="$1" --secret="$2" --region="$AWS_REGION"  --iam-dir="$USERS_FOLDER")
   if [ -n "$CERT" ] && [ -n "$KEY" ]; then
@@ -112,7 +112,7 @@ run_versity_app_scoutfs() {
 
 run_versity_app_s3() {
   if ! check_param_count "run_versity_app_s3" "versityid app index" 1 $#; then
-    exit 1
+    return 1
   fi
   base_command=("$VERSITY_EXE" --access="$AWS_ACCESS_KEY_ID" --secret="$AWS_SECRET_ACCESS_KEY" --region="$AWS_REGION")
   if [ -n "$CERT" ] && [ -n "$KEY" ]; then
@@ -140,7 +140,7 @@ run_versity_app() {
     run_versity_app_s3 "2"
   else
     log 1 "unrecognized backend type $BACKEND"
-    exit 1
+    return 1
   fi
   if [[ $IAM_TYPE != "s3" ]]; then
     return 0
@@ -151,13 +151,13 @@ run_versity_app() {
   if ! create_bucket "s3api" "$USERS_BUCKET"; then
     log 1 "error creating IAM bucket"
     teardown
-    exit 1
+    return 1
   fi
 }
 
 stop_single_process() {
   if ! check_param_count "stop_single_process" "versitygw PID" 1 $#; then
-    exit 1
+    return 1
   fi
   log 5 "stop process with ID: $1"
   # shellcheck disable=SC2086

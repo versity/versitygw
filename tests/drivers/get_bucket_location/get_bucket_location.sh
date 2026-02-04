@@ -24,8 +24,14 @@ get_check_bucket_location_various() {
   fi
   # shellcheck disable=SC2154
   if [ "$AWS_REGION" == "us-east-1" ]; then
-    if [ "$bucket_location" != "null" ]; then
-      log 2 "expected 'null' for 'us-east-1' region, got : '$bucket_location'"
+    # s3cmd returns 'us-east-1' here, the others return null
+    if [ "$1" == "s3cmd" ]; then
+      expected_location="us-east-1"
+    else
+      expected_location="null"
+    fi
+    if [ "$bucket_location" != "$expected_location" ]; then
+      log 2 "expected '$expected_location' for 'us-east-1' region, got : '$bucket_location'"
       return 1
     fi
   elif [ "$AWS_REGION" != "$bucket_location" ]; then

@@ -15,6 +15,7 @@
 # under the License.
 
 source ./tests/drivers/xml.sh
+source ./tests/report.sh
 
 write_openssl_command_to_command_log() {
   if ! check_param_count_v2 "command file" 1 $#; then
@@ -53,6 +54,9 @@ send_via_openssl() {
   log 5 "connecting to $host"
   if [ -n "$COMMAND_LOG" ]; then
     write_openssl_command_to_command_log "$1"
+  fi
+  if ! record_openssl_command "$1"; then
+    log 3 "error recording openssl command"
   fi
   if ! result=$(openssl s_client -connect "$host" -ign_eof < "$1" 2>&1); then
     log 2 "error sending openssl command: $result"

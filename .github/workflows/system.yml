@@ -104,6 +104,7 @@ jobs:
           AUTOGENERATE_USERS: true
           USER_AUTOGENERATION_PREFIX: github-actions-test-
           AWS_REGION: ${{ matrix.AWS_REGION }}
+          COVERAGE_LOG: coverage.log
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
@@ -124,6 +125,23 @@ jobs:
             BYPASS_ENV_FILE=true ${{ github.workspace }}/tests/setup_static.sh
           fi
           BYPASS_ENV_FILE=true $HOME/bin/bats ${{ github.workspace }}/$RUN_SET
+          if [ -e "$COVERAGE_LOG" ]; then
+            cat $COVERAGE_LOG
+          fi
+
+      - name: Ensure coverage file exists, and generate working name
+        run: |
+          touch coverage.log
+          run_set="${{ matrix.RUN_SET }}"
+          SAFE_RUN_SET="${run_set//\//-}"
+          echo "SAFE_RUN_SET=$SAFE_RUN_SET" >> $GITHUB_ENV
+
+      - name: Upload command coverage log
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ env.SAFE_RUN_SET }}-${{ matrix.RECREATE_BUCKETS }}
+          path: coverage.log
+          retention-days: 1
 
       - name: Time report
         run: | 
@@ -134,3 +152,19 @@ jobs:
       - name: Coverage report
         run: |
           go tool covdata percent -i=cover
+
+  print-coverage:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Download all S3 ops artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Merge (sort | uniq)
+        run: |
+          find artifacts -type f -name coverage.log -exec sed '/^\s*$/d' {} \; | sort -u > combined-coverage.log
+
+          echo "Command coverage:"
+          cat combined-coverage.log
