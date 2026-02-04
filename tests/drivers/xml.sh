@@ -162,6 +162,31 @@ check_xml_error_contains_with_single_error_field() {
   return 0
 }
 
+check_if_element_exists() {
+  if ! check_param_count_gt "data file, element, XML tree" 3 $#; then
+    return 1
+  fi
+  if ! build_xpath_string_for_element "${@:3}"; then
+    log 2 "error building XPath search string"
+    return 1
+  fi
+
+  log 5 "data: $(cat "$1")"
+  log 5 "xpath: $xpath"
+  if ! get_xml_data "$1" "$1.xml"; then
+    log 2 "error getting XML data"
+    return 1
+  fi
+  if ! result=$(xmllint --xpath "boolean(${xpath}[text()='$2'])" "$1.xml" 2>&1); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  if [ "$result" == "true" ]; then
+    return 0
+  fi
+  return 1
+}
+
 get_xml_data() {
   if ! check_param_count_v2 "data file, output file" 2 $#; then
     return 1

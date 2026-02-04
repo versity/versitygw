@@ -43,18 +43,31 @@ setup_bucket_and_add_file() {
   if ! check_param_count_v2 "bucket, filename" 2 $#; then
     return 1
   fi
+  if ! setup_bucket_and_add_files "$1" "$2"; then
+    log 2 "error setting up bucket and adding file"
+    return 1
+  fi
+  return 0
+}
+
+setup_bucket_and_add_files() {
+  if ! check_param_count_gt "bucket, filenames" 2 $#; then
+    return 1
+  fi
   if ! setup_bucket_v2 "$1"; then
     log 2 "error setting up bucket"
     return 1
   fi
-  if ! create_test_files "$2"; then
-    log 2 "error creating test file"
+  if ! create_test_files "${@:2}"; then
+    log 2 "error creating test files"
     return 1
   fi
-  if ! put_object_rest "$TEST_FILE_FOLDER/$2" "$1" "$2"; then
-    log 2 "error putting REST object"
-    return 1
-  fi
+  for file in "${@:2}"; do
+    if ! put_object_rest "$TEST_FILE_FOLDER/$file" "$1" "$file"; then
+      log 2 "error adding file '$TEST_FILE_FOLDER/$file' to bucket '$1'"
+      return 1
+    fi
+  done
   return 0
 }
 

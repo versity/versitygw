@@ -80,6 +80,50 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   assert_success
 }
 
+@test "REST - ListObjectsV2 - includes bucket header" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1814"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run get_file_name
+  assert_success
+  test_file_two="$output"
+
+  run setup_bucket_and_add_files "$bucket_name" "$test_file" "$test_file_two"
+  assert_success
+
+  run send_rest_go_command_check_header_key_and_value "200" "x-amz-bucket-region" "$AWS_REGION" "-method" "GET" \
+    "-bucketName" "$bucket_name" "-query" "list-type=2"
+  assert_success
+}
+
+@test "REST - ListObjectsV2 - success" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run get_file_name
+  assert_success
+  test_file_two="$output"
+
+  run setup_bucket_and_add_files "$bucket_name" "$test_file" "$test_file_two"
+  assert_success
+
+  run list_check_objects_rest_v2 "$bucket_name" 2 "$test_file" "$test_file_two"
+  assert_success
+}
+
 @test "REST - list objects v1 - no NextMarker without delimiter" {
   if [ "$DIRECT" != "true" ]; then
     skip "https://github.com/versity/versitygw/issues/999"

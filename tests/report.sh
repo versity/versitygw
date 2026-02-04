@@ -337,7 +337,6 @@ record_command_v2() {
   if ! check_param_count_v2 "command string" 1 $#; then
     return 1
   fi
-  log 5 "parsing command '$1'"
   if ! parse_command_info "$1"; then
     log 2 "error parsing command info"
     return 1

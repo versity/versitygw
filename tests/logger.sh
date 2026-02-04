@@ -69,7 +69,6 @@ log_mask() {
   if ! check_log_params "log_mask" "level, string, stack reference" 3 $#; then
     return 1
   fi
-
   if ! mask_args "$2"; then
     echo "error masking args"
     return 1
@@ -130,7 +129,7 @@ check_arg_for_mask() {
       masked_args+=("${arg:0:4}****")
       is_access=false
     else
-      masked_args+=("********")
+      masked_args+=("\********")
     fi
     mask_next=false
   elif [[ "$arg" == --secret_key=* ]]; then
@@ -163,10 +162,10 @@ log_message() {
   local bash_source_ref=$(($3+1))
   now="$(date "+%Y-%m-%d %H:%M:%S")"
   if [[ ( "$1" == "CRIT" ) || ( "$1" == "ERROR" ) ]]; then
-    echo "$now $1 $2" >&2
+    printf "%s\n" "$now $1 $2" >&2
   fi
   if [[ -n "$TEST_LOG_FILE" ]]; then
-    echo "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "$TEST_LOG_FILE.tmp"
+    printf "%s\n" "$now ${BASH_SOURCE[$bash_source_ref]}:${BASH_LINENO[$3]} $1 $2" >> "$TEST_LOG_FILE.tmp"
   fi
   sync
 }

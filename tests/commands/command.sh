@@ -18,7 +18,7 @@ source ./tests/logger.sh
 source ./tests/report.sh
 
 send_command() {
-  if [ $# -eq 0 ]; then
+  if ! check_param_count_gt "command data" 1 $#; then
     return 1
   fi
   if [ -n "$COMMAND_LOG" ] || [ -n "$COVERAGE_LOG" ]; then

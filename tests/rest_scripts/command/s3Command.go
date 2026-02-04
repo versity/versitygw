@@ -291,7 +291,20 @@ func (s *S3Command) generateCanonicalRequestString() {
 	canonicalRequestLines := []string{s.Method}
 
 	canonicalRequestLines = append(canonicalRequestLines, s.path)
-	canonicalRequestLines = append(canonicalRequestLines, s.Query)
+	var queryRequestLine string
+	if strings.Contains(s.Query, "&") {
+		queries := strings.Split(s.Query, "&")
+		if !strings.HasSuffix(queries[0], "=") && !strings.Contains(queries[0], "=") {
+			queries[0] += "="
+			queryRequestLine = strings.Join(queries, "&")
+		}
+	} else if s.Query != "" && !strings.HasSuffix(s.Query, "=") && !strings.Contains(s.Query, "=") {
+		queryRequestLine = s.Query + "="
+	}
+	if queryRequestLine == "" {
+		queryRequestLine = s.Query
+	}
+	canonicalRequestLines = append(canonicalRequestLines, queryRequestLine)
 
 	var signedParams []string
 	for _, headerValue := range s.headerValues {

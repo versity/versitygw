@@ -203,3 +203,22 @@ export RUN_USERS=true
   run list_check_buckets_user "$username" "$password" "$bucket_two_name"
   assert_success
 }
+
+@test "REST - ListBuckets - invalid POST route" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1810"
+  fi
+  run get_file_name
+  assert_success
+  file_name=$output
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_add_file "$bucket_name" "$file_name"
+  assert_success
+
+  run send_rest_go_command_expect_error_with_specific_arg_names_values "405" "MethodNotAllowed" "is not allowed" 4 "Method" "POST" "ResourceType" "SERVICE" "-method" "POST"
+  assert_success
+}

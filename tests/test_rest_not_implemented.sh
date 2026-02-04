@@ -195,3 +195,53 @@ source ./tests/setup.sh
   run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "requestPayment=" "PUT"
   assert_success
 }
+
+@test "REST - GetObjectAcl" {
+  run get_file_name
+  assert_success
+  file_name=$output
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_add_file "$bucket_name" "$file_name"
+  assert_success
+
+  run send_not_implemented_expect_failure "-bucketName" "$bucket_name" "-query" "acl=" "-method" "GET" "-objectKey" "$file_name"
+  assert_success
+}
+
+@test "REST - PutObjectAcl" {
+  run get_file_name
+  assert_success
+  file_name=$output
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_add_file "$bucket_name" "$file_name"
+  assert_success
+
+  run send_not_implemented_expect_failure "-bucketName" "$bucket_name" "-query" "acl=" "-method" "PUT" "-objectKey" "$file_name"
+  assert_success
+}
+
+@test "REST - RestoreObject" {
+  skip "https://github.com/versity/versitygw/issues/1805"
+
+  run get_file_name
+  assert_success
+  file_name=$output
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket_and_add_file "$bucket_name" "$file_name"
+  assert_success
+
+  run send_not_implemented_expect_failure "-bucketName" "$bucket_name" "-query" "restore=" "-method" "POST" "-objectKey" "$file_name"
+  assert_success
+}

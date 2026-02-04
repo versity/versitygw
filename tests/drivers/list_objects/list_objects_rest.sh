@@ -51,3 +51,32 @@ list_objects_success_or_access_denied() {
   fi
   return 0
 }
+
+check_v2_objects() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_xml_element "$1" "$object_count" "ListBucketResult" "KeyCount"; then
+    log 2 "error checking KeyCount element"
+    return 1
+  fi
+  for object in "${expected_objects[@]}"; do
+    if ! check_if_element_exists "$1" "$object" "ListBucketResult" "Contents" "Key"; then
+      log 2 "error checking if element '$object' exists"
+      return 1
+    fi
+  done
+  return 0
+}
+
+list_check_objects_rest_v2() {
+  if ! check_param_count_v2 "bucket name, object count, objects, params" 4 $#; then
+    return 1
+  fi
+  object_count=$2
+  expected_objects=("${@:3:$object_count}")
+  if ! list_objects_v2_rest_callback "$1" "200" "check_v2_objects" "${@:((3+$object_count))}"; then
+    log 2 "error sending list objects v2 command and checking callback"
+    return 1
+  fi
+}
