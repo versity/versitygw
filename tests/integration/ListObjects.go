@@ -185,7 +185,7 @@ func ListObjects_invalid_max_keys(s *S3Conf) error {
 			MaxKeys: &maxKeys,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxKeys)); err != nil {
+		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("max-keys")); err != nil {
 			return err
 		}
 

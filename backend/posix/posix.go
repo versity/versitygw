@@ -2325,7 +2325,7 @@ func (p *Posix) ListParts(ctx context.Context, input *s3.ListPartsInput) (s3resp
 		var err error
 		partNumberMarker, err = strconv.Atoi(stringMarker)
 		if err != nil {
-			return lpr, s3err.GetAPIError(s3err.ErrInvalidPartNumberMarker)
+			return lpr, s3err.GetInvalidMaxLimiterErr("part-number-marker")
 		}
 	}
 

@@ -83,7 +83,48 @@ func ListParts_invalid_max_parts(s *S3Conf) error {
 			MaxParts: &invMaxParts,
 		})
 		cancel()
-		if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidMaxParts)); err != nil {
+		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("max-parts")); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func ListParts_invalid_part_number_marker(s *S3Conf) error {
+	testName := "ListParts_invalid_part_number_marker"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-obj"
+		out, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		listparts := func(partNumberMarker string) error {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.ListParts(ctx, &s3.ListPartsInput{
+				Bucket:           &bucket,
+				Key:              &obj,
+				UploadId:         out.UploadId,
+				PartNumberMarker: &partNumberMarker,
+			})
+			cancel()
+			return err
+		}
+
+		// invalid part number marker
+		err = listparts("invalid")
+		if err := checkApiErr(err, s3err.GetInvalidMaxLimiterErr("part-number-marker")); err != nil {
+			return err
+		}
+		// out of in range part number marker
+		err = listparts("2736457823532448723")
+		if err := checkApiErr(err, s3err.GetInvalidMaxLimiterErr("part-number-marker")); err != nil {
+			return err
+		}
+		// negative part number marker
+		err = listparts("-14")
+		if err := checkApiErr(err, s3err.GetNegativeMaxLimiterErr("part-number-marker")); err != nil {
 			return err
 		}
 

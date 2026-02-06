@@ -76,11 +76,8 @@ const (
 	ErrInvalidBucketName
 	ErrInvalidDigest
 	ErrBadDigest
-	ErrInvalidMaxKeys
 	ErrInvalidMaxBuckets
-	ErrInvalidMaxUploads
-	ErrInvalidMaxParts
-	ErrInvalidPartNumberMarker
+	ErrNegativeMaxKeys
 	ErrInvalidObjectAttributes
 	ErrInvalidPart
 	ErrInvalidPartNumber
@@ -287,24 +284,9 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Description:    "Argument max-buckets must be an integer between 1 and 10000.",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
-	ErrInvalidMaxUploads: {
+	ErrNegativeMaxKeys: {
 		Code:           "InvalidArgument",
-		Description:    "Argument max-uploads must be an integer between 0 and 2147483647.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrInvalidMaxKeys: {
-		Code:           "InvalidArgument",
-		Description:    "Argument maxKeys must be an integer between 0 and 2147483647.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrInvalidMaxParts: {
-		Code:           "InvalidArgument",
-		Description:    "Argument max-parts must be an integer between 0 and 2147483647.",
-		HTTPStatusCode: http.StatusBadRequest,
-	},
-	ErrInvalidPartNumberMarker: {
-		Code:           "InvalidArgument",
-		Description:    "Argument part-number-marker must be an integer between 0 and 2147483647",
+		Description:    "max-keys cannot be negative",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrInvalidObjectAttributes: {
@@ -1060,6 +1042,22 @@ func GetInvalidCORSMethodErr(method string) APIError {
 	return APIError{
 		Code:           "BadRequest",
 		Description:    fmt.Sprintf("Invalid Access-Control-Request-Method: %s", method),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetInvalidMaxLimiterErr(limiter string) APIError {
+	return APIError{
+		Code:           "InvalidArgument",
+		Description:    fmt.Sprintf("Provided %s not an integer or within integer range", limiter),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
+func GetNegativeMaxLimiterErr(limiter string) APIError {
+	return APIError{
+		Code:           "InvalidArgument",
+		Description:    fmt.Sprintf("Argument %s must be an integer between 0 and 2147483647", limiter),
 		HTTPStatusCode: http.StatusBadRequest,
 	}
 }

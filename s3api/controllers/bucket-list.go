@@ -15,13 +15,9 @@
 package controllers
 
 import (
-	"strconv"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
-	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
-	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3response"
 )
 
@@ -35,16 +31,11 @@ func (c S3ApiController) ListBuckets(ctx *fiber.Ctx) (*Response, error) {
 		region = defaultRegion
 	}
 
-	maxBuckets := defaultMaxBuckets
-	if maxBucketsStr != "" {
-		maxBucketsParsed, err := strconv.ParseInt(maxBucketsStr, 10, 32)
-		if err != nil || maxBucketsParsed < 0 || maxBucketsParsed > int64(defaultMaxBuckets) {
-			debuglogger.Logf("error parsing max-buckets %q: %v", maxBucketsStr, err)
-			return &Response{
-				MetaOpts: &MetaOptions{},
-			}, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)
-		}
-		maxBuckets = int32(maxBucketsParsed)
+	maxBuckets, err := utils.ParseMaxLimiter(maxBucketsStr, utils.LimiterTypeMaxBuckets)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{},
+		}, err
 	}
 
 	res, err := c.be.ListBuckets(ctx.Context(),

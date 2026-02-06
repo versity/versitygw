@@ -185,21 +185,79 @@ func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
 	ctx.Response().Header.EnableNormalizing()
 }
 
-func ParseUint(str string) (int32, error) {
-	if str == "" {
-		return 1000, nil
+// LimiterType represents the name of a pagination limiter parameter.
+type LimiterType string
+
+const (
+	// Standard S3 limiters
+	LimiterTypeMaxKeys          = "max-keys"           // ListObjects, ListObjectVersions
+	LimiterTypeMaxParts         = "max-parts"          // ListParts
+	LimiterTypeMaxUploads       = "max-uploads"        // ListMultipartUploads
+	LimiterTypePartNumberMarker = "part-number-marker" // ListParts(partNumberMarker)
+	LimiterTypeVersionsMaxKeys  = "versions_max_keys"  // ListObjectVersions (internal alias mapped to max-keys)
+	LimiterTypeMaxBuckets       = "max-buckets"        // ListBuckets
+)
+
+const (
+	// Default values applied when the limiter is missing.
+	defaultMaxBuckets = int32(10000)
+	defaultMaxLimiter = int32(1000)
+)
+
+// ParseMaxLimiter parses and validates the pagination limiter
+//   - Empty value → return default depending on limiter type.
+//   - Non-numeric or out-of-range → return the corresponding InvalidArgument error.
+//   - Negative values → return specific negative-value errors per limiter type.
+//   - Values above defaultMaxLimiter are clamped.
+//   - The versions_max_keys limiter is normalized to max-keys for validation.
+func ParseMaxLimiter(limiter string, lt LimiterType) (int32, error) {
+	if limiter == "" {
+		// Use per-type default when no limiter is provided.
+		if lt == LimiterTypeMaxBuckets {
+			return defaultMaxBuckets, nil
+		}
+		return defaultMaxLimiter, nil
 	}
-	num, err := strconv.ParseInt(str, 10, 32)
+
+	num, err := strconv.ParseInt(limiter, 10, 32)
 	if err != nil {
-		debuglogger.Logf("invalid intager provided: %v\n", err)
-		return 1000, fmt.Errorf("invalid int: %w", err)
+		// versions_max_keys follows max-keys error semantics.
+		if lt == LimiterTypeVersionsMaxKeys {
+			lt = LimiterTypeMaxKeys
+		}
+		debuglogger.Logf("invalid %s provided: %s\n", lt, limiter)
+		return 0, s3err.GetInvalidMaxLimiterErr(string(lt))
 	}
+
+	// max-buckets has distinct range rules and errors.
+	if lt == LimiterTypeMaxBuckets {
+		if num < 1 || num > int64(defaultMaxBuckets) {
+			debuglogger.Logf("invalid max-buckets: %v", num)
+			return 0, s3err.GetAPIError(s3err.ErrInvalidMaxBuckets)
+		}
+		return int32(num), nil
+	}
+
+	// Negative values violate limiter semantics.
 	if num < 0 {
-		debuglogger.Logf("negative intager provided: %v\n", num)
-		return 1000, fmt.Errorf("negative uint: %v", num)
+		logArg := lt
+		if logArg == LimiterTypeVersionsMaxKeys {
+			logArg = LimiterTypeMaxKeys
+		}
+
+		debuglogger.Logf("negative %s provided: %v\n", logArg, num)
+
+		// versions_max_keys uses the MaxKeys negative error.
+		if lt == LimiterTypeVersionsMaxKeys {
+			return 0, s3err.GetAPIError(s3err.ErrNegativeMaxKeys)
+		}
+
+		return 0, s3err.GetNegativeMaxLimiterErr(string(lt))
 	}
-	if num > 1000 {
-		num = 1000
+
+	// Clamp excessive limiters to defaultMaxLimiter.
+	if num > int64(defaultMaxLimiter) {
+		num = int64(defaultMaxLimiter)
 	}
 	return int32(num), nil
 }
