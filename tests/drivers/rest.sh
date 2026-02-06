@@ -331,7 +331,7 @@ check_specific_argument_name_and_value() {
     return 1
   fi
   if ! check_error_parameter "$1" "$argument_name" "$argument_value"; then
-    log 2 "error checking 'ArgumentName' parameter"
+    log 2 "error checking '$argument_name' parameter"
     return 1
   fi
 }
@@ -348,3 +348,52 @@ send_rest_go_command_expect_error_with_specific_arg_name_value() {
   fi
   return 0
 }
+
+check_specific_argument_names_and_values() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  for ((idx=0; idx<${#arg_names_and_values[@]}; idx+=2)); do
+    if ! check_error_parameter "$1" "${arg_names_and_values[$idx]}" "${arg_names_and_values[(($idx+1))]}"; then
+      log 2 "error checking '${arg_names_and_values[$idx]}' parameter"
+      return 1
+    fi
+  done
+}
+
+send_rest_go_command_expect_error_with_specific_arg_names_values() {
+  if ! check_param_count_gt "response code, error code, message, arg count, pairs of arg names and values, params" 6 $#; then
+    return 1
+  fi
+  arg_names_and_values=("${@:5:$4}")
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_names_and_values" "${@:((5+$4))}"; then
+    log 2 "error checking error response values"
+    return 1
+  fi
+  return 0
+}
+
+check_header_key_and_value() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! check_for_header_key_and_value "$1" "$header_key" "$header_value"; then
+    log 2 "error checking header key and value"
+    return 1
+  fi
+  return 0
+}
+
+send_rest_go_command_check_header_key_and_value() {
+  if ! check_param_count_gt "response code, header key, header values, params" 3 $#; then
+    return 1
+  fi
+  header_key="$2"
+  header_value="$3"
+  if ! send_rest_go_command_callback "$1" "check_header_key_and_value" "${@:4}"; then
+    log 2 "error sending command and checking header key and value"
+    return 1
+  fi
+  return 0
+}
+

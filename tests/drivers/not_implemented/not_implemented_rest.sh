@@ -18,8 +18,7 @@ source ./tests/rest_scripts/rest.sh
 source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_controls_rest.sh
 
 send_not_implemented_expect_failure() {
-  if [ $(($# % 2)) -ne 0 ]; then
-    log 2 "'send_not_implemented_expect_failure' param count must be multiple of 2 (key/value pairs)"
+  if ! check_param_count_gt "parameters" 1 $#; then
     return 1
   fi
   if ! curl_command=$(go run ./tests/rest_scripts/generateCommand.go -awsAccessKeyId "$AWS_ACCESS_KEY_ID" \
