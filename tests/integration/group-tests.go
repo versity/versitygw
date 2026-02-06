@@ -459,13 +459,17 @@ func TestListMultipartUploads(ts *TestState) {
 	ts.Run(ListMultipartUploads_invalid_max_uploads)
 	ts.Run(ListMultipartUploads_max_uploads)
 	ts.Run(ListMultipartUploads_exceeding_max_uploads)
-	ts.Run(ListMultipartUploads_incorrect_next_key_marker)
 	ts.Run(ListMultipartUploads_ignore_upload_id_marker)
+	ts.Run(ListMultipartUploads_invalid_uploadId_marker)
+	ts.Run(ListMultipartUploads_keyMarker_not_from_list)
+	ts.Run(ListMultipartUploads_delimiter_truncated)
+	ts.Run(ListMultipartUploads_prefix)
+	ts.Run(ListMultipartUploads_both_delimiter_and_prefix)
+	ts.Run(ListMultipartUploads_delimiter_no_matches)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(ListMultipartUploads_with_checksums)
 	}
-	ts.Run(ListMultipartUploads_success)
 }
 
 func TestAbortMultipartUpload(ts *TestState) {
@@ -1473,10 +1477,13 @@ func GetIntTests() IntTests {
 		"ListMultipartUploads_invalid_max_uploads":                                 ListMultipartUploads_invalid_max_uploads,
 		"ListMultipartUploads_max_uploads":                                         ListMultipartUploads_max_uploads,
 		"ListMultipartUploads_exceeding_max_uploads":                               ListMultipartUploads_exceeding_max_uploads,
-		"ListMultipartUploads_incorrect_next_key_marker":                           ListMultipartUploads_incorrect_next_key_marker,
 		"ListMultipartUploads_ignore_upload_id_marker":                             ListMultipartUploads_ignore_upload_id_marker,
+		"ListMultipartUploads_invalid_uploadId_marker":                             ListMultipartUploads_invalid_uploadId_marker,
+		"ListMultipartUploads_keyMarker_not_from_list":                             ListMultipartUploads_keyMarker_not_from_list,
+		"ListMultipartUploads_delimiter_truncated":                                 ListMultipartUploads_delimiter_truncated,
+		"ListMultipartUploads_prefix":                                              ListMultipartUploads_prefix,
+		"ListMultipartUploads_both_delimiter_and_prefix":                           ListMultipartUploads_both_delimiter_and_prefix,
 		"ListMultipartUploads_with_checksums":                                      ListMultipartUploads_with_checksums,
-		"ListMultipartUploads_success":                                             ListMultipartUploads_success,
 		"AbortMultipartUpload_non_existing_bucket":                                 AbortMultipartUpload_non_existing_bucket,
 		"AbortMultipartUpload_incorrect_uploadId":                                  AbortMultipartUpload_incorrect_uploadId,
 		"AbortMultipartUpload_incorrect_object_key":                                AbortMultipartUpload_incorrect_object_key,

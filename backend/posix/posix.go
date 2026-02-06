@@ -2180,11 +2180,12 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	var lmu s3response.ListMultipartUploadsResult
 
 	bucket := *mpu.Bucket
-	var delimiter string
 
 	if !p.isBucketValid(bucket) {
 		return lmu, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
+
+	var delimiter string
 	if mpu.Delimiter != nil {
 		delimiter = *mpu.Delimiter
 	}
@@ -2192,6 +2193,15 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	if mpu.Prefix != nil {
 		prefix = *mpu.Prefix
 	}
+	var keyMarker string
+	if mpu.KeyMarker != nil {
+		keyMarker = *mpu.KeyMarker
+	}
+	var uploadIDMarker string
+	if mpu.UploadIdMarker != nil {
+		uploadIDMarker = *mpu.UploadIdMarker
+	}
+	maxUploads := int(*mpu.MaxUploads)
 
 	_, err := os.Stat(bucket)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -2205,17 +2215,6 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 	objs, _ := os.ReadDir(filepath.Join(bucket, MetaTmpMultipartDir))
 
 	var uploads []s3response.Upload
-	var resultUpds []s3response.Upload
-
-	var keyMarker string
-	if mpu.KeyMarker != nil {
-		keyMarker = *mpu.KeyMarker
-	}
-	var uploadIDMarker string
-	if mpu.UploadIdMarker != nil {
-		uploadIDMarker = *mpu.UploadIdMarker
-	}
-	keyMarkerInd, uploadIdMarkerFound := -1, false
 
 	for _, obj := range objs {
 		if !obj.IsDir() {
@@ -2227,7 +2226,12 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 			continue
 		}
 		objectName := string(b)
-		if mpu.Prefix != nil && !strings.HasPrefix(objectName, *mpu.Prefix) {
+		// filter by prefix
+		if prefix != "" && !strings.HasPrefix(objectName, prefix) {
+			continue
+		}
+		// filter by keyMarker
+		if keyMarker != "" && objectName <= keyMarker {
 			continue
 		}
 
@@ -2241,22 +2245,12 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 				continue
 			}
 
-			// userMetaData := make(map[string]string)
-			// upiddir := filepath.Join(bucket, metaTmpMultipartDir, obj.Name(), upid.Name())
-			// loadUserMetaData(upiddir, userMetaData)
-
 			fi, err := upid.Info()
 			if err != nil {
 				return lmu, fmt.Errorf("stat %q: %w", upid.Name(), err)
 			}
 
 			uploadID := upid.Name()
-			if !uploadIdMarkerFound && uploadIDMarker == uploadID {
-				uploadIdMarkerFound = true
-			}
-			if keyMarkerInd == -1 && objectName == keyMarker {
-				keyMarkerInd = len(uploads)
-			}
 
 			checksum, err := p.retrieveChecksums(nil, bucket, filepath.Join(MetaTmpMultipartDir, obj.Name(), uploadID))
 			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
@@ -2274,61 +2268,31 @@ func (p *Posix) ListMultipartUploads(_ context.Context, mpu *s3.ListMultipartUpl
 		}
 	}
 
-	maxUploads := int(*mpu.MaxUploads)
-	if (uploadIDMarker != "" && !uploadIdMarkerFound) || (keyMarker != "" && keyMarkerInd == -1) {
-		return s3response.ListMultipartUploadsResult{
-			Bucket:         bucket,
-			Delimiter:      delimiter,
-			KeyMarker:      keyMarker,
-			MaxUploads:     maxUploads,
-			Prefix:         prefix,
-			UploadIDMarker: uploadIDMarker,
-			Uploads:        []s3response.Upload{},
-		}, nil
-	}
-
+	// Sort once: Key asc, Initiated asc
 	sort.SliceStable(uploads, func(i, j int) bool {
-		return uploads[i].Key < uploads[j].Key
+		if uploads[i].Key != uploads[j].Key {
+			return uploads[i].Key < uploads[j].Key
+		}
+		return uploads[i].Initiated.Before(uploads[j].Initiated)
 	})
 
-	start := 0
-	if keyMarker != "" {
-		for i, up := range uploads {
-			if up.Key == keyMarker && (uploadIDMarker == "" ||
-				up.UploadID == uploadIDMarker) {
-				// Start after the marker
-				start = i + 1
-				break
-			}
-		}
-	}
-
-	for i := start; i < len(uploads); i++ {
-		if len(resultUpds) == maxUploads {
-			return s3response.ListMultipartUploadsResult{
-				Bucket:             bucket,
-				Delimiter:          delimiter,
-				KeyMarker:          keyMarker,
-				MaxUploads:         maxUploads,
-				NextKeyMarker:      resultUpds[len(resultUpds)-1].Key,
-				NextUploadIDMarker: resultUpds[len(resultUpds)-1].UploadID,
-				IsTruncated:        true,
-				Prefix:             prefix,
-				UploadIDMarker:     uploadIDMarker,
-				Uploads:            resultUpds,
-			}, nil
-		}
-		resultUpds = append(resultUpds, uploads[i])
+	result, err := backend.ListMultipartUploads(uploads, prefix, delimiter, keyMarker, uploadIDMarker, maxUploads)
+	if err != nil {
+		return lmu, err
 	}
 
 	return s3response.ListMultipartUploadsResult{
-		Bucket:         bucket,
-		Delimiter:      delimiter,
-		KeyMarker:      keyMarker,
-		MaxUploads:     maxUploads,
-		Prefix:         prefix,
-		UploadIDMarker: uploadIDMarker,
-		Uploads:        resultUpds,
+		Bucket:             bucket,
+		Delimiter:          delimiter,
+		KeyMarker:          keyMarker,
+		MaxUploads:         maxUploads,
+		Prefix:             prefix,
+		NextKeyMarker:      result.NextKeyMarker,
+		NextUploadIDMarker: result.NextUploadIDMarker,
+		UploadIDMarker:     uploadIDMarker,
+		IsTruncated:        result.IsTruncated,
+		Uploads:            result.Uploads,
+		CommonPrefixes:     result.CommonPrefixes,
 	}, nil
 }
 

@@ -177,6 +177,7 @@ const (
 	ErrTrailerHeaderNotSupported
 	ErrBadRequest
 	ErrMissingUploadId
+	ErrInvalidUploadIdMarker
 	ErrNoSuchCORSConfiguration
 	ErrCORSForbidden
 	ErrMissingCORSOrigin
@@ -794,6 +795,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 	ErrMissingUploadId: {
 		Code:           "InvalidArgument",
 		Description:    "This operation does not accept partNumber without uploadId",
+		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrInvalidUploadIdMarker: {
+		Code:           "InvalidArgument",
+		Description:    "Invalid uploadId marker",
 		HTTPStatusCode: http.StatusBadRequest,
 	},
 	ErrNoSuchCORSConfiguration: {
