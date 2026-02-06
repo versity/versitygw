@@ -1445,7 +1445,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		middlewares.ApplyBucketCORSPreflightFallback(be, corsAllowOrigin),
 		controllers.ProcessHandlers(ctrl.CORSOptions, metrics.ActionOptions, services,
 			middlewares.BucketObjectNameValidator(),
-			middlewares.ApplyBucketCORS(be, corsAllowOrigin),
 			middlewares.ParseAcl(be),
 		),
 	)
@@ -1454,7 +1453,6 @@ func (sa *S3ApiRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMServ
 		middlewares.ApplyBucketCORSPreflightFallback(be, corsAllowOrigin),
 		controllers.ProcessHandlers(ctrl.CORSOptions, metrics.ActionOptions, services,
 			middlewares.BucketObjectNameValidator(),
-			middlewares.ApplyBucketCORS(be, corsAllowOrigin),
 			middlewares.ParseAcl(be),
 		),
 	)
