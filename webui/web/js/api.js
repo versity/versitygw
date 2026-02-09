@@ -458,6 +458,23 @@ class VersityAPI {
   }
 
   /**
+   * MD5 hash returning base64 (for Content-MD5 header)
+   */
+  md5Base64(message) {
+    // MD5 is not available in Web Crypto API (not secure), so use CryptoJS
+    const hash = CryptoJS.MD5(message);
+    const bytes = [];
+    for (let i = 0; i < hash.sigBytes; i++) {
+      bytes.push((hash.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff);
+    }
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  /**
    * HMAC-SHA256 (uses crypto.subtle in HTTPS, CryptoJS in HTTP)
    */
   async hmacSha256(key, message) {
@@ -1616,7 +1633,12 @@ class VersityAPI {
   <ObjectLockEnabled>Enabled</ObjectLockEnabled>${ruleXml}
 </ObjectLockConfiguration>`;
     
-    await this.request('PUT', `/${bucket}`, { 'object-lock': '' }, body);
+    // Calculate Content-MD5 header
+    const contentMd5 = this.md5Base64(body);
+
+    await this.request('PUT', `/${bucket}`, { 'object-lock': '' }, body, false, 'application/xml', {
+      'Content-MD5': contentMd5
+    });
   }
 
   /**
