@@ -21,6 +21,11 @@ Download [latest release](https://github.com/versity/versitygw/releases)
 * Protocol compatibility in `posix` allows common access to files via posix or S3
 * Simplified interface for adding new storage system support
 
+### WebGUI
+Get more details about the new (optional) WebGUI management/explorer here: [https://github.com/versity/versitygw/wiki/WebGUI](https://github.com/versity/versitygw/wiki/WebGUI)
+
+![admin-explorer](https://github.com/user-attachments/assets/e99db171-2c72-4d0f-8c8d-480a56e1c8a1)
+
 ### News
 Check out latest wiki articles: [https://github.com/versity/versitygw/wiki/Articles](https://github.com/versity/versitygw/wiki/Articles)
 
@@ -52,10 +57,10 @@ See the [Quickstart](https://github.com/versity/versitygw/wiki/Quickstart) docum
 ### Run the gateway with posix backend:
 
 ```
-mkdir /tmp/vgw
-ROOT_ACCESS_KEY="testuser" ROOT_SECRET_KEY="secret" ./versitygw --port :10000 posix /tmp/vgw
+mkdir /tmp/vgw /tmp/vers
+ROOT_ACCESS_KEY="testuser" ROOT_SECRET_KEY="secret" ./versitygw --port :10000 posix --versioning-dir /tmp/vers /tmp/vgw
 ```
-This will enable an S3 server on the current host listening on port 10000 and hosting the directory `/tmp/vgw`.
+This will enable an S3 server on the current host listening on port 10000 and hosting the directory `/tmp/vgw` and older object versions in `/tmp/vers`.
 
 To get the usage output, run the following:
 
