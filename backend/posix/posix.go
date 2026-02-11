@@ -365,6 +365,10 @@ func (p *Posix) ListBuckets(ctx context.Context, input s3response.ListBucketsInp
 			continue
 		}
 
+		if !utils.IsValidBucketName(fi.Name()) {
+			continue
+		}
+
 		if len(buckets) == int(input.MaxBuckets) {
 			cToken = buckets[len(buckets)-1].Name
 			break
