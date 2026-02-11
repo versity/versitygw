@@ -1498,6 +1498,96 @@ func CopyObject_success(s *S3Conf) error {
 	})
 }
 
+func CopyObject_with_special_characters(s *S3Conf) error {
+	testName := "CopyObject_with_special_characters"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		// Test copying objects with special characters that need URL encoding
+		// like curly braces, spaces, and other reserved characters
+		testCases := []struct {
+			name   string
+			srcKey string
+			dstKey string
+		}{
+			{
+				name:   "curly braces",
+				srcKey: "myfolder/{e14c392b-09ad-4188-85f4-b779af00fb88}/testfile",
+				dstKey: "myfolder/{e14c392b-09ad-4188-85f4-b779af00fb88}/copy",
+			},
+			{
+				name:   "multiple special chars",
+				srcKey: "folder/{id}/file #1",
+				dstKey: "folder/{id}/file #1 copy",
+			},
+			{
+				name:   "ampersand and hash",
+				srcKey: "file&with#special",
+				dstKey: "file&with#special-copy",
+			},
+			{
+				name:   "spaces and brackets",
+				srcKey: "my file [2024].txt",
+				dstKey: "my file [2024] copy.txt",
+			},
+		}
+
+		for _, tc := range testCases {
+			// Create source object
+			dataLength := int64(100)
+			r, err := putObjectWithData(dataLength, &s3.PutObjectInput{
+				Bucket: &bucket,
+				Key:    &tc.srcKey,
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("%s: failed to put source object: %w", tc.name, err)
+			}
+
+			// Copy the object
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+				Bucket:     &bucket,
+				Key:        &tc.dstKey,
+				CopySource: getPtr(fmt.Sprintf("%v/%v", bucket, tc.srcKey)),
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s: failed to copy object: %w", tc.name, err)
+			}
+
+			// Verify the copied object
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			out, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: &bucket,
+				Key:    &tc.dstKey,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("%s: failed to get copied object: %w", tc.name, err)
+			}
+
+			if out.ContentLength == nil {
+				return fmt.Errorf("%s: expected content-length to be set, instead got nil", tc.name)
+			}
+			if *out.ContentLength != dataLength {
+				return fmt.Errorf("%s: expected content-length %v, instead got %v",
+					tc.name, dataLength, *out.ContentLength)
+			}
+
+			bdy, err := io.ReadAll(out.Body)
+			if err != nil {
+				return fmt.Errorf("%s: failed to read body: %w", tc.name, err)
+			}
+			out.Body.Close()
+
+			outCsum := sha256.Sum256(bdy)
+			if outCsum != r.csum {
+				return fmt.Errorf("%s: invalid object data, checksum mismatch", tc.name)
+			}
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_object_acl_not_supported(s *S3Conf) error {
 	testName := "CopyObject_object_acl_not_supported"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
