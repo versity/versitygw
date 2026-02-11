@@ -92,9 +92,9 @@ var (
 	ipaInsecure                            bool
 	iamDebug                               bool
 	webuiAddr                              string
+	webuiPathPrefix                        string
 	webuiCertFile, webuiKeyFile            string
 	webuiNoTLS                             bool
-	webuiPathPrefix                        string
 )
 
 var (
