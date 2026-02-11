@@ -32,7 +32,6 @@ var webFiles embed.FS
 // webFS is an alias for webFiles for consistency with server.go
 var webFS = webFiles
 
-
 func replaceInEmbedFS(original embed.FS, old, pathPrefix string) (*mapFS, error) {
 	m := &mapFS{files: make(map[string][]byte), pathPrefix: pathPrefix}
 	err := fs.WalkDir(original, "web", func(path string, d fs.DirEntry, err error) error {
@@ -53,7 +52,7 @@ func replaceInEmbedFS(original embed.FS, old, pathPrefix string) (*mapFS, error)
 }
 
 type mapFS struct {
-	files map[string][]byte
+	files      map[string][]byte
 	pathPrefix string
 }
 

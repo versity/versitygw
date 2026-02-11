@@ -98,7 +98,7 @@ func (s *Server) setupMiddleware() {
 // setupRoutes configures all routes
 func (s *Server) setupRoutes() {
 	pp := s.config.PathPrefix
-	
+
 	// Add <base href> to all embedded HTML files to ensure correct resolution of relative paths
 	processedFS, err := replaceInEmbedFS(webFS, "{{.WEBUI_PATH_PREFIX}}", pp)
 	if err != nil {
