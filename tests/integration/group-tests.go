@@ -347,6 +347,7 @@ func TestCopyObject(ts *TestState) {
 		// azure doesn't support these metadata characters
 		ts.Run(CopyObject_with_metadata)
 	}
+	ts.Run(CopyObject_with_special_characters)
 	ts.Run(CopyObject_success)
 }
 
@@ -1404,6 +1405,7 @@ func GetIntTests() IntTests {
 		"CopyObject_should_copy_the_existing_checksum":                             CopyObject_should_copy_the_existing_checksum,
 		"CopyObject_should_replace_the_existing_checksum":                          CopyObject_should_replace_the_existing_checksum,
 		"CopyObject_to_itself_by_replacing_the_checksum":                           CopyObject_to_itself_by_replacing_the_checksum,
+		"CopyObject_with_special_characters":                                       CopyObject_with_special_characters,
 		"CopyObject_success":                                                       CopyObject_success,
 		"PutObjectTagging_non_existing_object":                                     PutObjectTagging_non_existing_object,
 		"PutObjectTagging_long_tags":                                               PutObjectTagging_long_tags,

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -950,7 +951,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 		}
 	}
 
-	if strings.Join([]string{*input.Bucket, *input.Key}, "/") == *input.CopySource {
+	if srcBucket == *input.Bucket && srcObj == *input.Key {
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
 			return s3response.CopyObjectOutput{}, s3err.GetAPIError(s3err.ErrInvalidCopyDest)
 		}
@@ -1858,7 +1859,10 @@ func (az *Azure) getContainerURL(cntr string) string {
 }
 
 func (az *Azure) getBlobURL(cntr, blb string) string {
-	return fmt.Sprintf("%v/%v", az.getContainerURL(cntr), blb)
+	// URL-encode the blob name to handle special characters like {, }, #, spaces, etc.
+	// Use PathEscape to encode the blob name while preserving forward slashes
+	encodedBlob := url.PathEscape(blb)
+	return fmt.Sprintf("%v/%v", az.getContainerURL(cntr), encodedBlob)
 }
 
 func (az *Azure) getBlobClient(cntr, blb string) (*blob.Client, error) {
