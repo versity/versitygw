@@ -17,7 +17,6 @@ package webui
 import (
 	"bytes"
 	"embed"
-	"fmt"
 	"io/fs"
 	"path/filepath"
 	"time"
