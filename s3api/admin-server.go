@@ -15,6 +15,9 @@
 package s3api
 
 import (
+	"fmt"
+	"net"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -31,7 +34,6 @@ type S3AdminServer struct {
 	app             *fiber.App
 	backend         backend.Backend
 	router          *S3AdminRouter
-	port            string
 	CertStorage     *utils.CertStorage
 	quiet           bool
 	debug           bool
@@ -40,13 +42,12 @@ type S3AdminServer struct {
 	maxRequests     int
 }
 
-func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
+func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
 	server := &S3AdminServer{
 		backend: be,
 		router: &S3AdminRouter{
 			s3api: ctrl,
 		},
-		port: port,
 	}
 
 	for _, opt := range opts {
@@ -123,16 +124,42 @@ func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
 	}
 }
 
-func (sa *S3AdminServer) Serve() (err error) {
-	if sa.CertStorage != nil {
-		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
-		if err != nil {
-			return err
+// ServeMultiPort creates listeners for multiple port specifications and serves
+// on all of them simultaneously. This supports listening on multiple ports and/or
+// addresses (e.g., [":8080", "localhost:8081"]).
+func (sa *S3AdminServer) ServeMultiPort(ports []string) error {
+	if len(ports) == 0 {
+		return fmt.Errorf("no ports specified")
+	}
+
+	// Multiple ports - create listeners for each
+	var listeners []net.Listener
+
+	for _, portSpec := range ports {
+		var ln net.Listener
+		var err error
+
+		if sa.CertStorage != nil {
+			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate)
+		} else {
+			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec)
 		}
 
-		return sa.app.Listener(ln)
+		if err != nil {
+			return fmt.Errorf("failed to bind admin listener %s: %w", portSpec, err)
+		}
+
+		listeners = append(listeners, ln)
 	}
-	return sa.app.Listen(sa.port)
+
+	if len(listeners) == 0 {
+		return fmt.Errorf("failed to create any admin listeners")
+	}
+
+	// Combine all listeners
+	finalListener := utils.NewMultiListener(listeners...)
+
+	return sa.app.Listener(finalListener)
 }
 
 // ShutDown gracefully shuts down the server with a context timeout

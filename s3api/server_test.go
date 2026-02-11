@@ -27,6 +27,7 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		name    string
 		sa      *S3ApiServer
 		wantErr bool
+		port    string
 	}{
 		{
 			name:    "Serve-invalid-address",
@@ -34,9 +35,9 @@ func TestS3ApiServer_Serve(t *testing.T) {
 			sa: &S3ApiServer{
 				app:     fiber.New(),
 				backend: backend.BackendUnsupported{},
-				port:    "Invalid address",
 				Router:  &S3ApiRouter{},
 			},
+			port: "Invalid address",
 		},
 		{
 			name:    "Serve-invalid-address-with-certificate",
@@ -44,15 +45,15 @@ func TestS3ApiServer_Serve(t *testing.T) {
 			sa: &S3ApiServer{
 				app:         fiber.New(),
 				backend:     backend.BackendUnsupported{},
-				port:        "Invalid address",
 				Router:      &S3ApiRouter{},
 				CertStorage: &utils.CertStorage{},
 			},
+			port: "Invalid address",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.sa.Serve(); (err != nil) != tt.wantErr {
+			if err := tt.sa.ServeMultiPort([]string{tt.port}); (err != nil) != tt.wantErr {
 				t.Errorf("S3ApiServer.Serve() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
