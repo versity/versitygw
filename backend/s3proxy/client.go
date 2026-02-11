@@ -17,6 +17,7 @@ package s3proxy
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -48,7 +49,16 @@ func (s *S3Proxy) getClientWithCtx(ctx context.Context) (*s3.Client, error) {
 }
 
 func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Config, error) {
-	creds := credentials.NewStaticCredentialsProvider(access, secret, "")
+	if (access != "" && secret == "") || (access == "" && secret != "") {
+		return aws.Config{}, fmt.Errorf("both access and secret must be set or none at all")
+	}
+
+	var creds aws.CredentialsProvider
+	if access != "" {
+		creds = credentials.NewStaticCredentialsProvider(access, secret, "")
+	} else {
+		creds = aws.AnonymousCredentials{}
+	}
 
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.sslSkipVerify},
