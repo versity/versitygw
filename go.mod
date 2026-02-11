@@ -10,6 +10,9 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/DataDog/datadog-go/v5 v5.8.3
 	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2/config v1.32.7
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
 	github.com/aws/smithy-go v1.24.0
 	github.com/davecgh/go-spew v1.1.1
@@ -40,10 +43,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.7
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.0
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
@@ -71,6 +71,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -85,7 +86,3 @@ require (
 	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// pinned in dependabot.yml since newer versions in the go mod cache no longer
-// exist. remove the ignore once this repo creates a newer tag.
-require github.com/nats-io/nkeys v0.4.12 // indirect

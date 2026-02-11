@@ -26,7 +26,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go/middleware"
 )
@@ -189,31 +189,41 @@ func (c *S3Conf) Config() aws.Config {
 }
 
 func (c *S3Conf) UploadData(r io.Reader, bucket, object string) error {
-	uploader := manager.NewUploader(c.GetClient())
-	uploader.PartSize = c.PartSize
-	uploader.Concurrency = c.Concurrency
+	uploader := transfermanager.New(c.GetClient(),
+		func(options *transfermanager.Options) {
+			options.PartSizeBytes = c.PartSize
+			options.Concurrency = c.Concurrency
+		})
 
-	upinfo := &s3.PutObjectInput{
+	upinfo := &transfermanager.UploadObjectInput{
 		Body:   r,
 		Bucket: &bucket,
 		Key:    &object,
 	}
 
-	_, err := uploader.Upload(context.Background(), upinfo)
+	_, err := uploader.UploadObject(context.Background(), upinfo)
 	return err
 }
 
 func (c *S3Conf) DownloadData(w io.WriterAt, bucket, object string) (int64, error) {
-	downloader := manager.NewDownloader(c.GetClient())
-	downloader.PartSize = c.PartSize
-	downloader.Concurrency = c.Concurrency
+	downloader := transfermanager.New(c.GetClient(),
+		func(options *transfermanager.Options) {
+			options.PartSizeBytes = c.PartSize
+			options.Concurrency = c.Concurrency
+		})
 
-	downinfo := &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &object,
+	downinfo := &transfermanager.DownloadObjectInput{
+		Bucket:   &bucket,
+		Key:      &object,
+		WriterAt: w,
 	}
 
-	return downloader.Download(context.Background(), w, downinfo)
+	out, err := downloader.DownloadObject(context.Background(), downinfo)
+	if err != nil {
+		return 0, err
+	}
+
+	return *out.ContentLength, nil
 }
 
 func (c *S3Conf) getAdminCommand(args ...string) []string {

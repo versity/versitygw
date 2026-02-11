@@ -11,8 +11,6 @@ updates:
     allow:
       # Allow both direct and indirect updates for all packages
       - dependency-type: "all"
-    ignore:
-      - dependency-name: "github.com/nats-io/nkeys"
 
   - package-ecosystem: "github-actions"
     directory: "/"
