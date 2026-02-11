@@ -15,9 +15,9 @@
 package s3api
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -52,16 +52,14 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-		ErrorHandler:          globalErrorHandler,
+		AppName:      "versitygw",
+		ServerHeader: "VERSITYGW",
+		ErrorHandler: globalErrorHandler,
 	})
 
 	server.app = app
 
-	app.Use(recover.New(
+	app.Use("*", recover.New(
 		recover.Config{
 			EnableStackTrace:  true,
 			StackTraceHandler: stackTraceHandler,
@@ -69,15 +67,15 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 
 	// Logging middlewares
 	if !server.quiet {
-		app.Use(logger.New(logger.Config{
+		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
-	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
+	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
-		app.Use(middlewares.DebugLogger())
+		app.Use("*", middlewares.DebugLogger())
 	}
 
 	server.router.Init(app, be, iam, l, root, region, server.debug, server.corsAllowOrigin)
@@ -109,14 +107,22 @@ func WithAdminCORSAllowOrigin(origin string) AdminOpt {
 
 func (sa *S3AdminServer) Serve() (err error) {
 	if sa.CertStorage != nil {
-		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
+		ln, err := utils.NewTLSListener(fiber.NetworkTCP, sa.port, sa.CertStorage.GetCertificate)
 		if err != nil {
 			return err
 		}
 
-		return sa.app.Listener(ln)
+		return sa.app.Listener(ln,
+			fiber.ListenConfig{
+				ListenerNetwork:       fiber.NetworkTCP,
+				DisableStartupMessage: true,
+			})
 	}
-	return sa.app.Listen(sa.port)
+	return sa.app.Listen(sa.port,
+		fiber.ListenConfig{
+			ListenerNetwork:       fiber.NetworkTCP,
+			DisableStartupMessage: true,
+		})
 }
 
 // ShutDown gracefully shuts down the server with a context timeout

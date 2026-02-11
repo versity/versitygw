@@ -23,7 +23,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
@@ -31,14 +31,14 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketTagging(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -56,7 +56,7 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitBucket)
+	tagging, err := utils.ParseTagging(ctx.BodyRaw(), utils.TagLimitBucket)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -65,7 +65,7 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutBucketTagging(ctx.Context(), bucket, tagging)
+	err = c.be.PutBucketTagging(ctx.RequestCtx(), bucket, tagging)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -74,13 +74,13 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketOwnershipControls(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	if err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:      c.readonly,
 		Acl:           parsedAcl,
 		AclPermission: auth.PermissionWrite,
@@ -97,7 +97,7 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	}
 
 	var ownershipControls s3response.OwnershipControls
-	if err := xml.Unmarshal(ctx.Body(), &ownershipControls); err != nil {
+	if err := xml.Unmarshal(ctx.BodyRaw(), &ownershipControls); err != nil {
 		debuglogger.Logf("failed to unmarshal request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -119,7 +119,7 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	err := c.be.PutBucketOwnershipControls(ctx.Context(), bucket, ownershipControls.Rules[0].ObjectOwnership)
+	err := c.be.PutBucketOwnershipControls(ctx.RequestCtx(), bucket, ownershipControls.Rules[0].ObjectOwnership)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -127,14 +127,14 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 	}, err
 }
 
-func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketVersioning(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -153,7 +153,7 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	}
 
 	var versioningConf types.VersioningConfiguration
-	err = xml.Unmarshal(ctx.Body(), &versioningConf)
+	err = xml.Unmarshal(ctx.BodyRaw(), &versioningConf)
 	if err != nil {
 		debuglogger.Logf("error unmarshalling versioning configuration: %v", err)
 		return &Response{
@@ -173,7 +173,7 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	err = c.be.PutBucketVersioning(ctx.Context(), bucket, versioningConf.Status)
+	err = c.be.PutBucketVersioning(ctx.RequestCtx(), bucket, versioningConf.Status)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -181,14 +181,14 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 	}, err
 }
 
-func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObjectLockConfiguration(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	if err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	if err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -205,7 +205,7 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 		}, err
 	}
 
-	config, err := auth.ParseBucketLockConfigurationInput(ctx.Body())
+	config, err := auth.ParseBucketLockConfigurationInput(ctx.BodyRaw())
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -214,7 +214,7 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 		}, err
 	}
 
-	err = c.be.PutObjectLockConfiguration(ctx.Context(), bucket, config)
+	err = c.be.PutObjectLockConfiguration(ctx.RequestCtx(), bucket, config)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -222,14 +222,14 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 	}, err
 }
 
-func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketCors(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -247,7 +247,7 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	body := ctx.Body()
+	body := ctx.BodyRaw()
 
 	var corsConfig auth.CORSConfiguration
 	err = xml.Unmarshal(body, &corsConfig)
@@ -270,7 +270,7 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutBucketCors(ctx.Context(), bucket, body)
+	err = c.be.PutBucketCors(ctx.RequestCtx(), bucket, body)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -278,13 +278,13 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketPolicy(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:      c.readonly,
 		Acl:           parsedAcl,
 		AclPermission: auth.PermissionWrite,
@@ -301,7 +301,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = auth.ValidatePolicyDocument(ctx.Body(), bucket, c.iam)
+	err = auth.ValidatePolicyDocument(ctx.BodyRaw(), bucket, c.iam)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -310,7 +310,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutBucketPolicy(ctx.Context(), bucket, ctx.Body())
+	err = c.be.PutBucketPolicy(ctx.RequestCtx(), bucket, ctx.BodyRaw())
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -319,7 +319,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutBucketAcl(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acl := ctx.Get("X-Amz-Acl")
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
@@ -335,7 +335,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	var input *auth.PutBucketAclInput
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -362,7 +362,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	ownership, err := c.be.GetBucketOwnershipControls(ctx.Context(), bucket)
+	ownership, err := c.be.GetBucketOwnershipControls(ctx.RequestCtx(), bucket)
 	if err != nil && !errors.Is(err, s3err.GetAPIError(s3err.ErrOwnershipControlsNotFound)) {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -379,9 +379,9 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrAclNotSupported)
 	}
 
-	if len(ctx.Body()) > 0 {
+	if len(ctx.BodyRaw()) > 0 {
 		var accessControlPolicy auth.AccessControlPolicy
-		err := xml.Unmarshal(ctx.Body(), &accessControlPolicy)
+		err := xml.Unmarshal(ctx.BodyRaw(), &accessControlPolicy)
 		if err != nil {
 			debuglogger.Logf("error unmarshalling access control policy: %v", err)
 			return &Response{
@@ -470,7 +470,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutBucketAcl(ctx.Context(), bucket, updAcl)
+	err = c.be.PutBucketAcl(ctx.RequestCtx(), bucket, updAcl)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -478,7 +478,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) CreateBucket(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acl := ctx.Get("X-Amz-Acl")
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
@@ -561,9 +561,9 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	var body s3response.CreateBucketConfiguration
-	if len(ctx.Body()) != 0 {
+	if len(ctx.BodyRaw()) != 0 {
 		// request body is optional for CreateBucket
-		err := xml.Unmarshal(ctx.Body(), &body)
+		err := xml.Unmarshal(ctx.BodyRaw(), &body)
 		if err != nil {
 			debuglogger.Logf("failed to parse the request body: %v", err)
 			return &Response{
@@ -611,7 +611,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.CreateBucket(ctx.Context(), &s3.CreateBucketInput{
+	err = c.be.CreateBucket(ctx.RequestCtx(), &s3.CreateBucketInput{
 		Bucket:                     &bucket,
 		ObjectOwnership:            objectOwnership,
 		ObjectLockEnabledForBucket: &lockEnabled,

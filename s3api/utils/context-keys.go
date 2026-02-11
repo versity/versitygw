@@ -15,7 +15,7 @@
 package utils
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Region, StartTime, IsRoot, Account, AccessKey context locals
@@ -55,19 +55,19 @@ func (ck ContextKey) Values() []ContextKey {
 	}
 }
 
-func (ck ContextKey) Set(ctx *fiber.Ctx, val any) {
+func (ck ContextKey) Set(ctx fiber.Ctx, val any) {
 	ctx.Locals(string(ck), val)
 }
 
-func (ck ContextKey) IsSet(ctx *fiber.Ctx) bool {
+func (ck ContextKey) IsSet(ctx fiber.Ctx) bool {
 	val := ctx.Locals(string(ck))
 	return val != nil
 }
 
-func (ck ContextKey) Delete(ctx *fiber.Ctx) {
+func (ck ContextKey) Delete(ctx fiber.Ctx) {
 	ctx.Locals(string(ck), nil)
 }
 
-func (ck ContextKey) Get(ctx *fiber.Ctx) any {
+func (ck ContextKey) Get(ctx fiber.Ctx) any {
 	return ctx.Locals(string(ck))
 }

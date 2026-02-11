@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/segmentio/kafka-go"
 	"github.com/versity/versitygw/s3response"
 )
@@ -73,7 +73,7 @@ func InitKafkaEventService(url, topic, key string, filter EventFilter) (S3EventS
 	}, nil
 }
 
-func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
+func (ks *Kafka) SendEvent(ctx fiber.Ctx, meta EventMeta) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 
@@ -84,7 +84,7 @@ func (ks *Kafka) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	if meta.EventName == EventObjectRemovedDeleteObjects {
 		var dObj s3response.DeleteObjects
 
-		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+		if err := xml.Unmarshal(ctx.BodyRaw(), &dObj); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
 			return
 		}

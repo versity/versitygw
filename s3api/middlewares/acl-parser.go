@@ -16,7 +16,7 @@ package middlewares
 
 import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
@@ -26,9 +26,9 @@ import (
 // ParseAcl retreives the bucket acl and stores in the context locals
 // if no bucket is found, it returns 'NoSuchBucket'
 func ParseAcl(be backend.Backend) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		bucket := ctx.Params("bucket")
-		data, err := be.GetBucketAcl(ctx.Context(), &s3.GetBucketAclInput{Bucket: &bucket})
+		data, err := be.GetBucketAcl(ctx.RequestCtx(), &s3.GetBucketAclInput{Bucket: &bucket})
 		if err != nil {
 			return err
 		}

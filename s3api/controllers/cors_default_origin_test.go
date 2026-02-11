@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3err"
 )
@@ -36,7 +36,7 @@ func TestApplyBucketCORS_FallbackOrigin_NoBucketCors_NoRequestOrigin(t *testing.
 	app := fiber.New()
 	app.Get("/:bucket/test",
 		middlewares.ApplyBucketCORS(mockedBackend, origin),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			return c.SendStatus(http.StatusOK)
 		},
 	)
@@ -71,7 +71,7 @@ func TestApplyBucketCORS_FallbackOrigin_NotAppliedWhenBucketCorsExists(t *testin
 	app := fiber.New()
 	app.Get("/:bucket/test",
 		middlewares.ApplyBucketCORS(mockedBackend, origin),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			return c.SendStatus(http.StatusOK)
 		},
 	)

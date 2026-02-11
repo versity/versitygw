@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 )
 
@@ -45,7 +45,7 @@ func WithCopySource() preconditionOpt {
 // - If-None-Match
 // - If-Modified-Since
 // - If-Unmodified-Since
-func ParsePreconditionHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) ConditionalHeaders {
+func ParsePreconditionHeaders(ctx fiber.Ctx, opts ...preconditionOpt) ConditionalHeaders {
 	ifMatch, ifNoneMatch := ParsePreconditionMatchHeaders(ctx, opts...)
 	ifModSince, ifUnmodeSince := ParsePreconditionDateHeaders(ctx, opts...)
 
@@ -58,7 +58,7 @@ func ParsePreconditionHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) Condition
 }
 
 // ParsePreconditionMatchHeaders extracts "If-Match" and "If-None-Match" headers from fiber Ctx
-func ParsePreconditionMatchHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) (*string, *string) {
+func ParsePreconditionMatchHeaders(ctx fiber.Ctx, opts ...preconditionOpt) (*string, *string) {
 	cfg := new(precondtionCfg)
 	for _, opt := range opts {
 		opt(cfg)
@@ -75,7 +75,7 @@ func ParsePreconditionMatchHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) (*st
 
 // ParsePreconditionDateHeaders parses the "If-Modified-Since" and "If-Unmodified-Since"
 // headers from fiber context to *time.Time
-func ParsePreconditionDateHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) (*time.Time, *time.Time) {
+func ParsePreconditionDateHeaders(ctx fiber.Ctx, opts ...preconditionOpt) (*time.Time, *time.Time) {
 	cfg := new(precondtionCfg)
 	for _, opt := range opts {
 		opt(cfg)
@@ -129,7 +129,7 @@ func ParsePreconditionDateHeader(date string) *time.Time {
 
 // ParseIfMatchSize parses the 'x-amz-if-match-size' to *int64
 // if parsing fails, returns nil
-func ParseIfMatchSize(ctx *fiber.Ctx) *int64 {
+func ParseIfMatchSize(ctx fiber.Ctx) *int64 {
 	ifMatchSizeHdr := ctx.Get("x-amz-if-match-size")
 	if ifMatchSizeHdr == "" {
 		return nil

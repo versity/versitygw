@@ -21,14 +21,14 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
-func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) HeadObject(ctx fiber.Ctx) (*Response, error) {
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -36,7 +36,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 	// url values
 	bucket := ctx.Params("bucket")
-	partNumberQuery := int32(ctx.QueryInt("partNumber", -1))
+	partNumberQuery := int32(fiber.Query[int](ctx, "partNumber", -1))
 	versionId := ctx.Query("versionId")
 	objRange := ctx.Get("Range")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
@@ -46,7 +46,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 		action = auth.GetObjectVersionAction
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -101,7 +101,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 
 	conditionalHeaders := utils.ParsePreconditionHeaders(ctx)
 
-	res, err := c.be.HeadObject(ctx.Context(),
+	res, err := c.be.HeadObject(ctx.RequestCtx(),
 		&s3.HeadObjectInput{
 			Bucket:            &bucket,
 			Key:               &key,

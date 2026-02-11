@@ -20,13 +20,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
 type S3EventSender interface {
-	SendEvent(ctx *fiber.Ctx, meta EventMeta)
+	SendEvent(ctx fiber.Ctx, meta EventMeta)
 	Close() error
 }
 
@@ -147,7 +147,7 @@ func InitEventSender(cfg *EventConfig) (S3EventSender, error) {
 	return evSender, err
 }
 
-func createEventSchema(ctx *fiber.Ctx, meta EventMeta, configId ConfigurationId) EventSchema {
+func createEventSchema(ctx fiber.Ctx, meta EventMeta, configId ConfigurationId) EventSchema {
 	path := strings.Split(ctx.Path(), "/")
 
 	var bucket, object string

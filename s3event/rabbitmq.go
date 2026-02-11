@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/versity/versitygw/s3response"
@@ -87,7 +87,7 @@ func InitRabbitmqEventService(url, exchange, routingKey string, filter EventFilt
 	}, nil
 }
 
-func (rs *RabbitmqEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
+func (rs *RabbitmqEventSender) SendEvent(ctx fiber.Ctx, meta EventMeta) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
@@ -97,7 +97,7 @@ func (rs *RabbitmqEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 
 	if meta.EventName == EventObjectRemovedDeleteObjects {
 		var dObj s3response.DeleteObjects
-		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+		if err := xml.Unmarshal(ctx.BodyRaw(), &dObj); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
 			return
 		}

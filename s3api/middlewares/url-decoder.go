@@ -17,12 +17,12 @@ package middlewares
 import (
 	"net/url"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // DecodeURL url path unescapes the request url for the gateway
 // to handle some special characters
-func DecodeURL(ctx *fiber.Ctx) error {
+func DecodeURL(ctx fiber.Ctx) error {
 	unescp, err := url.PathUnescape(string(ctx.Request().URI().PathOriginal()))
 	if err != nil {
 		return err

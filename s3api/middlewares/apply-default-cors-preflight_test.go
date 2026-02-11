@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestApplyDefaultCORSPreflight_OptionsSetsPreflightHeaders(t *testing.T) {
@@ -28,7 +28,7 @@ func TestApplyDefaultCORSPreflight_OptionsSetsPreflightHeaders(t *testing.T) {
 	app.Options("/admin",
 		ApplyDefaultCORSPreflight(origin),
 		ApplyDefaultCORS(origin),
-		func(c *fiber.Ctx) error { return nil },
+		func(c fiber.Ctx) error { return nil },
 	)
 
 	req, err := http.NewRequest(http.MethodOptions, "/admin", nil)

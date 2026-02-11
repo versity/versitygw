@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -35,7 +35,7 @@ var VaryHdr = "Origin, Access-Control-Request-Headers, Access-Control-Request-Me
 func ApplyBucketCORS(be backend.Backend, fallbackOrigin string) fiber.Handler {
 	fallbackOrigin = strings.TrimSpace(fallbackOrigin)
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		bucket := ctx.Params("bucket")
 		origin := ctx.Get("Origin")
 		// If neither Origin is present nor a fallback is configured, skip CORS entirely.
@@ -44,7 +44,7 @@ func ApplyBucketCORS(be backend.Backend, fallbackOrigin string) fiber.Handler {
 		}
 
 		// if bucket cors is not set, skip the check
-		data, err := be.GetBucketCors(ctx.Context(), bucket)
+		data, err := be.GetBucketCors(ctx.RequestCtx(), bucket)
 		if err != nil {
 			// If CORS is not configured, S3Error will have code NoSuchCORSConfiguration.
 			// In this case, we can safely continue. For any other error, we should log it.

@@ -17,7 +17,7 @@ package middlewares
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
@@ -36,12 +36,12 @@ import (
 func ApplyBucketCORSPreflightFallback(be backend.Backend, fallbackOrigin string) fiber.Handler {
 	fallbackOrigin = strings.TrimSpace(fallbackOrigin)
 	if fallbackOrigin == "" {
-		return func(ctx *fiber.Ctx) error { return ctx.Next() }
+		return func(ctx fiber.Ctx) error { return ctx.Next() }
 	}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		bucket := ctx.Params("bucket")
-		_, err := be.GetBucketCors(ctx.Context(), bucket)
+		_, err := be.GetBucketCors(ctx.RequestCtx(), bucket)
 		if err != nil {
 			if s3Err, ok := err.(s3err.APIError); ok && (s3Err.Code == "NoSuchCORSConfiguration" || s3Err.Code == "NoSuchBucket") {
 				if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {

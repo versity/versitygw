@@ -18,13 +18,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // HostStyleParser is a middleware which parses the bucket name
 // from the 'Host' header and appends in the request URL path
 func HostStyleParser(virtualDomain string) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		host := string(ctx.Request().Host())
 		// the host should match this pattern: '<bucket_name>.<virtual_domain>'
 		bucket, _, found := strings.Cut(host, "."+virtualDomain)

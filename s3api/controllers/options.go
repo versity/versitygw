@@ -17,7 +17,7 @@ package controllers
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/middlewares"
@@ -25,7 +25,7 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func (s S3ApiController) CORSOptions(ctx *fiber.Ctx) (*Response, error) {
+func (s S3ApiController) CORSOptions(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	// get headers
@@ -63,7 +63,7 @@ func (s S3ApiController) CORSOptions(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	cors, err := s.be.GetBucketCors(ctx.Context(), bucket)
+	cors, err := s.be.GetBucketCors(ctx.RequestCtx(), bucket)
 	if err != nil {
 		debuglogger.Logf("failed to get bucket cors: %v", err)
 		if errors.Is(err, s3err.GetAPIError(s3err.ErrNoSuchCORSConfiguration)) {

@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -72,7 +72,7 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 
 // Returns MethodNotAllowed for unmatched routes
 func (c S3ApiController) HandleErrorRoute(err error) Controller {
-	return func(ctx *fiber.Ctx) (*Response, error) {
+	return func(ctx fiber.Ctx) (*Response, error) {
 		return &Response{}, err
 	}
 }
@@ -107,11 +107,11 @@ type Services struct {
 }
 
 // Controller is the type definition for an s3api controller
-type Controller func(ctx *fiber.Ctx) (*Response, error)
+type Controller func(ctx fiber.Ctx) (*Response, error)
 
 // ProcessHandlers groups a controller and multiple middlewares into a single fiber handler
 func ProcessHandlers(controller Controller, s3action string, svc *Services, handlers ...fiber.Handler) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		// if skip locals is set, skip to the next rout handler
 		if utils.ContextKeySkip.IsSet(ctx) {
 			utils.ContextKeySkip.Delete(ctx)
@@ -121,7 +121,7 @@ func ProcessHandlers(controller Controller, s3action string, svc *Services, hand
 		for _, handler := range handlers {
 			err := handler(ctx)
 			if err != nil {
-				return ProcessController(ctx, func(ctx *fiber.Ctx) (*Response, error) {
+				return ProcessController(ctx, func(ctx fiber.Ctx) (*Response, error) {
 					return &Response{
 						MetaOpts: &MetaOptions{},
 					}, err
@@ -136,14 +136,14 @@ func ProcessHandlers(controller Controller, s3action string, svc *Services, hand
 // WrapMiddleware executes the given middleware and handles sending the audit logs
 // and metrics. It also handles the error parsing
 func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.Manager) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		err := handler(ctx)
 		if err != nil {
 			if mm != nil {
 				mm.Send(ctx, err, metrics.ActionUndetected, 0, 0)
 			}
 			if logger != nil {
-				logger.Log(ctx, err, ctx.Body(), s3log.LogMeta{
+				logger.Log(ctx, err, ctx.BodyRaw(), s3log.LogMeta{
 					Action: metrics.ActionUndetected,
 				})
 			}
@@ -168,7 +168,7 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 
 // ProcessController executes the given s3api controller and handles the metrics
 // access logs and s3 events
-func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, svc *Services) error {
+func ProcessController(ctx fiber.Ctx, controller Controller, s3action string, svc *Services) error {
 	response, err := controller(ctx)
 
 	// Set the response headers
@@ -316,7 +316,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 	return ctx.Send(res)
 }
 
-func ensureExposeMetaHeaders(ctx *fiber.Ctx) {
+func ensureExposeMetaHeaders(ctx fiber.Ctx) {
 	// Only attempt to modify expose headers when CORS is actually in use.
 	if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
 		return
@@ -388,7 +388,7 @@ func ensureExposeMetaHeaders(ctx *fiber.Ctx) {
 }
 
 // Sets the response headers
-func SetResponseHeaders(ctx *fiber.Ctx, headers map[string]*string) {
+func SetResponseHeaders(ctx fiber.Ctx, headers map[string]*string) {
 	if headers == nil {
 		return
 	}

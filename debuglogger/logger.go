@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Color string
@@ -60,7 +60,7 @@ func printError(prefix prefix, er error) {
 }
 
 // Logs http request details: headers, body, params, query args
-func LogFiberRequestDetails(ctx *fiber.Ctx) {
+func LogFiberRequestDetails(ctx fiber.Ctx) {
 	// Log the full request url
 	fullURL := ctx.Protocol() + "://" + ctx.Hostname() + ctx.OriginalURL()
 	fmt.Printf("%s[URL]: %s%s\n", green, fullURL, reset)
@@ -90,7 +90,7 @@ func LogFiberRequestDetails(ctx *fiber.Ctx) {
 }
 
 // Logs http response details: body, headers
-func LogFiberResponseDetails(ctx *fiber.Ctx) {
+func LogFiberResponseDetails(ctx fiber.Ctx) {
 	wrapInBox(green, "RESPONSE HEADERS", boxWidth, func() {
 		for key, value := range ctx.Response().Header.All() {
 			printWrappedLine(yellow, string(key), string(value))
@@ -265,7 +265,7 @@ func wrapText(text string, width int) []string {
 
 // TODO: remove this and use utils.IsBidDataAction after refactoring
 // and creating 'internal' package
-func isLargeDataAction(ctx *fiber.Ctx) bool {
+func isLargeDataAction(ctx fiber.Ctx) bool {
 	if ctx.Method() == http.MethodPut && len(strings.Split(ctx.Path(), "/")) >= 3 {
 		if !ctx.Request().URI().QueryArgs().Has("tagging") && ctx.Get("X-Amz-Copy-Source") == "" && !ctx.Request().URI().QueryArgs().Has("acl") {
 			return true

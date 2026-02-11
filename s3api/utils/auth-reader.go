@@ -25,7 +25,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/smithy-go/logging"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
@@ -41,7 +41,7 @@ const (
 // data requests where the data size and checksum are not known until
 // the data is completely read.
 type AuthReader struct {
-	ctx    *fiber.Ctx
+	ctx    fiber.Ctx
 	auth   AuthData
 	secret string
 	size   int
@@ -52,7 +52,7 @@ type AuthReader struct {
 // v4 auth when the underlying reader returns io.EOF. This postpones the
 // authorization check until the reader is consumed. So it is important that
 // the consumer of this reader checks for the auth errors while reading.
-func NewAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string) *AuthReader {
+func NewAuthReader(ctx fiber.Ctx, r io.Reader, auth AuthData, secret string) *AuthReader {
 	var hr *HashReader
 	hashPayload := ctx.Get("X-Amz-Content-Sha256")
 	if !IsSpecialPayload(hashPayload) {
@@ -114,7 +114,7 @@ const (
 )
 
 // CheckValidSignature validates the ctx v4 auth signature
-func CheckValidSignature(ctx *fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64, streamBody bool) error {
+func CheckValidSignature(ctx fiber.Ctx, auth AuthData, secret, checksum string, tdate time.Time, contentLen int64, streamBody bool) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	// Create a new http request instance from fasthttp request

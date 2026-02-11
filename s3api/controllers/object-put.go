@@ -24,7 +24,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3api/utils"
@@ -33,7 +33,7 @@ import (
 	"github.com/versity/versitygw/s3response"
 )
 
-func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObjectTagging(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
@@ -47,7 +47,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		action = auth.PutObjectVersionTaggingAction
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -75,7 +75,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	tagging, err := utils.ParseTagging(ctx.Body(), utils.TagLimitObject)
+	tagging, err := utils.ParseTagging(ctx.BodyRaw(), utils.TagLimitObject)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -84,7 +84,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutObjectTagging(ctx.Context(), bucket, key, versionId, tagging)
+	err = c.be.PutObjectTagging(ctx.RequestCtx(), bucket, key, versionId, tagging)
 	return &Response{
 		Headers: map[string]*string{
 			"x-amz-version-id": &versionId,
@@ -96,7 +96,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObjectRetention(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
@@ -106,7 +106,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -135,7 +135,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	// parse the request body bytes into a go struct and validate
-	retention, err := auth.ParseObjectLockRetentionInput(ctx.Body())
+	retention, err := auth.ParseObjectLockRetentionInput(ctx.BodyRaw())
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -145,7 +145,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	// check if the operation is allowed
-	err = auth.IsObjectLockRetentionPutAllowed(ctx.Context(), c.be, bucket, key, versionId, acct.Access, retention, bypass)
+	err = auth.IsObjectLockRetentionPutAllowed(ctx.RequestCtx(), c.be, bucket, key, versionId, acct.Access, retention, bypass)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -164,7 +164,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutObjectRetention(ctx.Context(), bucket, key, versionId, data)
+	err = c.be.PutObjectRetention(ctx.RequestCtx(), bucket, key, versionId, data)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -172,7 +172,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObjectLegalHold(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
@@ -181,7 +181,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be, auth.AccessOptions{
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be, auth.AccessOptions{
 		Readonly:        c.readonly,
 		Acl:             parsedAcl,
 		AclPermission:   auth.PermissionWrite,
@@ -210,7 +210,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	}
 
 	var legalHold types.ObjectLockLegalHold
-	if err := xml.Unmarshal(ctx.Body(), &legalHold); err != nil {
+	if err := xml.Unmarshal(ctx.BodyRaw(), &legalHold); err != nil {
 		debuglogger.Logf("failed to parse request body: %v", err)
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -228,7 +228,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 
-	err = c.be.PutObjectLegalHold(ctx.Context(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
+	err = c.be.PutObjectLegalHold(ctx.RequestCtx(), bucket, key, versionId, legalHold.Status == types.ObjectLockLegalHoldStatusOn)
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: parsedAcl.Owner,
@@ -236,10 +236,10 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) UploadPart(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
-	partNumber := int32(ctx.QueryInt("partNumber", -1))
+	partNumber := int32(fiber.Query[int](ctx, "partNumber", -1))
 	uploadId := ctx.Query("uploadId")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -258,7 +258,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		contentLengthStr = decodedLength
 	}
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -315,7 +315,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 		body = bytes.NewReader([]byte{})
 	}
 
-	res, err := c.be.UploadPart(ctx.Context(),
+	res, err := c.be.UploadPart(ctx.RequestCtx(),
 		&s3.UploadPartInput{
 			Bucket:            &bucket,
 			Key:               &key,
@@ -351,12 +351,12 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 
 }
 
-func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) UploadPartCopy(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
 	copySrcRange := ctx.Get("X-Amz-Copy-Source-Range")
-	partNumber := int32(ctx.QueryInt("partNumber", -1))
+	partNumber := int32(fiber.Query[int](ctx, "partNumber", -1))
 	uploadId := ctx.Query("uploadId")
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
@@ -373,7 +373,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
+	err = auth.VerifyObjectCopyAccess(ctx.RequestCtx(), c.be, copySource,
 		auth.AccessOptions{
 			Acl:             parsedAcl,
 			AclPermission:   auth.PermissionWrite,
@@ -412,7 +412,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
 
-	resp, err := c.be.UploadPartCopy(ctx.Context(),
+	resp, err := c.be.UploadPartCopy(ctx.RequestCtx(),
 		&s3.UploadPartCopyInput{
 			Bucket:                      &bucket,
 			Key:                         &key,
@@ -440,7 +440,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObjectAcl(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	acl := ctx.Get("X-Amz-Acl")
@@ -454,7 +454,7 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:      c.readonly,
 			Acl:           parsedAcl,
@@ -473,7 +473,7 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = c.be.PutObjectAcl(ctx.Context(), &s3.PutObjectAclInput{
+	err = c.be.PutObjectAcl(ctx.RequestCtx(), &s3.PutObjectAclInput{
 		Bucket:           &bucket,
 		Key:              &key,
 		GrantFullControl: &grantFullControl,
@@ -491,7 +491,7 @@ func (c S3ApiController) PutObjectAcl(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) CopyObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
@@ -528,7 +528,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = auth.VerifyObjectCopyAccess(ctx.Context(), c.be, copySource,
+	err = auth.VerifyObjectCopyAccess(ctx.RequestCtx(), c.be, copySource,
 		auth.AccessOptions{
 			Acl:           parsedAcl,
 			AclPermission: auth.PermissionWrite,
@@ -596,7 +596,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 
 	preconditionHdrs := utils.ParsePreconditionHeaders(ctx, utils.WithCopySource())
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, false, c.be, true)
+	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, false, c.be, true)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -605,7 +605,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	res, err := c.be.CopyObject(ctx.Context(),
+	res, err := c.be.CopyObject(ctx.RequestCtx(),
 		s3response.CopyObjectInput{
 			Bucket:                      &bucket,
 			Key:                         &key,
@@ -652,7 +652,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	}, err
 }
 
-func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) PutObject(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	contentType := ctx.Get("Content-Type")
@@ -692,7 +692,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	// load the meta headers
 	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 
-	err = auth.VerifyAccess(ctx.Context(), c.be,
+	err = auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -712,7 +712,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	err = auth.CheckObjectAccess(ctx.Context(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, IsBucketPublic, c.be, true)
+	err = auth.CheckObjectAccess(ctx.RequestCtx(), bucket, acct.Access, []types.ObjectIdentifier{{Key: &key}}, true, IsBucketPublic, c.be, true)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -759,7 +759,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 
 	ifMatch, ifNoneMatch := utils.ParsePreconditionMatchHeaders(ctx)
 
-	res, err := c.be.PutObject(ctx.Context(),
+	res, err := c.be.PutObject(ctx.RequestCtx(),
 		s3response.PutObjectInput{
 			Bucket:                    &bucket,
 			Key:                       &key,

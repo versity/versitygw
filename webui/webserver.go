@@ -16,13 +16,13 @@ package webui
 
 import (
 	"fmt"
-	"net/http"
+	"io/fs"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -57,11 +57,10 @@ func WithTLS(cs *utils.CertStorage) Option {
 }
 
 // NewServer creates a new GUI server instance
-func NewServer(cfg *ServerConfig, opts ...Option) *Server {
+func NewServer(cfg *ServerConfig, opts ...Option) (*Server, error) {
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		DisableStartupMessage: true,
+		AppName:      "versitygw",
+		ServerHeader: "VERSITYGW",
 	})
 
 	server := &Server{
@@ -74,43 +73,55 @@ func NewServer(cfg *ServerConfig, opts ...Option) *Server {
 	}
 
 	server.setupMiddleware()
-	server.setupRoutes()
+	err := server.setupRoutes()
+	if err != nil {
+		return nil, err
+	}
 
 	fmt.Printf("initializing web dashboard on %s\n", cfg.ListenAddr)
 
-	return server
+	return server, nil
 }
 
 // setupMiddleware configures middleware
 func (s *Server) setupMiddleware() {
 	// Panic recovery
-	s.app.Use(recover.New())
+	s.app.Use("*", recover.New())
 
 	// Request logging
 	if !s.quiet {
-		s.app.Use(logger.New(logger.Config{
+		s.app.Use("*", logger.New(logger.Config{
 			Format: "${time} | web | ${status} | ${latency} | ${ip} | ${method} | ${path}\n",
 		}))
 	}
 }
 
 // setupRoutes configures all routes
-func (s *Server) setupRoutes() {
+func (s *Server) setupRoutes() error {
 	// API endpoint to get configured gateways
 	s.app.Get("/api/gateways", s.handleGetGateways)
 
-	// Serve embedded static files from web/
-	s.app.Use("/", filesystem.New(filesystem.Config{
-		Root:         http.FS(webFS),
-		PathPrefix:   "web",
-		Index:        "index.html",
-		NotFoundFile: "index.html", // SPA fallback
-		Browse:       false,
+	// create a subtree from 'web' directory
+	// so that routing works correctly
+	// currently there's a bug in fasthttp resolving fs root
+	// https://github.com/valyala/fasthttp/issues/2141
+	// TODO: remove sub fs after the bug fix
+	subFS, err := fs.Sub(webFS, "web")
+	if err != nil {
+		return err
+	}
+
+	s.app.Use("/", static.New("", static.Config{
+		FS:         subFS,
+		Browse:     false,
+		IndexNames: []string{"index.html"},
 	}))
+
+	return nil
 }
 
 // handleGetGateways returns the configured gateway URLs (both S3 and Admin)
-func (s *Server) handleGetGateways(c *fiber.Ctx) error {
+func (s *Server) handleGetGateways(c fiber.Ctx) error {
 	adminGateways := s.config.AdminGateways
 	if len(adminGateways) == 0 {
 		// Fallback to S3 gateways if admin gateways not configured
@@ -133,15 +144,23 @@ func (s *Server) Serve() error {
 
 	// Check if TLS is configured
 	if s.CertStorage != nil {
-		ln, err := utils.NewTLSListener(s.app.Config().Network, addr, s.CertStorage.GetCertificate)
+		ln, err := utils.NewTLSListener(fiber.NetworkTCP, addr, s.CertStorage.GetCertificate)
 		if err != nil {
 			return err
 		}
 
-		return s.app.Listener(ln)
+		return s.app.Listener(ln,
+			fiber.ListenConfig{
+				ListenerNetwork:       fiber.NetworkTCP,
+				DisableStartupMessage: true,
+			})
 	}
 
-	return s.app.Listen(addr)
+	return s.app.Listen(addr,
+		fiber.ListenConfig{
+			ListenerNetwork:       fiber.NetworkTCP,
+			DisableStartupMessage: true,
+		})
 }
 
 // Shutdown gracefully shuts down the server

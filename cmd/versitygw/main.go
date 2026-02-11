@@ -959,12 +959,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 			webOpts = append(webOpts, webui.WithQuiet())
 		}
 
-		webSrv = webui.NewServer(&webui.ServerConfig{
+		webSrv, err = webui.NewServer(&webui.ServerConfig{
 			ListenAddr:    webuiAddr,
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
 			Region:        region,
 		}, webOpts...)
+		if err != nil {
+			return fmt.Errorf("initialize webui: %w", err)
+		}
 	}
 
 	if !quiet {

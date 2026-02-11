@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/debuglogger"
@@ -75,19 +75,17 @@ func New(
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName:               "versitygw",
-		ServerHeader:          "VERSITYGW",
-		StreamRequestBody:     true,
-		DisableKeepalive:      !server.keepAlive,
-		Network:               fiber.NetworkTCP,
-		DisableStartupMessage: true,
-		ErrorHandler:          globalErrorHandler,
+		AppName:           "versitygw",
+		ServerHeader:      "VERSITYGW",
+		StreamRequestBody: true,
+		DisableKeepalive:  !server.keepAlive,
+		ErrorHandler:      globalErrorHandler,
 	})
 
 	server.app = app
 
 	// initialize the panic recovery middleware
-	app.Use(recover.New(
+	app.Use("*", recover.New(
 		recover.Config{
 			EnableStackTrace:  true,
 			StackTraceHandler: stackTraceHandler,
@@ -95,32 +93,32 @@ func New(
 
 	// Logging middlewares
 	if !server.quiet {
-		app.Use(logger.New(logger.Config{
+		app.Use("*", logger.New(logger.Config{
 			Format: "${time} | vgw | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
 	// Set up health endpoint if specified
 	if server.health != "" {
-		app.Get(server.health, func(ctx *fiber.Ctx) error {
+		app.Get(server.health, func(ctx fiber.Ctx) error {
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
 
 	// initilaze the default value setter middleware
-	app.Use(middlewares.SetDefaultValues(root, region))
+	app.Use("*", middlewares.SetDefaultValues(root, region))
 
 	// initialize the 'DecodeURL' middleware which
 	// path unescapes the url
-	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
+	app.Use("*", controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
 	// initialize host-style parser in virtual domain is specified
 	if server.virtualDomain != "" {
-		app.Use(middlewares.HostStyleParser(server.virtualDomain))
+		app.Use("*", middlewares.HostStyleParser(server.virtualDomain))
 	}
 
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
-		app.Use(middlewares.DebugLogger())
+		app.Use("*", middlewares.DebugLogger())
 	}
 
 	server.Router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root, server.corsAllowOrigin)
@@ -173,14 +171,21 @@ func WithCORSAllowOrigin(origin string) Option {
 
 func (sa *S3ApiServer) Serve() (err error) {
 	if sa.CertStorage != nil {
-		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
+		ln, err := utils.NewTLSListener(fiber.NetworkTCP, sa.port, sa.CertStorage.GetCertificate)
 		if err != nil {
 			return err
 		}
 
-		return sa.app.Listener(ln)
+		return sa.app.Listener(ln,
+			fiber.ListenConfig{
+				ListenerNetwork:       fiber.NetworkTCP,
+				DisableStartupMessage: true,
+			})
 	}
-	return sa.app.Listen(sa.port)
+	return sa.app.Listen(sa.port, fiber.ListenConfig{
+		ListenerNetwork:       fiber.NetworkTCP,
+		DisableStartupMessage: true,
+	})
 }
 
 // ShutDown gracefully shuts down the server with a context timeout
@@ -190,13 +195,13 @@ func (sa *S3ApiServer) ShutDown() error {
 
 // stackTraceHandler stores the system panics
 // in the context locals
-func stackTraceHandler(ctx *fiber.Ctx, e any) {
+func stackTraceHandler(ctx fiber.Ctx, e any) {
 	utils.ContextKeyStack.Set(ctx, e)
 }
 
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
-func globalErrorHandler(ctx *fiber.Ctx, er error) error {
+func globalErrorHandler(ctx fiber.Ctx, er error) error {
 	if utils.ContextKeyStack.IsSet(ctx) {
 		// if stack is set, it means the stack trace
 		// has caught a panic
