@@ -1210,7 +1210,7 @@ func printBanner(port, admPort string, ssl, admSsl bool, webuiAddr, webuiPathPre
 			centerText(""),
 			leftText("WebUI listening on:"),
 		)
-		pp := strings.TrimRight(webuiPathPrefix,"/")
+		pp := strings.TrimRight(webuiPathPrefix, "/")
 		for _, ip := range webInterfaces {
 			url := fmt.Sprintf("http://%s:%s%s", ip, webPrt, pp)
 			if webuiSsl {
