@@ -397,3 +397,15 @@ send_rest_go_command_check_header_key_and_value() {
   return 0
 }
 
+send_rest_go_command_write_response_to_file() {
+  if ! check_param_count_gt "file, params" 2 $#; then
+    return 1
+  fi
+  if ! rest_go_command_perform_send "${@:2}"; then
+    log 2 "error sending rest go command"
+    return 1
+  fi
+  echo -n "$result" > "$1"
+  return 0
+}
+
