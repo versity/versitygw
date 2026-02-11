@@ -68,8 +68,8 @@ func ParsePreconditionMatchHeaders(ctx *fiber.Ctx, opts ...preconditionOpt) (*st
 		prefix = "X-Amz-Copy-Source-"
 	}
 
-	ifMatch := trimQuotes(ctx.Get(prefix + "If-Match"))
-	ifNoneMatch := trimQuotes(ctx.Get(prefix + "If-None-Match"))
+	ifMatch := TrimQuotes(ctx.Get(prefix + "If-Match"))
+	ifNoneMatch := TrimQuotes(ctx.Get(prefix + "If-None-Match"))
 	return GetStringPtr(ifMatch), GetStringPtr(ifNoneMatch)
 }
 
@@ -143,7 +143,7 @@ func ParseIfMatchSize(ctx *fiber.Ctx) *int64 {
 	return &ifMatchSize
 }
 
-func trimQuotes(str string) string {
+func TrimQuotes(str string) string {
 	if len(str) < 2 {
 		return str
 	}

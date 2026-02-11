@@ -634,6 +634,7 @@ type ObjectDeletePreconditions struct {
 
 // EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
+	etag = strings.Trim(etag, `"`)
 	ifMatch := preconditions.IfMatch
 	if ifMatch != nil && *ifMatch != etag {
 		return errPreconditionFailed
