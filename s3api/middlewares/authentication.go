@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
@@ -40,7 +40,7 @@ type RootUserConfig struct {
 func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool, requireContentSha256 bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		// The bucket is public, no need to check this signature
 		if utils.ContextKeyPublicBucket.IsSet(ctx) {
 			return nil
@@ -159,7 +159,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		if !utils.IsSpecialPayload(hashPayload) {
 			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.Body())
+			hashedPayload := sha256.Sum256(ctx.BodyRaw())
 			hexPayload := hex.EncodeToString(hashedPayload[:])
 
 			// Compare the calculated hash with the hash provided

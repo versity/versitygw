@@ -18,7 +18,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/s3api/utils"
 )
 
@@ -85,7 +85,7 @@ func (rr *MockChecksumReader) Checksum() string {
 
 var _ ChecksumReader = &MockChecksumReader{}
 
-func wrapBodyReader(ctx *fiber.Ctx, wr func(io.Reader) io.Reader) {
+func wrapBodyReader(ctx fiber.Ctx, wr func(io.Reader) io.Reader) {
 	rdr, ok := utils.ContextKeyBodyReader.Get(ctx).(io.Reader)
 	if !ok {
 		rdr = ctx.Request().BodyStream()

@@ -18,14 +18,14 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestApplyDefaultCORS_AddsHeaderWhenOriginSet(t *testing.T) {
 	origin := "https://example.com"
 
 	app := fiber.New()
-	app.Get("/admin", ApplyDefaultCORS(origin), func(c *fiber.Ctx) error {
+	app.Get("/admin", ApplyDefaultCORS(origin), func(c fiber.Ctx) error {
 		return c.SendStatus(http.StatusOK)
 	})
 
@@ -51,10 +51,10 @@ func TestApplyDefaultCORS_DoesNotOverrideExistingHeader(t *testing.T) {
 	origin := "https://example.com"
 
 	app := fiber.New()
-	app.Get("/admin", func(c *fiber.Ctx) error {
+	app.Get("/admin", func(c fiber.Ctx) error {
 		c.Response().Header.Add("Access-Control-Allow-Origin", "https://already-set.com")
 		return nil
-	}, ApplyDefaultCORS(origin), func(c *fiber.Ctx) error {
+	}, ApplyDefaultCORS(origin), func(c fiber.Ctx) error {
 		return c.SendStatus(http.StatusOK)
 	})
 

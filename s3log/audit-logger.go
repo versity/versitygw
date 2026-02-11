@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type AuditLogger interface {
-	Log(ctx *fiber.Ctx, err error, body []byte, meta LogMeta)
+	Log(ctx fiber.Ctx, err error, body []byte, meta LogMeta)
 	HangUp() error
 	Shutdown() error
 }

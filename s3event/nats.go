@@ -21,7 +21,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/nats-io/nats.go"
 	"github.com/versity/versitygw/s3response"
 )
@@ -60,7 +60,7 @@ func InitNatsEventService(url, topic string, filter EventFilter) (S3EventSender,
 	}, nil
 }
 
-func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
+func (ns *NatsEventSender) SendEvent(ctx fiber.Ctx, meta EventMeta) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
@@ -71,7 +71,7 @@ func (ns *NatsEventSender) SendEvent(ctx *fiber.Ctx, meta EventMeta) {
 	if meta.EventName == EventObjectRemovedDeleteObjects {
 		var dObj s3response.DeleteObjects
 
-		if err := xml.Unmarshal(ctx.Body(), &dObj); err != nil {
+		if err := xml.Unmarshal(ctx.BodyRaw(), &dObj); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to parse delete objects input payload: %v\n", err.Error())
 			return
 		}

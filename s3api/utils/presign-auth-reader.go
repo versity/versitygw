@@ -27,7 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/logging"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/debuglogger"
 	"github.com/versity/versitygw/s3err"
 )
@@ -44,13 +44,13 @@ const (
 // data requests where the data size is not known until
 // the data is completely read.
 type PresignedAuthReader struct {
-	ctx    *fiber.Ctx
+	ctx    fiber.Ctx
 	auth   AuthData
 	secret string
 	r      io.Reader
 }
 
-func NewPresignedAuthReader(ctx *fiber.Ctx, r io.Reader, auth AuthData, secret string) *PresignedAuthReader {
+func NewPresignedAuthReader(ctx fiber.Ctx, r io.Reader, auth AuthData, secret string) *PresignedAuthReader {
 	return &PresignedAuthReader{
 		ctx:    ctx,
 		r:      r,
@@ -74,7 +74,7 @@ func (pr *PresignedAuthReader) Read(p []byte) (int, error) {
 }
 
 // CheckPresignedSignature validates presigned request signature
-func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, streamBody bool) error {
+func CheckPresignedSignature(ctx fiber.Ctx, auth AuthData, secret string, streamBody bool) error {
 	signedHdrs := strings.Split(auth.SignedHeaders, ";")
 
 	var contentLength int64
@@ -96,7 +96,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, strea
 	date, _ := time.Parse(iso8601Format, auth.Date)
 
 	signer := v4.NewSigner()
-	uri, _, signErr := signer.PresignHTTP(ctx.Context(), aws.Credentials{
+	uri, _, signErr := signer.PresignHTTP(ctx.RequestCtx(), aws.Credentials{
 		AccessKeyID:     auth.Access,
 		SecretAccessKey: secret,
 	}, req, unsignedPayload, service, auth.Region, date, func(options *v4.SignerOptions) {
@@ -133,7 +133,7 @@ func CheckPresignedSignature(ctx *fiber.Ctx, auth AuthData, secret string, strea
 // &X-Amz-Expires=86400
 // &X-Amz-SignedHeaders=host
 // &X-Amz-Signature=1e68ad45c1db540284a4a1eca3884c293ba1a0ff63ab9db9a15b5b29dfa02cd8
-func ParsePresignedURIParts(ctx *fiber.Ctx) (AuthData, error) {
+func ParsePresignedURIParts(ctx fiber.Ctx) (AuthData, error) {
 	a := AuthData{}
 
 	// Get and verify algorithm query parameter
@@ -267,7 +267,7 @@ func validateAlgorithm(algo string) error {
 
 // IsPresignedURLAuth determines if the request is presigned:
 // which is authorization with query params
-func IsPresignedURLAuth(ctx *fiber.Ctx) bool {
+func IsPresignedURLAuth(ctx fiber.Ctx) bool {
 	algo := ctx.Query("X-Amz-Algorithm")
 	creds := ctx.Query("X-Amz-Credential")
 	signature := ctx.Query("X-Amz-Signature")

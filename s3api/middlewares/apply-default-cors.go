@@ -17,10 +17,10 @@ package middlewares
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
-func ensureExposeETag(ctx *fiber.Ctx) {
+func ensureExposeETag(ctx fiber.Ctx) {
 	existing := strings.TrimSpace(string(ctx.Response().Header.Peek("Access-Control-Expose-Headers")))
 	defaults := []string{"ETag"}
 	if existing == "" {
@@ -57,10 +57,10 @@ func ensureExposeETag(ctx *fiber.Ctx) {
 func ApplyDefaultCORS(fallbackOrigin string) fiber.Handler {
 	fallbackOrigin = strings.TrimSpace(fallbackOrigin)
 	if fallbackOrigin == "" {
-		return func(ctx *fiber.Ctx) error { return nil }
+		return func(ctx fiber.Ctx) error { return nil }
 	}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		if len(ctx.Response().Header.Peek("Access-Control-Allow-Origin")) == 0 {
 			ctx.Response().Header.Add("Access-Control-Allow-Origin", fallbackOrigin)
 		}

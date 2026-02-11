@@ -15,12 +15,13 @@
 package utils
 
 import (
-	"net"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp/fasthttputil"
 	v4 "github.com/versity/versitygw/aws/signer/v4"
 )
@@ -84,14 +85,14 @@ func Test_Client_UserAgent(t *testing.T) {
 	expectedSig := "37a35d96998d786113ad420c57c22c5433f6aca74f88f26566caa047fc3601c6"
 	dateStr := "20240206T210328Z"
 
-	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app := fiber.New(fiber.Config{})
 
 	tdate, err := time.Parse(iso8601Format, dateStr)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	app.Get("/", func(c *fiber.Ctx) error {
+	app.Get("/", func(c fiber.Ctx) error {
 		req, err := createHttpRequestFromCtx(c, signedHdrs, int64(c.Request().Header.ContentLength()), true)
 		if err != nil {
 			t.Fatal(err)
@@ -129,16 +130,16 @@ func Test_Client_UserAgent(t *testing.T) {
 
 	ln := fasthttputil.NewInmemoryListener()
 	go func() {
-		err := app.Listener(ln)
+		err := app.Listener(ln, fiber.ListenConfig{
+			DisableStartupMessage: true,
+		})
 		if err != nil {
 			panic(err)
 		}
 	}()
 
-	c := fiber.AcquireClient()
-	c.UserAgent = agent
-	a := c.Get("http://example.com")
-	a.HostClient.Dial = func(_ string) (net.Conn, error) { return ln.Dial() }
-	a.String()
-	fiber.ReleaseClient(c)
+	c := client.New()
+	c.SetUserAgent(agent)
+	_, err = c.Get("http://example.com")
+	assert.NoError(t, err)
 }

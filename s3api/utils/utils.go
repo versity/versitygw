@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/oklog/ulid/v2"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/debuglogger"
@@ -71,7 +71,7 @@ func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]strin
 	return
 }
 
-func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
+func createHttpRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
 	req := ctx.Request()
 	var body io.Reader
 	if streamBody {
@@ -126,7 +126,7 @@ var (
 	}
 )
 
-func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
+func createPresignedHttpRequestFromCtx(ctx fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {
 	req := ctx.Request()
 	var body io.Reader
 	if streamBody {
@@ -177,7 +177,7 @@ func createPresignedHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, cont
 	return httpReq, nil
 }
 
-func SetMetaHeaders(ctx *fiber.Ctx, meta map[string]string) {
+func SetMetaHeaders(ctx fiber.Ctx, meta map[string]string) {
 	ctx.Response().Header.DisableNormalizing()
 	for key, val := range meta {
 		ctx.Response().Header.Set(fmt.Sprintf("x-amz-meta-%s", key), val)
@@ -267,17 +267,17 @@ type CustomHeader struct {
 	Value string
 }
 
-func SetResponseHeaders(ctx *fiber.Ctx, headers []CustomHeader) {
+func SetResponseHeaders(ctx fiber.Ctx, headers []CustomHeader) {
 	for _, header := range headers {
 		ctx.Set(header.Key, header.Value)
 	}
 }
 
 // Streams the response body by chunks
-func StreamResponseBody(ctx *fiber.Ctx, rdr io.ReadCloser, bodysize int) {
+func StreamResponseBody(ctx fiber.Ctx, rdr io.ReadCloser, bodysize int) {
 	// SetBodyStream will call Close() on the reader when the stream is done
 	// since rdr is a ReadCloser
-	ctx.Context().SetBodyStream(rdr, bodysize)
+	ctx.RequestCtx().SetBodyStream(rdr, bodysize)
 }
 
 func IsValidBucketName(bucket string) bool {
@@ -361,7 +361,7 @@ func FilterObjectAttributes(attrs map[s3response.ObjectAttributes]struct{}, outp
 	return output
 }
 
-func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]struct{}, error) {
+func ParseObjectAttributes(ctx fiber.Ctx) (map[s3response.ObjectAttributes]struct{}, error) {
 	attrs := map[s3response.ObjectAttributes]struct{}{}
 	var err error
 	for key, value := range ctx.Request().Header.All() {
@@ -400,7 +400,7 @@ type objLockCfg struct {
 	LegalHoldStatus types.ObjectLockLegalHoldStatus
 }
 
-func ParsObjectLockHdrs(ctx *fiber.Ctx) (*objLockCfg, error) {
+func ParsObjectLockHdrs(ctx fiber.Ctx) (*objLockCfg, error) {
 	legalHoldHdr := ctx.Get("X-Amz-Object-Lock-Legal-Hold")
 	objLockModeHdr := ctx.Get("X-Amz-Object-Lock-Mode")
 	objLockDate := ctx.Get("X-Amz-Object-Lock-Retain-Until-Date")
@@ -482,7 +482,7 @@ func (cv ChecksumValues) Headers() string {
 
 // ParseCalculatedChecksumHeaders parses and validates x-amz-checksum-x header keys
 // e.g x-amz-checksum-crc32, x-amz-checksum-sha256 ...
-func ParseCalculatedChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
+func ParseCalculatedChecksumHeaders(ctx fiber.Ctx) (ChecksumValues, error) {
 	checksums := ChecksumValues{}
 
 	var hdrErr error
@@ -525,7 +525,7 @@ func ParseCalculatedChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 // ParseCompleteMpChecksumHeaders parses and validates
 // the 'CompleteMultipartUpload' x-amz-checksum-x headers
 // by supporting both 'checksum' and 'checksum-<part_length>' formats
-func ParseCompleteMpChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
+func ParseCompleteMpChecksumHeaders(ctx fiber.Ctx) (ChecksumValues, error) {
 	// first parse/validate 'x-amz-checksum-x' headers
 	checksums, err := ParseCalculatedChecksumHeaders(ctx)
 	if err != nil {
@@ -559,7 +559,7 @@ func ParseCompleteMpChecksumHeaders(ctx *fiber.Ctx) (ChecksumValues, error) {
 
 // ParseChecksumHeadersAndSdkAlgo parses/validates 'x-amz-sdk-checksum-algorithm' and
 // 'x-amz-checksum-x' precalculated request headers
-func ParseChecksumHeadersAndSdkAlgo(ctx *fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValues, error) {
+func ParseChecksumHeadersAndSdkAlgo(ctx fiber.Ctx) (types.ChecksumAlgorithm, ChecksumValues, error) {
 	sdkAlgorithm := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("X-Amz-Sdk-Checksum-Algorithm")))
 	err := IsChecksumAlgorithmValid(sdkAlgorithm)
 	if err != nil {
@@ -718,7 +718,7 @@ func checkChecksumTypeAndAlgo(algo types.ChecksumAlgorithm, t types.ChecksumType
 }
 
 // Parses and validates the x-amz-checksum-algorithm and x-amz-checksum-type headers
-func ParseCreateMpChecksumHeaders(ctx *fiber.Ctx) (types.ChecksumAlgorithm, types.ChecksumType, error) {
+func ParseCreateMpChecksumHeaders(ctx fiber.Ctx) (types.ChecksumAlgorithm, types.ChecksumType, error) {
 	algo := types.ChecksumAlgorithm(strings.ToUpper(ctx.Get("x-amz-checksum-algorithm")))
 	if err := IsChecksumAlgorithmValid(algo); err != nil {
 		return "", "", err
@@ -918,7 +918,7 @@ func ValidateCopySource(copysource string) error {
 }
 
 // GetQueryParam returns a pointer to the query parameter value if it exists
-func GetQueryParam(ctx *fiber.Ctx, key string) *string {
+func GetQueryParam(ctx fiber.Ctx, key string) *string {
 	value := ctx.Query(key)
 	if value == "" {
 		return nil
@@ -950,9 +950,9 @@ func ValidateVersionId(versionId string) error {
 
 // GenerateObjectLocation generates the object location path-styled or host-styled
 // depending on the gateway configuration
-func GenerateObjectLocation(ctx *fiber.Ctx, virtualDomain, bucket, object string) string {
-	scheme := ctx.Protocol()
-	host := ctx.Hostname()
+func GenerateObjectLocation(ctx fiber.Ctx, virtualDomain, bucket, object string) string {
+	scheme := ctx.Scheme()
+	host := ctx.Host()
 
 	// escape the object name
 	obj := url.PathEscape(object)
@@ -1011,7 +1011,7 @@ func NewTLSListener(network string, address string, getCertificateFunc func(*tls
 // since ACL operations are not supported on objects, the presence of any ACL headers
 // results in a NotImplemented error. It returns nil only when all ACL headers
 // are absent.
-func ValidateNoACLHeaders(ctx *fiber.Ctx) error {
+func ValidateNoACLHeaders(ctx fiber.Ctx) error {
 	for _, header := range []string{
 		"x-amz-acl",
 		"x-amz-grant-full-control",

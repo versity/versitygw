@@ -18,13 +18,13 @@ import (
 	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
 )
 
-func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
+func (c S3ApiController) HeadBucket(ctx fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -32,7 +32,7 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	isPublicBucket := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := auth.VerifyAccess(ctx.Context(), c.be,
+	err := auth.VerifyAccess(ctx.RequestCtx(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
 			Acl:             parsedAcl,
@@ -54,7 +54,7 @@ func (c S3ApiController) HeadBucket(ctx *fiber.Ctx) (*Response, error) {
 		}, err
 	}
 
-	_, err = c.be.HeadBucket(ctx.Context(),
+	_, err = c.be.HeadBucket(ctx.RequestCtx(),
 		&s3.HeadBucketInput{
 			Bucket: &bucket,
 		})

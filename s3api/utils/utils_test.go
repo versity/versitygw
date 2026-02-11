@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 	"github.com/versity/versitygw/backend"
@@ -35,7 +35,7 @@ import (
 
 func TestCreateHttpRequestFromCtx(t *testing.T) {
 	type args struct {
-		ctx *fiber.Ctx
+		ctx fiber.Ctx
 	}
 
 	app := fiber.New()

@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3err"
 )
@@ -43,7 +43,7 @@ func TestApplyBucketCORSPreflightFallback_NoBucketCors_Responds204(t *testing.T)
 	app := fiber.New()
 	app.Options("/:bucket",
 		ApplyBucketCORSPreflightFallback(be, "https://example.com"),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			// Should not be reached if fallback triggers
 			return c.SendStatus(http.StatusTeapot)
 		},
@@ -86,7 +86,7 @@ func TestApplyBucketCORSPreflightFallback_NoSuchBucket_Responds204(t *testing.T)
 	app := fiber.New()
 	app.Options("/:bucket",
 		ApplyBucketCORSPreflightFallback(be, "https://example.com"),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			return c.SendStatus(http.StatusTeapot)
 		},
 	)
@@ -125,7 +125,7 @@ func TestApplyBucketCORSPreflightFallback_BucketHasCors_CallsNext(t *testing.T) 
 	app := fiber.New()
 	app.Options("/:bucket",
 		ApplyBucketCORSPreflightFallback(be, "https://example.com"),
-		func(c *fiber.Ctx) error {
+		func(c fiber.Ctx) error {
 			return c.SendStatus(http.StatusOK)
 		},
 	)

@@ -20,7 +20,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/metrics"
@@ -31,7 +31,7 @@ import (
 // AuthorizePublicBucketAccess checks if the bucket grants public
 // access to anonymous requesters
 func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPermission auth.Action, permission auth.Permission, region string, streamBody bool) fiber.Handler {
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx fiber.Ctx) error {
 		// skip for authenticated requests
 		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
 			return nil
@@ -57,7 +57,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		}
 
 		bucket, object := parsePath(ctx.Path())
-		err := auth.VerifyPublicAccess(ctx.Context(), be, policyPermission, permission, bucket, object)
+		err := auth.VerifyPublicAccess(ctx.RequestCtx(), be, policyPermission, permission, bucket, object)
 		if err != nil {
 			if s3action == metrics.ActionHeadBucket {
 				// add the bucket region header for HeadBucket
@@ -114,7 +114,7 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 
 		if payloadHash != "" {
 			// Calculate the hash of the request payload
-			hashedPayload := sha256.Sum256(ctx.Body())
+			hashedPayload := sha256.Sum256(ctx.BodyRaw())
 			hexPayload := hex.EncodeToString(hashedPayload[:])
 
 			// Compare the calculated hash with the hash provided
