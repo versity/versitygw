@@ -26,6 +26,45 @@ source ./tests/setup.sh
   assert_success
 }
 
+@test "REST - GetBucketAnalyticsConfiguration - with template" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1821"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run get_file_name
+  assert_success
+  file_name=$output
+
+  run send_rest_go_command_write_response_to_file "$TEST_FILE_FOLDER/$file_name" "-bucketName" "$bucket_name" "-query" "analytics="
+  assert_success
+
+  run bash -c "go run ./tests/checker/main.go -dataFile $TEST_FILE_FOLDER/$file_name -batsTestFileName $BATS_TEST_FILENAME \
+    -batsTestName $BATS_TEST_NAME -serverName $SERVER_NAME -matrixFile $TEMPLATE_MATRIX_FILE"
+  assert_success
+}
+
+@test "REST - NotImplemented - correct Content-Type header" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1821"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_check_header_key_and_value "501" "Content-Type" "application/xml" "-bucketName" "$bucket_name" \
+    "-query" "analytics"
+  assert_success
+}
+
 @test "REST - Get/ListBucketAnalyticsConfiguration(s)" {
   run test_not_implemented_expect_failure "$BUCKET_ONE_NAME" "analytics=" "GET"
   assert_success

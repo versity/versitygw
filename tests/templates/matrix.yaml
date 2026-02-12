@@ -1,0 +1,7 @@
+test_rest_not_implemented.sh:
+  test_REST_-2d_GetBucketAnalyticsConfiguration_-2d_with_template:
+    default:
+      VERSITYGW:
+        not-implemented.yaml.tmpl
+      AMAZONS3:
+        get-bucket-analytics.yaml.tmpl
