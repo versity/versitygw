@@ -154,7 +154,7 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 				return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 			}
 
-			debuglogger.Logf("Internal Error, %v", err)
+			debuglogger.InternalError(err)
 			ctx.Status(http.StatusInternalServerError)
 
 			// If the error is not 's3err.APIError' return 'InternalError'
@@ -249,7 +249,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 		responseBytes = encodedResp
 	} else {
 		if responseBytes, err = xml.Marshal(response.Data); err != nil {
-			debuglogger.Logf("Internal Error, %v", err)
+			debuglogger.InternalError(err)
 			if svc.Logger != nil {
 				svc.Logger.Log(ctx, err, nil, s3log.LogMeta{
 					Action:      s3action,
