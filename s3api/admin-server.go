@@ -36,6 +36,8 @@ type S3AdminServer struct {
 	quiet           bool
 	debug           bool
 	corsAllowOrigin string
+	maxConnections  int
+	maxRequests     int
 }
 
 func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, region string, iam auth.IAMService, l s3log.AuditLogger, ctrl controllers.S3ApiController, opts ...AdminOpt) *S3AdminServer {
@@ -57,6 +59,7 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 		Network:               fiber.NetworkTCP,
 		DisableStartupMessage: true,
 		ErrorHandler:          globalErrorHandler,
+		Concurrency:           server.maxConnections,
 	})
 
 	server.app = app
@@ -73,6 +76,10 @@ func NewAdminServer(be backend.Backend, root middlewares.RootUserConfig, port, r
 			Format: "${time} | adm | ${status} | ${latency} | ${ip} | ${method} | ${path} | ${error} | ${queryParams}\n",
 		}))
 	}
+
+	// initialize total requests cap limiter middleware
+	app.Use(middlewares.RateLimiter(server.maxRequests, nil, l))
+
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, nil))
 
 	// initialize the debug logger in debug mode
@@ -105,6 +112,15 @@ func WithAdminDebug() AdminOpt {
 // for the standalone admin server.
 func WithAdminCORSAllowOrigin(origin string) AdminOpt {
 	return func(s *S3AdminServer) { s.corsAllowOrigin = origin }
+}
+
+// WithAdminConcurrencyLimiter sets the admin standalone server's maximum
+// connection limit and the hard limit for in-flight requests.
+func WithAdminConcurrencyLimiter(maxConnections, maxRequests int) AdminOpt {
+	return func(s *S3AdminServer) {
+		s.maxConnections = maxConnections
+		s.maxRequests = maxRequests
+	}
 }
 
 func (sa *S3AdminServer) Serve() (err error) {
