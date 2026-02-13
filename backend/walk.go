@@ -335,7 +335,8 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 func readDir(path string, walkstate *walkState) {
 	entries, err := fs.ReadDir(walkstate.fileSystem, path)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 
 	entriesIndex := 0
