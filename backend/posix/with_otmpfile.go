@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -265,6 +266,9 @@ func (tmp *tmpfile) Write(b []byte) (int, error) {
 
 func (tmp *tmpfile) cleanup() {
 	tmp.f.Close()
+	if !strings.HasPrefix(tmp.f.Name(), procfddir) {
+		os.Remove(tmp.f.Name())
+	}
 }
 
 func (tmp *tmpfile) File() *os.File {
