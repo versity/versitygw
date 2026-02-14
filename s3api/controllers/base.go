@@ -148,6 +148,8 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 				})
 			}
 
+			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+
 			serr, ok := err.(s3err.APIError)
 			if ok {
 				ctx.Status(serr.HTTPStatusCode)
@@ -197,6 +199,10 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 				ObjectSize:  opts.ObjectSize,
 			})
 		}
+
+		// set content type to application/xml
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
@@ -294,6 +300,9 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			})
 		}
 		ctx.Status(http.StatusInternalServerError)
+
+		// set content type to application/xml
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))
