@@ -197,6 +197,9 @@ func stackTraceHandler(ctx *fiber.Ctx, e any) {
 // globalErrorHandler catches the errors before reaching to
 // the handlers and any system panics
 func globalErrorHandler(ctx *fiber.Ctx, er error) error {
+	// set content type to application/xml
+	ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+
 	if utils.ContextKeyStack.IsSet(ctx) {
 		// if stack is set, it means the stack trace
 		// has caught a panic
