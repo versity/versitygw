@@ -22,7 +22,7 @@ check_log_params() {
     return 1
   fi
   if [ "$3" -ne "$4" ]; then
-    echo "function $1 requires $2" 2
+    echo "function $1 requires $2" >&2
     return 1
   fi
   return 0
