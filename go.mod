@@ -34,6 +34,7 @@ require (
 	github.com/versity/scoutfs-go v0.0.0-20240625221833-95fd765b760b
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.41.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -84,5 +85,4 @@ require (
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
