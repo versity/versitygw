@@ -58,9 +58,9 @@ See the [Quickstart](https://github.com/versity/versitygw/wiki/Quickstart) docum
 
 ```
 mkdir /tmp/vgw /tmp/vers
-ROOT_ACCESS_KEY="testuser" ROOT_SECRET_KEY="secret" ./versitygw --port :10000 posix --versioning-dir /tmp/vers /tmp/vgw
+ROOT_ACCESS_KEY="testuser" ROOT_SECRET_KEY="secret" ./versitygw --port :10000 --iam-dir /tmp/vgw posix --versioning-dir /tmp/vers /tmp/vgw
 ```
-This will enable an S3 server on the current host listening on port 10000 and hosting the directory `/tmp/vgw` and older object versions in `/tmp/vers`.
+This will enable an S3 server on the current host listening on port 10000 and hosting the directory `/tmp/vgw` with older object versions in `/tmp/vers`. It's fine if both of these directories are within the same filesystem. The `--iam-dir` option enables simple JSON flat file accounts for testing.
 
 To get the usage output, run the following:
 
@@ -75,6 +75,26 @@ versitygw [global options] command [command options] [arguments...]
 ```
 The [global options](https://github.com/versity/versitygw/wiki/Global-Options) are specified before the backend type and the backend options are specified after.
 
+### Testing & Production Readiness
+
+VersityGW is **battle-tested and production-ready**. Every pull request must pass our comprehensive test suite before it can be reviewed or merged. All code reviews are done by at least one human in the loop. LLMs may be used to augment the review process, but are never the sole reviewer or decision maker. See [Testing](https://github.com/versity/versitygw/wiki/Testing) for high level testing documentation.
+
+#### Comprehensive Test Coverage
+
+Our multi-layered testing strategy includes:
+
+- **Go Unit Test Files** - Extensive unit tests with race detection and code coverage analysis covering core functionality, edge cases, and error handling.
+- **Integration Test Scripts** - Real-world scenario testing across multiple backends (POSIX, S3, Azure) and configurations.
+- **Functional/Regression Tests** - End-to-end SDK tests validating complete workflows including full-flow operations, POSIX-specific behavior, and IAM functionality populated with regression tests as issues are addressed.
+- **Static Analysis** - Static Analysis checks using [staticcheck](https://staticcheck.dev).
+- **System Tests** - Protocol-level validation using industry-standard S3 clients:
+  - AWS CLI - Official AWS command-line tools
+  - s3cmd - Popular S3 client
+  - MinIO mc - Modern S3-compatible client
+  - Direct REST API testing with curl for request/response validation
+- **Security Testing** - Both HTTP and HTTPS configurations tested. Vulnerability scanning with govulncheck. And regular dependency updates with dependabot.
+- **Compatibility Testing** - Multiple backends, versioning scenarios, static bucket modes, and various authentication methods.
+
 ### Run the gateway in Docker
 
 Use the published image like the native binary by passing CLI arguments:
@@ -83,20 +103,8 @@ Use the published image like the native binary by passing CLI arguments:
 docker run --rm versity/versitygw:latest --version
 ```
 
-When no command arguments are supplied, the container looks for `VGW_BACKEND` and optional `VGW_BACKEND_ARG`/`VGW_BACKEND_ARGS` environment variables to determine which backend to start. Backend-specific configuration continues to come from the existing environment flags (for example `ROOT_ACCESS_KEY`, `VGW_PORT`, and others).
-
-```bash
-docker run --rm \
-  -e ROOT_ACCESS_KEY=testuser \
-  -e ROOT_SECRET_KEY=secret \
-  -e VGW_BACKEND=posix \
-  -e VGW_BACKEND_ARG=/data \
-  -p 10000:7070 \
-  -v $(pwd)/data:/data \
-  versity/versitygw:latest
-```
-
-If you need to pass additional CLI options, set `VGW_ARGS` with a space-delimited list, or continue passing arguments directly to `docker run`.
+See [Docker](https://github.com/versity/versitygw/wiki/Docker) for more
+documentation for running within Docker.
 
 ***
 
