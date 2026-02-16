@@ -48,7 +48,7 @@ verify_object_exists() {
   if ! check_param_count_v2 "bucket name, key" 2 $#; then
     return 1
   fi
-  if ! head_object_rest_expect_success "$1" "$2" "" "200"; then
+  if ! head_object_rest_expect_success "$1" "$2" ""; then
     log 2 "error sending HeadObject command and verifying existence"
     return 1
   fi

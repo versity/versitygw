@@ -103,7 +103,7 @@ check_rest_expected_header_error() {
   status_message=$(echo "$status_line" | cut -d' ' -f3- | tr -d '\r')
   log 5 "status code: $status_code, status message: $status_message"
   if [ "$2" != "$status_code" ]; then
-    log 2 "expected curl response '$2', was '$status_code'"
+    log 2 "expected curl response '$2', was '$status_code' ($(echo -n "$result"))"
     return 1
   fi
   if [ "$status_message" != "$3" ]; then
@@ -253,11 +253,54 @@ send_rest_go_command() {
   return 0
 }
 
+split_params_by_delimiter() {
+  local params=("$@")
+  local go_params=()
+  local callback_params=()
+  local found_delimiter=false
+  
+  for param in "${params[@]}"; do
+    if [[ "$param" == "--" ]]; then
+      found_delimiter=true
+      continue
+    fi
+    if [[ "$found_delimiter" == true ]]; then
+      callback_params+=("$param")
+    else
+      go_params+=("$param")
+    fi
+  done
+  
+  # Line 1: count of go params
+  echo "${#go_params[@]}"
+  # Lines 2-N+1: go params (one per line)
+  printf '%s\n' "${go_params[@]}"
+  # Line N+2: count of callback params  
+  echo "${#callback_params[@]}"
+  # Remaining lines: callback params
+  printf '%s\n' "${callback_params[@]}"
+}
+
 send_rest_go_command_callback() {
   if ! check_param_count_gt "response code, callback, params" 2 $#; then
     return 1
   fi
-  if ! rest_go_command_perform_send "${@:3}"; then
+
+  local all_params=("${@:3}")
+  local split_output
+  split_output=$(split_params_by_delimiter "${all_params[@]}")
+  
+  local split_lines=()
+  while IFS= read -r line; do
+    split_lines+=("$line")
+  done <<< "$split_output"
+  
+  local go_count="${split_lines[0]}"
+  local go_params=("${split_lines[@]:1:$go_count}")
+  local callback_count="${split_lines[$((go_count + 1))]}"
+  local callback_params=("${split_lines[@]:$((go_count + 2)):$callback_count}")
+
+  if ! rest_go_command_perform_send "${go_params[@]}"; then
     log 2 "error sending rest go command"
     return 1
   fi
@@ -274,7 +317,7 @@ send_rest_go_command_callback() {
     return 1
   fi
   echo -n "$result" > "$TEST_FILE_FOLDER/$output_file_name"
-  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/$output_file_name"; then
+  if [ "$2" != "" ] && ! "$2" "$TEST_FILE_FOLDER/$output_file_name" "${callback_params[@]}"; then
     log 2 "error in callback"
     return 1
   fi
