@@ -133,7 +133,7 @@ func (c S3ApiController) DeleteObject(ctx *fiber.Ctx) (*Response, error) {
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
 	versionId := ctx.Query("versionId")
 	bypass := strings.EqualFold(ctx.Get("X-Amz-Bypass-Governance-Retention"), "true")
-	ifMatch := utils.GetStringPtr(ctx.Get("If-Match"))
+	ifMatch := utils.GetStringPtr(utils.TrimQuotes(ctx.Get("If-Match")))
 	ifMatchLastModTime := utils.ParsePreconditionDateHeader(ctx.Get("X-Amz-If-Match-Last-Modified-Time"))
 	ifMatchSize := utils.ParseIfMatchSize(ctx)
 	// context locals

@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -124,6 +125,7 @@ func DeleteObject_conditional_writes(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		var etag *string = getPtr("")
+		var etagUnquoted *string = getPtr("")
 		var size *int64 = getPtr(int64(0))
 		var modTime *time.Time = getPtr(time.Now())
 
@@ -149,6 +151,9 @@ func DeleteObject_conditional_writes(s *S3Conf) error {
 			}
 
 			*etag = *res.res.ETag
+			if etag != nil {
+				*etagUnquoted = strings.Trim(*etag, `"`)
+			}
 			*size = *res.res.Size
 			*modTime = *out.LastModified
 
@@ -176,12 +181,16 @@ func DeleteObject_conditional_writes(s *S3Conf) error {
 			{etag, size, nil, nil},
 			{etag, nil, modTime, nil},
 			{nil, size, modTime, nil},
+			// unqoted etag
+			{etagUnquoted, nil, nil, nil},
 			// error cases
 			{getPtr("incorrect_etag"), nil, nil, errPrecond},
 			{nil, getPtr(int64(23234)), nil, errPrecond},
 			{nil, nil, getPtr(time.Now().AddDate(-1, -1, -1)), errPrecond},
 			{getPtr("incorrect_etag"), getPtr(int64(23234)), nil, errPrecond},
 			{getPtr("incorrect_etag"), getPtr(int64(23234)), getPtr(time.Now().AddDate(-1, -1, -1)), errPrecond},
+			// quoted incorrect etag
+			{getPtr(`"incorrect_etag"`), nil, nil, errPrecond},
 		} {
 			err := createObj()
 			if err != nil {

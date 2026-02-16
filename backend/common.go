@@ -247,6 +247,17 @@ func ParseCopySource(copySourceHeader string) (string, string, string, error) {
 		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceBucket)
 	}
 
+	var err error
+	// URL-decode the bucket and object names to handle special characters
+	srcBucket, err = url.QueryUnescape(srcBucket)
+	if err != nil {
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+	}
+	srcObject, err = url.QueryUnescape(srcObject)
+	if err != nil {
+		return "", "", "", s3err.GetAPIError(s3err.ErrInvalidCopySourceEncoding)
+	}
+
 	return srcBucket, srcObject, versionId, nil
 }
 
@@ -634,6 +645,7 @@ type ObjectDeletePreconditions struct {
 
 // EvaluateObjectDeletePreconditions evaluates preconditions for DeleteObject
 func EvaluateObjectDeletePreconditions(etag string, modTime time.Time, size int64, preconditions ObjectDeletePreconditions) error {
+	etag = strings.Trim(etag, `"`)
 	ifMatch := preconditions.IfMatch
 	if ifMatch != nil && *ifMatch != etag {
 		return errPreconditionFailed

@@ -105,6 +105,7 @@ jobs:
           USER_AUTOGENERATION_PREFIX: github-actions-test-
           AWS_REGION: ${{ matrix.AWS_REGION }}
           COVERAGE_LOG: coverage.log
+          TEMPLATE_MATRIX_FILE: ${{ github.workspace }}/tests/templates/matrix.yaml
         run: |
           make testbin
           export AWS_ACCESS_KEY_ID=ABCDEFGHIJKLMNOPQRST
@@ -137,7 +138,7 @@ jobs:
           echo "SAFE_RUN_SET=$SAFE_RUN_SET" >> $GITHUB_ENV
 
       - name: Upload command coverage log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-${{ env.SAFE_RUN_SET }}-${{ matrix.RECREATE_BUCKETS }}
           path: coverage.log
@@ -158,7 +159,7 @@ jobs:
     needs: [build]
     steps:
       - name: Download all S3 ops artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
