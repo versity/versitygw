@@ -131,16 +131,17 @@ jobs:
           fi
 
       - name: Ensure coverage file exists, and generate working name
+        id: prepare_coverage
         run: |
           touch coverage.log
           run_set="${{ matrix.RUN_SET }}"
           SAFE_RUN_SET="${run_set//\//-}"
-          echo "SAFE_RUN_SET=$SAFE_RUN_SET" >> $GITHUB_ENV
+          echo "safe_run_set=$SAFE_RUN_SET" >> $GITHUB_OUTPUT
 
       - name: Upload command coverage log
         uses: actions/upload-artifact@v6
         with:
-          name: coverage-${{ env.SAFE_RUN_SET }}-${{ matrix.RECREATE_BUCKETS }}
+          name: coverage-${{ steps.prepare_coverage.outputs.safe_run_set }}-${{ matrix.RECREATE_BUCKETS }}
           path: coverage.log
           retention-days: 1
 
