@@ -49,6 +49,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/versity/versitygw/s3err"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -560,7 +562,29 @@ func putObjectWithData(lgth int64, input *s3.PutObjectInput, client *s3.Client) 
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), longTimeout)
-	res, err := client.PutObject(ctx, input)
+	res, err := client.PutObject(ctx, input, func(o *s3.Options) {
+		// if input.Body is not nil, aws sdk hardcodes Content-Type: application/octet-stream
+		// this adds a new middleware in the stack to remove the Content-Type header, if
+		// it isn't explicitly provided as 'PutObject' input. Place the middleware
+		// right before "Signing" middleware to avoid incorrect request signature calculation
+		if input.ContentType == nil {
+			o.APIOptions = append(o.APIOptions, func(stack *middleware.Stack) error {
+				return stack.Finalize.Insert(
+					middleware.FinalizeMiddlewareFunc("UnsetContentType",
+						func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+							out middleware.FinalizeOutput, md middleware.Metadata, err error,
+						) {
+							if req, ok := in.Request.(*smithyhttp.Request); ok {
+								req.Header.Del("Content-Type")
+							}
+							return next.HandleFinalize(ctx, in)
+						}),
+					"Signing",
+					middleware.Before,
+				)
+			})
+		}
+	})
 	cancel()
 	if err != nil {
 		return nil, err

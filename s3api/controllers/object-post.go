@@ -145,7 +145,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
-	contentType := ctx.Get("Content-Type")
+	contentType := ctx.Get("Content-Type", defaultContentType)
 	contentDisposition := ctx.Get("Content-Disposition")
 	contentLanguage := ctx.Get("Content-Language")
 	cacheControl := ctx.Get("Cache-Control")

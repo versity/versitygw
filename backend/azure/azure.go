@@ -352,10 +352,6 @@ func (az *Azure) PutObject(ctx context.Context, po s3response.PutObjectInput) (s
 		opts.HTTPHeaders.BlobContentType = po.ContentType
 	}
 
-	if opts.HTTPHeaders.BlobContentType == nil {
-		opts.HTTPHeaders.BlobContentType = backend.GetPtrFromString(backend.DefaultContentType)
-	}
-
 	uploadResp, err := az.client.UploadStream(ctx, *po.Bucket, *po.Key, po.Body, opts)
 	if err != nil {
 		return s3response.PutObjectOutput{}, azureErrToS3Err(err)
@@ -487,16 +483,11 @@ func (az *Azure) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.G
 		tagcount = int32(*blobDownloadResponse.TagCount)
 	}
 
-	contentType := blobDownloadResponse.ContentType
-	if contentType == nil {
-		contentType = backend.GetPtrFromString(backend.DefaultContentType)
-	}
-
 	return &s3.GetObjectOutput{
 		AcceptRanges:       backend.GetPtrFromString("bytes"),
 		ContentLength:      blobDownloadResponse.ContentLength,
 		ContentEncoding:    blobDownloadResponse.ContentEncoding,
-		ContentType:        contentType,
+		ContentType:        blobDownloadResponse.ContentType,
 		ContentDisposition: blobDownloadResponse.ContentDisposition,
 		ContentLanguage:    blobDownloadResponse.ContentLanguage,
 		CacheControl:       blobDownloadResponse.CacheControl,

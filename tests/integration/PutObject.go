@@ -913,6 +913,37 @@ func PutObject_success(s *S3Conf) error {
 	})
 }
 
+func PutObject_default_content_type(s *S3Conf) error {
+	testName := "PutObject_default_content_type"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		key := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket:      &bucket,
+			Key:         &key,
+			ContentType: nil,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s", defaultContentType, getString(res.ContentType))
+		}
+
+		return nil
+	})
+}
+
 func PutObject_invalid_credentials(s *S3Conf) error {
 	testName := "PutObject_invalid_credentials"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
