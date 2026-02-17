@@ -32,6 +32,8 @@ func initEnv(dir string) {
 	rootUserSecret = "pass"
 	iamDir = dir
 	port = "127.0.0.1:7070"
+	maxConnections = 250000
+	maxRequests = 100000
 
 	// client
 	awsID = "user"

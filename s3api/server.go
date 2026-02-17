@@ -51,6 +51,8 @@ type S3ApiServer struct {
 	health          string
 	virtualDomain   string
 	corsAllowOrigin string
+	maxConnections  int
+	maxRequests     int
 }
 
 func New(
@@ -82,6 +84,7 @@ func New(
 		Network:               fiber.NetworkTCP,
 		DisableStartupMessage: true,
 		ErrorHandler:          globalErrorHandler,
+		Concurrency:           server.maxConnections,
 	})
 
 	server.app = app
@@ -105,6 +108,9 @@ func New(
 			return ctx.SendStatus(http.StatusOK)
 		})
 	}
+
+	// initialize total requests cap limiter middleware
+	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
 
 	// initilaze the default value setter middleware
 	app.Use(middlewares.SetDefaultValues(root, region))
@@ -169,6 +175,15 @@ func WithKeepAlive() Option {
 // This is applied when no bucket CORS configuration exists, and for admin APIs.
 func WithCORSAllowOrigin(origin string) Option {
 	return func(s *S3ApiServer) { s.corsAllowOrigin = origin }
+}
+
+// WithConcurrencyLimiter sets the server's maximum connection limit
+// and the hard limit for in-flight requests.
+func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
+	return func(s *S3ApiServer) {
+		s.maxConnections = maxConnections
+		s.maxRequests = maxRequests
+	}
 }
 
 func (sa *S3ApiServer) Serve() (err error) {

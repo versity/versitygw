@@ -184,6 +184,7 @@ const (
 	ErrInvalidArgument
 	ErrMalformedTrailer
 	ErrInvalidChunkSize
+	ErrSlowDown
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -828,6 +829,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "InvalidChunkSizeError",
 		Description:    "Only the last chunk is allowed to have a size less than 8192 bytes",
 		HTTPStatusCode: http.StatusBadRequest,
+	},
+	ErrSlowDown: {
+		Code:           "SlowDown",
+		Description:    "Please reduce your request rate.",
+		HTTPStatusCode: http.StatusServiceUnavailable,
 	},
 
 	// non aws errors
