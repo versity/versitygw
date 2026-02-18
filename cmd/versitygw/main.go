@@ -43,6 +43,8 @@ var (
 	rootUserAccess                         string
 	rootUserSecret                         string
 	region                                 string
+	maxConnections, maxRequests            int
+	adminMaxConnections, adminMaxRequests  int
 	corsAllowOrigin                        string
 	admCertFile, admKeyFile                string
 	certFile, keyFile                      string
@@ -224,6 +226,22 @@ func initFlags() []cli.Flag {
 			Destination: &region,
 			Aliases:     []string{"r"},
 		},
+		&cli.IntFlag{
+			Name:        "max-connections",
+			Usage:       "maximum number of concurrent connections s3 api server may serve",
+			EnvVars:     []string{"VGW_MAX_CONNECTIONS"},
+			Value:       250000,
+			Destination: &maxConnections,
+			Aliases:     []string{"mc"},
+		},
+		&cli.IntFlag{
+			Name:        "max-requests",
+			Usage:       "maximum number of in-flight requests s3 api server may serve",
+			EnvVars:     []string{"VGW_MAX_REQUESTS"},
+			Value:       100000,
+			Destination: &maxRequests,
+			Aliases:     []string{"mr"},
+		},
 		&cli.StringFlag{
 			Name:        "cors-allow-origin",
 			Usage:       "default CORS Access-Control-Allow-Origin value (applied when no bucket CORS configuration exists, and for admin APIs)",
@@ -248,6 +266,22 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_ADMIN_PORT"},
 			Destination: &admPort,
 			Aliases:     []string{"ap"},
+		},
+		&cli.IntFlag{
+			Name:        "admin-max-connections",
+			Usage:       "maximum number of concurrent connections s3 admin server may handle",
+			EnvVars:     []string{"VGW_ADMIN_MAX_CONNECTIONS"},
+			Value:       250000,
+			Destination: &adminMaxConnections,
+			Aliases:     []string{"amc"},
+		},
+		&cli.IntFlag{
+			Name:        "admin-max-requests",
+			Usage:       "maximum number of in-flight requests s3 admin server may handle",
+			EnvVars:     []string{"VGW_ADMIN_MAX_REQUESTS"},
+			Value:       100000,
+			Destination: &adminMaxRequests,
+			Aliases:     []string{"amr"},
 		},
 		&cli.StringFlag{
 			Name:        "admin-cert",
@@ -680,6 +714,17 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("root user access and secret key must be provided")
 	}
 
+	if maxConnections < 1 {
+		log.Fatal("max-connections must be positive")
+	}
+	if maxRequests < 1 {
+		log.Fatal("max-requests must be positive")
+	}
+	if maxRequests > maxConnections {
+		log.Printf("WARNING: max-requests (%d) exceeds max-connections (%d) which could allow for gateway to panic before throttling requests",
+			maxRequests, maxConnections)
+	}
+
 	webuiAddr = strings.TrimSpace(webuiAddr)
 	if webuiAddr != "" && isAllDigits(webuiAddr) {
 		webuiAddr = ":" + webuiAddr
@@ -726,7 +771,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}()
 	}
 
-	var opts []s3api.Option
+	opts := []s3api.Option{
+		s3api.WithConcurrencyLimiter(maxConnections, maxRequests),
+	}
 	if corsAllowOrigin != "" {
 		opts = append(opts, s3api.WithCORSAllowOrigin(corsAllowOrigin))
 	}
@@ -867,7 +914,20 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	var admSrv *s3api.S3AdminServer
 
 	if admPort != "" {
-		var opts []s3api.AdminOpt
+		if adminMaxConnections < 1 {
+			log.Fatal("admin-max-connections must be positive")
+		}
+		if adminMaxRequests < 1 {
+			log.Fatal("admin-max-requests must be positive")
+		}
+		if adminMaxRequests > adminMaxConnections {
+			log.Printf("WARNING: admin-max-requests (%d) exceeds admin-max-connections (%d) which could allow for gateway to panic before throttling requests",
+				adminMaxRequests, adminMaxConnections)
+		}
+
+		opts := []s3api.AdminOpt{
+			s3api.WithAdminConcurrencyLimiter(adminMaxConnections, adminMaxRequests),
+		}
 		if corsAllowOrigin != "" {
 			opts = append(opts, s3api.WithAdminCORSAllowOrigin(corsAllowOrigin))
 		}

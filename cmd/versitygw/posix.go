@@ -32,6 +32,7 @@ var (
 	sidecar            string
 	nometa             bool
 	forceNoTmpFile     bool
+	actionsConcurrency int
 )
 
 func posixCommand() *cli.Command {
@@ -88,6 +89,13 @@ will be translated into the file /mnt/fs/gwroot/mybucket/a/b/c/myobject`,
 				EnvVars:     []string{"VGW_META_SIDECAR"},
 				Destination: &sidecar,
 			},
+			&cli.IntFlag{
+				Name:        "concurrency",
+				Usage:       "maximum concurrent actions allowed",
+				EnvVars:     []string{"VGW_POSIX_CONCURRENCY"},
+				Value:       5000,
+				Destination: &actionsConcurrency,
+			},
 			&cli.BoolFlag{
 				Name:        "nometa",
 				Usage:       "disable metadata storage",
@@ -119,6 +127,10 @@ func runPosix(ctx *cli.Context) error {
 		return fmt.Errorf("cannot use both nometa and sidecar metadata")
 	}
 
+	if actionsConcurrency <= 0 {
+		return fmt.Errorf("concurrency must be positive, got %d", actionsConcurrency)
+	}
+
 	opts := posix.PosixOpts{
 		ChownUID:            chownuid,
 		ChownGID:            chowngid,
@@ -127,6 +139,7 @@ func runPosix(ctx *cli.Context) error {
 		NewDirPerm:          fs.FileMode(dirPerms),
 		ForceNoTmpFile:      forceNoTmpFile,
 		ValidateBucketNames: disableStrictBucketNames,
+		Concurrency:         actionsConcurrency,
 	}
 
 	var ms meta.MetadataStorer
