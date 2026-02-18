@@ -19,7 +19,6 @@
 get_bucket_tagging() {
   log 6 "get_bucket_tagging"
   assert [ $# -eq 2 ]
-  record_command "get-bucket-tagging" "client:$1"
   local result
   if [[ $1 == 's3api' ]]; then
     tags=$(send_command aws --no-verify-ssl s3api get-bucket-tagging --bucket "$2" 2>&1) || result=$?
@@ -47,7 +46,6 @@ get_bucket_tagging_with_user() {
     log 2 "'get_bucket_tagging_with_user' command requires ID, key, bucket"
     return 1
   fi
-  record_command "get-bucket-tagging" "client:s3api"
   local result
   if ! tags=$(AWS_ACCESS_KEY_ID="$1" AWS_SECRET_ACCESS_KEY="$2" send_command aws --no-verify-ssl s3api get-bucket-tagging --bucket "$3" 2>&1); then
     log 5 "tags error: $tags"

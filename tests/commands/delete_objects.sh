@@ -15,7 +15,6 @@
 # under the License.
 
 delete_objects() {
-  record_command "delete-objects" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "'delete-objects' command requires bucket name, two object keys"
     return 1

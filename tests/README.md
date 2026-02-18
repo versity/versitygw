@@ -155,8 +155,6 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **DIRECT_AWS_USER_ID**:  AWS policy 12-digit user ID if **DIRECT** is set to **true**.
 
-**COVERAGE_DB**:  database to store client command coverage info and usage counts, if using.
-
 **USERNAME_ONE**, **PASSWORD_ONE**, **USERNAME_TWO**, **PASSWORD_TWO**:  setup_user (v1), credentials for users created and tested for non-root user **versitygw** operations (non-setup_user_v2).
 
 **TEST_FILE_FOLDER**:  where to put temporary test files.
@@ -188,6 +186,8 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **SKIP_USERS_TESTS**:  skip versitygw-specific users tests, set to **false** to test against other S3 gateways
 
 **MAX_OPENSSL_COMMAND_LOG_BYTES**:  number of OpenSSL command bytes to display in command log, can prevent the display of too many chars in the case of large payload commands, -1 means display whole command
+
+**COVERAGE_LOG**:  if set, where to write test or test suite coverage data
 
 ## REST Scripts
 

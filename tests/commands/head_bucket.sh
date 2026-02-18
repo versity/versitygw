@@ -23,7 +23,6 @@ source ./tests/report.sh
 #   2 - misc error
 head_bucket() {
   log 6 "head_bucket '$1' '$2'"
-  record_command "head-bucket" "client:$1"
   if ! check_param_count "head_bucket" "client, bucket name" 2 $#; then
     return 1
   fi

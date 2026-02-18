@@ -15,7 +15,6 @@
 # under the License.
 
 get_bucket_location() {
-  record_command "get-bucket-location" "client:$1"
   if [[ $# -ne 2 ]]; then
     log 2 "get bucket location command requires command type, bucket name"
     return 1
@@ -42,7 +41,6 @@ get_bucket_location() {
 }
 
 get_bucket_location_aws() {
-  record_command "get-bucket-location" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "get bucket location (aws) requires bucket name"
     return 1
@@ -57,7 +55,6 @@ get_bucket_location_aws() {
 }
 
 get_bucket_location_s3cmd() {
-  record_command "get-bucket-location" "client:s3cmd"
   if [[ $# -ne 1 ]]; then
     echo "get bucket location (s3cmd) requires bucket name"
     return 1
@@ -73,7 +70,6 @@ get_bucket_location_s3cmd() {
 }
 
 get_bucket_location_mc() {
-  record_command "get-bucket-location" "client:mc"
   if ! check_param_count_v2 "bucket name" 1 $#; then
     return 1
   fi
