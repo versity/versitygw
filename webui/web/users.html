@@ -79,10 +79,21 @@ under the License.
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
 
-  <div class="flex h-screen overflow-hidden">
+  <div class="relative flex h-screen overflow-hidden">
+    <input id="sidebar-toggle" name="panel" type="checkbox" class="peer hidden"/>
+    <label for="sidebar-toggle" class="
+      sm:hidden rotate-180 peer-checked:rotate-0 absolute z-20 top-[14px] left-6
+      flex justify-center items-center p-2 rounded-lg transition-all
+      text-white/70 hover:text-white peer-checked:text-charcoal-300 peer-checked:hover:text-charcoal
+      hover:bg-white/10 peer-checked:hover:bg-gray-100
+    ">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="-0.5 0 25 25">
+        <path stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M7.6728 22L16.1434 13.0294C16.4081 12.75 16.4081 12.3088 16.1434 12.0147L7.65808 3" />
+      </svg>  
+    </label>
     <!-- Sidebar -->
-    <aside class="w-60 bg-charcoal flex flex-col flex-shrink-0">
-      <div class="h-16 flex items-center px-6 border-b border-white/10">
+    <aside class="absolute z-10 sm:static peer-checked:-translate-x-60 translate-x-0 sm:!translate-x-0 w-60 h-screen bg-charcoal flex flex-col overflow-auto transition-all">
+      <div class="ml-12 sm:ml-0 h-16 flex-shrink-0 flex items-center px-6 border-b border-white/10">
         <a href="https://www.versity.com" target="_blank" rel="noopener noreferrer">
           <img src="assets/images/Versity-logo-white-horizontal.png" alt="Versity" class="h-10 hover:opacity-80 transition-opacity">
         </a>
@@ -158,8 +169,8 @@ under the License.
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden">
-      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0">
-        <h1 class="text-xl font-semibold text-charcoal">VersityGW Users</h1>
+      <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+        <h1 class="ml-12 sm:ml-0 text-xl font-semibold text-charcoal">VersityGW Users</h1>
         <button onclick="loadUsers()" class="p-2 text-charcoal-300 hover:text-charcoal hover:bg-gray-100 rounded-lg transition-colors" title="Refresh">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -167,7 +178,7 @@ under the License.
         </button>
       </header>
 
-      <main class="flex-1 overflow-auto p-8">
+      <main class="flex-1 overflow-auto p-6">
         <div class="max-w-7xl mx-auto">
           <!-- Page Header -->
           <div class="flex items-center justify-between mb-6">

@@ -435,7 +435,7 @@ under the License.
 
     async function loadConfiguredGateways() {
       try {
-        const res = await fetch('/api/gateways', { cache: 'no-store' });
+        const res = await fetch('api/gateways', { cache: 'no-store' });
         if (!res.ok) return { gateways: [], adminGateways: [], defaultRegion: null };
         const data = await res.json();
         if (!data || !Array.isArray(data.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };
