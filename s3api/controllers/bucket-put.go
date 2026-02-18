@@ -321,7 +321,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 
 func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
-	acl := ctx.Get("X-Amz-Acl")
+	acl := types.BucketCannedACL(ctx.Get("X-Amz-Acl"))
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
 	grantRead := ctx.Get("X-Amz-Grant-Read")
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
@@ -414,7 +414,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 				}
 		}
 
-		if grants+acl != "" {
+		if grants+string(acl) != "" {
 			debuglogger.Logf("invalid request: %q (grants) %q (acl)",
 				grants, acl)
 			return &Response{
@@ -480,7 +480,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 
 func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
-	acl := ctx.Get("X-Amz-Acl")
+	acl := types.BucketCannedACL(ctx.Get("X-Amz-Acl"))
 	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
 	grantRead := ctx.Get("X-Amz-Grant-Read")
 	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
@@ -488,9 +488,7 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
 	lockEnabled := strings.EqualFold(ctx.Get("X-Amz-Bucket-Object-Lock-Enabled"), "true")
 	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
-	objectOwnership := types.ObjectOwnership(
-		ctx.Get("X-Amz-Object-Ownership", string(types.ObjectOwnershipBucketOwnerEnforced)),
-	)
+	objectOwnership := types.ObjectOwnership(ctx.Get("X-Amz-Object-Ownership"))
 
 	if c.readonly {
 		return &Response{
@@ -519,6 +517,16 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketName)
 	}
 
+	// both bucket canned ACL and acl grants is not allowed
+	if acl != "" && grants != "" {
+		debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: bucketOwner.Access,
+			},
+		}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
+	}
+
 	// validate bucket canned acl
 	err := auth.ValidateCannedACL(acl)
 	if err != nil {
@@ -527,6 +535,16 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: bucketOwner.Access,
 			},
 		}, err
+	}
+
+	// if bucket acl is 'private', object ownership should default to 'BucketOwnerPreferred'
+	if acl == types.BucketCannedACLPrivate && objectOwnership == "" {
+		objectOwnership = types.ObjectOwnershipBucketOwnerPreferred
+	}
+
+	// if object ownership is so far empty, it should default to BucketOwnerEnforced
+	if objectOwnership == "" {
+		objectOwnership = types.ObjectOwnershipBucketOwnerEnforced
 	}
 
 	// validate the object ownership value
@@ -542,22 +560,17 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 			}
 	}
 
-	if acl+grants != "" && objectOwnership == types.ObjectOwnershipBucketOwnerEnforced {
+	// any bucket ACL(canned, grants) is not allowed with object ownership 'BucketOwnerEnforced'
+	// but there's an exception for 'private' bucket canned ACL,
+	// which is the effective default for all buckets. In this case
+	// the ACL(private canned) is allowed with 'BucketOwnerEnforced'
+	if acl != types.BucketCannedACLPrivate && string(acl)+grants != "" && objectOwnership == types.ObjectOwnershipBucketOwnerEnforced {
 		debuglogger.Logf("bucket acls are disabled for %v object ownership", objectOwnership)
 		return &Response{
 			MetaOpts: &MetaOptions{
 				BucketOwner: bucketOwner.Access,
 			},
 		}, s3err.GetAPIError(s3err.ErrInvalidBucketAclWithObjectOwnership)
-	}
-
-	if acl != "" && grants != "" {
-		debuglogger.Logf("invalid request: %q (grants) %q (acl)", grants, acl)
-		return &Response{
-			MetaOpts: &MetaOptions{
-				BucketOwner: bucketOwner.Access,
-			},
-		}, s3err.GetAPIError(s3err.ErrBothCannedAndHeaderGrants)
 	}
 
 	var body s3response.CreateBucketConfiguration

@@ -287,6 +287,133 @@ func CreateBucket_non_default_acl(s *S3Conf) error {
 	return nil
 }
 
+func CreateBucket_private_canned_acl(s *S3Conf) error {
+	testName := "CreateBucket_private_canned_acl"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+			ACL:    types.BucketCannedACLPrivate,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(res.Owner.ID))
+		}
+		if len(res.Grants) != 1 {
+			return fmt.Errorf("expected grants length to be 1, instead got %v",
+				len(res.Grants))
+		}
+		grt := res.Grants[0]
+		if grt.Permission != types.PermissionFullControl {
+			return fmt.Errorf("expected the grantee to have full-control permission, instead got %v",
+				grt.Permission)
+		}
+		if getString(grt.Grantee.ID) != s.awsID {
+			return fmt.Errorf("expected the grantee id to be %v, instead got %v",
+				s.awsID, getString(grt.Grantee.ID))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.OwnershipControls == nil {
+			return fmt.Errorf("unexpected nil OwnershipControls")
+		}
+		if len(out.OwnershipControls.Rules) != 1 {
+			return fmt.Errorf("expected the OwnershipControls rules length to be 1, instead got %v", len(out.OwnershipControls.Rules))
+		}
+		if out.OwnershipControls.Rules[0].ObjectOwnership != types.ObjectOwnershipBucketOwnerPreferred {
+			return fmt.Errorf("expected the ObjectOwnership to be %s, instead got %s", types.ObjectOwnershipBucketOwnerPreferred, out.OwnershipControls.Rules[0].ObjectOwnership)
+		}
+
+		return teardown(s, bucket)
+	})
+}
+
+func CreateBucket_private_canned_acl_bucket_owner_enforced_ownership(s *S3Conf) error {
+	testName := "CreateBucket_private_canned_acl_bucket_owner_enforced_ownership"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket:          &bucket,
+			ACL:             types.BucketCannedACLPrivate,
+			ObjectOwnership: types.ObjectOwnershipBucketOwnerEnforced,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.Owner.ID) != s.awsID {
+			return fmt.Errorf("expected bucket owner to be %v, instead got %v",
+				s.awsID, getString(res.Owner.ID))
+		}
+		if len(res.Grants) != 1 {
+			return fmt.Errorf("expected grants length to be 1, instead got %v",
+				len(res.Grants))
+		}
+		grt := res.Grants[0]
+		if grt.Permission != types.PermissionFullControl {
+			return fmt.Errorf("expected the grantee to have full-control permission, instead got %v",
+				grt.Permission)
+		}
+		if getString(grt.Grantee.ID) != s.awsID {
+			return fmt.Errorf("expected the grantee id to be %v, instead got %v",
+				s.awsID, getString(grt.Grantee.ID))
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.GetBucketOwnershipControls(ctx, &s3.GetBucketOwnershipControlsInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.OwnershipControls == nil {
+			return fmt.Errorf("unexpected nil OwnershipControls")
+		}
+		if len(out.OwnershipControls.Rules) != 1 {
+			return fmt.Errorf("expected the OwnershipControls rules length to be 1, instead got %v", len(out.OwnershipControls.Rules))
+		}
+		if out.OwnershipControls.Rules[0].ObjectOwnership != types.ObjectOwnershipBucketOwnerEnforced {
+			return fmt.Errorf("expected the ObjectOwnership to be %s, instead got %s", types.ObjectOwnershipBucketOwnerEnforced, out.OwnershipControls.Rules[0].ObjectOwnership)
+		}
+
+		return teardown(s, bucket)
+	})
+}
+
 func CreateBucket_default_object_lock(s *S3Conf) error {
 	testName := "CreateBucket_default_object_lock"
 	runF(testName)
