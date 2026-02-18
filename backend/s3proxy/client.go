@@ -69,6 +69,7 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 		config.WithRegion(s.awsRegion),
 		config.WithCredentialsProvider(creds),
 		config.WithHTTPClient(client),
+		config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
 	}
 
 	if s.disableChecksum {
