@@ -497,7 +497,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	copySource := strings.TrimPrefix(ctx.Get("X-Amz-Copy-Source"), "/")
 	metaDirective := types.MetadataDirective(ctx.Get("X-Amz-Metadata-Directive", string(types.MetadataDirectiveCopy)))
 	taggingDirective := types.TaggingDirective(ctx.Get("X-Amz-Tagging-Directive", string(types.TaggingDirectiveCopy)))
-	contentType := ctx.Get("Content-Type")
+	contentType := ctx.Get("Content-Type", defaultContentType)
 	contentEncoding := ctx.Get("Content-Encoding")
 	contentDisposition := ctx.Get("Content-Disposition")
 	contentLanguage := ctx.Get("Content-Language")
@@ -655,7 +655,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
 	key := strings.TrimPrefix(ctx.Path(), fmt.Sprintf("/%s/", bucket))
-	contentType := ctx.Get("Content-Type")
+	contentType := ctx.Get("Content-Type", defaultContentType)
 	contentEncoding := ctx.Get("Content-Encoding")
 	contentDisposition := ctx.Get("Content-Disposition")
 	contentLanguage := ctx.Get("Content-Language")
