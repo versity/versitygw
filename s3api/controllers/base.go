@@ -148,13 +148,15 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 				})
 			}
 
+			ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+
 			serr, ok := err.(s3err.APIError)
 			if ok {
 				ctx.Status(serr.HTTPStatusCode)
 				return ctx.Send(s3err.GetAPIErrorResponse(serr, "", "", ""))
 			}
 
-			debuglogger.Logf("Internal Error, %v", err)
+			debuglogger.InternalError(err)
 			ctx.Status(http.StatusInternalServerError)
 
 			// If the error is not 's3err.APIError' return 'InternalError'
@@ -197,6 +199,10 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 				ObjectSize:  opts.ObjectSize,
 			})
 		}
+
+		// set content type to application/xml
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
+
 		serr, ok := err.(s3err.APIError)
 		if ok {
 			ctx.Status(serr.HTTPStatusCode)
@@ -249,7 +255,7 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 		responseBytes = encodedResp
 	} else {
 		if responseBytes, err = xml.Marshal(response.Data); err != nil {
-			debuglogger.Logf("Internal Error, %v", err)
+			debuglogger.InternalError(err)
 			if svc.Logger != nil {
 				svc.Logger.Log(ctx, err, nil, s3log.LogMeta{
 					Action:      s3action,
@@ -294,6 +300,9 @@ func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, s
 			})
 		}
 		ctx.Status(http.StatusInternalServerError)
+
+		// set content type to application/xml
+		ctx.Response().Header.SetContentType(fiber.MIMEApplicationXML)
 
 		return ctx.Send(s3err.GetAPIErrorResponse(
 			s3err.GetAPIError(s3err.ErrInternalError), "", "", ""))

@@ -32,6 +32,8 @@ func initEnv(dir string) {
 	rootUserSecret = "pass"
 	iamDir = dir
 	port = "127.0.0.1:7070"
+	maxConnections = 250000
+	maxRequests = 100000
 
 	// client
 	awsID = "user"
@@ -59,7 +61,8 @@ func initPosix(ctx context.Context) {
 	}
 
 	be, err := posix.New(tempdir, meta.XattrMeta{}, posix.PosixOpts{
-		NewDirPerm: 0755,
+		NewDirPerm:  0755,
+		Concurrency: 5000,
 	})
 	if err != nil {
 		log.Fatalf("init posix: %v", err)
