@@ -496,7 +496,7 @@ func UpdateBucketACLOwner(ctx context.Context, be backend.Backend, bucket, newOw
 }
 
 // ValidateCannedACL validates bucket canned acl value
-func ValidateCannedACL(acl string) error {
+func ValidateCannedACL(acl types.BucketCannedACL) error {
 	switch types.BucketCannedACL(acl) {
 	case types.BucketCannedACLPrivate, types.BucketCannedACLPublicRead, types.BucketCannedACLPublicReadWrite, "":
 		return nil
