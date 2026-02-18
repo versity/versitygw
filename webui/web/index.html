@@ -16,6 +16,7 @@ under the License.
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <base href="{{.WEBUI_PATH_PREFIX}}">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VersityGW Admin - Login</title>
@@ -436,7 +437,7 @@ under the License.
 
     async function loadConfiguredGateways() {
       try {
-        const res = await fetch('/api/gateways', { cache: 'no-store' });
+        const res = await fetch('api/gateways', { cache: 'no-store' });
         if (!res.ok) return { gateways: [], adminGateways: [], defaultRegion: null };
         const data = await res.json();
         if (!data || !Array.isArray(data.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };

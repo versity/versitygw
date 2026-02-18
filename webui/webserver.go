@@ -29,6 +29,7 @@ import (
 // ServerConfig holds the server configuration
 type ServerConfig struct {
 	ListenAddr    string
+	PathPrefix    string
 	Gateways      []string // S3 API gateways
 	AdminGateways []string // Admin API gateways (defaults to Gateways if empty)
 	Region        string
@@ -96,15 +97,23 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes configures all routes
 func (s *Server) setupRoutes() {
+	pp := s.config.PathPrefix
+
+	// Add <base href> to all embedded HTML files to ensure correct resolution of relative paths
+	processedFS, err := replaceInEmbedFS(webFS, "{{.WEBUI_PATH_PREFIX}}", pp)
+	if err != nil {
+		fmt.Printf("Failed to process embedded files: %v\n", err)
+	}
+
 	// API endpoint to get configured gateways
-	s.app.Get("/api/gateways", s.handleGetGateways)
+	s.app.Get(pp+"api/gateways", s.handleGetGateways)
 
 	// Serve embedded static files from web/
-	s.app.Use("/", filesystem.New(filesystem.Config{
-		Root:         http.FS(webFS),
+	s.app.Use(pp, filesystem.New(filesystem.Config{
+		Root:         http.FS(processedFS),
 		PathPrefix:   "web",
-		Index:        "index.html",
-		NotFoundFile: "index.html", // SPA fallback
+		Index:        "web/index.html",
+		NotFoundFile: "web/index.html", // SPA fallback
 		Browse:       false,
 	}))
 }

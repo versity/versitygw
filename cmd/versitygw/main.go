@@ -94,6 +94,7 @@ var (
 	ipaInsecure                            bool
 	iamDebug                               bool
 	webuiAddr                              string
+	webuiPathPrefix                        string
 	webuiCertFile, webuiKeyFile            string
 	webuiNoTLS                             bool
 )
@@ -178,6 +179,12 @@ func initFlags() []cli.Flag {
 			Usage:       "enable WebUI server on the specified listen address (e.g. ':7071', '127.0.0.1:7071', 'localhost:7071'; disabled when omitted)",
 			EnvVars:     []string{"VGW_WEBUI_PORT"},
 			Destination: &webuiAddr,
+		},
+		&cli.StringFlag{
+			Name:        "webui-path-prefix",
+			Usage:       "path prefix for WebUI (e.g. '/webui/'; defaults to empty string)",
+			EnvVars:     []string{"VGW_WEBUI_PATH_PREFIX"},
+			Destination: &webuiPathPrefix,
 		},
 		&cli.StringFlag{
 			Name:        "webui-cert",
@@ -954,7 +961,19 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	webuiSSLEnabled := false
 	webTLSCert := ""
 	webTLSKey := ""
+	webPathPrefix := "/"
 	if webuiAddr != "" {
+		if webuiPathPrefix != "" {
+			webPathPrefix = strings.TrimSpace(webuiPathPrefix)
+			if webPathPrefix != "/" {
+				if !strings.HasPrefix(webPathPrefix, "/") {
+					webPathPrefix = "/" + webPathPrefix
+				}
+				if !strings.HasSuffix(webPathPrefix, "/") {
+					webPathPrefix = webPathPrefix + "/"
+				}
+			}
+		}
 		_, webPrt, err := net.SplitHostPort(webuiAddr)
 		if err != nil {
 			return fmt.Errorf("webui listen address must be in the form ':port' or 'host:port': %w", err)
@@ -1021,6 +1040,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 		webSrv = webui.NewServer(&webui.ServerConfig{
 			ListenAddr:    webuiAddr,
+			PathPrefix:    webPathPrefix,
 			Gateways:      gateways,
 			AdminGateways: adminGateways,
 			Region:        region,
@@ -1028,7 +1048,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	if !quiet {
-		printBanner(port, admPort, certFile != "", admCertFile != "", webuiAddr, webuiSSLEnabled)
+		printBanner(port, admPort, certFile != "", admCertFile != "", webuiAddr, webPathPrefix, webuiSSLEnabled)
 	}
 
 	servers := 1
@@ -1153,7 +1173,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(port, admPort string, ssl, admSsl bool, webuiAddr string, webuiSsl bool) {
+func printBanner(port, admPort string, ssl, admSsl bool, webuiAddr, webuiPathPrefix string, webuiSsl bool) {
 	interfaces, err := getMatchingIPs(port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to match local IP addresses: %v\n", err)
@@ -1250,10 +1270,11 @@ func printBanner(port, admPort string, ssl, admSsl bool, webuiAddr string, webui
 			centerText(""),
 			leftText("WebUI listening on:"),
 		)
+		pp := strings.TrimRight(webuiPathPrefix, "/")
 		for _, ip := range webInterfaces {
-			url := fmt.Sprintf("http://%s:%s", ip, webPrt)
+			url := fmt.Sprintf("http://%s:%s%s", ip, webPrt, pp)
 			if webuiSsl {
-				url = fmt.Sprintf("https://%s:%s", ip, webPrt)
+				url = fmt.Sprintf("https://%s:%s%s", ip, webPrt, pp)
 			}
 			lines = append(lines, leftText("  "+url))
 		}
