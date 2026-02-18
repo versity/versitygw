@@ -15,7 +15,6 @@
 # under the License.
 
 delete_bucket_tagging() {
-  record_command "delete-bucket-tagging" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "delete bucket tagging command missing command type, bucket name"
     return 1
@@ -38,7 +37,6 @@ delete_bucket_tagging() {
 
 delete_bucket_tagging_with_user() {
   log 6 "delete_bucket_tagging_with_user"
-  record_command "delete-bucket-tagging" "client:s3api"
   if [ $# -ne 3 ]; then
     log 2 "delete bucket tagging command missing username, password, bucket name"
     return 1

@@ -18,7 +18,6 @@ source ./tests/drivers/params.sh
 
 put_bucket_policy() {
   log 6 "put_bucket_policy '$1' '$2' '$3'"
-  record_command "put-bucket-policy" "client:$1"
   if ! check_param_count "put_bucket_policy" "command type, bucket, policy file" 3 $#; then
     return 1
   fi
@@ -50,7 +49,6 @@ put_bucket_policy() {
 }
 
 put_bucket_policy_with_user() {
-  record_command "put-bucket-policy" "client:s3api"
   if ! check_param_count "put_bucket_policy_with_user" "bucket, policy file, username, password" 4 $#; then
     return 1
   fi

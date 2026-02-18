@@ -15,7 +15,6 @@
 # under the License.
 
 put_bucket_versioning() {
-  record_command "put-bucket-versioning" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "put bucket versioning command requires command type, bucket name, 'Enabled' or 'Suspended'"
     return 1

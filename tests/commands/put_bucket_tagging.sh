@@ -22,7 +22,6 @@ put_bucket_tagging() {
   fi
   local error
   local result=0
-  record_command "put-bucket-tagging" "client:$1"
   if [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api put-bucket-tagging --bucket "$2" --tagging "TagSet=[{Key=$3,Value=$4}]") || result=$?
   elif [[ $1 == 'mc' ]]; then
@@ -41,7 +40,6 @@ put_bucket_tagging() {
 put_bucket_tagging_with_user() {
   log 6 "put_bucket_tagging_with_user"
   assert [ $# -eq 5 ]
-  record_command "put-bucket-tagging" "client:$1"
   if ! error=$(AWS_ACCESS_KEY_ID="$4" AWS_SECRET_ACCESS_KEY="$5" send_command aws --no-verify-ssl s3api put-bucket-tagging --bucket "$1" --tagging "TagSet=[{Key=$2,Value=$3}]"); then
     log 2 "error putting bucket tagging: $error"
     return 1

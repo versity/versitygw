@@ -15,7 +15,6 @@
 # under the License.
 
 list_multipart_uploads() {
-  record_command "list-multipart-uploads" "client:s3api"
   if [[ $# -ne 1 ]]; then
     log 2 "'list multipart uploads' command requires bucket name"
     return 1
@@ -27,7 +26,6 @@ list_multipart_uploads() {
 }
 
 list_multipart_uploads_rest() {
-  record_command "list_multipart_uploads_rest" "client:rest"
   if ! check_param_count "list_multipart_upload_rest" "bucket" 1 $#; then
     return 1
   fi
@@ -44,7 +42,6 @@ list_multipart_uploads_rest() {
 }
 
 list_multipart_uploads_with_user() {
-  record_command "list-multipart-uploads" "client:s3api"
   if [[ $# -ne 3 ]]; then
     log 2 "'list multipart uploads' command requires bucket name, username, password"
     return 1

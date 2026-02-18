@@ -15,7 +15,6 @@
 # under the License.
 
 list_object_versions() {
-  record_command "list-object-versions" "client:s3api"
   if ! check_param_count "list_object_versions" "client, bucket name" 2 $#; then
     return 1
   fi

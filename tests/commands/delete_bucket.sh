@@ -18,7 +18,6 @@
 # fail if params are bad, or bucket exists and user is unable to delete bucket
 delete_bucket() {
   log 6 "delete_bucket"
-  record_command "delete-bucket" "client:$1"
   if [ $# -ne 2 ]; then
     log 2 "'delete_bucket' command requires client, bucket"
     return 1

@@ -22,7 +22,6 @@ put_object_tagging() {
   fi
   local error
   local result
-  record_command "put-object-tagging" "client:$1"
   if [[ $1 == 's3api' ]]; then
     error=$(send_command aws --no-verify-ssl s3api put-object-tagging --bucket "$2" --key "$3" --tagging "TagSet=[{Key=$4,Value=$5}]" 2>&1) || result=$?
   elif [[ $1 == 'mc' ]]; then

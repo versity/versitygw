@@ -15,7 +15,6 @@
 # under the License.
 
 put_object_legal_hold() {
-  record_command "put-object-legal-hold" "client:s3api"
   if ! check_param_count "put_object_legal_hold" "client, bucket, key, hold status ('ON' or 'OFF')" 4 $#; then
     return 1
   fi
@@ -49,7 +48,6 @@ put_object_legal_hold_rest() {
 }
 
 put_object_legal_hold_version_id() {
-  record_command "put-object-legal-hold" "client:s3api"
   if ! check_param_count "put_object_legal_hold_version_id" "bucket, key, version ID, hold status ('ON' or 'OFF')" 4 $#; then
     return 1
   fi
