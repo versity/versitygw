@@ -15,7 +15,6 @@
 # under the License.
 
 select_object_content() {
-  record_command "select-object-content" "client:s3api"
   if [[ $# -ne 7 ]]; then
     log 2 "'select object content' command requires bucket, key, expression, expression type, input serialization, output serialization, outfile"
     return 1

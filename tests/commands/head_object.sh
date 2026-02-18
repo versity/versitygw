@@ -15,7 +15,6 @@
 # under the License.
 
 head_object() {
-  record_command "head-object" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "head-object missing command, bucket name, object name"
     return 2
@@ -44,7 +43,7 @@ head_object() {
 }
 
 head_object_rest_expect_success() {
-  if ! check_param_count_v2 "bucket, object, env vars" 4 $#; then
+  if ! check_param_count_v2 "bucket, object, env vars" 3 $#; then
     return 1
   fi
   env_vars="BUCKET_NAME=$1 OBJECT_KEY=$2 $3"

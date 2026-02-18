@@ -43,3 +43,25 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
   run get_etag_attribute_rest "$bucket_name" "$test_file" "$expected_etag"
   assert_success
 }
+
+@test "REST - HeadObject - default Content-Type is binary/octet-stream" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1849"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file="$output"
+
+  run setup_bucket_and_file_v2 "$bucket_name" "$test_file"
+  assert_success
+
+  run put_object_rest "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file"
+  assert_success
+
+  run head_object_check_header_key_and_value "$bucket_name" "$test_file" "Content-Type" "binary/octet-stream"
+  assert_success
+}

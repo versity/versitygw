@@ -16,7 +16,6 @@
 
 list_buckets() {
   log 6 "list_buckets"
-  record_command "list-buckets" "client:$1"
   if [ $# -ne 1 ]; then
     log 2 "list buckets command missing command type"
     return 1
@@ -55,7 +54,6 @@ list_buckets() {
 }
 
 list_buckets_with_user() {
-  record_command "list-buckets" "client:$1"
   if [ $# -ne 3 ]; then
     log 2 "'list buckets as user' command missing command type, username, password"
     return 1
