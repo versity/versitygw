@@ -16,6 +16,8 @@ package s3api
 
 import (
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -43,7 +45,6 @@ type S3ApiServer struct {
 	Router          *S3ApiRouter
 	app             *fiber.App
 	backend         backend.Backend
-	port            string
 	CertStorage     *utils.CertStorage
 	quiet           bool
 	readonly        bool
@@ -58,7 +59,7 @@ type S3ApiServer struct {
 func New(
 	be backend.Backend,
 	root middlewares.RootUserConfig,
-	port, region string,
+	region string,
 	iam auth.IAMService,
 	l s3log.AuditLogger,
 	adminLogger s3log.AuditLogger,
@@ -69,7 +70,6 @@ func New(
 	server := &S3ApiServer{
 		backend: be,
 		Router:  new(S3ApiRouter),
-		port:    port,
 	}
 
 	for _, opt := range opts {
@@ -186,16 +186,41 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 	}
 }
 
-func (sa *S3ApiServer) Serve() (err error) {
-	if sa.CertStorage != nil {
-		ln, err := utils.NewTLSListener(sa.app.Config().Network, sa.port, sa.CertStorage.GetCertificate)
+// ServeMultiPort creates listeners for multiple port specifications and serves
+// on all of them simultaneously. This supports listening on multiple ports and/or
+// addresses (e.g., [":7070", "localhost:8080", "0.0.0.0:9090"]).
+func (sa *S3ApiServer) ServeMultiPort(ports []string) error {
+	if len(ports) == 0 {
+		return fmt.Errorf("no ports specified")
+	}
+
+	// Multiple ports - create listeners for each
+	var listeners []net.Listener
+
+	for _, portSpec := range ports {
+		var ln net.Listener
+		var err error
+
+		if sa.CertStorage != nil {
+			ln, err = utils.NewMultiAddrTLSListener(sa.app.Config().Network, portSpec, sa.CertStorage.GetCertificate)
+		} else {
+			ln, err = utils.NewMultiAddrListener(sa.app.Config().Network, portSpec)
+		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to bind s3 listener %s: %w", portSpec, err)
 		}
 
-		return sa.app.Listener(ln)
+		listeners = append(listeners, ln)
 	}
-	return sa.app.Listen(sa.port)
+
+	if len(listeners) == 0 {
+		return fmt.Errorf("failed to create any s3 listeners")
+	}
+
+	// Combine all listeners
+	finalListener := utils.NewMultiListener(listeners...)
+
+	return sa.app.Listener(finalListener)
 }
 
 // ShutDown gracefully shuts down the server with a context timeout

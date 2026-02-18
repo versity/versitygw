@@ -16,8 +16,8 @@ package webui
 
 import (
 	"fmt"
+	"net"
 	"net/http"
-	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -28,7 +28,6 @@ import (
 
 // ServerConfig holds the server configuration
 type ServerConfig struct {
-	ListenAddr    string
 	Gateways      []string // S3 API gateways
 	AdminGateways []string // Admin API gateways (defaults to Gateways if empty)
 	Region        string
@@ -73,10 +72,10 @@ func NewServer(cfg *ServerConfig, opts ...Option) *Server {
 		opt(server)
 	}
 
+	fmt.Printf("initializing web dashboard\n")
+
 	server.setupMiddleware()
 	server.setupRoutes()
-
-	fmt.Printf("initializing web dashboard on %s\n", cfg.ListenAddr)
 
 	return server
 }
@@ -124,24 +123,41 @@ func (s *Server) handleGetGateways(c *fiber.Ctx) error {
 	})
 }
 
-// Serve starts the server
-func (s *Server) Serve() error {
-	addr := strings.TrimSpace(s.config.ListenAddr)
-	if addr == "" {
-		return fmt.Errorf("webui: listen address is required")
+// ServeMultiPort creates listeners for multiple address specifications and serves
+// on all of them simultaneously. This supports listening on multiple addresses.
+func (s *Server) ServeMultiPort(ports []string) error {
+	if len(ports) == 0 {
+		return fmt.Errorf("no addresses specified")
 	}
 
-	// Check if TLS is configured
-	if s.CertStorage != nil {
-		ln, err := utils.NewTLSListener(s.app.Config().Network, addr, s.CertStorage.GetCertificate)
-		if err != nil {
-			return err
+	// Multiple addresses - create listeners for each
+	var listeners []net.Listener
+
+	for _, addrSpec := range ports {
+		var ln net.Listener
+		var err error
+
+		if s.CertStorage != nil {
+			ln, err = utils.NewMultiAddrTLSListener(s.app.Config().Network, addrSpec, s.CertStorage.GetCertificate)
+		} else {
+			ln, err = utils.NewMultiAddrListener(s.app.Config().Network, addrSpec)
 		}
 
-		return s.app.Listener(ln)
+		if err != nil {
+			return fmt.Errorf("failed to bind webui listener %s: %w", addrSpec, err)
+		}
+
+		listeners = append(listeners, ln)
 	}
 
-	return s.app.Listen(addr)
+	if len(listeners) == 0 {
+		return fmt.Errorf("failed to create any webui listeners")
+	}
+
+	// Combine all listeners
+	finalListener := utils.NewMultiListener(listeners...)
+
+	return s.app.Listener(finalListener)
 }
 
 // Shutdown gracefully shuts down the server
