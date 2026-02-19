@@ -193,6 +193,7 @@ const (
 	ErrDirectoryNotEmpty
 	ErrQuotaExceeded
 	ErrVersioningNotConfigured
+	ErrACLsDisabled
 
 	// Admin api errors
 	ErrAdminAccessDenied
@@ -866,6 +867,11 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "VersioningNotConfigured",
 		Description:    "Versioning has not been configured for the gateway.",
 		HTTPStatusCode: http.StatusNotImplemented,
+	},
+	ErrACLsDisabled: {
+		Code:           "AccessControlListNotSupported",
+		Description:    "Access control lists are disabled at the gateway level",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// Admin api errors

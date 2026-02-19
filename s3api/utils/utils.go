@@ -1011,7 +1011,11 @@ func NewTLSListener(network string, address string, getCertificateFunc func(*tls
 // since ACL operations are not supported on objects, the presence of any ACL headers
 // results in a NotImplemented error. It returns nil only when all ACL headers
 // are absent.
-func ValidateNoACLHeaders(ctx *fiber.Ctx) error {
+func ValidateNoACLHeaders(ctx *fiber.Ctx, disableACL bool) error {
+	if disableACL {
+		return nil
+	}
+
 	for _, header := range []string{
 		"x-amz-acl",
 		"x-amz-grant-full-control",

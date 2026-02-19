@@ -47,6 +47,7 @@ func (c S3ApiController) DeleteObjects(ctx *fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Action:          auth.DeleteObjectAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
