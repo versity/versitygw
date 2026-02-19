@@ -41,7 +41,7 @@ const (
 
 const SHA256HashZeroBytes = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-type S3RESTCommand struct {
+/*type S3RESTCommand struct {
 	Method         string
 	Url            string
 	Queries        map[string]string
@@ -60,6 +60,12 @@ type S3CommandErrors struct {
 	MissingHostParam             bool
 	CustomHostParam              string
 	CustomHostParamSet           bool
+}*/
+
+type HeaderValue struct {
+	Key    string
+	Value  string
+	Signed bool
 }
 
 type S3Command struct {
@@ -74,6 +80,7 @@ type S3Command struct {
 	AwsSecretAccessKey           string
 	ServiceName                  string
 	SignedParams                 map[string]string
+	UnsignedParams               map[string]string
 	PayloadFile                  string
 	IncorrectSignature           bool
 	AuthorizationHeaderMalformed bool
@@ -100,7 +107,7 @@ type S3Command struct {
 	currentDateTime      string
 	host                 string
 	payloadHash          string
-	headerValues         [][]string
+	headerValues         []*HeaderValue
 	canonicalRequestHash string
 	path                 string
 	signedParamString    string
@@ -208,24 +215,24 @@ func (s *S3Command) initializeOpenSSLPayloadAndGetContentLength() error {
 }
 
 func (s *S3Command) addHeaderValues() error {
-	s.headerValues = [][]string{}
+	s.headerValues = []*HeaderValue{}
 	if s.MissingHostParam {
-		s.headerValues = append(s.headerValues, []string{"host", ""})
+		s.headerValues = append(s.headerValues, &HeaderValue{"host", "", true})
 	} else if s.CustomHostParamSet {
-		s.headerValues = append(s.headerValues, []string{"host", s.CustomHostParam})
+		s.headerValues = append(s.headerValues, &HeaderValue{"host", s.CustomHostParam, true})
 	} else {
-		s.headerValues = append(s.headerValues, []string{"host", s.host})
+		s.headerValues = append(s.headerValues, &HeaderValue{"host", s.host, true})
 	}
 	if s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer && s.ChecksumType != "" {
-		s.headerValues = append(s.headerValues, []string{"x-amz-trailer", fmt.Sprintf("x-amz-checksum-%s", s.ChecksumType)})
+		s.headerValues = append(s.headerValues, &HeaderValue{"x-amz-trailer", fmt.Sprintf("x-amz-checksum-%s", s.ChecksumType), true})
 	}
 	s.headerValues = append(s.headerValues,
-		[]string{"x-amz-content-sha256", s.payloadHash},
-		[]string{"x-amz-date", s.currentDateTime},
+		&HeaderValue{"x-amz-content-sha256", s.payloadHash, true},
+		&HeaderValue{"x-amz-date", s.currentDateTime, true},
 	)
 	if s.Client == OPENSSL && !s.OmitContentLength {
 		s.headerValues = append(s.headerValues,
-			[]string{"Content-Length", fmt.Sprintf("%d", s.contentLength)})
+			&HeaderValue{"Content-Length", fmt.Sprintf("%d", s.contentLength), true})
 	}
 	if s.dataSource != nil && s.PayloadType != UnsignedPayload {
 		payloadSize, err := s.dataSource.SourceDataByteSize()
@@ -233,19 +240,22 @@ func (s *S3Command) addHeaderValues() error {
 			return fmt.Errorf("error getting payload size: %w", err)
 		}
 		s.headerValues = append(s.headerValues,
-			[]string{"x-amz-decoded-content-length", fmt.Sprintf("%d", payloadSize)})
+			&HeaderValue{"x-amz-decoded-content-length", fmt.Sprintf("%d", payloadSize), true})
 	}
 	for key, value := range s.SignedParams {
-		s.headerValues = append(s.headerValues, []string{key, value})
+		s.headerValues = append(s.headerValues, &HeaderValue{key, value, true})
 	}
 	if s.ContentMD5 || s.IncorrectContentMD5 || s.CustomContentMD5 != "" {
 		if err := s.addContentMD5Header(); err != nil {
 			return fmt.Errorf("error adding Content-MD5 header: %w", err)
 		}
 	}
+	for key, value := range s.UnsignedParams {
+		s.headerValues = append(s.headerValues, &HeaderValue{key, value, false})
+	}
 	sort.Slice(s.headerValues,
 		func(i, j int) bool {
-			return strings.ToLower(s.headerValues[i][0]) < strings.ToLower(s.headerValues[j][0])
+			return strings.ToLower(s.headerValues[i].Key) < strings.ToLower(s.headerValues[j].Key)
 		})
 	return nil
 }
@@ -283,7 +293,7 @@ func (s *S3Command) addContentMD5Header() error {
 		contentMD5 = base64.StdEncoding.EncodeToString(md5Hash)
 	}
 
-	s.headerValues = append(s.headerValues, []string{"Content-MD5", contentMD5})
+	s.headerValues = append(s.headerValues, &HeaderValue{"Content-MD5", contentMD5, true})
 	return nil
 }
 
@@ -308,9 +318,11 @@ func (s *S3Command) generateCanonicalRequestString() {
 
 	var signedParams []string
 	for _, headerValue := range s.headerValues {
-		key := strings.ToLower(headerValue[0])
-		canonicalRequestLines = append(canonicalRequestLines, key+":"+headerValue[1])
-		signedParams = append(signedParams, key)
+		if headerValue.Signed {
+			key := strings.ToLower(headerValue.Key)
+			canonicalRequestLines = append(canonicalRequestLines, key+":"+headerValue.Value)
+			signedParams = append(signedParams, key)
+		}
 	}
 
 	canonicalRequestLines = append(canonicalRequestLines, "")
@@ -375,7 +387,7 @@ func (s *S3Command) buildCurlShellCommand() (string, error) {
 	authorizationString := s.buildAuthorizationString()
 	curlCommand = append(curlCommand, "-H", fmt.Sprintf("\"%s\"", authorizationString))
 	for _, headerValue := range s.headerValues {
-		headerString := fmt.Sprintf("\"%s: %s\"", headerValue[0], headerValue[1])
+		headerString := fmt.Sprintf("\"%s: %s\"", headerValue.Key, headerValue.Value)
 		curlCommand = append(curlCommand, "-H", headerString)
 	}
 	if s.PayloadFile != "" {
@@ -407,10 +419,10 @@ func (s *S3Command) buildOpenSSLCommand() error {
 	openSSLCommand := []string{fmt.Sprintf("%s %s HTTP/1.1", s.Method, s.path)}
 	openSSLCommand = append(openSSLCommand, s.buildAuthorizationString())
 	for _, headerValue := range s.headerValues {
-		if headerValue[0] == "host" && s.MissingHostParam {
+		if headerValue.Key == "host" && s.MissingHostParam {
 			continue
 		}
-		openSSLCommand = append(openSSLCommand, fmt.Sprintf("%s:%s", headerValue[0], headerValue[1]))
+		openSSLCommand = append(openSSLCommand, fmt.Sprintf("%s:%s", headerValue.Key, headerValue.Value))
 	}
 
 	file, err := os.Create(s.FilePath)

@@ -318,16 +318,31 @@ send_rest_go_command_callback() {
   return 0
 }
 
+# return 0 for key match, 1 for no key match, 2 for value mismatch
+check_key_and_value_pair_for_match() {
+  if ! check_param_count_v2 "read key, read value, expected key, expected value" 4 $#; then
+    return 2
+  fi
+  if [ "${1,,}" == "${3,,}" ]; then
+    if [ "$2" != "$4" ]; then
+      log 2 "expected value of '$4', was '$2'"
+      return 2
+    fi
+    return 0
+  fi
+  return 1
+}
+
 check_for_header_key_and_value() {
   if ! check_param_count_v2 "data file, header key, header value" 3 $#; then
     return 1
   fi
   while IFS=$': \r' read -r key value; do
-    if [ "$key" == "$2" ]; then
-      if [ "$value" != "$3" ]; then
-        log 2 "expected value of '$3', was '$value'"
-        return 1
-      fi
+    local check_result=0
+    check_key_and_value_pair_for_match "$key" "$value" "$2" "$3" || check_result=$?
+    if [ "$check_result" -eq 2 ]; then
+      return 1
+    elif [ "$check_result" -eq 0 ]; then
       return 0
     fi
   done <<< "$(grep -E '^.+: .+$' "$1")"
@@ -446,3 +461,172 @@ send_rest_go_command_write_response_to_file() {
   return 0
 }
 
+check_header_keys_and_values() {
+  if ! check_param_count_gt "data file, header/key value pairs" 1 $#; then
+    return 1
+  fi
+
+  local data_file="$1"
+  local pairs=("${@:2}")
+  local check_result=0
+  local remaining_pairs=""
+  local line=""
+  local key=""
+  local value=""
+
+  # Parse header lines until the blank line separator.
+  # - Split on the first ':'
+  # - Allow empty values (e.g. "X-Foo:")
+  # - Preserve spaces in values
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+
+    # End of headers
+    if [ -z "$line" ]; then
+      break
+    fi
+
+    # Require at least one ':' to treat as a header field
+    case "$line" in
+      *:*) ;;
+      *) continue ;;
+    esac
+
+    key="${line%%:*}"
+    value="${line#*:}"
+    value="${value# }"
+
+    check_result=0
+    if remaining_pairs=$(check_for_key_and_value_within_pairs "$key" "$value" "${pairs[@]}"); then
+      # match found; remaining_pairs contains the updated list
+      pairs=()
+      if [ -n "$remaining_pairs" ]; then
+        while IFS= read -r line; do
+          pairs+=("$line")
+        done <<< "$remaining_pairs"
+      fi
+
+      if [ "${#pairs[@]}" -eq 0 ]; then
+        return 0
+      fi
+    else
+      check_result=$?
+      if [ "$check_result" -eq 2 ]; then
+        log 2 "error checking pair"
+        return 1
+      fi
+      # check_result==1 means no match; keep current pairs
+    fi
+  done < "$data_file"
+
+  if [ "${#pairs[@]}" -eq 0 ]; then
+    return 0
+  fi
+  log 2 "missing expected header key '${pairs[0]}'"
+  return 1
+}
+
+# Check that a specific header key/value pair (or pairs) is NOT present.
+# Returns:
+#   0 - none of the specified pairs are present
+#   1 - at least one specified pair is present
+#   2 - other error (param count, malformed pairs)
+check_header_keys_and_values_not_present() {
+  if ! check_param_count_gt "data file, header/key value pairs" 1 $#; then
+    return 2
+  fi
+
+  local data_file="$1"
+  shift 1
+
+  if [ $(( $# % 2 )) -ne 0 ]; then
+    log 2 "header key/value pairs must be even count"
+    return 2
+  fi
+
+  local expected_pairs=("$@")
+  local line=""
+  local key=""
+  local value=""
+
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+
+    # End of headers
+    if [ -z "$line" ]; then
+      break
+    fi
+
+    case "$line" in
+      *:*) ;;
+      *) continue ;;
+    esac
+
+    key="${line%%:*}"
+    value="${line#*:}"
+    value="${value# }"
+
+    local idx
+    for ((idx=0; idx<${#expected_pairs[@]}; idx+=2)); do
+      local exp_key="${expected_pairs[$idx]}"
+      local exp_val="${expected_pairs[$((idx+1))]}"
+
+      if [ "${key,,}" = "${exp_key,,}" ] && [ "$value" = "$exp_val" ]; then
+        log 2 "unexpected header pair present: '$exp_key: $exp_val'"
+        return 1
+      fi
+    done
+  done < "$data_file"
+
+  return 0
+}
+
+check_for_key_and_value_within_pairs() {
+  if ! check_param_count_gt "read key, read value, full set of key/value pairs" 2 $#; then
+    return 2
+  fi
+
+  local read_key="$1"
+  local read_value="$2"
+  shift 2
+
+  # Require an even number of remaining args (key/value pairs)
+  if [ $(( $# % 2 )) -ne 0 ]; then
+    log 2 "key/value pairs must be even count"
+    return 2
+  fi
+
+  local pairs=()
+  local omit_idx=-1
+  local idx=0
+  while [ $# -gt 0 ]; do
+    local key="$1"
+    local value="$2"
+    local check_result=0
+
+    pairs+=("$key" "$value")
+    check_key_and_value_pair_for_match "$read_key" "$read_value" "$key" "$value" || check_result=$?
+    if [ "$check_result" -eq 2 ]; then
+      return 2
+    elif [ "$check_result" -eq 0 ]; then
+      # Omit the last matching pair (preserves previous behavior)
+      omit_idx=$idx
+    fi
+
+    idx=$((idx + 2))
+    shift 2
+  done
+
+  if [ "$omit_idx" -lt 0 ]; then
+    return 1
+  fi
+
+  for ((idx=0; idx<${#pairs[@]}; idx+=2)); do
+    if [ "$idx" -eq "$omit_idx" ]; then
+      continue
+    fi
+    echo "${pairs[$idx]}"
+    echo "${pairs[$((idx+1))]}"
+  done
+  return 0
+}
