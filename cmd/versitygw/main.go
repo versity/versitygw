@@ -97,6 +97,7 @@ var (
 	webuiPorts                             []string
 	webuiCertFile, webuiKeyFile            string
 	webuiNoTLS                             bool
+	disableACLs                            bool
 )
 
 var (
@@ -325,6 +326,13 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_VIRTUAL_DOMAIN"},
 			Destination: &virtualDomain,
 			Aliases:     []string{"vd"},
+		},
+		&cli.BoolFlag{
+			Name:        "disable-acl",
+			Usage:       "disables gateway ACLs, by ignoring all ACL headers",
+			EnvVars:     []string{"VGW_DISABLE_ACL"},
+			Destination: &disableACLs,
+			Aliases:     []string{"da"},
 		},
 		&cli.StringFlag{
 			Name:        "access-log",
@@ -817,6 +825,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 	if keepAlive {
 		opts = append(opts, s3api.WithKeepAlive())
+	}
+	if disableACLs {
+		opts = append(opts, s3api.WithDisableACL())
 	}
 	if debug {
 		debuglogger.SetDebugEnabled()

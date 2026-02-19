@@ -681,7 +681,7 @@ func TestAdminController_CreateBucket(t *testing.T) {
 				},
 			}
 
-			s3api := New(be, iam, nil, nil, nil, false, "")
+			s3api := New(be, iam, nil, nil, nil, false, false, "")
 
 			ctrl := AdminController{
 				iam:   iam,

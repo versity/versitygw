@@ -79,6 +79,7 @@ type AccessOptions struct {
 	Action          Action
 	Readonly        bool
 	IsPublicRequest bool
+	disableACL      bool
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
@@ -102,6 +103,12 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 	if policyErr != nil {
 		if !errors.Is(policyErr, s3err.GetAPIError(s3err.ErrNoSuchBucketPolicy)) {
 			return policyErr
+		}
+		if opts.disableACL {
+			// return an immediate AccessDenied, as bucket ACLs are disabled
+			// and the only access granter left it bucket policies.
+			// If no bucket policy is set, no need to check if bucket ACL grants access
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
 		}
 	} else {
 		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action)

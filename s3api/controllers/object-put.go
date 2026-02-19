@@ -510,7 +510,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -668,7 +668,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

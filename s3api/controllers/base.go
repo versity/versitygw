@@ -39,6 +39,7 @@ type S3ApiController struct {
 	evSender      s3event.S3EventSender
 	mm            metrics.Manager
 	readonly      bool
+	disableACL    bool
 	virtualDomain string
 }
 
@@ -59,7 +60,7 @@ var (
 	xmlhdr = []byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
 )
 
-func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly bool, virtualDomain string) S3ApiController {
+func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs s3event.S3EventSender, mm metrics.Manager, readonly, disableACL bool, virtualDomain string) S3ApiController {
 	return S3ApiController{
 		be:            be,
 		iam:           iam,
@@ -67,8 +68,17 @@ func New(be backend.Backend, iam auth.IAMService, logger s3log.AuditLogger, evs 
 		evSender:      evs,
 		readonly:      readonly,
 		mm:            mm,
+		disableACL:    disableACL,
 		virtualDomain: virtualDomain,
 	}
+}
+
+func (c S3ApiController) getAclHeaderValue(ctx *fiber.Ctx, key string, defaultValues ...string) string {
+	if c.disableACL {
+		return ""
+	}
+
+	return ctx.Get(key, defaultValues...)
 }
 
 // Returns MethodNotAllowed for unmatched routes
