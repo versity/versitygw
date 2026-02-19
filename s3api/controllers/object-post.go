@@ -158,7 +158,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
