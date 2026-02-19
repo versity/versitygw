@@ -103,8 +103,8 @@ func (s *Server) setupRoutes() {
 	s.app.Use("/", filesystem.New(filesystem.Config{
 		Root:         http.FS(webFS),
 		PathPrefix:   "web",
-		Index:        "web/index.html",
-		NotFoundFile: "web/index.html", // SPA fallback
+		Index:        "index.html",
+		NotFoundFile: "index.html", // SPA fallback
 		Browse:       false,
 	}))
 }
