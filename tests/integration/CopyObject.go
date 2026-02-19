@@ -746,6 +746,49 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 	})
 }
 
+func CopyObject_default_content_type_with_replace_metadata(s *S3Conf) error {
+	testName := "CopyObject_default_content_type_with_replace_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "destination-object"
+		_, err := putObjectWithData(1, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+			// with metadata directive REPLACE, Content-Type should default to binary/octet-stream
+			MetadataDirective: types.MetadataDirectiveReplace,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &dstObj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s", defaultContentType, getString(res.ContentType))
+		}
+
+		return nil
+	})
+}
+
 func CopyObject_missing_bucket_lock(s *S3Conf) error {
 	testName := "CopyObject_missing_bucket_lock"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
@@ -808,6 +851,7 @@ func CopyObject_invalid_legal_hold(s *S3Conf) error {
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrInvalidLegalHoldStatus))
 	}, withLock())
 }
+
 func CopyObject_invalid_object_lock_mode(s *S3Conf) error {
 	testName := "CopyObject_invalid_object_lock_mode"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

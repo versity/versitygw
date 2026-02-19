@@ -51,7 +51,8 @@ const (
 	minPartNumber = 1
 	maxPartNumber = 10000
 
-	defaultRegion = "us-east-1"
+	defaultRegion      = "us-east-1"
+	defaultContentType = "binary/octet-stream"
 )
 
 var (

@@ -79,6 +79,8 @@ func TestCreateBucket(ts *TestState) {
 	ts.Run(CreateBucket_as_user)
 	ts.Run(CreateBucket_default_acl)
 	ts.Run(CreateBucket_non_default_acl)
+	ts.Run(CreateBucket_private_canned_acl)
+	ts.Run(CreateBucket_private_canned_acl_bucket_owner_enforced_ownership)
 	ts.Run(CreateDeleteBucket_success)
 	ts.Run(CreateBucket_default_object_lock)
 	ts.Run(CreateBucket_invalid_location_constraint)
@@ -183,6 +185,7 @@ func TestPutObject(ts *TestState) {
 		ts.Run(PutObject_with_metadata)
 	}
 	ts.Run(PutObject_success)
+	ts.Run(PutObject_default_content_type)
 	if !ts.conf.versioningEnabled {
 		ts.Run(PutObject_racey_success)
 	}
@@ -330,6 +333,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_non_existing_dir_object)
 	ts.Run(CopyObject_should_copy_meta_props)
 	ts.Run(CopyObject_should_replace_meta_props)
+	ts.Run(CopyObject_default_content_type_with_replace_metadata)
 	ts.Run(CopyObject_missing_bucket_lock)
 	ts.Run(CopyObject_invalid_legal_hold)
 	ts.Run(CopyObject_invalid_object_lock_mode)
@@ -487,6 +491,7 @@ func TestCompleteMultipartUpload(ts *TestState) {
 	ts.Run(CompletedMultipartUpload_non_existing_bucket)
 	ts.Run(CompleteMultipartUpload_incorrect_part_number)
 	ts.Run(CompleteMultipartUpload_invalid_part_number)
+	ts.Run(CompleteMultipartUpload_defualt_content_type)
 	ts.Run(CompleteMultipartUpload_invalid_ETag)
 	ts.Run(CompleteMultipartUpload_small_upload_size)
 	ts.Run(CompleteMultipartUpload_empty_parts)
@@ -1244,6 +1249,8 @@ func GetIntTests() IntTests {
 		"CreateDeleteBucket_success":                                               CreateDeleteBucket_success,
 		"CreateBucket_default_acl":                                                 CreateBucket_default_acl,
 		"CreateBucket_non_default_acl":                                             CreateBucket_non_default_acl,
+		"CreateBucket_private_canned_acl":                                          CreateBucket_private_canned_acl,
+		"CreateBucket_private_canned_acl_bucket_owner_enforced_ownership":          CreateBucket_private_canned_acl_bucket_owner_enforced_ownership,
 		"CreateBucket_default_object_lock":                                         CreateBucket_default_object_lock,
 		"CreateBucket_invalid_location_constraint":                                 CreateBucket_invalid_location_constraint,
 		"CreateBucket_long_tags":                                                   CreateBucket_long_tags,
@@ -1292,6 +1299,7 @@ func GetIntTests() IntTests {
 		"PutObject_special_chars":                                                  PutObject_special_chars,
 		"PutObject_tagging":                                                        PutObject_tagging,
 		"PutObject_success":                                                        PutObject_success,
+		"PutObject_default_content_type":                                           PutObject_default_content_type,
 		"PutObject_invalid_object_names":                                           PutObject_invalid_object_names,
 		"PutObject_object_acl_not_supported":                                       PutObject_object_acl_not_supported,
 		"PutObject_false_negative_object_names":                                    PutObject_false_negative_object_names,
@@ -1392,6 +1400,7 @@ func GetIntTests() IntTests {
 		"CopyObject_non_existing_dir_object":                                       CopyObject_non_existing_dir_object,
 		"CopyObject_should_copy_meta_props":                                        CopyObject_should_copy_meta_props,
 		"CopyObject_should_replace_meta_props":                                     CopyObject_should_replace_meta_props,
+		"CopyObject_default_content_type_with_replace_metadata":                    CopyObject_default_content_type_with_replace_metadata,
 		"CopyObject_missing_bucket_lock":                                           CopyObject_missing_bucket_lock,
 		"CopyObject_invalid_legal_hold":                                            CopyObject_invalid_legal_hold,
 		"CopyObject_invalid_object_lock_mode":                                      CopyObject_invalid_object_lock_mode,
@@ -1497,6 +1506,7 @@ func GetIntTests() IntTests {
 		"AbortMultipartUpload_if_match_initiated_time":                             AbortMultipartUpload_if_match_initiated_time,
 		"CompletedMultipartUpload_non_existing_bucket":                             CompletedMultipartUpload_non_existing_bucket,
 		"CompleteMultipartUpload_invalid_part_number":                              CompleteMultipartUpload_invalid_part_number,
+		"CompleteMultipartUpload_defualt_content_type":                             CompleteMultipartUpload_defualt_content_type,
 		"CompleteMultipartUpload_invalid_ETag":                                     CompleteMultipartUpload_invalid_ETag,
 		"CompleteMultipartUpload_small_upload_size":                                CompleteMultipartUpload_small_upload_size,
 		"CompleteMultipartUpload_empty_parts":                                      CompleteMultipartUpload_empty_parts,

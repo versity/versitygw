@@ -1607,6 +1607,57 @@ func CompleteMultipartUpload_invalid_part_number(s *S3Conf) error {
 	})
 }
 
+func CompleteMultipartUpload_defualt_content_type(s *S3Conf) error {
+	testName := "CompleteMultipartUpload_defualt_content_type"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		mp, err := createMp(s3client, bucket, obj)
+		if err != nil {
+			return err
+		}
+
+		parts, _, err := uploadParts(s3client, 10, 1, bucket, obj, *mp.UploadId)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+			Bucket:   &bucket,
+			Key:      &obj,
+			UploadId: mp.UploadId,
+			MultipartUpload: &types.CompletedMultipartUpload{
+				Parts: []types.CompletedPart{
+					{
+						ETag:       parts[0].ETag,
+						PartNumber: parts[0].PartNumber,
+					},
+				},
+			},
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if getString(res.ContentType) != defaultContentType {
+			return fmt.Errorf("expected default %s Content-Type, instead got %s", defaultContentType, getString(res.ContentType))
+		}
+
+		return nil
+	})
+}
+
 func CompleteMultipartUpload_success(s *S3Conf) error {
 	testName := "CompleteMultipartUpload_success"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
