@@ -55,7 +55,7 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with user permission - admin user" {
-  if [ "$SKIP_USERS_TEST" == "true" ]; then
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -73,7 +73,7 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with no permission - 'user' user" {
-  if [ "$SKIP_USERS_TEST" == "true" ]; then
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -538,7 +538,7 @@ export RUN_USERS=true
   run bash -c "echo -n \"$payload_content\" > $TEST_FILE_FOLDER/$test_file"
   assert_success
 
-  run send_openssl_go_command "200" "-method" "PUT" "-payload" "$payload_content" "-bucketName" "$bucket_name" "-objectKey" "$test_file"
+  run send_openssl_go_command "200" "-method" "PUT" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payload" "$payload_content"
   assert_success
 
   run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/${test_file}_downloaded"

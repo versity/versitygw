@@ -18,6 +18,8 @@
 
 ### Posix Backend
 
+> **Note**:  many of the required libraries, and a good rundown of the installation procedure, can be found in the `Dockerfile_test_bats` dockerfile in the root folder.
+
 1. Build the `versitygw` binary.
 2. Install the command-line interface(s) you want to test if unavailable on your machine.  
    * **aws cli**: Instructions are [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
@@ -50,7 +52,7 @@
 
 To preserve buckets while running tests, set `RECREATE_BUCKETS` to `false`.  Two utility functions are included, if needed, to create, and delete buckets for this:  `tests/setup_static.sh` and `tests/remove_static.sh`.  Note that this creates a bucket with object lock enabled, and some tests may fail if the bucket being tested doesn't have object lock enabled.
 
-### S3 Backend
+### ~~S3 Backend~~ (Not Working)
 
 Instructions are mostly the same; however, testing with the S3 backend requires two S3 accounts.  Ideally, these are two real accounts, but one can also be a dummy account that versity uses internally.
 
@@ -65,7 +67,7 @@ To set up the latter:
 
 To communicate directly with s3, in order to compare the gateway results to direct results:
 1.  Create an AWS profile with the direct connection info.  Set `AWS_PROFILE` to this.
-2.  Set `RUN_VERSITYGW` to false.
+2.  Set `RUN_VERSITYGW` to **false**.
 3.  Set `AWS_ENDPOINT_URL` to the typical endpoint location (usually `https://s3.amazonaws.com`).
 4.  If testing **s3cmd**, create a new `s3cfg.local` file with `host_base` and `host_bucket` set to `s3.amazonaws.com`.
 5.  If testing **mc**, change the `MC_ALIAS` value to a new value such as `versity-direct`.
@@ -75,7 +77,7 @@ To communicate directly with s3, in order to compare the gateway results to dire
 1.  Copy `.secrets.default` to `.secrets` in the `tests` folder and change the parameters and add the additional s3 fields explained in the **S3 Backend** section above if running with the s3 backend.
 2.  By default, the dockerfile uses the **arm** architecture (usually modern Mac).  If using **amd** (usually earlier Mac or Linux), you can either replace the corresponding `ARG` values directly, or with `arg="<param>=<amd library or folder>"`  Also, you can determine which is used by your OS with `uname -a`.
 3.  Build and run the `Dockerfile_test_bats` file.  Change the `SECRETS_FILE` and `CONFIG_FILE` parameters to point to your secrets and config file, respectively, if not using the defaults.  Example:  `docker build -t <tag> --build-arg="SECRETS_FILE=<file>" --build-arg="CONFIG_FILE=<file>" -f tests/Dockerfile_test_bats .`.
-4.  To run the entire suite, run `docker run -it <image name>`.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST tests -> `docker run -it <image name> rest`).  Also, multiple specific suites can be run, if separated by comma.
+4.  To run the entire suite, run `docker run -it <image name>`.  This is not recommended due to the sheer amount of tests.  To run an individual suite, pass in the name of the suite as defined in `tests/run.sh` (e.g. REST tests -> `docker run -it <image name> rest`).  Also, multiple specific suites can be run, if separated by comma.
 
 ## Instructions - Running with docker-compose
 
@@ -108,12 +110,12 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **ACL_AWS_CANONICAL_ID**:  for direct mode, the canonical ID for the user to test ACL changes and access by non-owners
 
-**ACL_AWS_ACCESS_KEY_ID**, **ACL_AWS_ACCESS_SECRET_KEY**:  for direct mode, the ID and key for the S3 user in the **ACL_AWS_CANONICAL_ID** account.
+**ACL_AWS_ACCESS_KEY_ID**, **ACL_AWS_SECRET_ACCESS_KEY**:  for direct mode, the ID and key for the S3 user in the **ACL_AWS_CANONICAL_ID** account.
+
+**ACL_AWS_ACCESS_KEY_ID_TWO**, **ACL_AWS_SECRET_ACCESS_KEY_TWO**:  if running a second versitygw application, the user ID and secret key for this application.
 
 **USER_ID_{role}_{id}**, **USERNAME_{role}_{id}**, **PASSWORD_{role}_{id}**:  for setup_user_v2 non-autocreated users, the format for the user.
 * example:  USER_ID_USER_1={name}:  user ID corresponding to the first user with **user** permissions in the test.
-
-#### 
 
 ### Non-Secret
 
@@ -121,11 +123,15 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **RUN_VERSITYGW**:  whether to run the versitygw executable, should be set to **false** when running tests directly against **s3**.
 
+**PORT**:  port to run the versity app on, if not specified, defaults to **7070**.
+
+**PORT_TWO**:  port to run the second versity app on, if running two versity applications simultaneously.  If not specified, defaults to **7071**.
+
 **BACKEND**:  the storage backend type for the gateway, e.g. **posix** or **s3**.
 
 **LOCAL_FOLDER**:  if running with a **posix** backend, the backend storage folder.
 
-**BUCKET_ONE_NAME**, **BUCKET_TWO_NAME**:  test bucket names.
+**BUCKET_ONE_NAME**, **BUCKET_TWO_NAME**:  test bucket names.  In newer tests and when `RECREATE_BUCKETS` is set to **true**, these are prefixes and the suffixes are autogenerated.
 
 **RECREATE_BUCKETS**:  whether to delete buckets between tests.  If set to false, the bucket will be restored to an original state for the purpose of ensuring consistent tests, but not deleted.
 
@@ -142,6 +148,8 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **GOCOVERDIR**:  folder to put golang coverage info in, if checking coverage info.
 
 **USERS_FOLDER**:  folder to use if storing IAM data in a folder.
+
+**USERS_BUCKET**:  bucket to use if storing IAM data in an S3 bucket
 
 **IAM_TYPE**:  how to store IAM data (**s3** or **folder**).
 
@@ -173,9 +181,9 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 
 **AUTOGENERATE_USERS**:  setup_user_v2, whether or not to autocreate users for tests.  If set to **false**, users must be pre-created (see `Secret` section above).
 
-**USER_AUTOGENERATION_PREFIX**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **true**, the prefix for the autocreated username. 
+**USER_AUTOGENERATION_PREFIX**:  setup_user_v2, if **AUTOGENERATE_USERS** is set to **true**, the prefix for the autocreated username. 
 
-**CREATE_STATIC_USERS_IF_NONEXISTENT**:  setup_user_v2, if **AUTOCREATE_USERS** is set to **false**, generate non-existing users if they don't exist, but don't delete them, as with user autogeneration
+**CREATE_STATIC_USERS_IF_NONEXISTENT**:  setup_user_v2, if **AUTOGENERATE_USERS** is set to **false**, generate non-existing users if they don't exist, but don't delete them, as with user autogeneration
 
 **DIRECT_POST_COMMAND_DELAY**:  in v1 direct mode, time to wait before sending new commands to try to prevent propagation delay issues
 
@@ -188,6 +196,16 @@ A single instance can be run with `docker-compose -f docker-compose-bats.yml up 
 **MAX_OPENSSL_COMMAND_LOG_BYTES**:  number of OpenSSL command bytes to display in command log, can prevent the display of too many chars in the case of large payload commands, -1 means display whole command
 
 **COVERAGE_LOG**:  if set, where to write test or test suite coverage data
+
+**PYTHON_ENV_FOLDER**:  where to place or use the python environment to calculate certain AWS checksums.  The default is `env` in the `TEST_FILE_FOLDER`.
+
+**TEMPLATE_MATRIX_FILE**:  YAML file location used to retrieve the templates for expected responses, in some cases
+
+**SKIP_POLICY**:  set to **true** to skip tests involving policies
+
+**SKIP_BUCKET_OWNERSHIP_CONTROLS**:  set to **true** to avoid bucket ownership operations.  This is needed to properly set up and clean the buckets if these operations are not supported by the server.
+
+**BYPASS_ENV_FILE**:  skip loading `.env` file on startup, default is **false**
 
 ## REST Scripts
 

@@ -142,7 +142,11 @@ source ./tests/drivers/put_object/put_object_rest.sh
   run setup_bucket "$bucket_name"
   assert_success
 
-  run send_rest_go_command "204" "-method" "DELETE" "-bucketName" "$bucket_name" "-signedParams" "x-amz-expected-bucket-owner:$AWS_USER_ID"
+  run get_user_id
+  assert_success
+  user_id=$output
+
+  run send_rest_go_command "204" "-method" "DELETE" "-bucketName" "$bucket_name" "-signedParams" "x-amz-expected-bucket-owner:$user_id"
   assert_success
 }
 

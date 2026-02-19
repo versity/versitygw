@@ -64,6 +64,10 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   run setup_bucket "$bucket_name"
   assert_success
 
-  run head_bucket_rest_expect_success "$bucket_name" "EXPECTED_OWNER=$AWS_USER_ID"
+  run get_user_id
+  assert_success
+  user_id=$output
+
+  run head_bucket_rest_expect_success "$bucket_name" "EXPECTED_OWNER=$user_id"
   assert_success
 }
