@@ -66,25 +66,22 @@ source ./tests/setup_unit.sh
 }
 
 @test "get_xml_data - valid XML with declaration" {
-  input=$(get_file_name) output_file=$(get_file_name)
+  input=$(get_file_name)
   printf 'HTTP/1.1 200\r\n\r\n<?xml version="1.0"?><Value>OK</Value>' > "$TEST_FILE_FOLDER/$input"
-  run get_xml_data "$TEST_FILE_FOLDER/$input" "$TEST_FILE_FOLDER/$output_file"
+  run compare_data_with_xml_file "$TEST_FILE_FOLDER/$input" "<?xml version=\"1.0\"?>\n<Value>OK</Value>"
   assert_success
-  grep -q "<Value>OK</Value>" "$TEST_FILE_FOLDER/$output_file"
 }
 
 @test "get_xml_data - valid XML without declaration" {
-  input=$(get_file_name) output_file=$(get_file_name)
-  printf 'HTTP/1.1 200\r\n\r\n<Value>OK</Value>' > "$TEST_FILE_FOLDER/$input"
-  run get_xml_data "$TEST_FILE_FOLDER/$input" "$TEST_FILE_FOLDER/$output_file"
+  input=$(get_file_name)
+  printf 'HTTP/1.1 200\r\n\r\n<Value>AlsoOK</Value>' > "$TEST_FILE_FOLDER/$input"
+  run compare_data_with_xml_file "$TEST_FILE_FOLDER/$input" "<?xml version=\"1.0\"?>\n<Value>AlsoOK</Value>"
   assert_success
-  grep -q "<Value>OK</Value>" "$TEST_FILE_FOLDER/$output_file"
 }
 
 @test "get_xml_data - XML with extra content after root" {
-  input=$(get_file_name) output_file=$(get_file_name)
-  printf 'HTTP/1.1 200\r\n\r\n<Value>OK</Value>extra' > "$TEST_FILE_FOLDER/$input"
-  run get_xml_data "$TEST_FILE_FOLDER/$input" "$TEST_FILE_FOLDER/$output_file"
+  input=$(get_file_name)
+  printf 'HTTP/1.1 200\r\n\r\n<Value>AgainOK</Value>extra' > "$TEST_FILE_FOLDER/$input"
+  run compare_data_with_xml_file "$TEST_FILE_FOLDER/$input" "<?xml version=\"1.0\"?>\n<Value>AgainOK</Value>"
   assert_success
-  grep -q "<Value>OK</Value>" "$TEST_FILE_FOLDER/$output_file"
 }

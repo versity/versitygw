@@ -264,3 +264,26 @@ check_error_parameter() {
   fi
   return 0
 }
+
+compare_data_with_xml_file() {
+  if ! check_param_count_v2 "input file, expected data string" 2 $#; then
+    return 1
+  fi
+  if ! output_file=$(get_file_name 2>&1); then
+    log 2 "error getting output file file name: $output_file"
+    return 1
+  fi
+  if ! expected_data=$(get_file_name 2>&1); then
+    log 2 "error getting expected data file name: $expected_data"
+    return 1
+  fi
+  if ! get_xml_data "$1" "$TEST_FILE_FOLDER/$output_file"; then
+    log 2 "error getting xml data"
+    return 1
+  fi
+  echo -en "$2" > "$TEST_FILE_FOLDER/$expected_data"
+  if ! diff "$TEST_FILE_FOLDER/$expected_data" "$TEST_FILE_FOLDER/$output_file"; then
+    return 1
+  fi
+  return 0
+}

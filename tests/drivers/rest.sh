@@ -281,26 +281,49 @@ split_params_by_delimiter() {
   printf '%s\n' "${callback_params[@]}"
 }
 
+# return 0 for callback params, 1 for only go params
+get_go_params() {
+  for param in "$@"; do
+    if [[ "$param" == "--" ]]; then
+      return 1
+    fi
+    log 5 "param: $param"
+    echo "$param"
+  done
+  return 0
+}
+
+get_callback_params() {
+  delimiter_found=false
+  for param in "$@"; do
+    if [ "$delimiter_found" == "true" ]; then
+      echo "$param"
+      continue
+    fi
+    if [ "$param" == "--" ]; then
+      delimiter_found=true
+    fi
+  done
+  return 0
+}
+
 send_rest_go_command_callback() {
   if ! check_param_count_gt "response code, callback, params" 2 $#; then
     return 1
   fi
 
-  local all_params=("${@:3}")
-  local split_output
-  split_output=$(split_params_by_delimiter "${all_params[@]}")
-  
-  local split_lines=()
+  local all_params=("${@:3}") no_callback_params=0 go_params go_param_array=() callback_params=()
+  go_params=$(get_go_params "${all_params[@]}") || no_callback_params=$?
   while IFS= read -r line; do
-    split_lines+=("$line")
-  done <<< "$split_output"
-  
-  local go_count="${split_lines[0]}"
-  local go_params=("${split_lines[@]:1:$go_count}")
-  local callback_count="${split_lines[$((go_count + 1))]}"
-  local callback_params=("${split_lines[@]:$((go_count + 2)):$callback_count}")
+    go_param_array+=("$line")
+  done <<< "$go_params"
+  if [ "$no_callback_params" -eq 1 ]; then
+    while IFS= read -r line; do
+      callback_params+=("$line")
+    done <<< "$(get_callback_params "${all_params[@]}")"
+  fi
 
-  if ! rest_go_command_perform_send "${go_params[@]}"; then
+  if ! rest_go_command_perform_send "${go_param_array[@]}"; then
     log 2 "error sending rest go command"
     return 1
   fi

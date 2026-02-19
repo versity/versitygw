@@ -531,9 +531,11 @@ export RUN_USERS=true
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  payload_content="1234567890"
+  run bash -c "tr -dc 'a-zA-Z0-9 ' < /dev/urandom | fold -w 100 | head -n 1"
+  assert_success
+  payload_content=$output
 
-  run bash -c "echo -n '$payload_content' > $TEST_FILE_FOLDER/$test_file"
+  run bash -c "echo -n \"$payload_content\" > $TEST_FILE_FOLDER/$test_file"
   assert_success
 
   run send_openssl_go_command "200" "-method" "PUT" "-payload" "$payload_content" "-bucketName" "$bucket_name" "-objectKey" "$test_file"
