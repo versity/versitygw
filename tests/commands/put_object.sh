@@ -18,7 +18,6 @@ source ./tests/report.sh
 
 put_object() {
   log 6 "put_object"
-  record_command "put-object" "client:$1"
   if [ $# -ne 4 ]; then
     log 2 "put object command requires command type, source, destination bucket, destination key"
     return 1
@@ -48,7 +47,6 @@ put_object() {
 }
 
 put_object_with_user() {
-  record_command "put-object" "client:$1"
   if [ $# -ne 6 ]; then
     log 2 "put object command requires command type, source, destination bucket, destination key, aws ID, aws secret key"
     return 1

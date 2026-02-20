@@ -25,6 +25,7 @@ source ./tests/drivers/list_object_versions/list_object_versions_rest.sh
 source ./tests/drivers/put_object/put_object_rest.sh
 source ./tests/util/util_public_access_block.sh
 source ./tests/util/util_time.sh
+source ./tests/drivers/get_object/get_object_rest.sh
 
 test_file="test_file"
 export RUN_USERS=true
@@ -54,7 +55,7 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with user permission - admin user" {
-  if [ "$SKIP_USERS_TEST" == "true" ]; then
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -72,7 +73,7 @@ export RUN_USERS=true
 }
 
 @test "REST - PutObject with no permission - 'user' user" {
-  if [ "$SKIP_USERS_TEST" == "true" ]; then
+  if [ "$SKIP_USERS_TESTS" == "true" ]; then
     skip "skipping versity-specific users tests"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
@@ -515,5 +516,31 @@ export RUN_USERS=true
   assert_success
 
   run rest_check_legal_hold "$bucket_name" "$test_file"
+  assert_success
+}
+
+@test "REST - PutObject - openssl go non-file payload" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run get_file_name
+  assert_success
+  test_file=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run bash -c "openssl rand -base64 100 | tr -dc 'a-zA-Z0-9' | head -c 100"
+  assert_success
+  payload_content=$output
+
+  run bash -c "echo -n \"$payload_content\" > $TEST_FILE_FOLDER/$test_file"
+  assert_success
+
+  run send_openssl_go_command "200" "-method" "PUT" "-bucketName" "$bucket_name" "-objectKey" "$test_file" "-payload" "$payload_content"
+  assert_success
+
+  run download_and_compare_file "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file" "$TEST_FILE_FOLDER/${test_file}_downloaded"
   assert_success
 }

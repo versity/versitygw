@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Copyright 2026 Versity Software
+# This file is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 build_xpath_string() {
   if ! check_param_count_gt "XML tree" 1 $#; then
     return 1
@@ -14,13 +28,23 @@ build_xpath_string_for_element() {
   if ! check_param_count_gt "XML tree" 1 $#; then
     return 1
   fi
-  xpath='//'
+  local xpath='//'
   for ((idx=1;idx<=$#;idx++)); do
+    if [ "${!idx}" == "" ]; then
+      log 2 "param number $idx is empty"
+      return 1
+    fi
+    if [[ "${!idx}" =~ [[:space:]] ]]; then
+      log 2 "param '${!idx}' contains a space"
+      return 1
+    fi
     xpath+='*[local-name()="'${!idx}'"]'
     if [ "$idx" != $# ]; then
       xpath+='/'
     fi
   done
+  echo "$xpath"
+  return 0
 }
 
 check_for_empty_element() {
@@ -29,8 +53,8 @@ check_for_empty_element() {
   fi
 
   # shellcheck disable=SC2068
-  if ! build_xpath_string_for_element ${@:2}; then
-    log 2 "error building XPath search string"
+  if ! xpath=$(build_xpath_string_for_element ${@:2} 2>&1); then
+    log 2 "error building XPath search string: $xpath"
     return 1
   fi
   if ! get_xml_data "$1" "$1.xml"; then
@@ -50,7 +74,7 @@ get_element() {
     return 1
   fi
 
-  if ! build_xpath_string_for_element "${@:2}"; then
+  if ! xpath=$(build_xpath_string_for_element "${@:2}" 2>&1); then
     log 2 "error building XPath search string"
     return 1
   fi
@@ -62,13 +86,12 @@ get_element() {
 }
 
 get_element_text() {
-  if [ $# -lt 2 ]; then
-    log 2 "'get_element_text' requires data file, XML tree"
+  if ! check_param_count_gt "data file, XML tree" 2 $#; then
     return 1
   fi
 
-  if ! build_xpath_string_for_element "${@:2}"; then
-    log 2 "error building XPath search string"
+  if ! xpath=$(build_xpath_string_for_element "${@:2}" 2>&1); then
+    log 2 "error building XPath search string: $xpath"
     return 1
   fi
 
@@ -166,8 +189,8 @@ check_if_element_exists() {
   if ! check_param_count_gt "data file, element, XML tree" 3 $#; then
     return 1
   fi
-  if ! build_xpath_string_for_element "${@:3}"; then
-    log 2 "error building XPath search string"
+  if ! xpath=$(build_xpath_string_for_element "${@:3}" 2>&1); then
+    log 2 "error building XPath search string: $xpath"
     return 1
   fi
 
@@ -189,6 +212,11 @@ check_if_element_exists() {
 
 get_xml_data() {
   if ! check_param_count_v2 "data file, output file" 2 $#; then
+    return 1
+  fi
+
+  if [ ! -e "$1" ]; then
+    log 2 "file '$1' does not exist"
     return 1
   fi
   log 5 "data: $(cat "$1")"
@@ -232,6 +260,29 @@ check_error_parameter() {
   unescaped_value="$(xmlstarlet unesc "$value")"
   if [ "$unescaped_value" != "$3" ]; then
     log 2 "expected '$3', was '$unescaped_value'"
+    return 1
+  fi
+  return 0
+}
+
+compare_data_with_xml_file() {
+  if ! check_param_count_v2 "input file, expected data string" 2 $#; then
+    return 1
+  fi
+  if ! output_file=$(get_file_name 2>&1); then
+    log 2 "error getting output file file name: $output_file"
+    return 1
+  fi
+  if ! expected_data=$(get_file_name 2>&1); then
+    log 2 "error getting expected data file name: $expected_data"
+    return 1
+  fi
+  if ! get_xml_data "$1" "$TEST_FILE_FOLDER/$output_file"; then
+    log 2 "error getting xml data"
+    return 1
+  fi
+  echo -en "$2" > "$TEST_FILE_FOLDER/$expected_data"
+  if ! diff "$TEST_FILE_FOLDER/$expected_data" "$TEST_FILE_FOLDER/$output_file"; then
     return 1
   fi
   return 0

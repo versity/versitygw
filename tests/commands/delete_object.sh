@@ -17,7 +17,6 @@
 # params:  client, bucket, key
 delete_object() {
   log 6 "delete_object"
-  record_command "delete-object" "client:$1"
   if ! check_param_count "delete_object" "command type, bucket, key" 3 $#; then
     return 1
   fi
@@ -124,7 +123,6 @@ delete_object_version_rest_bypass_retention() {
 }
 
 delete_object_with_user() {
-  record_command "delete-object" "client:$1"
   if ! check_param_count "delete_object_version_bypass_retention" "command type, bucket, key, access ID, secret key" 5 $#; then
     return 1
   fi

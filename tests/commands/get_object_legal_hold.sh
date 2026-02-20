@@ -19,7 +19,6 @@ get_object_legal_hold() {
     log 2 "'get object legal hold' command requires bucket, key"
     return 1
   fi
-  record_command "get-object-legal-hold" "client:s3api"
   legal_hold=$(send_command aws --no-verify-ssl s3api get-object-legal-hold --bucket "$1" --key "$2" 2>&1) || local get_result=$?
   if [[ $get_result -ne 0 ]]; then
     log 2 "error getting object legal hold: $legal_hold"
@@ -49,7 +48,6 @@ get_object_legal_hold_version_id() {
     log 2 "'get_object_legal_hold_version_id' command requires bucket, key, version id"
     return 1
   fi
-  record_command "get-object-legal-hold" "client:s3api"
   if ! legal_hold=$(send_command aws --no-verify-ssl s3api get-object-legal-hold --bucket "$1" --key "$2" --version-id "$3" 2>&1); then
     log 2 "error getting object legal hold w/version id: $legal_hold"
     return 1

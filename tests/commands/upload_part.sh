@@ -32,7 +32,6 @@ upload_part_with_user() {
     return 1
   fi
   local etag_json
-  record_command "upload-part" "client:s3api"
   if ! etag_json=$(AWS_ACCESS_KEY_ID="$6" AWS_SECRET_ACCESS_KEY="$7" send_command aws --no-verify-ssl s3api upload-part --bucket "$1" --key "$2" --upload-id "$3" --part-number "$5" --body "$4-$(($5-1))" 2>&1); then
     log 2 "Error uploading part $5: $etag_json"
     return 1
