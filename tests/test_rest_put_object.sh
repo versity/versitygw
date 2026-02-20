@@ -531,7 +531,7 @@ export RUN_USERS=true
   run setup_bucket_v2 "$bucket_name"
   assert_success
 
-  run bash -c "tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 100 | head -n 1"
+  run bash -c "openssl rand -base64 100 | tr -dc 'a-zA-Z0-9' | head -c 100"
   assert_success
   payload_content=$output
 
