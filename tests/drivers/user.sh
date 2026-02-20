@@ -170,3 +170,16 @@ reset_bucket() {
     return 1
   fi
 }
+
+get_user_id() {
+  if [ "$DIRECT" == "true" ]; then
+    if [ "$DIRECT_AWS_USER_ID" == "" ]; then
+      log 2 "DIRECT_AWS_USER_ID is empty or not defined"
+      return 1
+    fi
+    echo "$DIRECT_AWS_USER_ID"
+    return 0
+  fi
+  echo "$AWS_ACCESS_KEY_ID"
+  return 0
+}

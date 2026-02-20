@@ -287,7 +287,6 @@ get_go_params() {
     if [[ "$param" == "--" ]]; then
       return 1
     fi
-    log 5 "param: $param"
     echo "$param"
   done
   return 0
