@@ -888,11 +888,16 @@ func TestS3ApiController_CreateBucket(t *testing.T) {
 				locals: map[utils.ContextKey]any{
 					utils.ContextKeyAccount: adminAcc,
 				},
+				bucket: "my-bucket",
 			},
 			output: testOutput{
 				response: &Response{
 					MetaOpts: &MetaOptions{
 						BucketOwner: adminAcc.Access,
+					},
+					Headers: map[string]*string{
+						"Location":         utils.GetStringPtr("/my-bucket"),
+						"x-amz-bucket-arn": utils.GetStringPtr("arn:aws:s3:::my-bucket"),
 					},
 				},
 			},
