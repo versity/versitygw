@@ -641,3 +641,28 @@ func CreateBucket_invalid_canned_acl(s *S3Conf) error {
 		return checkSdkApiErr(err, "InvalidArgument")
 	})
 }
+
+func CreateBucket_success(s *S3Conf) error {
+	testName := "CreateBucket_success"
+	return actionHandlerNoSetup(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.CreateBucket(ctx, &s3.CreateBucketInput{
+			Bucket: &bucket,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedLocation := "/" + bucket
+		if getString(res.Location) != expectedLocation {
+			return fmt.Errorf("expected the bucket Location to be %s, instead got %s", expectedLocation, getString(res.Location))
+		}
+		expectedArn := "arn:aws:s3:::" + bucket
+		if getString(res.BucketArn) != expectedArn {
+			return fmt.Errorf("expected the bucket arn to be %s, instead got %s", expectedArn, getString(res.BucketArn))
+		}
+
+		return teardown(s, bucket)
+	})
+}

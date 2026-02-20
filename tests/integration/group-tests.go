@@ -81,7 +81,7 @@ func TestCreateBucket(ts *TestState) {
 	ts.Run(CreateBucket_non_default_acl)
 	ts.Run(CreateBucket_private_canned_acl)
 	ts.Run(CreateBucket_private_canned_acl_bucket_owner_enforced_ownership)
-	ts.Run(CreateDeleteBucket_success)
+	ts.Run(CreateBucket_success)
 	ts.Run(CreateBucket_default_object_lock)
 	ts.Run(CreateBucket_invalid_location_constraint)
 	ts.Run(CreateBucket_long_tags)
@@ -1246,7 +1246,7 @@ func GetIntTests() IntTests {
 		"CreateBucket_invalid_ownership":                                           CreateBucket_invalid_ownership,
 		"CreateBucket_ownership_with_acl":                                          CreateBucket_ownership_with_acl,
 		"CreateBucket_as_user":                                                     CreateBucket_as_user,
-		"CreateDeleteBucket_success":                                               CreateDeleteBucket_success,
+		"CreateBucket_success":                                                     CreateBucket_success,
 		"CreateBucket_default_acl":                                                 CreateBucket_default_acl,
 		"CreateBucket_non_default_acl":                                             CreateBucket_non_default_acl,
 		"CreateBucket_private_canned_acl":                                          CreateBucket_private_canned_acl,

@@ -632,9 +632,21 @@ func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 			Tags: body.TagSet,
 		},
 	}, updAcl)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: bucketOwner.Access,
+			},
+		}, err
+	}
+
 	return &Response{
 		MetaOpts: &MetaOptions{
 			BucketOwner: bucketOwner.Access,
 		},
-	}, err
+		Headers: map[string]*string{
+			"Location":         utils.GetStringPtr("/" + bucket),
+			"x-amz-bucket-arn": utils.GetStringPtr(auth.ResourceArnPrefix + bucket),
+		},
+	}, nil
 }

@@ -24,28 +24,6 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
-func CreateDeleteBucket_success(s *S3Conf) error {
-	testName := "CreateBucket_success"
-	runF(testName)
-	bucket := getBucketName()
-
-	err := setup(s, bucket)
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-
-	}
-
-	err = teardown(s, bucket)
-	if err != nil {
-		failF("%v: %v", testName, err)
-		return fmt.Errorf("%v: %w", testName, err)
-	}
-
-	passF(testName)
-	return nil
-}
-
 func DeleteBucket_non_existing_bucket(s *S3Conf) error {
 	testName := "DeleteBucket_non_existing_bucket"
 	runF(testName)
