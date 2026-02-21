@@ -47,15 +47,16 @@ type S3Proxy struct {
 
 	client *s3.Client
 
-	access          string
-	secret          string
-	endpoint        string
-	awsRegion       string
-	metaBucket      string
-	disableChecksum bool
-	sslSkipVerify   bool
-	usePathStyle    bool
-	debug           bool
+	access                    string
+	secret                    string
+	endpoint                  string
+	awsRegion                 string
+	metaBucket                string
+	disableChecksum           bool
+	disableDataIntegrityCheck bool
+	sslSkipVerify             bool
+	usePathStyle              bool
+	debug                     bool
 }
 
 var _ backend.Backend = &S3Proxy{}
@@ -68,17 +69,18 @@ func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*
 	return s, s.validate(ctx)
 }
 
-func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, disableChecksum, sslSkipVerify, usePathStyle, debug bool) (*S3Proxy, error) {
+func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, disableChecksum, disableDataIntegrityCheck, sslSkipVerify, usePathStyle, debug bool) (*S3Proxy, error) {
 	s := &S3Proxy{
-		access:          access,
-		secret:          secret,
-		endpoint:        endpoint,
-		awsRegion:       region,
-		metaBucket:      metaBucket,
-		disableChecksum: disableChecksum,
-		sslSkipVerify:   sslSkipVerify,
-		usePathStyle:    usePathStyle,
-		debug:           debug,
+		access:                    access,
+		secret:                    secret,
+		endpoint:                  endpoint,
+		awsRegion:                 region,
+		metaBucket:                metaBucket,
+		disableChecksum:           disableChecksum,
+		disableDataIntegrityCheck: disableDataIntegrityCheck,
+		sslSkipVerify:             sslSkipVerify,
+		usePathStyle:              usePathStyle,
+		debug:                     debug,
 	}
 	client, err := s.getClientWithCtx(ctx)
 	if err != nil {

@@ -22,15 +22,16 @@ import (
 )
 
 var (
-	s3proxyAccess          string
-	s3proxySecret          string
-	s3proxyEndpoint        string
-	s3proxyRegion          string
-	s3proxyMetaBucket      string
-	s3proxyDisableChecksum bool
-	s3proxySslSkipVerify   bool
-	s3proxyUsePathStyle    bool
-	s3proxyDebug           bool
+	s3proxyAccess                    string
+	s3proxySecret                    string
+	s3proxyEndpoint                  string
+	s3proxyRegion                    string
+	s3proxyMetaBucket                string
+	s3proxyDisableChecksum           bool
+	s3proxyDisableDataIntegrityCheck bool
+	s3proxySslSkipVerify             bool
+	s3proxyUsePathStyle              bool
+	s3proxyDebug                     bool
 )
 
 func s3Command() *cli.Command {
@@ -85,6 +86,13 @@ to an s3 storage backend service.`,
 				Destination: &s3proxyDisableChecksum,
 			},
 			&cli.BoolFlag{
+				Name:        "disable-data-integrity-check",
+				Usage:       "disable data integrity checks for requests (sets RequestChecksumCalculationWhenRequired)",
+				Value:       false,
+				EnvVars:     []string{"VGW_S3_DISABLE_DATA_INTEGRITY_CHECK"},
+				Destination: &s3proxyDisableDataIntegrityCheck,
+			},
+			&cli.BoolFlag{
 				Name:        "ssl-skip-verify",
 				Usage:       "skip ssl cert verification for s3 service",
 				EnvVars:     []string{"VGW_S3_SSL_SKIP_VERIFY"},
@@ -111,7 +119,7 @@ to an s3 storage backend service.`,
 
 func runS3(ctx *cli.Context) error {
 	be, err := s3proxy.New(ctx.Context, s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
-		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxySslSkipVerify, s3proxyUsePathStyle, s3proxyDebug)
+		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxyDisableDataIntegrityCheck, s3proxySslSkipVerify, s3proxyUsePathStyle, s3proxyDebug)
 	if err != nil {
 		return fmt.Errorf("init s3 backend: %w", err)
 	}

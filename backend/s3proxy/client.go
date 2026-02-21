@@ -76,6 +76,11 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 			config.WithAPIOptions([]func(*middleware.Stack) error{v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware}))
 	}
 
+	if s.disableDataIntegrityCheck {
+		opts = append(opts,
+			config.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired))
+	}
+
 	if s.debug {
 		opts = append(opts,
 			config.WithClientLogMode(aws.LogSigning|aws.LogRetries|aws.LogRequest|aws.LogResponse|aws.LogRequestEventMessage|aws.LogResponseEventMessage))
