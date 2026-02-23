@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -97,6 +98,8 @@ var (
 	webuiPorts                             []string
 	webuiCertFile, webuiKeyFile            string
 	webuiNoTLS                             bool
+	webuiGateways                          []string
+	webuiAdminGateways                     []string
 )
 
 var (
@@ -150,6 +153,8 @@ documentation can be found in the GitHub wiki.`,
 			ports = ctx.StringSlice("port")
 			webuiPorts = ctx.StringSlice("webui")
 			admPorts = ctx.StringSlice("admin-port")
+			webuiGateways = ctx.StringSlice("webui-gateways")
+			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
 			return nil
 		},
 		Action: func(ctx *cli.Context) error {
@@ -202,6 +207,16 @@ func initFlags() []cli.Flag {
 			Usage:       "disable TLS for WebUI even if TLS is configured for the gateway",
 			EnvVars:     []string{"VGW_WEBUI_NO_TLS"},
 			Destination: &webuiNoTLS,
+		},
+		&cli.StringSliceFlag{
+			Name:    "webui-gateways",
+			Usage:   "override auto-detected S3 gateway URLs for WebUI (e.g. 'http://localhost:7070', 'https://s3.example.com'; can be specified multiple times)",
+			EnvVars: []string{"VGW_WEBUI_GATEWAYS"},
+		},
+		&cli.StringSliceFlag{
+			Name:    "webui-admin-gateways",
+			Usage:   "override auto-detected admin gateway URLs for WebUI (e.g. 'http://localhost:7080', 'https://admin.example.com'; can be specified multiple times)",
+			EnvVars: []string{"VGW_WEBUI_ADMIN_GATEWAYS"},
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -1023,16 +1038,37 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		}
 
 		var gateways []string
-		for _, p := range ports {
-			urls, err := buildServiceURLs(p, sslEnabled)
+		if len(webuiGateways) > 0 {
+			// Use explicitly provided gateway URLs if specified
+			// Validate explicitly provided URLs
+			validGateways, err := validateGatewayURLs(webuiGateways, "webui gateway")
 			if err != nil {
-				return fmt.Errorf("webui: build gateway URLs: %w", err)
+				return err
 			}
-			gateways = append(gateways, urls...)
+			gateways = validGateways
+		} else {
+			// Auto-detect from configured ports
+			for _, p := range ports {
+				urls, err := buildServiceURLs(p, sslEnabled)
+				if err != nil {
+					return fmt.Errorf("webui: build gateway URLs: %w", err)
+				}
+				gateways = append(gateways, urls...)
+			}
+			// Sort so localhost/127.0.0.1 URLs appear last
+			sortGatewayURLs(gateways)
 		}
 
 		adminGateways := gateways
-		if len(admPorts) > 0 {
+		if len(webuiAdminGateways) > 0 {
+			// Validate explicitly provided admin gateway URLs
+			validAdminGateways, err := validateGatewayURLs(webuiAdminGateways, "webui admin gateway")
+			if err != nil {
+				return err
+			}
+			adminGateways = validAdminGateways
+		} else if len(admPorts) > 0 {
+			// Auto-detect from configured admin ports
 			adminGateways = nil
 			for _, admPort := range admPorts {
 				urls, err := buildServiceURLs(admPort, admSSLEnabled)
@@ -1041,6 +1077,8 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 				}
 				adminGateways = append(adminGateways, urls...)
 			}
+			// Sort so localhost/127.0.0.1 URLs appear last
+			sortGatewayURLs(adminGateways)
 		}
 
 		if quiet {
@@ -1460,6 +1498,84 @@ func buildServiceURLs(spec string, ssl bool) ([]string, error) {
 		urls = append(urls, fmt.Sprintf("%s://%s:%s", scheme, ip, prt))
 	}
 	return urls, nil
+}
+
+// isLocalhost checks if a URL contains a localhost address
+func isLocalhost(url string) bool {
+	return strings.Contains(url, "localhost") ||
+		strings.Contains(url, "127.0.0.1") ||
+		strings.Contains(url, "[::1]")
+}
+
+// validateGatewayURLs validates a list of gateway URLs and returns only valid ones.
+// It prints warnings for invalid URLs and returns an error if the input list is non-empty
+// but contains no valid URLs after filtering.
+func validateGatewayURLs(urls []string, urlType string) ([]string, error) {
+	if len(urls) == 0 {
+		return urls, nil
+	}
+
+	var validURLs []string
+	for _, urlStr := range urls {
+		// Skip empty strings
+		if strings.TrimSpace(urlStr) == "" {
+			continue
+		}
+
+		parsedURL, err := url.Parse(urlStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: invalid %s URL %q: %v\n", urlType, urlStr, err)
+			continue
+		}
+
+		// Ensure the URL has a scheme (http or https)
+		if parsedURL.Scheme == "" {
+			fmt.Fprintf(os.Stderr, "WARNING: invalid %s URL %q: missing scheme (must be http:// or https://)\n", urlType, urlStr)
+			continue
+		}
+
+		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+			fmt.Fprintf(os.Stderr, "WARNING: invalid %s URL %q: unsupported scheme %q (must be http or https)\n", urlType, urlStr, parsedURL.Scheme)
+			continue
+		}
+
+		// Ensure the URL has a host
+		if parsedURL.Host == "" {
+			fmt.Fprintf(os.Stderr, "WARNING: invalid %s URL %q: missing host\n", urlType, urlStr)
+			continue
+		}
+
+		validURLs = append(validURLs, urlStr)
+	}
+
+	if len(validURLs) == 0 {
+		return nil, fmt.Errorf("%s URLs specified but none are valid", urlType)
+	}
+
+	return validURLs, nil
+}
+
+// sortGatewayURLs sorts a list of URLs so that localhost and 127.0.0.1 URLs appear last
+func sortGatewayURLs(urls []string) {
+	if len(urls) <= 1 {
+		return
+	}
+
+	// Partition URLs into two groups: non-localhost and localhost
+	var nonLocal []string
+	var local []string
+
+	for _, url := range urls {
+		if isLocalhost(url) {
+			local = append(local, url)
+		} else {
+			nonLocal = append(nonLocal, url)
+		}
+	}
+
+	// Rebuild the slice with non-localhost first, then localhost
+	copy(urls, nonLocal)
+	copy(urls[len(nonLocal):], local)
 }
 
 // validatePortConflicts checks for port conflicts across s3 api, admin, and webui ports.
