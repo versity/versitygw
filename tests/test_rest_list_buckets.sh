@@ -222,3 +222,19 @@ export RUN_USERS=true
   run send_rest_go_command_expect_error_with_specific_arg_names_values "405" "MethodNotAllowed" "is not allowed" 4 "Method" "POST" "ResourceType" "SERVICE" "-method" "POST"
   assert_success
 }
+
+@test "REST - ListBuckets - invalid method" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1846"
+  fi
+  run send_rest_go_command_expect_error "400" "BadRequest" "An error occurred when parsing the HTTP request" "-method" "GETS"
+  assert_success
+}
+
+@test "REST - ListBuckets - error Content-Type is application/xml" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1852"
+  fi
+  run send_rest_go_command_check_header_key_and_value "400" "Content-Type" "application/xml" "-method" "GETS"
+  assert_success
+}

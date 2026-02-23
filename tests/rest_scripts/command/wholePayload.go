@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -46,6 +47,9 @@ func (w *WholePayload) WritePayload(filePath string) error {
 		var bytesRead int
 		bytesRead, err = sourceFile.Read(buffer)
 		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return fmt.Errorf("error reading data bytes: %w", err)
 		}
 		if bytesRead == 0 {
@@ -54,6 +58,9 @@ func (w *WholePayload) WritePayload(filePath string) error {
 		if _, err = outFile.Write(buffer[:bytesRead]); err != nil {
 			return fmt.Errorf("error writing bytes to file: %w", err)
 		}
+	}
+	if err := outFile.Close(); err != nil {
+		return fmt.Errorf("error closing output file: %w", err)
 	}
 	return nil
 }
