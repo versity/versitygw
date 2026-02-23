@@ -33,7 +33,7 @@ func TestS3ApiController_CORSOptions(t *testing.T) {
 	cors, err := xml.Marshal(auth.CORSConfiguration{
 		Rules: []auth.CORSRule{
 			{
-				AllowedOrigins: []string{"example.com"},
+				AllowedOrigins: []auth.CORSOrigin{"example.com"},
 				AllowedMethods: []auth.CORSHTTPMethod{http.MethodGet, http.MethodPost},
 				AllowedHeaders: []auth.CORSHeader{"Content-Type", "Content-Disposition"},
 				ExposeHeaders:  []auth.CORSHeader{"Content-Encoding", "date"},

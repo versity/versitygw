@@ -1036,6 +1036,14 @@ func GetInvalidCORSRequestHeaderErr(header string) APIError {
 	}
 }
 
+func GetMultipleWildcardCORSOriginErr(origin string) APIError {
+	return APIError{
+		Code:           "InvalidRequest",
+		Description:    fmt.Sprintf(`AllowedOrigin "%s" can not have more than one wildcard.`, origin),
+		HTTPStatusCode: http.StatusBadRequest,
+	}
+}
+
 func GetUnsopportedCORSMethodErr(method string) APIError {
 	return APIError{
 		Code:           "InvalidRequest",

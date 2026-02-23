@@ -603,6 +603,7 @@ func TestDeleteBucketPolicy(ts *TestState) {
 func TestPutBucketCors(ts *TestState) {
 	ts.Run(PutBucketCors_non_existing_bucket)
 	ts.Run(PutBucketCors_empty_cors_rules)
+	ts.Run(PutBucketCors_invalid_allowed_origins)
 	ts.Run(PutBucketCors_invalid_method)
 	ts.Run(PutBucketCors_invalid_header)
 	ts.Run(PutBucketCors_md5)
@@ -1591,6 +1592,7 @@ func GetIntTests() IntTests {
 		"DeleteBucketPolicy_success":                                               DeleteBucketPolicy_success,
 		"PutBucketCors_non_existing_bucket":                                        PutBucketCors_non_existing_bucket,
 		"PutBucketCors_empty_cors_rules":                                           PutBucketCors_empty_cors_rules,
+		"PutBucketCors_invalid_allowed_origins":                                    PutBucketCors_invalid_allowed_origins,
 		"PutBucketCors_invalid_method":                                             PutBucketCors_invalid_method,
 		"PutBucketCors_invalid_header":                                             PutBucketCors_invalid_header,
 		"PutBucketCors_md5":                                                        PutBucketCors_md5,

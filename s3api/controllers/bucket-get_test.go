@@ -319,7 +319,7 @@ func TestS3ApiController_GetBucketCors(t *testing.T) {
 	cors := &auth.CORSConfiguration{
 		Rules: []auth.CORSRule{
 			{
-				AllowedOrigins: []string{"origin"},
+				AllowedOrigins: []auth.CORSOrigin{"origin"},
 				AllowedMethods: []auth.CORSHTTPMethod{http.MethodPut},
 				AllowedHeaders: []auth.CORSHeader{"X-Amz-Date"},
 			},

@@ -54,21 +54,63 @@ func PutBucketCors_empty_cors_rules(s *S3Conf) error {
 	})
 }
 
+func PutBucketCors_invalid_allowed_origins(s *S3Conf) error {
+	testName := "PutBucketCors_invalid_allowed_origins"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			allowedOrigins []string
+			expectedErr    s3err.APIError
+		}{
+			// empty allowed origins
+			{[]string{}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+			// multiple wildcards
+			{[]string{"*example.com*"}, s3err.GetMultipleWildcardCORSOriginErr("*example.com*")},
+			{[]string{"http://127.0.0.1:7070", "https://*:7070/*"}, s3err.GetMultipleWildcardCORSOriginErr("https://*:7070/*")},
+			{[]string{"a/really/*/long/*/path/*"}, s3err.GetMultipleWildcardCORSOriginErr("a/really/*/long/*/path/*")},
+			{[]string{"http://***", "www.example.net"}, s3err.GetMultipleWildcardCORSOriginErr("http://***")},
+		} {
+			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
+				Bucket: &bucket,
+				CORSConfiguration: &types.CORSConfiguration{
+					CORSRules: []types.CORSRule{
+						{
+							AllowedOrigins: test.allowedOrigins,
+							AllowedMethods: []string{http.MethodPost},
+							AllowedHeaders: []string{"x-amz-expected-bucket-owner"},
+							ExposeHeaders:  []string{"x-vgw-something"},
+						},
+					},
+				},
+			})
+			if err := checkApiErr(err, test.expectedErr); err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func PutBucketCors_invalid_method(s *S3Conf) error {
 	testName := "PutBucketCors_invalid_method"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		for _, test := range []struct {
-			invalidMethod  string
 			allowedMethods []string
+			expectedErr    s3err.APIError
 		}{
-			{"get", []string{"get"}},
-			{"put", []string{"put"}},
-			{"post", []string{"post"}},
-			{"head", []string{"head"}},
-			{"delete", []string{"delete"}},
-			{http.MethodPatch, []string{http.MethodGet, http.MethodPatch}},
-			{http.MethodOptions, []string{http.MethodPost, http.MethodOptions}},
-			{"invalid_method", []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete, "invalid_method"}},
+			// empty array
+			{[]string{}, s3err.GetAPIError(s3err.ErrMalformedXML)},
+			// empty method
+			{[]string{""}, s3err.GetUnsopportedCORSMethodErr("")},
+			// invalid methods
+			{[]string{"get"}, s3err.GetUnsopportedCORSMethodErr("get")},
+			{[]string{"put"}, s3err.GetUnsopportedCORSMethodErr("put")},
+			{[]string{"post"}, s3err.GetUnsopportedCORSMethodErr("post")},
+			{[]string{"head"}, s3err.GetUnsopportedCORSMethodErr("head")},
+			{[]string{"delete"}, s3err.GetUnsopportedCORSMethodErr("delete")},
+			{[]string{http.MethodGet, http.MethodPatch}, s3err.GetUnsopportedCORSMethodErr(http.MethodPatch)},
+			{[]string{http.MethodPost, http.MethodOptions}, s3err.GetUnsopportedCORSMethodErr(http.MethodOptions)},
+			{[]string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete, "invalid_method"}, s3err.GetUnsopportedCORSMethodErr("invalid_method")},
 		} {
 			err := putBucketCors(s3client, &s3.PutBucketCorsInput{
 				Bucket: &bucket,
@@ -84,7 +126,7 @@ func PutBucketCors_invalid_method(s *S3Conf) error {
 				},
 			})
 
-			if err := checkApiErr(err, s3err.GetUnsopportedCORSMethodErr(test.invalidMethod)); err != nil {
+			if err := checkApiErr(err, test.expectedErr); err != nil {
 				return err
 			}
 		}

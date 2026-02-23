@@ -22,6 +22,31 @@ import (
 	"github.com/versity/versitygw/s3err"
 )
 
+func TestCORSOrigin_Validate(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		err   error
+	}{
+		{"invalid double wildcard", "*hello*", s3err.GetMultipleWildcardCORSOriginErr("*hello*")},
+		{"invalid double wildcard 2", "something**", s3err.GetMultipleWildcardCORSOriginErr("something**")},
+		{"invalid double wildcard 3", "som*eth*ing", s3err.GetMultipleWildcardCORSOriginErr("som*eth*ing")},
+		{"invalid multiple wildcard", "http://*.example.com/*/path/*", s3err.GetMultipleWildcardCORSOriginErr("http://*.example.com/*/path/*")},
+		{"invalid multiple wildcard 2", "http://example.com/*/so/*/much/*/wildcards/*/in/*/this/*/path", s3err.GetMultipleWildcardCORSOriginErr("http://example.com/*/so/*/much/*/wildcards/*/in/*/this/*/path")},
+		{"no wildcard", "http://127.0.0.1:8080", nil},
+		{"one wildcard", "http://127.0.0.1:8080/*", nil},
+		// empty string - valid
+		{"empty origin", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			co := CORSOrigin(tt.input)
+			gotErr := co.Validate()
+			assert.Equal(t, tt.err, gotErr)
+		})
+	}
+}
+
 func TestCORSHeader_IsValid(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -50,7 +75,7 @@ func TestCORSHTTPMethod_IsValid(t *testing.T) {
 		method CORSHTTPMethod
 		want   bool
 	}{
-		{"empty valid", "", true},
+		{"empty invalid", "", false},
 		{"GET valid", http.MethodGet, true},
 		{"HEAD valid", http.MethodHead, true},
 		{"PUT valid", http.MethodPut, true},
@@ -158,9 +183,13 @@ func TestCORSConfiguration_Validate(t *testing.T) {
 		{"nil config", nil, s3err.GetAPIError(s3err.ErrMalformedXML)},
 		{"nil rules", &CORSConfiguration{}, s3err.GetAPIError(s3err.ErrMalformedXML)},
 		{"empty rules", &CORSConfiguration{Rules: []CORSRule{}}, s3err.GetAPIError(s3err.ErrMalformedXML)},
-		{"invalid rule", &CORSConfiguration{Rules: []CORSRule{{AllowedHeaders: []CORSHeader{"Invalid Header"}}}}, s3err.GetInvalidCORSHeaderErr("Invalid Header")},
+		{"invalid rule", &CORSConfiguration{Rules: []CORSRule{{
+			AllowedHeaders: []CORSHeader{"Invalid Header"},
+			AllowedOrigins: []CORSOrigin{"origin"},
+			AllowedMethods: []CORSHTTPMethod{http.MethodPut},
+		}}}, s3err.GetInvalidCORSHeaderErr("Invalid Header")},
 		{"valid rule", &CORSConfiguration{Rules: []CORSRule{{
-			AllowedOrigins: []string{"origin"},
+			AllowedOrigins: []CORSOrigin{"origin"},
 			AllowedHeaders: []CORSHeader{"X-Test"},
 			AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 			ExposeHeaders:  []CORSHeader{"X-Expose"},
@@ -195,7 +224,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			name: "allowed exact origin",
 			input: input{
 				cfg: &CORSConfiguration{Rules: []CORSRule{{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				}}},
@@ -219,7 +248,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			name: "allowed wildcard origin",
 			input: input{
 				cfg: &CORSConfiguration{Rules: []CORSRule{{
-					AllowedOrigins: []string{"*"},
+					AllowedOrigins: []CORSOrigin{"*"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				}}},
@@ -243,7 +272,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			name: "forbidden no matching origin",
 			input: input{
 				cfg: &CORSConfiguration{Rules: []CORSRule{{
-					AllowedOrigins: []string{"http://nope.com"},
+					AllowedOrigins: []CORSOrigin{"http://nope.com"},
 				}}},
 				origin: "http://not-allowed.com",
 				method: http.MethodGet,
@@ -257,7 +286,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			name: "forbidden method not allowed",
 			input: input{
 				cfg: &CORSConfiguration{Rules: []CORSRule{{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodPost},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				}}},
@@ -274,7 +303,7 @@ func TestCORSConfiguration_IsAllowed(t *testing.T) {
 			name: "forbidden header not allowed",
 			input: input{
 				cfg: &CORSConfiguration{Rules: []CORSRule{{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				}}},
@@ -307,25 +336,52 @@ func TestCORSRule_Validate(t *testing.T) {
 		{
 			name: "valid rule",
 			rule: CORSRule{
-				AllowedOrigins: []string{"http://allowed.com"},
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 				AllowedHeaders: []CORSHeader{"X-Test"},
 			},
 			want: nil,
 		},
 		{
+			name: "empty allowed origins",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{},
+				AllowedMethods: []CORSHTTPMethod{http.MethodPost},
+				AllowedHeaders: []CORSHeader{"X-Test"},
+			},
+			want: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
+			name: "invalid allowed origins",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed*/*"},
+				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
+				AllowedHeaders: []CORSHeader{"X-Test"},
+			},
+			want: s3err.GetMultipleWildcardCORSOriginErr("http://allowed*/*"),
+		},
+		{
 			name: "invalid allowed methods",
 			rule: CORSRule{
-				AllowedOrigins: []string{"http://allowed.com"},
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 				AllowedMethods: []CORSHTTPMethod{"invalid_method"},
 				AllowedHeaders: []CORSHeader{"X-Test"},
 			},
 			want: s3err.GetUnsopportedCORSMethodErr("invalid_method"),
 		},
 		{
+			name: "empty allowed methods",
+			rule: CORSRule{
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
+				AllowedMethods: []CORSHTTPMethod{},
+				AllowedHeaders: []CORSHeader{"X-Test"},
+			},
+			want: s3err.GetAPIError(s3err.ErrMalformedXML),
+		},
+		{
 			name: "invalid allowed header",
 			rule: CORSRule{
-				AllowedOrigins: []string{"http://allowed.com"},
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 				AllowedHeaders: []CORSHeader{"Invalid Header"},
 			},
@@ -334,7 +390,7 @@ func TestCORSRule_Validate(t *testing.T) {
 		{
 			name: "invalid allowed header",
 			rule: CORSRule{
-				AllowedOrigins: []string{"http://allowed.com"},
+				AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 				AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 				AllowedHeaders: []CORSHeader{"Content-Length"},
 				ExposeHeaders:  []CORSHeader{"Content-Encoding", "invalid header"},
@@ -371,7 +427,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "exact origin and method match",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},
@@ -385,7 +441,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "wildcard origin match",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"*"},
+					AllowedOrigins: []CORSOrigin{"*"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodPost},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},
@@ -399,7 +455,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "wildcard containing origin match",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://random*"},
+					AllowedOrigins: []CORSOrigin{"http://random*"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodPost},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},
@@ -413,7 +469,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "wildcard allowed headers match",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://something.com"},
+					AllowedOrigins: []CORSOrigin{"http://something.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodPost},
 					AllowedHeaders: []CORSHeader{"X-*"},
 				},
@@ -427,7 +483,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "origin mismatch",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},
@@ -441,7 +497,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "method mismatch",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodPost},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},
@@ -455,7 +511,7 @@ func TestCORSRule_Match(t *testing.T) {
 			name: "header mismatch",
 			input: input{
 				rule: CORSRule{
-					AllowedOrigins: []string{"http://allowed.com"},
+					AllowedOrigins: []CORSOrigin{"http://allowed.com"},
 					AllowedMethods: []CORSHTTPMethod{http.MethodGet},
 					AllowedHeaders: []CORSHeader{"X-Test"},
 				},

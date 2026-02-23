@@ -466,7 +466,7 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 	validBody, err := xml.Marshal(auth.CORSConfiguration{
 		Rules: []auth.CORSRule{
 			{
-				AllowedOrigins: []string{"*"},
+				AllowedOrigins: []auth.CORSOrigin{"*"},
 				AllowedMethods: []auth.CORSHTTPMethod{http.MethodPost},
 			},
 		},
@@ -476,7 +476,7 @@ func TestS3ApiController_PutBucketCors(t *testing.T) {
 	invalidCors, err := xml.Marshal(auth.CORSConfiguration{
 		Rules: []auth.CORSRule{
 			{
-				AllowedOrigins: []string{"origin"},
+				AllowedOrigins: []auth.CORSOrigin{"origin"},
 				AllowedMethods: []auth.CORSHTTPMethod{"invalid_method"},
 			},
 		},
