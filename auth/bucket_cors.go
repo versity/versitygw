@@ -28,8 +28,11 @@ import (
 // headerRegex is the regexp to validate http header names
 var headerRegex = regexp.MustCompile(`^[!#$%&'*+\-.^_` + "`" + `|~0-9A-Za-z]+$`)
 
-type CORSHeader string
-type CORSHTTPMethod string
+type (
+	CORSHeader     string
+	CORSHTTPMethod string
+	CORSOrigin     string
+)
 
 // IsValid validates the CORS http header
 // the rules are based on http RFC
@@ -53,7 +56,7 @@ func (ch CORSHeader) ToLower() string {
 // IsValid validates the cors http request method:
 // the methods are case sensitive
 func (cm CORSHTTPMethod) IsValid() bool {
-	return cm.IsEmpty() || cm == http.MethodGet || cm == http.MethodHead || cm == http.MethodPut ||
+	return cm == http.MethodGet || cm == http.MethodHead || cm == http.MethodPut ||
 		cm == http.MethodPost || cm == http.MethodDelete
 }
 
@@ -65,6 +68,21 @@ func (cm CORSHTTPMethod) IsEmpty() bool {
 // String converts the method value to 'string'
 func (cm CORSHTTPMethod) String() string {
 	return string(cm)
+}
+
+// String converts the origin value to 'string'
+func (co CORSOrigin) String() string {
+	return string(co)
+}
+
+// Validate validates the cors allowed origin
+func (co CORSOrigin) Validate() error {
+	// make sure no double wildcard present
+	if strings.Count(co.String(), "*") > 1 {
+		return s3err.GetMultipleWildcardCORSOriginErr(co.String())
+	}
+
+	return nil
 }
 
 type CORSConfiguration struct {
@@ -140,25 +158,42 @@ type CORSRule struct {
 	AllowedMethods []CORSHTTPMethod `xml:"AllowedMethod"`
 	AllowedHeaders []CORSHeader     `xml:"AllowedHeader"`
 	ExposeHeaders  []CORSHeader     `xml:"ExposeHeader"`
-	AllowedOrigins []string         `xml:"AllowedOrigin"`
+	AllowedOrigins []CORSOrigin     `xml:"AllowedOrigin"`
 	ID             *string
 	MaxAgeSeconds  *int32
 }
 
 // Validate validates and returns error if CORS configuration has invalid rule
 func (cr *CORSRule) Validate() error {
-	// validate CORS allowed headers
-	for _, header := range cr.AllowedHeaders {
-		if !header.IsValid() {
-			debuglogger.Logf("invalid CORS allowed header: %s", header)
-			return s3err.GetInvalidCORSHeaderErr(header.String())
+	// AllowedOrigins  can't be empty
+	if len(cr.AllowedOrigins) == 0 {
+		debuglogger.Logf("empty CORS allowed origins")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
+	}
+	// validate CORS allowed origins
+	for _, origin := range cr.AllowedOrigins {
+		if err := origin.Validate(); err != nil {
+			debuglogger.Logf("invalid CORS allowed origin: %s", origin)
+			return err
 		}
+	}
+	// AllowedMethods can't be empty
+	if len(cr.AllowedMethods) == 0 {
+		debuglogger.Logf("empty CORS allowed methods")
+		return s3err.GetAPIError(s3err.ErrMalformedXML)
 	}
 	// validate CORS allowed methods
 	for _, method := range cr.AllowedMethods {
 		if !method.IsValid() {
 			debuglogger.Logf("invalid CORS allowed method: %s", method)
 			return s3err.GetUnsopportedCORSMethodErr(method.String())
+		}
+	}
+	// validate CORS allowed headers
+	for _, header := range cr.AllowedHeaders {
+		if !header.IsValid() {
+			debuglogger.Logf("invalid CORS allowed header: %s", header)
+			return s3err.GetInvalidCORSHeaderErr(header.String())
 		}
 	}
 	// validate CORS expose headers
@@ -181,7 +216,7 @@ func (cr *CORSRule) Match(origin string, method CORSHTTPMethod, headers []CORSHe
 
 	// check if the provided origin exists in CORS AllowedOrigins
 	for _, or := range cr.AllowedOrigins {
-		if wildcardMatch(or, origin) {
+		if wildcardMatch(or.String(), origin) {
 			originFound = true
 			if or == "*" {
 				// mark wildcardOrigin as true, if "*" is found in AllowedOrigins
