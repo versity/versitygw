@@ -698,6 +698,7 @@ func PutObject_incorrect_checksums(s *S3Conf) error {
 	testName := "PutObject_incorrect_checksums"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
+		dirObj := "dir-object/"
 
 		for i, el := range []struct {
 			algo      types.ChecksumAlgorithm
@@ -728,6 +729,7 @@ func PutObject_incorrect_checksums(s *S3Conf) error {
 				crc64nvme: getPtr("sV264W+gYBI="),
 			},
 		} {
+			// test for file object
 			_, err := putObjectWithData(int64(i*100), &s3.PutObjectInput{
 				Bucket:            &bucket,
 				Key:               &obj,
@@ -737,6 +739,22 @@ func PutObject_incorrect_checksums(s *S3Conf) error {
 				ChecksumSHA256:    el.sha256,
 				ChecksumCRC64NVME: el.crc64nvme,
 			}, s3client)
+			if err := checkApiErr(err, s3err.GetChecksumBadDigestErr(el.algo)); err != nil {
+				return err
+			}
+
+			// test for directory object
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err = s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               &dirObj,
+				ChecksumCRC32:     el.crc32,
+				ChecksumCRC32C:    el.crc32c,
+				ChecksumSHA1:      el.sha1,
+				ChecksumSHA256:    el.sha256,
+				ChecksumCRC64NVME: el.crc64nvme,
+			})
+			cancel()
 			if err := checkApiErr(err, s3err.GetChecksumBadDigestErr(el.algo)); err != nil {
 				return err
 			}
@@ -780,6 +798,91 @@ func PutObject_default_checksum(s *S3Conf) error {
 
 		if getString(res.ChecksumCRC64NVME) != getString(out.res.ChecksumCRC64NVME) {
 			return fmt.Errorf("expected the object crc64nvme checksum to be %v, instead got %v", getString(res.ChecksumCRC64NVME), getString(out.res.ChecksumCRC64NVME))
+		}
+
+		return nil
+	})
+}
+
+func PutObject_dir_object_default_checksum(s *S3Conf) error {
+	testName := "PutObject_dir_object_default_checksum"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "dir/obj/"
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		res, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, func(o *s3.Options) {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationUnset
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if res.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the object checksum type to be %s, instead got %s", types.ChecksumTypeFullObject, res.ChecksumType)
+		}
+		expectedcrc64nvme := "AAAAAAAAAAA="
+		if getString(res.ChecksumCRC64NVME) != expectedcrc64nvme {
+			return fmt.Errorf("expected the crc64nvme checksum to be %s, instead got %s", expectedcrc64nvme, getString(res.ChecksumCRC64NVME))
+		}
+
+		return nil
+	})
+}
+
+func PutObject_dir_object_checksums_success(s *S3Conf) error {
+	testName := "PutObject_dir_object_checksums_success"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, test := range []struct {
+			algo          types.ChecksumAlgorithm
+			checksumValue string
+		}{
+			{types.ChecksumAlgorithmCrc32, "AAAAAA=="},
+			{types.ChecksumAlgorithmCrc32c, "AAAAAA=="},
+			{types.ChecksumAlgorithmCrc64nvme, "AAAAAAAAAAA="},
+			{types.ChecksumAlgorithmSha1, "2jmj7l5rSw0yVb/vlWAYkK/YBwk="},
+			{types.ChecksumAlgorithmSha256, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               getPtr(fmt.Sprintf("obj-%v/", i)),
+				ChecksumAlgorithm: test.algo,
+			})
+			cancel()
+			if err != nil {
+				return err
+			}
+
+			if res.ChecksumType != types.ChecksumTypeFullObject {
+				return fmt.Errorf("expected the checksum type to be %s, instead got %s", types.ChecksumTypeFullObject, res.ChecksumType)
+			}
+
+			switch test.algo {
+			case types.ChecksumAlgorithmCrc32:
+				if getString(res.ChecksumCRC32) != test.checksumValue {
+					return fmt.Errorf("expected the crc32 checksum value to be %s, instead got %s", test.checksumValue, getString(res.ChecksumCRC32))
+				}
+			case types.ChecksumAlgorithmCrc32c:
+				if getString(res.ChecksumCRC32C) != test.checksumValue {
+					return fmt.Errorf("expected the crc32c checksum value to be %s, instead got %s", test.checksumValue, getString(res.ChecksumCRC32C))
+				}
+			case types.ChecksumAlgorithmSha1:
+				if getString(res.ChecksumSHA1) != test.checksumValue {
+					return fmt.Errorf("expected the sha1 checksum value to be %s, instead got %s", test.checksumValue, getString(res.ChecksumSHA1))
+				}
+			case types.ChecksumAlgorithmSha256:
+				if getString(res.ChecksumSHA256) != test.checksumValue {
+					return fmt.Errorf("expected the sha256 checksum value to be %s, instead got %s", test.checksumValue, getString(res.ChecksumSHA256))
+				}
+			case types.ChecksumAlgorithmCrc64nvme:
+				if getString(res.ChecksumCRC64NVME) != test.checksumValue {
+					return fmt.Errorf("expected the crc64nvme checksum value to be %s, instead got %s", test.checksumValue, getString(res.ChecksumCRC64NVME))
+				}
+			}
 		}
 
 		return nil

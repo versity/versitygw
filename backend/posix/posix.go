@@ -3041,6 +3041,24 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	}, nil
 }
 
+// getEmptyChecksumValue returns the base64-encoded checksum
+// for an empty payload for the given algorithm defaulting to crc64nvme
+func getEmptyChecksumValue(algo types.ChecksumAlgorithm) string {
+	switch algo {
+	case types.ChecksumAlgorithmCrc32:
+		return "AAAAAA=="
+	case types.ChecksumAlgorithmCrc32c:
+		return "AAAAAA=="
+	case types.ChecksumAlgorithmSha1:
+		return "2jmj7l5rSw0yVb/vlWAYkK/YBwk="
+	case types.ChecksumAlgorithmSha256:
+		return "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+	default:
+		// default to crc64nvme
+		return "AAAAAAAAAAA="
+	}
+}
+
 func (p *Posix) PutObject(ctx context.Context, po s3response.PutObjectInput) (s3response.PutObjectOutput, error) {
 	release, err := p.acquireActionSlot(ctx)
 	if err != nil {
@@ -3093,6 +3111,39 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	if po.ContentLength != nil {
 		contentLength = *po.ContentLength
 	}
+
+	chRdr, chunkUpload := po.Body.(middlewares.ChecksumReader)
+	isTrailingChecksum := chunkUpload && chRdr.Algorithm() != ""
+
+	checksumAlgorithm := po.ChecksumAlgorithm
+	checksumValue := ""
+
+	if isTrailingChecksum {
+		checksumAlgorithm = types.ChecksumAlgorithm(strings.ToUpper(chRdr.Algorithm()))
+		checksumValue = chRdr.Checksum()
+	} else {
+		hashConfigs := []hashConfig{
+			{po.ChecksumCRC32, utils.HashTypeCRC32},
+			{po.ChecksumCRC32C, utils.HashTypeCRC32C},
+			{po.ChecksumSHA1, utils.HashTypeSha1},
+			{po.ChecksumSHA256, utils.HashTypeSha256},
+			{po.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
+		}
+
+		for _, config := range hashConfigs {
+			if config.value != nil {
+				checksumAlgorithm = types.ChecksumAlgorithm(strings.ToUpper(string(config.hashType)))
+				checksumValue = *config.value
+				break
+			}
+		}
+
+		if checksumAlgorithm == "" {
+			// default to crc64nvme
+			checksumAlgorithm = types.ChecksumAlgorithmCrc64nvme
+		}
+	}
+
 	if strings.HasSuffix(*po.Key, "/") {
 		// object is directory
 		if contentLength != 0 {
@@ -3132,10 +3183,46 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, fmt.Errorf("set content-type attr: %w", err)
 		}
 
+		expectedSum := getEmptyChecksumValue(checksumAlgorithm)
+		if checksumValue != "" && expectedSum != checksumValue {
+			return s3response.PutObjectOutput{}, s3err.GetChecksumBadDigestErr(checksumAlgorithm)
+		}
+
+		// set empty checksum
+		checksum := s3response.Checksum{
+			Type:      types.ChecksumTypeFullObject,
+			Algorithm: checksumAlgorithm,
+		}
+
+		// Store the calculated checksum in the object metadata
+		switch checksumAlgorithm {
+		case types.ChecksumAlgorithmCrc32:
+			checksum.CRC32 = &expectedSum
+		case types.ChecksumAlgorithmCrc32c:
+			checksum.CRC32C = &expectedSum
+		case types.ChecksumAlgorithmSha1:
+			checksum.SHA1 = &expectedSum
+		case types.ChecksumAlgorithmSha256:
+			checksum.SHA256 = &expectedSum
+		case types.ChecksumAlgorithmCrc64nvme:
+			checksum.CRC64NVME = &expectedSum
+		}
+
+		err = p.storeChecksums(nil, *po.Bucket, *po.Key, checksum)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
+		}
+
 		// for directory object no version is created
 		return s3response.PutObjectOutput{
-			ETag: emptyMD5,
-			Size: &contentLength,
+			ETag:              emptyMD5,
+			Size:              &contentLength,
+			ChecksumType:      checksum.Type,
+			ChecksumCRC32:     checksum.CRC32,
+			ChecksumCRC32C:    checksum.CRC32C,
+			ChecksumCRC64NVME: checksum.CRC64NVME,
+			ChecksumSHA1:      checksum.SHA1,
+			ChecksumSHA256:    checksum.SHA256,
 		}, nil
 	}
 
@@ -3197,53 +3284,13 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 	rdr := io.TeeReader(po.Body, hash)
 
 	var hashRdr *utils.HashReader
-
-	chRdr, chunkUpload := po.Body.(middlewares.ChecksumReader)
-	isTrailingChecksum := chunkUpload && chRdr.Algorithm() != ""
-
 	if !isTrailingChecksum {
-		hashConfigs := []hashConfig{
-			{po.ChecksumCRC32, utils.HashTypeCRC32},
-			{po.ChecksumCRC32C, utils.HashTypeCRC32C},
-			{po.ChecksumSHA1, utils.HashTypeSha1},
-			{po.ChecksumSHA256, utils.HashTypeSha256},
-			{po.ChecksumCRC64NVME, utils.HashTypeCRC64NVME},
+		hashRdr, err = utils.NewHashReader(rdr, checksumValue, utils.HashType(strings.ToLower(string(checksumAlgorithm))))
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
 		}
 
-		for _, config := range hashConfigs {
-			if config.value != nil {
-				hashRdr, err = utils.NewHashReader(rdr, *config.value, config.hashType)
-				if err != nil {
-					return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
-				}
-
-				rdr = hashRdr
-			}
-		}
-
-		// If only the checksum algorithm is provided register
-		// a new HashReader to calculate the object checksum
-		// This can never happen with PutObject direct call
-		// it's there for CopyObject to add a new checksum
-		if hashRdr == nil && po.ChecksumAlgorithm != "" {
-			hashRdr, err = utils.NewHashReader(rdr, "", utils.HashType(strings.ToLower(string(po.ChecksumAlgorithm))))
-			if err != nil {
-				return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
-			}
-
-			rdr = hashRdr
-		}
-
-		if hashRdr == nil {
-			// if no precalculated checksum or sdk checksum algorithm is provided
-			// and no streaming upload has checksum, default to crc64nvme
-			hashRdr, err = utils.NewHashReader(rdr, "", utils.HashTypeCRC64NVME)
-			if err != nil {
-				return s3response.PutObjectOutput{}, fmt.Errorf("initialize hash reader: %w", err)
-			}
-
-			rdr = hashRdr
-		}
+		rdr = hashRdr
 	}
 
 	_, err = io.Copy(f, rdr)
@@ -3293,43 +3340,35 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		}
 	}
 
-	var chAlgo utils.HashType
 	var sum string
 
 	if isTrailingChecksum {
-		chAlgo = utils.HashType(chRdr.Algorithm())
 		sum = chRdr.Checksum()
-	} else if hashRdr != nil {
-		chAlgo = hashRdr.Type()
+	} else {
 		sum = hashRdr.Sum()
 	}
 
-	checksum := s3response.Checksum{}
+	checksum := s3response.Checksum{
+		Type:      types.ChecksumTypeFullObject,
+		Algorithm: checksumAlgorithm,
+	}
 
 	// Store the calculated checksum in the object metadata
-	if sum != "" {
-		checksum.Type = types.ChecksumTypeFullObject
-		switch chAlgo {
-		case utils.HashTypeCRC32:
-			checksum.CRC32 = &sum
-			checksum.Algorithm = types.ChecksumAlgorithmCrc32
-		case utils.HashTypeCRC32C:
-			checksum.CRC32C = &sum
-			checksum.Algorithm = types.ChecksumAlgorithmCrc32c
-		case utils.HashTypeSha1:
-			checksum.SHA1 = &sum
-			checksum.Algorithm = types.ChecksumAlgorithmSha1
-		case utils.HashTypeSha256:
-			checksum.SHA256 = &sum
-			checksum.Algorithm = types.ChecksumAlgorithmSha256
-		case utils.HashTypeCRC64NVME:
-			checksum.CRC64NVME = &sum
-			checksum.Algorithm = types.ChecksumAlgorithmCrc64nvme
-		}
-		err := p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
-		}
+	switch checksumAlgorithm {
+	case types.ChecksumAlgorithmCrc32:
+		checksum.CRC32 = &sum
+	case types.ChecksumAlgorithmCrc32c:
+		checksum.CRC32C = &sum
+	case types.ChecksumAlgorithmSha1:
+		checksum.SHA1 = &sum
+	case types.ChecksumAlgorithmSha256:
+		checksum.SHA256 = &sum
+	case types.ChecksumAlgorithmCrc64nvme:
+		checksum.CRC64NVME = &sum
+	}
+	err = p.storeChecksums(f.File(), *po.Bucket, *po.Key, checksum)
+	if err != nil {
+		return s3response.PutObjectOutput{}, fmt.Errorf("store checksum: %w", err)
 	}
 
 	err = p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key, etagkey, []byte(etag))
@@ -3989,8 +4028,22 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			tagCount = &tgCount
 		}
 
+		var checksums s3response.Checksum
+		if input.ChecksumMode == types.ChecksumModeEnabled {
+			checksums, err = p.retrieveChecksums(nil, bucket, object)
+			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				return nil, fmt.Errorf("get object checksums: %w", err)
+			}
+		}
+
 		var length int64 = 0
 		return &s3.GetObjectOutput{
+			ChecksumCRC32:      checksums.CRC32,
+			ChecksumCRC32C:     checksums.CRC32C,
+			ChecksumSHA1:       checksums.SHA1,
+			ChecksumSHA256:     checksums.SHA256,
+			ChecksumCRC64NVME:  checksums.CRC64NVME,
+			ChecksumType:       checksums.Type,
 			AcceptRanges:       backend.GetPtrFromString("bytes"),
 			ContentLength:      &length,
 			ContentEncoding:    objMeta.ContentEncoding,
@@ -4070,15 +4123,11 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 	}
 
 	var checksums s3response.Checksum
-	var cType types.ChecksumType
 	// Skip the checksums retreival if object isn't requested fully
 	if input.ChecksumMode == types.ChecksumModeEnabled && length-startOffset == objSize {
 		checksums, err = p.retrieveChecksums(f, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
-		}
-		if checksums.Type != "" {
-			cType = checksums.Type
 		}
 	}
 
@@ -4111,7 +4160,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		ChecksumSHA1:       checksums.SHA1,
 		ChecksumSHA256:     checksums.SHA256,
 		ChecksumCRC64NVME:  checksums.CRC64NVME,
-		ChecksumType:       cType,
+		ChecksumType:       checksums.Type,
 	}, nil
 }
 
@@ -4279,14 +4328,10 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 	}
 
 	var checksums s3response.Checksum
-	var cType types.ChecksumType
 	if input.ChecksumMode == types.ChecksumModeEnabled {
 		checksums, err = p.retrieveChecksums(nil, bucket, object)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return nil, fmt.Errorf("get object checksums: %w", err)
-		}
-		if checksums.Type != "" {
-			cType = checksums.Type
 		}
 	}
 
@@ -4323,7 +4368,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ChecksumSHA1:              checksums.SHA1,
 		ChecksumSHA256:            checksums.SHA256,
 		ChecksumCRC64NVME:         checksums.CRC64NVME,
-		ChecksumType:              cType,
+		ChecksumType:              checksums.Type,
 		TagCount:                  tagCount,
 	}, nil
 }
