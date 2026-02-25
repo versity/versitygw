@@ -25,7 +25,6 @@ create_bucket() {
     return 1
   fi
 
-  record_command "create-bucket" "client:$1"
   local exit_code=0
   local error
   if [[ $1 == 's3' ]]; then
@@ -98,7 +97,6 @@ create_bucket_with_user() {
 
 create_bucket_object_lock_enabled() {
   log 6 "create_bucket_object_lock_enabled"
-  record_command "create-bucket" "client:s3api"
   if ! check_param_count "create_bucket_object_lock_enabled" "bucket" 1 $#; then
     return 1
   fi

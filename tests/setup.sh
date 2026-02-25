@@ -107,9 +107,6 @@ post_versity_cleanup() {
       echo "$BATS_TEST_NAME: ${total_time}s" >> "$TIME_LOG"
     fi
   fi
-  if [[ -n "$COVERAGE_DB" ]]; then
-    record_result
-  fi
   if [[ "$BATS_TEST_COMPLETED" -ne 1 ]]; then
     if [[ -e "$COMMAND_LOG" ]]; then
       cat "$COMMAND_LOG"

@@ -15,7 +15,6 @@
 # under the License.
 
 put_object_retention() {
-  record_command "put-object-retention" "client:s3api"
   if [[ $# -ne 4 ]]; then
     log 2 "'put object retention' command requires bucket, key, retention mode, retention date"
     return 1

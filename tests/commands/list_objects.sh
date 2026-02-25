@@ -21,7 +21,6 @@ source ./tests/commands/command.sh
 # return 0 if able to list, 1 if not
 list_objects() {
   log 6 "list_objects"
-  record_command "list-objects" "client:$1"
   if ! check_param_count "list_object" "client, bucket" 2 $#; then
     return 1
   fi

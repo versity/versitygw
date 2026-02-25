@@ -16,7 +16,6 @@
 
 get_object() {
   log 6 "get_object"
-  record_command "get-object" "client:$1"
   if [ $# -ne 4 ]; then
     log 2 "get object command requires command type, bucket, key, destination"
     return 1
@@ -45,7 +44,6 @@ get_object() {
 }
 
 get_object_with_range() {
-  record_command "get-object" "client:s3api"
   if [[ $# -ne 4 ]]; then
     log 2 "'get object with range' requires bucket, key, range, outfile"
     return 1
@@ -59,7 +57,6 @@ get_object_with_range() {
 
 get_object_with_user() {
   log 6 "get_object_with_user"
-  record_command "get-object" "client:$1"
   if [ $# -ne 6 ]; then
     log 2 "'get object with user' command requires command type, bucket, key, save location, aws ID, aws secret key"
     return 1

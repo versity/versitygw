@@ -41,7 +41,6 @@ create_multipart_upload_rest_with_checksum_type_and_algorithm_error() {
 }
 
 create_multipart_upload_s3api() {
-  record_command "create-multipart-upload" "client:s3api"
   if ! check_param_count_v2 "bucket, key" 2 $#; then
     return 1
   fi
@@ -83,7 +82,6 @@ create_multipart_upload_s3api_custom() {
 }
 
 create_multipart_upload_s3api_params() {
-  record_command "create-multipart-upload" "client:s3api"
   if ! check_param_count_v2 "bucket, key, content type, metadata, object lock legal hold status, \
     object lock mode, object lock retain until date, and tagging" 8 $#; then
     return 1
@@ -108,7 +106,6 @@ create_multipart_upload_s3api_params() {
 }
 
 create_multipart_upload_s3api_with_user() {
-  record_command "create-multipart-upload" "client:s3api"
   if ! check_param_count_v2 "bucket, key, username, password" 4 $#; then
     return 1
   fi
