@@ -42,6 +42,9 @@ type ScoutfsOpts struct {
 	// incorrect access to the filesystem. This is only needed if the
 	// frontend is not already validating bucket names.
 	ValidateBucketNames bool
+	// Concurrency sets the maximum number of concurrently running POSIX actions.
+	// Defaults to 5000 when unset or non-positive.
+	Concurrency int
 }
 
 var _ backend.Backend = &ScoutFS{}
