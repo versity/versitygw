@@ -126,6 +126,9 @@ const (
 
 	doFalloc   = true
 	skipFalloc = false
+
+	// defaultConcurrency is the default limit for concurrent POSIX actions.
+	defaultConcurrency = 5000
 )
 
 // PosixOpts are the options for the Posix backend
@@ -219,8 +222,16 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		newDirPerm:         opts.NewDirPerm,
 		forceNoTmpFile:     opts.ForceNoTmpFile,
 		validateBucketName: opts.ValidateBucketNames,
-		actionLimiter:      semaphore.NewWeighted(int64(opts.Concurrency)),
+		actionLimiter:      semaphore.NewWeighted(int64(concurrencyOrDefault(opts.Concurrency))),
 	}, nil
+}
+
+// concurrencyOrDefault returns n if it is positive, otherwise defaultConcurrency.
+func concurrencyOrDefault(n int) int {
+	if n > 0 {
+		return n
+	}
+	return defaultConcurrency
 }
 
 func validateSubDir(root, dir string) (string, error) {
