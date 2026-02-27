@@ -389,6 +389,11 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				return fs.SkipDir
 			}
 
+			// Skip parents of specified prefix
+			if len(path+"/") < len(prefix) {
+				return nil
+			}
+
 			res, err := getObj(path, versionIdMarker, &pastVersionIdMarker, max-len(objects)-len(delMarkers)-cpmap.Len(), d)
 			if err == ErrSkipObj {
 				return nil
