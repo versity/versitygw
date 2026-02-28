@@ -389,8 +389,15 @@ func WalkVersions(ctx context.Context, fileSystem fs.FS, prefix, delimiter, keyM
 				return fs.SkipDir
 			}
 
-			// Skip parents of specified prefix
-			if len(path+"/") < len(prefix) {
+			// Skip ancestor directories of the specified prefix; only process
+			// the directory that exactly matches the prefix.
+			// At this point we know strings.HasPrefix(prefix, path+"/") holds
+			// (i.e. path is an ancestor of the prefix directory). Skip it
+			// unless it is the exact prefix directory.
+			// Note: WalkVersions always walks from "." (unlike Walk, which
+			// narrows the root) because versioning marker semantics require
+			// visiting all entries in order, so this guard is needed instead.
+			if prefix != "" && strings.HasPrefix(prefix, path+"/") && path+"/" != prefix {
 				return nil
 			}
 
