@@ -414,7 +414,17 @@ func splitUnique(s, divider string) []string {
 	return result
 }
 
-func verifyACL(acl ACL, access string, permission Permission) error {
+func verifyACL(acl ACL, access string, permission Permission, disableACL bool) error {
+	if disableACL {
+		// only the bucket owner should have access to the bucket
+		// as bucket ACLs are disabled and no grantee check is necessary
+		if acl.Owner != access {
+			return s3err.GetAPIError(s3err.ErrAccessDenied)
+		}
+
+		return nil
+	}
+
 	grantee := Grantee{
 		Access:     access,
 		Permission: permission,

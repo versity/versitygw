@@ -39,6 +39,7 @@ func (c S3ApiController) DeleteBucketTagging(ctx *fiber.Ctx) (*Response, error) 
 			Bucket:          bucket,
 			Action:          auth.PutBucketTaggingAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -72,6 +73,7 @@ func (c S3ApiController) DeleteBucketOwnershipControls(ctx *fiber.Ctx) (*Respons
 			Acc:           acct,
 			Bucket:        bucket,
 			Action:        auth.PutBucketOwnershipControlsAction,
+			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -105,6 +107,7 @@ func (c S3ApiController) DeleteBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 			Acc:           acct,
 			Bucket:        bucket,
 			Action:        auth.DeleteBucketPolicyAction,
+			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -140,6 +143,7 @@ func (c S3ApiController) DeleteBucketCors(ctx *fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Action:          auth.PutBucketCorsAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -175,6 +179,7 @@ func (c S3ApiController) DeleteBucket(ctx *fiber.Ctx) (*Response, error) {
 			Bucket:          bucket,
 			Action:          auth.DeleteBucketAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

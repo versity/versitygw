@@ -79,6 +79,7 @@ type AccessOptions struct {
 	Action          Action
 	Readonly        bool
 	IsPublicRequest bool
+	DisableACL      bool
 }
 
 func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) error {
@@ -107,7 +108,7 @@ func VerifyAccess(ctx context.Context, be backend.Backend, opts AccessOptions) e
 		return VerifyBucketPolicy(policy, opts.Acc.Access, opts.Bucket, opts.Object, opts.Action)
 	}
 
-	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission); err != nil {
+	if err := verifyACL(opts.Acl, opts.Acc.Access, opts.AclPermission, opts.DisableACL); err != nil {
 		return err
 	}
 

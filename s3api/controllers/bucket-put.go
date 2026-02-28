@@ -47,6 +47,7 @@ func (c S3ApiController) PutBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.PutBucketTaggingAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -88,6 +89,7 @@ func (c S3ApiController) PutBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		Acc:           acct,
 		Bucket:        bucket,
 		Action:        auth.PutBucketOwnershipControlsAction,
+		DisableACL:    c.disableACL,
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -143,6 +145,7 @@ func (c S3ApiController) PutBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		Bucket:          bucket,
 		Action:          auth.PutBucketVersioningAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -197,6 +200,7 @@ func (c S3ApiController) PutObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 		Bucket:          bucket,
 		Action:          auth.PutBucketObjectLockConfigurationAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	}); err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -238,6 +242,7 @@ func (c S3ApiController) PutBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.PutBucketCorsAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -292,6 +297,7 @@ func (c S3ApiController) PutBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		Acc:           acct,
 		Bucket:        bucket,
 		Action:        auth.PutBucketPolicyAction,
+		DisableACL:    c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -344,6 +350,7 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 			Acc:           acct,
 			Bucket:        bucket,
 			Action:        auth.PutBucketAclAction,
+			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -351,6 +358,15 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 				BucketOwner: parsedAcl.Owner,
 			},
 		}, err
+	}
+
+	if c.disableACL {
+		debuglogger.Logf("PutBucketAcl is not available, as ACLs are disabled at gateway level")
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, s3err.GetAPIError(s3err.ErrACLsDisabled)
 	}
 
 	err = auth.ValidateCannedACL(acl)
@@ -480,12 +496,12 @@ func (c S3ApiController) PutBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 
 func (c S3ApiController) CreateBucket(ctx *fiber.Ctx) (*Response, error) {
 	bucket := ctx.Params("bucket")
-	acl := types.BucketCannedACL(ctx.Get("X-Amz-Acl"))
-	grantFullControl := ctx.Get("X-Amz-Grant-Full-Control")
-	grantRead := ctx.Get("X-Amz-Grant-Read")
-	grantReadACP := ctx.Get("X-Amz-Grant-Read-Acp")
-	grantWrite := ctx.Get("X-Amz-Grant-Write")
-	grantWriteACP := ctx.Get("X-Amz-Grant-Write-Acp")
+	acl := types.BucketCannedACL(c.getAclHeaderValue(ctx, "X-Amz-Acl"))
+	grantFullControl := c.getAclHeaderValue(ctx, "X-Amz-Grant-Full-Control")
+	grantRead := c.getAclHeaderValue(ctx, "X-Amz-Grant-Read")
+	grantReadACP := c.getAclHeaderValue(ctx, "X-Amz-Grant-Read-Acp")
+	grantWrite := c.getAclHeaderValue(ctx, "X-Amz-Grant-Write")
+	grantWriteACP := c.getAclHeaderValue(ctx, "X-Amz-Grant-Write-Acp")
 	lockEnabled := strings.EqualFold(ctx.Get("X-Amz-Bucket-Object-Lock-Enabled"), "true")
 	grants := grantFullControl + grantRead + grantReadACP + grantWrite + grantWriteACP
 	objectOwnership := types.ObjectOwnership(ctx.Get("X-Amz-Object-Ownership"))

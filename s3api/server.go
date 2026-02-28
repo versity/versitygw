@@ -42,18 +42,15 @@ const (
 )
 
 type S3ApiServer struct {
-	Router          *S3ApiRouter
-	app             *fiber.App
-	backend         backend.Backend
-	CertStorage     *utils.CertStorage
-	quiet           bool
-	readonly        bool
-	keepAlive       bool
-	health          string
-	virtualDomain   string
-	corsAllowOrigin string
-	maxConnections  int
-	maxRequests     int
+	Router         *S3ApiRouter
+	app            *fiber.App
+	backend        backend.Backend
+	CertStorage    *utils.CertStorage
+	quiet          bool
+	keepAlive      bool
+	health         string
+	maxConnections int
+	maxRequests    int
 }
 
 func New(
@@ -69,7 +66,16 @@ func New(
 ) (*S3ApiServer, error) {
 	server := &S3ApiServer{
 		backend: be,
-		Router:  new(S3ApiRouter),
+		Router: &S3ApiRouter{
+			be:      be,
+			iam:     iam,
+			logger:  l,
+			aLogger: adminLogger,
+			evs:     evs,
+			mm:      mm,
+			root:    root,
+			region:  region,
+		},
 	}
 
 	for _, opt := range opts {
@@ -88,6 +94,7 @@ func New(
 	})
 
 	server.app = app
+	server.Router.app = app
 
 	// initialize the panic recovery middleware
 	app.Use(recover.New(
@@ -119,17 +126,12 @@ func New(
 	// path unescapes the url
 	app.Use(controllers.WrapMiddleware(middlewares.DecodeURL, l, mm))
 
-	// initialize host-style parser in virtual domain is specified
-	if server.virtualDomain != "" {
-		app.Use(middlewares.HostStyleParser(server.virtualDomain))
-	}
-
 	// initialize the debug logger in debug mode
 	if debuglogger.IsDebugEnabled() {
 		app.Use(middlewares.DebugLogger())
 	}
 
-	server.Router.Init(app, be, iam, l, adminLogger, evs, mm, server.readonly, region, server.virtualDomain, root, server.corsAllowOrigin)
+	server.Router.Init()
 
 	return server, nil
 }
@@ -158,12 +160,14 @@ func WithHealth(health string) Option {
 }
 
 func WithReadOnly() Option {
-	return func(s *S3ApiServer) { s.readonly = true }
+	return func(s *S3ApiServer) { s.Router.readonly = true }
 }
 
 // WithHostStyle enabled host-style bucket addressing on the server
 func WithHostStyle(virtualDomain string) Option {
-	return func(s *S3ApiServer) { s.virtualDomain = virtualDomain }
+	return func(s *S3ApiServer) {
+		s.Router.virtualDomain = virtualDomain
+	}
 }
 
 // WithKeepAlive enables the server keep alive
@@ -174,7 +178,7 @@ func WithKeepAlive() Option {
 // WithCORSAllowOrigin sets the default CORS Access-Control-Allow-Origin value.
 // This is applied when no bucket CORS configuration exists, and for admin APIs.
 func WithCORSAllowOrigin(origin string) Option {
-	return func(s *S3ApiServer) { s.corsAllowOrigin = origin }
+	return func(s *S3ApiServer) { s.Router.corsAllowOrigin = origin }
 }
 
 // WithConcurrencyLimiter sets the server's maximum connection limit
@@ -184,6 +188,12 @@ func WithConcurrencyLimiter(maxConnections, maxRequests int) Option {
 		s.maxConnections = maxConnections
 		s.maxRequests = maxRequests
 	}
+}
+
+// WithDisableACL disables the s3 api server ACLs, by ignoring all
+// bucket/object ACL headers
+func WithDisableACL() Option {
+	return func(s *S3ApiServer) { s.Router.disableACL = true }
 }
 
 // ServeMultiPort creates listeners for multiple port specifications and serves

@@ -50,6 +50,7 @@ func (c S3ApiController) RestoreObject(ctx *fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Action:          auth.RestoreObjectAction,
 			IsPublicRequest: isBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -101,6 +102,7 @@ func (c S3ApiController) SelectObjectContent(ctx *fiber.Ctx) (*Response, error) 
 			Object:          key,
 			Action:          auth.GetObjectAction,
 			IsPublicRequest: isBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -158,7 +160,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -177,6 +179,7 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 			Bucket:        bucket,
 			Object:        key,
 			Action:        auth.PutObjectAction,
+			DisableACL:    c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -261,6 +264,7 @@ func (c S3ApiController) CompleteMultipartUpload(ctx *fiber.Ctx) (*Response, err
 			Object:          key,
 			Action:          auth.PutObjectAction,
 			IsPublicRequest: isBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

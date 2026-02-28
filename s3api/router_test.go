@@ -20,24 +20,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/s3api/middlewares"
 )
 
 func TestS3ApiRouter_Init(t *testing.T) {
-	type args struct {
-		app *fiber.App
-		be  backend.Backend
-		iam auth.IAMService
-	}
 	tests := []struct {
 		name string
 		sa   *S3ApiRouter
-		args args
 	}{
 		{
 			name: "Initialize S3 api router",
-			sa:   &S3ApiRouter{},
-			args: args{
+			sa: &S3ApiRouter{
 				app: fiber.New(),
 				be:  backend.BackendUnsupported{},
 				iam: &auth.IAMServiceInternal{},
@@ -46,7 +38,7 @@ func TestS3ApiRouter_Init(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.sa.Init(tt.args.app, tt.args.be, tt.args.iam, nil, nil, nil, nil, false, "us-east-1", "", middlewares.RootUserConfig{}, "")
+			tt.sa.Init()
 		})
 	}
 }

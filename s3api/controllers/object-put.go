@@ -57,6 +57,7 @@ func (c S3ApiController) PutObjectTagging(ctx *fiber.Ctx) (*Response, error) {
 		Object:          key,
 		Action:          action,
 		IsPublicRequest: IsBucketPublic,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -116,6 +117,7 @@ func (c S3ApiController) PutObjectRetention(ctx *fiber.Ctx) (*Response, error) {
 		Object:          key,
 		Action:          auth.PutObjectRetentionAction,
 		IsPublicRequest: IsBucketPublic,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -191,6 +193,7 @@ func (c S3ApiController) PutObjectLegalHold(ctx *fiber.Ctx) (*Response, error) {
 		Object:          key,
 		Action:          auth.PutObjectLegalHoldAction,
 		IsPublicRequest: IsBucketPublic,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -269,6 +272,7 @@ func (c S3ApiController) UploadPart(ctx *fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Action:          auth.PutObjectAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -383,6 +387,7 @@ func (c S3ApiController) UploadPartCopy(ctx *fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Action:          auth.PutObjectAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{
@@ -510,7 +515,7 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -668,7 +673,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 	parsedAcl := utils.ContextKeyParsedAcl.Get(ctx).(auth.ACL)
 	IsBucketPublic := utils.ContextKeyPublicBucket.IsSet(ctx)
 
-	err := utils.ValidateNoACLHeaders(ctx)
+	err := utils.ValidateNoACLHeaders(ctx, c.disableACL)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{
@@ -703,6 +708,7 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Action:          auth.PutObjectAction,
 			IsPublicRequest: IsBucketPublic,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

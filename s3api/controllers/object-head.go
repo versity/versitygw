@@ -57,6 +57,7 @@ func (c S3ApiController) HeadObject(ctx *fiber.Ctx) (*Response, error) {
 			Object:          key,
 			Action:          action,
 			IsPublicRequest: isPublicBucket,
+			DisableACL:      c.disableACL,
 		})
 	if err != nil {
 		return &Response{

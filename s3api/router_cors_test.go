@@ -24,7 +24,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/backend"
-	"github.com/versity/versitygw/s3api/middlewares"
 	"github.com/versity/versitygw/s3err"
 )
 
@@ -60,20 +59,13 @@ func TestS3ApiRouter_ListBuckets_DefaultCORSAllowOrigin(t *testing.T) {
 	origin := "https://example.com"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backend.BackendUnsupported{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backend.BackendUnsupported{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodGet, "/", nil)
 	if err != nil {
@@ -97,20 +89,13 @@ func TestS3ApiRouter_ListBuckets_OptionsPreflight_DefaultCORS(t *testing.T) {
 	origin := "https://example.com"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backend.BackendUnsupported{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backend.BackendUnsupported{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodOptions, "/", nil)
 	if err != nil {
@@ -137,20 +122,13 @@ func TestS3ApiRouter_PutBucketTagging_ErrorStillIncludesFallbackCORS(t *testing.
 	origin := "http://127.0.0.1:9090"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backendWithCorsOnly{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithCorsOnly{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodPut, "/testing?tagging", nil)
 	if err != nil {
@@ -172,20 +150,13 @@ func TestS3ApiRouter_PutObjectTagging_ErrorStillIncludesFallbackCORS(t *testing.
 	origin := "http://127.0.0.1:9090"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backendWithCorsOnly{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithCorsOnly{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodPut, "/testing/myobj?tagging", nil)
 	if err != nil {
@@ -207,20 +178,13 @@ func TestS3ApiRouter_CopyObject_ErrorStillIncludesFallbackCORS(t *testing.T) {
 	origin := "http://127.0.0.1:9090"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backendWithCorsOnly{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithCorsOnly{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodPut, "/testing/myobj", nil)
 	if err != nil {
@@ -243,20 +207,13 @@ func TestS3ApiRouter_PutObject_ErrorStillIncludesFallbackCORS(t *testing.T) {
 	origin := "http://127.0.0.1:9090"
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backendWithCorsOnly{},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		origin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithCorsOnly{},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: origin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodPut, "/testing/myobj", nil)
 	if err != nil {
@@ -294,20 +251,13 @@ func TestS3ApiRouter_OptionsWithBucketCORS_NoDuplicateHeaders(t *testing.T) {
 	</CORSConfiguration>`)
 
 	app := fiber.New()
-	(&S3ApiRouter{}).Init(
-		app,
-		backendWithBucketCors{corsConfig: corsConfig},
-		&auth.IAMServiceInternal{},
-		nil,
-		nil,
-		nil,
-		nil,
-		false,
-		"us-east-1",
-		"",
-		middlewares.RootUserConfig{},
-		fallbackOrigin,
-	)
+	(&S3ApiRouter{
+		app:             app,
+		be:              backendWithBucketCors{corsConfig: corsConfig},
+		iam:             &auth.IAMServiceInternal{},
+		region:          "us-east-1",
+		corsAllowOrigin: fallbackOrigin,
+	}).Init()
 
 	req, err := http.NewRequest(http.MethodOptions, "/xyz/upload/test.txt", nil)
 	if err != nil {

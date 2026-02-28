@@ -1171,6 +1171,16 @@ func TestSignedStreaminPayloadTrailer(ts *TestState) {
 	}
 }
 
+func TestNoAclMode(ts *TestState) {
+	ts.Run(NoAclMode_CreateBucket_with_acl)
+	ts.Run(NoAclMode_PutObject_with_acl)
+	ts.Run(NoAclMode_CopyObject_with_acl)
+	ts.Run(NoAclMode_multipart_upload_with_acl)
+	ts.Run(NoAclMode_PutBucketAcl)
+	ts.Run(NoAclMode_PutObjectAcl_not_implemented)
+	ts.Run(NoAclMode_GetObjectAcl_not_implemented)
+}
+
 type IntTest func(s3 *S3Conf) error
 
 type IntTests map[string]IntTest
@@ -1867,5 +1877,12 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayloadTrailer_invalid_checksum":                           SignedStreamingPayloadTrailer_invalid_checksum,
 		"SignedStreamingPayloadTrailer_bad_digest":                                 SignedStreamingPayloadTrailer_bad_digest,
 		"SignedStreamingPayloadTrailer_success":                                    SignedStreamingPayloadTrailer_success,
+		"NoAclMode_CreateBucket_with_acl":                                          NoAclMode_CreateBucket_with_acl,
+		"NoAclMode_PutObject_with_acl":                                             NoAclMode_PutObject_with_acl,
+		"NoAclMode_CopyObject_with_acl":                                            NoAclMode_CopyObject_with_acl,
+		"NoAclMode_multipart_upload_with_acl":                                      NoAclMode_multipart_upload_with_acl,
+		"NoAclMode_PutBucketAcl":                                                   NoAclMode_PutBucketAcl,
+		"NoAclMode_PutObjectAcl_not_implemented":                                   NoAclMode_PutObjectAcl_not_implemented,
+		"NoAclMode_GetObjectAcl_not_implemented":                                   NoAclMode_GetObjectAcl_not_implemented,
 	}
 }

@@ -41,6 +41,7 @@ func (c S3ApiController) GetBucketTagging(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.GetBucketTaggingAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -93,6 +94,7 @@ func (c S3ApiController) GetBucketOwnershipControls(ctx *fiber.Ctx) (*Response, 
 		Bucket:          bucket,
 		Action:          auth.GetBucketOwnershipControlsAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -133,6 +135,7 @@ func (c S3ApiController) GetBucketVersioning(ctx *fiber.Ctx) (*Response, error) 
 		Bucket:          bucket,
 		Action:          auth.GetBucketVersioningAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -175,6 +178,7 @@ func (c S3ApiController) GetBucketCors(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.GetBucketCorsAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -218,6 +222,7 @@ func (c S3ApiController) GetBucketPolicy(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.GetBucketPolicyAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -252,6 +257,7 @@ func (c S3ApiController) GetBucketPolicyStatus(ctx *fiber.Ctx) (*Response, error
 		Bucket:          bucket,
 		Action:          auth.GetBucketPolicyStatusAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -313,6 +319,7 @@ func (c S3ApiController) ListObjectVersions(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.ListBucketVersionsAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -366,6 +373,7 @@ func (c S3ApiController) GetObjectLockConfiguration(ctx *fiber.Ctx) (*Response, 
 		Bucket:          bucket,
 		Action:          auth.GetBucketObjectLockConfigurationAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -411,6 +419,7 @@ func (c S3ApiController) GetBucketAcl(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.GetBucketAclAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -462,6 +471,7 @@ func (c S3ApiController) ListMultipartUploads(ctx *fiber.Ctx) (*Response, error)
 		Bucket:          bucket,
 		Action:          auth.ListBucketMultipartUploadsAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -519,6 +529,7 @@ func (c S3ApiController) ListObjectsV2(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.ListBucketAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -576,6 +587,7 @@ func (c S3ApiController) ListObjects(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.ListBucketAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{
@@ -627,6 +639,7 @@ func (c S3ApiController) GetBucketLocation(ctx *fiber.Ctx) (*Response, error) {
 		Bucket:          bucket,
 		Action:          auth.GetBucketLocationAction,
 		IsPublicRequest: isPublicBucket,
+		DisableACL:      c.disableACL,
 	})
 	if err != nil {
 		return &Response{

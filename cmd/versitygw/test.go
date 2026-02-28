@@ -153,6 +153,11 @@ func initTestCommands() []*cli.Command {
 			Action: getAction(integration.TestAccessControl),
 		},
 		{
+			Name:   "noacl",
+			Usage:  "Tests gateway in ACL-disabled mode",
+			Action: getAction(integration.TestNoAclMode),
+		},
+		{
 			Name:  "bench",
 			Usage: "Runs download/upload performance test on the gateway",
 			Description: `Uploads/downloads some number(specified by flags) of files with some capacity(bytes).
