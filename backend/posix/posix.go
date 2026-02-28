@@ -3036,7 +3036,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			checksums = s3response.Checksum{}
 		} else {
 			if hashRdr == nil {
-				err := p.storeChecksums(f.File(), objPath, "", checksums)
+				err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 				if err != nil {
 					return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
 				}
@@ -3064,7 +3064,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			checksums.CRC64NVME = &sum
 		}
 
-		err := p.storeChecksums(f.File(), objPath, "", checksums)
+		err := p.storeChecksums(f.File(), *upi.Bucket, partPath, checksums)
 		if err != nil {
 			return s3response.CopyPartResult{}, fmt.Errorf("store part checksum: %w", err)
 		}
@@ -3073,7 +3073,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 	if crc64nvmeRdr != nil {
 		// store the internal crc64nvme
 		internalCrc64NvmeSum := crc64nvmeRdr.Sum()
-		err := p.meta.StoreAttribute(f.File(), objPath, "", partCrc64nvme, []byte(internalCrc64NvmeSum))
+		err := p.meta.StoreAttribute(f.File(), *upi.Bucket, partPath, partCrc64nvme, []byte(internalCrc64NvmeSum))
 		if err != nil {
 			return s3response.CopyPartResult{}, fmt.Errorf("store part internal crc64nvme: %w", err)
 		}
