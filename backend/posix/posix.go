@@ -1672,9 +1672,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	// The checksum algorithm should default to CRC64NVME
 	// just for data integrity. It isn't going to be saved
 	// in the final object metadata
-	checksumAlgorithm := types.ChecksumAlgorithmCrc64nvme
-	if checksums.Algorithm != "" {
-		checksumAlgorithm = checksums.Algorithm
+	if checksums.Algorithm == "" {
+		checksums.Algorithm = types.ChecksumAlgorithmCrc64nvme
 	}
 
 	// ChecksumType should be the same as specified on CreateMultipartUpload
@@ -1687,13 +1686,11 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		return res, "", s3err.GetChecksumTypeMismatchOnMpErr(checksumType)
 	}
 
+	mpChecksumType := checksums.Type
+
 	// The checksum type should default to FULL_OBJECT(crc64nvme)
-	checksumType := checksums.Type
 	if checksums.Type == "" {
-		// do not modify checksums.Type to further not save the checksum
-		// in the final object. As if no checksum has been specified on mp
-		// creation, the final object shouldn't contain the checksum metadata
-		checksumType = types.ChecksumTypeFullObject
+		checksums.Type = types.ChecksumTypeFullObject
 	}
 
 	// check all parts ok
@@ -1701,9 +1698,9 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	var totalsize int64
 
 	var composableCRC bool
-	switch checksums.Type {
+	switch mpChecksumType {
 	case types.ChecksumTypeFullObject:
-		composableCRC = utils.IsChecksumComposable(checksumAlgorithm)
+		composableCRC = utils.IsChecksumComposable(checksums.Algorithm)
 	}
 
 	// The initialie values is the lower limit of partNumber: 0
@@ -1762,16 +1759,16 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	var hashRdr *utils.HashReader
 	var compositeChecksumRdr *utils.CompositeChecksumReader
-	switch checksumType {
+	switch checksums.Type {
 	case types.ChecksumTypeFullObject:
 		if !composableCRC {
-			hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksumAlgorithm))))
+			hashRdr, err = utils.NewHashReader(nil, "", utils.HashType(strings.ToLower(string(checksums.Algorithm))))
 			if err != nil {
 				return res, "", fmt.Errorf("initialize hash reader: %w", err)
 			}
 		}
 	case types.ChecksumTypeComposite:
-		compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksumAlgorithm))))
+		compositeChecksumRdr, err = utils.NewCompositeChecksumReader(utils.HashType(strings.ToLower(string(checksums.Algorithm))))
 		if err != nil {
 			return res, "", fmt.Errorf("initialize composite checksum reader: %w", err)
 		}
@@ -1802,15 +1799,15 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		}
 
 		var rdr io.Reader = pf
-		switch checksumType {
+		switch checksums.Type {
 		case types.ChecksumTypeFullObject:
 			if composableCRC {
 				if i == 0 {
-					composableCsum = getPartChecksum(checksumAlgorithm, part)
+					composableCsum = getPartChecksum(checksums.Algorithm, part)
 					break
 				}
-				composableCsum, err = utils.AddCRCChecksum(checksumAlgorithm,
-					composableCsum, getPartChecksum(checksumAlgorithm, part),
+				composableCsum, err = utils.AddCRCChecksum(checksums.Algorithm,
+					composableCsum, getPartChecksum(checksums.Algorithm, part),
 					pfi.Size())
 				if err != nil {
 					pf.Close()
@@ -1822,7 +1819,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			hashRdr.SetReader(rdr)
 			rdr = hashRdr
 		case types.ChecksumTypeComposite:
-			err := compositeChecksumRdr.Process(getPartChecksum(checksumAlgorithm, part))
+			err := compositeChecksumRdr.Process(getPartChecksum(checksums.Algorithm, part))
 			if err != nil {
 				pf.Close()
 				return res, "", fmt.Errorf("process %v part checksum: %w",
@@ -1935,76 +1932,60 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 	var sha256 *string
 	var crc64nvme *string
 
-	// Calculate, compare with the provided checksum and store them
-	if checksums.Type != "" {
-		checksum := s3response.Checksum{
-			Algorithm: checksumAlgorithm,
-			Type:      checksums.Type,
+	var value string
+	switch checksums.Type {
+	case types.ChecksumTypeComposite:
+		value = fmt.Sprintf("%s-%v", compositeChecksumRdr.Sum(), len(parts))
+	case types.ChecksumTypeFullObject:
+		if !composableCRC {
+			value = hashRdr.Sum()
+		} else {
+			value = composableCsum
+		}
+	}
+
+	var gotSum *string
+
+	switch checksums.Algorithm {
+	case types.ChecksumAlgorithmCrc32:
+		gotSum = input.ChecksumCRC32
+		checksums.CRC32 = &value
+		crc32 = &value
+	case types.ChecksumAlgorithmCrc32c:
+		gotSum = input.ChecksumCRC32C
+		checksums.CRC32C = &value
+		crc32c = &value
+	case types.ChecksumAlgorithmSha1:
+		gotSum = input.ChecksumSHA1
+		checksums.SHA1 = &value
+		sha1 = &value
+	case types.ChecksumAlgorithmSha256:
+		gotSum = input.ChecksumSHA256
+		checksums.SHA256 = &value
+		sha256 = &value
+	case types.ChecksumAlgorithmCrc64nvme:
+		gotSum = input.ChecksumCRC64NVME
+		checksums.CRC64NVME = &value
+		crc64nvme = &value
+	}
+
+	// Check if the provided checksum and the calculated one are the same
+	if mpChecksumType != "" && gotSum != nil {
+		s := *gotSum
+		if checksums.Type == types.ChecksumTypeComposite && !strings.Contains(s, "-") {
+			// if number of parts is not specified in the final checksum
+			// make sure to add, to not fail in the final comparison
+			s = fmt.Sprintf("%s-%v", s, len(parts))
 		}
 
-		var sum string
-		switch checksums.Type {
-		case types.ChecksumTypeComposite:
-			sum = fmt.Sprintf("%s-%v", compositeChecksumRdr.Sum(), len(parts))
-		case types.ChecksumTypeFullObject:
-			if !composableCRC {
-				sum = hashRdr.Sum()
-			} else {
-				sum = composableCsum
-			}
+		if s != value {
+			return res, "", s3err.GetChecksumBadDigestErr(checksums.Algorithm)
 		}
+	}
 
-		var gotSum *string
-
-		switch checksumAlgorithm {
-		case types.ChecksumAlgorithmCrc32:
-			gotSum = input.ChecksumCRC32
-			checksum.CRC32 = &sum
-			crc32 = &sum
-		case types.ChecksumAlgorithmCrc32c:
-			gotSum = input.ChecksumCRC32C
-			checksum.CRC32C = &sum
-			crc32c = &sum
-		case types.ChecksumAlgorithmSha1:
-			gotSum = input.ChecksumSHA1
-			checksum.SHA1 = &sum
-			sha1 = &sum
-		case types.ChecksumAlgorithmSha256:
-			gotSum = input.ChecksumSHA256
-			checksum.SHA256 = &sum
-			sha256 = &sum
-		case types.ChecksumAlgorithmCrc64nvme:
-			gotSum = input.ChecksumCRC64NVME
-			checksum.CRC64NVME = &sum
-			crc64nvme = &sum
-		}
-
-		// Check if the provided checksum and the calculated one are the same
-		if gotSum != nil {
-			s := *gotSum
-			if checksums.Type == types.ChecksumTypeComposite && !strings.Contains(s, "-") {
-				// if number of parts is not specified in the final checksum
-				// make sure to add, to not fail in the final comparison
-				s = fmt.Sprintf("%s-%v", s, len(parts))
-			}
-
-			if s != sum {
-				return res, "", s3err.GetChecksumBadDigestErr(checksumAlgorithm)
-			}
-		}
-
-		err := p.storeChecksums(f.File(), bucket, object, checksum)
-		if err != nil {
-			return res, "", fmt.Errorf("store object checksum: %w", err)
-		}
-	} else {
-		// in this case no checksum has been specified on mp creation
-		// and the complete request checksum is defaulted to crc64nvem
-		// simply calculated the sum to further retrun in the response
-		if hashRdr != nil {
-			sum := hashRdr.Sum()
-			crc64nvme = &sum
-		}
+	err = p.storeChecksums(f.File(), bucket, object, checksums)
+	if err != nil {
+		return res, "", fmt.Errorf("store object checksum: %w", err)
 	}
 
 	// load and set retention
@@ -2047,7 +2028,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		ChecksumSHA1:      sha1,
 		ChecksumSHA256:    sha256,
 		ChecksumCRC64NVME: crc64nvme,
-		ChecksumType:      &checksumType,
+		ChecksumType:      &checksums.Type,
 	}, versionID, nil
 }
 

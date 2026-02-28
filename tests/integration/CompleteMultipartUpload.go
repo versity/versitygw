@@ -1111,6 +1111,24 @@ func CompleteMultipartUpload_should_ignore_the_final_checksum(s *S3Conf) error {
 			return fmt.Errorf("expected non nil crc64nvme checksum")
 		}
 
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket:       &bucket,
+			Key:          &obj,
+			ChecksumMode: types.ChecksumModeEnabled,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		if out.ChecksumType != types.ChecksumTypeFullObject {
+			return fmt.Errorf("expected the final object checksum type to be %s, instead got %s", types.ChecksumTypeFullObject, out.ChecksumType)
+		}
+		if out.ChecksumCRC64NVME == nil {
+			return fmt.Errorf("expected non nil crc64nvme checksum")
+		}
+
 		return nil
 	})
 }
