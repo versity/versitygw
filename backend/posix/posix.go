@@ -184,10 +184,10 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		return nil, fmt.Errorf("get absolute path of %v: %w", rootdir, err)
 	}
 
-	var verioningdirAbs string
+	var versioningdirAbs string
 	// Ensure the versioning directory isn't within the root directory
 	if opts.VersioningDir != "" {
-		verioningdirAbs, err = validateSubDir(rootdirAbs, opts.VersioningDir)
+		versioningdirAbs, err = validateSubDir(rootdirAbs, opts.VersioningDir)
 		if err != nil {
 			return nil, err
 		}
@@ -202,8 +202,8 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		}
 	}
 
-	if verioningdirAbs != "" {
-		fmt.Println("Bucket versioning enabled with directory:", verioningdirAbs)
+	if versioningdirAbs != "" {
+		fmt.Println("Bucket versioning enabled with directory:", versioningdirAbs)
 	}
 
 	if sidecardirAbs != "" {
@@ -219,7 +219,7 @@ func New(rootdir string, meta meta.MetadataStorer, opts PosixOpts) (*Posix, erro
 		chownuid:           opts.ChownUID,
 		chowngid:           opts.ChownGID,
 		bucketlinks:        opts.BucketLinks,
-		versioningDir:      verioningdirAbs,
+		versioningDir:      versioningdirAbs,
 		newDirPerm:         opts.NewDirPerm,
 		forceNoTmpFile:     opts.ForceNoTmpFile,
 		validateBucketName: opts.ValidateBucketNames,
@@ -1136,7 +1136,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					Key:          &path,
 				})
 			} else {
-				// Retreive checksum
+				// Retrieve checksum
 				checksum, err := p.retrieveChecksums(nil, bucket, path)
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
@@ -1227,7 +1227,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 				// so this will just set etag to "" if its not already set
 				etag := string(etagBytes)
 				size := nf.Size()
-				// Retreive checksum
+				// Retrieve checksum
 				checksum, err := p.retrieveChecksums(nil, versionPath, nullVersionId)
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
@@ -1349,7 +1349,7 @@ func (p *Posix) fileToObjVersions(bucket string) backend.GetVersionsFunc {
 					IsLatest:     getBoolPtr(false),
 				})
 			} else {
-				// Retreive checksum
+				// Retrieve checksum
 				checksum, err := p.retrieveChecksums(nil, versionPath, versionId)
 				if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 					return nil, fmt.Errorf("get checksum: %w", err)
@@ -1433,7 +1433,7 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 	}
 
 	if strings.HasSuffix(*mpu.Key, "/") {
-		// directory objects can't be uploaded with mutlipart uploads
+		// directory objects can't be uploaded with multipart uploads
 		// because posix directories can't contain data
 		return s3response.InitiateMultipartUploadResult{}, s3err.GetAPIError(s3err.ErrDirectoryObjectContainsData)
 	}
@@ -1736,7 +1736,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 			return res, "", fmt.Errorf("get part checksum: %w", err)
 		}
 
-		// If checksum has been provided on mp initalization
+		// If checksum has been provided on mp initialization
 		err = validatePartChecksum(partChecksum, part)
 		if err != nil {
 			return res, "", err
@@ -1784,7 +1784,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		case types.ChecksumTypeFullObject:
 			var partChecksum string
 			if mpChecksumType != "" {
-				// if any checksum has been initially specifed on mp creation
+				// if any checksum has been initially specified on mp creation
 				// read the part checksum configuration
 				partChecksum = getPartChecksum(checksums.Algorithm, part)
 			} else {
@@ -1793,7 +1793,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 				crc64nvme, err := p.meta.RetrieveAttribute(pf, bucket, partObjPath, partCrc64nvme)
 				if err != nil {
 					pf.Close()
-					return res, "", fmt.Errorf("retrieve part internal crc64nvme: %s", err)
+					return res, "", fmt.Errorf("retrieve part internal crc64nvme: %w", err)
 				}
 				partChecksum = string(crc64nvme)
 			}
@@ -1865,7 +1865,7 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	d, err := os.Stat(objname)
 
-	// if the versioninng is enabled first create the file object version
+	// if the versioning is enabled first create the file object version
 	if p.versioningEnabled() && vEnabled && err == nil && !d.IsDir() {
 		_, err := p.createObjVersion(bucket, object, d.Size(), acct, false)
 		if err != nil {
@@ -2219,7 +2219,7 @@ func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m objectM
 	if getString(m.Expires) != "" {
 		err := p.meta.StoreAttribute(f, bucket, object, expiresHdr, []byte(*m.Expires))
 		if err != nil {
-			return fmt.Errorf("set cache-control: %w", err)
+			return fmt.Errorf("set expires: %w", err)
 		}
 	}
 
@@ -2639,7 +2639,7 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 	// user input checksum algorithm: either with chunk uploads or with request headers
 	var inputChAlgo utils.HashType
-	// user input checksum value specifed with request headers
+	// user input checksum value specified with request headers
 	var inputSum string
 
 	if !isTrailingChecksum {
@@ -2666,11 +2666,11 @@ func (p *Posix) UploadPartWithPostFunc(ctx context.Context, input *s3.UploadPart
 
 	checksums, err := p.retrieveChecksums(nil, bucket, mpPath)
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return nil, fmt.Errorf("retreive mp checksum: %w", err)
+		return nil, fmt.Errorf("retrieve mp checksum: %w", err)
 	}
 
 	// If checksum isn't provided for the part,
-	// but it has been provided on mp initalization
+	// but it has been provided on mp initialization
 	// and checksum type is 'COMPOSITE', return mismatch error
 	if inputChAlgo == "" && checksums.Type == types.ChecksumTypeComposite {
 		return nil, s3err.GetChecksumTypeMismatchErr(checksums.Algorithm, "null")
@@ -2993,12 +2993,12 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 
 	mpChecksums, err := p.retrieveChecksums(nil, *upi.Bucket, filepath.Join(objdir, *upi.UploadId))
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return s3response.CopyPartResult{}, fmt.Errorf("retreive mp checksums: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("retrieve mp checksums: %w", err)
 	}
 
 	checksums, err := p.retrieveChecksums(nil, objPath, "")
 	if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-		return s3response.CopyPartResult{}, fmt.Errorf("retreive object part checksums: %w", err)
+		return s3response.CopyPartResult{}, fmt.Errorf("retrieve object part checksums: %w", err)
 	}
 
 	// TODO: Should the checksum be recalculated or just copied ?
@@ -3014,7 +3014,7 @@ func (p *Posix) UploadPartCopy(ctx context.Context, upi *s3.UploadPartCopyInput)
 			tr = hashRdr
 		}
 	} else {
-		// if not checksum has been specifed on multipart upload initiation
+		// if no checksum has been specified on multipart upload initiation
 		// create an internal crc64nvme reader to calculate and stored the internal crc64nvme
 		crc64nvmeRdr, err = utils.NewHashReader(tr, "", utils.HashTypeCRC64NVME)
 		if err != nil {
@@ -3304,7 +3304,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, s3err.GetAPIError(s3err.ErrExistingObjectIsDirectory)
 	}
 
-	// if the versioninng is enabled first create the file object version
+	// if the versioning is enabled first create the file object version
 	if p.versioningEnabled() && vStatus != "" && err == nil {
 		var isVersionIdMissing bool
 		if p.isBucketVersioningSuspended(vStatus) {
@@ -3387,7 +3387,7 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versionID = ulid.Make().String()
 	}
 
-	// Before finaliazing the object creation remove
+	// Before finalizing the object creation remove
 	// null versionId object from versioning directory
 	// if it exists and the versioning status is Suspended
 	if p.isBucketVersioningSuspended(vStatus) {
@@ -4892,7 +4892,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 
 	return func(path string, d fs.DirEntry) (s3response.Object, error) {
 		var owner *types.Owner
-		// Retreive the object owner data from bucket ACL, if fetchOwner is true
+		// Retrieve the object owner data from bucket ACL, if fetchOwner is true
 		// All the objects in the bucket are owned by the bucket owner
 		if fetchOwner {
 			aclJSON, err := p.meta.RetrieveAttribute(nil, bucket, "", aclkey)
@@ -4948,7 +4948,7 @@ func (p *Posix) FileToObj(bucket string, fetchOwner bool) backend.GetObjFunc {
 			return s3response.Object{}, backend.ErrSkipObj
 		}
 
-		// Retreive the object checksum algorithm
+		// Retrieve the object checksum algorithm
 		checksums, err := p.retrieveChecksums(nil, bucket, path)
 		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
 			return s3response.Object{}, backend.ErrSkipObj
