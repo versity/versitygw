@@ -308,6 +308,90 @@ func GetObject_checksums(s *S3Conf) error {
 	})
 }
 
+func GetObject_dir_object_checksum(s *S3Conf) error {
+	testName := "GetObject_dir_object_checksum"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		for i, obj := range []struct {
+			key          string
+			expectedSum  string
+			checksumAlgo types.ChecksumAlgorithm
+		}{
+			{
+				key:          "obj-1/",
+				expectedSum:  "AAAAAA==",
+				checksumAlgo: types.ChecksumAlgorithmCrc32,
+			},
+			{
+				key:          "obj-2/",
+				expectedSum:  "AAAAAA==",
+				checksumAlgo: types.ChecksumAlgorithmCrc32c,
+			},
+			{
+				key:          "obj-3/",
+				expectedSum:  "AAAAAAAAAAA=",
+				checksumAlgo: types.ChecksumAlgorithmCrc64nvme,
+			},
+			{
+				key:          "obj-4/",
+				expectedSum:  "2jmj7l5rSw0yVb/vlWAYkK/YBwk=",
+				checksumAlgo: types.ChecksumAlgorithmSha1,
+			},
+			{
+				key:          "obj-5/",
+				expectedSum:  "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
+				checksumAlgo: types.ChecksumAlgorithmSha256,
+			},
+		} {
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
+				Bucket:            &bucket,
+				Key:               &obj.key,
+				ChecksumAlgorithm: obj.checksumAlgo,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket:       &bucket,
+				Key:          &obj.key,
+				ChecksumMode: types.ChecksumModeEnabled,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if res.ChecksumType != types.ChecksumTypeFullObject {
+				return fmt.Errorf("test %v failed: expected the %v object checksum type to be %v, instaed got %v",
+					i+1, obj.key, types.ChecksumTypeFullObject, res.ChecksumType)
+			}
+
+			var gotSum *string
+			switch obj.checksumAlgo {
+			case types.ChecksumAlgorithmCrc32:
+				gotSum = res.ChecksumCRC32
+			case types.ChecksumAlgorithmCrc32c:
+				gotSum = res.ChecksumCRC32C
+			case types.ChecksumAlgorithmCrc64nvme:
+				gotSum = res.ChecksumCRC64NVME
+			case types.ChecksumAlgorithmSha1:
+				gotSum = res.ChecksumSHA1
+			case types.ChecksumAlgorithmSha256:
+				gotSum = res.ChecksumSHA256
+			}
+
+			if getString(gotSum) != obj.expectedSum {
+				return fmt.Errorf("test %v failed: expected the object %s to be %s, instead got %s", i+1, obj.checksumAlgo, obj.expectedSum, getString(gotSum))
+			}
+		}
+
+		return nil
+	})
+}
+
 func GetObject_large_object(s *S3Conf) error {
 	testName := "GetObject_large_object"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

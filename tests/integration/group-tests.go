@@ -178,7 +178,9 @@ func TestPutObject(ts *TestState) {
 		ts.Run(PutObject_invalid_checksum_header)
 		ts.Run(PutObject_incorrect_checksums)
 		ts.Run(PutObject_default_checksum)
+		ts.Run(PutObject_dir_object_default_checksum)
 		ts.Run(PutObject_checksums_success)
+		ts.Run(PutObject_dir_object_checksums_success)
 		// azure applies some encoding mechanisms.
 		ts.Run(PutObject_false_negative_object_names)
 		// azure doesn't support these metadata characters
@@ -239,6 +241,7 @@ func TestGetObject(ts *TestState) {
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(GetObject_checksums)
+		ts.Run(GetObject_dir_object_checksum)
 	}
 	ts.Run(GetObject_success)
 	ts.Run(GetObject_directory_success)
@@ -1247,7 +1250,9 @@ func GetIntTests() IntTests {
 		"PutObject_invalid_checksum_header":                                        PutObject_invalid_checksum_header,
 		"PutObject_incorrect_checksums":                                            PutObject_incorrect_checksums,
 		"PutObject_default_checksum":                                               PutObject_default_checksum,
+		"PutObject_dir_object_default_checksum":                                    PutObject_dir_object_default_checksum,
 		"PutObject_checksums_success":                                              PutObject_checksums_success,
+		"PutObject_dir_object_checksums_success":                                   PutObject_dir_object_checksums_success,
 		"PresignedAuth_Put_GetObject_with_data":                                    PresignedAuth_Put_GetObject_with_data,
 		"PresignedAuth_Put_GetObject_with_UTF8_chars":                              PresignedAuth_Put_GetObject_with_UTF8_chars,
 		"PresignedAuth_UploadPart":                                                 PresignedAuth_UploadPart,
@@ -1346,6 +1351,7 @@ func GetIntTests() IntTests {
 		"GetObject_large_object":                                                   GetObject_large_object,
 		"GetObject_conditional_reads":                                              GetObject_conditional_reads,
 		"GetObject_checksums":                                                      GetObject_checksums,
+		"GetObject_dir_object_checksum":                                            GetObject_dir_object_checksum,
 		"GetObject_success":                                                        GetObject_success,
 		"GetObject_directory_success":                                              GetObject_directory_success,
 		"GetObject_by_range_resp_status":                                           GetObject_by_range_resp_status,
