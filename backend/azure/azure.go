@@ -216,54 +216,61 @@ func (az *Azure) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, 
 }
 
 func (az *Azure) ListBuckets(ctx context.Context, input s3response.ListBucketsInput) (s3response.ListAllMyBucketsResult, error) {
-	pager := az.client.NewListContainersPager(
-		&service.ListContainersOptions{
-			Include: service.ListContainersInclude{
-				Metadata: true,
-			},
-			Marker:     &input.ContinuationToken,
-			MaxResults: &input.MaxBuckets,
-			Prefix:     &input.Prefix,
-		})
+	opts := &service.ListContainersOptions{
+		Include: service.ListContainersInclude{
+			Metadata: true,
+		},
+		Prefix: &input.Prefix,
+	}
+	pager := az.client.NewListContainersPager(opts)
 
 	var buckets []s3response.ListAllMyBucketsEntry
+	var cToken string
 	result := s3response.ListAllMyBucketsResult{
 		Prefix: input.Prefix,
 	}
 
-	resp, err := pager.NextPage(ctx)
-	if err != nil {
-		return result, azureErrToS3Err(err)
-	}
-	for _, v := range resp.ContainerItems {
-		if input.IsAdmin {
-			buckets = append(buckets, s3response.ListAllMyBucketsEntry{
-				Name: *v.Name,
-				// TODO: using modification date here instead of creation, is that ok?
-				CreationDate: *v.Properties.LastModified,
-			})
-		} else {
-			acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
-			if err != nil {
-				return result, err
+outer:
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return result, azureErrToS3Err(err)
+		}
+		for _, v := range resp.ContainerItems {
+			// If we've already filled MaxBuckets, there is a next page — set token and stop
+			if input.MaxBuckets > 0 && int32(len(buckets)) == input.MaxBuckets {
+				cToken = buckets[len(buckets)-1].Name
+				break outer
 			}
-
-			if acl.Owner == input.Owner {
+			// Skip items at or before the continuation token (client-side "start after")
+			if input.ContinuationToken != "" && *v.Name <= input.ContinuationToken {
+				continue
+			}
+			if input.IsAdmin {
 				buckets = append(buckets, s3response.ListAllMyBucketsEntry{
 					Name: *v.Name,
 					// TODO: using modification date here instead of creation, is that ok?
 					CreationDate: *v.Properties.LastModified,
 				})
+			} else {
+				acl, err := getAclFromMetadata(v.Metadata, keyAclLower)
+				if err != nil {
+					return result, err
+				}
+				if acl.Owner == input.Owner {
+					buckets = append(buckets, s3response.ListAllMyBucketsEntry{
+						Name: *v.Name,
+						// TODO: using modification date here instead of creation, is that ok?
+						CreationDate: *v.Properties.LastModified,
+					})
+				}
 			}
 		}
 	}
 
-	if resp.NextMarker != nil {
-		result.ContinuationToken = *resp.NextMarker
-	}
-
 	result.Buckets.Bucket = buckets
 	result.Owner.ID = input.Owner
+	result.ContinuationToken = cToken
 
 	return result, nil
 }
