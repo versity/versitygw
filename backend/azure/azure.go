@@ -1042,6 +1042,7 @@ func (az *Azure) CopyObject(ctx context.Context, input s3response.CopyObjectInpu
 	if err != nil {
 		return s3response.CopyObjectOutput{}, azureErrToS3Err(err)
 	}
+	defer downloadResp.Body.Close()
 
 	pInput := s3response.PutObjectInput{
 		Body:                      downloadResp.Body,
