@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2225,13 +2226,7 @@ func (az *Azure) trackZeroBytePart(ctx context.Context, bucket, key, uploadId st
 
 	// Deduplicate: replace an existing entry for the same partNumber.
 	parts := parseZeroByteParts(meta)
-	found := false
-	for _, p := range parts {
-		if p == partNumber {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(parts, partNumber)
 	if !found {
 		parts = append(parts, partNumber)
 	}
