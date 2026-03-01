@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+.DS_Store
 cmd/versitygw/versitygw
 /versitygw
 
