@@ -80,13 +80,12 @@ func PutObject_special_chars(s *S3Conf) error {
 func PutObject_tagging(s *S3Conf) error {
 	testName := "PutObject_tagging"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		obj := "my-obj"
-		testTagging := func(taggging string, result map[string]string, expectedErr error) error {
+		testTagging := func(object, taggging string, result map[string]string, expectedErr error) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 
 			_, err := s3client.PutObject(ctx, &s3.PutObjectInput{
 				Bucket:  &bucket,
-				Key:     &obj,
+				Key:     &object,
 				Tagging: &taggging,
 			})
 			cancel()
@@ -108,7 +107,7 @@ func PutObject_tagging(s *S3Conf) error {
 			ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
 			res, err := s3client.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
 				Bucket: &bucket,
-				Key:    &obj,
+				Key:    &object,
 			})
 			cancel()
 			if err != nil {
@@ -132,6 +131,8 @@ func PutObject_tagging(s *S3Conf) error {
 
 			return nil
 		}
+
+		fileObj, dirObj := "file-object", "dir-object/"
 
 		for i, el := range []struct {
 			tagging     string
@@ -182,9 +183,16 @@ func PutObject_tagging(s *S3Conf) error {
 					continue
 				}
 			}
-			err := testTagging(el.tagging, el.result, el.expectedErr)
+			// once test for file object
+			err := testTagging(fileObj, el.tagging, el.result, el.expectedErr)
 			if err != nil {
-				return fmt.Errorf("test case %v failed: %w", i+1, err)
+				return fmt.Errorf("test case %v failed for file object: %w", i+1, err)
+			}
+
+			// the test for directory object
+			err = testTagging(dirObj, el.tagging, el.result, el.expectedErr)
+			if err != nil {
+				return fmt.Errorf("test case %v failed for directory object: %w", i+1, err)
 			}
 		}
 		return nil
@@ -461,7 +469,8 @@ func PutObject_conditional_writes(s *S3Conf) error {
 func PutObject_with_metadata(s *S3Conf) error {
 	testName := "PutObject_with_metadata"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
-		meta := map[string]string{
+
+		inputMeta := map[string]string{
 			"Key":                 "Val",
 			"X-Test":              "Example",
 			"UPPERCASE":           "should-remain",
@@ -475,26 +484,6 @@ func PutObject_with_metadata(s *S3Conf) error {
 			"EmptyValue":          "",
 			"LongKeyNameThatShouldStillBeValidButQuiteLongToTestLimits": "some long metadata value to ensure nothing breaks at higher header sizes",
 			"WhitespaceKey ": " trailing-key",
-		}
-
-		obj := "my-object"
-		_, err := putObjectWithData(3, &s3.PutObjectInput{
-			Bucket:   &bucket,
-			Key:      &obj,
-			Metadata: meta,
-		}, s3client)
-		if err != nil {
-			return err
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
-		res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &obj,
-		})
-		cancel()
-		if err != nil {
-			return err
 		}
 
 		expectedMeta := map[string]string{
@@ -513,8 +502,37 @@ func PutObject_with_metadata(s *S3Conf) error {
 			"whitespacekey": "trailing-key",
 		}
 
-		if !areMapsSame(expectedMeta, res.Metadata) {
-			return fmt.Errorf("expected the object metadata to be %v, instead got %v", expectedMeta, res.Metadata)
+		for i, test := range []struct {
+			obj        string
+			dataLength int64
+		}{
+			// test for file object
+			{"file-object", 100},
+			// test for directory object
+			{"dir-object/", 0},
+		} {
+			_, err := putObjectWithData(test.dataLength, &s3.PutObjectInput{
+				Bucket:   &bucket,
+				Key:      &test.obj,
+				Metadata: inputMeta,
+			}, s3client)
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+			res, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+				Bucket: &bucket,
+				Key:    &test.obj,
+			})
+			cancel()
+			if err != nil {
+				return fmt.Errorf("test %v failed: %w", i+1, err)
+			}
+
+			if !areMapsSame(expectedMeta, res.Metadata) {
+				return fmt.Errorf("test %v failed: expected the object metadata to be %v, instead got %v", i+1, expectedMeta, res.Metadata)
+			}
 		}
 
 		return nil

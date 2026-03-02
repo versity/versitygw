@@ -3227,11 +3227,20 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
+		// set object metadata
 		for k, v := range po.Metadata {
 			err := p.meta.StoreAttribute(nil, *po.Bucket, *po.Key,
 				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
 			if err != nil {
 				return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
+			}
+		}
+
+		// Set object tagging
+		if tags != nil {
+			err := p.PutObjectTagging(withCtxNoSlot(ctx), *po.Bucket, *po.Key, "", tags)
+			if err != nil {
+				return s3response.PutObjectOutput{}, err
 			}
 		}
 
