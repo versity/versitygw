@@ -18,7 +18,7 @@ load ./bats-support/load
 load ./bats-assert/load
 
 source ./tests/drivers/create_bucket/create_bucket_rest.sh
-source ./tests/util/util_delete_object.sh
+source ./tests/drivers/delete_objects/delete_objects_rest.sh
 source ./tests/setup.sh
 
 @test "test_rest_delete_object" {

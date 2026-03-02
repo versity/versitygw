@@ -139,6 +139,7 @@ delete_object_with_user() {
   fi
   if [ $exit_code -ne 0 ]; then
     log 2 "error deleting object: $delete_object_error"
+    echo "$delete_object_error" >&2
     return 1
   fi
   return 0

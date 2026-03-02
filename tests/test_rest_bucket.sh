@@ -29,7 +29,6 @@ source ./tests/drivers/put_bucket_ownership_controls/put_bucket_ownership_contro
 source ./tests/drivers/put_bucket_tagging/put_bucket_tagging_rest.sh
 source ./tests/logger.sh
 source ./tests/setup.sh
-source ./tests/util/util_delete_object.sh
 source ./tests/util/util_list_buckets.sh
 source ./tests/util/util_lock_config.sh
 source ./tests/util/util_public_access_block.sh
