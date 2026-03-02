@@ -150,7 +150,7 @@ func (p *Posix) openMkTemp(dir, bucket, obj string, size int64, dofalloc bool, u
 func (tmp *tmpfile) falloc() error {
 	err := syscall.Fallocate(int(tmp.f.Fd()), 0, 0, tmp.size)
 	if err != nil {
-		return fmt.Errorf("fallocate: %v", err)
+		return fmt.Errorf("fallocate: %w", err)
 	}
 	return nil
 }
@@ -175,7 +175,7 @@ func (tmp *tmpfile) link() error {
 	}
 
 	if !tmp.isOTmp {
-		// O_TMPFILE not suported, use fallback
+		// O_TMPFILE not supported, use fallback
 		return tmp.fallbackLink()
 	}
 
