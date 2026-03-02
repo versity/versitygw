@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -1097,4 +1098,112 @@ func TestWalkVersionsTruncated(t *testing.T) {
 	if totalVersions != expectedTotal {
 		t.Errorf("total versions mismatch: expected %d, got %d", expectedTotal, totalVersions)
 	}
+}
+
+// TestWalkVersionsPrefixSkipsParents reproduces the bug (#1864) where
+// ListObjectVersions with a deep prefix and delimiter="/" was incorrectly
+// returning version entries for ancestor directories (e.g. "vendor/",
+// "vendor/Backup/") in addition to the the prefix directory itself.
+// Only "vendor/Backup/vendor/Clients/" should appear in ObjectVersions; all
+// deeper entries should become CommonPrefixes.
+func TestWalkVersionsPrefixSkipsParents(t *testing.T) {
+	fsys := fstest.MapFS{
+		"vendor":                                      {Mode: fs.ModeDir},
+		"vendor/Backup":                               {Mode: fs.ModeDir},
+		"vendor/Backup/vendor":                        {Mode: fs.ModeDir},
+		"vendor/Backup/vendor/Clients":                {Mode: fs.ModeDir},
+		"vendor/Backup/vendor/Clients/abc":            {Mode: fs.ModeDir},
+		"vendor/Backup/vendor/Clients/abc/backup.vbm": {},
+	}
+
+	prefix := "vendor/Backup/vendor/Clients/"
+	delimiter := "/"
+
+	res, err := backend.WalkVersions(context.Background(), fsys, prefix, delimiter, "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("WalkVersions: %v", err)
+	}
+
+	// Only the exact prefix directory should appear as an ObjectVersion.
+	expectedVersionKeys := []string{"vendor/Backup/vendor/Clients/"}
+	if !compareObjectVersionsOrdered(res.ObjectVersions, makeObjectVersions(expectedVersionKeys)) {
+		t.Errorf("unexpected ObjectVersions: got %v, want %v",
+			printVersionObjects(res.ObjectVersions), expectedVersionKeys)
+	}
+
+	// The child directory should be a CommonPrefix.
+	expectedPrefixes := []string{"vendor/Backup/vendor/Clients/abc/"}
+	if !comparePrefixesUnordered(res.CommonPrefixes, expectedPrefixes) {
+		t.Errorf("unexpected CommonPrefixes: got %v, want %v",
+			printCommonPrefixes(res.CommonPrefixes), expectedPrefixes)
+	}
+}
+
+// TestWalkVersionsPrefixNoDelimiterSkipsParents verifies that even without a
+// delimiter, ancestor directories of the prefix are not returned as versions.
+func TestWalkVersionsPrefixNoDelimiterSkipsParents(t *testing.T) {
+	fsys := fstest.MapFS{
+		"vendor":                                {Mode: fs.ModeDir},
+		"vendor/Backup":                         {Mode: fs.ModeDir},
+		"vendor/Backup/vendor":                  {Mode: fs.ModeDir},
+		"vendor/Backup/vendor/Clients":          {Mode: fs.ModeDir},
+		"vendor/Backup/vendor/Clients/file.vbm": {},
+	}
+
+	prefix := "vendor/Backup/vendor/Clients/"
+
+	res, err := backend.WalkVersions(context.Background(), fsys, prefix, "", "", "", 1000, getVersionsTestFunc, []string{})
+	if err != nil {
+		t.Fatalf("WalkVersions: %v", err)
+	}
+
+	// Ancestor keys must not appear. every returned key must start with prefix.
+	for _, ov := range res.ObjectVersions {
+		if ov.Key == nil {
+			t.Error("nil key in ObjectVersions")
+			continue
+		}
+		if !strings.HasPrefix(*ov.Key, prefix) {
+			t.Errorf("ancestor key leaked into results: %q", *ov.Key)
+		}
+	}
+
+	// The prefix dir itself and its file should be the only versions.
+	expectedVersionKeys := []string{
+		"vendor/Backup/vendor/Clients/",
+		"vendor/Backup/vendor/Clients/file.vbm",
+	}
+	if !compareObjectVersionsOrdered(res.ObjectVersions, makeObjectVersions(expectedVersionKeys)) {
+		t.Errorf("unexpected ObjectVersions: got %v, want %v",
+			printVersionObjects(res.ObjectVersions), expectedVersionKeys)
+	}
+}
+
+// makeObjectVersions builds a []s3response.ObjectVersion slice with just keys
+// set, for use in test comparisons.
+func makeObjectVersions(keys []string) []s3response.ObjectVersion {
+	ovs := make([]s3response.ObjectVersion, len(keys))
+	for i, k := range keys {
+		key := k
+		ovs[i] = s3response.ObjectVersion{Key: &key}
+	}
+	return ovs
+}
+
+// comparePrefixesUnordered checks that got contains exactly the expected
+// prefix strings regardless of order.
+func comparePrefixesUnordered(got []types.CommonPrefix, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	wantSet := make(map[string]bool, len(want))
+	for _, w := range want {
+		wantSet[w] = true
+	}
+	for _, cp := range got {
+		if cp.Prefix == nil || !wantSet[*cp.Prefix] {
+			return false
+		}
+	}
+	return true
 }
