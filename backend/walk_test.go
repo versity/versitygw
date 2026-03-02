@@ -85,6 +85,19 @@ func getMD5(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// getObjSkipDirs mimics the POSIX backend's FileToObj behavior for implicitly
+// created directories: it returns ErrSkipObj so that directories which exist
+// only as filesystem artefacts of slash-separated paths are not surfaced as
+// S3 objects. This is necessary when testing non-"/" delimiters where
+// fstest.MapFS creates intermediate directories from the "/" path separators
+// embedded in object keys.
+func getObjSkipDirs(path string, d fs.DirEntry) (s3response.Object, error) {
+	if d.IsDir() {
+		return s3response.Object{}, backend.ErrSkipObj
+	}
+	return getObj(path, d)
+}
+
 func TestWalk(t *testing.T) {
 	tests := []walkTest{
 		{
@@ -152,12 +165,18 @@ func TestWalk(t *testing.T) {
 		},
 		{
 			// non-standard delimiter
+			// fstest.MapFS implicitly creates filesystem directories for each
+			// "/"-separated path component (e.g. "photo|s", "200|6", ...) even
+			// though these are not S3 objects.  On a real POSIX filesystem the
+			// backend's FileToObj returns ErrSkipObj for such implicit
+			// directories (they have no stored etag), so we use getObjSkipDirs
+			// here to reproduce that behaviour.
 			fsys: fstest.MapFS{
 				"photo|s/200|6/Januar|y/sampl|e1.jpg": {},
 				"photo|s/200|6/Januar|y/sampl|e2.jpg": {},
 				"photo|s/200|6/Januar|y/sampl|e3.jpg": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []testcase{
 				{
 					name:      "different delimiter 1",
@@ -364,8 +383,14 @@ func (s *slowFS) ReadDir(name string) ([]fs.DirEntry, error) {
 }
 
 func TestWalkStop(t *testing.T) {
+	// Path must not start with "/" (invalid for fstest.MapFS) and must be deep
+	// enough that reading every level takes longer than walkTimeOut.
+	// readDirPause (100 ms) × 14 levels = 1.4 s  >  walkTimeOut (500 ms).
+	// An empty delimiter is used so that the walk recurses into every directory
+	// level rather than stopping at the first common-prefix boundary (which is
+	// what a "/" delimiter would do, completing in a single ReadDir call).
 	s := &slowFS{MapFS: fstest.MapFS{
-		"/a/b/c/d/e/f/g/h/i/g/k/l/m/n": &fstest.MapFile{},
+		"a/b/c/d/e/f/g/h/i/j/k/l/m/n": &fstest.MapFile{},
 	}}
 
 	ctx, cancel := context.WithTimeout(context.Background(), walkTimeOut)
@@ -376,7 +401,7 @@ func TestWalkStop(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
+		_, err = backend.Walk(ctx, s, "", "", "", 1000,
 			func(path string, d fs.DirEntry) (s3response.Object, error) {
 				return s3response.Object{}, nil
 			}, []string{})
@@ -401,6 +426,13 @@ func TestWalkStop(t *testing.T) {
 // but if you consider the character that comes after a is "/", then
 // the "." should come before "/" in the lexicographic ordering:
 // a.b/, a/
+//
+// Note: dir1/ itself does NOT appear in the expected output.  dir1 is
+// an implicit filesystem directory (no S3 object was explicitly PUT at
+// dir1/).  The walk's prefix-optimisation jumps directly into dir1/
+// without visiting dir1 as an entry from its parent, which matches the
+// real POSIX backend's behaviour (FileToObj returns ErrSkipObj for any
+// directory that has no stored etag).
 func TestOrderWalk(t *testing.T) {
 	tests := []walkTest{
 		{
@@ -422,7 +454,6 @@ func TestOrderWalk(t *testing.T) {
 					prefix:  "dir1/",
 					expected: backend.WalkResults{
 						Objects: []s3response.Object{
-							{Key: backend.GetPtrFromString("dir1/")},
 							{Key: backend.GetPtrFromString("dir1/a.b/")},
 							{Key: backend.GetPtrFromString("dir1/a.b/file1")},
 							{Key: backend.GetPtrFromString("dir1/a.b/file2")},
@@ -440,6 +471,12 @@ func TestOrderWalk(t *testing.T) {
 			},
 		},
 		{
+			// The same fstest.MapFS implicit-directory problem as the
+			// non-standard delimiter tests in TestWalk: "|" is the S3
+			// delimiter but "/" is the filesystem separator, so fstest
+			// creates implicit real directories (dir|1, dir|1/a, …) that
+			// should not appear as S3 objects.  Use getObjSkipDirs to
+			// mirror the POSIX backend's behaviour.
 			fsys: fstest.MapFS{
 				"dir|1/a/file1":   {},
 				"dir|1/a/file2":   {},
@@ -447,7 +484,7 @@ func TestOrderWalk(t *testing.T) {
 				"dir|1/a.b/file1": {},
 				"dir|1/a.b/file2": {},
 			},
-			getobj: getObj,
+			getobj: getObjSkipDirs,
 			cases: []testcase{
 				{
 					name:      "order test delim",
