@@ -701,3 +701,50 @@ func DeleteBucketWebsite_not_implemented(s *S3Conf) error {
 		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
 	})
 }
+
+func PutObjectAcl_not_implemented(s *S3Conf) error {
+	testName := "PutObjectAcl_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.PutObjectAcl(ctx, &s3.PutObjectAclInput{
+			Bucket: &bucket,
+			Key:    &obj,
+			ACL:    types.ObjectCannedACLAuthenticatedRead,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}
+
+func GetObjectAcl_not_implemented(s *S3Conf) error {
+	testName := "GetObjectAcl_not_implemented"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.GetObjectAcl(ctx, &s3.GetObjectAclInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented))
+	})
+}

@@ -1667,7 +1667,7 @@ func CopyObject_object_acl_not_supported(s *S3Conf) error {
 			ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 			_, err := s3client.CopyObject(ctx, input)
 			cancel()
-			if err := checkApiErr(err, s3err.GetAPIError(s3err.ErrNotImplemented)); err != nil {
+			if err != nil {
 				return fmt.Errorf("test %v failed: %w", i+1, err)
 			}
 		}

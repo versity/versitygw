@@ -753,6 +753,9 @@ func TestNotImplementedActions(ts *TestState) {
 	ts.Run(PutBucketWebsite_not_implemented)
 	ts.Run(GetBucketWebsite_not_implemented)
 	ts.Run(DeleteBucketWebsite_not_implemented)
+	// object acl actions
+	ts.Run(PutObjectAcl_not_implemented)
+	ts.Run(GetObjectAcl_not_implemented)
 }
 
 func TestWORMProtection(ts *TestState) {
@@ -1176,12 +1179,7 @@ func TestSignedStreaminPayloadTrailer(ts *TestState) {
 
 func TestNoAclMode(ts *TestState) {
 	ts.Run(NoAclMode_CreateBucket_with_acl)
-	ts.Run(NoAclMode_PutObject_with_acl)
-	ts.Run(NoAclMode_CopyObject_with_acl)
-	ts.Run(NoAclMode_multipart_upload_with_acl)
 	ts.Run(NoAclMode_PutBucketAcl)
-	ts.Run(NoAclMode_PutObjectAcl_not_implemented)
-	ts.Run(NoAclMode_GetObjectAcl_not_implemented)
 }
 
 type IntTest func(s3 *S3Conf) error
@@ -1709,6 +1707,8 @@ func GetIntTests() IntTests {
 		"PutBucketWebsite_not_implemented":                                         PutBucketWebsite_not_implemented,
 		"GetBucketWebsite_not_implemented":                                         GetBucketWebsite_not_implemented,
 		"DeleteBucketWebsite_not_implemented":                                      DeleteBucketWebsite_not_implemented,
+		"PutObjectAcl_not_implemented":                                             PutObjectAcl_not_implemented,
+		"GetObjectAcl_not_implemented":                                             GetObjectAcl_not_implemented,
 		"WORMProtection_bucket_object_lock_configuration_compliance_mode":          WORMProtection_bucket_object_lock_configuration_compliance_mode,
 		"WORMProtection_bucket_object_lock_configuration_governance_mode":          WORMProtection_bucket_object_lock_configuration_governance_mode,
 		"WORMProtection_bucket_object_lock_governance_bypass_delete":               WORMProtection_bucket_object_lock_governance_bypass_delete,
@@ -1886,11 +1886,6 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayloadTrailer_bad_digest":                                 SignedStreamingPayloadTrailer_bad_digest,
 		"SignedStreamingPayloadTrailer_success":                                    SignedStreamingPayloadTrailer_success,
 		"NoAclMode_CreateBucket_with_acl":                                          NoAclMode_CreateBucket_with_acl,
-		"NoAclMode_PutObject_with_acl":                                             NoAclMode_PutObject_with_acl,
-		"NoAclMode_CopyObject_with_acl":                                            NoAclMode_CopyObject_with_acl,
-		"NoAclMode_multipart_upload_with_acl":                                      NoAclMode_multipart_upload_with_acl,
 		"NoAclMode_PutBucketAcl":                                                   NoAclMode_PutBucketAcl,
-		"NoAclMode_PutObjectAcl_not_implemented":                                   NoAclMode_PutObjectAcl_not_implemented,
-		"NoAclMode_GetObjectAcl_not_implemented":                                   NoAclMode_GetObjectAcl_not_implemented,
 	}
 }
