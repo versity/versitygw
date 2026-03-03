@@ -345,17 +345,17 @@ func CopyObject_should_replace_tagging(s *S3Conf) error {
 
 func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	testName := "CopyObject_to_itself_with_new_metadata"
-
-	meta := map[string]string{
-		"Hello": "World",
-	}
-
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		_, err := putObjects(s3client, []string{obj}, bucket)
 		if err != nil {
 			return err
 		}
+
+		meta := map[string]string{
+			"Hello": "World",
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
 		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:            &bucket,
@@ -710,8 +710,9 @@ func CopyObject_should_replace_meta_props(s *S3Conf) error {
 		cType, cEnc, cDesp, cLang := "application/binary", "hex", "desp", "mex"
 		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*10)
 		meta := map[string]string{
-			"foo": "bar",
-			"baz": "quxx",
+			"foo":                    "bar",
+			"baz":                    "quxx",
+			strings.Repeat("d", 500): strings.Repeat("e", 400),
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -1180,19 +1181,19 @@ func CopyObject_with_metadata(s *S3Conf) error {
 		}
 
 		meta := map[string]string{
-			"Key":                 "Val",
-			"X-Test":              "Example",
-			"UPPERCASE":           "should-remain",
-			"MiXeD-CaSe":          "normalize-to-lower",
-			"with-number-123":     "numeric-test",
-			"123numeric-prefix":   "value123",
-			"key_with_underscore": "underscore-ok",
-			"key-with-dash":       "dash-ok",
-			"key.with.dot":        "dot-ok",
-			"KeyURL":              "https://example.com/test?query=1",
-			"EmptyValue":          "",
-			"LongKeyNameThatShouldStillBeValidButQuiteLongToTestLimits": "some long metadata value to ensure nothing breaks at higher header sizes",
-			"WhitespaceKey ": " trailing-key",
+			"Key":                    "Val",
+			"X-Test":                 "Example",
+			"UPPERCASE":              "should-remain",
+			"MiXeD-CaSe":             "normalize-to-lower",
+			"with-number-123":        "numeric-test",
+			"123numeric-prefix":      "value123",
+			"key_with_underscore":    "underscore-ok",
+			"key-with-dash":          "dash-ok",
+			"key.with.dot":           "dot-ok",
+			"KeyURL":                 "https://example.com/test?query=1",
+			"EmptyValue":             "",
+			strings.Repeat("v", 280): strings.Repeat("k", 300),
+			"WhitespaceKey ":         " trailing-key",
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
@@ -1219,19 +1220,19 @@ func CopyObject_with_metadata(s *S3Conf) error {
 		}
 
 		expectedMeta := map[string]string{
-			"key":                 "Val",
-			"x-test":              "Example",
-			"uppercase":           "should-remain",
-			"mixed-case":          "normalize-to-lower",
-			"with-number-123":     "numeric-test",
-			"123numeric-prefix":   "value123",
-			"key_with_underscore": "underscore-ok",
-			"key-with-dash":       "dash-ok",
-			"key.with.dot":        "dot-ok",
-			"keyurl":              "https://example.com/test?query=1",
-			"emptyvalue":          "",
-			"longkeynamethatshouldstillbevalidbutquitelongtotestlimits": "some long metadata value to ensure nothing breaks at higher header sizes",
-			"whitespacekey": "trailing-key",
+			"key":                    "Val",
+			"x-test":                 "Example",
+			"uppercase":              "should-remain",
+			"mixed-case":             "normalize-to-lower",
+			"with-number-123":        "numeric-test",
+			"123numeric-prefix":      "value123",
+			"key_with_underscore":    "underscore-ok",
+			"key-with-dash":          "dash-ok",
+			"key.with.dot":           "dot-ok",
+			"keyurl":                 "https://example.com/test?query=1",
+			"emptyvalue":             "",
+			strings.Repeat("v", 280): strings.Repeat("k", 300),
+			"whitespacekey":          "trailing-key",
 		}
 
 		if !areMapsSame(expectedMeta, res.Metadata) {
