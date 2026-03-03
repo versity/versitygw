@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [darwin, freebsd, linux]
+        os: [darwin, freebsd, linux, windows]
         arch: [amd64, arm64]
     steps:
 

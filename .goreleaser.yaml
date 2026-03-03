@@ -9,9 +9,8 @@ builds:
       - linux
       - darwin
       - freebsd
-      # windows is untested, we can start doing windows releases
-      # if someone is interested in taking on testing
-      # - windows
+      # windows is untested, mostly relying on community support for testing
+      - windows
     env:
       # disable cgo to fix glibc issues: https://github.com/golang/go/issues/58550
       # once we need to enable this, we will need to do per distro releases
