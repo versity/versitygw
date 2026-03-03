@@ -61,6 +61,7 @@ func NewServer(cfg *ServerConfig, opts ...Option) *Server {
 		AppName:               "versitygw",
 		ServerHeader:          "VERSITYGW",
 		DisableStartupMessage: true,
+		Network:               fiber.NetworkTCP,
 	})
 
 	server := &Server{
