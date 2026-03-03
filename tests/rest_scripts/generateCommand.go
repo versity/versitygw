@@ -13,6 +13,7 @@ import (
 
 const (
 	CreateBucket     = "createBucket"
+	PutBucketCors    = "putBucketCORS"
 	PutBucketTagging = "putBucketTagging"
 	PutObject        = "putObject"
 	PutObjectTagging = "putObjectTagging"
@@ -29,6 +30,7 @@ var awsSecretAccessKey *string
 var serviceName *string
 
 var signedParamsMap restParams
+var unsignedParamsMap restParams
 var payloadFile *string
 var incorrectSignature *bool
 var incorrectCredential *string
@@ -63,7 +65,11 @@ var omitContentLength *bool
 var locationConstraint *string
 var locationConstraintSet bool = false
 
+var corsRules arrayFlags
+
 type restParams map[string]string
+
+var paramSeparator *string
 
 func (r *restParams) String() string {
 	return fmt.Sprintf("%v", *r)
@@ -71,7 +77,7 @@ func (r *restParams) String() string {
 
 func (r *restParams) Set(value string) error {
 	*r = make(map[string]string)
-	pairs := strings.Split(value, ",")
+	pairs := strings.Split(value, *paramSeparator)
 	for _, pair := range pairs {
 		kv := strings.SplitN(pair, ":", 2)
 		if len(kv) != 2 {
@@ -111,6 +117,7 @@ func main() {
 		AwsSecretAccessKey:    *awsSecretAccessKey,
 		ServiceName:           *serviceName,
 		SignedParams:          signedParamsMap,
+		UnsignedParams:        unsignedParamsMap,
 		PayloadFile:           *payloadFile,
 		IncorrectSignature:    *incorrectSignature,
 		AuthorizationScheme:   *authorizationScheme,
@@ -149,7 +156,11 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 	switch *commandType {
 	case CreateBucket:
 		if s3Command, err = command.NewCreateBucketCommand(baseCommand, *locationConstraint, locationConstraintSet); err != nil {
-			return nil, fmt.Errorf("error setting up CreateBucket command: %v", err)
+			return nil, fmt.Errorf("error setting up CreateBucket command: %w", err)
+		}
+	case PutBucketCors:
+		if s3Command, err = command.NewPutBucketCORSCommand(baseCommand, corsRules); err != nil {
+			return nil, fmt.Errorf("error setting up PutBucketCORS command: %w", err)
 		}
 	case PutBucketTagging:
 		fields := command.TaggingFields{
@@ -158,11 +169,11 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 			TagValues: tagValues,
 		}
 		if s3Command, err = command.NewPutBucketTaggingCommand(baseCommand, &fields); err != nil {
-			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %w", err)
 		}
 	case PutObject:
 		if s3Command, err = command.NewPutObjectCommand(baseCommand); err != nil {
-			return nil, fmt.Errorf("error setting up PutObject command: %v", err)
+			return nil, fmt.Errorf("error setting up PutObject command: %w", err)
 		}
 	case PutObjectTagging:
 		fields := command.TaggingFields{
@@ -171,7 +182,7 @@ func getS3CommandType(baseCommand *command.S3Command) (command.S3CommandConverte
 			TagValues: tagValues,
 		}
 		if s3Command, err = command.NewPutObjectTaggingCommand(baseCommand, &fields); err != nil {
-			return nil, fmt.Errorf("error setting up PutBucketTagging command: %v", err)
+			return nil, fmt.Errorf("error setting up PutBucketTagging command: %w", err)
 		}
 	default:
 		s3Command = baseCommand
@@ -198,6 +209,7 @@ func buildCommand(s3Command command.S3CommandConverter) error {
 }
 
 func checkFlags() error {
+	paramSeparator = flag.String("paramSeparator", ",", "What character to use to separate signed and unsigned params")
 	method = flag.String("method", "GET", "HTTP method to use")
 	url = flag.String("url", "https://localhost:7070", "S3 server URL")
 	bucketName = flag.String("bucketName", "", "Bucket name")
@@ -210,6 +222,7 @@ func checkFlags() error {
 	logger.Debug = flag.Bool("debug", false, "Print debug statements")
 	logger.LogFile = flag.String("logFile", "", "Log file, if any")
 	flag.Var(&signedParamsMap, "signedParams", "Signed params, separated by comma")
+	flag.Var(&unsignedParamsMap, "unsignedParams", "Unsigned params, separated by comma")
 	payloadFile = flag.String("payloadFile", "", "Payload file path, if any")
 	incorrectSignature = flag.Bool("incorrectSignature", false, "Simulate an incorrect signature")
 	incorrectYearMonthDay = flag.Bool("incorrectYearMonthDay", false, "Simulate an incorrect year/month/day")
@@ -235,6 +248,7 @@ func checkFlags() error {
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
+	flag.Var(&corsRules, "corsRule", "CORS rule for PutBucketCORS command (can add multiple)")
 	// Parse the flags
 	flag.Parse()
 

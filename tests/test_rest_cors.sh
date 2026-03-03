@@ -49,9 +49,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - CORS - empty CORS rule" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1863"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
@@ -65,9 +62,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - CORS - missing allowed origin" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1863"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
@@ -81,9 +75,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - CORS - missing allowed method" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1863"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
@@ -97,9 +88,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - CORS - empty allowed method" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1863"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
@@ -143,5 +131,157 @@ source ./tests/setup.sh
   assert_success
 
   run send_rest_go_command_expect_error "404" "NoSuchCORSConfiguration" "does not exist" "-query" "cors" "-bucketName" "$bucket_name"
+  assert_success
+}
+
+@test "REST - CORS - origin - ETag not returned in exposed headers" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1893"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedMethods=GET,PUT;allowedOrigins=http://example.com" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values_not_present" "-bucketName" "$bucket_name" "-signedParams" "origin:http://example.com" "--" "access-control-expose-headers" "ETag"
+  assert_success
+}
+
+@test "REST - CORS - non-allowed method" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET,POST" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values_not_present" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-signedParams" "origin:http://example.com" "-unsignedParams" "Access-Control-Request-Methods:GET,PUT" "--" "access-control-allow-methods" "GET"
+  assert_success
+}
+
+@test "REST - CORS - allowed method" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET,POST" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-signedParams" "origin:http://example.com" "-unsignedParams" "Access-Control-Request-Methods:GET,POST" "--" \
+    "access-control-allow-methods" "GET, POST" "access-control-allow-origin" "http://example.com"
+  assert_success
+}
+
+@test "REST - CORS - non-allowed header" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET;allowedHeaders=dummy-header" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values_not_present" "-bucketName" "$bucket_name" "-unsignedParams" "Access-Control-Request-Headers:dummy-headers" "--" "access-control-expose-headers" "dummy-header"
+  assert_success
+}
+
+@test "REST - CORS - allowed headers" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET;allowedHeaders=dummy-header-one,dummy-header-two" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-unsignedParams" "origin:http://example.com,Access-Control-Request-Headers:dummy-header-one" "--" \
+    "access-control-allow-headers" "dummy-header-one"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-unsignedParams" "origin:http://example.com;Access-Control-Request-Headers:dummy-header-one,dummy-header-two" "--" \
+    "access-control-allow-headers" "dummy-header-one, dummy-header-two"
+  assert_success
+}
+
+@test "REST - CORS - invalid max age seconds" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "MalformedXML" "did not validate" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET;maxAgeSeconds=a" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+}
+
+@test "REST - CORS - valid max age seconds" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET;maxAgeSeconds=3000" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-unsignedParams" "origin:http://example.com" "--" \
+    "access-control-max-age" "3000"
+  assert_success
+}
+
+@test "REST - CORS - all fields" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1893"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET;allowedHeaders=dummy-header;exposedHeaders=dummy-header-two;maxAgeSeconds=60" \
+    "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-unsignedParams" "origin:http://example.com,access-control-request-methods:GET,access-control-request-headers:dummy-header" \
+    "--" "access-control-allow-origin" "http://example.com" "access-control-allow-methods" "GET" "access-control-allow-headers" "dummy-header" "access-control-expose-headers" "dummy-header-two" "access-control-max-age" "60"
+  assert_success
+}
+
+@test "REST - CORS - two rules" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run setup_bucket_v2 "$bucket_name"
+  assert_success
+
+  run send_rest_go_command "200" "-commandType" "putBucketCORS" "-paramSeparator" ";" "-corsRule" "allowedOrigins=http://example.com;allowedMethods=GET,POST" "-corsRule" "allowedOrigins=http://exampletwo.com;allowedMethods=GET,PUT" "-bucketName" "$bucket_name" "-contentMD5"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-unsignedParams" "origin:http://example.com;access-control-request-methods:GET,POST" \
+    "--" "access-control-allow-origin" "http://example.com" "access-control-allow-methods" "GET, POST"
+  assert_success
+
+  run send_rest_go_command_callback "200" "check_header_keys_and_values" "-bucketName" "$bucket_name" "-paramSeparator" ";" "-unsignedParams" "origin:http://exampletwo.com;access-control-request-methods:GET,PUT" \
+    "--" "access-control-allow-origin" "http://exampletwo.com" "access-control-allow-methods" "GET, PUT"
   assert_success
 }
