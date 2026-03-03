@@ -160,7 +160,7 @@ jobs:
     needs: [build]
     steps:
       - name: Download all S3 ops artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
