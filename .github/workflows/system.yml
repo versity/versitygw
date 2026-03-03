@@ -139,7 +139,7 @@ jobs:
           echo "safe_run_set=$SAFE_RUN_SET" >> $GITHUB_OUTPUT
 
       - name: Upload command coverage log
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ steps.prepare_coverage.outputs.safe_run_set }}-${{ matrix.RECREATE_BUCKETS }}
           path: coverage.log
