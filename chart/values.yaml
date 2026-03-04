@@ -1,0 +1,253 @@
+# Default values for versitygw.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Standard Helm chart settings
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of pod replicas for the deployment
+# Note that when using the "posix" backend with a PVC,
+# you can only increase the number of replicas if you have a "ReadWriteMany" volume!
+replicaCount: 1
+
+# This section defines which image to use and how to pull it.
+# Find all available tags / releases at: https://github.com/versity/versitygw/pkgs/container/versitygw
+image:
+  repository: ghcr.io/versity/versitygw
+  tag: "latest"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account (e.g. for IRSA / Workload Identity)
+  annotations: {}
+  # Name of the service account to use. If empty, a name is generated using the fullname template.
+  name: ""
+
+# Additional annotations for the pod
+podAnnotations: {}
+# Additional labels for the pod
+podLabels: {}
+
+# Security settings for the Deployment Pod and its containers.
+# The settings below are the recommended, least-privilege values.
+# For more details refer to https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+# The Kubernetes Service that exposes the versitygw server.
+# To make the server available outside the cluster, the type should be changed to `NodePort` or `LoadBalancer`.
+service:
+  type: ClusterIP
+
+# --- Ingress ---
+# Expose the S3 API via a Kubernetes Ingress resource.
+# Requires an ingress controller (e.g. nginx, traefik) to be installed in the cluster.
+ingress:
+  enabled: false
+  # IngressClass to use (maps to spec.ingressClassName).
+  # Leave empty to use the cluster default.
+  className: ""
+  # Annotations applied to the Ingress resource.
+  # Use these to configure controller-specific behaviour, e.g.:
+  #   nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  #   nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+  #   nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  annotations: {}
+  # List of host rules. Each host can expose one or more paths.
+  # The `servicePort` field on each path selects which named Service port to route to.
+  # Supported values: s3-api (default), admin, webui.
+  hosts:
+    - host: s3.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          # servicePort: s3-api  # default — routes to the S3 API port
+  # TLS configuration. Each entry maps a secret name to one or more hosts.
+  # The secret must contain tls.crt and tls.key.
+  # Example:
+  #   tls:
+  #     - secretName: versitygw-tls
+  #       hosts:
+  #         - s3.example.com
+  tls: []
+
+# --- Root credentials ---
+# The root S3 access credentials. These are required for the gateway to start.
+# IMPORTANT: For production use, set auth.existingSecret instead of storing
+# credentials in this values file.
+auth:
+  # If set, use this existing Kubernetes Secret for credentials instead of creating one.
+  # The secret must contain the keys: rootAccessKeyId and rootSecretAccessKey
+  existingSecret: ""
+  # Root access key ID (used when existingSecret is empty)
+  accessKey: ""
+  # Root secret access key (used when existingSecret is empty)
+  secretKey: ""
+
+# --- Versity Gateway server configuration ---
+gateway:
+  # -- Backend configuration --
+  backend:
+    # The storage backend to use. Supported values: posix, scoutfs, s3, azure, plugin
+    # This maps to the VGW_BACKEND environment variable used by the container entrypoint.
+    type: posix
+    # Additional arguments passed to the backend
+    args: "/mnt/data"
+    # for s3 backend:
+    # args: "--access 0123456 --secret 0xdeadbeef --endpoint http://s3.example.com"
+    # for azure backend:
+    # args: ""--account 0123456 --access-key 0xdeadbeef"
+
+  # The port versitygw listens on for S3 API requests.
+  port: 7070
+  # The AWS region string returned to clients.
+  region: us-east-1
+  # Enable virtual-host-style bucket addressing (e.g. bucket.example.com).
+  # Set to your domain (e.g. "example.com") to enable.
+  virtualDomain: ""
+  # Allow only read (GET/HEAD) operations. Prevents any writes.
+  readOnly: false
+  # Silence stdout request logging (useful when using a dedicated access log).
+  quiet: false
+  # Enable verbose debug output.
+  debug: false
+  # Access log file path for S3 requests (AWS log format). Empty = disabled.
+  accessLog: ""
+  # Default CORS allowed origin. Empty = CORS disabled.
+  corsAllowOrigin: ""
+  # Disable strict S3 bucket naming validation.
+  disableStrictBucketNames: false
+
+# --- Admin API server ---
+admin:
+  # Enable a separate admin API server on a dedicated port.
+  enabled: false
+  # The port for the admin API server. Must differ from gateway.port.
+  port: 7071
+  # Maximum concurrent connections for the admin server.
+  maxConnections: 250000
+  # Maximum in-flight requests for the admin server.
+  maxRequests: 100000
+
+# --- WebUI ---
+webui:
+  # Enable the built-in browser-based management WebUI.
+  enabled: false
+  # The port the WebUI listens on.
+  port: 8080
+  # Disable TLS for the WebUI even when gateway TLS is enabled.
+  noTls: false
+  # List of S3 endpoints used by the  Versity Web UI
+  # The list that is auto-generated by Versity GW is wrong in the case of
+  # Kubernetes because it uses the internal pod IP addresses.
+  apiGateways: []
+  # - s3.example.com
+  # List of Versity Admin endpoints used by the Versity Web UI
+  # The list that is auto-generated by Versity GW is wrong in the case of
+  # Kubernetes because it uses the internal pod IP addresses.
+  adminGateways: []
+  # - s3-admin.example.com
+
+# --- IAM (Identity and Access Management) ---
+iam:
+  enabled: false
+  # TODO: implement other IAM backend
+  # Internal flat-file IAM is the default. For production, consider LDAP or Vault.
+  type: internal
+  # Disable IAM result caching.
+  cacheDisable: false
+  # IAM cache entry TTL in seconds.
+  cacheTtl: 120
+  # IAM cache cleanup interval in seconds.
+  cachePrune: 3600
+  # Enable debug output for IAM operations.
+  debug: false
+
+# Extra environment variables to pass to the container.
+# Use this to configure advanced options not covered above (e.g. event notifications,
+# LDAP IAM, S3 proxy backend credentials, StatsD metrics, etc.).
+# Refer to https://github.com/versity/versitygw#configuration for the full list.
+# Example:
+#   extraEnv:
+#     - name: VGW_EVENT_KAFKA_URL
+#       value: "kafka:9092"
+#     - name: VGW_IAM_LDAP_URL
+#       value: "ldap://ldap.example.com"
+extraEnv: []
+
+# --- TLS ---
+# Enable HTTPS for the S3 API (and admin/webui if not separately configured).
+tls:
+  # Set to true to enable TLS. Requires certificate.secretName or certificate.create.
+  enabled: false
+
+# --- cert-manager Certificate ---
+certificate:
+  # Set to the name of an existing TLS Secret to use for HTTPS.
+  # If empty and certificate.create is false, defaults to <fullname>-cert.
+  secretName: ""
+  # Create a cert-manager Certificate resource to automatically provision TLS.
+  # Requires cert-manager to be installed in the cluster.
+  create: false
+  # DNS names to include in the certificate. Required when certificate.create is true.
+  dnsNames: []
+  #  - versitygw.example.com
+  # cert-manager issuer reference. Required when certificate.create is true.
+  # issuerRef:
+  #   group: cert-manager.io
+  #   kind: ClusterIssuer
+  #   name: "letsencrypt-production"
+
+# --- Persistence ---
+# Storage for the S3 gateway backend data (required for posix/scoutfs backends).
+# By default, an emptyDir (ephemeral) volume is used.
+persistence:
+  # If disabled, an emptyDir (ephemeral!) will be used instead of a PVC.
+  # NOTE: Data will be lost on pod restart if persistence is disabled.
+  enabled: false
+  # Use an existing PVC instead of creating a new one.
+  claimName: ""
+  size: 10Gi
+  storageClassName: ""
+  # Access mode for the PVC. Use ReadWriteMany for multi-replica deployments.
+  accessMode: ReadWriteOnce
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 500m
+  #   memory: 512Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+networkPolicy:
+  enabled: false
+  # allowIngressFromNamespaces:
+  #   matchLabels:
+  #     kubernetes.io/metadata.name: kube-system
+  # allowIngressFromPods:
+  #   matchLabels:
+  #     svccontroller.k3s.cattle.io/svcname: versitygw

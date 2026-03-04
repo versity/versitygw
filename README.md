@@ -106,6 +106,16 @@ docker run --rm versity/versitygw:latest --version
 See [Docker](https://github.com/versity/versitygw/wiki/Docker) for more
 documentation for running within Docker.
 
+### Run on Kubernetes
+
+A Helm chart is provided to easily run Versity in Kubernetes environments:
+
+```sh
+helm install versitygw oci://ghcr.io/versity/versitygw/charts/versity:latest
+```
+
+Please refer to the [chart's README](./chart/README.md) for more information and configuration parameters.
+
 ***
 
 #### Versity gives you clarity and control over your archival storage, so you can allocate more resources to your core mission.

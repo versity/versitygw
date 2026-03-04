@@ -1,0 +1,33 @@
+name: Release Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      # https://github.com/marketplace/actions/helm-oci-charts-releaser
+      - name: Run chart-releaser
+        uses: bitdeps/helm-oci-charts-releaser@v0.1.5
+        with:
+            oci_registry: ghcr.io/versity/versitygw/charts
+            oci_username: versity
+            oci_password: ${{ secrets.GITHUB_TOKEN }}
+            github_token: ${{ secrets.GITHUB_TOKEN }}
+            charts_dir: "."

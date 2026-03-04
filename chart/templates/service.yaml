@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "versitygw.fullname" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.gateway.port }}
+      targetPort: s3-api
+      protocol: TCP
+      name: s3-api
+    {{- if .Values.admin.enabled }}
+    - port: {{ .Values.admin.port }}
+      targetPort: admin
+      protocol: TCP
+      name: admin
+    {{- end }}
+    {{- if .Values.webui.enabled }}
+    - port: {{ .Values.webui.port }}
+      targetPort: webui
+      protocol: TCP
+      name: webui
+    {{- end }}
+  selector:
+    {{- include "versitygw.selectorLabels" . | nindent 4 }}
