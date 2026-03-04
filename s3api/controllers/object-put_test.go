@@ -964,6 +964,24 @@ func TestS3ApiController_CopyObject(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid metadata header",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"X-Amz-Copy-Source": "bucket/object",
+					"x-amz-meta-key":    strings.Repeat("b", 2048),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+			},
+		},
+		{
 			name: "invalid metadata directive",
 			input: testInput{
 				locals: defaultLocals,
@@ -1206,6 +1224,24 @@ func TestS3ApiController_PutObject(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrInvalidRequest),
+			},
+		},
+		{
+			name: "invalid metadata header",
+			input: testInput{
+				locals:       defaultLocals,
+				extraMockErr: s3err.GetAPIError(s3err.ErrObjectLockConfigurationNotFound),
+				headers: map[string]string{
+					"x-amz-meta-something": strings.Repeat("c", 2050),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
 			},
 		},
 		{

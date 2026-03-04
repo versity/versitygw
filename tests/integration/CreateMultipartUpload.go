@@ -38,6 +38,24 @@ func CreateMultipartUpload_non_existing_bucket(s *S3Conf) error {
 	})
 }
 
+func CreateMultipartUpload_long_metadata(s *S3Conf) error {
+	testName := "CreateMultipartUpload_long_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err := s3client.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+			Metadata: map[string]string{
+				"key":  "value",
+				"key2": strings.Repeat("b", 2040),
+			},
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMetadataTooLarge))
+	})
+}
+
 func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 	testName := "CreateMultipartUpload_with_metadata"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

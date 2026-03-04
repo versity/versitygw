@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/xml"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -233,6 +234,23 @@ func TestS3ApiController_CreateMultipartUpload(t *testing.T) {
 					},
 				},
 				err: s3err.GetAPIError(s3err.ErrAccessDenied),
+			},
+		},
+		{
+			name: "invalid metadata header",
+			input: testInput{
+				locals: defaultLocals,
+				headers: map[string]string{
+					"x-amz-meta-key": strings.Repeat("a", 2048),
+				},
+			},
+			output: testOutput{
+				response: &Response{
+					MetaOpts: &MetaOptions{
+						BucketOwner: "root",
+					},
+				},
+				err: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
 			},
 		},
 		{

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/versity/versitygw/s3err"
@@ -463,6 +464,94 @@ func PutObject_conditional_writes(s *S3Conf) error {
 		}
 
 		return nil
+	})
+}
+
+func PutObject_should_combine_metadata(s *S3Conf) error {
+	testName := "PutObject_should_combine_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		obj := "my-object"
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/%s/%s", s.endpoint, bucket, obj), strings.NewReader("dummy data"))
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+		req.Header.Add("x-amz-meta-key", "value-1")
+		req.Header.Add("x-amz-meta-key", "value-2")
+		req.Header.Add("x-amz-meta-key", "value-3")
+		req.Header.Add("x-amz-meta-Key", "value-4")
+		req.Header.Add("x-amz-meta-keY", "value-5")
+		req.Header.Add("x-amz-meta-foo", "bar")
+		req.Header.Add("x-amz-meta-baz", "abc")
+		req.Header.Add("x-amz-meta-xyzz", "xxx-3")
+		req.Header.Add("x-amz-meta-Xyzz", "xxx-1")
+		req.Header.Add("x-amz-meta-xyzz", "xxx-2")
+		req.Header.Add("x-amz-meta-hello", "world")
+		req.Header.Add("x-amz-meta-boo", "bar")
+		req.Header.Add("x-amz-meta-asdf", "ghk")
+
+		signer := v4.NewSigner()
+
+		err = signer.SignHTTP(req.Context(), aws.Credentials{AccessKeyID: s.awsID, SecretAccessKey: s.awsSecret}, req, "UNSIGNED-PAYLOAD", "s3", s.awsRegion, time.Now())
+		if err != nil {
+			return fmt.Errorf("failed to sign the request: %w", err)
+		}
+
+		resp, err := s.httpClient.Do(req)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("send request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("expected the response status code to be %v, instead got %v", http.StatusOK, resp.StatusCode)
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), shortTimeout)
+		out, err := s3client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &obj,
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		expectedMeta := map[string]string{
+			"key":   "value-1,value-2,value-3,value-4,value-5",
+			"foo":   "bar",
+			"baz":   "abc",
+			"xyzz":  "xxx-3,xxx-1,xxx-2",
+			"hello": "world",
+			"boo":   "bar",
+			"asdf":  "ghk",
+		}
+
+		if !areMapsSame(expectedMeta, out.Metadata) {
+			return fmt.Errorf("expected the object metadata to be %v, instead got %v", expectedMeta, out.Metadata)
+		}
+
+		return nil
+	})
+}
+
+func PutObject_long_metadata(s *S3Conf) error {
+	testName := "PutObject_long_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		_, err := putObjectWithData(10, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    getPtr("obj"),
+			Metadata: map[string]string{
+				"key":            "value",
+				"foo":            "bar",
+				"baz":            "quxx",
+				"something_long": strings.Repeat("a", 2048),
+			},
+		}, s3client)
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMetadataTooLarge))
 	})
 }
 

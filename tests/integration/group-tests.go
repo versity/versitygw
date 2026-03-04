@@ -171,6 +171,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_past_retain_until_date)
 	ts.Run(PutObject_invalid_retain_until_date)
 	ts.Run(PutObject_conditional_writes)
+	ts.Run(PutObject_should_combine_metadata)
 	//TODO: remove the condition after implementing checksums in azure
 	if !ts.conf.azureTests {
 		ts.Run(PutObject_checksum_algorithm_and_header_mismatch)
@@ -194,6 +195,7 @@ func TestPutObject(ts *TestState) {
 	ts.Run(PutObject_invalid_credentials)
 	ts.Run(PutObject_invalid_object_names)
 	ts.Run(PutObject_object_acl_not_supported)
+	ts.Run(PutObject_long_metadata)
 }
 
 func TestHeadObject(ts *TestState) {
@@ -331,6 +333,7 @@ func TestCopyObject(ts *TestState) {
 	ts.Run(CopyObject_should_copy_tagging)
 	ts.Run(CopyObject_invalid_tagging_directive)
 	ts.Run(CopyObject_to_itself_with_new_metadata)
+	ts.Run(CopyObject_long_metadata)
 	ts.Run(CopyObject_copy_source_starting_with_slash)
 	ts.Run(CopyObject_invalid_copy_source)
 	ts.Run(CopyObject_non_existing_dir_object)
@@ -383,6 +386,7 @@ func TestDeleteObjectTagging(ts *TestState) {
 
 func TestCreateMultipartUpload(ts *TestState) {
 	ts.Run(CreateMultipartUpload_non_existing_bucket)
+	ts.Run(CreateMultipartUpload_long_metadata)
 	ts.Run(CreateMultipartUpload_with_metadata)
 	ts.Run(CreateMultipartUpload_with_tagging)
 	ts.Run(CreateMultipartUpload_with_object_lock)
@@ -847,6 +851,7 @@ func TestFullFlow(ts *TestState) {
 		TestVersioning(ts)
 	}
 	TestIAM(ts)
+	TestServer(ts)
 }
 
 func TestPosix(ts *TestState) {
@@ -1135,6 +1140,11 @@ func TestRouter(ts *TestState) {
 	ts.Run(RouterListVersionsWithKey)
 }
 
+func TestServer(ts *TestState) {
+	// TestServer tests s3 api server specific behaviors
+	ts.Run(Server_large_http_header)
+}
+
 func TestUnsignedStreaminPayloadTrailer(ts *TestState) {
 	// azure doesn't support checksums
 	if !ts.conf.azureTests {
@@ -1241,6 +1251,8 @@ func GetIntTests() IntTests {
 		"PutObject_past_retain_until_date":                                         PutObject_past_retain_until_date,
 		"PutObject_invalid_retain_until_date":                                      PutObject_invalid_retain_until_date,
 		"PutObject_conditional_writes":                                             PutObject_conditional_writes,
+		"PutObject_should_combine_metadata":                                        PutObject_should_combine_metadata,
+		"PutObject_long_metadata":                                                  PutObject_long_metadata,
 		"PutObject_with_metadata":                                                  PutObject_with_metadata,
 		"PutObject_invalid_credentials":                                            PutObject_invalid_credentials,
 		"PutObject_checksum_algorithm_and_header_mismatch":                         PutObject_checksum_algorithm_and_header_mismatch,
@@ -1410,6 +1422,7 @@ func GetIntTests() IntTests {
 		"CopyObject_should_replace_tagging":                                        CopyObject_should_replace_tagging,
 		"CopyObject_should_copy_tagging":                                           CopyObject_should_copy_tagging,
 		"CopyObject_invalid_tagging_directive":                                     CopyObject_invalid_tagging_directive,
+		"CopyObject_long_metadata":                                                 CopyObject_long_metadata,
 		"CopyObject_to_itself_with_new_metadata":                                   CopyObject_to_itself_with_new_metadata,
 		"CopyObject_copy_source_starting_with_slash":                               CopyObject_copy_source_starting_with_slash,
 		"CopyObject_invalid_copy_source":                                           CopyObject_invalid_copy_source,
@@ -1447,6 +1460,7 @@ func GetIntTests() IntTests {
 		"DeleteObjectTagging_success":                                              DeleteObjectTagging_success,
 		"DeleteObjectTagging_expected_bucket_owner":                                DeleteObjectTagging_expected_bucket_owner,
 		"CreateMultipartUpload_non_existing_bucket":                                CreateMultipartUpload_non_existing_bucket,
+		"CreateMultipartUpload_long_metadata":                                      CreateMultipartUpload_long_metadata,
 		"CreateMultipartUpload_with_metadata":                                      CreateMultipartUpload_with_metadata,
 		"CreateMultipartUpload_with_tagging":                                       CreateMultipartUpload_with_tagging,
 		"CreateMultipartUpload_with_object_lock":                                   CreateMultipartUpload_with_object_lock,
@@ -1887,5 +1901,6 @@ func GetIntTests() IntTests {
 		"SignedStreamingPayloadTrailer_success":                                    SignedStreamingPayloadTrailer_success,
 		"NoAclMode_CreateBucket_with_acl":                                          NoAclMode_CreateBucket_with_acl,
 		"NoAclMode_PutBucketAcl":                                                   NoAclMode_PutBucketAcl,
+		"Server_large_http_header":                                                 Server_large_http_header,
 	}
 }

@@ -424,6 +424,33 @@ func CopyObject_to_itself_with_new_metadata(s *S3Conf) error {
 	})
 }
 
+func CopyObject_long_metadata(s *S3Conf) error {
+	testName := "CopyObject_long_metadata"
+	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
+		srcObj, dstObj := "source-object", "destination-object"
+		_, err := putObjectWithData(9, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &srcObj,
+		}, s3client)
+		if err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), shortTimeout)
+		_, err = s3client.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:     &bucket,
+			Key:        &dstObj,
+			CopySource: getPtr(fmt.Sprintf("%s/%s", bucket, srcObj)),
+			Metadata: map[string]string{
+				strings.Repeat("s", 2048): "value",
+			},
+		})
+		cancel()
+
+		return checkApiErr(err, s3err.GetAPIError(s3err.ErrMetadataTooLarge))
+	})
+}
+
 func CopyObject_copy_source_starting_with_slash(s *S3Conf) error {
 	testName := "CopyObject_CopySource_starting_with_slash"
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {

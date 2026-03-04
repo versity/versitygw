@@ -185,6 +185,7 @@ const (
 	ErrMalformedTrailer
 	ErrInvalidChunkSize
 	ErrSlowDown
+	ErrMetadataTooLarge
 
 	// Non-AWS errors
 	ErrExistingObjectIsDirectory
@@ -835,6 +836,12 @@ var errorCodeResponse = map[ErrorCode]APIError{
 		Code:           "SlowDown",
 		Description:    "Please reduce your request rate.",
 		HTTPStatusCode: http.StatusServiceUnavailable,
+	},
+	ErrMetadataTooLarge: {
+		// TODO: should have 'Size' and 'MaxSizeAllowed' properties
+		Code:           "MetadataTooLarge",
+		Description:    "Your metadata headers exceed the maximum allowed metadata size",
+		HTTPStatusCode: http.StatusBadRequest,
 	},
 
 	// non aws errors
