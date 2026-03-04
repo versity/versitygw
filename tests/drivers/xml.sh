@@ -24,25 +24,57 @@ build_xpath_string() {
   xpath+='/text()'
 }
 
+get_xpath_segment() {
+  if ! check_param_count_gt "XML element name" 1 $#; then
+    return 1
+  fi
+  if [ "$1" == "" ]; then
+    log 2 "element has no name"
+    return 1
+  fi
+  if [[ "$1" =~ [[:space:]] ]]; then
+    log 2 "element '$1' contains a space"
+    return 1
+  fi
+  echo '*[local-name()="'"$1"'"]'
+}
+
+
 build_xpath_string_for_element() {
   if ! check_param_count_gt "XML tree" 1 $#; then
     return 1
   fi
   local xpath='//'
   for ((idx=1;idx<=$#;idx++)); do
-    if [ "${!idx}" == "" ]; then
-      log 2 "param number $idx is empty"
+    if ! segment=$(get_xpath_segment "${!idx}" 2>&1); then
+      log 2 "error getting xpath segment: $segment"
       return 1
     fi
-    if [[ "${!idx}" =~ [[:space:]] ]]; then
-      log 2 "param '${!idx}' contains a space"
-      return 1
-    fi
-    xpath+='*[local-name()="'${!idx}'"]'
+    xpath+="$segment"
     if [ "$idx" != $# ]; then
       xpath+='/'
     fi
   done
+  log 5 "xpath: $xpath"
+  echo "$xpath"
+  return 0
+}
+
+get_inner_xpath_string_for_element() {
+  if ! check_param_count_gt "compare element, XML tree" 2 $#; then
+    return 1
+  fi
+  local xpath='['
+  for ((idx=2;idx<=$#;idx++)); do
+    if ! xpath+=$(get_xpath_segment "${!idx}" 2>&1); then
+      log 2 "error getting xpath segment: $xpath"
+      return 1
+    fi
+    if [ "$idx" != $# ]; then
+      xpath+='/'
+    fi
+  done
+  xpath+="='$1']"
   echo "$xpath"
   return 0
 }
@@ -130,6 +162,22 @@ check_xml_element() {
   return 0
 }
 
+check_xml_element_inside_string() {
+  if ! check_param_count_gt "string, expected value, XML tree" 3 $#; then
+    return 1
+  fi
+  if ! data_file=$(get_file_name 2>&1); then
+    log 2 "error getting data file: $data_file"
+    return 1
+  fi
+  echo -n "$1" > "$TEST_FILE_FOLDER/$data_file"
+  if ! check_xml_element "$TEST_FILE_FOLDER/$data_file" "$2" "${@:3}"; then
+    log 2 "error checking XML element"
+    return 1
+  fi
+  return 0
+}
+
 check_xml_element_contains() {
   if [ $# -lt 3 ]; then
     log 2 "'check_xml_element_contains' requires data source, expected value, XML tree"
@@ -210,6 +258,22 @@ check_if_element_exists() {
   return 1
 }
 
+print_xml_data_to_file() {
+  if ! check_param_count_v2 "data file" 1 $#; then
+    return 1
+  fi
+  if ! file_name=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $file_name"
+    return 1
+  fi
+  if ! get_xml_data "$1" "$TEST_FILE_FOLDER/$file_name"; then
+    log 2 "error getting xml data"
+    return 1
+  fi
+  echo "$TEST_FILE_FOLDER/$file_name"
+  return 0
+}
+
 get_xml_data() {
   if ! check_param_count_v2 "data file, output file" 2 $#; then
     return 1
@@ -285,5 +349,47 @@ compare_data_with_xml_file() {
   if ! diff "$TEST_FILE_FOLDER/$expected_data" "$TEST_FILE_FOLDER/$output_file"; then
     return 1
   fi
+  return 0
+}
+
+get_element_with_matching_inner_value() {
+  if ! check_param_count_gt "data file, matching value, outer value, with inner value separated by '--'" 4 $#; then
+    return 1
+  fi
+  local outer_params=() inner_params=() separator_found=false
+  for param in "${@:3}"; do
+    if [ "$param" == "--" ]; then
+      separator_found=true
+      continue
+    fi
+    if [ "$separator_found" == "false" ]; then
+      outer_params+=("$param")
+      continue
+    fi
+    inner_params+=("$param")
+  done
+  if [ "${#outer_params}" -eq 0 ] || [ "${#inner_params}" -eq 0 ]; then
+    log 2 "command requires params separated by '--'"
+    return 1
+  fi
+  if ! xml_data_file=$(print_xml_data_to_file "$1" 2>&1); then
+    log 2 "error writing XML to data file: $xml_data_file"
+    return 1
+  fi
+  if ! xpath=$(build_xpath_string_for_element "${outer_params[@]}" 2>&1); then
+    log 2 "error getting outer segment: $xpath"
+    return 1
+  fi
+  if ! inner_xpath=$(get_inner_xpath_string_for_element "$2" "${inner_params[@]}" 2>&1); then
+    log 2 "error getting inner segment: $inner_xpath"
+    return 1
+  fi
+  xpath+="$inner_xpath"
+  log 5 "full xpath: $xpath"
+  if ! result=$(xmllint --xpath "${xpath}" "$xml_data_file" 2>&1); then
+    log 2 "error getting result: $result"
+    return 1
+  fi
+  echo "$result"
   return 0
 }

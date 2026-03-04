@@ -128,7 +128,7 @@ export RUN_USERS=true
 }
 
 @test "REST - CreateBucket - location constraint mismatch" {
-  if [ "$DIRECT" != "true" ]; then
+  if [ "$DIRECT" == "true" ]; then
     skip "not valid for direct mode"
   fi
   local region="us-east-1"

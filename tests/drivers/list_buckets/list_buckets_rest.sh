@@ -265,3 +265,51 @@ list_check_buckets_user() {
   fi
   return 0
 }
+
+verify_bucket_not_in_list() {
+  if ! check_param_count_v2 "data file, bucket name" 2 $#; then
+    return 1
+  fi
+  if check_xml_element "$1" "$2" "ListAllMyBucketsResult" "Buckets" "Bucket" "Name"; then
+    log 2 "bucket shouldn't be returned in list"
+    return 1
+  fi
+  return 0
+}
+
+list_buckets_bucket_not_in_list() {
+  if ! check_param_count_gt "bucket name, region, other params" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "verify_bucket_not_in_list" "-query" "bucket-region=$2" "${@:3}" "--" "$1"; then
+    log 2 "error verifying that bucket '$1' is not returned"
+    return 1
+  fi
+  return 0
+}
+
+check_bucket_and_region() {
+  if ! check_param_count_v2 "data file, bucket, region" 3 $#; then
+    return 1
+  fi
+  if ! bucket_info=$(get_element_with_matching_inner_value "$1" "$2" "ListAllMyBucketsResult" "Buckets" "Bucket" "--" "Name" 2>&1); then
+    log 2 "error getting bucket with name '$1': $bucket_info"
+    return 1
+  fi
+  if ! check_xml_element_inside_string "$bucket_info" "$3" "Bucket" "BucketRegion"; then
+    log 2 "error checking for bucket region '$3' inside bucket info"
+    return 1
+  fi
+  return 0
+}
+
+list_check_bucket_and_region() {
+  if ! check_param_count_v2 "bucket, region" 2 $#; then
+    return 1
+  fi
+  if ! send_rest_go_command_callback "200" "check_bucket_and_region" "-query" "bucket-region=$2" \
+    "--" "$1" "$2"; then
+    return 1
+  fi
+  return 0
+}

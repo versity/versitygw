@@ -48,6 +48,8 @@ var customHostParam *string
 var customHostParamSet bool = false
 var commandType *string
 var checksumType *string
+var customSHA256Hash *string
+var customDate *string
 
 type arrayFlags []string
 
@@ -61,6 +63,8 @@ var chunkSize *int
 var omitPayloadTrailer *bool
 var omitPayloadTrailerKey *bool
 var omitContentLength *bool
+var omitSHA256Hash *bool
+var omitDate *bool
 
 var locationConstraint *string
 var locationConstraintSet bool = false
@@ -138,7 +142,11 @@ func main() {
 		OmitPayloadTrailer:    *omitPayloadTrailer,
 		OmitPayloadTrailerKey: *omitPayloadTrailerKey,
 		OmitContentLength:     *omitContentLength,
+		OmitSHA256Hash:        *omitSHA256Hash,
+		CustomSHA256Hash:      *customSHA256Hash,
 		Client:                *client,
+		OmitDate:              *omitDate,
+		CustomDate:            *customDate,
 	}
 
 	s3Command, err := getS3CommandType(baseCommand)
@@ -245,6 +253,10 @@ func checkFlags() error {
 	omitPayloadTrailer = flag.Bool("omitPayloadTrailer", false, "Omit final trailer for chunked uploads w/trailers")
 	omitPayloadTrailerKey = flag.Bool("omitPayloadTrailerKey", false, "Omit final trailer key for chunked uploads w/trailer")
 	omitContentLength = flag.Bool("omitContentLength", false, "Omit content length parameter")
+	omitSHA256Hash = flag.Bool("omitSHA256Hash", false, "Omit sha256 hash parameter")
+	customSHA256Hash = flag.String("customSHA256Hash", "", "Add a custom sha256 hash value")
+	omitDate = flag.Bool("omitDate", false, "Omit x-amz-date parameter")
+	customDate = flag.String("customDate", "", "Use a custom x-amz-date parameter")
 	flag.Var(&tagKeys, "tagKey", "Tag key (can add multiple)")
 	flag.Var(&tagValues, "tagValue", "Tag value (can add multiple)")
 	locationConstraint = flag.String("locationConstraint", "", "Location constraint for bucket creation")
