@@ -171,9 +171,12 @@ func TestResolveHostnameAddrs(t *testing.T) {
 			},
 		},
 		{
-			name:    "invalid address",
+			name:    "no port treated as unix socket path",
 			address: "invalid-no-port",
-			wantErr: true,
+			wantErr: false,
+			checkResult: func(addrs []string) bool {
+				return len(addrs) == 1 && addrs[0] == "invalid-no-port"
+			},
 		},
 	}
 
@@ -235,9 +238,20 @@ func TestResolveHostnameIPs(t *testing.T) {
 			},
 		},
 		{
-			name:    "invalid address",
-			address: "invalid-no-port",
-			wantErr: true,
+			name:    "unix socket path",
+			address: "/tmp/test.sock",
+			wantErr: false,
+			checkResult: func(ips []string) bool {
+				return len(ips) == 1 && ips[0] == "/tmp/test.sock"
+			},
+		},
+		{
+			name:    "relative unix socket path",
+			address: "./test.sock",
+			wantErr: false,
+			checkResult: func(ips []string) bool {
+				return len(ips) == 1 && ips[0] == "./test.sock"
+			},
 		},
 	}
 

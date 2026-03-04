@@ -156,6 +156,19 @@ documentation can be found in the GitHub wiki.`,
 			admPorts = ctx.StringSlice("admin-port")
 			webuiGateways = ctx.StringSlice("webui-gateways")
 			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
+
+			// Resolve relative UNIX socket paths to absolute before any backend
+			// (e.g. posix) can change the working directory via os.Chdir.
+			var err error
+			if ports, err = utils.AbsSocketPaths(ports); err != nil {
+				return err
+			}
+			if admPorts, err = utils.AbsSocketPaths(admPorts); err != nil {
+				return err
+			}
+			if webuiPorts, err = utils.AbsSocketPaths(webuiPorts); err != nil {
+				return err
+			}
 			return nil
 		},
 		Action: func(ctx *cli.Context) error {
@@ -181,14 +194,14 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringSliceFlag{
 			Name:    "port",
-			Usage:   "gateway listen address <ip>:<port> or :<port> (can be specified multiple times for listening on multiple addresses)",
+			Usage:   "gateway listen address: <ip>:<port>, :<port>, /path/to/socket for file-backed UNIX sockets, or @name for Linux abstract namespace sockets (can be specified multiple times for listening on multiple addresses)",
 			EnvVars: []string{"VGW_PORT"},
 			Value:   cli.NewStringSlice(":7070"),
 			Aliases: []string{"p"},
 		},
 		&cli.StringSliceFlag{
 			Name:    "webui",
-			Usage:   "enable WebUI server on the specified listen address (e.g. ':7071', '127.0.0.1:7071', 'localhost:7071'; can be specified multiple times for listening on multiple addresses; disabled when omitted)",
+			Usage:   "enable WebUI server on the specified listen address (e.g. ':7071', '127.0.0.1:7071', 'localhost:7071', '/run/vgw/webui.sock'; supports the same UNIX socket forms as --port; can be specified multiple times for listening on multiple addresses; disabled when omitted)",
 			EnvVars: []string{"VGW_WEBUI_PORT"},
 		},
 		&cli.StringFlag{
@@ -277,7 +290,7 @@ func initFlags() []cli.Flag {
 		},
 		&cli.StringSliceFlag{
 			Name:    "admin-port",
-			Usage:   "gateway admin server listen address <ip>:<port> or :<port> (can be specified multiple times for listening on multiple addresses)",
+			Usage:   "gateway admin server listen address: <ip>:<port>, :<port>, /path/to/socket for file-backed UNIX sockets, or @name for Linux abstract namespace sockets (can be specified multiple times for listening on multiple addresses)",
 			EnvVars: []string{"VGW_ADMIN_PORT"},
 			Aliases: []string{"ap"},
 		},
@@ -1242,6 +1255,14 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 	interfaceMap := make(map[string]bool) // deduplicate
 
 	for _, portSpec := range ports {
+		if utils.IsUnixSocketPath(portSpec) {
+			allPorts = append(allPorts, portSpec)
+			if !interfaceMap[portSpec] {
+				interfaceMap[portSpec] = true
+				allInterfaces = append(allInterfaces, portSpec)
+			}
+			continue
+		}
 		interfaces, err := getMatchingIPs(portSpec)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to match local IP addresses for %s: %v\n", portSpec, err)
@@ -1271,6 +1292,13 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 	var allAdmInterfaces []string
 	admInterfaceMap := make(map[string]bool)
 	for _, admPort := range admPorts {
+		if utils.IsUnixSocketPath(admPort) {
+			if !admInterfaceMap[admPort] {
+				admInterfaceMap[admPort] = true
+				allAdmInterfaces = append(allAdmInterfaces, admPort)
+			}
+			continue
+		}
 		interfaces, err := getMatchingIPs(admPort)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to match admin port local IP addresses for %s: %v\n", admPort, err)
@@ -1296,6 +1324,10 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 
 	// Build URLs for all listening addresses
 	for _, addrPort := range allInterfaces {
+		if utils.IsUnixSocketPath(addrPort) {
+			urls = append(urls, "unix:"+addrPort)
+			continue
+		}
 		ip, prt, err := net.SplitHostPort(addrPort)
 		if err != nil {
 			// Shouldn't happen as we constructed these properly, but handle it
@@ -1313,11 +1345,15 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 	// Determine bound host description
 	var boundHost string
 	if len(ports) == 1 {
-		hst, prt, _ := net.SplitHostPort(ports[0])
-		if hst == "" {
-			hst = "0.0.0.0"
+		if utils.IsUnixSocketPath(ports[0]) {
+			boundHost = fmt.Sprintf("(unix socket: %s)", ports[0])
+		} else {
+			hst, prt, _ := net.SplitHostPort(ports[0])
+			if hst == "" {
+				hst = "0.0.0.0"
+			}
+			boundHost = fmt.Sprintf("(bound on host %s and port %s)", hst, prt)
 		}
-		boundHost = fmt.Sprintf("(bound on host %s and port %s)", hst, prt)
 	} else {
 		// Multiple ports
 		portList := strings.Join(allPorts, ", ")
@@ -1352,6 +1388,10 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 		)
 
 		for _, addrPort := range allAdmInterfaces {
+			if utils.IsUnixSocketPath(addrPort) {
+				lines = append(lines, leftText("  unix:"+addrPort))
+				continue
+			}
 			ip, prt, err := net.SplitHostPort(addrPort)
 			if err != nil {
 				continue
@@ -1372,6 +1412,13 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 
 		for _, webuiAddr := range webuiAddrs {
 			if strings.TrimSpace(webuiAddr) == "" {
+				continue
+			}
+			if utils.IsUnixSocketPath(webuiAddr) {
+				if !webInterfaceMap[webuiAddr] {
+					webInterfaceMap[webuiAddr] = true
+					allWebInterfaces = append(allWebInterfaces, webuiAddr)
+				}
 				continue
 			}
 			webInterfaces, err := getMatchingIPs(webuiAddr)
@@ -1399,6 +1446,10 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 				leftText("WebUI listening on:"),
 			)
 			for _, addrPort := range allWebInterfaces {
+				if utils.IsUnixSocketPath(addrPort) {
+					lines = append(lines, leftText("  unix:"+addrPort))
+					continue
+				}
 				ip, prt, err := net.SplitHostPort(addrPort)
 				if err != nil {
 					continue
@@ -1429,6 +1480,11 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 // for the given address specification. For hostnames, it resolves to all
 // IP addresses (e.g., localhost -> 127.0.0.1 and ::1).
 func getMatchingIPs(spec string) ([]string, error) {
+	if utils.IsUnixSocketPath(spec) {
+		// Unix socket paths have no IP addresses; return the path itself as an identifier.
+		return []string{spec}, nil
+	}
+
 	ips, err := utils.ResolveHostnameIPs(spec)
 	if err != nil {
 		return nil, fmt.Errorf("resolve hostname: %v", err)
@@ -1488,6 +1544,12 @@ func getAllLocalIPs() ([]string, error) {
 }
 
 func buildServiceURLs(spec string, ssl bool) ([]string, error) {
+	if utils.IsUnixSocketPath(spec) {
+		// UNIX socket paths cannot be expressed as HTTP(S) URLs for WebUI gateways;
+		// skip them silently.
+		return nil, nil
+	}
+
 	interfaces, err := getMatchingIPs(spec)
 	if err != nil {
 		return nil, err
@@ -1593,6 +1655,8 @@ func sortGatewayURLs(urls []string) {
 // A bare port spec (e.g., ":7071") binds to all interfaces and will conflict with any other
 // binding on the same port, whether it's ":7071" or "ip:7071".
 // However, two identical "ip:port" specs are allowed (will be caught by later errors).
+// UNIX socket paths (e.g., "/tmp/gw.sock") are checked for duplicate path conflicts only,
+// and do not conflict with TCP port specifications.
 // This is needed because net.Listen() does not return the address already in use
 // error for the bare port spec arguments.
 func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
@@ -1600,6 +1664,7 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 		spec     string
 		port     string
 		isBare   bool
+		isUnix   bool
 		portType string // "s3", "admin", or "webui"
 	}
 
@@ -1607,6 +1672,10 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 
 	// Collect all port specs
 	for _, p := range ports {
+		if utils.IsUnixSocketPath(p) {
+			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "s3"})
+			continue
+		}
 		_, port, err := net.SplitHostPort(p)
 		if err != nil {
 			continue // will be caught by later validation
@@ -1620,6 +1689,10 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 	}
 
 	for _, p := range admPorts {
+		if utils.IsUnixSocketPath(p) {
+			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "admin"})
+			continue
+		}
 		_, port, err := net.SplitHostPort(p)
 		if err != nil {
 			continue // will be caught by later validation
@@ -1633,6 +1706,10 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 	}
 
 	for _, p := range webuiPorts {
+		if utils.IsUnixSocketPath(p) {
+			allSpecs = append(allSpecs, portSpec{spec: p, port: p, isUnix: true, portType: "webui"})
+			continue
+		}
 		_, port, err := net.SplitHostPort(p)
 		if err != nil {
 			continue // will be caught by later validation
@@ -1650,6 +1727,16 @@ func validatePortConflicts(ports, admPorts, webuiPorts []string) error {
 		for j, spec2 := range allSpecs {
 			if i >= j {
 				continue // skip comparing with self and already compared pairs
+			}
+
+			// Unix sockets and TCP ports never conflict with each other;
+			// only check for duplicate socket paths.
+			if spec1.isUnix || spec2.isUnix {
+				if spec1.isUnix && spec2.isUnix && spec1.spec == spec2.spec {
+					return fmt.Errorf("duplicate unix socket path: --%s %s conflicts with --%s %s",
+						spec1.portType, spec1.spec, spec2.portType, spec2.spec)
+				}
+				continue
 			}
 
 			// If ports don't match, no conflict
