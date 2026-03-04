@@ -186,6 +186,7 @@ rest_go_command_perform_send() {
     return 1
   fi
   log 5 "result: $result"
+  echo "$result"
 }
 
 send_rest_go_command_expect_error() {
@@ -205,16 +206,32 @@ send_rest_go_command_expect_error_callback() {
     log 2 "'send_rest_go_command_expect_error' param count must be 4 or greater, even (expected HTTP code, expected error code, expected message, callback, go params)"
     return 1
   fi
-  if ! rest_go_command_perform_send "${@:5}"; then
-    log 2 "error sending rest go command"
+
+  local all_params=("${@:5}") no_callback_params=0 go_params go_param_array=() callback_params=()
+  go_params=$(get_go_params "${all_params[@]}") || no_callback_params=$?
+  while IFS= read -r line; do
+    go_param_array+=("$line")
+  done <<< "$go_params"
+  if [ "$no_callback_params" -eq 1 ]; then
+    while IFS= read -r line; do
+      callback_params+=("$line")
+    done <<< "$(get_callback_params "${all_params[@]}")"
+  fi
+
+  if ! result=$(rest_go_command_perform_send "${go_param_array[@]}" 2>&1); then
+    log 2 "error sending rest go command: $result"
     return 1
   fi
-  echo -n "$result" > "$TEST_FILE_FOLDER/result.txt"
-  if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/result.txt" "$1" "$2" "$3"; then
+  if ! file_name=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $file_name"
+    return 1
+  fi
+  echo -n "$result" > "$TEST_FILE_FOLDER/$file_name"
+  if ! check_rest_go_expected_error "$TEST_FILE_FOLDER/$file_name" "$1" "$2" "$3"; then
     log 2 "error checking expected header error"
     return 1
   fi
-  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/result.txt"; then
+  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/$file_name" "${callback_params[@]}"; then
     log 2 "callback error"
     return 1
   fi
@@ -379,11 +396,11 @@ send_rest_go_command_expect_error_with_arg_name_value() {
 }
 
 check_specific_argument_name_and_value() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, argument name, value" 3 $#; then
     return 1
   fi
-  if ! check_error_parameter "$1" "$argument_name" "$argument_value"; then
-    log 2 "error checking '$argument_name' parameter"
+  if ! check_error_parameter "$1" "$2" "$3"; then
+    log 2 "error checking '$2' parameter"
     return 1
   fi
 }
@@ -392,9 +409,7 @@ send_rest_go_command_expect_error_with_specific_arg_name_value() {
   if ! check_param_count_gt "response code, error code, message, arg name, arg value, params" 5 $#; then
     return 1
   fi
-  argument_name=$4
-  argument_value=$5
-  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_name_and_value" "${@:6}"; then
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "check_specific_argument_name_and_value" "${@:6}" "--" "$4" "$5"; then
     log 2 "error checking error response values"
     return 1
   fi

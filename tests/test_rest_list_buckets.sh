@@ -238,3 +238,32 @@ export RUN_USERS=true
   run send_rest_go_command_check_header_key_and_value "400" "Content-Type" "application/xml" "-method" "GETS"
   assert_success
 }
+
+@test "REST - ListBuckets - invalid bucket-region query" {
+  local invalid_region="abc"
+
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  local bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error_with_specific_arg_name_value "400" "InvalidArgument" "Argument value $invalid_region is not a valid AWS Region" \
+   "ArgumentName" "bucket-region" "-query" "bucket-region=$invalid_region"
+  assert_success
+}
+
+@test "REST - ListBuckets - bucket region" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  #run send_rest_go_command "200" "-query" "bucket-region=us-west-1" "-awsRegion" "us-west-1" "-url" "https://s3.us-west-1.amazonaws.com"
+  run send_rest_go_command "200" "-query" "bucket-region=abc"
+  assert_success
+  return 1
+}
