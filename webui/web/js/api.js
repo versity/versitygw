@@ -1846,9 +1846,7 @@ ${tagsXml}
    */
   async putBucketPolicy(bucket, policy) {
     const policyJson = JSON.stringify(policy);
-    await this.request('PUT', `/${bucket}`, { policy: '' }, policyJson, {
-      'Content-Type': 'application/json'
-    });
+    await this.request('PUT', `/${bucket}`, { policy: '' }, policyJson, false, 'application/json');
   }
 
   /**
