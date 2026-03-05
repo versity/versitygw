@@ -1506,7 +1506,7 @@ func buildServiceURLs(spec string, ssl bool) ([]string, error) {
 	}
 	urls := make([]string, 0, len(interfaces))
 	for _, ip := range interfaces {
-		urls = append(urls, fmt.Sprintf("%s://%s:%s", scheme, ip, prt))
+		urls = append(urls, fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(ip, prt)))
 	}
 	return urls, nil
 }
