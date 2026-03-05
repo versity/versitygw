@@ -1,0 +1,19 @@
+{{- if .Values.certificate.create }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "versitygw.certificateSecretName" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    {{- toYaml .Values.certificate.dnsNames | nindent 4 }}
+  issuerRef:
+    {{- toYaml .Values.certificate.issuerRef | nindent 4 }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: {{ include "versitygw.certificateSecretName" . }}
+  usages:
+  - server auth
+{{- end }}

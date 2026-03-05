@@ -1,0 +1,211 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "versitygw.fullname" . }}
+  labels:
+    {{- include "versitygw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "versitygw.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- if not .Values.auth.existingSecret }}
+        checksum/credentials: {{ cat .Release.Name .Values.auth.accessKey .Values.auth.secretKey | sha256sum | trunc 12 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "versitygw.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "versitygw.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # Backend selection — consumed by docker-entrypoint.sh
+            - name: VGW_BACKEND
+              value: {{ .Values.gateway.backend.type | quote }}
+            - name: VGW_BACKEND_ARGS
+              value: {{ .Values.gateway.backend.args | quote }}
+            # Root credentials — sourced from a Kubernetes Secret
+            - name: ROOT_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "versitygw.credentialsSecretName" . }}
+                  key: rootAccessKeyId
+            - name: ROOT_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "versitygw.credentialsSecretName" . }}
+                  key: rootSecretAccessKey
+            # Gateway server settings
+            - name: VGW_PORT
+              value: ":{{ .Values.gateway.port }}"
+            - name: VGW_REGION
+              value: {{ .Values.gateway.region | quote }}
+            - name: VGW_HEALTH
+              value: "/_/health"
+            {{- if .Values.gateway.virtualDomain }}
+            - name: VGW_VIRTUAL_DOMAIN
+              value: {{ .Values.gateway.virtualDomain | quote }}
+            {{- end }}
+            {{- if .Values.gateway.readOnly }}
+            - name: VGW_READ_ONLY
+              value: "true"
+            {{- end }}
+            {{- if .Values.gateway.quiet }}
+            - name: VGW_QUIET
+              value: "true"
+            {{- end }}
+            {{- if .Values.gateway.debug }}
+            - name: VGW_DEBUG
+              value: "true"
+            {{- end }}
+            {{- if .Values.gateway.accessLog }}
+            - name: VGW_ACCESS_LOG
+              value: {{ .Values.gateway.accessLog | quote }}
+            {{- end }}
+            {{- if .Values.gateway.corsAllowOrigin }}
+            - name: VGW_CORS_ALLOW_ORIGIN
+              value: {{ .Values.gateway.corsAllowOrigin | quote }}
+            {{- end }}
+            {{- if .Values.gateway.disableStrictBucketNames }}
+            - name: VGW_DISABLE_STRICT_BUCKET_NAMES
+              value: "true"
+            {{- end }}
+            # Admin API server
+            {{- if .Values.admin.enabled }}
+            - name: VGW_ADMIN_PORT
+              value: ":{{ .Values.admin.port }}"
+            - name: VGW_ADMIN_MAX_CONNECTIONS
+              value: {{ .Values.admin.maxConnections | quote }}
+            - name: VGW_ADMIN_MAX_REQUESTS
+              value: {{ .Values.admin.maxRequests | quote }}
+            {{- end }}
+            # WebUI
+            {{- if .Values.webui.enabled }}
+            - name: VGW_WEBUI_PORT
+              value: ":{{ .Values.webui.port }}"
+            {{- if .Values.webui.noTls }}
+            - name: VGW_WEBUI_NO_TLS
+              value: "true"
+            {{- end }}
+            {{- if .Values.webui.apiGateways }}
+            - name: VGW_WEBUI_GATEWAYS
+              value: {{ .Values.webui.apiGateways | join "," | quote }}
+            {{- end }}
+            {{- if .Values.webui.adminGateways }}
+            - name: VGW_WEBUI_ADMIN_GATEWAYS
+              value: {{ .Values.webui.adminGateways | join "," | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.iam.enabled }}
+            # IAM settings
+            {{- if eq .Values.iam.type "internal" }}
+            - name: VGW_IAM_DIR
+              value: "/mnt/iam"
+            {{- end }}
+            {{- if .Values.iam.cacheDisable }}
+            - name: VGW_IAM_CACHE_DISABLE
+              value: "true"
+            {{- end }}
+            - name: VGW_IAM_CACHE_TTL
+              value: {{ .Values.iam.cacheTtl | quote }}
+            - name: VGW_IAM_CACHE_PRUNE
+              value: {{ .Values.iam.cachePrune | quote }}
+            {{- if .Values.iam.debug }}
+            - name: VGW_IAM_DEBUG
+              value: "true"
+            {{- end }}
+            {{- end }}
+            # TLS
+            {{- if .Values.tls.enabled }}
+            - name: VGW_CERT
+              value: /certs/tls.crt
+            - name: VGW_KEY
+              value: /certs/tls.key
+            {{- end }}
+            # Extra user-provided environment variables
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: s3-api
+              containerPort: {{ .Values.gateway.port }}
+              protocol: TCP
+            {{- if .Values.admin.enabled }}
+            - name: admin
+              containerPort: {{ .Values.admin.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.webui.enabled }}
+            - name: webui
+              containerPort: {{ .Values.webui.port }}
+              protocol: TCP
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: "/_/health"
+              port: s3-api
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - name: data
+              mountPath: /mnt/data
+              subPath: data
+              readOnly: false
+            - name: data
+              mountPath: /mnt/iam
+              subPath: iam
+              readOnly: false
+            {{- if .Values.tls.enabled }}
+            - name: certificates
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "versitygw.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: certificates
+          secret:
+            secretName: {{ include "versitygw.certificateSecretName" . }}
+        {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

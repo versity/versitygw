@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "versitygw.fullname" . }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "versitygw.selectorLabels" . | nindent 6 }}
+  # Permit ingress traffic only from the specified namespaces and pods
+  ingress:
+    - from:
+        namespaceSelector:
+          matchLabels: {{- toYaml .Values.networkPolicy.allowIngressFromNamespaces | nindent 10 }}
+        podSelector: {{- toYaml .Values.networkPolicy.allowIngressFromPods | nindent 10 }}
+      # By omitting the ports specification we apply this NetworkPolicy to all ports
+      ports: []
+  # All egress traffic is allowed
+  egress:
+    - {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
