@@ -16,6 +16,12 @@
 
 source ./tests/versity.sh
 
+if [ -n "$BASH_VERSION" ] && [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "ERROR: This test suite requires bash 4.0 or later. Current: $BASH_VERSION" >&2
+  echo "On macOS: brew install bash && add to PATH" >&2
+  exit 1
+fi
+
 base_setup() {
   check_env_vars
   if [ "$RUN_VERSITYGW" == "true" ] && [ "$UNIT_TEST" != "true" ]; then

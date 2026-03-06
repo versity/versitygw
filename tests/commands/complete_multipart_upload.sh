@@ -14,6 +14,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+source ./tests/drivers/list_parts/list_parts_rest.sh
+
 complete_multipart_upload() {
   if [[ $# -ne 4 ]]; then
     log 2 "'complete multipart upload' command requires bucket, key, upload ID, parts list"
