@@ -11,6 +11,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -24,10 +25,19 @@ jobs:
 
       # https://github.com/marketplace/actions/helm-oci-charts-releaser
       - name: Run chart-releaser
+        id: releaser
         uses: bitdeps/helm-oci-charts-releaser@v0.1.5
         with:
-            oci_registry: ghcr.io/versity/versitygw/charts
-            oci_username: versity
-            oci_password: ${{ secrets.GITHUB_TOKEN }}
-            github_token: ${{ secrets.GITHUB_TOKEN }}
-            charts_dir: "."
+          oci_registry: ghcr.io/versity/versitygw/charts
+          oci_username: versity
+          oci_password: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          charts_dir: "."
+
+      - name: Install cosign
+        if: steps.releaser.outputs.changed_charts != ''
+        uses: sigstore/cosign-installer@v4.0.0
+
+      - name: Sign chart with cosign
+        if: steps.releaser.outputs.changed_charts != ''
+        run: cosign sign --yes ghcr.io/versity/versitygw/charts/versitygw:${{ steps.releaser.outputs.chart_version }}
