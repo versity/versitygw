@@ -1,0 +1,12 @@
+{
+  "name": "versitygw-sdk-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node sdk-test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.995.0"
+  }
+}

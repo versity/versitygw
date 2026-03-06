@@ -68,3 +68,7 @@ metrics-exploration/grafana_data/**
 # bats tools
 /tests/bats-assert
 /tests/bats-support
+
+# js testing
+tests/js/node_modules/
+
