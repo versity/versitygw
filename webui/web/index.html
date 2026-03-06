@@ -21,191 +21,10 @@ under the License.
   <title>VersityGW Admin - Login</title>
   <script src="assets/js/crypto-js.min.js"></script>
   <script src="assets/css/tailwind.js"></script>
+  <script src="assets/css/tailwind-config.js"></script>
   <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
   <link rel="icon" type="image/png" href="assets/images/favicon.png">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: {
-              DEFAULT: '#002A7A',
-              50: '#E6EBF4',
-              100: '#B3C2E0',
-              200: '#809ACC',
-              300: '#4D71B8',
-              400: '#264DA3',
-              500: '#002A7A',
-              600: '#002468',
-              700: '#001D56',
-            },
-            accent: {
-              DEFAULT: '#0076CD',
-              50: '#E6F3FA',
-              100: '#B3DCF2',
-              500: '#0076CD',
-              600: '#0065AF',
-            },
-            charcoal: {
-              DEFAULT: '#191B2A',
-              300: '#757884',
-              400: '#565968',
-            },
-            surface: {
-              DEFAULT: '#F3F8FC',
-            }
-          },
-          fontFamily: {
-            sans: ['Roboto', 'system-ui', 'sans-serif'],
-          },
-        }
-      }
-    }
-  </script>
-  <style>
-    body { font-family: 'Roboto', system-ui, sans-serif; }
-    .input-icon {
-      position: absolute;
-      left: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #808080;
-    }
-    .input-with-icon {
-      padding-left: 44px;
-    }
-    .password-toggle {
-      position: absolute;
-      right: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #808080;
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 4px;
-    }
-    .password-toggle:hover {
-      color: #002A7A;
-    }
-    .advanced-toggle {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-      padding: 0.75rem 0;
-      margin: 0.5rem 0;
-      background: none;
-      border: none;
-      font: inherit;
-      color: inherit;
-      text-align: left;
-      width: 100%;
-    }
-    .advanced-toggle:hover {
-      opacity: 0.8;
-    }
-    .advanced-toggle-carat {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.25rem;
-      height: 1.25rem;
-      flex-shrink: 0;
-      transition: transform 0.3s ease;
-    }
-    .advanced-toggle.expanded .advanced-toggle-carat {
-      transform: rotate(90deg);
-    }
-    .advanced-toggle-label {
-      font-weight: 500;
-      color: #565968;
-      cursor: pointer;
-    }
-    .advanced-options {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease-out;
-    }
-    .advanced-options.show {
-      max-height: 500px;
-    }
-    /* Custom dropdown styles */
-    .custom-dropdown {
-      display: none;
-      position: absolute;
-      z-index: 10;
-      width: 100%;
-      margin-top: 4px;
-      background: white;
-      border: 2px solid #e5e7eb;
-      border-radius: 0.5rem;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-      max-height: 12rem;
-      overflow: auto;
-    }
-    .custom-dropdown.show {
-      display: block;
-    }
-    .custom-dropdown-item {
-      padding: 0.75rem 1rem;
-      cursor: pointer;
-      color: #191B2A;
-      transition: background-color 0.15s;
-    }
-    .custom-dropdown-item:hover {
-      background-color: #f9fafb;
-    }
-    .custom-dropdown-item.selected {
-      background-color: rgba(0, 118, 205, 0.1);
-      color: #0076CD;
-    }
-    /* Toggle Switch Styles */
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 60px;
-      height: 28px;
-    }
-    .toggle-switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .toggle-slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #e5e7eb;
-      transition: 0.3s;
-      border-radius: 28px;
-    }
-    .toggle-slider:before {
-      position: absolute;
-      content: "";
-      height: 20px;
-      width: 20px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: 0.3s;
-      border-radius: 50%;
-    }
-    input:checked + .toggle-slider {
-      background-color: #0076CD;
-    }
-    input:checked + .toggle-slider:before {
-      transform: translateX(32px);
-    }
-    .toggle-label {
-      font-size: 0.875rem;
-      color: #565968;
-      font-weight: 500;
-    }
-  </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-surface to-white flex items-center justify-center p-4">
   <script src="js/api.js"></script>
@@ -405,7 +224,7 @@ under the License.
     }
 
     // ============================================
-    // Configured Gateways (from vgwmgr CLI)
+    // Configured Gateways 
     // ============================================
     let configuredGateways = [];
     let configuredAdminGateways = [];
@@ -434,24 +253,18 @@ under the License.
       return out;
     }
 
-    async function loadConfiguredGateways() {
-      try {
-        const res = await fetch('/api/gateways', { cache: 'no-store' });
-        if (!res.ok) return { gateways: [], adminGateways: [], defaultRegion: null };
-        const data = await res.json();
-        if (!data || !Array.isArray(data.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };
-        return {
-          gateways: data.gateways,
-          adminGateways: data.adminGateways || data.gateways || [],
-          defaultRegion: normalizeRegion(typeof data.defaultRegion === 'string' ? data.defaultRegion : null),
-        };
-      } catch (e) {
-        return { gateways: [], adminGateways: [], defaultRegion: null };
-      }
+    function loadConfiguredGateways() {
+      const cfg = window.__VGWCONFIG__ || {};
+      if (!Array.isArray(cfg.gateways)) return { gateways: [], adminGateways: [], defaultRegion: null };
+      return {
+        gateways: cfg.gateways,
+        adminGateways: cfg.adminGateways || cfg.gateways || [],
+        defaultRegion: normalizeRegion(typeof cfg.defaultRegion === 'string' ? cfg.defaultRegion : null),
+      };
     }
 
-    async function initConfiguredGateways() {
-      const cfg = await loadConfiguredGateways();
+    function initConfiguredGateways() {
+      const cfg = loadConfiguredGateways();
       configuredGateways = uniqNonEmpty(cfg.gateways);
       configuredAdminGateways = uniqNonEmpty(cfg.adminGateways);
       configuredDefaultRegion = cfg.defaultRegion;

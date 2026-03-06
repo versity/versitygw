@@ -1,0 +1,194 @@
+/*
+ * Copyright 2026 Versity Software
+ * This file is licensed under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/*
+ * theme.css — Global shared styles for all pages.
+ * Page-specific styles remain inline in their respective HTML files.
+ */
+
+body {
+  font-family: 'Roboto', system-ui, sans-serif;
+}
+
+/*  Sidebar Navigation */
+.nav-item {
+  transition: all 0.15s ease;
+}
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.nav-item.active {
+  background: rgba(0, 118, 205, 0.2);
+  border-left: 4px solid #0076CD;
+}
+
+/* Modal */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+/* Custom Dropdown */
+.custom-dropdown {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  width: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  max-height: 12rem;
+  overflow: auto;
+}
+.custom-dropdown.show {
+  display: block;
+}
+.custom-dropdown-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  color: #191B2A;
+  transition: background-color 0.15s;
+}
+.custom-dropdown-item:hover {
+  background-color: #f9fafb;
+}
+.custom-dropdown-item.selected {
+  background-color: rgba(0, 118, 205, 0.1);
+  color: #0076CD;
+}
+/* Dropup variant — opens upward */
+.custom-dropdown.dropup {
+  bottom: 100%;
+  top: auto;
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 28px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #e5e7eb;
+  transition: 0.3s;
+  border-radius: 28px;
+}
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: 50%;
+}
+input:checked + .toggle-slider {
+  background-color: #0076CD;
+}
+input:checked + .toggle-slider:before {
+  transform: translateX(32px);
+}
+.toggle-label {
+  font-size: 0.875rem;
+  color: #565968;
+  font-weight: 500;
+}
+
+/* Login Page */
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #808080;
+}
+.input-with-icon {
+  padding-left: 44px;
+}
+.password-toggle {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #808080;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px;
+}
+.password-toggle:hover {
+  color: #002A7A;
+}
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.75rem 0;
+  margin: 0.5rem 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+}
+.advanced-toggle:hover {
+  opacity: 0.8;
+}
+.advanced-toggle-carat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+.advanced-toggle.expanded .advanced-toggle-carat {
+  transform: rotate(90deg);
+}
+.advanced-toggle-label {
+  font-weight: 500;
+  color: #565968;
+  cursor: pointer;
+}
+.advanced-options {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+.advanced-options.show {
+  max-height: 500px;
+}
