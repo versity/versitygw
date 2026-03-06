@@ -281,7 +281,7 @@ certificate:
 persistence:
   # If disabled, an emptyDir (ephemeral!) will be used instead of a PVC.
   # NOTE: Data will be lost on pod restart if persistence is disabled.
-  enabled: false
+  enabled: true
   # Use an existing PVC instead of creating a new one.
   claimName: ""
   size: 10Gi

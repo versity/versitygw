@@ -13,7 +13,7 @@ Download [latest release](https://github.com/versity/versitygw/releases)
  | Linux/amd64 | Linux/arm64 | MacOS/amd64 | MacOS/arm64 | BSD/amd64 | BSD/arm64 |
  |:-----------:|:-----------:|:-----------:|:-----------:|:---------:|:---------:|
  |    ✔️    |  ✔️  |   ✔️   |  ✔️   |  ✔️   |  ✔️   |
- 
+
 ### Use Cases
 * Turn your local filesystem into an S3 server with a single command!
 * Proxy S3 requests to S3 storage
@@ -45,11 +45,11 @@ Versity Gateway, a simple to use tool for seamless inline translation between AW
 
 The server translates incoming S3 API requests and transforms them into equivalent operations to the backend service. By leveraging this gateway server, applications can interact with the S3-compatible API on top of already existing storage systems. This project enables leveraging existing infrastructure investments while seamlessly integrating with S3-compatible systems, offering increased flexibility and compatibility in managing data storage.
 
-The Versity Gateway is focused on performance, simplicity, and expandability. The Versity Gateway is designed with modularity in mind, enabling future extensions to support additional backend storage systems. At present, the Versity Gateway supports any generic POSIX file backend storage, Versity’s open source ScoutFS filesystem, Azure Blob Storage, and other S3 servers.  
+The Versity Gateway is focused on performance, simplicity, and expandability. The Versity Gateway is designed with modularity in mind, enabling future extensions to support additional backend storage systems. At present, the Versity Gateway supports any generic POSIX file backend storage, Versity’s open source ScoutFS filesystem, Azure Blob Storage, and other S3 servers.
 
-The gateway is completely stateless. Multiple Versity Gateway instances may be deployed in a cluster to increase aggregate throughput. The Versity Gateway’s stateless architecture allows any request to be serviced by any gateway thereby distributing workloads and enhancing performance. Load balancers may be used to evenly distribute requests across the cluster of gateways for optimal performance. 
+The gateway is completely stateless. Multiple Versity Gateway instances may be deployed in a cluster to increase aggregate throughput. The Versity Gateway’s stateless architecture allows any request to be serviced by any gateway thereby distributing workloads and enhancing performance. Load balancers may be used to evenly distribute requests across the cluster of gateways for optimal performance.
 
-The S3 HTTP(S) server and routing is implemented using the [Fiber](https://gofiber.io) web framework.  This framework is actively developed with a focus on performance.  S3 API compatibility leverages the official [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) whenever possible for maximum service compatibility with AWS S3. 
+The S3 HTTP(S) server and routing is implemented using the [Fiber](https://gofiber.io) web framework.  This framework is actively developed with a focus on performance.  S3 API compatibility leverages the official [aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2) whenever possible for maximum service compatibility with AWS S3.
 
 ## Getting Started
 See the [Quickstart](https://github.com/versity/versitygw/wiki/Quickstart) documentation.
@@ -111,7 +111,7 @@ documentation for running within Docker.
 A Helm chart is provided to easily run Versity in Kubernetes environments:
 
 ```sh
-helm install versitygw oci://ghcr.io/versity/versitygw/charts/versity:latest
+helm install versitygw oci://ghcr.io/versity/versitygw/charts/versitygw
 ```
 
 Please refer to the [chart's README](./chart/README.md) for more information and configuration parameters.
@@ -125,9 +125,8 @@ Please refer to the [chart's README](./chart/README.md) for more information and
 info@versity.com <br />
 +1 844 726 8826
 
-### @versitysoftware 
-[![linkedin](https://github.com/versity/versitygw/blob/assets/assets/linkedin.jpg)](https://www.linkedin.com/company/versity/) &nbsp; 
+### @versitysoftware
+[![linkedin](https://github.com/versity/versitygw/blob/assets/assets/linkedin.jpg)](https://www.linkedin.com/company/versity/) &nbsp;
 [![twitter](https://github.com/versity/versitygw/blob/assets/assets/twitter.jpg)](https://twitter.com/VersitySoftware) &nbsp;
 [![facebook](https://github.com/versity/versitygw/blob/assets/assets/facebook.jpg)](https://www.facebook.com/versitysoftware) &nbsp;
 [![instagram](https://github.com/versity/versitygw/blob/assets/assets/instagram.jpg)](https://www.instagram.com/versitysoftware/) &nbsp;
-
