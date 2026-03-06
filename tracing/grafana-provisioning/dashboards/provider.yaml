@@ -1,0 +1,7 @@
+apiVersion: 1
+
+providers:
+  - name: versitygw
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

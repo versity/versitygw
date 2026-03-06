@@ -37,6 +37,7 @@ const (
 	ContextKeySkip           ContextKey = "__skip"
 	ContextKeyStack          ContextKey = "stack"
 	ContextKeyBucketOwner    ContextKey = "bucket-owner"
+	ContextKeyS3Action       ContextKey = "s3-action"
 )
 
 func (ck ContextKey) Values() []ContextKey {

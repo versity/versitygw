@@ -36,6 +36,7 @@ import (
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+	"github.com/versity/versitygw/tracing"
 	"github.com/versity/versitygw/webui"
 )
 
@@ -95,6 +96,8 @@ var (
 	ipaUser, ipaPassword                   string
 	ipaInsecure                            bool
 	iamDebug                               bool
+	otelEndpoint                           string
+	otelServiceName                        string
 	webuiPorts                             []string
 	webuiCertFile, webuiKeyFile            string
 	webuiNoTLS                             bool
@@ -727,6 +730,19 @@ func initFlags() []cli.Flag {
 			EnvVars:     []string{"VGW_IPA_INSECURE"},
 			Destination: &ipaInsecure,
 		},
+		&cli.StringFlag{
+			Name:        "otel-endpoint",
+			Usage:       "OpenTelemetry collector endpoint URL for tracing (e.g. http://localhost:4318). Tracing is disabled when unset.",
+			EnvVars:     []string{"VGW_OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"},
+			Destination: &otelEndpoint,
+		},
+		&cli.StringFlag{
+			Name:        "otel-service-name",
+			Usage:       "Service name reported in OpenTelemetry traces",
+			EnvVars:     []string{"VGW_OTEL_SERVICE_NAME", "OTEL_SERVICE_NAME"},
+			Value:       "versitygw",
+			Destination: &otelServiceName,
+		},
 	}
 }
 
@@ -844,6 +860,15 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	if disableACLs {
 		opts = append(opts, s3api.WithDisableACL())
 	}
+	if otelEndpoint != "" {
+		shutdownTracer, err := tracing.InitTracer(ctx, otelServiceName, otelEndpoint)
+		if err != nil {
+			return fmt.Errorf("init otel tracer: %w", err)
+		}
+		defer shutdownTracer(context.Background()) //nolint:errcheck
+		opts = append(opts, s3api.WithTracing())
+	}
+
 	if debug {
 		debuglogger.SetDebugEnabled()
 	}

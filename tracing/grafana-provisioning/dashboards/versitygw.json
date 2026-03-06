@@ -1,0 +1,1368 @@
+{
+  "title": "VersityGW \u2013 S3 Gateway Traces",
+  "uid": "versitygw-traces",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "operation",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(traces_spanmetrics_calls_total{service=\"versitygw\", span_name=~\"s3_.+\"}, span_name)",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "label": "Operation",
+        "refresh": 2,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Total Requests",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(traces_spanmetrics_calls_total{service=\"versitygw\"}[$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Request Rate",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(traces_spanmetrics_calls_total{service=\"versitygw\"}[1m]))"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Internal Server Error Rate",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(traces_spanmetrics_calls_total{service=\"versitygw\", http_response_status_code=~\"5..\"}[1m])) / sum(rate(traces_spanmetrics_calls_total{service=\"versitygw\"}[1m]))"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "p50 Latency",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "1000 * histogram_quantile(0.50, sum(rate(traces_spanmetrics_latency_bucket{service=\"versitygw\"}[1m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "p95 Latency",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 200
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "1000 * histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{service=\"versitygw\"}[1m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "p99 Latency",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "expr": "1000 * histogram_quantile(0.99, sum(rate(traces_spanmetrics_latency_bucket{service=\"versitygw\"}[1m])) by (le))"
+        }
+      ]
+    },
+    {
+      "id": 200,
+      "type": "bargauge",
+      "title": "Requests by API Operation (rate/s)",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true,
+        "maxVizHeight": 32,
+        "sizing": "manual",
+        "minVizHeight": 32,
+        "namePlacement": "top"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sort_desc(sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\",span_name=~\"s3_.+\"}[5m])))",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 201,
+      "type": "bargauge",
+      "title": "Errors by API Operation (rate/s)",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true,
+        "maxVizHeight": 32,
+        "sizing": "manual",
+        "minVizHeight": 32,
+        "namePlacement": "top"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sort_desc(sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\",span_name=~\"s3_.+\",status_code=\"STATUS_CODE_ERROR\"}[5m])))",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "transformations": []
+    },
+    {
+      "id": 202,
+      "type": "timeseries",
+      "title": "Authentication Error Rate (401 / 403)",
+      "description": "Rate of 401 Unauthorized and 403 Forbidden responses over time, broken down by operation. Spikes indicate authentication or authorization failures.",
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\", http_response_status_code=~\"401|403\", span_name=~\"s3_.+\"}[1m]))",
+          "legendFormat": "{{span_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "table",
+      "title": "Operations \u2013 RED Metrics",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "Rate (req/s)",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rate (req/s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-BlPu"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Error %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 500
+                    },
+                    {
+                      "color": "red",
+                      "value": 2000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Operation"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "View traces",
+                    "url": "/explore?orgId=1&left=%7B%22datasource%22:%22tempo%22,%22queries%22:%5B%7B%22queryType%22:%22traceql%22,%22query%22:%22%7B%20span.s3.action%20%3D%20%5C%22${__data.fields.Operation}%5C%22%20%7D%22%7D%5D%7D"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "span_name": "Operation",
+              "Value #A": "Rate (req/s)",
+              "Value #B": "Error %",
+              "Value #C": "p50 (ms)",
+              "Value #D": "p95 (ms)",
+              "Value #E": "p99 (ms)"
+            },
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "expr": "sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m]))",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "expr": "100 * sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\", status_code=\"STATUS_CODE_ERROR\"}[1m])) / sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m]))",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B",
+          "format": "table"
+        },
+        {
+          "expr": "1000 * histogram_quantile(0.50, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m])))",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "C",
+          "format": "table"
+        },
+        {
+          "expr": "1000 * histogram_quantile(0.95, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m])))",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "D",
+          "format": "table"
+        },
+        {
+          "expr": "1000 * histogram_quantile(0.99, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m])))",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "E",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request Rate by Operation",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "sortBy": "Mean",
+          "sortDesc": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (span_name) (rate(traces_spanmetrics_calls_total{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m]))",
+          "legendFormat": "{{span_name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p99 Latency by Operation",
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "sortBy": "Mean",
+          "sortDesc": true
+        }
+      },
+      "targets": [
+        {
+          "expr": "1000 * histogram_quantile(0.99, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"s3_.+\", span_name=~\"$operation\"}[1m])))",
+          "legendFormat": "{{span_name}}"
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "type": "row",
+      "title": "Middleware Overhead",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Middleware p50 Latency (ms)",
+      "description": "p50 latency of each middleware span over time. One line per layer \u2014 lets you spot which middleware is slowest or where latency is spiking.",
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "1000 * histogram_quantile(0.50, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "legendFormat": "{{span_name}}"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "bargauge",
+      "title": "Middleware Share of Total Request Time (p50 %)",
+      "description": "Each middleware span's p50 latency expressed as a percentage of the overall (non-middleware) request p50. Longer bars mean that layer is consuming more of the total request budget.",
+      "gridPos": {
+        "x": 12,
+        "y": 41,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "100 * histogram_quantile(0.50, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m]))) / on() group_left() histogram_quantile(0.50, sum by (le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name!~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "table",
+      "title": "Middleware Overhead \u2013 p50 / p95 / p99 & % of Request Time",
+      "description": "Absolute latency and percentage share of total request time for each middleware and IAM sub-span. '% of Req p50/p95' uses the blended non-middleware percentile as the denominator.",
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "p50 (ms)",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Middleware"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99 (ms)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 200
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% of Req p50"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10
+                    },
+                    {
+                      "color": "red",
+                      "value": 30
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "% of Req p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10
+                    },
+                    {
+                      "color": "red",
+                      "value": 30
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "span_name": "Middleware",
+              "Value #A": "p50 (ms)",
+              "Value #B": "p95 (ms)",
+              "Value #C": "p99 (ms)",
+              "Value #D": "% of Req p50",
+              "Value #E": "% of Req p95"
+            },
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "expr": "1000 * histogram_quantile(0.50, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "range": false
+        },
+        {
+          "refId": "B",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "expr": "1000 * histogram_quantile(0.95, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "range": false
+        },
+        {
+          "refId": "C",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "expr": "1000 * histogram_quantile(0.99, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "range": false
+        },
+        {
+          "refId": "D",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "expr": "100 * histogram_quantile(0.50, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m]))) / on() group_left() histogram_quantile(0.50, sum by (le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name!~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "range": false
+        },
+        {
+          "refId": "E",
+          "instant": true,
+          "format": "table",
+          "legendFormat": "",
+          "expr": "100 * histogram_quantile(0.95, sum by (span_name, le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name=~\"middleware\\\\..+|iam\\\\..+\"}[5m]))) / on() group_left() histogram_quantile(0.95, sum by (le) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\", span_name!~\"middleware\\\\..+|iam\\\\..+\"}[5m])))",
+          "range": false
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "id": 60,
+      "title": "Backend Action Overhead",
+      "type": "row"
+    },
+    {
+      "id": 61,
+      "type": "timeseries",
+      "title": "Backend Action p50 Latency (ms)",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 60
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "(histogram_quantile(0.5, sum by(le, span_name) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\",span_name=~\"backend\\\\.s3_.+\"}[5m])))) * 1000",
+          "hide": false,
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{span_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 62,
+      "type": "bargauge",
+      "title": "Backend Share of Request Time (p50 %)",
+      "description": "For each action, what fraction of the root request span duration is spent in the backend call.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 60
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "100 * histogram_quantile(0.5, sum by(le, span_name) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\",span_name=~\"backend\\\\.s3_.+\"}[5m]))) / on(span_name) group_left() label_replace(histogram_quantile(0.5, sum by(le, span_name) (rate(traces_spanmetrics_latency_bucket{service=\"versitygw\",span_name=~\"s3_.+\",span_name!~\"backend\\\\..+\"}[5m]))), \"span_name\", \"backend.$1\", \"span_name\", \"(s3_.+)\")",
+          "hide": false,
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{span_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true
+      }
+    }
+  ]
+}

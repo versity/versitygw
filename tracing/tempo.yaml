@@ -1,0 +1,64 @@
+# Grafana Tempo configuration — single-binary / local-storage mode.
+# Suitable for local development; not for production use.
+
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+  processor:
+    span_metrics:
+      dimensions:
+        - http.response.status_code
+      histogram_buckets:
+        - 0.000005  # 5µs
+        - 0.00001   # 10µs
+        - 0.000025  # 25µs
+        - 0.00005   # 50µs
+        - 0.0001    # 0.1ms
+        - 0.0002
+        - 0.0005
+        - 0.001
+        - 0.002
+        - 0.005
+        - 0.01
+        - 0.025
+        - 0.05
+        - 0.1
+        - 0.25
+        - 0.5
+        - 1.0
+        - 2.5
+        - 5.0
+        - 10.0
+
+overrides:
+  metrics_generator_processors: [service-graphs, span-metrics]

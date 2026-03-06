@@ -22,6 +22,8 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool) fiber.Handler {
@@ -35,6 +37,12 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 		if !utils.IsPresignedURLAuth(ctx) {
 			return nil
 		}
+
+		parentCtx := ctx.UserContext()
+		sctx, span := otel.Tracer(tracerName).Start(parentCtx, "middleware.VerifyPresignedV4Signature")
+		defer span.End()
+		ctx.SetUserContext(sctx)
+		defer ctx.SetUserContext(parentCtx)
 
 		if ctx.Request().URI().QueryArgs().Has("X-Amz-Security-Token") {
 			// OIDC Authorization with X-Amz-Security-Token is not supported
@@ -52,11 +60,21 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
+		_, iamSpan := otel.Tracer(tracerName).Start(sctx, "iam.GetUserAccount")
 		account, err := acct.getAccount(authData.Access)
+		if err != nil {
+			iamSpan.RecordError(err)
+			iamSpan.SetStatus(codes.Error, "")
+		}
+		iamSpan.End()
+
 		if err == auth.ErrNoSuchUser {
+			span.SetStatus(codes.Error, "")
 			return s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)
 		}
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			return err
 		}
 		utils.ContextKeyAccount.Set(ctx, account)
@@ -90,6 +108,8 @@ func VerifyPresignedV4Signature(root RootUserConfig, iam auth.IAMService, region
 
 		err = utils.CheckPresignedSignature(ctx, authData, account.Secret, streamBody)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			return err
 		}
 

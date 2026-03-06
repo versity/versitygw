@@ -21,6 +21,9 @@ import (
 	"github.com/versity/versitygw/backend"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // ParseAcl retreives the bucket acl and stores in the context locals
@@ -28,8 +31,18 @@ import (
 func ParseAcl(be backend.Backend) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
 		bucket := ctx.Params("bucket")
+
+		parentCtx := ctx.UserContext()
+		sctx, span := otel.Tracer(tracerName).Start(parentCtx, "middleware.ParseAcl")
+		span.SetAttributes(attribute.String("s3.bucket", bucket))
+		defer span.End()
+		ctx.SetUserContext(sctx)
+		defer ctx.SetUserContext(parentCtx)
+
 		data, err := be.GetBucketAcl(ctx.Context(), &s3.GetBucketAclInput{Bucket: &bucket})
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			return err
 		}
 

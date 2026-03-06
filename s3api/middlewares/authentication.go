@@ -25,6 +25,9 @@ import (
 	"github.com/versity/versitygw/auth"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const (
@@ -49,6 +52,12 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 		if utils.ContextKeyAuthenticated.IsSet(ctx) {
 			return nil
 		}
+
+		parentCtx := ctx.UserContext()
+		sctx, span := otel.Tracer(tracerName).Start(parentCtx, "middleware.VerifyV4Signature")
+		defer span.End()
+		ctx.SetUserContext(sctx)
+		defer ctx.SetUserContext(parentCtx)
 
 		// Check X-Amz-Date header
 		date := ctx.Get("X-Amz-Date")
@@ -84,13 +93,25 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		utils.ContextKeyIsRoot.Set(ctx, authData.Access == root.Access)
 
+		_, iamSpan := otel.Tracer(tracerName).Start(sctx, "iam.GetUserAccount")
 		account, err := acct.getAccount(authData.Access)
+		if err != nil {
+			iamSpan.RecordError(err)
+			iamSpan.SetStatus(codes.Error, "")
+		}
+		iamSpan.End()
+
 		if err == auth.ErrNoSuchUser {
+			span.SetStatus(codes.Error, "")
 			return s3err.GetAPIError(s3err.ErrInvalidAccessKeyID)
 		}
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			return err
 		}
+
+		span.SetAttributes(attribute.Bool("auth.is_root", authData.Access == root.Access))
 
 		if date[:8] != authData.Date {
 			return s3err.MalformedAuth.DateMismatch()
@@ -170,6 +191,8 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 
 		err = utils.CheckValidSignature(ctx, authData, account.Secret, hashPayload, tdate, contentLength, false)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			return err
 		}
 

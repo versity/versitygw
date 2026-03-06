@@ -30,6 +30,8 @@ import (
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type S3ApiController struct {
@@ -129,6 +131,10 @@ func ProcessHandlers(controller Controller, s3action string, svc *Services, hand
 			return ctx.Next()
 		}
 
+		// Store the resolved S3 action name so the tracing middleware can
+		// attach it to the span after routing has completed.
+		utils.ContextKeyS3Action.Set(ctx, s3action)
+
 		for _, handler := range handlers {
 			err := handler(ctx)
 			if err != nil {
@@ -179,10 +185,21 @@ func WrapMiddleware(handler fiber.Handler, logger s3log.AuditLogger, mm metrics.
 	}
 }
 
+const controllerTracerName = "github.com/versity/versitygw"
+
 // ProcessController executes the given s3api controller and handles the metrics
 // access logs and s3 events
 func ProcessController(ctx *fiber.Ctx, controller Controller, s3action string, svc *Services) error {
+	parentCtx := ctx.UserContext()
+	backendCtx, backendSpan := otel.Tracer(controllerTracerName).Start(parentCtx, "backend."+s3action)
+	ctx.SetUserContext(backendCtx)
 	response, err := controller(ctx)
+	if err != nil {
+		backendSpan.RecordError(err)
+		backendSpan.SetStatus(codes.Error, "")
+	}
+	backendSpan.End()
+	ctx.SetUserContext(parentCtx)
 
 	// Set the response headers
 	SetResponseHeaders(ctx, response.Headers)

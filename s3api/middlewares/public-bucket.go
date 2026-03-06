@@ -26,6 +26,9 @@ import (
 	"github.com/versity/versitygw/metrics"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // AuthorizePublicBucketAccess checks if the bucket grants public
@@ -36,6 +39,13 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		if utils.IsPresignedURLAuth(ctx) || ctx.Get("Authorization") != "" {
 			return nil
 		}
+
+		parentCtx := ctx.UserContext()
+		sctx, span := otel.Tracer(tracerName).Start(parentCtx, "middleware.AuthorizePublicBucketAccess")
+		span.SetAttributes(attribute.String("s3.action", s3action))
+		defer span.End()
+		ctx.SetUserContext(sctx)
+		defer ctx.SetUserContext(parentCtx)
 
 		switch s3action {
 		case metrics.ActionListAllMyBuckets:
@@ -57,8 +67,14 @@ func AuthorizePublicBucketAccess(be backend.Backend, s3action string, policyPerm
 		}
 
 		bucket, object := parsePath(ctx.Path())
+		span.SetAttributes(
+			attribute.String("s3.bucket", bucket),
+			attribute.String("s3.object", object),
+		)
 		err := auth.VerifyPublicAccess(ctx.Context(), be, policyPermission, permission, bucket, object)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "")
 			if s3action == metrics.ActionHeadBucket {
 				// add the bucket region header for HeadBucket
 				// if anonymous access is denied

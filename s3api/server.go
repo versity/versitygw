@@ -51,6 +51,7 @@ type S3ApiServer struct {
 	health         string
 	maxConnections int
 	maxRequests    int
+	tracingEnabled bool
 }
 
 func New(
@@ -116,6 +117,12 @@ func New(
 		})
 	}
 
+	// initialize OpenTelemetry tracing middleware (must be early so all
+	// subsequent handlers execute within the request span).
+	if server.tracingEnabled {
+		app.Use(middlewares.OtelTracing())
+	}
+
 	// initialize total requests cap limiter middleware
 	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
 
@@ -142,6 +149,13 @@ type Option func(*S3ApiServer)
 // WithTLS sets TLS Credentials
 func WithTLS(cs *utils.CertStorage) Option {
 	return func(s *S3ApiServer) { s.CertStorage = cs }
+}
+
+// WithTracing enables the OpenTelemetry request-tracing middleware.  A tracer
+// provider must already be configured globally (e.g. via tracing.InitTracer)
+// before the first request arrives.
+func WithTracing() Option {
+	return func(s *S3ApiServer) { s.tracingEnabled = true }
 }
 
 // WithAdminServer runs admin endpoints with the gateway in the same network

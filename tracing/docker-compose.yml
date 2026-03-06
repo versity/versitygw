@@ -1,0 +1,52 @@
+# Minimal Grafana Tempo + Grafana stack for local trace viewing.
+#
+# Usage:
+#   docker compose -f tracing/docker-compose.yml up -d
+#
+# Then start versitygw with:
+#   --otel-endpoint http://localhost:4318
+#
+# Open Grafana at http://localhost:3000  (admin / admin)
+# Go to Explore → select "Tempo" datasource → run a TraceQL query or browse the
+# "Search" tab to find traces by service name, span attributes, etc.
+
+services:
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP  ← versitygw sends here
+      - "3200:3200"   # Tempo query API (used by Grafana datasource)
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+    volumes:
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+      - prometheus
+
+volumes:
+  tempo-data:
+  prometheus-data:

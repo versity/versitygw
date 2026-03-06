@@ -23,6 +23,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/versity/versitygw/s3api/utils"
 	"github.com/versity/versitygw/s3err"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // VerifyChecksums parses, validates, and calculates the
@@ -33,6 +35,12 @@ import (
 // the x-amz-checksum-* headers are explicitly processed by the backend.
 func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fiber.Handler {
 	return func(ctx *fiber.Ctx) error {
+		parentCtx := ctx.UserContext()
+		sctx, span := otel.Tracer(tracerName).Start(parentCtx, "middleware.VerifyChecksums")
+		defer span.End()
+		ctx.SetUserContext(sctx)
+		defer ctx.SetUserContext(parentCtx)
+
 		md5sum := ctx.Get("Content-Md5")
 
 		if streamBody {
@@ -103,6 +111,8 @@ func VerifyChecksums(streamBody bool, requireBody bool, requireChecksum bool) fi
 		if rdr != nil {
 			_, err = io.Copy(io.Discard, rdr)
 			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "")
 				return err
 			}
 		}
