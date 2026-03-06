@@ -4,40 +4,48 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "chart/Chart.yaml"
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
       packages: write
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v6
 
-      - name: Configure Git
+      - name: Check if chart should be updated
+        id: check
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          version=$(yq '.version' chart/Chart.yaml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if helm show chart oci://ghcr.io/versity/versitygw/charts/versitygw --version "$version" 2>/dev/null; then
+            echo "No chart update detected."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Chart update detected. Updating to $version."
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      # https://github.com/marketplace/actions/helm-oci-charts-releaser
-      - name: Run chart-releaser
-        id: releaser
-        uses: bitdeps/helm-oci-charts-releaser@v0.1.5
-        with:
-          oci_registry: ghcr.io/versity/versitygw/charts
-          oci_username: versity
-          oci_password: ${{ secrets.GITHUB_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          charts_dir: "."
+      - name: Package chart
+        if: steps.check.outputs.new == 'true'
+        run: helm package chart/
+
+      - name: Login to GHCR
+        if: steps.check.outputs.new == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u versity --password-stdin
+
+      - name: Push chart
+        if: steps.check.outputs.new == 'true'
+        run: helm push versitygw-${{ steps.check.outputs.version }}.tgz oci://ghcr.io/versity/versitygw/charts
 
       - name: Install cosign
-        if: steps.releaser.outputs.changed_charts != ''
-        uses: sigstore/cosign-installer@v4.0.0
+        if: steps.check.outputs.new == 'true'
+        uses: sigstore/cosign-installer@v4
 
       - name: Sign chart with cosign
-        if: steps.releaser.outputs.changed_charts != ''
-        run: cosign sign --yes ghcr.io/versity/versitygw/charts/versitygw:${{ steps.releaser.outputs.chart_version }}
+        if: steps.check.outputs.new == 'true'
+        run: cosign sign --yes ghcr.io/versity/versitygw/charts/versitygw:${{ steps.check.outputs.version }}
