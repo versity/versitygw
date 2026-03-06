@@ -8,8 +8,8 @@ AssertPathExists=/etc/versitygw.d/%i.conf
 
 [Service]
 WorkingDirectory=/root
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=versitygw-%i
 
 User=root
