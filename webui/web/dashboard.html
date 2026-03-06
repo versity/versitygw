@@ -21,29 +21,10 @@ under the License.
   <title>VersityGW Admin - Dashboard</title>
   <script src="assets/js/crypto-js.min.js"></script>
   <script src="assets/css/tailwind.js"></script>
+  <script src="assets/css/tailwind-config.js"></script>
   <link rel="stylesheet" href="assets/css/fonts.css">
+  <link rel="stylesheet" href="assets/css/theme.css">
   <link rel="icon" type="image/png" href="assets/images/favicon.png">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            primary: { DEFAULT: '#002A7A', 50: '#E6EBF4', 500: '#002A7A', 600: '#002468' },
-            accent: { DEFAULT: '#0076CD', 50: '#E6F3FA', 500: '#0076CD', 600: '#0065AF' },
-            charcoal: { DEFAULT: '#191B2A', 300: '#757884', 400: '#565968' },
-            surface: { DEFAULT: '#F3F8FC' }
-          },
-          fontFamily: { sans: ['Roboto', 'system-ui', 'sans-serif'] },
-        }
-      }
-    }
-  </script>
-  <style>
-    body { font-family: 'Roboto', system-ui, sans-serif; }
-    .nav-item { transition: all 0.15s ease; }
-    .nav-item:hover { background: rgba(255,255,255,0.1); }
-    .nav-item.active { background: rgba(0, 118, 205, 0.2); border-left: 4px solid #0076CD; }
-  </style>
 </head>
 <body class="min-h-screen bg-surface">
   <script src="js/api.js"></script>

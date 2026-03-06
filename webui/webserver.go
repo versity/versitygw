@@ -15,9 +15,11 @@
 package webui
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
@@ -96,32 +98,48 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes configures all routes
 func (s *Server) setupRoutes() {
-	// API endpoint to get configured gateways
-	s.app.Get("/api/gateways", s.handleGetGateways)
+	// Serve index.html
+	s.app.Get("/", s.handleIndexHTML)
+	s.app.Get("/index.html", s.handleIndexHTML)
 
 	// Serve embedded static files from web/
 	s.app.Use("/", filesystem.New(filesystem.Config{
-		Root:         http.FS(webFS),
-		PathPrefix:   "web",
-		Index:        "index.html",
-		NotFoundFile: "index.html", // SPA fallback
-		Browse:       false,
+		Root:       http.FS(webFS),
+		PathPrefix: "web",
+		Browse:     false,
 	}))
 }
 
-// handleGetGateways returns the configured gateway URLs (both S3 and Admin)
-func (s *Server) handleGetGateways(c *fiber.Ctx) error {
+// handleIndexHTML serves index.html with server config injected as an inline script.
+func (s *Server) handleIndexHTML(c *fiber.Ctx) error {
+	data, err := webFiles.ReadFile("web/index.html")
+	if err != nil {
+		return fiber.ErrInternalServerError
+	}
+
 	adminGateways := s.config.AdminGateways
 	if len(adminGateways) == 0 {
-		// Fallback to S3 gateways if admin gateways not configured
 		adminGateways = s.config.Gateways
 	}
 
-	return c.JSON(fiber.Map{
+	configJSON, err := json.Marshal(map[string]interface{}{
 		"gateways":      s.config.Gateways,
 		"adminGateways": adminGateways,
 		"defaultRegion": s.config.Region,
 	})
+	if err != nil {
+		return fiber.ErrInternalServerError
+	}
+
+	html := strings.Replace(
+		string(data),
+		"</head>",
+		"<script>window.__VGWCONFIG__ = "+string(configJSON)+";</script></head>",
+		1,
+	)
+
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(html)
 }
 
 // ServeMultiPort creates listeners for multiple address specifications and serves
