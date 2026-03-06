@@ -100,6 +100,7 @@ var (
 	webuiNoTLS                             bool
 	webuiGateways                          []string
 	webuiAdminGateways                     []string
+	webuiPathPrefix                        string
 	disableACLs                            bool
 )
 
@@ -156,6 +157,7 @@ documentation can be found in the GitHub wiki.`,
 			admPorts = ctx.StringSlice("admin-port")
 			webuiGateways = ctx.StringSlice("webui-gateways")
 			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
+			webuiPathPrefix = ctx.String("webui-path-prefix")
 			return nil
 		},
 		Action: func(ctx *cli.Context) error {
@@ -218,6 +220,12 @@ func initFlags() []cli.Flag {
 			Name:    "webui-admin-gateways",
 			Usage:   "override auto-detected admin gateway URLs for WebUI (e.g. 'http://localhost:7080', 'https://admin.example.com'; can be specified multiple times)",
 			EnvVars: []string{"VGW_WEBUI_ADMIN_GATEWAYS"},
+		},
+		&cli.StringFlag{
+			Name:        "webui-path-prefix",
+			Usage:       "mount the WebUI under a path prefix (e.g. '/ui'); must start with '/' and must not end with '/'",
+			EnvVars:     []string{"VGW_WEBUI_PATH_PREFIX"},
+			Destination: &webuiPathPrefix,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -1095,6 +1103,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if quiet {
 			webOpts = append(webOpts, webui.WithQuiet())
 		}
+		if webuiPathPrefix != "" {
+			webOpts = append(webOpts, webui.WithPathPrefix(webuiPathPrefix))
+		}
 
 		webSrv = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
@@ -1104,7 +1115,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	if !quiet {
-		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled)
+		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix)
 	}
 
 	servers := 1
@@ -1230,7 +1241,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool) {
+func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string) {
 	if len(ports) == 0 {
 		fmt.Fprintf(os.Stderr, "No ports specified\n")
 		return
@@ -1408,7 +1419,7 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 				if webuiSsl {
 					url = fmt.Sprintf("https://%s", hostPort)
 				}
-				lines = append(lines, leftText("  "+url))
+				lines = append(lines, leftText("  "+url+webuiPathPrefix))
 			}
 		}
 	}

@@ -41,6 +41,7 @@ type Server struct {
 	app         *fiber.App
 	CertStorage *utils.CertStorage
 	config      *ServerConfig
+	pathPrefix  string
 	quiet       bool
 }
 
@@ -55,6 +56,12 @@ func WithQuiet() Option {
 // WithTLS sets TLS Credentials
 func WithTLS(cs *utils.CertStorage) Option {
 	return func(s *Server) { s.CertStorage = cs }
+}
+
+// WithPathPrefix mounts the entire web UI under the given path prefix
+// (e.g. "/ui"). The prefix must start with "/" and must not end with "/".
+func WithPathPrefix(prefix string) Option {
+	return func(s *Server) { s.pathPrefix = prefix }
 }
 
 // NewServer creates a new GUI server instance
@@ -98,12 +105,14 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes configures all routes
 func (s *Server) setupRoutes() {
-	// Serve index.html
-	s.app.Get("/", s.handleIndexHTML)
-	s.app.Get("/index.html", s.handleIndexHTML)
+	prefix := s.pathPrefix // e.g. "" or "/ui"
+
+	// Serve index.html with server-side config injection
+	s.app.Get(prefix+"/", s.handleIndexHTML)
+	s.app.Get(prefix+"/index.html", s.handleIndexHTML)
 
 	// Serve embedded static files from web/
-	s.app.Use("/", filesystem.New(filesystem.Config{
+	s.app.Use(prefix+"/", filesystem.New(filesystem.Config{
 		Root:       http.FS(webFS),
 		PathPrefix: "web",
 		Browse:     false,
@@ -131,8 +140,10 @@ func (s *Server) handleIndexHTML(c *fiber.Ctx) error {
 		return fiber.ErrInternalServerError
 	}
 
-	html := strings.Replace(
-		string(data),
+	basePath := s.pathPrefix + "/"
+	html := strings.Replace(string(data), "{{.BasePath}}", basePath, 1)
+	html = strings.Replace(
+		html,
 		"</head>",
 		"<script>window.__VGWCONFIG__ = "+string(configJSON)+";</script></head>",
 		1,
