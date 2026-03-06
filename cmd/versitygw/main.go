@@ -100,6 +100,7 @@ var (
 	webuiNoTLS                             bool
 	webuiGateways                          []string
 	webuiAdminGateways                     []string
+	webuiPathPrefix                        string
 	disableACLs                            bool
 )
 
@@ -156,6 +157,7 @@ documentation can be found in the GitHub wiki.`,
 			admPorts = ctx.StringSlice("admin-port")
 			webuiGateways = ctx.StringSlice("webui-gateways")
 			webuiAdminGateways = ctx.StringSlice("webui-admin-gateways")
+			webuiPathPrefix = ctx.String("webui-path-prefix")
 
 			// Resolve relative UNIX socket paths to absolute before any backend
 			// (e.g. posix) can change the working directory via os.Chdir.
@@ -231,6 +233,12 @@ func initFlags() []cli.Flag {
 			Name:    "webui-admin-gateways",
 			Usage:   "override auto-detected admin gateway URLs for WebUI (e.g. 'http://localhost:7080', 'https://admin.example.com'; can be specified multiple times)",
 			EnvVars: []string{"VGW_WEBUI_ADMIN_GATEWAYS"},
+		},
+		&cli.StringFlag{
+			Name:        "webui-path-prefix",
+			Usage:       "mount the WebUI under a path prefix (e.g. '/ui'); must be single segment path that starts with '/'",
+			EnvVars:     []string{"VGW_WEBUI_PATH_PREFIX"},
+			Destination: &webuiPathPrefix,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -748,6 +756,11 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("root user access and secret key must be provided")
 	}
 
+	err := validateWebUIPathPrefix(webuiPathPrefix)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	if maxConnections < 1 {
 		log.Fatal("max-connections must be positive")
 	}
@@ -1108,6 +1121,9 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		if quiet {
 			webOpts = append(webOpts, webui.WithQuiet())
 		}
+		if webuiPathPrefix != "" {
+			webOpts = append(webOpts, webui.WithPathPrefix(webuiPathPrefix))
+		}
 
 		webSrv = webui.NewServer(&webui.ServerConfig{
 			Gateways:      gateways,
@@ -1117,7 +1133,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	if !quiet {
-		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled)
+		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix)
 	}
 
 	servers := 1
@@ -1243,7 +1259,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool) {
+func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string) {
 	if len(ports) == 0 {
 		fmt.Fprintf(os.Stderr, "No ports specified\n")
 		return
@@ -1459,7 +1475,7 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 				if webuiSsl {
 					url = fmt.Sprintf("https://%s", hostPort)
 				}
-				lines = append(lines, leftText("  "+url))
+				lines = append(lines, leftText("  "+url+webuiPathPrefix))
 			}
 		}
 	}
@@ -1626,6 +1642,40 @@ func validateGatewayURLs(urls []string, urlType string) ([]string, error) {
 	}
 
 	return validURLs, nil
+}
+
+// validateWebUIPathPrefix validates --webui-path-prefix.
+// Accepted format is a single path segment like "/ui".
+func validateWebUIPathPrefix(prefix string) error {
+	if prefix == "" {
+		return nil
+	}
+
+	if strings.TrimSpace(prefix) != prefix {
+		return fmt.Errorf("invalid --webui-path-prefix %q: must not contain leading or trailing whitespace", prefix)
+	}
+
+	if !strings.HasPrefix(prefix, "/") {
+		return fmt.Errorf("invalid --webui-path-prefix %q: must start with '/' (example: '/ui')", prefix)
+	}
+
+	if strings.HasSuffix(prefix, "/") {
+		return fmt.Errorf("invalid --webui-path-prefix %q: must not end with '/'", prefix)
+	}
+
+	if strings.Count(prefix, "/") > 1 {
+		return fmt.Errorf("invalid --webui-path-prefix %q: only a single path segment is allowed (example: '/ui')", prefix)
+	}
+
+	if strings.ContainsAny(prefix, "?#") {
+		return fmt.Errorf("invalid --webui-path-prefix %q: query strings and fragments are not allowed", prefix)
+	}
+
+	if strings.Contains(prefix, "\\") {
+		return fmt.Errorf("invalid --webui-path-prefix %q: backslashes are not allowed", prefix)
+	}
+
+	return nil
 }
 
 // sortGatewayURLs sorts a list of URLs so that localhost and 127.0.0.1 URLs appear last
