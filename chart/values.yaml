@@ -84,6 +84,28 @@ ingress:
   #         - s3.example.com
   tls: []
 
+# --- HTTPRoute ---
+# Expose the S3 API via a Gateway API HTTPRoute resource.
+# Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
+httpRoute:
+  enabled: false
+  annotations: {}
+  # The parent Gateway(s) this route attaches to.
+  parentRefs:
+    - name: my-gateway
+      # namespace: gateway-system
+      # sectionName: https
+  # Hostnames for the route.
+  hostnames:
+    - s3.example.com
+  # Rules that define how requests are matched and routed to the service.
+  # See https://gateway-api.sigs.k8s.io/api-types/httproute/#rules
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+
 # --- Root credentials ---
 # The root S3 access credentials. These are required for the gateway to start.
 # IMPORTANT: For production use, set auth.existingSecret instead of storing
@@ -141,6 +163,27 @@ admin:
   maxConnections: 250000
   # Maximum in-flight requests for the admin server.
   maxRequests: 100000
+  # --- HTTPRoute ---
+  # Expose the Admin API via a Gateway API HTTPRoute resource.
+  # Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
+  httpRoute:
+    enabled: false
+    annotations: {}
+    # The parent Gateway(s) this route attaches to.
+    parentRefs:
+      - name: my-gateway
+        # namespace: gateway-system
+        # sectionName: https
+    # Hostnames for the route.
+    hostnames:
+      - s3-admin.example.com
+  # Rules that define how requests are matched and routed to the service.
+  # See https://gateway-api.sigs.k8s.io/api-types/httproute/#rules
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
 
 # --- WebUI ---
 webui:
@@ -160,6 +203,27 @@ webui:
   # Kubernetes because it uses the internal pod IP addresses.
   adminGateways: []
   # - s3-admin.example.com
+  # --- HTTPRoute (Gateway API) ---
+  # Expose the WebUI via a Gateway API HTTPRoute resource.
+  # Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
+  httpRoute:
+    enabled: false
+    annotations: {}
+    # The parent Gateway(s) this route attaches to.
+    parentRefs:
+      - name: my-gateway
+        # namespace: gateway-system
+        # sectionName: https
+    # Hostnames for the route.
+    hostnames:
+      - versitygw.example.com
+  # Rules that define how requests are matched and routed to the service.
+  # See https://gateway-api.sigs.k8s.io/api-types/httproute/#rules
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
 
 # --- IAM (Identity and Access Management) ---
 iam:

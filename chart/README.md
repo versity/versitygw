@@ -4,7 +4,7 @@ Versity is an S3-compatible storage gateway that proxies S3 API requests to a va
 
 ## Overview
 
-[versitygw](https://github.com/versity/versitygw) is an S3-compatible gateway that fronts POSIX filesystems, ScoutFS, S3, Azure Blob Storage, or custom plugin backends. This chart deploys versitygw on Kubernetes as a Deployment and Service, with optional support for TLS termination, Ingress, certificate provisioning (via `cert-manager` CRDs), IAM, an Admin API, a browser-based WebUI, persistent storage, and NetworkPolicy.
+[versitygw](https://github.com/versity/versitygw) is an S3-compatible gateway that fronts POSIX filesystems, ScoutFS, S3, Azure Blob Storage, or custom plugin backends. This chart deploys versitygw on Kubernetes as a Deployment and Service, with optional support for TLS termination, Ingress, HTTPRoutes, certificate provisioning (via `cert-manager` CRDs), IAM, an Admin API, a browser-based WebUI, persistent storage, and NetworkPolicy.
 
 ## Prerequisites
 
@@ -45,6 +45,7 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | **TLS** | `tls.enabled=true` — serve HTTPS; supply a TLS Secret via `certificate.secretName` or let cert-manager provision one |
 | **cert-manager** | `certificate.create=true`, `certificate.issuerRef`, `certificate.dnsNames` |
 | **Ingress** | `ingress.enabled=true`, `ingress.className`, `ingress.hosts`, `ingress.tls` |
+| **HTTPRoute** | `httpRoute.enabled=true` — Gateway API successor to Ingress for S3 API; also `admin.httpRoute.enabled=true` and `webui.httpRoute.enabled=true` to expose the admin API and/or WebUI |
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
 | **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
