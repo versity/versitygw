@@ -16,11 +16,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/urfave/cli/v2"
+	"github.com/versity/versitygw/backend/meta"
 	"github.com/versity/versitygw/s3event"
 )
 
@@ -41,6 +44,12 @@ func utilsCommand() *cli.Command {
 						Aliases: []string{"p"},
 					},
 				},
+			},
+			{
+				Name:    "convert-xattr-metadata",
+				Aliases: []string{"cxm"},
+				Usage:   "Convert legacy X-Amz-Meta.* xattrs into user.metadata JSON and remove legacy keys.",
+				Action:  convertXattrMetadata,
 			},
 		},
 	}
@@ -86,6 +95,132 @@ func generateEventFiltersConfig(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("write config file: %w", err)
 	}
+
+	return nil
+}
+
+const (
+	newMetadataAttr = "metadata"   // stored as user.metadata
+	oldMetadataHdr  = "X-Amz-Meta" // legacy prefix
+)
+
+func convertXattrMetadata(ctx *cli.Context) error {
+	root := strings.TrimSpace(ctx.Args().First())
+	if root == "" {
+		return cli.Exit("missing directory: should be provided as command argument", 2)
+	}
+
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve directory: %w", err)
+	}
+
+	info, err := os.Stat(absRoot)
+	if err != nil {
+		return fmt.Errorf("stat directory: %w", err)
+	}
+	if !info.IsDir() {
+		return cli.Exit(fmt.Sprintf("not a directory: %s", absRoot), 2)
+	}
+
+	xm := meta.XattrMeta{}
+	err = xm.Test(absRoot)
+	if err != nil {
+		return err
+	}
+
+	var (
+		scanned   int
+		converted int
+		skipped   int
+		errCount  int
+	)
+
+	walkErr := filepath.WalkDir(absRoot, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			errCount++
+			// keep going
+			return nil
+		}
+
+		rel, err := filepath.Rel(absRoot, path)
+		if err != nil {
+			errCount++
+			return nil
+		}
+		if rel == "." {
+			// skip root itself
+			return nil
+		}
+
+		attrs, err := xm.ListAttributes(absRoot, rel)
+		if err != nil {
+			errCount++
+			return nil
+		}
+		if len(attrs) == 0 {
+			// not an s3 object, do not track as skipped
+			return nil
+		}
+
+		scanned++
+
+		// Collect legacy metadata attributes.
+		oldAttrs := make([]string, 0)
+		for _, a := range attrs {
+			if strings.HasPrefix(a, oldMetadataHdr+".") {
+				oldAttrs = append(oldAttrs, a)
+			}
+		}
+		if len(oldAttrs) == 0 {
+			skipped++
+			return nil
+		}
+
+		// Build key/value map from legacy attrs.
+		md := make(map[string]string, len(oldAttrs))
+		for _, a := range oldAttrs {
+			b, err := xm.RetrieveAttribute(nil, absRoot, rel, a)
+			if err != nil {
+				// If we can't read one key, don't convert this entry.
+				errCount++
+				return nil
+			}
+			key := strings.TrimPrefix(a, oldMetadataHdr+".")
+			md[key] = string(b)
+		}
+
+		// Marshal to JSON and store as user.metadata.
+		j, err := json.Marshal(md)
+		if err != nil {
+			errCount++
+			return nil
+		}
+
+		if err := xm.StoreAttribute(nil, absRoot, rel, newMetadataAttr, j); err != nil {
+			errCount++
+			return nil
+		}
+
+		// Cleanup old metadata only after successful write of user.metadata.
+		for _, a := range oldAttrs {
+			if err := xm.DeleteAttribute(absRoot, rel, a); err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+				// Count, but continue cleanup attempts.
+				errCount++
+			}
+		}
+
+		converted++
+		return nil
+	})
+	if walkErr != nil {
+		return fmt.Errorf("walk directory: %w", walkErr)
+	}
+
+	fmt.Printf(
+		"xattr metadata conversion is finished:\n  directory: %s\n  scanned: %d\n  converted: %d\n  skipped: %d\n  errors: %d\n",
+		absRoot, scanned, converted, skipped, errCount,
+	)
 
 	return nil
 }

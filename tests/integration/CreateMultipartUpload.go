@@ -43,8 +43,9 @@ func CreateMultipartUpload_with_metadata(s *S3Conf) error {
 	return actionHandler(s, testName, func(s3client *s3.Client, bucket string) error {
 		obj := "my-obj"
 		meta := map[string]string{
-			"prop1": "val1",
-			"prop2": "val2",
+			"prop1":                  "val1",
+			"prop2":                  "val2",
+			strings.Repeat("b", 300): strings.Repeat("c", 500),
 		}
 		cType, cEnc, cDesp, cLang := "application/text", "testenc", "testdesp", "sp"
 		cacheControl, expires := "no-cache", time.Now().Add(time.Hour*5)

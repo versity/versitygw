@@ -101,7 +101,8 @@ const (
 	MetaTmpMultipartDir = MetaTmpDir + "/multipart"
 	onameAttr           = "objname"
 	tagHdr              = "X-Amz-Tagging"
-	metaHdr             = "X-Amz-Meta"
+	oldMetaHdr          = "X-Amz-Meta"
+	metadataHdr         = "metadata"
 	contentTypeHdr      = "content-type"
 	contentEncHdr       = "content-encoding"
 	contentLangHdr      = "content-language"
@@ -1471,18 +1472,6 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set name attr for upload: %w", err)
 	}
 
-	// set user metadata
-	for k, v := range mpu.Metadata {
-		err := p.meta.StoreAttribute(nil, bucket, filepath.Join(objdir, uploadID),
-			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-		if err != nil {
-			// cleanup object if returning error
-			os.RemoveAll(filepath.Join(tmppath, uploadID))
-			os.Remove(tmppath)
-			return s3response.InitiateMultipartUploadResult{}, fmt.Errorf("set user attr %q: %w", k, err)
-		}
-	}
-
 	// set object tagging
 	if tags != nil {
 		err := p.PutObjectTagging(withCtxNoSlot(ctx), bucket, filepath.Join(objdir, uploadID), "", tags)
@@ -1494,14 +1483,16 @@ func (p *Posix) CreateMultipartUpload(ctx context.Context, mpu s3response.Create
 		}
 	}
 
-	err = p.storeObjectMetadata(nil, bucket, filepath.Join(objdir, uploadID), objectMetadata{
-		ContentType:        mpu.ContentType,
-		ContentEncoding:    mpu.ContentEncoding,
-		ContentDisposition: mpu.ContentDisposition,
-		ContentLanguage:    mpu.ContentLanguage,
-		CacheControl:       mpu.CacheControl,
-		Expires:            mpu.Expires,
-	})
+	err = p.storeObjectMetaProperties(nil, bucket, filepath.Join(objdir, uploadID),
+		metaProperties{
+			ContentType:        mpu.ContentType,
+			ContentEncoding:    mpu.ContentEncoding,
+			ContentDisposition: mpu.ContentDisposition,
+			ContentLanguage:    mpu.ContentLanguage,
+			CacheControl:       mpu.CacheControl,
+			Expires:            mpu.Expires,
+			Metadata:           mpu.Metadata,
+		})
 	if err != nil {
 		// cleanup object if returning error
 		os.RemoveAll(filepath.Join(tmppath, uploadID))
@@ -1840,9 +1831,8 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 
 	upiddir := filepath.Join(objdir, uploadID)
 
-	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(nil, bucket, upiddir, nil, userMetaData)
-	err = p.storeObjectMetadata(f.File(), bucket, object, objMeta)
+	objMeta := p.loadObjectMetaProperties(nil, bucket, upiddir, nil)
+	err = p.storeObjectMetaProperties(f.File(), bucket, object, objMeta)
 	if err != nil {
 		return res, "", err
 	}
@@ -1881,13 +1871,6 @@ func (p *Posix) CompleteMultipartUploadWithCopy(ctx context.Context, input *s3.C
 		err := p.meta.StoreAttribute(f.File(), bucket, object, versionIdKey, []byte(versionID))
 		if err != nil {
 			return res, "", fmt.Errorf("set versionId attr: %w", err)
-		}
-	}
-
-	for k, v := range userMetaData {
-		err = p.meta.StoreAttribute(f.File(), bucket, object, fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-		if err != nil {
-			return res, "", fmt.Errorf("set user attr %q: %w", k, err)
 		}
 	}
 
@@ -2109,41 +2092,74 @@ func (p *Posix) checkUploadIDExists(bucket, object, uploadID string) ([32]byte, 
 	return sum, nil
 }
 
-type objectMetadata struct {
+type metaProperties struct {
 	ContentType        *string
 	ContentEncoding    *string
 	ContentDisposition *string
 	ContentLanguage    *string
 	CacheControl       *string
 	Expires            *string
+	Metadata           map[string]string
 }
 
-// fill out the user metadata map with the metadata for the object
-// and return object meta properties as `ObjectMetadata`
-func (p *Posix) loadObjectMetaData(f *os.File, bucket, object string, fi *os.FileInfo, m map[string]string) objectMetadata {
-	ents, err := p.meta.ListAttributes(bucket, object)
-	if err != nil || len(ents) == 0 {
-		return objectMetadata{}
-	}
+// loadObjectMetadata loads the given object metadata, if it fails to load
+// it falls back to the old metadata key -> xattr key mapping mechanism
+// and converts the old metadata storing schema with the new one
+func (p *Posix) loadObjectMetadata(f *os.File, bucket, object string) map[string]string {
+	m, err := p.meta.RetrieveAttribute(f, bucket, object, metadataHdr)
+	if err != nil {
+		if errors.Is(err, meta.ErrNoSuchKey) {
+			// fallback to the deprecated mechanism
+			ents, err := p.meta.ListAttributes(bucket, object)
+			if err != nil || len(ents) == 0 {
+				return nil
+			}
+			result := map[string]string{}
 
-	if m != nil {
-		for _, e := range ents {
-			if !isValidMeta(e) {
-				continue
+			legacyAttrs := make([]string, 0, len(ents))
+			for _, e := range ents {
+				if !isValidMeta(e) {
+					continue
+				}
+				b, err := p.meta.RetrieveAttribute(f, bucket, object, e)
+				if err != nil {
+					continue
+				}
+				if b == nil {
+					b = []byte{}
+				}
+
+				legacyAttrs = append(legacyAttrs, e)
+				result[strings.TrimPrefix(e, fmt.Sprintf("%v.", oldMetaHdr))] = string(b)
 			}
-			b, err := p.meta.RetrieveAttribute(f, bucket, object, e)
-			if err != nil {
-				continue
+
+			if len(result) != 0 {
+				err = p.storeObjectMetadata(f, bucket, object, result)
+				if err == nil {
+					// if it succeded to store the metadata as a json
+					// object in user.metadata, cleanup the legacy X-Amz-Meta.
+					// attributes
+					for _, attr := range legacyAttrs {
+						_ = p.meta.DeleteAttribute(bucket, object, attr)
+					}
+				}
 			}
-			if b == nil {
-				m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = ""
-				continue
-			}
-			m[strings.TrimPrefix(e, fmt.Sprintf("%v.", metaHdr))] = string(b)
+
+			return result
 		}
+
+		return nil
 	}
 
-	var result objectMetadata
+	var metadata map[string]string
+	_ = json.Unmarshal(m, &metadata)
+	return metadata
+}
+
+// loadObjectMetaProperties loads the given object meta properties
+// including Content-Type, Cache-Control ... and the object Metadata
+func (p *Posix) loadObjectMetaProperties(f *os.File, bucket, object string, fi *os.FileInfo) metaProperties {
+	var result metaProperties
 
 	b, err := p.meta.RetrieveAttribute(f, bucket, object, contentTypeHdr)
 	if err == nil {
@@ -2182,10 +2198,49 @@ func (p *Posix) loadObjectMetaData(f *os.File, bucket, object string, fi *os.Fil
 		result.Expires = backend.GetPtrFromString(string(b))
 	}
 
+	result.Metadata = p.loadObjectMetadata(f, bucket, object)
+
 	return result
 }
 
-func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m objectMetadata) error {
+// storeObjectMetadata parses the given metadata map[string]string
+// to raw json to store in file/directory meta storage and checks/cleans up
+// any legacy metadata persent in the object meta storage
+func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, meta map[string]string) error {
+	if len(meta) == 0 {
+		return nil
+	}
+
+	parsed, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+
+	err = p.meta.StoreAttribute(f, bucket, object, metadataHdr, parsed)
+	if err != nil {
+		return err
+	}
+
+	// cleanup any previously set legacy metadata
+	ents, err := p.meta.ListAttributes(bucket, object)
+	if err != nil || len(ents) == 0 {
+		return nil
+	}
+
+	for _, ent := range ents {
+		if !isValidMeta(ent) {
+			continue
+		}
+
+		_ = p.meta.DeleteAttribute(bucket, object, ent)
+	}
+
+	return nil
+}
+
+// storeObjectMetaProperties stores the object meta properties like:
+// Content-Type, Content-Encoding, object Metadata ...
+func (p *Posix) storeObjectMetaProperties(f *os.File, bucket, object string, m metaProperties) error {
 	if getString(m.ContentType) != "" {
 		err := p.meta.StoreAttribute(f, bucket, object, contentTypeHdr, []byte(*m.ContentType))
 		if err != nil {
@@ -2222,12 +2277,18 @@ func (p *Posix) storeObjectMetadata(f *os.File, bucket, object string, m objectM
 			return fmt.Errorf("set expires: %w", err)
 		}
 	}
+	if m.Metadata != nil {
+		err := p.storeObjectMetadata(f, bucket, object, m.Metadata)
+		if err != nil {
+			return fmt.Errorf("set metadata: %w", err)
+		}
+	}
 
 	return nil
 }
 
 func isValidMeta(val string) bool {
-	return strings.HasPrefix(val, metaHdr)
+	return strings.HasPrefix(val, oldMetaHdr)
 }
 
 func (p *Posix) AbortMultipartUpload(ctx context.Context, mpu *s3.AbortMultipartUploadInput) error {
@@ -3227,13 +3288,9 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 			return s3response.PutObjectOutput{}, err
 		}
 
-		// set object metadata
-		for k, v := range po.Metadata {
-			err := p.meta.StoreAttribute(nil, *po.Bucket, *po.Key,
-				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-			if err != nil {
-				return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
-			}
+		err = p.storeObjectMetadata(nil, *po.Bucket, *po.Key, po.Metadata)
+		if err != nil {
+			return s3response.PutObjectOutput{}, fmt.Errorf("set object metadata: %w", err)
 		}
 
 		// Set object tagging
@@ -3407,14 +3464,6 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		versionID = nullVersionId
 	}
 
-	for k, v := range po.Metadata {
-		err := p.meta.StoreAttribute(f.File(), *po.Bucket, *po.Key,
-			fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-		if err != nil {
-			return s3response.PutObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
-		}
-	}
-
 	var sum string
 
 	if isTrailingChecksum {
@@ -3451,14 +3500,16 @@ func (p *Posix) PutObjectWithPostFunc(ctx context.Context, po s3response.PutObje
 		return s3response.PutObjectOutput{}, fmt.Errorf("set etag attr: %w", err)
 	}
 
-	err = p.storeObjectMetadata(f.File(), *po.Bucket, *po.Key, objectMetadata{
-		ContentType:        po.ContentType,
-		ContentEncoding:    po.ContentEncoding,
-		ContentLanguage:    po.ContentLanguage,
-		ContentDisposition: po.ContentDisposition,
-		CacheControl:       po.CacheControl,
-		Expires:            po.Expires,
-	})
+	err = p.storeObjectMetaProperties(f.File(), *po.Bucket, *po.Key,
+		metaProperties{
+			ContentType:        po.ContentType,
+			ContentEncoding:    po.ContentEncoding,
+			ContentLanguage:    po.ContentLanguage,
+			ContentDisposition: po.ContentDisposition,
+			CacheControl:       po.CacheControl,
+			Expires:            po.Expires,
+			Metadata:           po.Metadata,
+		})
 	if err != nil {
 		return s3response.PutObjectOutput{}, err
 	}
@@ -4089,9 +4140,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			return nil, err
 		}
 
-		userMetaData := make(map[string]string)
-
-		objMeta := p.loadObjectMetaData(nil, bucket, object, &fid, userMetaData)
+		objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fid)
 
 		var tagCount *int32
 		tags, err := p.getAttrTags(bucket, object, versionId)
@@ -4129,7 +4178,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			ExpiresString:      objMeta.Expires,
 			ETag:               &etag,
 			LastModified:       backend.GetTimePtr(fid.ModTime()),
-			Metadata:           userMetaData,
+			Metadata:           objMeta.Metadata,
 			TagCount:           tagCount,
 			ContentRange:       nil,
 			StorageClass:       types.StorageClassStandard,
@@ -4183,9 +4232,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 			startOffset, startOffset+length-1, objSize)
 	}
 
-	userMetaData := make(map[string]string)
-
-	objMeta := p.loadObjectMetaData(f, bucket, object, &fi, userMetaData)
+	objMeta := p.loadObjectMetaProperties(f, bucket, object, &fi)
 
 	var tagCount *int32
 	tags, err := p.getAttrTags(bucket, object, versionId)
@@ -4224,7 +4271,7 @@ func (p *Posix) GetObject(ctx context.Context, input *s3.GetObjectInput) (*s3.Ge
 		ExpiresString:      objMeta.Expires,
 		ETag:               &etag,
 		LastModified:       backend.GetTimePtr(fi.ModTime()),
-		Metadata:           userMetaData,
+		Metadata:           objMeta.Metadata,
 		TagCount:           tagCount,
 		ContentRange:       &contentRange,
 		StorageClass:       types.StorageClassStandard,
@@ -4345,8 +4392,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		versionId = string(vId)
 	}
 
-	userMetaData := make(map[string]string)
-	objMeta := p.loadObjectMetaData(nil, bucket, object, &fi, userMetaData)
+	objMeta := p.loadObjectMetaProperties(nil, bucket, object, &fi)
 
 	b, err := p.meta.RetrieveAttribute(nil, bucket, object, etagkey)
 	etag := string(b)
@@ -4432,7 +4478,7 @@ func (p *Posix) HeadObject(ctx context.Context, input *s3.HeadObjectInput) (*s3.
 		ExpiresString:             objMeta.Expires,
 		ETag:                      &etag,
 		LastModified:              backend.GetTimePtr(fi.ModTime()),
-		Metadata:                  userMetaData,
+		Metadata:                  objMeta.Metadata,
 		ObjectLockLegalHoldStatus: objectLockLegalHoldStatus,
 		ObjectLockMode:            objectLockMode,
 		ObjectLockRetainUntilDate: objectLockRetainUntilDate,
@@ -4604,9 +4650,6 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		return s3response.CopyObjectOutput{}, err
 	}
 
-	mdmap := make(map[string]string)
-	p.loadObjectMetaData(nil, srcBucket, srcObject, &fi, mdmap)
-
 	var etag string
 	var version *string
 	var crc32 *string
@@ -4623,20 +4666,9 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		}
 
 		// Delete the object metadata
-		for k := range mdmap {
-			err := p.meta.DeleteAttribute(dstBucket, dstObject,
-				fmt.Sprintf("%v.%v", metaHdr, k))
-			if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
-				return s3response.CopyObjectOutput{}, fmt.Errorf("delete user metadata: %w", err)
-			}
-		}
-		// Store the new metadata
-		for k, v := range input.Metadata {
-			err := p.meta.StoreAttribute(nil, dstBucket, dstObject,
-				fmt.Sprintf("%v.%v", metaHdr, k), []byte(v))
-			if err != nil {
-				return s3response.CopyObjectOutput{}, fmt.Errorf("set user attr %q: %w", k, err)
-			}
+		err = p.meta.DeleteAttribute(dstBucket, dstObject, metadataHdr)
+		if err != nil && !errors.Is(err, meta.ErrNoSuchKey) {
+			return s3response.CopyObjectOutput{}, fmt.Errorf("delete object metadata: %w", err)
 		}
 
 		checksums, err := p.retrieveChecksums(nil, dstBucket, dstObject)
@@ -4707,14 +4739,15 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 		version = backend.GetPtrFromString(string(vId))
 
 		// Store the provided object meta properties
-		err = p.storeObjectMetadata(nil, dstBucket, dstObject,
-			objectMetadata{
+		err = p.storeObjectMetaProperties(nil, dstBucket, dstObject,
+			metaProperties{
 				ContentType:        input.ContentType,
 				ContentEncoding:    input.ContentEncoding,
 				ContentLanguage:    input.ContentLanguage,
 				ContentDisposition: input.ContentDisposition,
 				CacheControl:       input.CacheControl,
 				Expires:            input.Expires,
+				Metadata:           input.Metadata,
 			})
 		if err != nil {
 			return s3response.CopyObjectOutput{}, err
@@ -4765,14 +4798,14 @@ func (p *Posix) CopyObject(ctx context.Context, input s3response.CopyObjectInput
 
 		// load and pass the source object meta properties, if metadata directive is "COPY"
 		if input.MetadataDirective != types.MetadataDirectiveReplace {
-			metaProps := p.loadObjectMetaData(nil, srcBucket, srcObject, &fi, nil)
+			metaProps := p.loadObjectMetaProperties(nil, srcBucket, srcObject, &fi)
 			putObjectInput.ContentEncoding = metaProps.ContentEncoding
 			putObjectInput.ContentDisposition = metaProps.ContentDisposition
 			putObjectInput.ContentLanguage = metaProps.ContentLanguage
 			putObjectInput.ContentType = metaProps.ContentType
 			putObjectInput.CacheControl = metaProps.CacheControl
 			putObjectInput.Expires = metaProps.Expires
-			putObjectInput.Metadata = mdmap
+			putObjectInput.Metadata = metaProps.Metadata
 		}
 
 		// pass the input tagging to PutObject, if tagging directive is "REPLACE"
