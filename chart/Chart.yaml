@@ -2,7 +2,7 @@ apiVersion: v2
 name: versitygw
 description: A Helm chart for deploying the Versity S3 Gateway on Kubernetes
 type: application
-version: 0.1.0
+version: 0.2.0
 sources:
   - https://github.com/versity/versitygw
 icon: https://raw.githubusercontent.com/versity/versitygw/main/webui/web/assets/images/Versity-logo-blue-horizontal.png
