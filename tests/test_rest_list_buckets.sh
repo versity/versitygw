@@ -254,6 +254,27 @@ export RUN_USERS=true
   assert_success
 }
 
+@test "REST - ListBuckets - incorrect bucket region" {
+  local test_region="us-east-1"
+  if [ "$AWS_REGION" == "us-east-1" ]; then
+    test_region="us-west-1"
+  fi
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  local params=()
+  if [ "$DIRECT" == "true" ]; then
+    params+=("-url" "https://s3.$test_region.amazonaws.com" "-awsRegion" "$test_region")
+  fi
+
+  run list_buckets_bucket_not_in_list "$bucket_name" "$test_region" "${params[@]}"
+  assert_success
+}
+
 @test "REST - ListBuckets - bucket region" {
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -265,5 +286,64 @@ export RUN_USERS=true
   #run send_rest_go_command "200" "-query" "bucket-region=us-west-1" "-awsRegion" "us-west-1" "-url" "https://s3.us-west-1.amazonaws.com"
   run send_rest_go_command "200" "-query" "bucket-region=abc"
   assert_success
-  return 1
+}
+
+@test "REST - ListBuckets - missing sha256 hash" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "Missing required header for this request: x-amz-content-sha256" "-omitSHA256Hash"
+  assert_success
+}
+
+@test "REST - ListBuckets - invalid hash type" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidArgument" "x-amz-content-sha256 must be" "-customSHA256Hash" "ABCDEFG"
+  assert_success
+}
+
+@test "REST - ListBuckets - non-matching hash type" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "400" "InvalidRequest" "The value of x-amz-content-sha256 header is invalid" "-customSHA256Hash" "STREAMING-UNSIGNED-PAYLOAD-TRAILER"
+  assert_success
+}
+
+@test "REST - ListBuckets - omit date" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "403" "AccessDenied" "AWS authentication requires a valid Date or x-amz-date header" "-omitDate"
+  assert_success
+}
+
+@test "REST - ListBuckets - invalid date" {
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run setup_bucket "$bucket_name"
+  assert_success
+
+  run send_rest_go_command_expect_error "403" "AccessDenied" "AWS authentication requires a valid Date or x-amz-date header" "-customDate" "ABCDEFG"
+  assert_success
 }

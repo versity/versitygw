@@ -147,7 +147,7 @@ send_rest_command_expect_success_callback() {
   if ! check_param_count_v2 "env vars, script, response code, callback fn" 4 $#; then
     return 1
   fi
-  if ! output_file_name=$(get_file_name); then
+  if ! output_file_name=$(get_file_name 2>&1); then
     log 2 "error generating output file name: $output_file_name"
     return 1
   fi
