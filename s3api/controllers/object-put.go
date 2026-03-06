@@ -551,7 +551,14 @@ func (c S3ApiController) CopyObject(ctx *fiber.Ctx) (*Response, error) {
 		}, s3err.GetAPIError(s3err.ErrNonEmptyRequestBody)
 	}
 
-	metadata := utils.GetUserMetaData(&ctx.Request().Header)
+	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
 
 	if metaDirective != "" && metaDirective != types.MetadataDirectiveCopy && metaDirective != types.MetadataDirectiveReplace {
 		debuglogger.Logf("invalid metadata directive: %v", metaDirective)
@@ -676,9 +683,6 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 		contentLengthStr = decodedLength
 	}
 
-	// load the meta headers
-	metadata := utils.GetUserMetaData(&ctx.Request().Header)
-
 	err := auth.VerifyAccess(ctx.Context(), c.be,
 		auth.AccessOptions{
 			Readonly:        c.readonly,
@@ -692,6 +696,16 @@ func (c S3ApiController) PutObject(ctx *fiber.Ctx) (*Response, error) {
 			IsPublicRequest: IsBucketPublic,
 			DisableACL:      c.disableACL,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	// load the meta headers
+	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

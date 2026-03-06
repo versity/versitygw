@@ -91,6 +91,10 @@ func New(
 		DisableStartupMessage: true,
 		ErrorHandler:          globalErrorHandler,
 		Concurrency:           server.maxConnections,
+		// Sets buffer limit to read/parse incoming requests
+		// if the limit is reached, fiber/fasthttp will throw an error
+		// in the global error handler
+		ReadBufferSize: 8 * 1024, // 8 KB
 	})
 
 	server.app = app
@@ -259,13 +263,20 @@ func globalErrorHandler(ctx *fiber.Ctx, er error) error {
 		// handle the fiber specific errors
 		var fiberErr *fiber.Error
 		if errors.As(er, &fiberErr) {
+			if errors.Is(fiberErr, fiber.ErrRequestHeaderFieldsTooLarge) {
+				debuglogger.Logf("total request headers size exceeds the allowed 8KB")
+				ctx.Status(http.StatusBadRequest)
+				return nil
+			}
 			if strings.Contains(fiberErr.Message, "cannot parse Content-Length") {
+				debuglogger.Logf("failed to parse Content-Length")
 				ctx.Status(http.StatusBadRequest)
 				return nil
 			}
 			if strings.Contains(fiberErr.Message, "error when reading request headers") {
 				// This error means fiber failed to parse the incoming request
 				// which is a malfoedmed one. Return a BadRequest in this case
+				debuglogger.Logf("failed to parse the http request")
 				err := s3err.GetAPIError(s3err.ErrCannotParseHTTPRequest)
 				ctx.Status(err.HTTPStatusCode)
 				return ctx.Send(s3err.GetAPIErrorResponse(err, "", "", ""))

@@ -154,7 +154,6 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 	contentEncoding := ctx.Get("Content-Encoding")
 	tagging := ctx.Get("X-Amz-Tagging")
 	expires := ctx.Get("Expires")
-	metadata := utils.GetUserMetaData(&ctx.Request().Header)
 	// context locals
 	acct := utils.ContextKeyAccount.Get(ctx).(auth.Account)
 	isRoot := utils.ContextKeyIsRoot.Get(ctx).(bool)
@@ -172,6 +171,15 @@ func (c S3ApiController) CreateMultipartUpload(ctx *fiber.Ctx) (*Response, error
 			Action:        auth.PutObjectAction,
 			DisableACL:    c.disableACL,
 		})
+	if err != nil {
+		return &Response{
+			MetaOpts: &MetaOptions{
+				BucketOwner: parsedAcl.Owner,
+			},
+		}, err
+	}
+
+	metadata, err := utils.GetUserMetaData(&ctx.Request().Header)
 	if err != nil {
 		return &Response{
 			MetaOpts: &MetaOptions{

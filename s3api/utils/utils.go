@@ -55,20 +55,52 @@ func SetBucketNameValidationStrict(strict bool) {
 	strictBucketNameValidation.Store(strict)
 }
 
-func GetUserMetaData(headers *fasthttp.RequestHeader) (metadata map[string]string) {
-	metadata = make(map[string]string)
+// maximum allowed size (2 KB) for all user-defined
+// object metadata combined, excluded the 'x-amz-meta-' prefix
+const maxMetadataSize = 2048
+
+// GetUserMetaData extracts user metadata from headers with the "x-amz-meta-" prefix.
+// Keys are normalized to lowercase and duplicate headers are merged as
+// comma-separated values. The total metadata size is validated against the
+// 2 KB S3 limit.
+func GetUserMetaData(headers *fasthttp.RequestHeader) (map[string]string, error) {
+	metadata := make(map[string]string)
+	var metadataSize int
+
 	headers.DisableNormalizing()
+	defer headers.EnableNormalizing()
+
 	for key, value := range headers.AllInOrder() {
 		hKey := string(key)
 		if strings.HasPrefix(strings.ToLower(hKey), "x-amz-meta-") {
 			trimmedKey := strings.ToLower(hKey[11:])
 			headerValue := string(value)
-			metadata[trimmedKey] = headerValue
+
+			if existingVal, ok := metadata[trimmedKey]; ok {
+				// S3 combines multiple metadata headers with the same key.
+				// For example:
+				//   x-amz-meta-Key: value1
+				//   x-amz-meta-kEy: value2
+				//   x-amz-meta-keY: value3
+				//
+				// These are merged into a single lowercased key with the values
+				// joined as a comma-separated list:
+				//   key: value1,value2,value3
+				metadataSize += len(headerValue) + 1
+				metadata[trimmedKey] = existingVal + "," + headerValue
+			} else {
+				metadataSize += len(trimmedKey) + len(headerValue)
+				metadata[trimmedKey] = headerValue
+			}
+
+			if metadataSize > maxMetadataSize {
+				debuglogger.Logf("total meta headers size exceeded the maximum allowed: (size): %v, (max): %v", metadataSize, maxMetadataSize)
+				return nil, s3err.GetAPIError(s3err.ErrMetadataTooLarge)
+			}
 		}
 	}
-	headers.EnableNormalizing()
 
-	return
+	return metadata, nil
 }
 
 func createHttpRequestFromCtx(ctx *fiber.Ctx, signedHdrs []string, contentLength int64, streamBody bool) (*http.Request, error) {

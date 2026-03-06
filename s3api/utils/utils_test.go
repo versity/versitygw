@@ -15,12 +15,14 @@
 package utils
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/xml"
 	"errors"
 	"math/rand"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,35 +96,134 @@ func TestCreateHttpRequestFromCtx(t *testing.T) {
 	}
 }
 
-func TestGetUserMetaData(t *testing.T) {
-	type args struct {
-		headers *fasthttp.RequestHeader
+// a helper method to construct a raw http request with the given http request headers
+// to further parse with fasthttp.Request.Read and return fasthttp.RequestHeader
+func createHeadersFromRawRequest(t *testing.T, hdrs [][2]string) *fasthttp.RequestHeader {
+	t.Helper()
+
+	var b strings.Builder
+	b.WriteString("PUT / HTTP/1.1\r\n")
+	b.WriteString("Host: example.com\r\n")
+	for _, kv := range hdrs {
+		b.WriteString(kv[0])
+		b.WriteString(": ")
+		b.WriteString(kv[1])
+		b.WriteString("\r\n")
 	}
+	b.WriteString("\r\n")
 
-	app := fiber.New()
+	var req fasthttp.Request
+	if err := req.Read(bufio.NewReader(bytes.NewReader([]byte(b.String())))); err != nil {
+		t.Fatalf("failed to parse raw request: %v", err)
+	}
+	return &req.Header
+}
 
-	// Case 1
-	ctx := app.AcquireCtx(&fasthttp.RequestCtx{})
-	req := ctx.Request()
-
+func TestGetUserMetaData(t *testing.T) {
 	tests := []struct {
-		name         string
-		args         args
-		wantMetadata map[string]string
+		name    string
+		hdrs    [][2]string
+		want    map[string]string
+		wantErr error
 	}{
 		{
-			name: "Success-empty-response",
-			args: args{
-				headers: &req.Header,
+			name: "no metadata headers",
+			hdrs: [][2]string{
+				{"Content-Type", "application/json"},
 			},
-			wantMetadata: map[string]string{},
+			want: map[string]string{},
+		},
+		{
+			name: "single metadata header",
+			hdrs: [][2]string{
+				{"x-amz-meta-foo", "bar"},
+			},
+			want: map[string]string{"foo": "bar"},
+		},
+		{
+			name: "multiple metadata headers",
+			hdrs: [][2]string{
+				{"x-amz-meta-foo", "bar"},
+				{"x-amz-meta-baz", "qux"},
+			},
+			want: map[string]string{"foo": "bar", "baz": "qux"},
+		},
+		{
+			name: "case-insensitive prefix and key lowercasing",
+			hdrs: [][2]string{
+				{"X-Amz-Meta-TestKey", "Value"},
+			},
+			want: map[string]string{"testkey": "Value"},
+		},
+		{
+			name: "ignores non-metadata headers",
+			hdrs: [][2]string{
+				{"authorization", "token"},
+				{"x-amz-meta-foo", "bar"},
+			},
+			want: map[string]string{"foo": "bar"},
+		},
+		{
+			name: "metadata size exceeds limit (single header)",
+			hdrs: [][2]string{
+				{"x-amz-meta-big", strings.Repeat("a", maxMetadataSize+1)},
+			},
+			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+		},
+		{
+			name: "metadata cumulative size exceeds limit (multiple headers)",
+			hdrs: [][2]string{
+				{"x-amz-meta-a", strings.Repeat("a", maxMetadataSize/2)},
+				{"x-amz-meta-b", strings.Repeat("b", maxMetadataSize/2+10)},
+			},
+			wantErr: s3err.GetAPIError(s3err.ErrMetadataTooLarge),
+		},
+		{
+			name: "duplicate keys combined",
+			hdrs: [][2]string{
+				{"x-amz-meta-Foo", "first"},
+				{"x-amz-meta-foo", "second"},
+			},
+			want: map[string]string{"foo": "first,second"},
+		},
+		{
+			name: "duplicate same value keys combined",
+			hdrs: [][2]string{
+				{"x-amz-meta-Foo", "value"},
+				{"x-amz-meta-foo", "value"},
+			},
+			want: map[string]string{"foo": "value,value"},
+		},
+		{
+			name: "mixed keys",
+			hdrs: [][2]string{
+				{"x-amz-meta-Foo", "value2"},
+				{"x-amz-meta-fOo", "value1"},
+				{"x-amz-meta-foO", "value3"},
+				{"x-amz-meta-bar", "baz"},
+				{"x-amz-meta-quxx", "efg"},
+				{"x-amz-meta-abc", "value"},
+				{"x-amz-meta-Abc", "value"},
+				{"x-amz-meta-aBc", "value"},
+				{"x-amz-meta-abC", "value"},
+				{"x-amz-meta-ABC", "value"},
+			},
+			want: map[string]string{
+				"foo":  "value2,value1,value3",
+				"bar":  "baz",
+				"quxx": "efg",
+				"abc":  "value,value,value,value,value",
+			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if gotMetadata := GetUserMetaData(tt.args.headers); !reflect.DeepEqual(gotMetadata, tt.wantMetadata) {
-				t.Errorf("GetUserMetaData() = %v, want %v", gotMetadata, tt.wantMetadata)
-			}
+			h := createHeadersFromRawRequest(t, tt.hdrs)
+
+			got, err := GetUserMetaData(h)
+			assert.Equal(t, tt.wantErr, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
