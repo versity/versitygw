@@ -203,7 +203,7 @@ webui:
   # Kubernetes because it uses the internal pod IP addresses.
   adminGateways: []
   # - s3-admin.example.com
-  # --- HTTPRoute (Gateway API) ---
+  # --- HTTPRoute ---
   # Expose the WebUI via a Gateway API HTTPRoute resource.
   # Requires Gateway API CRDs and a Gateway API implementation (Envoy Gateway, Istio, Kgateway, etc.) in the cluster.
   httpRoute:
