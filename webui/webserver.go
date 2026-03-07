@@ -117,6 +117,14 @@ func (s *Server) setupRoutes() {
 		PathPrefix: "web",
 		Browse:     false,
 	}))
+
+	// Catch-all: absorb any request the filesystem did not fully handle.
+	// The filesystem middleware calls Next() for non-GET/HEAD methods and for
+	// paths not found in the embedded FS, which would otherwise fall through
+	// to the S3 router and be interpreted as bucket/object operations.
+	s.app.Use(prefix+"/", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusBadRequest)
+	})
 }
 
 // handleIndexHTML serves index.html with server config injected as an inline script.
@@ -193,4 +201,17 @@ func (s *Server) ServeMultiPort(ports []string) error {
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown() error {
 	return s.app.Shutdown()
+}
+
+// MountOn registers the WebUI routes on an existing Fiber app at the given path prefix.
+// This allows hosting the WebUI on the same port as another service (e.g. the S3 API server).
+// The prefix must start with "/" and must not be empty or just "/".
+func MountOn(app *fiber.App, prefix string, cfg *ServerConfig) {
+	s := &Server{
+		app:        app,
+		config:     cfg,
+		pathPrefix: prefix,
+	}
+	fmt.Printf("initializing web dashboard\n")
+	s.setupRoutes()
 }

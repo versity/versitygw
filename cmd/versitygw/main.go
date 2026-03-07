@@ -101,6 +101,7 @@ var (
 	webuiGateways                          []string
 	webuiAdminGateways                     []string
 	webuiPathPrefix                        string
+	webuiS3Prefix                          string
 	disableACLs                            bool
 )
 
@@ -226,6 +227,12 @@ func initFlags() []cli.Flag {
 			Usage:       "mount the WebUI under a path prefix (e.g. '/ui'); must start with '/' and must not end with '/'",
 			EnvVars:     []string{"VGW_WEBUI_PATH_PREFIX"},
 			Destination: &webuiPathPrefix,
+		},
+		&cli.StringFlag{
+			Name:        "webui-s3-prefix",
+			Usage:       "mount the WebUI on the S3 port at the given path prefix (e.g. '/ui'); must start with '/', must not be '/', and must not end with '/'",
+			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
+			Destination: &webuiS3Prefix,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -799,6 +806,19 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return err
 	}
 
+	// Validate webui-s3-prefix
+	if webuiS3Prefix != "" {
+		if !strings.HasPrefix(webuiS3Prefix, "/") {
+			return fmt.Errorf("--webui-s3-prefix must start with '/'")
+		}
+		if webuiS3Prefix == "/" {
+			return fmt.Errorf("--webui-s3-prefix must not be '/' (use a specific path like '/ui')")
+		}
+		if strings.HasSuffix(webuiS3Prefix, "/") {
+			return fmt.Errorf("--webui-s3-prefix must not end with '/'")
+		}
+	}
+
 	utils.SetBucketNameValidationStrict(!disableStrictBucketNames)
 
 	if pprof != "" {
@@ -942,6 +962,58 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	})
 	if err != nil {
 		return fmt.Errorf("init bucket event notifications: %w", err)
+	}
+
+	// Mount WebUI on the S3 port if --webui-s3-prefix is set
+	if webuiS3Prefix != "" {
+		s3SSLEnabled := certFile != ""
+		s3AdmSSLEnabled := s3SSLEnabled
+		if len(admPorts) > 0 {
+			s3AdmSSLEnabled = admCertFile != ""
+		}
+
+		var s3WebGateways []string
+		if len(webuiGateways) > 0 {
+			validGateways, err := validateGatewayURLs(webuiGateways, "webui gateway")
+			if err != nil {
+				return err
+			}
+			s3WebGateways = validGateways
+		} else {
+			for _, p := range ports {
+				urls, err := buildServiceURLs(p, s3SSLEnabled)
+				if err != nil {
+					return fmt.Errorf("webui-s3-prefix: build gateway URLs: %w", err)
+				}
+				s3WebGateways = append(s3WebGateways, urls...)
+			}
+			sortGatewayURLs(s3WebGateways)
+		}
+
+		s3WebAdminGateways := s3WebGateways
+		if len(webuiAdminGateways) > 0 {
+			validAdminGateways, err := validateGatewayURLs(webuiAdminGateways, "webui admin gateway")
+			if err != nil {
+				return err
+			}
+			s3WebAdminGateways = validAdminGateways
+		} else if len(admPorts) > 0 {
+			s3WebAdminGateways = nil
+			for _, admPort := range admPorts {
+				urls, err := buildServiceURLs(admPort, s3AdmSSLEnabled)
+				if err != nil {
+					return fmt.Errorf("webui-s3-prefix: build admin gateway URLs: %w", err)
+				}
+				s3WebAdminGateways = append(s3WebAdminGateways, urls...)
+			}
+			sortGatewayURLs(s3WebAdminGateways)
+		}
+
+		opts = append(opts, s3api.WithWebUI(webuiS3Prefix, &webui.ServerConfig{
+			Gateways:      s3WebGateways,
+			AdminGateways: s3WebAdminGateways,
+			Region:        region,
+		}))
 	}
 
 	srv, err := s3api.New(be, middlewares.RootUserConfig{
@@ -1115,7 +1187,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	if !quiet {
-		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix)
+		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix, webuiS3Prefix)
 	}
 
 	servers := 1
@@ -1241,7 +1313,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string) {
+func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string, webuiS3Prefix string) {
 	if len(ports) == 0 {
 		fmt.Fprintf(os.Stderr, "No ports specified\n")
 		return
@@ -1421,6 +1493,26 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 				}
 				lines = append(lines, leftText("  "+url+webuiPathPrefix))
 			}
+		}
+	}
+
+	// Show WebUI embedded on the S3 port (--webui-s3-prefix)
+	if webuiS3Prefix != "" {
+		lines = append(lines,
+			centerText(""),
+			leftText("WebUI embedded on S3 service at:"),
+		)
+		for _, addrPort := range allInterfaces {
+			ip, prt, err := net.SplitHostPort(addrPort)
+			if err != nil {
+				continue
+			}
+			hostPort := net.JoinHostPort(ip, prt)
+			url := fmt.Sprintf("http://%s", hostPort)
+			if ssl {
+				url = fmt.Sprintf("https://%s", hostPort)
+			}
+			lines = append(lines, leftText("  "+url+webuiS3Prefix))
 		}
 	}
 
