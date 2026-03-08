@@ -1,0 +1,17 @@
+name: Lint Helm Chart
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint chart
+        run: helm lint chart/ --strict --set auth.accessKey=dummy --set auth.secretKey=dummy
