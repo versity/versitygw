@@ -16,7 +16,6 @@
 
 /*
  * theme.css — Global shared styles for all pages.
- * Page-specific styles remain inline in their respective HTML files.
  */
 
 /* ============================================
@@ -47,6 +46,13 @@ body {
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
 }
+
+/* ============================================
+   Explorer
+   ============================================ */
+.drop-zone-active { background: rgba(0, 118, 205, 0.1); border-color: #0076CD; }
+.file-row:hover { background: #f9fafb; }
+.file-row.selected { background: #e6f3fa; }
 
 /* ============================================
    Custom Dropdown
