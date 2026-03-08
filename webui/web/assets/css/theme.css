@@ -16,7 +16,6 @@
 
 /*
  * theme.css — Global shared styles for all pages.
- * Page-specific styles remain inline in their respective HTML files.
  */
 
 body {
@@ -35,13 +34,11 @@ body {
   border-left: 4px solid #0076CD;
 }
 
-/* Modal */
 .modal-backdrop {
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
 }
 
-/* Custom Dropdown */
 .custom-dropdown {
   display: none;
   position: absolute;
@@ -71,7 +68,7 @@ body {
   background-color: rgba(0, 118, 205, 0.1);
   color: #0076CD;
 }
-/* Dropup variant — opens upward */
+
 .custom-dropdown.dropup {
   bottom: 100%;
   top: auto;
@@ -79,7 +76,6 @@ body {
   margin-bottom: 4px;
 }
 
-/* Toggle Switch */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -192,3 +188,8 @@ input:checked + .toggle-slider:before {
 .advanced-options.show {
   max-height: 500px;
 }
+
+/* Explorer */
+.drop-zone-active { background: rgba(0, 118, 205, 0.1); border-color: #0076CD; }
+.file-row:hover { background: #f9fafb; }
+.file-row.selected { background: #e6f3fa; }
