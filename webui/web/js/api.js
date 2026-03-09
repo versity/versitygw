@@ -292,15 +292,6 @@ class VersityAPI {
   // ============================================
 
   /**
-   * Detect ROOT user and get accessible gateways
-   * Calls /api/detect-root endpoint to check if credentials match ROOT config
-   * @param {string} accessKey - Access key to check
-   * @param {string} secretKey - Secret key to check
-   * @returns {Object} - { userType: 'root'|'user', matchingGateways: [...] }
-   */
-  // detectRootUser removed - single gateway mode
-
-  /**
    * Store user type and accessible gateways in session
    * @param {string} userType - 'root' | 'admin' | 'user'
    * @param {Array} accessibleGateways - List of gateways this user can access
@@ -316,26 +307,6 @@ class VersityAPI {
    */
   loadUserContext() {
     this._userType = sessionStorage.getItem('vgw_user_type') || 'user';
-  }
-
-  /**
-   * Check if current user is ROOT user (has ROOT credentials matching gateway configs)
-   * @returns {boolean}
-   */
-  // isRootUser removed
-
-  /**
-   * Get list of gateways accessible to current user
-   * Only populated for ROOT users
-   * @returns {Array} - Array of { name, port, endpoint, region, status }
-   */
-  // getAccessibleGateways removed
-
-  /**
-   * Check if authenticated
-   */
-  isAuthenticated() {
-    return this.credentials !== null && this.s3Endpoint !== null;
   }
 
   /**
