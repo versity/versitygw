@@ -30,17 +30,17 @@ func TestS3ApiServer_Serve(t *testing.T) {
 		port    string
 	}{
 		{
-			name:    "Serve-invalid-address",
+			name:    "Serve-invalid-tcp-address",
 			wantErr: true,
 			sa: &S3ApiServer{
 				app:     fiber.New(),
 				backend: backend.BackendUnsupported{},
 				Router:  &S3ApiRouter{},
 			},
-			port: "Invalid address",
+			port: "localhost:notaport",
 		},
 		{
-			name:    "Serve-invalid-address-with-certificate",
+			name:    "Serve-invalid-tcp-address-with-certificate",
 			wantErr: true,
 			sa: &S3ApiServer{
 				app:         fiber.New(),
@@ -48,7 +48,7 @@ func TestS3ApiServer_Serve(t *testing.T) {
 				Router:      &S3ApiRouter{},
 				CertStorage: &utils.CertStorage{},
 			},
-			port: "Invalid address",
+			port: "localhost:notaport",
 		},
 	}
 	for _, tt := range tests {
