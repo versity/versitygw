@@ -46,7 +46,7 @@ jobs:
 
       - name: Install cosign
         if: steps.check.outputs.new == 'true'
-        uses: sigstore/cosign-installer@v4.0.0
+        uses: sigstore/cosign-installer@v4.1.0
 
       - name: Sign chart with cosign
         if: steps.check.outputs.new == 'true'
