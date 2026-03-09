@@ -34,7 +34,11 @@ jobs:
 
       - name: Login to GHCR
         if: steps.check.outputs.new == 'true'
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u versity --password-stdin
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: versity
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push chart
         if: steps.check.outputs.new == 'true'
