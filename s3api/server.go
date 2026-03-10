@@ -35,6 +35,7 @@ import (
 	"github.com/versity/versitygw/s3err"
 	"github.com/versity/versitygw/s3event"
 	"github.com/versity/versitygw/s3log"
+	"github.com/versity/versitygw/webui"
 )
 
 const (
@@ -42,15 +43,17 @@ const (
 )
 
 type S3ApiServer struct {
-	Router         *S3ApiRouter
-	app            *fiber.App
-	backend        backend.Backend
-	CertStorage    *utils.CertStorage
-	quiet          bool
-	keepAlive      bool
-	health         string
-	maxConnections int
-	maxRequests    int
+	Router           *S3ApiRouter
+	app              *fiber.App
+	backend          backend.Backend
+	CertStorage      *utils.CertStorage
+	quiet            bool
+	keepAlive        bool
+	health           string
+	maxConnections   int
+	maxRequests      int
+	webuiMountPrefix string
+	webuiSrvCfg      *webui.ServerConfig
 }
 
 func New(
@@ -120,6 +123,11 @@ func New(
 		})
 	}
 
+	// Set up WebUI on the S3 port if configured
+	if server.webuiSrvCfg != nil {
+		webui.MountOn(app, server.webuiMountPrefix, server.webuiSrvCfg)
+	}
+
 	// initialize total requests cap limiter middleware
 	app.Use(middlewares.RateLimiter(server.maxRequests, mm, l))
 
@@ -183,6 +191,16 @@ func WithKeepAlive() Option {
 // This is applied when no bucket CORS configuration exists, and for admin APIs.
 func WithCORSAllowOrigin(origin string) Option {
 	return func(s *S3ApiServer) { s.Router.corsAllowOrigin = origin }
+}
+
+// WithWebUI mounts the WebUI on the S3 server's Fiber app at the given path prefix,
+// before S3 routes are registered. The prefix must start with "/" and must not be
+// empty or just "/".
+func WithWebUI(prefix string, cfg *webui.ServerConfig) Option {
+	return func(s *S3ApiServer) {
+		s.webuiMountPrefix = prefix
+		s.webuiSrvCfg = cfg
+	}
 }
 
 // WithConcurrencyLimiter sets the server's maximum connection limit

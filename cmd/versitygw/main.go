@@ -101,6 +101,7 @@ var (
 	webuiGateways                          []string
 	webuiAdminGateways                     []string
 	webuiPathPrefix                        string
+	webuiS3Prefix                          string
 	disableACLs                            bool
 )
 
@@ -239,6 +240,12 @@ func initFlags() []cli.Flag {
 			Usage:       "mount the WebUI under a path prefix (e.g. '/ui'); must be single segment path that starts with '/'",
 			EnvVars:     []string{"VGW_WEBUI_PATH_PREFIX"},
 			Destination: &webuiPathPrefix,
+		},
+		&cli.StringFlag{
+			Name:        "webui-s3-prefix",
+			Usage:       "mount the WebUI on the S3 port at the given path prefix (e.g. '/ui'); must start with '/', must not be '/', and must not end with '/'",
+			EnvVars:     []string{"VGW_WEBUI_S3_PREFIX"},
+			Destination: &webuiS3Prefix,
 		},
 		&cli.StringFlag{
 			Name:        "access",
@@ -756,16 +763,16 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("root user access and secret key must be provided")
 	}
 
-	err := validateWebUIPathPrefix(webuiPathPrefix)
+	err := validateWebUIPathPrefix("--webui-path-prefix", webuiPathPrefix)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if maxConnections < 1 {
-		log.Fatal("max-connections must be positive")
+		return fmt.Errorf("max-connections must be positive")
 	}
 	if maxRequests < 1 {
-		log.Fatal("max-requests must be positive")
+		return fmt.Errorf("max-requests must be positive")
 	}
 	if maxRequests > maxConnections {
 		log.Printf("WARNING: max-requests (%d) exceeds max-connections (%d) which could allow for gateway to panic before throttling requests",
@@ -774,7 +781,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 
 	// Ensure we have at least one port specified
 	if len(ports) == 0 {
-		log.Fatal("no ports specified")
+		return fmt.Errorf("no ports specified")
 	}
 
 	// WebUI runs in a browser and typically talks to the gateway/admin APIs cross-origin
@@ -813,7 +820,13 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	// Validate port conflicts across s3 api, admin, and webui ports
-	if err := validatePortConflicts(ports, admPorts, webuiPorts); err != nil {
+	err = validatePortConflicts(ports, admPorts, webuiPorts)
+	if err != nil {
+		return err
+	}
+
+	err = validateWebUIPathPrefix("--webui-s3-prefix", webuiS3Prefix)
+	if err != nil {
 		return err
 	}
 
@@ -962,6 +975,57 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		return fmt.Errorf("init bucket event notifications: %w", err)
 	}
 
+	if webuiS3Prefix != "" {
+		s3SSLEnabled := certFile != ""
+		s3AdmSSLEnabled := s3SSLEnabled
+		if len(admPorts) > 0 {
+			s3AdmSSLEnabled = admCertFile != ""
+		}
+
+		var s3WebGateways []string
+		if len(webuiGateways) > 0 {
+			validGateways, err := validateGatewayURLs(webuiGateways, "webui gateway")
+			if err != nil {
+				return err
+			}
+			s3WebGateways = validGateways
+		} else {
+			for _, p := range ports {
+				urls, err := buildServiceURLs(p, s3SSLEnabled)
+				if err != nil {
+					return fmt.Errorf("webui-s3-prefix: build gateway URLs: %w", err)
+				}
+				s3WebGateways = append(s3WebGateways, urls...)
+			}
+			sortGatewayURLs(s3WebGateways)
+		}
+
+		s3WebAdminGateways := s3WebGateways
+		if len(webuiAdminGateways) > 0 {
+			validAdminGateways, err := validateGatewayURLs(webuiAdminGateways, "webui admin gateway")
+			if err != nil {
+				return err
+			}
+			s3WebAdminGateways = validAdminGateways
+		} else if len(admPorts) > 0 {
+			s3WebAdminGateways = nil
+			for _, admPort := range admPorts {
+				urls, err := buildServiceURLs(admPort, s3AdmSSLEnabled)
+				if err != nil {
+					return fmt.Errorf("webui-s3-prefix: build admin gateway URLs: %w", err)
+				}
+				s3WebAdminGateways = append(s3WebAdminGateways, urls...)
+			}
+			sortGatewayURLs(s3WebAdminGateways)
+		}
+
+		opts = append(opts, s3api.WithWebUI(webuiS3Prefix, &webui.ServerConfig{
+			Gateways:      s3WebGateways,
+			AdminGateways: s3WebAdminGateways,
+			Region:        region,
+		}))
+	}
+
 	srv, err := s3api.New(be, middlewares.RootUserConfig{
 		Access: rootUserAccess,
 		Secret: rootUserSecret,
@@ -976,10 +1040,10 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 		var opts []s3api.AdminOpt
 
 		if adminMaxConnections < 1 {
-			log.Fatal("admin-max-connections must be positive")
+			return fmt.Errorf("admin-max-connections must be positive")
 		}
 		if adminMaxRequests < 1 {
-			log.Fatal("admin-max-requests must be positive")
+			return fmt.Errorf("admin-max-requests must be positive")
 		}
 		if adminMaxRequests > adminMaxConnections {
 			log.Printf("WARNING: admin-max-requests (%d) exceeds admin-max-connections (%d) which could allow for gateway to panic before throttling requests",
@@ -1133,7 +1197,7 @@ func runGateway(ctx context.Context, be backend.Backend) error {
 	}
 
 	if !quiet {
-		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix)
+		printBanner(ports, admPorts, certFile != "" || keyFile != "", admCertFile != "" || admKeyFile != "", webuiPorts, webuiSSLEnabled, webuiPathPrefix, webuiS3Prefix)
 	}
 
 	servers := 1
@@ -1259,7 +1323,7 @@ Loop:
 	return saveErr
 }
 
-func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string) {
+func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs []string, webuiSsl bool, webuiPathPrefix string, webuiS3Prefix string) {
 	if len(ports) == 0 {
 		fmt.Fprintf(os.Stderr, "No ports specified\n")
 		return
@@ -1480,6 +1544,25 @@ func printBanner(ports []string, admPorts []string, ssl, admSsl bool, webuiAddrs
 		}
 	}
 
+	if webuiS3Prefix != "" {
+		lines = append(lines,
+			centerText(""),
+			leftText("WebUI embedded on S3 service at:"),
+		)
+		for _, addrPort := range allInterfaces {
+			ip, prt, err := net.SplitHostPort(addrPort)
+			if err != nil {
+				continue
+			}
+			hostPort := net.JoinHostPort(ip, prt)
+			url := fmt.Sprintf("http://%s", hostPort)
+			if ssl {
+				url = fmt.Sprintf("https://%s", hostPort)
+			}
+			lines = append(lines, leftText("  "+url+webuiS3Prefix))
+		}
+	}
+
 	// Print the top border
 	fmt.Println("┌" + strings.Repeat("─", columnWidth-2) + "┐")
 
@@ -1644,35 +1727,41 @@ func validateGatewayURLs(urls []string, urlType string) ([]string, error) {
 	return validURLs, nil
 }
 
-// validateWebUIPathPrefix validates --webui-path-prefix.
+// validateWebUIPathPrefix validates webui path prefix.
 // Accepted format is a single path segment like "/ui".
-func validateWebUIPathPrefix(prefix string) error {
+func validateWebUIPathPrefix(option, prefix string) error {
 	if prefix == "" {
 		return nil
 	}
 
 	if strings.TrimSpace(prefix) != prefix {
-		return fmt.Errorf("invalid --webui-path-prefix %q: must not contain leading or trailing whitespace", prefix)
+		return fmt.Errorf("invalid %v %q: must not contain leading or trailing whitespace",
+			option, prefix)
 	}
 
 	if !strings.HasPrefix(prefix, "/") {
-		return fmt.Errorf("invalid --webui-path-prefix %q: must start with '/' (example: '/ui')", prefix)
+		return fmt.Errorf("invalid %v %q: must start with '/' (example: '/ui')",
+			option, prefix)
 	}
 
 	if strings.HasSuffix(prefix, "/") {
-		return fmt.Errorf("invalid --webui-path-prefix %q: must not end with '/'", prefix)
+		return fmt.Errorf("invalid %v %q: must not end with '/'",
+			option, prefix)
 	}
 
 	if strings.Count(prefix, "/") > 1 {
-		return fmt.Errorf("invalid --webui-path-prefix %q: only a single path segment is allowed (example: '/ui')", prefix)
+		return fmt.Errorf("invalid %v %q: only a single path segment is allowed (example: '/ui')",
+			option, prefix)
 	}
 
 	if strings.ContainsAny(prefix, "?#") {
-		return fmt.Errorf("invalid --webui-path-prefix %q: query strings and fragments are not allowed", prefix)
+		return fmt.Errorf("invalid %v %q: query strings and fragments are not allowed",
+			option, prefix)
 	}
 
 	if strings.Contains(prefix, "\\") {
-		return fmt.Errorf("invalid --webui-path-prefix %q: backslashes are not allowed", prefix)
+		return fmt.Errorf("invalid %v %q: backslashes are not allowed",
+			option, prefix)
 	}
 
 	return nil
