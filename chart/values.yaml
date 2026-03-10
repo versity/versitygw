@@ -282,7 +282,8 @@ persistence:
   # If disabled, an emptyDir (ephemeral!) will be used instead of a PVC.
   # NOTE: Data will be lost on pod restart if persistence is disabled.
   enabled: true
-  # Use an existing PVC instead of creating a new one.
+  # Use an existing PVC instead of creating a new one. When set, the chart
+  # will mount this claim and will not create a PersistentVolumeClaim resource.
   claimName: ""
   size: 10Gi
   storageClassName: ""
