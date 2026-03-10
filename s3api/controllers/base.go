@@ -349,7 +349,7 @@ func ensureExposeMetaHeaders(ctx *fiber.Ctx) {
 
 	lowerExisting := map[string]struct{}{}
 	if existing != "" {
-		for _, part := range strings.Split(existing, ",") {
+		for part := range strings.SplitSeq(existing, ",") {
 			p := strings.ToLower(strings.TrimSpace(part))
 			if p != "" {
 				lowerExisting[p] = struct{}{}

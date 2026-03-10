@@ -68,8 +68,7 @@ func initPosix(ctx context.Context) {
 		log.Fatalf("init posix: %v", err)
 	}
 
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		err = runGateway(ctx, be)
 		if err != nil && err != context.Canceled {
 			log.Fatalf("run gateway: %v", err)
@@ -79,8 +78,7 @@ func initPosix(ctx context.Context) {
 		if err != nil {
 			log.Fatalf("remove temp directory: %v", err)
 		}
-		wg.Done()
-	}()
+	})
 
 	// wait for server to start
 	time.Sleep(1 * time.Second)

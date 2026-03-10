@@ -940,7 +940,7 @@ func GetAPIErrorResponse(err APIError, resource, requestID, hostID string) []byt
 }
 
 // Encodes the response headers into XML format.
-func encodeResponse(response interface{}) []byte {
+func encodeResponse(response any) []byte {
 	var bytesBuffer bytes.Buffer
 	bytesBuffer.WriteString(xml.Header)
 	e := xml.NewEncoder(&bytesBuffer)

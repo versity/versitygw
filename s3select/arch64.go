@@ -13,7 +13,6 @@
 // under the License.
 
 //go:build amd64 || arm64 || ppc64le || riscv64
-// +build amd64 arm64 ppc64le riscv64
 
 package s3select
 

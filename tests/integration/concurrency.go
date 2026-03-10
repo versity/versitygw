@@ -87,13 +87,11 @@ func (ct *TestState) process() {
 			if err := ct.sem.Acquire(ct.ctx, 1); err != nil {
 				continue
 			}
-			ct.wg.Add(1)
-			go func() {
+			ct.wg.Go(func() {
 				// Run test and release semaphore once done
 				fn(ct.conf)
 				ct.sem.Release(1)
-				ct.wg.Done()
-			}()
+			})
 		}
 	}
 }

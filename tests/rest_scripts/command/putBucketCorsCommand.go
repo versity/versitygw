@@ -56,8 +56,8 @@ func NewPutBucketCORSCommand(command *S3Command, ruleStrings []string) (*S3Comma
 
 func assembleCORSRule(ruleString string) (*CORSRule, error) {
 	corsRule := &CORSRule{}
-	ruleComponents := strings.Split(ruleString, ";")
-	for _, component := range ruleComponents {
+	ruleComponents := strings.SplitSeq(ruleString, ";")
+	for component := range ruleComponents {
 		componentSegments := strings.Split(component, "=")
 		switch componentSegments[0] {
 		case AllowedMethods:

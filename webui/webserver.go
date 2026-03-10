@@ -138,7 +138,7 @@ func (s *Server) handleIndexHTML(c *fiber.Ctx) error {
 		adminGateways = s.config.Gateways
 	}
 
-	configJSON, err := json.Marshal(map[string]interface{}{
+	configJSON, err := json.Marshal(map[string]any{
 		"gateways":      s.config.Gateways,
 		"adminGateways": adminGateways,
 		"defaultRegion": s.config.Region,

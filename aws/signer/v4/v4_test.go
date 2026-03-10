@@ -100,7 +100,7 @@ func TestPresignRequest(t *testing.T) {
 		t.Errorf("expect %v, got %v", e, a)
 	}
 
-	for _, h := range strings.Split(expectedHeaders, ";") {
+	for h := range strings.SplitSeq(expectedHeaders, ";") {
 		v := headers.Get(h)
 		if len(v) == 0 {
 			t.Errorf("expect %v, to be present in header map", h)
@@ -153,7 +153,7 @@ func TestPresignBodyWithArrayRequest(t *testing.T) {
 		t.Errorf("expect %v, got %v", e, a)
 	}
 
-	for _, h := range strings.Split(expectedHeaders, ";") {
+	for h := range strings.SplitSeq(expectedHeaders, ";") {
 		v := headers.Get(h)
 		if len(v) == 0 {
 			t.Errorf("expect %v, to be present in header map", h)

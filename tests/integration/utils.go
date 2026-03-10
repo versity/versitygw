@@ -1886,7 +1886,6 @@ func cleanupLockedObjects(client *s3.Client, bucket string, objs []objToDelete) 
 	sem := semaphore.NewWeighted(maxDelObjWorkers)
 
 	for _, obj := range objs {
-		obj := obj // capture loop variable
 
 		// Acquire worker slot before processing an object
 		if err := sem.Acquire(ctx, 1); err != nil {
@@ -2417,12 +2416,12 @@ func extractSignature(req *http.Request) ([]byte, error) {
 
 	authHdr := req.Header.Get("Authorization")
 
-	i := strings.Index(authHdr, key)
-	if i == -1 {
+	_, after, ok := strings.Cut(authHdr, key)
+	if !ok {
 		return nil, errors.New("signature not found")
 	}
 
-	sig := authHdr[i+len(key):]
+	sig := after
 
 	return hex.DecodeString(sig)
 }

@@ -31,14 +31,14 @@ func getHost(r *http.Request) string {
 //
 // Copied from the Go 1.8 standard library (net/url)
 func stripPort(hostport string) string {
-	colon := strings.IndexByte(hostport, ':')
-	if colon == -1 {
+	before, _, ok := strings.Cut(hostport, ":")
+	if !ok {
 		return hostport
 	}
-	if i := strings.IndexByte(hostport, ']'); i != -1 {
-		return strings.TrimPrefix(hostport[:i], "[")
+	if before, _, ok := strings.Cut(hostport, "]"); ok {
+		return strings.TrimPrefix(before, "[")
 	}
-	return hostport[:colon]
+	return before
 }
 
 // Port returns the port part of u.Host, without the leading colon.
@@ -46,17 +46,17 @@ func stripPort(hostport string) string {
 //
 // Copied from the Go 1.8 standard library (net/url)
 func portOnly(hostport string) string {
-	colon := strings.IndexByte(hostport, ':')
-	if colon == -1 {
+	_, after, ok := strings.Cut(hostport, ":")
+	if !ok {
 		return ""
 	}
-	if i := strings.Index(hostport, "]:"); i != -1 {
-		return hostport[i+len("]:"):]
+	if _, after, ok := strings.Cut(hostport, "]:"); ok {
+		return after
 	}
 	if strings.Contains(hostport, "]") {
 		return ""
 	}
-	return hostport[colon+len(":"):]
+	return after
 }
 
 // Returns true if the specified URI is using the standard port

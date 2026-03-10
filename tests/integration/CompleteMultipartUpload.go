@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -1898,10 +1899,8 @@ func CompleteMultipartUpload_racey_success(s *S3Conf) error {
 
 		mu.RLock()
 		defer mu.RUnlock()
-		for _, s := range sums {
-			if csum == s {
-				return nil
-			}
+		if slices.Contains(sums, csum) {
+			return nil
 		}
 		return fmt.Errorf("expected the object checksum to be one of %v, instead got %v",
 			sums, csum)
