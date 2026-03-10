@@ -49,6 +49,7 @@ type S3Proxy struct {
 
 	access                    string
 	secret                    string
+	anonymousCredentials      bool
 	endpoint                  string
 	awsRegion                 string
 	metaBucket                string
@@ -69,10 +70,11 @@ func NewWithClient(ctx context.Context, client *s3.Client, metaBucket string) (*
 	return s, s.validate(ctx)
 }
 
-func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, disableChecksum, disableDataIntegrityCheck, sslSkipVerify, usePathStyle, debug bool) (*S3Proxy, error) {
+func New(ctx context.Context, access, secret, endpoint, region, metaBucket string, anonymousCredentials, disableChecksum, disableDataIntegrityCheck, sslSkipVerify, usePathStyle, debug bool) (*S3Proxy, error) {
 	s := &S3Proxy{
 		access:                    access,
 		secret:                    secret,
+		anonymousCredentials:      anonymousCredentials,
 		endpoint:                  endpoint,
 		awsRegion:                 region,
 		metaBucket:                metaBucket,
