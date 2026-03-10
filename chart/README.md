@@ -82,7 +82,7 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
 | **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
-| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi` |
+| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage by default; set `persistence.claimName` to use an existing PVC instead |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
 
 ## Scaling and Persistence
@@ -98,6 +98,11 @@ When scaling `versitygw` horizontally by setting `replicaCount` greater than 1, 
     - Using **ReadWriteMany (RWX)**: Replicas can be distributed across **multiple nodes** in the cluster. This is the recommended approach for true horizontal scaling and high availability. When using RWX, it is also recommended to use pod anti-affinity (via `affinity` in `values.yaml`) to ensure pods are distributed across nodes/zones.
 - **Stateless Backends (S3, Azure)**: If you are using a stateless storage backend (e.g. proxying to another S3 store) **and** you are either not using IAM or using an external IAM provider (e.g. LDAP, Vault), persistence can be safely disabled by setting `persistence.enabled=false`.
 
+### Using an existing PVC
+
+Set `persistence.enabled=true` and `persistence.claimName=<existing-pvc-name>` to mount an already existing PVC. When `persistence.claimName` is set, the chart will use that claim and will not create a new `PersistentVolumeClaim` resource.
+
 ## Configuration
 
 See [`values.yaml`](./values.yaml) for the full list of parameters and their defaults.
+
