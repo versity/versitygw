@@ -27,6 +27,7 @@ var (
 	s3proxyEndpoint                  string
 	s3proxyRegion                    string
 	s3proxyMetaBucket                string
+	s3proxyAnonymousCredentials      bool
 	s3proxyDisableChecksum           bool
 	s3proxyDisableDataIntegrityCheck bool
 	s3proxySslSkipVerify             bool
@@ -79,6 +80,13 @@ to an s3 storage backend service.`,
 				Destination: &s3proxyMetaBucket,
 			},
 			&cli.BoolFlag{
+				Name:        "anonymous-credentials",
+				Usage:       "force anonymous credentials instead of AWS default credential chain",
+				Value:       false,
+				EnvVars:     []string{"VGW_S3_ANONYMOUS_CREDENTIALS"},
+				Destination: &s3proxyAnonymousCredentials,
+			},
+			&cli.BoolFlag{
 				Name:        "disable-checksum",
 				Usage:       "disable gateway to server object checksums",
 				Value:       false,
@@ -119,7 +127,7 @@ to an s3 storage backend service.`,
 
 func runS3(ctx *cli.Context) error {
 	be, err := s3proxy.New(ctx.Context, s3proxyAccess, s3proxySecret, s3proxyEndpoint, s3proxyRegion,
-		s3proxyMetaBucket, s3proxyDisableChecksum, s3proxyDisableDataIntegrityCheck, s3proxySslSkipVerify, s3proxyUsePathStyle, s3proxyDebug)
+		s3proxyMetaBucket, s3proxyAnonymousCredentials, s3proxyDisableChecksum, s3proxyDisableDataIntegrityCheck, s3proxySslSkipVerify, s3proxyUsePathStyle, s3proxyDebug)
 	if err != nil {
 		return fmt.Errorf("init s3 backend: %w", err)
 	}

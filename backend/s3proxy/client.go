@@ -52,12 +52,8 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 	if (access != "" && secret == "") || (access == "" && secret != "") {
 		return aws.Config{}, fmt.Errorf("both access and secret must be set or none at all")
 	}
-
-	var creds aws.CredentialsProvider
-	if access != "" {
-		creds = credentials.NewStaticCredentialsProvider(access, secret, "")
-	} else {
-		creds = aws.AnonymousCredentials{}
+	if s.anonymousCredentials && access != "" {
+		return aws.Config{}, fmt.Errorf("anonymous credentials cannot be used with access and secret")
 	}
 
 	tr := &http.Transport{
@@ -67,8 +63,13 @@ func (s *S3Proxy) getConfig(ctx context.Context, access, secret string) (aws.Con
 
 	opts := []func(*config.LoadOptions) error{
 		config.WithRegion(s.awsRegion),
-		config.WithCredentialsProvider(creds),
 		config.WithHTTPClient(client),
+	}
+
+	if access != "" {
+		opts = append(opts, config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(access, secret, "")))
+	} else if s.anonymousCredentials {
+		opts = append(opts, config.WithCredentialsProvider(aws.AnonymousCredentials{}))
 	}
 
 	if s.disableChecksum {
