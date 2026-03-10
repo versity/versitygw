@@ -59,6 +59,8 @@ helm upgrade my-versitygw oci://ghcr.io/versity/versitygw/charts/versitygw \
   --version 0.2.0
 ```
 
+You can find the list of available Helm chart versions in the [GitHub packages page](https://github.com/versity/versitygw/pkgs/container/versitygw%2Fcharts%2Fversitygw/versions?filters%5Bversion_type%5D=tagged).
+
 ## Backend Storage
 
 The `gateway.backend.type` value selects the storage backend. Use `gateway.backend.args` to pass backend-specific arguments.

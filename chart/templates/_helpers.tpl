@@ -79,7 +79,11 @@ Returns empty string if persistence is disabled.
 */}}
 {{- define "versitygw.pvcName" -}}
 {{- if .Values.persistence.enabled }}
-{{- default (printf "%s-data" (include "versitygw.fullname" .)) .Values.persistence.claimName }}
+{{- if .Values.persistence.claimName }}
+{{- .Values.persistence.claimName }}
+{{- else }}
+{{- printf "%s-data" (include "versitygw.fullname" .) }}
+{{- end }}
 {{- end }}
 {{- end }}
 
