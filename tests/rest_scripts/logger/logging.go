@@ -8,7 +8,7 @@ import (
 var Debug *bool
 var LogFile *string
 
-func PrintDebug(format string, args ...interface{}) {
+func PrintDebug(format string, args ...any) {
 	if *Debug {
 		if *LogFile != "" {
 			logFile, err := os.OpenFile(*LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
@@ -22,7 +22,7 @@ func PrintDebug(format string, args ...interface{}) {
 	}
 }
 
-func LogFatal(format string, args ...interface{}) {
+func LogFatal(format string, args ...any) {
 	PrintDebug(format, args...)
 	os.Exit(1)
 }

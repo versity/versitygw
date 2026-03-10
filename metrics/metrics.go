@@ -88,9 +88,9 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 
 	// setup statsd endpoints
 	if len(conf.StatsdServers) > 0 {
-		statsdServers := strings.Split(conf.StatsdServers, ",")
+		statsdServers := strings.SplitSeq(conf.StatsdServers, ",")
 
-		for _, server := range statsdServers {
+		for server := range statsdServers {
 			statsd, err := newStatsd(server, conf.ServiceName)
 			if err != nil {
 				return nil, err
@@ -101,9 +101,9 @@ func NewManager(ctx context.Context, conf Config) (Manager, error) {
 
 	// setup dogstatsd endpoints
 	if len(conf.DogStatsdServers) > 0 {
-		dogStatsdServers := strings.Split(conf.DogStatsdServers, ",")
+		dogStatsdServers := strings.SplitSeq(conf.DogStatsdServers, ",")
 
-		for _, server := range dogStatsdServers {
+		for server := range dogStatsdServers {
 			dogStatsd, err := newDogStatsd(server, conf.ServiceName)
 			if err != nil {
 				return nil, err

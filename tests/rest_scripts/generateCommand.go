@@ -77,8 +77,8 @@ func (r *restParams) String() string {
 
 func (r *restParams) Set(value string) error {
 	*r = make(map[string]string)
-	pairs := strings.Split(value, *paramSeparator)
-	for _, pair := range pairs {
+	pairs := strings.SplitSeq(value, *paramSeparator)
+	for pair := range pairs {
 		kv := strings.SplitN(pair, ":", 2)
 		if len(kv) != 2 {
 			return fmt.Errorf("invalid key-value pair: %s", pair)

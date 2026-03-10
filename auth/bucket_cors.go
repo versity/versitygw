@@ -327,8 +327,8 @@ func ParseCORSHeaders(headers string) ([]CORSHeader, error) {
 		return result, nil
 	}
 
-	headersSplitted := strings.Split(headers, ",")
-	for _, h := range headersSplitted {
+	headersSplitted := strings.SplitSeq(headers, ",")
+	for h := range headersSplitted {
 		corsHeader := CORSHeader(strings.TrimSpace(h))
 		if corsHeader == "" || !corsHeader.IsValid() {
 			debuglogger.Logf("invalid access control header: %s", h)

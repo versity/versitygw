@@ -401,8 +401,8 @@ func ParseObjectAttributes(ctx *fiber.Ctx) (map[s3response.ObjectAttributes]stru
 			if len(value) == 0 {
 				break
 			}
-			oattrs := strings.Split(string(value), ",")
-			for _, a := range oattrs {
+			oattrs := strings.SplitSeq(string(value), ",")
+			for a := range oattrs {
 				attr := s3response.ObjectAttributes(a)
 				if !attr.IsValid() {
 					debuglogger.Logf("invalid object attribute: %v\n", attr)
@@ -500,16 +500,16 @@ type ChecksumValues map[types.ChecksumAlgorithm]string
 // e.g.
 // "x-amz-checksum-crc64nvme, x-amz-checksum-sha1"
 func (cv ChecksumValues) Headers() string {
-	result := ""
+	var result strings.Builder
 	isFirst := false
 
 	for key := range cv {
 		if !isFirst {
-			result += ", "
+			result.WriteString(", ")
 		}
-		result += fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(key)))
+		result.WriteString(fmt.Sprintf("x-amz-checksum-%v", strings.ToLower(string(key))))
 	}
-	return result
+	return result.String()
 }
 
 // ParseCalculatedChecksumHeaders parses and validates x-amz-checksum-x header keys

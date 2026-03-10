@@ -992,7 +992,7 @@ func TestParseTagging(t *testing.T) {
 			},
 		}
 
-		for i := 0; i < lgth; i++ {
+		for range lgth {
 			res.TagSet.Tags = append(res.TagSet.Tags, s3response.Tag{
 				Key:   genRandStr(10),
 				Value: genRandStr(20),

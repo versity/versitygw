@@ -416,7 +416,7 @@ func (ipa *IpaIAMService) newRequest(method string, args []string, dict map[stri
 		return "", fmt.Errorf("ipa request invalid: %w", err)
 	}
 
-	request := map[string]interface{}{
+	request := map[string]any{
 		"id":     id,
 		"method": json.RawMessage(jmethod),
 		"params": []json.RawMessage{json.RawMessage(jargs), json.RawMessage(jdict)},
@@ -448,7 +448,7 @@ func pkcs7Unpad(b []byte, blocksize int) ([]byte, error) {
 	if n == 0 || n > len(b) {
 		return nil, errors.New("invalid padding on input")
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if b[len(b)-n+i] != c {
 			return nil, errors.New("invalid padding on input")
 		}

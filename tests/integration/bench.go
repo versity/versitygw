@@ -45,7 +45,7 @@ func TestUpload(s *S3Conf, files int, objSize int64, bucket, prefix string) erro
 
 	runF("performance test: upload objects")
 
-	for i := 0; i < files; i++ {
+	for i := range files {
 		sg.Add(1)
 		go func(i int) {
 			var r io.Reader = NewDataReader(int(objSize), int(s.PartSize))
@@ -87,7 +87,7 @@ func TestDownload(s *S3Conf, files int, objSize int64, bucket, prefix string) er
 
 	runF("performance test: download objects")
 
-	for i := 0; i < files; i++ {
+	for i := range files {
 		sg.Add(1)
 		go func(i int) {
 			nw := NewNullWriter()
@@ -131,16 +131,14 @@ func TestReqPerSec(s *S3Conf, totalReqs int, bucket string) error {
 	runF("performance test: measuring request per second")
 
 	for i := 0; i < s.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; i < totalReqs/s.Concurrency; i++ {
 				_, err := client.HeadBucket(context.Background(), &s3.HeadBucketInput{Bucket: &bucket})
 				if err != nil && resErr != nil {
 					resErr = err
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

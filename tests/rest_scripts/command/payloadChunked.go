@@ -22,12 +22,7 @@ func (c *PayloadChunked) getChunkedPayloadContentLength(additionalChunkHeaderSiz
 	var sizeIdx int64
 	var contentLength int64
 	for sizeIdx = 0; sizeIdx < payloadSize; sizeIdx += c.chunkSize {
-		var endIdx int64
-		if sizeIdx+c.chunkSize < payloadSize {
-			endIdx = sizeIdx + c.chunkSize
-		} else {
-			endIdx = payloadSize
-		}
+		endIdx := min(sizeIdx+c.chunkSize, payloadSize)
 		hexSize := fmt.Sprintf("%x", endIdx-sizeIdx)
 		contentLength += int64(len(hexSize)) + additionalChunkHeaderSize + (endIdx - sizeIdx) + 2
 	}

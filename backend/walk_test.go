@@ -374,14 +374,12 @@ func TestWalkStop(t *testing.T) {
 
 	var err error
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_, err = backend.Walk(ctx, s, "", "/", "", 1000,
 			func(path string, d fs.DirEntry) (s3response.Object, error) {
 				return s3response.Object{}, nil
 			}, []string{})
-	}()
+	})
 
 	select {
 	case <-time.After(1 * time.Second):

@@ -344,8 +344,8 @@ func headerCompare(expectedHeaders map[string]string, actualHeaders map[string][
 		}
 
 		// regex match
-		if strings.HasPrefix(want, "re:") {
-			pat := strings.TrimPrefix(want, "re:")
+		if after, ok := strings.CutPrefix(want, "re:"); ok {
+			pat := after
 			re, err := regexp.Compile(pat)
 			if err != nil {
 				return fmt.Errorf("bad regex for header %q: %w", k, err)

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -300,12 +301,7 @@ func Walk(ctx context.Context, fileSystem fs.FS, prefix, delimiter, marker strin
 }
 
 func contains(a string, strs []string) bool {
-	for _, s := range strs {
-		if s == a {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strs, a)
 }
 
 type WalkVersioningResults struct {

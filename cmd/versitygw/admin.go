@@ -583,11 +583,11 @@ func parseCreateBucketPayload(input string) ([]byte, error) {
 	}
 	for _, part := range inputParts {
 		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "LocationConstraint=") {
-			locConstraint := strings.TrimPrefix(part, "LocationConstraint=")
+		if after, ok := strings.CutPrefix(part, "LocationConstraint="); ok {
+			locConstraint := after
 			config.LocationConstraint = &locConstraint
-		} else if strings.HasPrefix(part, "Tags=") {
-			tags, err := parseTagging(strings.TrimPrefix(part, "Tags="))
+		} else if after, ok := strings.CutPrefix(part, "Tags="); ok {
+			tags, err := parseTagging(after)
 			if err != nil {
 				return nil, err
 			}

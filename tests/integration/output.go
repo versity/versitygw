@@ -32,17 +32,17 @@ var (
 	FailCount atomic.Uint32
 )
 
-func runF(format string, a ...interface{}) {
+func runF(format string, a ...any) {
 	RunCount.Add(1)
 	fmt.Printf(colorCyan+"RUN  "+colorReset+format+"\n", a...)
 }
 
-func failF(format string, a ...interface{}) {
+func failF(format string, a ...any) {
 	FailCount.Add(1)
 	fmt.Printf(colorRed+"FAIL "+colorReset+format+"\n", a...)
 }
 
-func passF(format string, a ...interface{}) {
+func passF(format string, a ...any) {
 	PassCount.Add(1)
 	fmt.Printf(colorGreen+"PASS "+colorReset+format+"\n", a...)
 }
