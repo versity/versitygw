@@ -282,7 +282,9 @@ persistence:
   # If disabled, an emptyDir (ephemeral!) will be used instead of a PVC.
   # NOTE: Data will be lost on pod restart if persistence is disabled.
   enabled: true
-  # Use an existing PVC instead of creating a new one.
+  # Whether to create a new PVC. If false, persistence.claimName must be provided.
+  create: true
+  # The name of the PVC that should be created or used (if persistence.create=false)
   claimName: ""
   size: 10Gi
   storageClassName: ""

@@ -4,6 +4,9 @@
     {{- fail "Multiple replicas with POSIX backend or Internal IAM require persistence.enabled=true to prevent data loss and inconsistency across pods. If using a stateless backend (e.g. S3, Azure) and external IAM, set persistence.enabled=false." }}
   {{- end }}
 {{- end }}
+{{- if and .Values.persistence.enabled (not .Values.persistence.create) (not .Values.persistence.claimName) }}
+  {{- fail "persistence.claimName is required when persistence.create is false" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
