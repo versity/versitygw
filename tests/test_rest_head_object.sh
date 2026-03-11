@@ -45,9 +45,6 @@ source ./tests/drivers/get_object_attributes/get_object_attributes_rest.sh
 }
 
 @test "REST - HeadObject - default Content-Type is binary/octet-stream" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1849"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name="$output"

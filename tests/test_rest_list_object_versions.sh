@@ -38,9 +38,6 @@ source ./tests/util/util_time.sh
 }
 
 @test "ListObjectVersions - version changes after deletion w/retention policy" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1741"
-  fi
   test_file="test_file"
 
   run get_bucket_name "$BUCKET_ONE_NAME"

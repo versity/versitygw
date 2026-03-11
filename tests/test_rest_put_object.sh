@@ -394,7 +394,7 @@ export RUN_USERS=true
 
 @test "PutObject - x-amz-acl - not implemented" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1767"
+    skip "skip for versitygw - see #1904"
   fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
@@ -422,7 +422,7 @@ export RUN_USERS=true
 
 @test "PutObject - x-amz-grant-full-control - not implemented" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1773"
+    skip "skip for versitygw - see #1904"
   fi
   run attempt_put_object_with_specific_acl "x-amz-grant-full-control"
   assert_success
@@ -430,14 +430,14 @@ export RUN_USERS=true
 
 @test "PutObject - x-amz-grant-read - not implemented" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1773"
+    skip "skip for versitygw - see #1904"
   fi
   run attempt_put_object_with_specific_acl "x-amz-grant-read"
   assert_success
 }
 @test "PutObject - x-amz-grant-read-acp - not implemented" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1773"
+    skip "skip for versitygw - see #1904"
   fi
   run attempt_put_object_with_specific_acl "x-amz-grant-read-acp"
   assert_success
@@ -445,7 +445,7 @@ export RUN_USERS=true
 
 @test "PutObject - x-amz-grant-write-acp - not implemented" {
   if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1773"
+    skip "skip for versitygw - see #1904"
   fi
   run attempt_put_object_with_specific_acl "x-amz-grant-write-acp"
   assert_success

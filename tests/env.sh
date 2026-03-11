@@ -107,10 +107,10 @@ check_aws_vars() {
       log 1 "AWS_ENDPOINT_URL missing"
       exit 1
     fi
-    export SERVER_NAME="VERSITYGW"
+    export SERVER_NAME="versitygw"
   else
     if [ -z "$SERVER_NAME" ]; then
-      export SERVER_NAME="AMAZONS3"
+      export SERVER_NAME="amazonS3"
     else
       export SERVER_NAME
     fi

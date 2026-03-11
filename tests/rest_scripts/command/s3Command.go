@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -309,7 +310,12 @@ func (s *S3Command) generateCanonicalRequestString() {
 	if queryRequestLine == "" {
 		queryRequestLine = s.Query
 	}
-	canonicalRequestLines = append(canonicalRequestLines, queryRequestLine)
+	canonicalQuery, err := canonicalizeQuery(queryRequestLine)
+	if err != nil {
+		logger.PrintDebug("error parsing query '%s': %v", queryRequestLine, err)
+		canonicalQuery = queryRequestLine
+	}
+	canonicalRequestLines = append(canonicalRequestLines, canonicalQuery)
 
 	var signedParams []string
 	for _, headerValue := range s.headerValues {
@@ -373,12 +379,20 @@ func (s *S3Command) buildCurlShellCommand() (string, error) {
 	if s.Method != "GET" {
 		curlCommand = append(curlCommand, fmt.Sprintf("-X %s ", s.Method))
 	}
-	fullPath := "\"" + s.Url + s.path
-	if s.Query != "" {
-		fullPath += "?" + s.Query
+	fullPath := s.Url + s.path
+	awsUrl, err := url.Parse(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("error parsing URL: %w", err)
 	}
-	fullPath += "\""
-	curlCommand = append(curlCommand, fullPath)
+	if s.Query != "" {
+		canonicalQuery, err := canonicalizeQuery(s.Query)
+		if err != nil {
+			return "", fmt.Errorf("error parsing query: %w", err)
+		}
+		awsUrl.RawQuery = canonicalQuery
+	}
+	enclosedPath := fmt.Sprintf("\"%s\"", awsUrl.String())
+	curlCommand = append(curlCommand, enclosedPath)
 	authorizationString := s.buildAuthorizationString()
 	curlCommand = append(curlCommand, "-H", fmt.Sprintf("\"%s\"", authorizationString))
 	for _, headerValue := range s.headerValues {

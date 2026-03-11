@@ -101,9 +101,6 @@ source ./tests/setup.sh
 }
 
 @test "REST - CORS - invalid origin" {
-  if [ "$DIRECT" != "true" ]; then
-    skip "https://github.com/versity/versitygw/issues/1870"
-  fi
   run get_bucket_name "$BUCKET_ONE_NAME"
   assert_success
   bucket_name=$output
