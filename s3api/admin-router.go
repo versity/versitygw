@@ -37,7 +37,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// CreateUser admin api
 	app.Patch("/create-user",
 		controllers.ProcessHandlers(ctrl.CreateUser, metrics.ActionAdminCreateUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminCreateUser),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -49,7 +49,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// DeleteUsers admin api
 	app.Patch("/delete-user",
 		controllers.ProcessHandlers(ctrl.DeleteUser, metrics.ActionAdminDeleteUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -61,7 +61,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// UpdateUser admin api
 	app.Patch("/update-user",
 		controllers.ProcessHandlers(ctrl.UpdateUser, metrics.ActionAdminUpdateUser, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -73,7 +73,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// ListUsers admin api
 	app.Patch("/list-users",
 		controllers.ProcessHandlers(ctrl.ListUsers, metrics.ActionAdminListUsers, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminListUsers),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -85,7 +85,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// ChangeBucketOwner admin api
 	app.Patch("/change-bucket-owner",
 		controllers.ProcessHandlers(ctrl.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -97,7 +97,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 	// ListBucketsAndOwners admin api
 	app.Patch("/list-buckets",
 		controllers.ProcessHandlers(ctrl.ListBuckets, metrics.ActionAdminListBuckets, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminListBuckets),
 			middlewares.ApplyDefaultCORS(corsAllowOrigin),
 		))
@@ -108,7 +108,7 @@ func (ar *S3AdminRouter) Init(app *fiber.App, be backend.Backend, iam auth.IAMSe
 
 	app.Patch("/:bucket/create",
 		controllers.ProcessHandlers(ctrl.CreateBucket, metrics.ActionAdminListBuckets, services,
-			middlewares.VerifyV4Signature(root, iam, region, false, true),
+			middlewares.VerifyV4Signature(root, iam, region, false, true, false),
 			middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
 		))
 	app.Options("/:bucket/create",

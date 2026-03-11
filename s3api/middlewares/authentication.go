@@ -30,6 +30,7 @@ import (
 const (
 	iso8601Format   = "20060102T150405Z"
 	maxObjSizeLimit = 5 * 1024 * 1024 * 1024 // 5gb
+	defaultRegion   = "us-east-1"
 )
 
 type RootUserConfig struct {
@@ -37,7 +38,7 @@ type RootUserConfig struct {
 	Secret string
 }
 
-func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody bool, requireContentSha256 bool) fiber.Handler {
+func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, streamBody, requireContentSha256, allowDefaultRegion bool) fiber.Handler {
 	acct := accounts{root: root, iam: iam}
 
 	return func(ctx *fiber.Ctx) error {
@@ -78,7 +79,7 @@ func VerifyV4Signature(root RootUserConfig, iam auth.IAMService, region string, 
 			return err
 		}
 
-		if authData.Region != region {
+		if authData.Region != region && !(allowDefaultRegion && authData.Region == defaultRegion) {
 			return s3err.MalformedAuth.IncorrectRegion(region, authData.Region)
 		}
 

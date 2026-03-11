@@ -62,7 +62,7 @@ func (sa *S3ApiRouter) Init() {
 		// CreateUser admin api
 		sa.app.Patch("/create-user",
 			controllers.ProcessHandlers(adminController.CreateUser, metrics.ActionAdminCreateUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminCreateUser),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -74,7 +74,7 @@ func (sa *S3ApiRouter) Init() {
 		// DeleteUsers admin api
 		sa.app.Patch("/delete-user",
 			controllers.ProcessHandlers(adminController.DeleteUser, metrics.ActionAdminDeleteUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminDeleteUser),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -86,7 +86,7 @@ func (sa *S3ApiRouter) Init() {
 		// UpdateUser admin api
 		sa.app.Patch("/update-user",
 			controllers.ProcessHandlers(adminController.UpdateUser, metrics.ActionAdminUpdateUser, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminUpdateUser),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -98,7 +98,7 @@ func (sa *S3ApiRouter) Init() {
 		// ListUsers admin api
 		sa.app.Patch("/list-users",
 			controllers.ProcessHandlers(adminController.ListUsers, metrics.ActionAdminListUsers, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminListUsers),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -110,7 +110,7 @@ func (sa *S3ApiRouter) Init() {
 		// ChangeBucketOwner admin api
 		sa.app.Patch("/change-bucket-owner",
 			controllers.ProcessHandlers(adminController.ChangeBucketOwner, metrics.ActionAdminChangeBucketOwner, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminChangeBucketOwner),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -122,7 +122,7 @@ func (sa *S3ApiRouter) Init() {
 		// ListBucketsAndOwners admin api
 		sa.app.Patch("/list-buckets",
 			controllers.ProcessHandlers(adminController.ListBuckets, metrics.ActionAdminListBuckets, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminListBuckets),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -134,7 +134,7 @@ func (sa *S3ApiRouter) Init() {
 		// CreateBucket admin api
 		sa.app.Patch("/:bucket/create",
 			controllers.ProcessHandlers(adminController.CreateBucket, metrics.ActionAdminCreateBucket, adminServices,
-				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+				middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 				middlewares.IsAdmin(metrics.ActionAdminCreateBucket),
 				middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			))
@@ -170,7 +170,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ApplyDefaultCORS(sa.corsAllowOrigin),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListAllMyBuckets, "", auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, true),
 		))
 
 	sa.app.Options("/",
@@ -192,7 +192,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -205,7 +205,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -219,7 +219,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketVersioning, auth.PutBucketVersioningAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -233,7 +233,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectLockConfiguration, auth.PutBucketObjectLockConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -247,7 +247,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -261,7 +261,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -275,7 +275,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketAcl, auth.PutBucketAclAction, auth.PermissionWriteAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -289,7 +289,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketAnalyticsConfiguration, auth.PutAnalyticsConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -302,7 +302,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketEncryption, auth.PutEncryptionConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -315,7 +315,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketIntelligentTieringConfiguration, auth.PutIntelligentTieringConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -328,7 +328,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketInventoryConfiguration, auth.PutInventoryConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -341,7 +341,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketLifecycleConfiguration, auth.PutLifecycleConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -354,7 +354,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketLogging, auth.PutBucketLoggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -367,7 +367,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketRequestPayment, auth.PutBucketRequestPaymentAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -380,7 +380,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketMetricsConfiguration, auth.PutMetricsConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -393,7 +393,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketReplication, auth.PutReplicationConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -406,7 +406,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutPublicAccessBlock, auth.PutBucketPublicAccessBlockAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -419,7 +419,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketNotificationConfiguration, auth.PutBucketNotificationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -432,7 +432,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketAccelerateConfiguration, auth.PutAccelerateConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -445,7 +445,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutBucketWebsite, auth.PutBucketWebsiteAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -457,7 +457,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCreateBucket, auth.CreateBucketAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 		))
@@ -477,7 +477,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionHeadBucket, auth.ListBucketAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -498,7 +498,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketTagging, auth.PutBucketTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -511,7 +511,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketOwnershipControls, auth.PutBucketOwnershipControlsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -524,7 +524,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketPolicy, auth.PutBucketPolicyAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -537,7 +537,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketCors, auth.PutBucketCorsAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -550,7 +550,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketAnalyticsConfiguration, auth.PutAnalyticsConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -563,7 +563,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketEncryption, auth.PutEncryptionConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -576,7 +576,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketIntelligentTieringConfiguration, auth.PutIntelligentTieringConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -589,7 +589,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketInventoryConfiguration, auth.PutInventoryConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -602,7 +602,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketLifecycle, auth.PutLifecycleConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -615,7 +615,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketMetricsConfiguration, auth.PutMetricsConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -628,7 +628,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketReplication, auth.PutReplicationConfigurationAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -641,7 +641,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeletePublicAccessBlock, auth.PutBucketPublicAccessBlockAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -654,7 +654,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucketWebsite, auth.PutBucketWebsiteAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -666,7 +666,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteBucket, auth.DeleteBucketAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -687,7 +687,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketLocation, auth.GetBucketLocationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		),
@@ -701,7 +701,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketTagging, auth.GetBucketTaggingAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -714,7 +714,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketOwnershipControls, auth.GetBucketOwnershipControlsAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -727,7 +727,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketVersioning, auth.GetBucketVersioningAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -740,7 +740,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketPolicy, auth.GetBucketPolicyAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -753,7 +753,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketCors, auth.GetBucketCorsAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -766,7 +766,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectLockConfiguration, auth.GetBucketObjectLockConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -779,7 +779,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketAcl, auth.GetBucketAclAction, auth.PermissionReadAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -792,7 +792,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListMultipartUploads, auth.ListBucketMultipartUploadsAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -805,7 +805,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListObjectVersions, auth.ListBucketVersionsAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -818,7 +818,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketPolicyStatus, auth.GetBucketPolicyStatusAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -831,7 +831,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketAnalyticsConfiguration, auth.GetAnalyticsConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -844,7 +844,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListBucketAnalyticsConfigurations, auth.GetAnalyticsConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -857,7 +857,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketEncryption, auth.GetEncryptionConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -870,7 +870,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketIntelligentTieringConfiguration, auth.GetIntelligentTieringConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -883,7 +883,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListBucketIntelligentTieringConfigurations, auth.GetIntelligentTieringConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -896,7 +896,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketInventoryConfiguration, auth.GetInventoryConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -909,7 +909,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListBucketInventoryConfigurations, auth.GetInventoryConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -922,7 +922,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketLifecycleConfiguration, auth.GetLifecycleConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -935,7 +935,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketLogging, auth.GetBucketLoggingAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -948,7 +948,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketRequestPayment, auth.GetBucketRequestPaymentAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -961,7 +961,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketMetricsConfiguration, auth.GetMetricsConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -974,7 +974,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListBucketMetricsConfigurations, auth.GetMetricsConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -987,7 +987,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketReplication, auth.GetReplicationConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -1000,7 +1000,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetPublicAccessBlock, auth.GetBucketPublicAccessBlockAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -1013,7 +1013,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketNotificationConfiguration, auth.GetBucketNotificationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -1026,7 +1026,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketAccelerateConfiguration, auth.GetAccelerateConfigurationAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -1039,7 +1039,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetBucketWebsite, auth.GetBucketWebsiteAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		),
 	)
@@ -1052,7 +1052,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListObjectsV2, auth.ListBucketAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1064,7 +1064,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListObjects, auth.ListBucketAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1086,7 +1086,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteObjects, auth.DeleteObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, true),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1107,7 +1107,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionHeadObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1141,7 +1141,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectTagging, auth.GetObjectTaggingAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1154,7 +1154,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectRetention, auth.GetObjectRetentionAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1167,7 +1167,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectLegalHold, auth.GetObjectLegalHoldAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1180,7 +1180,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectAcl, auth.GetObjectAclAction, auth.PermissionReadAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1193,7 +1193,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObjectAttributes, auth.GetObjectAttributesAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1206,7 +1206,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionListParts, auth.ListMultipartUploadPartsAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1218,7 +1218,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionGetObject, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1240,7 +1240,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteObjectTagging, auth.DeleteObjectTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1253,7 +1253,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionAbortMultipartUpload, auth.AbortMultipartUploadAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1265,7 +1265,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionDeleteObject, auth.DeleteObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1288,7 +1288,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionRestoreObject, auth.RestoreObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1303,7 +1303,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionSelectObjectContent, auth.GetObjectAction, auth.PermissionRead, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1317,7 +1317,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCompleteMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1330,7 +1330,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCreateMultipartUpload, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1346,7 +1346,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectTagging, auth.PutObjectTaggingAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, true, false),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1359,7 +1359,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectRetention, auth.PutObjectRetentionAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, true),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1373,7 +1373,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectLegalHold, auth.PutObjectLegalHoldAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, true),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1387,7 +1387,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObjectAcl, auth.PutObjectAclAction, auth.PermissionWriteAcp, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.VerifyChecksums(false, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1402,7 +1402,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionUploadPartCopy, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
 		))
@@ -1415,7 +1415,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.BucketObjectNameValidator(),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionUploadPart, auth.PutObjectAction, auth.PermissionWrite, sa.region, true),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, true),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, true, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, true, true, false),
 			middlewares.VerifyChecksums(true, false, false),
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.ParseAcl(sa.be),
@@ -1442,7 +1442,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionCopyObject, auth.PutObjectAction, auth.PermissionWrite, sa.region, false),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, false),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, false, true, false),
 			middlewares.ParseAcl(sa.be),
 		))
 	objectRouter.Put("",
@@ -1454,7 +1454,7 @@ func (sa *S3ApiRouter) Init() {
 			middlewares.ApplyBucketCORS(sa.be, sa.corsAllowOrigin),
 			middlewares.AuthorizePublicBucketAccess(sa.be, metrics.ActionPutObject, auth.PutObjectAction, auth.PermissionWrite, sa.region, true),
 			middlewares.VerifyPresignedV4Signature(sa.root, sa.iam, sa.region, true),
-			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, true, true),
+			middlewares.VerifyV4Signature(sa.root, sa.iam, sa.region, true, true, false),
 			middlewares.VerifyChecksums(true, false, false),
 			middlewares.ParseAcl(sa.be),
 		))
