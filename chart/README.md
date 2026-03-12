@@ -84,12 +84,12 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
 | **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
-| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi` |
+| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
 
 ## Scaling and Persistence
 
-By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss.
+By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss. To use a hostPath volume set `persistence.hostPath`.
 
 ### Horizontal Scaling (replicas > 1)
 
