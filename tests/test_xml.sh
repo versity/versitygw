@@ -38,11 +38,11 @@ source ./tests/setup_unit.sh
 
   run build_xpath_string_for_element "dontcare" ""
   assert_failure
-  assert_output -p 'param number 2 is empty'
+  assert_output -p 'element has no name'
 
   run build_xpath_string_for_element "XML With Space"
   assert_failure
-  assert_output -p "param 'XML With Space' contains a space"
+  assert_output -p "element 'XML With Space' contains a space"
 }
 
 @test "get_xml_data - missing params" {

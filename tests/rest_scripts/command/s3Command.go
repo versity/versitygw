@@ -81,6 +81,10 @@ type S3Command struct {
 	OmitPayloadTrailer           bool
 	OmitPayloadTrailerKey        bool
 	OmitContentLength            bool
+	OmitSHA256Hash               bool
+	CustomSHA256Hash             string
+	OmitDate                     bool
+	CustomDate                   string
 
 	dataSource           DataSource
 	currentDateTime      string
@@ -116,7 +120,9 @@ func (s *S3Command) CurlShellCommand() (string, error) {
 
 func (s *S3Command) prepareForBuild() error {
 	now := time.Now().UTC()
-	if s.IncorrectYearMonthDay {
+	if s.CustomDate != "" {
+		s.currentDateTime = s.CustomDate
+	} else if s.IncorrectYearMonthDay {
 		s.currentDateTime = now.Add(-48 * time.Hour).Format("20060102T150405Z")
 	} else {
 		s.currentDateTime = now.Format("20060102T150405Z")
@@ -151,7 +157,9 @@ func (s *S3Command) preparePayload() error {
 	} else if s.Payload != "" {
 		s.dataSource = NewStringDataSource(s.Payload)
 	}
-	if s.PayloadType != "" {
+	if s.CustomSHA256Hash != "" {
+		s.payloadHash = s.CustomSHA256Hash
+	} else if s.PayloadType != "" {
 		s.payloadHash = s.PayloadType
 	} else if s.dataSource != nil {
 		var err error
@@ -193,8 +201,7 @@ func (s *S3Command) initializeOpenSSLPayloadAndGetContentLength() error {
 	return nil
 }
 
-func (s *S3Command) addHeaderValues() error {
-	s.headerValues = []*HeaderValue{}
+func (s *S3Command) addBaseHeaderValues() {
 	if s.MissingHostParam {
 		s.headerValues = append(s.headerValues, &HeaderValue{"host", "", true})
 	} else if s.CustomHostParamSet {
@@ -202,16 +209,25 @@ func (s *S3Command) addHeaderValues() error {
 	} else {
 		s.headerValues = append(s.headerValues, &HeaderValue{"host", s.host, true})
 	}
-	if s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer && s.ChecksumType != "" {
-		s.headerValues = append(s.headerValues, &HeaderValue{"x-amz-trailer", fmt.Sprintf("x-amz-checksum-%s", s.ChecksumType), true})
+	if !s.OmitSHA256Hash {
+		s.headerValues = append(s.headerValues, &HeaderValue{"x-amz-content-sha256", s.payloadHash, true})
 	}
-	s.headerValues = append(s.headerValues,
-		&HeaderValue{"x-amz-content-sha256", s.payloadHash, true},
-		&HeaderValue{"x-amz-date", s.currentDateTime, true},
-	)
+	if !s.OmitDate {
+		s.headerValues = append(s.headerValues, &HeaderValue{"x-amz-date", s.currentDateTime, true})
+	}
 	if s.Client == OPENSSL && !s.OmitContentLength {
 		s.headerValues = append(s.headerValues,
 			&HeaderValue{"Content-Length", fmt.Sprintf("%d", s.contentLength), true})
+	}
+}
+
+func (s *S3Command) addHeaderValues() error {
+	s.headerValues = []*HeaderValue{}
+
+	s.addBaseHeaderValues()
+
+	if s.PayloadType == StreamingAWS4HMACSHA256PayloadTrailer && s.ChecksumType != "" {
+		s.headerValues = append(s.headerValues, &HeaderValue{"x-amz-trailer", fmt.Sprintf("x-amz-checksum-%s", s.ChecksumType), true})
 	}
 	if s.dataSource != nil && s.PayloadType != UnsignedPayload {
 		payloadSize, err := s.dataSource.SourceDataByteSize()
