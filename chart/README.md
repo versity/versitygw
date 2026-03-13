@@ -89,7 +89,11 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 
 ## Scaling and Persistence
 
-By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss. To use a hostPath volume set `persistence.hostPath`.
+By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss. 
+
+Alternatively, you may use [hostPath volume](https://kubernetes.io/docs/concepts/storage/volumes/#hostpath) by setting the `persistence.hostPath` value.
+As a general rule, this setup should only be used if all nodes in the cluster have access to the same data (e.g. NFS share is mounted on all nodes) or for single-node use cases.
+Special care must be taken particularly when using multiple replicas with such a setup, since Versity does not perform internal data replication ("clustering").
 
 ### Horizontal Scaling (replicas > 1)
 
