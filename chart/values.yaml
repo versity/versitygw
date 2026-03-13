@@ -288,6 +288,8 @@ persistence:
   claimName: ""
   size: 10Gi
   storageClassName: ""
+  # If set then use a hostPath volume, needs `persistence.create=false`
+  hostPath: ""
   # Access mode for the PVC. Use ReadWriteMany for multi-replica deployments.
   accessMode: ReadWriteOnce
 

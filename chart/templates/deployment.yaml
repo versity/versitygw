@@ -4,8 +4,14 @@
     {{- fail "Multiple replicas with POSIX backend or Internal IAM require persistence.enabled=true to prevent data loss and inconsistency across pods. If using a stateless backend (e.g. S3, Azure) and external IAM, set persistence.enabled=false." }}
   {{- end }}
 {{- end }}
-{{- if and .Values.persistence.enabled (not .Values.persistence.create) (not .Values.persistence.claimName) }}
-  {{- fail "persistence.claimName is required when persistence.create is false" }}
+{{- if and .Values.persistence.enabled (not .Values.persistence.create) (not .Values.persistence.claimName) (not .Values.persistence.hostPath) }}
+  {{- fail "persistence.claimName or persistence.hostPath is required when persistence.create is false" }}
+{{- end }}
+{{- if and .Values.persistence.claimName .Values.persistence.hostPath }}
+  {{- fail "only persistence.claimName or persistence.hostPath can be set" }}
+{{- end }}
+{{- if and .Values.persistence.create .Values.persistence.hostPath }}
+  {{- fail "persistence.create must be false for persistence.hostPath can be set" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -195,8 +201,14 @@ spec:
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
+          {{- if .Values.persistence.hostPath }}
+          hostPath:
+            path: {{ .Values.persistence.hostPath }}
+            type: DirectoryOrCreate
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ include "versitygw.pvcName" . }}
+          {{- end }}
           {{- else }}
           emptyDir: {}
           {{- end }}

@@ -84,12 +84,16 @@ The `gateway.backend.type` value selects the storage backend. Use `gateway.backe
 | **Admin API** | `admin.enabled=true` — exposes a separate management API on `admin.port` (default `7071`) |
 | **WebUI** | `webui.enabled=true` — browser-based management UI on `webui.port` (default `8080`); set `webui.apiGateways` and `webui.adminGateways` to your externally reachable endpoints |
 | **IAM** | `iam.enabled=true` — flat-file identity and access management stored alongside backend data |
-| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi` |
+| **Persistence** | `persistence.enabled=true` — provisions a PVC for backend data and IAM storage; defaults to `10Gi`, or uses a hostPath volume specified by `persistence.hostPath` |
 | **NetworkPolicy** | `networkPolicy.enabled=true` — restricts ingress to selected pods/namespaces; allows all egress |
 
 ## Scaling and Persistence
 
-By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss.
+By default, this chart enables persistence via a `PersistentVolumeClaim` (PVC) to ensure data consistency and prevent data loss. 
+
+Alternatively, you may use [hostPath volume](https://kubernetes.io/docs/concepts/storage/volumes/#hostpath) by setting the `persistence.hostPath` value.
+As a general rule, this setup should only be used if all nodes in the cluster have access to the same data (e.g. NFS share is mounted on all nodes) or for single-node use cases.
+Special care must be taken particularly when using multiple replicas with such a setup, since Versity does not perform internal data replication ("clustering").
 
 ### Horizontal Scaling (replicas > 1)
 
