@@ -433,7 +433,7 @@ func updateUser(ctx *cli.Context) error {
 		ctx.String("secret"),
 		ctx.Int("user-id"),
 		ctx.Int("group-id"),
-		ctx.Int("projectID"),
+		ctx.Int("project-id"),
 		auth.Role(ctx.String("role"))
 
 	props := auth.MutableProps{}
