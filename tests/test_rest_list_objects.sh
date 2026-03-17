@@ -174,3 +174,44 @@ source ./tests/drivers/create_bucket/create_bucket_rest.sh
   run list_objects_with_prefix_and_delimiter_check_results "$bucket_name" "$prefix" "/" "a-b/" "--" "a-b-1.txt" "a-b-2.txt"
   assert_success
 }
+
+@test "REST - ListObjects - invalid encoding" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1984"
+  fi
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name file_name <<< "$output"
+
+  run send_rest_go_command "200" "-method" PUT "-bucketName" "$bucket_name" "-payloadFile" "$TEST_FILE_FOLDER/$file_name" "-objectKey" "$file_name"
+  assert_success
+
+  local bad_encoding="jdfkllaj"
+  run send_rest_go_command_expect_error_with_arg_name_value "400" "InvalidArgument" "Invalid Encoding Method specified in Request" \
+    "encoding-type" "$bad_encoding" "-bucketName" "$bucket_name" "-query" "encoding-type=$bad_encoding"
+  assert_success
+}
+
+@test "REST - ListObjects - encoding success" {
+  if [ "$DIRECT" != "true" ]; then
+    skip "https://github.com/versity/versitygw/issues/1985"
+  fi
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  file_name="a+ b.txt"
+  expected_encoding="a%2B+b.txt"
+  run create_test_file "$file_name"
+  assert_success
+
+  payload_file="$TEST_FILE_FOLDER/$file_name"
+  run send_rest_go_command "200" "-method" "PUT" "-payloadFile" "$payload_file" "-bucketName" "$bucket_name" "-objectKey" "$file_name"
+  assert_success
+
+  run list_objects_check_key "$bucket_name" "$expected_encoding" "url"
+  assert_success
+
+  run list_objects_check_key "$bucket_name" "$file_name" ""
+  assert_success
+}

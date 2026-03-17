@@ -304,12 +304,8 @@ send_curl_command_create_bucket_expect_error_callback() {
     log 2 "error getting bucket name from '$BUCKET_ONE_NAME': $bucket_name"
     return 1
   fi
-  if ! send_rest_go_command_expect_error "$1" "$2" "$3" "-bucketName" "$bucket_name" "-commandType" "createBucket" "${@:5}"; then
+  if ! send_rest_go_command_expect_error_callback "$1" "$2" "$3" "$4" "-bucketName" "$bucket_name" "-commandType" "createBucket" "${@:5}"; then
     log 2 "error sending rest go command"
-    return 1
-  fi
-  if [ "$4" != "" ] && ! "$4" "$TEST_FILE_FOLDER/result.txt"; then
-    log 2 "callback error"
     return 1
   fi
   return 0

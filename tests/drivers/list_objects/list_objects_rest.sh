@@ -163,3 +163,29 @@ list_objects_with_prefix_and_delimiter_check_results() {
   fi
   return 0
 }
+
+list_objects_check_key() {
+  if ! check_param_count_v2 "bucket name, key, encoding type" 3 $#; then
+    return 1
+  fi
+  query=()
+  if [ "$3" != "" ]; then
+    query=("-query" "encoding-type=$3")
+  fi
+  if ! send_rest_go_command_callback "200" "check_if_key_exists" "-bucketName" "$1" "${query[@]}" "--" "$2"; then
+    log 2 "error sending rest command"
+    return 1
+  fi
+  return 0
+}
+
+check_if_key_exists() {
+  if ! check_param_count_v2 "data file, key" 2 $#; then
+    return 1
+  fi
+  if ! check_if_element_exists "$1" "$2" "ListBucketResult" "Contents" "Key"; then
+    log 2 "error checking if CommonPrefix '$2' exists"
+    return 1
+  fi
+  return 0
+}
