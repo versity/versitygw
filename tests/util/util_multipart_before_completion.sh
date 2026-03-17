@@ -351,10 +351,11 @@ multipart_upload_range_too_large() {
 }
 
 list_and_check_upload() {
-  if [ $# -lt 2 ]; then
+  if ! check_param_count_ge_le "bucket, key, upload ID" 2 3 $#; then
     log 2 "'list_and_check_upload' requires bucket, key, upload ID (optional)"
     return 1
   fi
+
   if ! uploads=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OUTPUT_FILE="$TEST_FILE_FOLDER/uploads.txt" ./tests/rest_scripts/list_multipart_uploads.sh); then
     log 2 "error listing multipart uploads before upload: $result"
     return 1
@@ -440,10 +441,14 @@ upload_part_check_etag_header() {
   if ! check_param_count_v2 "bucket, key, upload ID, part number, part" 5 $#; then
     return 1
   fi
-  if ! etag=$(upload_part_rest "$1" "$2" "$3" "$4" "$5" 2>&1); then
-    log 2 "error getting etag: $etag"
+
+  local response
+  if ! response=$(upload_part_rest "$1" "$2" "$3" "$4" "$5" 2>&1); then
+    log 2 "error getting etag: $response"
     return 1
   fi
+  etag="$response"
+
   if ! [[ "$etag" =~ ^\"[0-9a-f]+\" ]]; then
     log 2 "etag pattern mismatch, etag ($etag) should be hex string surrounded by quotes"
     return 1
@@ -456,19 +461,31 @@ upload_part_copy_check_etag_header() {
     log 2 "'upload_part_copy_check_etag_header' requires bucket, destination file, part location"
     return 1
   fi
-  if ! create_multipart_upload_rest "$1" "$2" "" "parse_upload_id"; then
-    log 2 "error creating upload and getting ID: $upload_id"
+
+  local response
+  if ! response=$(create_multipart_upload_rest "$1" "$2" "" "parse_upload_id" 2>&1); then
+    log 2 "error creating upload and getting ID: $response"
     return 1
   fi
-  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$upload_id" PART_LOCATION="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/response.txt" ./tests/rest_scripts/upload_part_copy.sh); then
+  upload_id="$response"
+
+  if ! response=$(get_file_name 2>&1); then
+    log 2 "error getting file name: $response"
+    return 1
+  fi
+  file_name="$response"
+
+  if ! result=$(COMMAND_LOG="$COMMAND_LOG" BUCKET_NAME="$1" OBJECT_KEY="$2" PART_NUMBER="1" UPLOAD_ID="$upload_id" PART_LOCATION="$3" OUTPUT_FILE="$TEST_FILE_FOLDER/$file_name" ./tests/rest_scripts/upload_part_copy.sh); then
     # shellcheck disable=SC2154
     log 2 "error uploading part: $result"
     return 1
   fi
-  if ! etag=$(get_element_text "$TEST_FILE_FOLDER/response.txt" "CopyPartResult" "ETag"); then
-    log 2 "error getting etag"
+  if ! response=$(get_element_text "$TEST_FILE_FOLDER/$file_name" "CopyPartResult" "ETag" 2>&1); then
+    log 2 "error getting etag: $response"
     return 1
   fi
+  etag="$response"
+
   log 5 "etag: $etag"
   if ! [[ "$etag" =~ ^\"[0-9a-f]+\" ]]; then
     log 2 "etag pattern mismatch, etag ($etag) should be hex string surrounded by quotes"

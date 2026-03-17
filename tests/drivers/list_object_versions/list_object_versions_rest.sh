@@ -35,6 +35,7 @@ parse_version_or_delete_marker_id() {
     return 1
   fi
   log 5 "version or marker ID: $version_or_marker_id"
+  echo "$version_or_marker_id"
   return 0
 }
 
@@ -42,33 +43,43 @@ parse_version_id() {
   if ! check_param_count_v2 "data file, IsLatest val" 2 $#; then
     return 1
   fi
-  if ! parse_version_or_delete_marker_id "$1" "Version" "$2"; then
-    echo "error parsing version ID"
+  if ! version_id=$(parse_version_or_delete_marker_id "$1" "Version" "$2" 2>&1); then
+    echo "error parsing version ID: $version_id"
     return 1
   fi
-  version_id=$version_or_marker_id
+  echo "$version_id"
   return 0
 }
 
-parse_non_latest_version_id() {
+parse_a_non_latest_version_id() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  if ! parse_version_id "$1" "false"; then
-    log 2 "error getting non-latest version ID"
+
+  local response
+  if ! response=$(parse_version_id "$1" "false" 2>&1); then
+    log 2 "error getting non-latest version ID: $response"
     return 1
   fi
+
+  version_id="$response"
+  echo "$version_id"
   return 0
 }
 
-get_non_latest_version() {
+get_a_non_latest_version() {
   if ! check_param_count_v2 "bucket" $# 1; then
     return 1
   fi
-  if ! send_rest_go_command_callback "200" "parse_non_latest_version_id" "-method" "GET" "-query" "versions=" "-bucketName" "$1"; then
-    log 2 "error retrieving version tags"
+
+  local response
+  if ! response=$(send_rest_go_command_callback "200" "parse_a_non_latest_version_id" "-method" "GET" "-query" "versions=" "-bucketName" "$1" 2>&1); then
+    log 2 "error retrieving non-latest version ID: $response"
     return 1
   fi
+
+  non_latest_version="$response"
+  echo "$non_latest_version"
   return 0
 }
 
@@ -76,11 +87,15 @@ check_object_versions_before_deletion() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  if ! get_xml_data "$1" "$1.tmp"; then
-    log 2 "error getting XML data"
+
+  local response
+  if ! response=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error getting XML data: $response"
     return 1
   fi
-  if ! parse_versions_rest "$1.tmp"; then
+
+  xml_data="$response"
+  if ! parse_versions_rest "$xml_data"; then
     log 2 "error parsing versions"
     return 1
   fi
@@ -90,18 +105,23 @@ check_object_versions_before_deletion() {
   fi
   version_id="${version_ids[0]}"
   log 5 "version ID: $version_id"
+  echo "$version_id"
   return 0
 }
 
 check_object_versions_after_deletion() {
-  if ! check_param_count_v2 "data file" 1 $#; then
+  if ! check_param_count_v2 "data file, version ID" 2 $#; then
     return 1
   fi
-  if ! get_xml_data "$1" "$1.tmp"; then
-    log 2 "error getting XML data"
+
+  local response
+  if ! response=$(check_validity_and_or_parse_xml_data "$1" 2>&1); then
+    log 2 "error getting XML data: $response"
     return 1
   fi
-  if ! parse_versions_rest "$1.tmp"; then
+
+  xml_data="$response"
+  if ! parse_versions_rest "$xml_data"; then
     log 2 "error parsing versions"
     return 1
   fi
@@ -109,8 +129,8 @@ check_object_versions_after_deletion() {
     log 2 "expected version ID count of 2, was '${#version_ids[@]}'"
     return 1
   fi
-  if [ "${version_ids[0]}" != "$version_id" ]; then
-    log 2 "expected version ID of '$version_id', was '${version_ids[0]}'"
+  if [ "${version_ids[0]}" != "$2" ]; then
+    log 2 "expected version ID of '$2', was '${version_ids[0]}'"
     return 1
   fi
   if [ "${version_islatests[0]}" != "false" ]; then
@@ -128,8 +148,8 @@ list_object_versions_before_and_after_retention_deletion() {
   if ! check_param_count_v2 "bucket name, file" 2 $#; then
     return 1
   fi
-  if ! send_rest_go_command_callback "200" "check_object_versions_before_deletion" \
-      "-method" "GET" "-bucketName" "$1" "-query" "versions="; then
+  if ! key_version_id=$(send_rest_go_command_callback "200" "check_object_versions_before_deletion" \
+      "-method" "GET" "-bucketName" "$1" "-query" "versions=" 2>&1); then
     log 2 "error checking versions before deletion"
     return 1
   fi
@@ -137,9 +157,10 @@ list_object_versions_before_and_after_retention_deletion() {
     log 2 "error deleting file"
     return 1
   fi
+  log 5 "version ID: $key_version_id"
   if ! send_rest_go_command_callback "200" "check_object_versions_after_deletion" \
-      "-method" "GET" "-bucketName" "$1" "-query" "versions="; then
-    log 2 "error checking versions before deletion"
+      "-method" "GET" "-bucketName" "$1" "-query" "versions=" "--" "$key_version_id"; then
+    log 2 "error checking versions after deletion"
     return 1
   fi
   return 0
@@ -149,10 +170,15 @@ parse_latest_version_id() {
   if ! check_param_count_v2 "data file" 1 $#; then
     return 1
   fi
-  if ! parse_version_id "$1" "true"; then
-    log 2 "error getting latest version ID"
+
+  local response
+  if ! response=$(parse_version_id "$1" "true" 2>&1); then
+    log 2 "error getting latest version ID: $response"
     return 1
   fi
+
+  version_id="$response"
   log 5 "version ID: $version_id"
+  echo "$version_id"
   return 0
 }

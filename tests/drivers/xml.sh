@@ -246,7 +246,9 @@ check_if_element_exists() {
     log 2 "error checking XML data: $data_file"
     return 1
   fi
-  if ! result=$(xmllint --xpath "boolean(${xpath}[text()='$2'])" "$data_file" 2>&1); then
+  local search_string="boolean(${xpath}[text()='$2'])"
+  log 5 "search string: $search_string"
+  if ! result=$(xmllint --xpath "$search_string" "$data_file" 2>&1); then
     log 2 "error getting result: $result"
     return 1
   fi
@@ -255,6 +257,18 @@ check_if_element_exists() {
   fi
   log 5 "element '$2' not found"
   return 1
+}
+
+verify_element_doesnt_exist() {
+  if ! check_param_count_gt "data file, element, xml tree" 3 $#; then
+    return 1
+  fi
+  if check_if_element_exists "$1" "$2" "${@:3}"; then
+    log 2 "element '$2' should not exist in data"
+    log 5 "data: $(cat "$1")"
+    return 1
+  fi
+  return 0
 }
 
 print_xml_data_to_file() {

@@ -44,10 +44,14 @@ tag_old_version() {
   if ! check_param_count_v2 "bucket name, key" 2 $#; then
     return 1
   fi
-  if ! get_non_latest_version "$1"; then
-    log 2 "error getting non-latest object version"
+
+  local response
+  if ! response=$(get_a_non_latest_version "$1" 2>&1); then
+    log 2 "error getting non-latest object version: $response"
     return 1
   fi
+
+  version_id="$response"
   if ! send_rest_go_command "200" "-bucketName" "$1" "-objectKey" "$2" "-query" "versionId=$version_id" "-debug" "-logFile" "signature.log" \
         "-commandType" "putObjectTagging" "-tagKey" "key" "-tagValue" "value" "-contentMD5"; then
     log 2 "error tagging object"
