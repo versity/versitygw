@@ -166,7 +166,7 @@ get_bucket_policy_mc() {
   if ! check_param_count "get_bucket_policy_mc" "bucket" 1 $#; then
     return 1
   fi
-  bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1") || get_result=$?
+  bucket_policy=$(send_command mc --insecure anonymous get-json "$MC_ALIAS/$1" 2>&1) || get_result=$?
   if [[ $get_result -ne 0 ]]; then
     log 2 "error getting policy: $bucket_policy"
     return 1

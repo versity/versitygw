@@ -37,12 +37,12 @@ create_bucket() {
   elif [[ $1 == "mc" ]]; then
     error=$(send_command mc --insecure mb "$MC_ALIAS"/"$2" --region "$AWS_REGION" 2>&1) || exit_code=$?
   else
-    log 2 "invalid command type $1"
-    return 1
+    error="invalid command type $1"
+    exit_code=1
   fi
   if [ $exit_code -ne 0 ]; then
-    log 2 "error creating bucket: $error"
-    return 1
+    printf "error creating bucket: %s\n" "$error" >&2
+    return $exit_code
   fi
   return 0
 }

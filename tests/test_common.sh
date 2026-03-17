@@ -29,6 +29,7 @@ source ./tests/commands/put_bucket_tagging.sh
 source ./tests/commands/put_object_tagging.sh
 source ./tests/commands/put_object.sh
 source ./tests/commands/put_public_access_block.sh
+source ./tests/drivers/create_bucket/create_bucket_rest.sh
 source ./tests/drivers/file.sh
 source ./tests/drivers/params.sh
 source ./tests/util/util_file.sh
@@ -43,16 +44,16 @@ test_common_multipart_upload() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  bucket_file="largefile"
-  run setup_bucket_and_large_file "$BUCKET_ONE_NAME" "$bucket_file"
+  run setup_bucket_and_large_file_v3 "$BUCKET_ONE_NAME"
   assert_success
+  read -r bucket_name bucket_file <<< "$output"
 
   if [ "$1" == 's3' ]; then
     run copy_file_locally "$TEST_FILE_FOLDER/$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
     assert_success
   fi
 
-  run put_object "$1" "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
+  run put_object "$1" "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file"
   assert_success
 
   if [ "$1" == 's3' ]; then
@@ -60,7 +61,8 @@ test_common_multipart_upload() {
     assert_success
   fi
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
+  log 5 "file: $TEST_FILE_FOLDER/$bucket_file, bucket: $bucket_name"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$bucket_file" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file-copy"
   assert_success
 }
 
@@ -71,49 +73,58 @@ test_common_create_delete_bucket() {
   if [[ $RECREATE_BUCKETS != "true" ]]; then
     return
   fi
-
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  run bucket_cleanup_if_bucket_exists "$BUCKET_ONE_NAME"
+  run bucket_cleanup_if_bucket_exists_v2 "$BUCKET_ONE_NAME"
   assert_success
 
-  run create_bucket "$1" "$BUCKET_ONE_NAME"
+  run get_bucket_name "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run create_bucket "$1" "$bucket_name"
   assert_success
 
-  run bucket_exists "$BUCKET_ONE_NAME"
+  run bucket_exists "$bucket_name"
+  assert_success
+  assert_output "true"
+
+  run delete_bucket "$1" "$bucket_name"
   assert_success
 
-  run delete_bucket "$1" "$BUCKET_ONE_NAME"
-  assert_success
+  run bucket_exists "$bucket_name"
+  assert_failure 1
+  assert_output "false"
 }
 
 test_common_copy_object() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  local object_name="test-object"
-  run create_test_file "$object_name"
+  run create_test_file_v2
   assert_success
+  object_name=$output
 
-  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run setup_buckets_v3 "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
+  read -r bucket_one bucket_two <<< "$output"
 
   if [[ $1 == 's3' ]]; then
-    run copy_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name"
+    run copy_object "$1" "$TEST_FILE_FOLDER/$object_name" "$bucket_one" "$object_name"
     assert_success
   else
-    run put_object "$1" "$TEST_FILE_FOLDER/$object_name" "$BUCKET_ONE_NAME" "$object_name"
+    run put_object "$1" "$TEST_FILE_FOLDER/$object_name" "$bucket_one" "$object_name"
     assert_success
   fi
   if [[ $1 == 's3' ]]; then
-    run copy_object "$1" "s3://$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name"
+    run copy_object "$1" "s3://$bucket_one/$object_name" "$bucket_two" "$object_name"
     assert_success
   else
-    run copy_object "$1" "$BUCKET_ONE_NAME/$object_name" "$BUCKET_TWO_NAME" "$object_name"
+    run copy_object "$1" "$bucket_one/$object_name" "$bucket_two" "$object_name"
     assert_success
   fi
-  run download_and_compare_file "$TEST_FILE_FOLDER/$object_name" "$BUCKET_TWO_NAME" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$object_name" "$bucket_two" "$object_name" "$TEST_FILE_FOLDER/$object_name-copy"
   assert_success
 }
 
@@ -123,9 +134,9 @@ test_common_put_object_with_data() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  local object_name="test-object"
-  run create_test_file "$object_name"
+  run create_test_file_v2
   assert_success
+  object_name=$output
 
   test_common_put_object "$1" "$object_name"
 }
@@ -136,9 +147,9 @@ test_common_put_object_no_data() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  local object_name="test-object"
-  run create_test_file "$object_name" 0
+  run create_test_file_v2 0
   assert_success
+  object_name="$output"
 
   test_common_put_object "$1" "$object_name"
 }
@@ -149,8 +160,9 @@ test_common_put_object() {
   run assert_param_count "client type, file" 2 "$#"
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name=$output
 
   # s3 erases file locally, so we need to copy it first
   if [ "$1" == 's3' ]; then
@@ -158,7 +170,7 @@ test_common_put_object() {
     assert_success
   fi
 
-  run put_object "$1" "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2"
+  run put_object "$1" "$TEST_FILE_FOLDER/$2" "$bucket_name" "$2"
   assert_success
 
   if [ "$1" == 's3' ]; then
@@ -166,13 +178,13 @@ test_common_put_object() {
     assert_success
   fi
 
-  run download_and_compare_file "$TEST_FILE_FOLDER/$2" "$BUCKET_ONE_NAME" "$2" "$TEST_FILE_FOLDER/${2}-copy"
+  run download_and_compare_file "$TEST_FILE_FOLDER/$2" "$bucket_name" "$2" "$TEST_FILE_FOLDER/${2}-copy"
   assert_success
 
-  run delete_object "$1" "$BUCKET_ONE_NAME" "$2"
+  run delete_object "$1" "$bucket_name" "$2"
   assert_success
 
-  run object_exists "$1" "$BUCKET_ONE_NAME" "$2"
+  run object_exists "$1" "$bucket_name" "$2"
   assert_failure 1
 }
 
@@ -208,10 +220,11 @@ test_common_list_buckets() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  run setup_buckets "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run setup_buckets_v3 "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
   assert_success
+  read -r bucket_one bucket_two <<< "$output"
 
-  run list_and_check_buckets "$1" "$BUCKET_ONE_NAME" "$BUCKET_TWO_NAME"
+  run list_and_check_buckets "$1" "$bucket_one" "$bucket_two"
   assert_success
 }
 
@@ -219,18 +232,17 @@ test_common_list_objects() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  object_one="test-file-one"
-  object_two="test-file-two"
-  run setup_bucket_and_files "$BUCKET_ONE_NAME" "$object_one" "$object_two"
+  run setup_bucket_and_files_v3 "$BUCKET_ONE_NAME" 2
+  assert_success
+  read -r bucket_name object_one object_two <<< "$output"
+
+  run put_object "$1" "$TEST_FILE_FOLDER/$object_one" "$bucket_name" "$object_one"
   assert_success
 
-  run put_object "$1" "$TEST_FILE_FOLDER"/$object_one "$BUCKET_ONE_NAME" "$object_one"
+  run put_object "$1" "$TEST_FILE_FOLDER/$object_two" "$bucket_name" "$object_two"
   assert_success
 
-  run put_object "$1" "$TEST_FILE_FOLDER"/$object_two "$BUCKET_ONE_NAME" "$object_two"
-  assert_success
-
-  run list_check_objects_common "$1" "$BUCKET_ONE_NAME" "$object_one" "$object_two"
+  run list_check_objects_common "$1" "$bucket_name" "$object_one" "$object_two"
   assert_success
 }
 
@@ -241,22 +253,23 @@ test_common_set_get_delete_bucket_tags() {
   local key="test_key"
   local value="test_value"
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run verify_no_bucket_tags "$1" "$bucket_name"
   assert_success
 
-  run verify_no_bucket_tags "$1" "$BUCKET_ONE_NAME"
+  run put_bucket_tagging "$1" "$bucket_name" $key $value
   assert_success
 
-  run put_bucket_tagging "$1" "$BUCKET_ONE_NAME" $key $value
+  run get_and_check_bucket_tags "$bucket_name" "$key" "$value"
   assert_success
 
-  run get_and_check_bucket_tags "$BUCKET_ONE_NAME" "$key" "$value"
+  run delete_bucket_tagging "$1" "$bucket_name"
   assert_success
 
-  run delete_bucket_tagging "$1" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run verify_no_bucket_tags "$1" "$BUCKET_ONE_NAME"
+  run verify_no_bucket_tags "$1" "$bucket_name"
   assert_success
 }
 
@@ -264,23 +277,23 @@ test_common_set_get_object_tags() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  local bucket_file="bucket-file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name bucket_file <<< "$output"
+
   local key="test_key"
   local value="test_value"
 
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
+  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$bucket_name" "$bucket_file"
   assert_success
 
-  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
+  run verify_no_object_tags "$1" "$bucket_name" "$bucket_file"
   assert_success
 
-  run verify_no_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file"
+  run put_object_tagging "$1" "$bucket_name" "$bucket_file" "$key" "$value"
   assert_success
 
-  run put_object_tagging "$1" "$BUCKET_ONE_NAME" $bucket_file $key $value
-  assert_success
-
-  run check_verify_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$key" "$value"
+  run check_verify_object_tags "$1" "$bucket_name" "$bucket_file" "$key" "$value"
   assert_success
 }
 
@@ -288,21 +301,25 @@ test_common_presigned_url_utf8_chars() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  local bucket_file="my-$%^&*;"
-  local bucket_file_copy="bucket-file-copy"
+  run get_file_names 2
+  assert_success
+  read -r file_header bucket_file_copy <<< "$output"
 
+  local bucket_file="${file_header}-$%^&*;"
   run create_test_file "$bucket_file"
   assert_success
+
   run dd if=/dev/urandom of="$TEST_FILE_FOLDER/$bucket_file" bs=5M count=1
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name="$output"
+
+  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$bucket_name" "$bucket_file"
   assert_success
 
-  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
-  assert_success
-
-  run create_check_presigned_url "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file_copy"
+  run create_check_presigned_url "$1" "$bucket_name" "$bucket_file" "$TEST_FILE_FOLDER/$bucket_file_copy"
   assert_success
 
   run compare_files "$TEST_FILE_FOLDER"/"$bucket_file" "$TEST_FILE_FOLDER"/"$bucket_file_copy"
@@ -316,13 +333,14 @@ test_common_list_objects_file_count() {
   run create_test_file_count 1001
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  bucket_name=$output
+
+  run put_object_multiple "$1" "$TEST_FILE_FOLDER/file_*" "$bucket_name"
   assert_success
 
-  run put_object_multiple "$1" "$TEST_FILE_FOLDER/file_*" "$BUCKET_ONE_NAME"
-  assert_success
-
-  run list_objects_check_file_count "$1" "$BUCKET_ONE_NAME" 1001
+  run list_objects_check_file_count "$1" "$bucket_name" 1001
   assert_success
 }
 
@@ -330,26 +348,26 @@ test_common_delete_object_tagging() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  bucket_file="bucket_file"
   tag_key="key"
   tag_value="value"
 
-  run setup_bucket_and_file "$BUCKET_ONE_NAME" "$bucket_file"
+  run setup_bucket_and_file_v3 "$BUCKET_ONE_NAME"
+  assert_success
+  read -r bucket_name bucket_file <<< "$output"
+
+  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$bucket_name" "$bucket_file"
   assert_success
 
-  run put_object "$1" "$TEST_FILE_FOLDER"/"$bucket_file" "$BUCKET_ONE_NAME" "$bucket_file"
+  run put_object_tagging "$1" "$bucket_name" "$bucket_file" "$tag_key" "$tag_value"
   assert_success
 
-  run put_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value"
+  run get_and_verify_object_tags "$1" "$bucket_name" "$bucket_file" "$tag_key" "$tag_value"
   assert_success
 
-  run get_and_verify_object_tags "$1" "$BUCKET_ONE_NAME" "$bucket_file" "$tag_key" "$tag_value"
+  run delete_object_tagging "$1" "$bucket_name" "$bucket_file"
   assert_success
 
-  run delete_object_tagging "$1" "$BUCKET_ONE_NAME" "$bucket_file"
-  assert_success
-
-  run check_object_tags_empty "$1" "$BUCKET_ONE_NAME" "$bucket_file"
+  run check_object_tags_empty "$1" "$bucket_name" "$bucket_file"
   assert_success
 }
 
@@ -357,10 +375,11 @@ test_common_get_bucket_location() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name=$output
 
-  run get_check_bucket_location_various "$1" "$BUCKET_ONE_NAME"
+  run get_check_bucket_location_various "$1" "$bucket_name"
   assert_success
 }
 
@@ -368,36 +387,32 @@ test_common_get_put_delete_bucket_policy() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  policy_file="policy_file"
-
-  run create_test_file "$policy_file"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name=$output
 
   effect="Allow"
   principal="*"
   action="s3:GetObject"
-  resource="arn:aws:s3:::$BUCKET_ONE_NAME/*"
+  resource="arn:aws:s3:::$bucket_name/*"
 
-  run setup_policy_with_single_statement "$TEST_FILE_FOLDER/$policy_file" "2012-10-17" "$effect" "$principal" "$action" "$resource"
+  run setup_policy_with_single_statement_v2 "2012-10-17" "$effect" "$principal" "$action" "$resource"
   assert_success
-  log 5 "POLICY: $(cat "$TEST_FILE_FOLDER/$policy_file")"
+  policy_file="$output"
 
-  run setup_bucket "$BUCKET_ONE_NAME"
-  assert_success
-
-  run check_for_empty_policy "$1" "$BUCKET_ONE_NAME"
+  run check_for_empty_policy "$1" "$bucket_name"
   assert_success
 
-  run put_bucket_policy "$1" "$BUCKET_ONE_NAME" "$TEST_FILE_FOLDER"/"$policy_file"
+  run put_bucket_policy "$1" "$bucket_name" "$TEST_FILE_FOLDER"/"$policy_file"
   assert_success
 
-  run get_and_check_policy "$1" "$BUCKET_ONE_NAME" "$effect" "$principal" "$action" "$resource"
+  run get_and_check_policy "$1" "$bucket_name" "$effect" "$principal" "$action" "$resource"
   assert_success
 
-  run delete_bucket_policy "$1" "$BUCKET_ONE_NAME"
+  run delete_bucket_policy "$1" "$bucket_name"
   assert_success
 
-  run check_for_empty_policy "$1" "$BUCKET_ONE_NAME"
+  run check_for_empty_policy "$1" "$bucket_name"
   assert_success
 }
 
@@ -405,22 +420,22 @@ test_common_ls_directory_object() {
   run assert_param_count "client type" 1 "$#"
   assert_success
 
-  test_file="a"
-
-  run create_test_file "$test_file" 0
+  run create_test_file_v2 0
   assert_success
+  test_file="$output"
 
-  run setup_bucket "$BUCKET_ONE_NAME"
+  run setup_bucket_v3 "$BUCKET_ONE_NAME"
   assert_success
+  bucket_name="$output"
 
   if [ "$1" == 's3cmd' ]; then
     put_object_client="s3api"
   else
     put_object_client="$1"
   fi
-  run put_object "$put_object_client" "$TEST_FILE_FOLDER/$test_file" "$BUCKET_ONE_NAME" "$test_file/"
+  run put_object "$put_object_client" "$TEST_FILE_FOLDER/$test_file" "$bucket_name" "$test_file/"
   assert_success "error putting test file folder"
 
-  run list_and_check_directory_obj "$1" "$test_file"
+  run list_and_check_directory_obj "$1" "$bucket_name" "$test_file"
   assert_success "error listing and checking directory object"
 }
